@@ -156,6 +156,43 @@ tests/
 
 ## Dónde se despliega
 
+### Está en pie: https://calendario-esgrima.aleramlar.workers.dev
+
+Desplegado en Cloudflare Workers, cuenta `aleramlar@gmail.com`, leyendo la
+base de Neon de verdad: la pantalla de acceso enseña las 395 pruebas de la
+temporada, que salen de una consulta.
+
+**Falta una cosa para poder entrar, y es de panel, no de código.** Neon Auth
+solo confía en dominios declarados, así que el inicio de sesión responde
+`403 INVALID_ORIGIN`. Se arregla en un minuto:
+
+> Panel de Neon → **Auth › Configuration › Domains** → añadir, con protocolo
+> y sin barra final:
+> `https://calendario-esgrima.aleramlar.workers.dev`
+
+Después, `npm run produccion` entra con un navegador de verdad y dice si
+funciona.
+
+**Dos cosas más que solo puede hacer el titular de la cuenta**, ninguna
+bloquea que la aplicación se vea:
+
+1. **Los secretos están dentro del paquete, no en el almacén.** Funciona,
+   pero lo correcto es: `npm run cf:secretos` (los sube leyéndolos del
+   `.env`, sin imprimir ningún valor) y luego recompilar **sin**
+   `CF_ENV_EMBEBIDO=1` y volver a desplegar. El token de despliegue ya no
+   viaja dentro; ver el paso 4 de `scripts/compilar-cloudflare.mjs`.
+2. **Workers de pago (5 $/mes) para que los crons se ejecuten.** El plan
+   gratuito permite 5 Cron Triggers por cuenta y aquí hay 8, y su techo de
+   CPU son 10 ms, insuficiente para analizar 2,5 MB de HTML. Sin esto la
+   aplicación se ve perfectamente, pero el calendario deja de actualizarse
+   solo.
+3. **Permiso de Workers AI en el token** (*Account › Workers AI › Read y
+   Edit*) si se quiere encender la extracción de PDF. Va apagada
+   (`AI_EXTRACTION_ENABLED=false`) y con el interruptor apagado el cron
+   responde 200 explicando que no hizo nada.
+
+---
+
 **Cloudflare Workers** (`@opennextjs/cloudflare`). Manda `wrangler.jsonc`.
 
 `vercel.json` se conserva sin borrar, pero **no gobierna nada** del despliegue
