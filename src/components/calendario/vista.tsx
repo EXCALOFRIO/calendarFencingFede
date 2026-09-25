@@ -21,10 +21,12 @@ import {
   formatDateRangeEs,
   organismoDe,
   titular,
+  titularTorneo,
 } from '@/lib/utils';
 import type { Inscrito } from '@/app/(app)/inscritos';
 import { FichaEvento } from './ficha-evento';
-import { MarcaArma, NOMBRE_ARMA } from './marca-arma';
+import { IconoArma } from './iconos-arma';
+import { NOMBRE_ARMA } from './marca-arma';
 import { RejillaMes } from './rejilla-mes';
 
 export type TiradorOpcion = {
@@ -266,16 +268,37 @@ export function VistaCalendario({
           {filtrados.length !== numPruebas ? ` en ${filtrados.length} torneos` : ''}
           <span className="hidden sm:inline">{temporada ? ` · ${temporada}` : ''}</span>
         </p>
-        {actualizado ? (
-          <p className="ml-auto hidden text-xs text-muted-foreground sm:block">
-            Actualizado {actualizado}
-          </p>
-        ) : null}
+        {/*
+          «Ver todo» vive en la cabecera y no entre los controles.
+
+          Medido en un iPhone: con la raíz a 18 px, la fila de controles
+          necesitaba cuatro renglones y el calendario se quedaba con media
+          pantalla y la última semana cortada. Este botón es el que menos se
+          toca de los cinco, así que es el que se va arriba, al hueco que en
+          el móvil deja la hora de actualización.
+        */}
+        <div className="ml-auto flex items-baseline gap-3">
+          {actualizado ? (
+            <p className="hidden text-xs text-muted-foreground sm:block">
+              Actualizado {actualizado}
+            </p>
+          ) : null}
+          {tirador ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="-my-1 h-8 px-2"
+              onClick={todoPuesto ? verLoMio : verTodo}
+            >
+              {todoPuesto ? 'Solo lo mío' : 'Ver todo'}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {/* Controles en una sola fila que envuelve. */}
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:gap-2">
-        <div className="relative order-1 min-w-0 flex-1 basis-32">
+        <div className="relative order-1 min-w-0 flex-1 basis-28">
           <Search
             className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden
@@ -349,9 +372,9 @@ export function VistaCalendario({
               aria-label={NOMBRE_ARMA[a]}
               className="h-9 px-2.5 text-sm data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
             >
-              {/* En pantalla estrecha solo cabe la inicial, que es la misma
+              {/* En pantalla estrecha solo cabe el icono, que es la misma
                   marca que llevan las barras del calendario. */}
-              <span className="sm:hidden">{a[0]}</span>
+              <IconoArma arma={a} className="size-4 shrink-0" />
               <span className="hidden sm:inline">{NOMBRE_ARMA[a]}</span>
             </ToggleGroupItem>
           ))}
@@ -372,7 +395,7 @@ export function VistaCalendario({
               key={g.v}
               value={g.v}
               aria-label={g.largo}
-              className="h-9 w-9 px-0 text-sm data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+              className="h-9 w-8 px-0 text-sm data-[state=on]:bg-primary data-[state=on]:text-primary-foreground sm:w-9"
             >
               {g.t}
             </ToggleGroupItem>
@@ -404,16 +427,7 @@ export function VistaCalendario({
           </ToggleGroup>
         ) : null}
 
-        {tirador ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="order-3 h-9 px-2 sm:order-7 sm:px-3"
-            onClick={todoPuesto ? verLoMio : verTodo}
-          >
-            {todoPuesto ? 'Solo lo mío' : 'Ver todo'}
-          </Button>
-        ) : null}
+
       </div>
 
       {aviso ? (
@@ -550,15 +564,36 @@ function CabeceraFicha({ evento }: { evento: EventView }) {
             {CIRCUIT_LABEL[evento.circuit] ?? evento.circuit}
           </Badge>
         </div>
-        <SheetTitle className="text-3xl leading-none">
-          {titular(evento.name)}
+        <SheetTitle className="text-3xl leading-[0.95] sm:text-4xl">
+          {titularTorneo(evento.name)}
         </SheetTitle>
-        <SheetDescription className="flex flex-wrap items-center gap-x-2">
-          <MapPin className="size-3.5" aria-hidden />
-          {titular(evento.city ?? 'Sede sin publicar')}
-          {evento.country ? `, ${evento.country}` : ''}
-          <span aria-hidden>·</span>
-          {formatDateRangeEs(evento.startDate, evento.endDate)}
+        {/*
+          Dónde y cuándo, en dos columnas con su rótulo.
+
+          Antes era una cadena «Casablanca, MA · 15-18 oct 2026». Una línea
+          de datos pegados con puntos medios es rápida de escribir y lenta de
+          leer: hay que analizarla para saber qué es cada trozo. En columnas
+          se ve de un vistazo, que es justo lo que se pidió.
+        */}
+        <SheetDescription asChild>
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-1 pt-1">
+            <div className="flex flex-col">
+              <dt className="text-xs text-muted-foreground">Dónde</dt>
+              <dd className="flex items-center gap-1.5 text-sm text-foreground">
+                <MapPin className="size-3.5 shrink-0" aria-hidden />
+                <span className="truncate">
+                  {evento.city ? titular(evento.city) : 'Sede sin publicar'}
+                  {evento.country ? `, ${evento.country}` : ''}
+                </span>
+              </dd>
+            </div>
+            <div className="flex flex-col">
+              <dt className="text-xs text-muted-foreground">Cuándo</dt>
+              <dd className="text-sm text-foreground">
+                {formatDateRangeEs(evento.startDate, evento.endDate)}
+              </dd>
+            </div>
+          </dl>
         </SheetDescription>
       </SheetHeader>
     </div>
@@ -592,7 +627,7 @@ function Leyenda() {
           menos de calendario. */}
       {ARMAS.map((a) => (
         <li key={a} className="hidden items-center gap-1.5 sm:flex">
-          <MarcaArma armas={[a]} />
+          <IconoArma arma={a} className="size-4" />
           {NOMBRE_ARMA[a]}
         </li>
       ))}

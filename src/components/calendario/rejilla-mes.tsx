@@ -21,9 +21,11 @@ import {
   formatDateRangeEs,
   organismoDe,
   titular,
+  titularTorneo,
   type Organismo,
 } from '@/lib/utils';
-import { MarcaArma } from './marca-arma';
+import { IconoArma } from './iconos-arma';
+import { NOMBRE_ARMA } from './marca-arma';
 
 /**
  * Rejilla de un mes con barras continuas.
@@ -64,8 +66,8 @@ const CABECERA = 22;
 
 /** Límites del alto de barra. Por debajo del mínimo no cabe el texto. */
 const LIMITES = {
-  normal: { min: 18, max: 30 },
-  compacta: { min: 13, max: 20 },
+  normal: { min: 18, max: 40 },
+  compacta: { min: 13, max: 24 },
 };
 
 function isoLocal(d: Date): string {
@@ -315,7 +317,7 @@ export function RejillaMes({
             <div
               key={d}
               className={cn(
-                'text-center text-[11px] font-medium uppercase',
+                'pb-1 text-center text-xs font-medium',
                 i >= 5 ? 'text-muted-foreground/60' : 'text-muted-foreground',
               )}
             >
@@ -396,10 +398,13 @@ function FilaSemana({
    * esa semana, para que el calendario llene el alto de la pantalla en vez
    * de dejar un hueco debajo.
    *
-   * Una semana vacía crece muy poco a propósito (`0.3` contra `1.6`). Con el
-   * reparto anterior, un septiembre con tres semanas libres se iba en filas
-   * en blanco del alto de la pantalla y las dos semanas que importaban
-   * quedaban apretadas abajo. El espacio tiene que irse donde pasan cosas.
+   * El reparto entre semanas llenas y vacías está **calibrado**, no puesto a
+   * ojo. Con la primera proporción (0,3 contra 1,6) pasaba lo contrario del
+   * problema que resolvía: en un mes tranquilo, la semana con dos torneos se
+   * llevaba 230 px para pintar 90 y quedaba un boquete debajo de las barras
+   * que parecía un fallo de dibujado. Ahora una semana vacía sigue siendo
+   * claramente más baja —se ve de un vistazo que ese fin de semana está
+   * libre— pero no se aplasta, y el sobrante se reparte con la carga.
    */
   const filas = carrilesPintados + (recorta ? 1 : 0);
   const altoMinimo = vacia
@@ -408,7 +413,7 @@ function FilaSemana({
       : 30
     : CABECERA + filas * (altoBarra + HUECO_BARRA) + 4;
 
-  const peso = vacia ? 0.3 : 1.6 + (filas - 1) * 0.5;
+  const peso = vacia ? 0.8 : 1.5 + (filas - 1) * 0.55;
 
   return (
     <div
@@ -420,17 +425,24 @@ function FilaSemana({
           key={d.iso}
           className={cn(
             'relative border-r last:border-r-0',
+            // Una semana sin competicion se hunde: fondo mas oscuro y
+            // numeros apagados. Antes tenia el mismo fondo que una semana
+            // llena y solo era mas baja, asi que parecia una fila cortada
+            // por un fallo de dibujado en vez de «aqui no hay nada».
+            vacia && 'bg-black/25',
             !d.delMes && 'bg-background/40',
           )}
         >
           <span
             className={cn(
-              'cifra absolute left-1.5 top-1 text-[13px]',
+              'cifra absolute left-1.5 top-0.5 text-sm',
               d.esHoy
                 ? 'flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground'
-                : d.delMes
-                  ? 'text-foreground'
-                  : 'text-muted-foreground/45',
+                : !d.delMes
+                  ? 'text-muted-foreground/40'
+                  : vacia
+                    ? 'text-muted-foreground/70'
+                    : 'text-foreground',
             )}
           >
             {d.dia}
@@ -502,7 +514,7 @@ function MasDelDia({
         <button
           type="button"
           aria-label={`Ver ${barras.length} torneos más de este día`}
-          className="objetivo-libre absolute flex cursor-pointer items-center justify-center rounded-[5px] text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="objetivo-libre absolute flex cursor-pointer items-center justify-center rounded-sm text-[0.68rem] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           style={{
             left: `calc(${(columna / 7) * 100}% + 3px)`,
             width: `calc(${(1 / 7) * 100}% - 6px)`,
@@ -530,9 +542,11 @@ function MasDelDia({
                     COLOR[o].barra.split(' ')[1],
                   )}
                 >
-                  <MarcaArma armas={armas} />
+                  {armas.slice(0, 2).map((a) => (
+                    <IconoArma key={a} arma={a} className="size-4 shrink-0" />
+                  ))}
                   <span className="min-w-0 flex-1 truncate font-medium">
-                    {titular(b.evento.name)}
+                    {titularTorneo(b.evento.name)}
                   </span>
                   {b.evento.city ? (
                     <span className="shrink-0 truncate text-muted-foreground">
@@ -583,12 +597,12 @@ function BarraTorneo({
             'transition-[filter] duration-150 hover:brightness-125',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             compacta ? 'gap-[3px] px-1' : 'gap-1.5 px-1.5',
-            apretada ? 'text-[9px]' : compacta ? 'text-[10px]' : 'text-[11px]',
+            apretada ? 'text-[0.6rem]' : compacta ? 'text-[0.68rem]' : 'text-xs',
             color.barra,
             // Si viene de antes o sigue después, ese lado se queda recto:
             // se ve que el torneo continúa.
-            barra.continuaAntes ? 'rounded-l-none' : 'rounded-l-[5px]',
-            barra.continuaDespues ? 'rounded-r-none' : 'rounded-r-[5px]',
+            barra.continuaAntes ? 'rounded-l-none' : 'rounded-l-sm',
+            barra.continuaDespues ? 'rounded-r-none' : 'rounded-r-sm',
             // Inscrito: filete del color del texto. No es solo color: va
             // también el icono de la derecha y el texto del globo.
             inscrito && 'ring-1 ring-inset ring-current',
@@ -602,9 +616,20 @@ function BarraTorneo({
             height: alto,
           }}
         >
-          <MarcaArma armas={armas} compacta={compacta || apretada} />
+          {/* Iconos de arma: es lo que distingue una prueba de otra sin
+              leer. Como mucho dos; con tres el nombre ya no cabe. */}
+          <span className="flex shrink-0 items-center gap-0.5">
+            {armas.slice(0, 2).map((a) => (
+              <IconoArma
+                key={a}
+                arma={a}
+                title={NOMBRE_ARMA[a]}
+                className={apretada ? 'size-3' : 'size-4'}
+              />
+            ))}
+          </span>
 
-          <span className="truncate">{titular(evento.name)}</span>
+          <span className="truncate">{titularTorneo(evento.name)}</span>
 
           {/*
             La ciudad también en trimestre. Sin ella, en un fin de semana con
@@ -664,7 +689,7 @@ function ContenidoGlobo({
 
   return (
     <TooltipContent side="top" className="max-w-72 flex-col items-start gap-1.5 p-2.5">
-      <p className="text-sm font-semibold leading-tight">{titular(evento.name)}</p>
+      <p className="text-sm font-semibold leading-tight">{titularTorneo(evento.name)}</p>
 
       <p className="text-xs opacity-80">
         {evento.city ? titular(evento.city) : 'Sede sin publicar'}
@@ -674,9 +699,10 @@ function ContenidoGlobo({
 
       <ul className="flex flex-col gap-0.5 text-xs">
         {[...porArma.entries()].map(([arma, claves]) => (
-          <li key={arma} className="flex items-baseline gap-1.5">
-            <MarcaArma armas={[arma]} />
-            <span className="opacity-80">{[...claves].sort().join(' · ')}</span>
+          <li key={arma} className="flex items-center gap-2">
+            <IconoArma arma={arma} className="size-4 shrink-0" />
+            <span className="font-medium">{NOMBRE_ARMA[arma]}</span>
+            <span className="opacity-70">{[...claves].sort().join(', ')}</span>
           </li>
         ))}
       </ul>

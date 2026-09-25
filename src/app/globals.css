@@ -8,74 +8,101 @@
  * TEMA
  * ===========================================================================
  *
- * Se usan los nombres de variable estándar de shadcn/ui (`--background`,
- * `--card`, `--primary`, `--muted-foreground`…) y no unos inventados. Es
- * deliberado: así los componentes que se instalan con su CLI se ven bien sin
- * tocarlos y se pueden actualizar sin romper nada. La versión anterior tenía
- * tokens propios, y por eso había que reescribir cada componente entero.
+ * Nombres de variable estándar de shadcn/ui, no inventados: así los
+ * componentes que se instalan con su CLI se ven bien sin tocarlos.
  *
- * Tres decisiones de color, con su porqué:
+ * -------------------------------------------------------------------------
+ * DE DÓNDE SALE ESTE ASPECTO
+ * -------------------------------------------------------------------------
  *
- * 1. **Gris muy oscuro, no negro puro.** Sobre #000 nada parece un objeto:
- *    no hay diferencia entre el fondo y una superficie y la pantalla se lee
- *    plana. Con el fondo en L=0.16 y las tarjetas en L=0.21 hay separación
- *    real sin necesidad de poner bordes por todas partes.
- * 2. **Carmesí de marca, con dos tonos.** Medido: el carmesí saturado da
- *    3,98:1 como texto sobre fondo oscuro, por debajo de AA. `--primary` es
- *    para rellenos y `--primary-text` para cuando el carmesí es texto.
- * 3. **Oro exclusivo de las convocatorias de selección.** Si se usa para
- *    otra cosa deja de significar "te han convocado", que es el aviso más
- *    importante de la aplicación.
+ * De la esgrima, no de una plantilla. Tres referencias concretas:
+ *
+ * - **La pista**: 14 metros de aluminio, marcada con líneas blancas finas.
+ *   De ahí que la estructura de la aplicación sean bandas horizontales
+ *   separadas por filetes de un píxel, y no tarjetas flotando.
+ * - **El marcador**: cifras enormes en condensada y rótulos diminutos al
+ *   lado. El contraste brutal entre los dos ES la jerarquía. Una pantalla
+ *   entera a 13 px se lee plana por mucho color que le pongas.
+ * - **El equipo**: blanco sobre metal. El blanco es un color estructural
+ *   aquí, no solo el del texto: los filetes, los bordes y los realces son
+ *   blanco a muy baja opacidad.
+ *
+ * Y dos cosas que se evitan a propósito porque son el aspecto por defecto de
+ * cualquier interfaz generada:
+ *
+ * - **Negro teñido + un único acento de color.** El fondo de aquí es un
+ *   grafito frío de verdad (croma 0,008 en el azul), no un #0B0B0B con
+ *   pretensiones. Se nota sobre todo en las superficies.
+ * - **Todo con el mismo radio y una sombra gris blanda debajo.** El radio
+ *   estructural es pequeño (6 px) y las superficies se separan con un
+ *   **filete de luz** arriba —un píxel de blanco al 5 %, como el canto de
+ *   una chapa— en vez de con sombra.
+ *
+ * Los tres colores con significado, y no hay más:
+ *
+ * 1. **Carmesí**, la RFEE. Dos tonos: `--primary` para rellenos y
+ *    `--primary-text` para cuando el carmesí es texto, porque el saturado da
+ *    3,98:1 sobre fondo oscuro y no llega a AA.
+ * 2. **Oro**, y SOLO las convocatorias de selección. Si se usa para otra
+ *    cosa deja de significar «te han convocado», que es el aviso más
+ *    importante que da esta aplicacion.
+ * 3. **Semáforo** verde/ámbar/rojo para los plazos. Los tres pasan AA.
  */
 
 :root {
-  --radius: 0.75rem;
+  /* Radio estructural pequeño. Las pastillas usan `rounded-full`, que es una
+     decisión distinta: redondo del todo o casi recto, nunca el término medio
+     de 12 px en absolutamente todo. */
+  --radius: 0.375rem;
 
-  --background: oklch(0.16 0.003 285);
-  --foreground: oklch(0.97 0.002 285);
+  --background: oklch(0.17 0.008 265);
+  --foreground: oklch(0.98 0.002 265);
 
-  --card: oklch(0.21 0.004 285);
-  --card-foreground: oklch(0.97 0.002 285);
+  --card: oklch(0.215 0.009 265);
+  --card-foreground: oklch(0.98 0.002 265);
 
-  --popover: oklch(0.23 0.004 285);
-  --popover-foreground: oklch(0.97 0.002 285);
+  --popover: oklch(0.245 0.009 265);
+  --popover-foreground: oklch(0.98 0.002 265);
 
   --primary: oklch(0.586 0.222 17.6);
   --primary-foreground: oklch(0.99 0 0);
   /* Carmesí legible como texto; el de relleno se queda en 3,98:1. */
-  --primary-text: oklch(0.72 0.17 17.6);
+  --primary-text: oklch(0.74 0.17 17.6);
 
-  --secondary: oklch(0.27 0.005 285);
-  --secondary-foreground: oklch(0.97 0.002 285);
+  --secondary: oklch(0.27 0.009 265);
+  --secondary-foreground: oklch(0.98 0.002 265);
 
-  --muted: oklch(0.27 0.005 285);
-  --muted-foreground: oklch(0.72 0.007 286);
+  --muted: oklch(0.27 0.009 265);
+  --muted-foreground: oklch(0.75 0.01 265);
 
-  --accent: oklch(0.29 0.005 285);
-  --accent-foreground: oklch(0.97 0.002 285);
+  --accent: oklch(0.3 0.01 265);
+  --accent-foreground: oklch(0.98 0.002 265);
 
   --destructive: oklch(0.65 0.21 22);
   --destructive-foreground: oklch(0.99 0 0);
 
-  --border: oklch(1 0 0 / 10%);
+  --border: oklch(1 0 0 / 9%);
   --input: oklch(1 0 0 / 14%);
-  --ring: oklch(0.72 0.17 17.6);
+  --ring: oklch(0.74 0.17 17.6);
+
+  /* Filete de luz del canto superior de una superficie. */
+  --filete: oklch(1 0 0 / 6%);
 
   /* Convocatorias de selección, y nada más. */
-  --gold: oklch(0.8 0.13 82);
+  --gold: oklch(0.82 0.13 82);
   --gold-foreground: oklch(0.2 0.03 84);
 
   /* Semáforo de plazos. Los tres pasan AA sobre el fondo. */
-  --ok: oklch(0.78 0.15 158);
-  --warn: oklch(0.82 0.14 82);
-  --danger: oklch(0.7 0.19 20);
-  --off: oklch(0.6 0.007 286);
+  --ok: oklch(0.79 0.15 158);
+  --warn: oklch(0.83 0.14 82);
+  --danger: oklch(0.71 0.19 20);
+  --off: oklch(0.62 0.01 265);
 
   /* Quién organiza: es la lectura rápida del calendario. */
-  --org-rfee: oklch(0.65 0.2 17.6);
-  --org-fie: oklch(0.8 0.13 82);
-  --org-efc: oklch(0.72 0.14 240);
-  --org-aut: oklch(0.65 0.01 286);
+  --org-rfee: oklch(0.66 0.2 17.6);
+  --org-fie: oklch(0.81 0.13 82);
+  --org-efc: oklch(0.73 0.14 240);
+  --org-aut: oklch(0.66 0.012 265);
 }
 
 @theme inline {
@@ -100,6 +127,7 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
+  --color-filete: var(--filete);
   --color-gold: var(--gold);
   --color-gold-foreground: var(--gold-foreground);
   --color-ok: var(--ok);
@@ -127,6 +155,24 @@
 
   html {
     -webkit-text-size-adjust: 100%;
+  }
+
+  /**
+   * En el movil, TODO un 12 % más grande.
+   *
+   * La aplicación se mira de pie en la puerta de un pabellón, con prisa y a
+   * pulso. Las medidas de Tailwind van en `rem`, así que subir la raíz sube
+   * la interfaz entera de golpe y sin descuadrar nada: los 14 px del texto
+   * secundario pasan a 15,75 y los 11 px de los rótulos a 12,4. Es la
+   * diferencia entre leerlo y entornar los ojos.
+   *
+   * Se queda por encima de 16 px en los campos de formulario, que es el
+   * umbral por debajo del cual iOS hace zoom solo al enfocar.
+   */
+  @media (max-width: 639px) {
+    html {
+      font-size: 18px;
+    }
   }
 
   body {

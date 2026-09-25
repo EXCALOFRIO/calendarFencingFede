@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import type { CompetitionView, EventView } from '@/lib/queries/calendar';
 import { mapsLinks, timezoneInfo } from '@/lib/travel';
+import { IconoArma } from './iconos-arma';
 import {
   CATEGORY_LABEL,
   GENDER_LABEL,
@@ -125,7 +126,17 @@ export function FichaEvento({
               </Button>
               {!sede ? (
                 <span className="text-xs text-muted-foreground">
-                  La sede todavía no está publicada.
+                  {/*
+                    Medido contra la base: de 274 eventos vigentes, solo 16
+                    tienen pabellón, y son todos nacionales. Ni la FIE ni el
+                    circuito europeo lo publican nunca. Decir «todavía no
+                    está publicada» en una Copa del Mundo hace pensar que
+                    falla la aplicación; lo honesto es decir quién no lo
+                    publica.
+                  */}
+                  {evento.scope === 'INTERNACIONAL'
+                    ? 'La organización internacional no publica el pabellón.'
+                    : 'La sede todavía no está publicada.'}
                 </span>
               ) : null}
             </div>
@@ -156,13 +167,14 @@ export function FichaEvento({
                 onClick={() => setElegida(c.id)}
                 aria-pressed={c.id === elegida}
                 className={cn(
-                  'shrink-0 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
+                  'flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
                   c.id === elegida
                     ? 'border-primary bg-primary/15 text-primary-text'
                     : 'text-muted-foreground hover:bg-accent',
                   !puede && 'opacity-60',
                 )}
               >
+                <IconoArma arma={c.weapon} className="size-4 shrink-0" />
                 {WEAPON_LABEL[c.weapon]} {c.gender === 'M' ? 'M' : 'F'}{' '}
                 {CATEGORY_LABEL[c.category as keyof typeof CATEGORY_LABEL] ??
                   c.category}
@@ -276,7 +288,7 @@ function DetallePrueba({
       <div className="flex items-baseline gap-2">
         {prueba.status.daysLeft !== null ? (
           <>
-            <span className={cn('cifra text-4xl', tono.texto)}>
+            <span className={cn('cifra text-6xl', tono.texto)}>
               {prueba.status.daysLeft}
             </span>
             <span className="text-sm text-muted-foreground">
@@ -311,11 +323,11 @@ function DetallePrueba({
       )}
 
       {horarios.length > 0 ? (
-        <dl className="grid grid-cols-4 gap-2 rounded-md bg-muted/50 p-2 text-center">
+        <dl className="grid grid-cols-4 gap-px overflow-hidden rounded-md bg-border">
           {horarios.map(([k, v]) => (
-            <div key={k}>
-              <dt className="text-[11px] text-muted-foreground">{k}</dt>
-              <dd className="cifra text-base">{v}</dd>
+            <div key={k} className="flex flex-col items-center bg-card py-2">
+              <dt className="text-xs text-muted-foreground">{k}</dt>
+              <dd className="cifra text-xl">{v}</dd>
             </div>
           ))}
         </dl>

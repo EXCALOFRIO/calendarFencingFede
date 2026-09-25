@@ -304,3 +304,131 @@ export function titular(nombre: string): string {
     })
     .join('');
 }
+
+/**
+ * Nombres de la FIE, en castellano.
+ *
+ * La FIE publica en inglés y en francés: «Samsun World Cup 2026», «Dublin
+ * Satellite Tournament 2026», «Gand Satellite Tournament». Cuando el mismo
+ * torneo llega tambien por Skermo se usa el nombre español y no hace falta
+ * nada de esto, pero hay 34 pruebas que solo están en la FIE y salían en
+ * inglés en mitad de un calendario en castellano.
+ *
+ * Se traduce **la forma**, que es un patrón cerrado y corto: ciudad + tipo de
+ * prueba + año. No se traduce nada más, y el nombre original se sigue
+ * enseñando tal cual en la ficha, al lado del enlace a la fuente, porque es
+ * como está publicado oficialmente.
+ */
+
+/** Tipos de prueba de la FIE, de más específico a más general. */
+const TIPOS_FIE: [RegExp, string][] = [
+  [/\bcadet\s+world\s+championships?\b/i, 'Campeonato del Mundo Cadete'],
+  [/\bjunior\s+world\s+championships?\b/i, 'Campeonato del Mundo Júnior'],
+  [/\bveteran\s+world\s+championships?\b/i, 'Campeonato del Mundo de Veteranos'],
+  [/\bworld\s+championships?\b/i, 'Campeonato del Mundo'],
+  [/\bcadet\s+european\s+championships?\b/i, 'Campeonato de Europa Cadete'],
+  [/\bjunior\s+european\s+championships?\b/i, 'Campeonato de Europa Júnior'],
+  [/\beuropean\s+championships?\b/i, 'Campeonato de Europa'],
+  [/\bzonal\s+championships?\b/i, 'Campeonato de Zona'],
+  [/\bcadet\s+world\s+cup\b/i, 'Copa del Mundo Cadete'],
+  [/\bjunior\s+world\s+cup\b/i, 'Copa del Mundo Júnior'],
+  [/\bsatellite\s+tournament\b/i, 'Torneo Satélite'],
+  [/\bgrand\s+prix\b/i, 'Gran Premio'],
+  [/\bworld\s+cup\b/i, 'Copa del Mundo'],
+  [/\bolympic\s+games\b/i, 'Juegos Olímpicos'],
+  [/\beuropean\s+games\b/i, 'Juegos Europeos'],
+];
+
+/**
+ * Ciudades que la FIE publica con su nombre local o inglés y que en español
+ * se llaman de otra forma. Solo las que aparecen de verdad en el calendario;
+ * lo que no esté aquí se deja como viene, que es mejor que adivinar.
+ */
+const CIUDADES_ES: Record<string, string> = {
+  /**
+   * No todo lo que va delante del tipo de prueba es una ciudad: cuando la
+   * FIE aún no tiene sede publica «Sabre World Cup 2027», donde «Sabre» es
+   * el arma. Traducidas, esas tres dan un título correcto en castellano:
+   * «Copa del Mundo de Sable».
+   */
+  sabre: 'Sable',
+  saber: 'Sable',
+  epee: 'Espada',
+  'épée': 'Espada',
+  foil: 'Florete',
+
+  dublin: 'Dublín',
+  gand: 'Gante',
+  ghent: 'Gante',
+  london: 'Londres',
+  geneva: 'Ginebra',
+  nuremberg: 'Núremberg',
+  antwerp: 'Amberes',
+  turin: 'Turín',
+  torino: 'Turín',
+  milano: 'Milán',
+  milan: 'Milán',
+  copenhagen: 'Copenhague',
+  istanbul: 'Estambul',
+  warsaw: 'Varsovia',
+  prague: 'Praga',
+  moscow: 'Moscú',
+  athens: 'Atenas',
+  bucharest: 'Bucarest',
+  lisbon: 'Lisboa',
+  cairo: 'El Cairo',
+  algiers: 'Argel',
+  tbilisi: 'Tiflis',
+  seoul: 'Seúl',
+  tokyo: 'Tokio',
+  beijing: 'Pekín',
+  'new york': 'Nueva York',
+  'the hague': 'La Haya',
+  brussels: 'Bruselas',
+  munich: 'Múnich',
+  cologne: 'Colonia',
+  frankfurt: 'Fráncfort',
+  basel: 'Basilea',
+  zurich: 'Zúrich',
+  lausanne: 'Lausana',
+  stockholm: 'Estocolmo',
+  gothenburg: 'Gotemburgo',
+  bordeaux: 'Burdeos',
+  marseille: 'Marsella',
+  nice: 'Niza',
+  strasbourg: 'Estrasburgo',
+  bogota: 'Bogotá',
+  belgrade: 'Belgrado',
+  sofia: 'Sofía',
+  reykjavik: 'Reikiavik',
+  'sao paulo': 'São Paulo',
+};
+
+/**
+ * Título de un torneo, siempre en castellano.
+ *
+ * Si el nombre es de la FIE y encaja con el patrón «ciudad + tipo + año», se
+ * devuelve «Copa del Mundo de Samsun». Si no encaja, se devuelve el nombre
+ * pasado por `titular()`, que es lo que hacía antes.
+ */
+export function titularTorneo(nombre: string): string {
+  for (const [patron, tipo] of TIPOS_FIE) {
+    const encontrado = nombre.match(patron);
+    if (!encontrado) continue;
+
+    // Lo que queda a la izquierda del tipo es la ciudad; a la derecha, el año.
+    const ciudadCruda = nombre
+      .slice(0, encontrado.index ?? 0)
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!ciudadCruda) return tipo;
+
+    const ciudad = CIUDADES_ES[ciudadCruda.toLowerCase()] ?? titular(ciudadCruda);
+    // «de El Cairo» chirría, así que ese lleva su contracción.
+    const enlace = /^el\s/i.test(ciudad) ? `del ${ciudad.slice(3)}` : `de ${ciudad}`;
+    return `${tipo} ${enlace}`;
+  }
+
+  return titular(nombre);
+}

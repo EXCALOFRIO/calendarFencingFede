@@ -45,6 +45,53 @@ La pantalla principal **es el calendario**. Todo lo demás es secundario.
 | `bg-gold` / `text-gold` | **exclusivo de convocatorias de selección** |
 | `org-rfee` / `org-fie` / `org-efc` / `org-aut` | quién organiza |
 
+## 3 bis. De dónde sale este aspecto (léelo antes de diseñar nada)
+
+El usuario rechazó varias versiones con la misma frase: *«la veo como
+generada por IA»*. Tenía razón, y el diagnóstico es concreto. Estos cinco
+rasgos son el aspecto por defecto de cualquier interfaz generada hoy, y
+aparecían todos a la vez:
+
+1. Fondo negro teñido (`#0B0B0B`, `#111`) con **un único acento de color**.
+2. **Todo** con el mismo radio de 12 px y la misma sombra gris blanda debajo.
+3. El contenido troceado en **tarjetas idénticas** que no jerarquizan nada.
+4. Cadenas de datos unidas por puntos medios: `Arma · Género · Categoría`.
+5. Rótulos en MAYÚSCULAS espaciadas encima de cada título, y flechas `→`
+   pegadas al texto de los botones.
+
+**No los uses.** Lo que se usa en su lugar sale de la esgrima:
+
+- **La pista.** Catorce metros de aluminio con líneas blancas finas. La
+  estructura son **bandas horizontales separadas por filetes de un píxel**,
+  no cajas flotando. Radio estructural 6 px (`--radius`); las pastillas van
+  `rounded-full`. Redondo del todo o casi recto, nunca el término medio.
+- **El marcador.** Cifras enormes en condensada con un rótulo diminuto al
+  lado. **El contraste entre las dos ES la jerarquía.** Una pantalla entera
+  a 13 px se lee plana por mucho color que lleve. Si un dato importa, que
+  sea `.cifra` y grande de verdad (`text-4xl` o más); si no importa, que sea
+  pequeño y apagado. No hay término medio.
+- **El equipo.** Blanco sobre metal. El blanco es un color **estructural**:
+  los filetes, los bordes y los realces son blanco a muy baja opacidad
+  (`--border`, `--filete`). Las superficies se separan con un filete de luz
+  arriba, como el canto de una chapa, no con sombra.
+
+En lugar de `A · B · C`, **pon los datos en columnas o en filas con su
+rótulo**. Cuesta dos líneas más de marcado y es la diferencia entre una
+ficha y un volcado de base de datos.
+
+## 3 ter. De un vistazo
+
+Petición literal: *«nada de muchos menús ni submenús, todo en un vistazo,
+bien y rápido para organizarse»*.
+
+- Lo que alguien necesita para decidir **tiene que estar en la primera
+  pantalla**, sin abrir nada. Si hace falta un clic para saber cuántos días
+  quedan, está mal.
+- Cero submenús. Si una sección necesita pestañas internas, probablemente
+  son dos secciones o ninguna.
+- Máximo **una** acción principal por pantalla. Las demás, en su sitio y
+  calladas.
+
 ## 4. Tipografía
 
 Dos familias con papeles fijos:
