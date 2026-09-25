@@ -30,7 +30,9 @@
     "mirar": "tsx tests/ui/mirar.mts",
     "barrido": "tsx tests/ui/barrido.mts",
     "ficha": "tsx tests/ui/ficha.mts",
-    "iconos": "node tests/ui/iconos.mjs"
+    "iconos": "node tests/ui/iconos.mjs",
+    "cf:secretos": "node scripts/subir-secretos.mjs",
+    "produccion": "tsx tests/ui/produccion.mts"
   },
   "dependencies": {
     "@neondatabase/auth": "^0.5.0-beta",

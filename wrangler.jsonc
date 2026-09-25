@@ -1,0 +1,136 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+
+  // Nombre del Worker y, por tanto, del subdominio de pruebas:
+  // https://calendario-esgrima.<tu-subdominio>.workers.dev
+  "name": "calendario-esgrima",
+
+  // Punto de entrada PROPIO, no el generado. `worker/index.ts` reexporta el
+  // `fetch` que produce OpenNext y añade el manejador `scheduled` que
+  // sustituye a los crons de Vercel. Ver worker/index.ts.
+  "main": "worker/index.ts",
+
+  /**
+   * Fecha de compatibilidad.
+   *
+   * Tiene que ser >= 2025-04-01 para que `process.env` se rellene con las
+   * variables y los secretos del Worker (bandera
+   * `nodejs_compat_populate_process_env`, activa por defecto a partir de esa
+   * fecha). Todo el código de la aplicación lee `process.env`, así que esto
+   * no es opcional.
+   */
+  "compatibility_date": "2026-09-15",
+
+  /**
+   * `nodejs_compat`: node:crypto y node:buffer, que usan
+   *   src/lib/skermo/credentials.ts y las dependencias de Next.
+   * `global_fetch_strictly_public`: que un `fetch()` a nuestro propio dominio
+   *   salga a Internet en lugar de cortocircuitar dentro del Worker. Lo pide
+   *   OpenNext para que el comportamiento coincida con el de Node.
+   */
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+
+  // Ficheros estáticos (/_next/static, /public) servidos por Cloudflare, no
+  // por el Worker: no cuentan como invocación.
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+
+  "observability": {
+    "enabled": true
+  },
+
+  /**
+   * Optimización de imágenes de `next/image`.
+   *
+   * El Worker atiende `/_next/image` y transforma con este binding: descarga
+   * el original (por ejemplo el cartel de `static.fie.org`), lo redimensiona
+   * en memoria y lo devuelve. **No guarda copia en ningún sitio.**
+   *
+   * Se usa el binding y NO un loader hacia `/cdn-cgi/image/...` porque esa
+   * ruta necesita una zona de Cloudflare con transformaciones activadas y
+   * aquí servimos desde `workers.dev`, que no es una zona. El propio worker
+   * generado por OpenNext lo dice: «"/cdn-cgi/image/..." requests do not
+   * reach production workers».
+   *
+   * Coste: 5.000 transformaciones únicas al mes gratis, y una transformación
+   * repetida no vuelve a contar en el mes.
+   */
+  "images": {
+    "binding": "IMAGES"
+  },
+
+  /**
+   * Crons. Traducción literal de `vercel.json`, una franja por fuente para que
+   * una fuente lenta no arrastre a las demás. Las horas son UTC.
+   *
+   * El reparto cron -> ruta está en worker/index.ts; si tocas una expresión
+   * aquí, tócala también allí o esa ejecución no hará nada.
+   *
+   * OJO: el plan gratuito de Workers permite 5 Cron Triggers por CUENTA y
+   * estos son 8. Hace falta Workers Paid (ver informe).
+   */
+  "triggers": {
+    "crons": [
+      "0 3 * * *",
+      "30 3 * * *",
+      "0 4 * * *",
+      "30 4 * * *",
+      "0 5 * * *",
+      "30 5 * * *",
+      "0 6 * * *",
+      "0 7 * * *"
+    ]
+  },
+
+  /**
+   * Workers AI, para la extracción asistida de las circulares en PDF
+   * (`src/lib/ai/extract.ts`, que lo busca como `env.AI`).
+   *
+   * Es el camino barato: dentro del Worker no hacen falta ni
+   * `CLOUDFLARE_ACCOUNT_ID` ni `CLOUDFLARE_API_TOKEN`, y la capa gratuita son
+   * 10.000 neurons al día. Declarar el binding no gasta nada mientras
+   * `AI_EXTRACTION_ENABLED` siga en "false".
+   */
+  "ai": {
+    "binding": "AI"
+  },
+
+  /**
+   * Almacenamiento de PDFs de convocatoria y snapshots del scraper.
+   *
+   * Es el sustituto de Vercel Blob. src/lib/storage.ts lo usa si el binding
+   * existe; si no, cae a Neon Object Storage (AWS_*), que también funciona en
+   * Workers. Crea el cubo antes de desplegar:
+   *
+   *   npx wrangler r2 bucket create calendario-esgrima-archivos
+   */
+  "r2_buckets": [
+    {
+      "binding": "ARCHIVOS",
+      "bucket_name": "calendario-esgrima-archivos"
+    }
+  ],
+
+  /**
+   * Variables NO secretas. Los secretos van con `wrangler secret put`, uno a
+   * uno, y NUNCA aquí (este fichero se versiona).
+   */
+  "vars": {
+    "NEXT_PUBLIC_APP_URL": "https://calendario-esgrima.aleramlar.workers.dev",
+    "INGEST_SNAPSHOT_HTML": "true",
+    "INGEST_USER_AGENT": "CalendarioEsgrima/1.0 (+https://calendario-esgrima.aleramlar.workers.dev)",
+    "RESEND_DAILY_LIMIT": "100",
+    // Apagada de momento: el token de la cuenta todavía no tiene permiso de
+    // Workers AI (ver informe). Con el interruptor en "false" el cron de
+    // extracción responde 200 explicando que no hizo nada.
+    "AI_EXTRACTION_ENABLED": "false",
+    "AI_PROVIDER": "workers_ai",
+    "AI_MODEL": "@cf/google/gemma-4-26b-a4b-it",
+    "AI_PAID_TIER": "false",
+    "SKERMO_SUBMIT_ENABLED": "false",
+    "SKERMO_SUBMIT_DRY_RUN": "true",
+    "SKERMO_BASE_URL": "https://app.skermo.org"
+  }
+}

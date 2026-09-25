@@ -151,6 +151,36 @@ tests/
   encadenar nuestras migraciones a las suyas es pedir una rotura.
 - **Región `fra1`** en Vercel y Neon en AWS Frankfurt: base de datos y servidor
   en el mismo sitio y cerca de España.
+
+---
+
+## Dónde se despliega
+
+**Cloudflare Workers** (`@opennextjs/cloudflare`). Manda `wrangler.jsonc`.
+
+`vercel.json` se conserva sin borrar, pero **no gobierna nada** del despliegue
+vivo: es la referencia de la que salió la lista de crons. Si cambias una
+franja ahí, no pasa nada hasta que la copies a `triggers.crons` de
+`wrangler.jsonc` **y** a la tabla `TAREAS` de `worker/index.ts`.
+
+La base de datos **se queda en Neon**: el driver HTTP
+`@neondatabase/serverless` funciona en Workers sin tocar nada, y el esquema es
+Postgres con enums, `uuid` y `jsonb`, que D1 no tiene.
+
+```bash
+npm run cf:build     # next build + empaquetado para el Worker
+npm run cf:preview   # el Worker entero en local, con bindings de verdad
+npm run cf:deploy    # compila y despliega
+```
+
+Al compilar hay que pasar la URL final, porque `NEXT_PUBLIC_APP_URL` se
+sustituye dentro del código en tiempo de compilación y no se puede cambiar
+después desde el panel:
+
+```bash
+NEXT_PUBLIC_APP_URL=https://calendario-esgrima.<subdominio>.workers.dev \
+  npm run cf:build
+```
 - **Un cron por fuente, a horas distintas.** Si la FIE cambia su API, el resto
   sigue funcionando.
 - **Ningún número de la normativa vive en el código.** Importes, plazos,

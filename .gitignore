@@ -22,3 +22,4 @@ capturas/*.png
 .open-next
 tests/ui/informe.json
 dev.log
+tests/ui/iconos.html

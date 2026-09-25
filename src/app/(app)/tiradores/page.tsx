@@ -82,7 +82,7 @@ export default async function Pagina() {
         titulo="Tiradores"
         contexto={
           esAdmin
-            ? 'Todos los tiradores de la federación, con a qué van y cómo van.'
+            ? 'Todos los tiradores de la federación: a qué van y cómo van.'
             : armasPropias.length > 0
               ? `Los de ${armasPropias.map((a) => WEAPON_LABEL[a].toLowerCase()).join(' y ')} primero; el resto, a un clic.`
               : 'Tu cuenta no tiene ningún arma asignada, así que se enseñan todas. Pídele a la dirección técnica que te asigne la tuya.'
