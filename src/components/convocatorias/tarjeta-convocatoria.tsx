@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -26,7 +25,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { responderConvocatoria } from '@/lib/callups/actions';
-import { CALL_UP_STATUS_LABEL, PLACE_TYPE_LABEL } from '@/lib/callups/tipos';
+import { CALL_UP_STATUS_LABEL } from '@/lib/callups/tipos';
 import type { CallUpForAthlete } from '@/lib/callups/tipos';
 import {
   cn,
@@ -34,7 +33,24 @@ import {
   formatDateTimeEs,
   titular,
 } from '@/lib/utils';
+import { PLAZA_CORTA, partirPrueba } from './etiquetas';
 import { CLASE_TONO, type Plazo, palabraPlazo } from './plazo';
+
+/** Un dato con su rótulo encima. Nunca `A · B · C`. */
+function Dato({
+  rotulo,
+  valor,
+}: {
+  rotulo: string;
+  valor: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col">
+      <dt className="text-xs text-muted-foreground">{rotulo}</dt>
+      <dd className="text-sm">{valor}</dd>
+    </div>
+  );
+}
 
 /**
  * La convocatoria, tal y como la ve quien ha sido convocado.
@@ -61,6 +77,7 @@ export function TarjetaConvocatoria({
   const [motivo, setMotivo] = React.useState(c.rejectionReason ?? '');
 
   const pendiente = c.status === 'pendiente';
+  const prueba = partirPrueba(c.competition);
 
   async function responder(respuesta: 'confirmado' | 'rechazado', razon?: string) {
     setEnviando(respuesta);
@@ -75,7 +92,14 @@ export function TarjetaConvocatoria({
   }
 
   return (
-    <article className="flex flex-col gap-4 rounded-lg border border-gold/35 bg-gold/[0.04] p-4 sm:p-5">
+    /*
+      El filete de arriba es de oro.
+
+      Es la única superficie de la aplicación que lo lleva, y es el canto de
+      chapa del tema aplicado a lo que de verdad significa algo: sin leer una
+      palabra, una banda con el borde superior dorado es «te han convocado».
+    */
+    <article className="flex flex-col gap-4 rounded-lg border-t-2 border-gold bg-gold/[0.04] p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="min-w-56 flex-1">
           <p className="flex items-center gap-1.5 text-xs font-medium text-gold">
@@ -84,37 +108,13 @@ export function TarjetaConvocatoria({
           </p>
 
           <h2 className="mt-1 text-xl sm:text-2xl">{titular(c.eventName)}</h2>
-
-          {/* Una línea de contexto, con los separadores como elementos sueltos
-              para que al envolver no queden puntos huérfanos al principio. */}
-          <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
-            {mostrarNombre ? (
-              <>
-                <span className="text-foreground">{c.athleteName}</span>
-                <span aria-hidden>·</span>
-              </>
-            ) : null}
-            <span>{formatDateRangeEs(c.eventStartDate, c.eventEndDate)}</span>
-            {c.eventCity ? (
-              <>
-                <span aria-hidden>·</span>
-                <span className="inline-flex items-center gap-1">
-                  <MapPin className="size-3" aria-hidden />
-                  {titular(c.eventCity)}
-                  {c.eventCountry && c.eventCountry !== 'ES'
-                    ? ` (${c.eventCountry})`
-                    : ''}
-                </span>
-              </>
-            ) : null}
-          </p>
         </div>
 
         {/* La cifra que importa: cuántos días quedan para contestar. En móvil
             baja a su propia línea; apretada contra el título no se lee. */}
         {pendiente ? (
           <div className="flex w-full shrink-0 items-baseline gap-2 sm:w-auto">
-            <span className={cn('cifra text-5xl', CLASE_TONO[plazo.tono])}>
+            <span className={cn('cifra text-6xl', CLASE_TONO[plazo.tono])}>
               {plazo.dias === null ? '—' : Math.abs(plazo.dias)}
             </span>
             <span
@@ -134,24 +134,50 @@ export function TarjetaConvocatoria({
         ) : null}
       </div>
 
-      {/* Tipo de plaza: es la diferencia entre "te lo has ganado en la pista"
-          y "te ha elegido el seleccionador", y nadie quiere confundirlas. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge
-          variant="outline"
-          className={
-            c.placeType === 'ranking'
-              ? 'border-gold/50 text-gold'
-              : 'border-border text-foreground'
+      {/*
+        Los datos, en filas con su rótulo.
+
+        El tipo de plaza es la diferencia entre «te lo has ganado en la
+        pista» y «te ha elegido el seleccionador», y nadie quiere
+        confundirlas: por eso va con el rótulo delante y no como una pastilla
+        más en una cadena de pastillas.
+      */}
+      <dl className="flex flex-wrap gap-x-8 gap-y-3">
+        {mostrarNombre ? <Dato rotulo="Tirador" valor={c.athleteName} /> : null}
+        <Dato
+          rotulo="Cuándo"
+          valor={formatDateRangeEs(c.eventStartDate, c.eventEndDate)}
+        />
+        {c.eventCity ? (
+          <Dato
+            rotulo="Dónde"
+            valor={
+              <span className="inline-flex items-center gap-1">
+                <MapPin className="size-3.5 shrink-0" aria-hidden />
+                {titular(c.eventCity)}
+                {c.eventCountry && c.eventCountry !== 'ES'
+                  ? ` (${c.eventCountry})`
+                  : ''}
+              </span>
+            }
+          />
+        ) : null}
+        {prueba ? <Dato rotulo="Prueba" valor={prueba.prueba} /> : null}
+        {prueba?.categoria ? (
+          <Dato rotulo="Categoría" valor={prueba.categoria} />
+        ) : null}
+        <Dato
+          rotulo="Plaza"
+          valor={
+            <span className={c.placeType === 'ranking' ? 'text-gold' : undefined}>
+              {PLAZA_CORTA[c.placeType]}
+              {c.placeType === 'ranking' && c.rankingPositionAtCutoff !== null
+                ? `, ${c.rankingPositionAtCutoff}.º al corte`
+                : ''}
+            </span>
           }
-        >
-          {PLACE_TYPE_LABEL[c.placeType]}
-          {c.placeType === 'ranking' && c.rankingPositionAtCutoff !== null
-            ? ` · ${c.rankingPositionAtCutoff}.º al corte`
-            : ''}
-        </Badge>
-        {c.competition ? <Badge variant="secondary">{c.competition}</Badge> : null}
-      </div>
+        />
+      </dl>
 
       {c.body ? <p className="medida text-sm whitespace-pre-line">{c.body}</p> : null}
 

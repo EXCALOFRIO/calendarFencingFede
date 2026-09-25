@@ -2,7 +2,7 @@ import { ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { PANTALLAS_ADMIN } from '@/components/admin/admin-screens';
 import { SinAcceso, exigirRol } from '@/components/admin/guardia';
-import { Cabecera, Cifra } from '@/components/admin/piezas';
+import { Cabecera, Cifra, TiraCifras } from '@/components/admin/piezas';
 import { Badge } from '@/components/ui/badge';
 import { formatDateTimeEs } from '@/lib/utils';
 import { resumenGestion } from './consultas';
@@ -61,7 +61,7 @@ export default async function Pagina() {
         }
       />
 
-      <div className="flex flex-wrap gap-2">
+      <TiraCifras>
         <Cifra
           valor={resumen.esperandoFederacion}
           palabra="esperan a la RFEE"
@@ -97,7 +97,7 @@ export default async function Pagina() {
           tono={resumen.fuentesConRetraso > 0 ? 'aviso' : 'ok'}
           href="/admin/salud"
         />
-      </div>
+      </TiraCifras>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg">Secciones</h2>

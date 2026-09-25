@@ -160,9 +160,11 @@ function Prueba({ prueba }: { prueba: BreakdownEntry }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-medium">{prueba.eventName}</p>
-          <p className="text-xs text-muted-foreground">
-            {prueba.eventDate ? formatDateEs(prueba.eventDate) : 'sin fecha'} ·{' '}
-            {circuito}
+          <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+            <span>
+              {prueba.eventDate ? formatDateEs(prueba.eventDate) : 'sin fecha'}
+            </span>
+            <span>{circuito}</span>
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -177,8 +179,10 @@ function Prueba({ prueba }: { prueba: BreakdownEntry }) {
 
       {/* La cuenta, escrita tal cual: puesto, base, coeficiente y resultado. */}
       <p className="text-xs text-muted-foreground">
-        {prueba.position}.º puesto · {puntos(prueba.basePoints)} de base ×{' '}
-        {coeficiente(prueba.coefficient)} de coeficiente
+        <span className="cifra text-foreground">{prueba.position}</span>.º puesto,{' '}
+        <span className="cifra text-foreground">{puntos(prueba.basePoints)}</span> de
+        base por <span className="cifra text-foreground">{coeficiente(prueba.coefficient)}</span>{' '}
+        de coeficiente
       </p>
 
       {!prueba.counted ? (

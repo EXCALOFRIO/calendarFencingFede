@@ -252,7 +252,7 @@ export function NormativaPanel({ normativa }: { normativa: Normativa }) {
                 >
                   <div className="flex w-16 shrink-0 flex-col">
                     <span className="cifra text-2xl">{p.daysBefore}</span>
-                    <span className="text-[11px] text-muted-foreground">
+                    <span className="text-xs text-muted-foreground">
                       días antes
                     </span>
                   </div>
@@ -290,7 +290,7 @@ export function NormativaPanel({ normativa }: { normativa: Normativa }) {
                       fecha={p.updatedAt}
                     />
                     {p.actualizadoPor ? (
-                      <span className="text-[11px] text-muted-foreground/80">
+                      <span className="text-xs text-muted-foreground/80">
                         Último cambio: {p.actualizadoPor}
                       </span>
                     ) : null}
@@ -304,7 +304,7 @@ export function NormativaPanel({ normativa }: { normativa: Normativa }) {
                           ? 'no publicado'
                           : formatEur(p.surchargeEur)}
                     </span>
-                    <span className="text-[11px] text-muted-foreground">
+                    <span className="text-xs text-muted-foreground">
                       {p.blocking ? 'no se puede inscribir' : 'recargo'}
                     </span>
                   </div>
@@ -482,7 +482,7 @@ export function NormativaPanel({ normativa }: { normativa: Normativa }) {
                       ].map(([palabra, valor]) => (
                         <div key={palabra as string} className="flex flex-col">
                           <dd className="cifra text-lg">{valor as number}</dd>
-                          <dt className="text-[11px] text-muted-foreground">
+                          <dt className="text-xs text-muted-foreground">
                             {palabra as string}
                           </dt>
                         </div>

@@ -26,8 +26,14 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { EntryStatus } from '@/lib/entries/state-machine';
-import { competitionLabel } from '@/lib/callups/tipos';
-import { cn, formatDateEs, titular } from '@/lib/utils';
+import {
+  CATEGORY_LABEL,
+  GENDER_LABEL,
+  WEAPON_LABEL,
+  cn,
+  formatDateEs,
+  titular,
+} from '@/lib/utils';
 
 /**
  * Bandeja federativa.
@@ -367,12 +373,23 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
                     aria-label={`Seleccionar las ${ids.length} inscripciones de ${grupo.titulo}`}
                   />
                   <h2 className="min-w-0 text-base">{grupo.titulo}</h2>
-                  <span className="text-xs text-muted-foreground">
-                    {formatDateEs(grupo.fecha)} · {grupo.filas.length}{' '}
-                    {grupo.filas.length === 1 ? 'inscripción' : 'inscripciones'}
-                    {algunas
-                      ? ` · ${ids.filter((id) => elegidas.has(id)).length} seleccionadas`
-                      : ''}
+                  {/* Cada dato con su rótulo, no encadenados con puntos. */}
+                  <span className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
+                    <span>{formatDateEs(grupo.fecha)}</span>
+                    <span>
+                      <span className="cifra text-foreground">
+                        {grupo.filas.length}
+                      </span>{' '}
+                      {grupo.filas.length === 1 ? 'inscripción' : 'inscripciones'}
+                    </span>
+                    {algunas ? (
+                      <span className="text-primary-text">
+                        <span className="cifra">
+                          {ids.filter((id) => elegidas.has(id)).length}
+                        </span>{' '}
+                        seleccionadas
+                      </span>
+                    ) : null}
                   </span>
                 </div>
 
@@ -394,28 +411,63 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
 
                       <div className="flex min-w-0 flex-col">
                         <span className="truncate font-medium">{f.tirador}</span>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {f.clubNombre ?? 'Sin club en su ficha'}
-                          {f.licenciaRfee ? ` · licencia ${f.licenciaRfee}` : ''}
+                        <span className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                          <span className="min-w-0 truncate">
+                            {f.clubNombre ?? 'Sin club en su ficha'}
+                          </span>
+                          {f.licenciaRfee ? (
+                            <span>
+                              Licencia{' '}
+                              <span className="text-foreground">
+                                {f.licenciaRfee}
+                              </span>
+                            </span>
+                          ) : null}
                         </span>
                       </div>
 
                       <div className="col-start-2 flex min-w-0 flex-col sm:col-start-3">
+                        {/*
+                          Arma y género en blanco, categoría y formato
+                          apagados. Es la misma información que daba
+                          «Sable femenino · M17» pero jerarquizada: lo que
+                          se busca al repasar la bandeja es el arma.
+                        */}
                         <span className="truncate text-sm">
-                          {competitionLabel({
-                            weapon: f.weapon,
-                            gender: f.gender,
-                            category: f.category,
-                            format: f.format,
-                          })}
+                          {WEAPON_LABEL[f.weapon as keyof typeof WEAPON_LABEL] ??
+                            f.weapon}{' '}
+                          {(
+                            GENDER_LABEL[f.gender as keyof typeof GENDER_LABEL] ??
+                            f.gender
+                          ).toLowerCase()}{' '}
+                          <span className="text-muted-foreground">
+                            {CATEGORY_LABEL[
+                              f.category as keyof typeof CATEGORY_LABEL
+                            ] ?? f.category}
+                            {f.format === 'EQUIPOS' ? ', equipos' : ''}
+                          </span>
                         </span>
-                        <span className="text-xs text-muted-foreground">
-                          {f.diasHastaEvento <= 0
-                            ? 'Empieza hoy'
-                            : f.diasHastaEvento === 1
-                              ? 'Empieza mañana'
-                              : `Faltan ${f.diasHastaEvento} días`}
-                          {f.eventoCiudad ? ` · ${f.eventoCiudad}` : ''}
+                        <span className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                          <span>
+                            {f.diasHastaEvento <= 0 ? (
+                              'Empieza hoy'
+                            ) : f.diasHastaEvento === 1 ? (
+                              'Empieza mañana'
+                            ) : (
+                              <>
+                                Faltan{' '}
+                                <span className="cifra text-foreground">
+                                  {f.diasHastaEvento}
+                                </span>{' '}
+                                días
+                              </>
+                            )}
+                          </span>
+                          {f.eventoCiudad ? (
+                            <span className="min-w-0 truncate">
+                              {f.eventoCiudad}
+                            </span>
+                          ) : null}
                         </span>
                       </div>
 

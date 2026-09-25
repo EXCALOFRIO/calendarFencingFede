@@ -107,7 +107,7 @@ export function TablaRanking({
   const hayCorte = plazas > 0 && tabla.rows.length > plazas;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-5">
       {/* Controles: una sola fila que envuelve. */}
       <div className="flex flex-wrap items-center gap-2">
         <ToggleGroup
@@ -155,26 +155,42 @@ export function TablaRanking({
         </Select>
       </div>
 
-      {/* Dónde estás tú, y a cuánto del corte. Es lo primero que busca quien
-          entra aquí, así que va antes de la tabla y no dentro de ella. */}
+      {/*
+        Dónde estás tú, y a cuánto del corte.
+
+        Es la única razón por la que un tirador abre esta pantalla, así que
+        el puesto va en cifra de marcador y no en una pastilla: la tabla que
+        viene debajo tiene treinta números del mismo tamaño y, sin este
+        contraste, el tuyo se pierde entre ellos.
+      */}
       {misFilas.map((fila) => (
         <button
           key={fila.athleteId}
           type="button"
           onClick={() => setAbierto(fila.athleteId)}
-          className="flex cursor-pointer items-center gap-4 rounded-lg border border-primary/40 bg-primary/10 px-4 py-3 text-left transition-colors hover:bg-primary/15"
+          className="flex cursor-pointer items-start gap-4 rounded-lg border-t border-filete bg-card px-4 py-4 text-left transition-colors hover:bg-accent"
         >
-          <span className="cifra text-4xl text-primary-text">{fila.position}.º</span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-medium">{fila.athleteName}</span>
-            <span className="block text-xs text-muted-foreground">
+          <span className="flex w-16 shrink-0 flex-col">
+            <span className="cifra text-5xl text-primary-text sm:text-6xl">
+              {fila.position}
+            </span>
+            <span className="mt-1 text-xs leading-tight text-muted-foreground">
+              tu puesto
+            </span>
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="text-base font-medium">{fila.athleteName}</span>
+            <span className="medida text-sm text-muted-foreground">
               <Corte
                 corte={corteDelGrupo[fila.athleteId] ?? null}
                 puntosTotales={fila.totalPoints}
               />
             </span>
+            <span className="mt-1 inline-flex items-center gap-1 text-sm text-primary-text">
+              Ver de dónde salen tus puntos
+              <ChevronRight className="size-4 shrink-0" aria-hidden />
+            </span>
           </span>
-          <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         </button>
       ))}
 
@@ -184,12 +200,13 @@ export function TablaRanking({
           ? `Calculado el ${formatDateEs(tabla.computedAt)}`
           : 'Sin fecha de cálculo'}
         {tabla.rule
-          ? ` · cuentan las ${tabla.rule.countingEvents} mejores pruebas` +
-            (plazas > 0 ? ` · ${plazas} plazas por ranking` : '')
-          : ' · sin normativa configurada para esta categoría'}
+          ? `. Cuentan las ${tabla.rule.countingEvents} mejores pruebas` +
+            (plazas > 0 ? `, y salen ${plazas} plazas por ranking` : '')
+          : '. Sin normativa configurada para esta categoría'}
         {tabla.rule && tabla.rule.technicalPlaces > 0
           ? ` y ${tabla.rule.technicalPlaces} por criterio técnico`
           : ''}
+        .
       </p>
 
       <Table>
@@ -250,7 +267,7 @@ export function TablaRanking({
                 </SheetTitle>
                 <SheetDescription className="pr-10">
                   {etiquetaGrupo(grupo)}
-                  {filaAbierta.clubName ? ` · ${filaAbierta.clubName}` : ''}
+                  {filaAbierta.clubName ? `. ${filaAbierta.clubName}` : ''}
                 </SheetDescription>
               </SheetHeader>
               <div className="px-4 pb-10">
@@ -365,20 +382,27 @@ function Fila({
             </Badge>
           ) : null}
         </span>
-        {/* Segunda línea solo en móvil: aquí caben los datos de las columnas
-            que se ocultan, sin obligar a desplazarse en horizontal. */}
-        <span className="mt-0.5 block text-xs text-muted-foreground md:hidden">
-          {[
-            fila.clubName,
-            `${fila.countedEvents} ${fila.countedEvents === 1 ? 'prueba' : 'pruebas'}`,
-            fila.change !== null && fila.change !== 0
-              ? `${fila.change > 0 ? '+' : '−'}${Math.abs(fila.change)} ${
-                  Math.abs(fila.change) === 1 ? 'puesto' : 'puestos'
-                }`
-              : null,
-          ]
-            .filter(Boolean)
-            .join(' · ')}
+        {/*
+          Segunda línea solo en móvil: aquí caben los datos de las columnas
+          que se ocultan, sin obligar a desplazarse en horizontal. Con su
+          rótulo delante, no encadenados con puntos medios: «3 · +2» no dice
+          si son pruebas, puestos o puntos.
+        */}
+        <span className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground md:hidden">
+          <span className="min-w-0 basis-full truncate">
+            {fila.clubName ?? 'Sin club'}
+          </span>
+          <span>
+            <span className="cifra text-foreground">{fila.countedEvents}</span>{' '}
+            {fila.countedEvents === 1 ? 'prueba contada' : 'pruebas contadas'}
+          </span>
+          {fila.change !== null && fila.change !== 0 ? (
+            <span className={fila.change > 0 ? 'text-ok' : 'text-danger'}>
+              {fila.change > 0 ? 'Sube' : 'Baja'}{' '}
+              <span className="cifra">{Math.abs(fila.change)}</span>{' '}
+              {Math.abs(fila.change) === 1 ? 'puesto' : 'puestos'}
+            </span>
+          ) : null}
         </span>
       </TableCell>
 

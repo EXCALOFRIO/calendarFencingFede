@@ -1,10 +1,10 @@
 import { LogOut } from 'lucide-react';
 import { headers } from 'next/headers';
 import Link from 'next/link';
+import { Seccion } from '@/components/estado/piezas';
 import { Calendarios, type FeedVista } from '@/components/perfil/calendarios';
-import { FichaTirador } from '@/components/perfil/tirador';
+import { Dato, FichaTirador } from '@/components/perfil/tirador';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { getManagedAthletes, requireProfile } from '@/lib/auth/session';
 import { deriveCategoriesFromBirthDate } from '@/lib/categories';
 import { FEED_META, FEED_TYPES, feedUrl, webcalUrl } from '@/lib/ical';
@@ -73,38 +73,24 @@ export default async function Pagina() {
         </p>
       </div>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-xl">Tu cuenta</h2>
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
-          <div className="flex min-w-0 flex-col gap-1">
-            <dt className="text-xs text-muted-foreground">Nombre</dt>
-            <dd className="text-sm">{perfil.fullName}</dd>
-          </div>
-          <div className="flex min-w-0 flex-col gap-1">
-            <dt className="text-xs text-muted-foreground">Correo</dt>
-            <dd className="truncate text-sm">{perfil.email}</dd>
-          </div>
-          <div className="flex min-w-0 flex-col gap-1">
-            <dt className="text-xs text-muted-foreground">Papel</dt>
-            <dd className="text-sm">{PAPEL[perfil.role] ?? perfil.role}</dd>
-          </div>
-          <div className="flex min-w-0 flex-col gap-1">
-            <dt className="text-xs text-muted-foreground">Club</dt>
-            <dd className="text-sm">
-              {perfil.clubName ?? (
-                <span className="text-muted-foreground">Sin club asignado</span>
-              )}
-            </dd>
-          </div>
+      <Seccion titulo="Tu cuenta">
+        <dl className="flex flex-wrap gap-x-8 gap-y-3 pt-3">
+          <Dato etiqueta="Nombre">{perfil.fullName}</Dato>
+          <Dato etiqueta="Correo">
+            <span className="block truncate">{perfil.email}</span>
+          </Dato>
+          <Dato etiqueta="Papel">{PAPEL[perfil.role] ?? perfil.role}</Dato>
+          <Dato etiqueta="Club">
+            {perfil.clubName ?? (
+              <span className="text-muted-foreground">Sin club asignado</span>
+            )}
+          </Dato>
         </dl>
-      </section>
+      </Seccion>
 
-      <Separator />
-
-      <section className="flex flex-col gap-1">
-        <h2 className="text-xl">
-          {atletas.length === 1 ? 'Tu ficha de tirador' : 'Tus tiradores'}
-        </h2>
+      <Seccion
+        titulo={atletas.length === 1 ? 'Tu ficha de tirador' : 'Tus tiradores'}
+      >
 
         {atletas.length > 0 ? (
           <div className="flex flex-col divide-y">
@@ -125,7 +111,7 @@ export default async function Pagina() {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col items-start gap-3 py-3">
+          <div className="flex flex-col items-start gap-3 py-4">
             <p className="medida text-sm text-muted-foreground">
               Tu cuenta no tiene ninguna ficha de tirador vinculada. Aquí
               aparecerían sus armas, sus categorías y sus licencias. La vincula
@@ -136,29 +122,27 @@ export default async function Pagina() {
             </Button>
           </div>
         )}
-      </section>
+      </Seccion>
 
-      <Separator />
+      <Seccion titulo="El calendario en tu móvil">
+        <div className="pt-3">
+          <Calendarios feeds={feeds} revocar={revocarCalendario} />
+        </div>
+      </Seccion>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-xl">El calendario en tu móvil</h2>
-        <Calendarios feeds={feeds} revocar={revocarCalendario} />
-      </section>
-
-      <Separator />
-
-      <section className="flex flex-col items-start gap-3">
-        <h2 className="text-xl">Sesión</h2>
-        <p className="medida text-sm text-muted-foreground">
-          Se cierra la sesión en este dispositivo. Los calendarios que tengas
-          suscritos siguen actualizándose: no dependen de estar dentro.
-        </p>
-        <form action="/api/auth/sign-out" method="post">
-          <Button variant="outline" type="submit">
-            <LogOut /> Salir de la sesión
-          </Button>
-        </form>
-      </section>
+      <Seccion titulo="Sesión">
+        <div className="flex flex-col items-start gap-3 pt-3">
+          <p className="medida text-sm text-muted-foreground">
+            Se cierra la sesión en este dispositivo. Los calendarios que tengas
+            suscritos siguen actualizándose: no dependen de estar dentro.
+          </p>
+          <form action="/api/auth/sign-out" method="post">
+            <Button variant="outline" type="submit">
+              <LogOut /> Salir de la sesión
+            </Button>
+          </form>
+        </div>
+      </Seccion>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { ArrowDownRight, ArrowUpRight, ChevronRight, TriangleAlert } from 'lucid
 import Link from 'next/link';
 import * as React from 'react';
 import type {
+  CompeticionElegible,
   PuestoTemporada,
   PuntosDePrueba,
 } from '@/app/(app)/estado/consultas';
@@ -12,13 +13,15 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { MyStatus } from '@/lib/queries/my-status';
 import {
   CATEGORY_LABEL,
-  GENDER_SHORT,
+  GENDER_LABEL,
   WEAPON_LABEL,
   cn,
   formatDateEs,
 } from '@/lib/utils';
 import { type Respuesta, FilaConvocatoria } from './convocatoria';
 import { FilaInscripcion, FilaPasada, PanelHoy } from './inscripcion';
+import { CeldaMarcador, Marcador, Rotulos, Seccion } from './piezas';
+import { type Solicitar, SinInscribir } from './sin-inscribir';
 
 const TODOS = 'todos';
 
@@ -29,23 +32,42 @@ const TODOS = 'todos';
  * tirador ocurre aquí, sin volver a la red: una cuenta gestiona uno o dos
  * tiradores, así que cabe de sobra, y así un padre con dos hijos alterna
  * entre ellos sin esperar.
+ *
+ * -------------------------------------------------------------------------
+ * EL ORDEN DE LA PANTALLA ES EL ORDEN DE LA URGENCIA
+ * -------------------------------------------------------------------------
+ * Arriba del todo, el marcador: de dos a cuatro cifras que contestan «¿cómo
+ * voy?» sin tocar nada ni bajar. Debajo, en este orden y sin excepciones:
+ * lo que pasa hoy, lo que hay que contestar, lo que se cierra pronto y en lo
+ * que todavía no estás, lo que ya está en marcha, y por último lo que solo
+ * se consulta.
+ *
+ * En el móvil manda el orden del DOM. En pantalla ancha, lo que solo se
+ * consulta —el puesto en el ranking y los trámites pendientes— se va a una
+ * columna estrecha de la derecha, pero SIGUE DESPUÉS en el marcado para que
+ * en el móvil no se cuele por delante de lo urgente.
  */
 export function PanelEstado({
   estado,
   puestos,
   puntosPorPrueba,
+  elegibles,
   temporada,
   hoy,
   responderConvocatoria,
+  solicitarInscripcion,
 }: {
   estado: MyStatus;
   puestos: PuestoTemporada[];
   /** `athleteId|eventCompetitionId` -> puntos de ranking de esa prueba. */
   puntosPorPrueba: Record<string, PuntosDePrueba>;
+  /** Pruebas abiertas que le corresponden y en las que todavía no está. */
+  elegibles: CompeticionElegible[];
   temporada: string | null;
   /** Fecha de hoy en ISO, calculada en el servidor. */
   hoy: string;
   responderConvocatoria: Respuesta;
+  solicitarInscripcion: Solicitar;
 }) {
   const varios = estado.athletes.length > 1;
   const [quien, setQuien] = React.useState(() =>
@@ -73,22 +95,43 @@ export function PanelEstado({
     a.pending.map((p) => ({ ...p, quien: a.fullName })),
   );
   const misPuestos = mio(puestos);
+  const misElegibles = mio(elegibles);
 
   const conNombre = quien === TODOS && varios;
 
   const enMarcha = mio(estado.upcomingEntries).filter(
     (e) => e.status !== 'rejected' && e.status !== 'withdrawn',
+  );
+
+  const sinResponder = convocatorias.filter(
+    (c) => c.status === 'pendiente',
   ).length;
 
+  /**
+   * El plazo más apretado de todos los que le afectan: los de lo que ya pidió
+   * y los de aquello en lo que todavía no está. Es la cifra por la que se
+   * entra a esta pantalla desde la puerta de un pabellón.
+   */
+  const plazoMasCorto = Math.min(
+    ...enMarcha
+      .map((e) => e.deadlineStatus.daysLeft)
+      .filter((d): d is number => d !== null),
+    ...misElegibles.map((c) => c.diasRestantes),
+  );
+  const hayPlazo = Number.isFinite(plazoMasCorto);
+
+  const mejorPuesto = misPuestos[0] ?? null;
+  const hayTiradorSinArma = tiradores.some(
+    (a) => a.weapons.length === 0 || a.eligibleCategories.length === 0,
+  );
+
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex min-w-0 flex-col gap-6">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h1 className="text-2xl sm:text-3xl">Mi estado</h1>
-        <p className="text-sm text-muted-foreground">
-          <span className="cifra text-base text-foreground">{enMarcha}</span>{' '}
-          {enMarcha === 1 ? 'inscripción en marcha' : 'inscripciones en marcha'}
-          {temporada ? ` · temporada ${temporada}` : ''}
-        </p>
+        {temporada ? (
+          <p className="text-sm text-muted-foreground">Temporada {temporada}</p>
+        ) : null}
       </div>
 
       {varios ? (
@@ -110,77 +153,99 @@ export function PanelEstado({
         </ToggleGroup>
       ) : null}
 
-      {/*
-        En el móvil manda el orden del DOM: hoy, la foto de la temporada y lo
-        que te falta, y después la lista. En pantalla ancha lo secundario se
-        va a una columna de la derecha y la lista ocupa el resto.
-      */}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
-        {hoyMismo.length > 0 ? (
-          <section className="flex flex-col gap-3 lg:col-start-1 lg:row-start-1">
-            <h2 className="text-xl">Hoy compites</h2>
-            {hoyMismo.map((e) => (
-              <PanelHoy key={e.entryId} entrada={e} conNombre={conNombre} />
-            ))}
-          </section>
-        ) : null}
-
-        <aside
-          className={cn(
-            'flex flex-col gap-6 lg:col-start-2 lg:row-start-1',
-            hoyMismo.length > 0 && 'lg:row-span-2',
-          )}
-        >
-          <SituacionTemporada
-            puestos={misPuestos}
-            tiradores={tiradores.map((a) => ({ id: a.id, nombre: a.fullName }))}
-            conNombre={conNombre}
+      {/* El marcador. Cuatro cifras y ninguna frase: lo que se mira de pie. */}
+      <Marcador>
+        <CeldaMarcador
+          valor={hayPlazo ? plazoMasCorto : '—'}
+          palabra={
+            hayPlazo
+              ? plazoMasCorto === 1
+                ? 'día para el plazo más corto'
+                : 'días para el plazo más corto'
+              : 'plazos abiertos'
+          }
+          tono={
+            !hayPlazo
+              ? 'apagado'
+              : plazoMasCorto <= 3
+                ? 'urgente'
+                : plazoMasCorto <= 10
+                  ? 'aviso'
+                  : 'ok'
+          }
+        />
+        <CeldaMarcador
+          valor={enMarcha.length}
+          palabra={
+            enMarcha.length === 1
+              ? 'inscripción en marcha'
+              : 'inscripciones en marcha'
+          }
+          tono={enMarcha.length > 0 ? 'normal' : 'apagado'}
+        />
+        <CeldaMarcador
+          valor={misElegibles.length}
+          palabra={
+            misElegibles.length === 1
+              ? 'prueba abierta en la que no estás'
+              : 'pruebas abiertas en las que no estás'
+          }
+          /* Blanco, no carmesí: el rojo de esta pantalla es el del plazo que
+             se acaba, y dos rojos seguidos no jerarquizan nada. */
+          tono={misElegibles.length > 0 ? 'normal' : 'apagado'}
+        />
+        {sinResponder > 0 ? (
+          <CeldaMarcador
+            valor={sinResponder}
+            palabra={
+              sinResponder === 1
+                ? 'convocatoria sin contestar'
+                : 'convocatorias sin contestar'
+            }
+            tono="oro"
           />
+        ) : (
+          <CeldaMarcador
+            valor={mejorPuesto ? mejorPuesto.position : '—'}
+            /* «en espada M20» a secas se lee como un recuento; la palabra
+               tiene que decir que es un puesto. */
+            palabra={
+              mejorPuesto
+                ? `puesto en ${WEAPON_LABEL[mejorPuesto.weapon].toLowerCase()} ${
+                    CATEGORY_LABEL[
+                      mejorPuesto.category as keyof typeof CATEGORY_LABEL
+                    ] ?? mejorPuesto.category
+                  }`
+                : 'sin puesto en el ranking'
+            }
+            tono={mejorPuesto ? 'normal' : 'apagado'}
+          />
+        )}
+      </Marcador>
 
-          {pendientes.length > 0 ? (
-            <section className="flex flex-col gap-3">
-              <h2 className="text-xl">Qué te falta</h2>
-              <ul className="flex flex-col divide-y">
-                {pendientes.map((p) => (
-                  <li key={`${p.quien}-${p.label}`}>
-                    <Link
-                      href={p.href}
-                      className="flex items-start gap-2.5 py-3 hover:text-primary-text"
-                    >
-                      <TriangleAlert
-                        className="mt-0.5 size-4 shrink-0 text-warn"
-                        aria-hidden
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-medium">
-                          {p.label}
-                          {conNombre ? ` · ${p.quien}` : ''}
-                        </span>
-                        <span className="block text-sm text-muted-foreground">
-                          {p.detail}
-                        </span>
-                      </span>
-                      <ChevronRight
-                        className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                        aria-hidden
-                      />
-                    </Link>
-                  </li>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+        <div className="flex min-w-0 flex-col gap-6 lg:col-start-1 lg:row-start-1">
+          {hoyMismo.length > 0 ? (
+            <Seccion titulo="Hoy compites">
+              <div className="flex flex-col gap-3 pt-3">
+                {hoyMismo.map((e) => (
+                  <PanelHoy key={e.entryId} entrada={e} conNombre={conNombre} />
                 ))}
-              </ul>
-            </section>
+              </div>
+            </Seccion>
           ) : null}
-        </aside>
 
-        <div
-          className={cn(
-            'flex min-w-0 flex-col gap-6 lg:col-start-1',
-            hoyMismo.length > 0 ? 'lg:row-start-2' : 'lg:row-start-1',
-          )}
-        >
           {convocatorias.length > 0 ? (
-            <section className="flex flex-col gap-1">
-              <h2 className="text-xl">Selección</h2>
+            <Seccion
+              titulo="Selección"
+              contexto={
+                sinResponder > 0
+                  ? sinResponder === 1
+                    ? 'falta tu respuesta'
+                    : `faltan ${sinResponder} respuestas`
+                  : undefined
+              }
+            >
               <ul className="flex flex-col divide-y">
                 {convocatorias.map((c) => (
                   <FilaConvocatoria
@@ -191,11 +256,24 @@ export function PanelEstado({
                   />
                 ))}
               </ul>
-            </section>
+            </Seccion>
           ) : null}
 
-          <section className="flex flex-col gap-1">
-            <h2 className="text-xl">Próximas inscripciones</h2>
+          <SinInscribir
+            competiciones={misElegibles}
+            solicitar={solicitarInscripcion}
+            conNombre={conNombre}
+            hayTiradorSinArma={hayTiradorSinArma}
+          />
+
+          <Seccion
+            titulo="Lo que ya has pedido"
+            contexto={
+              proximas.length > 0
+                ? `${proximas.length} ${proximas.length === 1 ? 'inscripción' : 'inscripciones'}`
+                : undefined
+            }
+          >
             {proximas.length > 0 ? (
               <ul className="flex flex-col divide-y">
                 {proximas.map((e) => (
@@ -208,7 +286,7 @@ export function PanelEstado({
                 ))}
               </ul>
             ) : (
-              <div className="flex flex-col items-start gap-3 py-3">
+              <div className="flex flex-col items-start gap-3 py-4">
                 <p className="medida text-sm text-muted-foreground">
                   Aquí aparece cada inscripción que pidas, con el paso en el que
                   está y los días que quedan de plazo. Todavía no has pedido
@@ -219,11 +297,10 @@ export function PanelEstado({
                 </Button>
               </div>
             )}
-          </section>
+          </Seccion>
 
           {pasadas.length > 0 ? (
-            <section className="flex flex-col gap-1">
-              <h2 className="text-xl">Ya celebradas</h2>
+            <Seccion titulo="Ya celebradas" contexto={`${pasadas.length}`}>
               <ul className="flex flex-col divide-y">
                 {pasadas.map((e) => (
                   <FilaPasada
@@ -238,9 +315,50 @@ export function PanelEstado({
                   />
                 ))}
               </ul>
-            </section>
+            </Seccion>
           ) : null}
         </div>
+
+        <aside className="flex min-w-0 flex-col gap-6 lg:col-start-2 lg:row-start-1">
+          {pendientes.length > 0 ? (
+            <Seccion titulo="Qué te falta">
+              <ul className="flex flex-col divide-y">
+                {pendientes.map((p) => (
+                  <li key={`${p.quien}-${p.label}`}>
+                    <Link
+                      href={p.href}
+                      className="flex items-start gap-2.5 py-3 hover:text-primary-text"
+                    >
+                      <TriangleAlert
+                        className="mt-0.5 size-4 shrink-0 text-warn"
+                        aria-hidden
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium">
+                          {p.label}
+                        </span>
+                        <span className="block text-sm text-muted-foreground">
+                          {p.detail}
+                          {conNombre ? ` (${p.quien})` : ''}
+                        </span>
+                      </span>
+                      <ChevronRight
+                        className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                        aria-hidden
+                      />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Seccion>
+          ) : null}
+
+          <SituacionTemporada
+            puestos={misPuestos}
+            tiradores={tiradores.map((a) => ({ id: a.id, nombre: a.fullName }))}
+            conNombre={conNombre}
+          />
+        </aside>
       </div>
     </div>
   );
@@ -257,11 +375,9 @@ function SituacionTemporada({
   conNombre: boolean;
 }) {
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-xl">Tu temporada</h2>
-
+    <Seccion titulo="Tu temporada">
       {puestos.length === 0 ? (
-        <p className="medida text-sm text-muted-foreground">
+        <p className="medida py-4 text-sm text-muted-foreground">
           {/*
             Se dice «tu arma y tu categoría», no «esta temporada»: puede
             haber ranking calculado en otros grupos y entonces la frase
@@ -285,36 +401,52 @@ function SituacionTemporada({
             return (
               <li
                 key={`${p.athleteId}-${p.weapon}-${p.gender}-${p.category}`}
-                className="flex items-baseline gap-3 py-3"
+                className="flex flex-col gap-3 py-4"
               >
-                <span className="cifra text-4xl">{p.position}</span>
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="text-sm">
-                    en {WEAPON_LABEL[p.weapon]} {GENDER_SHORT[p.gender]}{' '}
-                    {categoria}
-                    {conNombre && nombre ? ` · ${nombre}` : ''}
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    <span className="cifra text-base text-foreground">
-                      {p.totalPoints}
-                    </span>{' '}
-                    puntos de{' '}
-                    <span className="cifra text-base text-foreground">
-                      {p.pruebasContadas}
-                    </span>{' '}
-                    {p.pruebasContadas === 1 ? 'prueba' : 'pruebas'}
-                  </span>
-                  <Variacion valor={p.variacion} />
-                  <span className="text-xs text-muted-foreground">
-                    Calculado el {formatDateEs(p.calculadoEl)}
+                <div className="flex items-baseline gap-3">
+                  <span className="cifra text-5xl">{p.position}</span>
+                  <span className="text-xs leading-tight text-muted-foreground">
+                    puesto
+                    {conNombre && nombre ? (
+                      <span className="mt-0.5 block text-foreground">
+                        {nombre}
+                      </span>
+                    ) : null}
                   </span>
                 </div>
+
+                <Rotulos
+                  datos={[
+                    ['Arma', WEAPON_LABEL[p.weapon]],
+                    ['Género', GENDER_LABEL[p.gender]],
+                    ['Categoría', categoria],
+                    [
+                      'Puntos',
+                      <span key="p" className="cifra text-base">
+                        {p.totalPoints}
+                      </span>,
+                    ],
+                    [
+                      p.pruebasContadas === 1
+                        ? 'Prueba contada'
+                        : 'Pruebas contadas',
+                      <span key="n" className="cifra text-base">
+                        {p.pruebasContadas}
+                      </span>,
+                    ],
+                  ]}
+                />
+
+                <Variacion valor={p.variacion} />
+                <span className="text-xs text-muted-foreground">
+                  Calculado el {formatDateEs(p.calculadoEl)}
+                </span>
               </li>
             );
           })}
         </ul>
       )}
-    </section>
+    </Seccion>
   );
 }
 

@@ -31,14 +31,15 @@ export function Historico({
               {mostrarNombre ? (
                 <span className="font-normal text-muted-foreground">
                   {' '}
-                  · {c.athleteName}
+                  — {c.athleteName}
                 </span>
               ) : null}
             </p>
-            <p className="text-xs text-muted-foreground">
-              {formatDateRangeEs(c.eventStartDate, c.eventEndDate)}
-              {c.competition ? ` · ${c.competition}` : ''} ·{' '}
-              {PLACE_TYPE_LABEL[c.placeType].toLowerCase()}
+            {/* Cada dato con su hueco, no encadenados con puntos medios. */}
+            <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+              <span>{formatDateRangeEs(c.eventStartDate, c.eventEndDate)}</span>
+              {c.competition ? <span>{c.competition}</span> : null}
+              <span>{PLACE_TYPE_LABEL[c.placeType].toLowerCase()}</span>
             </p>
             {c.rejectionReason ? (
               <p className="medida mt-0.5 text-xs text-muted-foreground">

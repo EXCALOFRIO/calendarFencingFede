@@ -178,18 +178,25 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
         </p>
       ) : null}
 
-      <ul className="flex flex-col gap-2">
+      {/*
+        Bandas separadas por un filete, no una tarjeta por tirador.
+
+        Con cien fichas, cien recuadros idénticos no jerarquizan nada: lo que
+        ordena la lista es el puesto en el ranking, y para que se lea hace
+        falta que sea la única cifra grande de cada banda.
+      */}
+      <ul className="flex flex-col divide-y border-t">
         {tiradores.map((t) => (
-        <li key={t.id} className="min-w-0 rounded-lg border bg-card">
+        <li key={t.id} className="min-w-0">
           <Collapsible>
-            <div className="flex flex-wrap items-start gap-x-4 gap-y-2 px-3 py-3">
+            <div className="flex flex-wrap items-start gap-x-4 gap-y-2 py-3.5">
               {/* Puesto en el ranking: la cifra que de verdad ordena. */}
               {hayRanking ? (
                 <div className="flex w-14 shrink-0 flex-col">
                   {t.ranking.length > 0 ? (
                     <>
-                      <span className="cifra text-3xl">{t.ranking[0].position}</span>
-                      <span className="text-[11px] leading-tight text-muted-foreground">
+                      <span className="cifra text-4xl">{t.ranking[0].position}</span>
+                      <span className="mt-0.5 text-xs leading-tight text-muted-foreground">
                         en{' '}
                         {CATEGORY_LABEL[
                           t.ranking[0].category as keyof typeof CATEGORY_LABEL
@@ -198,8 +205,8 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
                     </>
                   ) : (
                     <>
-                      <span className="cifra text-3xl text-muted-foreground">—</span>
-                      <span className="text-[11px] leading-tight text-muted-foreground">
+                      <span className="cifra text-4xl text-muted-foreground">—</span>
+                      <span className="mt-0.5 text-xs leading-tight text-muted-foreground">
                         sin puesto
                       </span>
                     </>
@@ -207,9 +214,9 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
                 </div>
               ) : null}
 
-              <div className="flex min-w-44 flex-1 flex-col gap-1">
+              <div className="flex min-w-44 flex-1 flex-col gap-1.5">
                 <span className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{t.fullName}</span>
+                  <span className="text-base font-medium">{t.fullName}</span>
                   {t.weapons.map((a) => (
                     <Badge key={a} variant="secondary" className="font-normal">
                       {WEAPON_LABEL[a]}
@@ -223,18 +230,28 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
                   ) : null}
                 </span>
 
-                <span className="text-xs text-muted-foreground">
-                  {t.clubName ?? 'Sin club en su ficha'}
-                  {t.rfeeLicense ? ` · licencia ${t.rfeeLicense}` : ''}
-                  {` · ${nacimiento(t.gender, t.birthDate)}`}
+                {/* Cada dato con su rótulo, no encadenados con puntos. */}
+                <span className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+                  <span>{t.clubName ?? 'Sin club en su ficha'}</span>
+                  {t.rfeeLicense ? (
+                    <span>
+                      Licencia{' '}
+                      <span className="text-foreground">{t.rfeeLicense}</span>
+                    </span>
+                  ) : null}
+                  <span>{nacimiento(t.gender, t.birthDate)}</span>
                 </span>
 
                 <EstadoInscripciones tirador={t} />
 
                 {t.warnings.length > 0 ? (
-                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-warn">
-                    <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
-                    {t.warnings.join(' · ')}
+                  <span className="flex flex-wrap items-start gap-x-2 gap-y-1 text-xs text-warn">
+                    <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                    <span className="flex flex-col gap-0.5">
+                      {t.warnings.map((aviso) => (
+                        <span key={aviso}>{aviso}</span>
+                      ))}
+                    </span>
                   </span>
                 ) : null}
               </div>
@@ -243,10 +260,10 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
                   escritorio se alinean a la derecha de la ficha. */}
               <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
                 <span className="flex items-baseline gap-1.5 sm:flex-col sm:items-end sm:gap-0.5">
-                  <span className="cifra text-2xl">
+                  <span className="cifra text-3xl">
                     {t.upcoming.length + t.enClub.length}
                   </span>
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     próximas competiciones
                   </span>
                 </span>
@@ -265,7 +282,7 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
             </div>
 
             <CollapsibleContent>
-              <div className="grid gap-4 border-t px-3 py-3 sm:grid-cols-2">
+              <div className="grid gap-4 border-t border-filete bg-card px-3 py-3 sm:grid-cols-2">
                 <div className="flex min-w-0 flex-col gap-1.5">
                   <h3 className="text-sm">A dónde va</h3>
                   {t.upcoming.length === 0 && t.enClub.length === 0 ? (
@@ -337,7 +354,7 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
                     </ul>
                   )}
                   {t.resultCount > t.recentResults.length ? (
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       {t.resultCount} resultados en total
                       {t.bestPosition !== null
                         ? `, mejor puesto ${t.bestPosition}`
@@ -475,25 +492,30 @@ function ListaCompeticiones({ tiradores }: { tiradores: TiradorVista[] }) {
           (Date.parse(`${g.fecha}T00:00:00Z`) - hoy) / 86_400_000,
         );
         return (
-          <li key={g.eventId} className="min-w-0 rounded-lg border bg-card">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b px-3 py-2.5">
+          <li key={g.eventId} className="min-w-0 rounded-lg border-t border-filete bg-card">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b px-3 py-3">
               {/* Un «0 días» repetido cinco veces se lee como un fallo de
                   cálculo. Cuando la competición es hoy, se dice hoy. */}
               {dias <= 0 ? (
-                <span className="cifra text-xl text-primary-text">Hoy</span>
+                <span className="cifra text-2xl text-primary-text">Hoy</span>
               ) : (
                 <>
-                  <span className="cifra text-2xl">{dias}</span>
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="cifra text-3xl">{dias}</span>
+                  <span className="text-xs text-muted-foreground">
                     {dias === 1 ? 'día' : 'días'}
                   </span>
                 </>
               )}
               <h2 className="min-w-0 flex-1 text-base">{titular(g.nombre)}</h2>
-              <span className="text-xs text-muted-foreground">
-                {formatDateEs(g.fecha)}
-                {g.ciudad ? ` · ${g.ciudad}` : ''} · {g.asistentes.length}{' '}
-                {g.asistentes.length === 1 ? 'inscripción' : 'inscripciones'}
+              <span className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
+                <span>{formatDateEs(g.fecha)}</span>
+                {g.ciudad ? <span>{g.ciudad}</span> : null}
+                <span>
+                  <span className="cifra text-foreground">
+                    {g.asistentes.length}
+                  </span>{' '}
+                  {g.asistentes.length === 1 ? 'inscripción' : 'inscripciones'}
+                </span>
               </span>
             </div>
 
@@ -512,7 +534,7 @@ function ListaCompeticiones({ tiradores }: { tiradores: TiradorVista[] }) {
                   {a.avisos.length > 0 ? (
                     <span
                       className="flex shrink-0 items-center gap-1 text-xs text-warn"
-                      title={a.avisos.join(' · ')}
+                      title={a.avisos.join('. ')}
                     >
                       <TriangleAlert className="size-3.5" aria-hidden />
                       {a.avisos.length === 1 ? a.avisos[0] : `${a.avisos.length} avisos`}

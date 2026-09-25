@@ -1,8 +1,8 @@
-import { AlertTriangle } from 'lucide-react';
+import { TriangleAlert } from 'lucide-react';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { SinRanking } from '@/components/ranking/sin-ranking';
 import { TablaRanking } from '@/components/ranking/tabla-ranking';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { getManagedAthletes, getSessionProfile } from '@/lib/auth/session';
 import { getRankingScreenData, groupKey, listGroupsForAthlete } from '@/lib/queries/ranking';
 
@@ -55,20 +55,38 @@ export default async function Pagina() {
     <>
       <Cabecera contexto={contexto} />
 
+      {/*
+        Una línea, no un recuadro.
+
+        El aviso ocupaba una pantalla entera de móvil con tres frases sobre
+        homónimos y acentos, y dejaba la tabla —que es a lo que se viene—
+        por debajo del pliegue. Se queda lo que cambia una decisión (cuántos
+        faltan y que la tabla está incompleta) y el resto se explica en la
+        pantalla que sirve para arreglarlo.
+      */}
       {datos.status.resultsUnmatched > 0 ? (
-        <Alert className="mb-6">
-          <AlertTriangle aria-hidden />
-          <AlertTitle>
-            {datos.status.resultsUnmatched} resultados sin asignar a un tirador
-          </AlertTitle>
-          <AlertDescription>
-            <p className="medida">
-              Esta tabla está incompleta mientras queden resultados sin emparejar. No
-              se emparejan por nombre automáticamente porque hay homónimos y los
-              acentos varían entre fuentes: lo resuelve una persona desde Gestión.
-            </p>
-          </AlertDescription>
-        </Alert>
+        <p className="mb-4 flex items-start gap-2 text-xs text-warn">
+          <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
+          <span className="medida">
+            Tabla incompleta:{' '}
+            <span className="cifra text-sm">
+              {datos.status.resultsUnmatched}
+            </span>{' '}
+            resultados sin asignar a un tirador.
+            {perfil.role === 'admin' ? (
+              <>
+                {' '}
+                <Link
+                  href="/admin/emparejar"
+                  className="underline underline-offset-2"
+                >
+                  Emparejarlos
+                </Link>
+                .
+              </>
+            ) : null}
+          </span>
+        </p>
       ) : null}
 
       <TablaRanking

@@ -1,11 +1,9 @@
-import { CalendarClock, MapPin } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { DEADLINE_TYPE_LABEL, etiquetaRecargo } from '@/lib/deadlines';
 import { ENTRY_STATUS_LABEL } from '@/lib/entries/state-machine';
 import type { MyEntry } from '@/lib/queries/my-status';
 import {
   CATEGORY_LABEL,
-  GENDER_SHORT,
+  GENDER_LABEL,
   WEAPON_LABEL,
   cn,
   formatDateEs,
@@ -13,6 +11,7 @@ import {
   titular,
 } from '@/lib/utils';
 import type { PuntosDePrueba } from '@/app/(app)/estado/consultas';
+import { Rotulos, tamanoCifra } from './piezas';
 import { ProgresoInscripcion } from './progreso';
 
 /** Color del semáforo de plazos. Nunca va solo: siempre lleva su palabra. */
@@ -24,10 +23,16 @@ const TONO = {
   sin_datos: 'text-muted-foreground',
 } as const;
 
+/**
+ * «Espada femenino Absoluto».
+ *
+ * Con el género entero, no con la inicial: «Sable M M20» parecía una
+ * errata y obligaba a descifrar cuál de las dos emes era el género.
+ */
 export function nombrePrueba(e: MyEntry): string {
   const categoria =
     CATEGORY_LABEL[e.category as keyof typeof CATEGORY_LABEL] ?? e.category;
-  return `${WEAPON_LABEL[e.weapon]} ${GENDER_SHORT[e.gender]} ${categoria}`;
+  return `${WEAPON_LABEL[e.weapon]} ${GENDER_LABEL[e.gender].toLowerCase()} ${categoria}`;
 }
 
 /**
@@ -83,7 +88,27 @@ function proximoHito(e: MyEntry): string | null {
       ? `después, ${recargo.texto}`
       : 'recargo posterior no publicado';
 
-  return `${etiqueta}: ${cuando}${estimado} · ${despues}`;
+  return `${etiqueta}: ${cuando}${estimado}. Y ${despues}.`;
+}
+
+/** Los datos de la prueba en columnas con rótulo, nunca `A · B · C`. */
+function datosDePrueba(
+  e: MyEntry,
+  conNombre: boolean,
+): [string, React.ReactNode][] {
+  const categoria =
+    CATEGORY_LABEL[e.category as keyof typeof CATEGORY_LABEL] ?? e.category;
+
+  return [
+    ['Cuándo', formatDateRangeEs(e.startDate, e.endDate)],
+    ['Dónde', e.city ? titular(e.city) : 'sin sede publicada'],
+    ['Prueba', `${WEAPON_LABEL[e.weapon]} ${GENDER_LABEL[e.gender]}`],
+    ['Categoría', categoria],
+    ['Formato', e.format === 'EQUIPOS' ? 'Equipos' : 'Individual'],
+    ...(conNombre
+      ? ([['Tirador', e.athleteName]] as [string, React.ReactNode][])
+      : []),
+  ];
 }
 
 /** Columna izquierda: la cifra manda, y al lado la palabra pequeña. */
@@ -100,33 +125,41 @@ function Cuenta({
 
   // En una rechazada o retirada, los días de plazo ya no significan nada: el
   // hueco se deja vacío para que las filas sigan alineadas.
-  if (fuera) return <div className="w-14 shrink-0" />;
+  if (fuera) return <div className="w-20 shrink-0" />;
 
   if (esHoy) {
     return (
-      <div className="w-14 shrink-0">
-        <span className="cifra block text-2xl text-primary-text">Hoy</span>
-        <span className="block text-xs text-muted-foreground">compites</span>
+      <div className="w-20 shrink-0">
+        <span className="cifra block text-4xl text-primary-text">Hoy</span>
+        <span className="mt-1 block text-xs leading-tight text-muted-foreground">
+          compites
+        </span>
       </div>
     );
   }
 
   if (estado.daysLeft !== null) {
     return (
-      <div className="w-14 shrink-0">
-        <span className={cn('cifra block text-4xl', TONO[estado.state])}>
+      <div className="w-20 shrink-0">
+        <span
+          className={cn(
+            'cifra block',
+            tamanoCifra(estado.daysLeft),
+            TONO[estado.state],
+          )}
+        >
           {estado.daysLeft}
         </span>
-        <span className="block text-xs text-muted-foreground">
-          {estado.daysLeft === 1 ? 'día' : 'días'}
+        <span className="mt-1 block text-xs leading-tight text-muted-foreground">
+          {estado.daysLeft === 1 ? 'día de plazo' : 'días de plazo'}
         </span>
       </div>
     );
   }
 
   return (
-    <div className="w-14 shrink-0">
-      <span className="block text-sm text-muted-foreground">
+    <div className="w-20 shrink-0">
+      <span className="block text-xs leading-tight text-muted-foreground">
         {estado.closed ? 'Plazo cerrado' : 'Plazo no publicado'}
       </span>
     </div>
@@ -154,33 +187,9 @@ export function FilaInscripcion({
       <Cuenta entrada={entrada} esHoy={esHoy} fuera={fuera} />
 
       <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <div className="flex flex-col gap-1">
-          <h3 className="text-lg">{titular(entrada.eventName)}</h3>
-          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5">
-              <CalendarClock className="size-3.5 shrink-0" aria-hidden />
-              {formatDateRangeEs(entrada.startDate, entrada.endDate)}
-            </span>
-            {entrada.city ? (
-              <span className="inline-flex min-w-0 items-center gap-1.5">
-                <MapPin className="size-3.5 shrink-0" aria-hidden />
-                <span className="truncate">{titular(entrada.city)}</span>
-              </span>
-            ) : null}
-          </p>
-        </div>
+        <h3 className="text-lg">{titular(entrada.eventName)}</h3>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{nombrePrueba(entrada)}</Badge>
-          {entrada.format === 'EQUIPOS' ? (
-            <Badge variant="outline">Equipos</Badge>
-          ) : null}
-          {conNombre ? (
-            <span className="text-sm text-muted-foreground">
-              {entrada.athleteName}
-            </span>
-          ) : null}
-        </div>
+        <Rotulos disposicion="linea" datos={datosDePrueba(entrada, conNombre)} />
 
         {fuera ? (
           <p className="text-sm text-danger">{enQuienEsta(entrada)}</p>
@@ -228,22 +237,27 @@ export function PanelHoy({
   ).filter((h): h is [string, string] => Boolean(h[1]));
 
   return (
-    <div className="flex max-w-2xl flex-col gap-3 rounded-lg border bg-card p-4">
-      <div className="flex flex-col gap-1">
-        <h3 className="text-lg">{titular(entrada.eventName)}</h3>
-        <p className="text-sm text-muted-foreground">
-          {nombrePrueba(entrada)}
-          {entrada.city ? ` · ${titular(entrada.city)}` : ''}
-          {conNombre ? ` · ${entrada.athleteName}` : ''}
-        </p>
-      </div>
+    <div className="flex max-w-2xl flex-col gap-4 rounded-lg border-t border-filete bg-card p-4">
+      <h3 className="text-lg">{titular(entrada.eventName)}</h3>
 
+      <Rotulos
+        datos={[
+          ['Prueba', nombrePrueba(entrada)],
+          ['Dónde', entrada.city ? titular(entrada.city) : 'sin sede publicada'],
+          ...(conNombre
+            ? ([['Tirador', entrada.athleteName]] as [string, React.ReactNode][])
+            : []),
+        ]}
+      />
+
+      {/* Las horas del día, que es lo único que importa ya en el pabellón:
+          van en cifra grande y separadas por filetes, como un marcador. */}
       {horarios.length > 0 ? (
-        <dl className="grid grid-cols-4 gap-2 text-center">
+        <dl className="grid grid-cols-4 gap-px overflow-hidden rounded-lg bg-border">
           {horarios.map(([k, v]) => (
-            <div key={k}>
-              <dt className="text-xs text-muted-foreground">{k}</dt>
-              <dd className="cifra text-lg">{v}</dd>
+            <div key={k} className="flex flex-col gap-0.5 bg-background px-2 py-2">
+              <dd className="cifra text-2xl">{v}</dd>
+              <dt className="text-xs leading-tight text-muted-foreground">{k}</dt>
             </div>
           ))}
         </dl>
@@ -272,26 +286,43 @@ export function FilaPasada({
 }) {
   return (
     <li className="flex gap-4 py-4">
-      <div className="w-14 shrink-0">
+      <div className="w-20 shrink-0">
         {entrada.resultPosition !== null ? (
           <>
-            <span className="cifra block text-4xl">{entrada.resultPosition}</span>
-            <span className="block text-xs text-muted-foreground">puesto</span>
+            <span
+              className={cn(
+                'cifra block',
+                entrada.resultPosition >= 100 ? 'text-3xl' : 'text-4xl',
+              )}
+            >
+              {entrada.resultPosition}
+            </span>
+            <span className="mt-1 block text-xs leading-tight text-muted-foreground">
+              puesto
+            </span>
           </>
         ) : (
-          <span className="block text-sm text-muted-foreground">
+          <span className="block text-xs leading-tight text-muted-foreground">
             Sin resultado
           </span>
         )}
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
         <h3 className="text-base">{titular(entrada.eventName)}</h3>
-        <p className="text-sm text-muted-foreground">
-          {formatDateRangeEs(entrada.startDate, entrada.endDate)} ·{' '}
-          {nombrePrueba(entrada)}
-          {conNombre ? ` · ${entrada.athleteName}` : ''}
-        </p>
+        <Rotulos
+          disposicion="linea"
+          datos={[
+            ['Cuándo', formatDateRangeEs(entrada.startDate, entrada.endDate)],
+            ['Prueba', nombrePrueba(entrada)],
+            ...(conNombre
+              ? ([['Tirador', entrada.athleteName]] as [
+                  string,
+                  React.ReactNode,
+                ][])
+              : []),
+          ]}
+        />
 
         {entrada.resultPosition === null ? (
           <p className="text-sm text-muted-foreground">

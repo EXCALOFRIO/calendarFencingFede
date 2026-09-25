@@ -199,17 +199,22 @@ export function EmparejarPanel({
 
                 <div className="flex min-w-40 flex-1 flex-col">
                   <span className="font-medium">{titular(fila.sourceAthleteName)}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {fila.sourceLicense
-                      ? `Licencia ${fila.sourceLicense}`
-                      : 'La fuente no publica licencia'}
-                    {fila.sourceClub ? ` · ${fila.sourceClub}` : ''}
-                    {fila.weapon
-                      ? ` · ${WEAPON_LABEL[fila.weapon as keyof typeof WEAPON_LABEL]}`
-                      : ''}
-                    {fila.category
-                      ? ` ${CATEGORY_LABEL[fila.category as keyof typeof CATEGORY_LABEL] ?? fila.category}`
-                      : ''}
+                  {/* Cada dato en su hueco, no encadenados con puntos. */}
+                  <span className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                    <span>
+                      {fila.sourceLicense
+                        ? `Licencia ${fila.sourceLicense}`
+                        : 'La fuente no publica licencia'}
+                    </span>
+                    {fila.sourceClub ? <span>{fila.sourceClub}</span> : null}
+                    {fila.weapon ? (
+                      <span>
+                        {WEAPON_LABEL[fila.weapon as keyof typeof WEAPON_LABEL]}
+                        {fila.category
+                          ? ` ${CATEGORY_LABEL[fila.category as keyof typeof CATEGORY_LABEL] ?? fila.category}`
+                          : ''}
+                      </span>
+                    ) : null}
                   </span>
                 </div>
 
@@ -346,10 +351,16 @@ function SelectorTirador({
                       </Badge>
                     ) : null}
                   </span>
-                  <span className="w-full truncate text-xs text-muted-foreground">
-                    {yearFromIsoDate(t.birthDate)}
-                    {t.clubNombre ? ` · ${t.clubNombre}` : ''}
-                    {t.rfeeLicense ? ` · ${t.rfeeLicense}` : ' · sin licencia'}
+                  <span className="flex w-full flex-wrap gap-x-3 text-xs text-muted-foreground">
+                    <span>{yearFromIsoDate(t.birthDate)}</span>
+                    {t.clubNombre ? (
+                      <span className="min-w-0 truncate">{t.clubNombre}</span>
+                    ) : null}
+                    <span>
+                      {t.rfeeLicense
+                        ? `Licencia ${t.rfeeLicense}`
+                        : 'sin licencia'}
+                    </span>
                   </span>
                 </CommandItem>
               ))}

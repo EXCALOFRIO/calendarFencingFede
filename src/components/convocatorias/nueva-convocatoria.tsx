@@ -98,7 +98,15 @@ export function NuevaConvocatoria({ eventos }: { eventos: EventoConvocable[] }) 
   return (
     <Sheet open={abierto} onOpenChange={setAbierto}>
       <SheetTrigger asChild>
-        <Button className="cursor-pointer">
+        {/*
+          En contorno, no en relleno carmesí.
+
+          En esta pantalla la acción consecuente es «Publicar y avisar»: se
+          manda un correo a diez personas y un aviso no se recoge. Crear un
+          borrador no tiene consecuencias, así que no puede pedir la misma
+          atención. Una acción principal por pantalla.
+        */}
+        <Button variant="outline" className="cursor-pointer">
           <Plus aria-hidden />
           Nueva convocatoria
         </Button>

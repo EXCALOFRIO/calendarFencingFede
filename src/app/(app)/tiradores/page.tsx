@@ -1,5 +1,5 @@
 import { SinAcceso, exigirRol } from '@/components/admin/guardia';
-import { Cabecera, Cifra } from '@/components/admin/piezas';
+import { Cabecera, Cifra, TiraCifras } from '@/components/admin/piezas';
 import { PanelTiradores } from '@/components/tiradores/panel-tiradores';
 import type { TiradorVista } from '@/components/tiradores/tipos';
 import { getCurrentSeason } from '@/lib/queries/calendar';
@@ -89,7 +89,7 @@ export default async function Pagina() {
         }
       />
 
-      <div className="flex flex-wrap gap-2">
+      <TiraCifras>
         <Cifra
           valor={vista.length}
           palabra="tiradores en activo"
@@ -118,7 +118,7 @@ export default async function Pagina() {
           detalle="licencia o consentimiento"
           tono={conAvisos > 0 ? 'aviso' : 'apagado'}
         />
-      </div>
+      </TiraCifras>
 
       <PanelTiradores
         tiradores={vista}

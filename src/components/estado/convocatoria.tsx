@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { MyCallUp } from '@/lib/queries/my-status';
 import { formatDateEs, titular } from '@/lib/utils';
+import { Rotulos } from './piezas';
 
 export type Respuesta = (
   id: string,
@@ -40,7 +41,7 @@ export function FilaConvocatoria({
   const pendiente = convocatoria.status === 'pendiente';
 
   return (
-    <li className="flex flex-col gap-2 py-4">
+    <li className="flex flex-col gap-3 py-4">
       <div className="flex flex-wrap items-center gap-2">
         <Badge className="bg-gold text-gold-foreground">Convocado</Badge>
         {pendiente ? (
@@ -54,27 +55,31 @@ export function FilaConvocatoria({
             Dijiste que no puedes ir
           </span>
         )}
-        {conNombre ? (
-          <span className="text-sm text-muted-foreground">
-            {convocatoria.athleteName}
-          </span>
-        ) : null}
       </div>
 
-      <div className="flex flex-col gap-1">
-        <h3 className="text-lg">{titular(convocatoria.eventName)}</h3>
-        <p className="text-sm text-muted-foreground">
-          {convocatoria.title} · {formatDateEs(convocatoria.startDate)}
-        </p>
-        <p className="text-sm text-muted-foreground">
-          {convocatoria.placeType === 'ranking'
-            ? 'Plaza por ranking.'
-            : 'Plaza técnica, a criterio del seleccionador.'}
-          {convocatoria.respondBy
-            ? ` Hay que responder antes del ${formatDateEs(convocatoria.respondBy)}.`
-            : ''}
-        </p>
-      </div>
+      <h3 className="text-lg">{titular(convocatoria.eventName)}</h3>
+
+      <Rotulos
+        datos={[
+          ['Convocatoria', convocatoria.title],
+          ['Se compite el', formatDateEs(convocatoria.startDate)],
+          [
+            'Plaza',
+            convocatoria.placeType === 'ranking'
+              ? 'Por ranking'
+              : 'Técnica, a criterio del seleccionador',
+          ],
+          [
+            'Responder antes del',
+            convocatoria.respondBy
+              ? formatDateEs(convocatoria.respondBy)
+              : 'sin fecha límite',
+          ],
+          ...(conNombre
+            ? ([['Tirador', convocatoria.athleteName]] as [string, string][])
+            : []),
+        ]}
+      />
 
       {aviso ? <p className="text-sm">{aviso}</p> : null}
 

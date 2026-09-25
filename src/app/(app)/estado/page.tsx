@@ -3,9 +3,14 @@ import { PanelEstado } from '@/components/estado/panel';
 import { Button } from '@/components/ui/button';
 import { requireProfile } from '@/lib/auth/session';
 import { responderConvocatoria } from '@/lib/callups/actions';
+import { requestEntry } from '@/lib/entries/actions';
 import { getCurrentSeason } from '@/lib/queries/calendar';
 import { getMyStatus } from '@/lib/queries/my-status';
-import { getPuestosDeTemporada, getPuntosPorPrueba } from './consultas';
+import {
+  getCompeticionesElegibles,
+  getPuestosDeTemporada,
+  getPuntosPorPrueba,
+} from './consultas';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Mi estado' };
@@ -30,9 +35,24 @@ export default async function Pagina() {
   }
 
   const ids = estado.athletes.map((a) => a.id);
-  const [puestos, puntosPorPrueba] = await Promise.all([
+  const [puestos, puntosPorPrueba, elegibles] = await Promise.all([
     getPuestosDeTemporada(ids),
     getPuntosPorPrueba(ids),
+    /*
+      En qué NO está y todavía podría estar. La elegibilidad sale de lo que
+      `getMyStatus` ya derivó con la tabla de categorías de la temporada, así
+      que la regla es exactamente la misma que aplica la ficha del calendario
+      al decidir si el botón de inscribirse está activo.
+    */
+    getCompeticionesElegibles(
+      estado.athletes.map((a) => ({
+        id: a.id,
+        fullName: a.fullName,
+        gender: a.gender,
+        weapons: a.weapons,
+        eligibleCategories: a.eligibleCategories,
+      })),
+    ),
   ]);
 
   return (
@@ -40,11 +60,13 @@ export default async function Pagina() {
       estado={estado}
       puestos={puestos}
       puntosPorPrueba={puntosPorPrueba}
+      elegibles={elegibles}
       temporada={temporada?.label ?? null}
       // La fecha se decide en el servidor: el reloj del móvil puede estar en
       // otro huso y "hoy compites" no puede depender de eso.
       hoy={new Date().toISOString().slice(0, 10)}
       responderConvocatoria={responderConvocatoria}
+      solicitarInscripcion={requestEntry}
     />
   );
 }

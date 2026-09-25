@@ -73,25 +73,46 @@ export function Cifra({
 }) {
   const contenido = (
     <>
-      <span className={cn('cifra text-2xl sm:text-4xl', TONO_CIFRA[tono])}>
+      <span className={cn('cifra shrink-0 text-4xl', TONO_CIFRA[tono])}>
         {valor}
       </span>
-      <span className="text-xs leading-tight text-muted-foreground">{palabra}</span>
-      {/*
-        La línea de matiz solo en pantalla ancha. En un móvil de 390 px, cinco
-        cifras con su matiz ocupaban la pantalla entera y había que bajar dos
-        veces para ver el primer dato: el resumen tapaba lo resumido.
-      */}
-      {detalle ? (
-        <span className="hidden text-[11px] leading-tight text-muted-foreground/80 sm:block">
-          {detalle}
+      <span className="flex min-w-0 flex-col">
+        <span className="text-xs leading-tight text-muted-foreground">
+          {palabra}
         </span>
-      ) : null}
+        {/*
+          La línea de matiz solo en pantalla ancha. En un móvil de 390 px,
+          cinco cifras con su matiz ocupaban la pantalla entera y había que
+          bajar dos veces para ver el primer dato: el resumen tapaba lo
+          resumido.
+        */}
+        {detalle ? (
+          <span className="hidden text-xs leading-tight text-muted-foreground/80 sm:block">
+            {detalle}
+          </span>
+        ) : null}
+      </span>
     </>
   );
 
+  /*
+    La cifra y la palabra van UNA AL LADO DE OTRA, no apiladas.
+
+    Apiladas, cinco cifras con rótulos de tres palabras llenaban la primera
+    pantalla entera del móvil y empujaban la lista —que es a lo que se
+    viene— por debajo del pliegue dos veces. Al lado, el bloque entero mide
+    lo que miden tres renglones y sigue leyéndose como un marcador.
+  */
+  /*
+    Dos columnas en el móvil, medidas con el navegador y no a ojo.
+
+    A una sola columna cada rótulo cabe en un renglón, pero cinco bandas de
+    61 px suman 305; a dos columnas el rótulo se parte a veces en dos y aun
+    así la chapa entera mide 220. Gana la chapa más baja: lo que empujaba la
+    lista por debajo del pliegue era la altura total, no los renglones.
+  */
   const clases =
-    'flex min-w-0 flex-1 basis-32 flex-col gap-0.5 rounded-lg border bg-card px-3 py-2 sm:flex-none sm:basis-auto sm:gap-1 sm:py-2.5';
+    'flex min-w-0 flex-1 basis-36 items-baseline gap-2 bg-card px-3 py-2.5 sm:basis-44';
 
   if (href) {
     return (
@@ -102,6 +123,22 @@ export function Cifra({
   }
 
   return <div className={clases}>{contenido}</div>;
+}
+
+/**
+ * La chapa donde viven las cifras.
+ *
+ * Una sola superficie con las celdas separadas por líneas de un píxel, no
+ * cinco recuadros flotando con hueco entre ellos. Es la pista: bandas
+ * separadas por filetes. Y se separa del fondo con un filete de luz arriba,
+ * como el canto de una chapa, en vez de con sombra.
+ */
+export function TiraCifras({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap gap-px overflow-hidden rounded-lg border-t border-filete bg-border">
+      {children}
+    </div>
+  );
 }
 
 /**

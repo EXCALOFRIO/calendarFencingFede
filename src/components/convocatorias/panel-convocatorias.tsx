@@ -28,10 +28,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { eliminarConvocatoria, publicarConvocatoria } from '@/lib/callups/actions';
-import { CALL_UP_STATUS_LABEL, PLACE_TYPE_LABEL } from '@/lib/callups/tipos';
+import { CALL_UP_STATUS_LABEL } from '@/lib/callups/tipos';
 import type { CallUpDetail, EventoConvocable } from '@/lib/callups/tipos';
 import { cn, formatDateRangeEs, formatDateTimeEs, titular } from '@/lib/utils';
 import { ElegirConvocados } from './elegir-convocados';
+import { PLAZA_CORTA, partirPrueba } from './etiquetas';
 import { NuevaConvocatoria } from './nueva-convocatoria';
 
 /**
@@ -99,7 +100,16 @@ function Fila({
   puedeGestionar: boolean;
 }) {
   const router = useRouter();
-  const [abierta, setAbierta] = React.useState(false);
+  /**
+   * Abierta de entrada si queda alguien por contestar.
+   *
+   * A esta pantalla se viene a saber QUIÉN no ha contestado, porque de eso
+   * depende llamar al siguiente. Si para averiguarlo hay que desplegar una
+   * a una las convocatorias, la pantalla no contesta la pregunta: la
+   * esconde. Las que ya están resueltas siguen plegadas, que es lo que
+   * evita el muro de veinte tablas.
+   */
+  const [abierta, setAbierta] = React.useState(c.pendientes > 0);
   const [confirmar, setConfirmar] = React.useState<'publicar' | 'borrar' | null>(null);
   const [trabajando, setTrabajando] = React.useState(false);
   const [aviso, setAviso] = React.useState<{ ok: boolean; texto: string } | null>(null);
@@ -129,7 +139,7 @@ function Fila({
             />
             <span className="min-w-0">
               <span className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium">{c.title}</span>
+                <span className="text-base font-medium">{c.title}</span>
                 {c.published ? (
                   <Badge variant="outline" className="border-gold/50 text-gold">
                     Publicada
@@ -138,10 +148,21 @@ function Fila({
                   <Badge variant="secondary">Borrador</Badge>
                 )}
               </span>
-              <span className="mt-0.5 block text-xs text-muted-foreground">
-                {titular(c.eventName)} ·{' '}
-                {formatDateRangeEs(c.eventStartDate, c.eventEndDate)}
-                {c.respondBy ? ` · responder antes del ${formatDateTimeEs(c.respondBy)}` : ''}
+              {/* Con el rótulo delante, no encadenados con puntos medios. */}
+              <span className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+                <span className="min-w-0 truncate">{titular(c.eventName)}</span>
+                <span>
+                  <span className="text-muted-foreground">Se compite </span>
+                  {formatDateRangeEs(c.eventStartDate, c.eventEndDate)}
+                </span>
+                {c.respondBy ? (
+                  <span>
+                    <span className="text-muted-foreground">
+                      Responden antes del{' '}
+                    </span>
+                    {formatDateTimeEs(c.respondBy)}
+                  </span>
+                ) : null}
               </span>
             </span>
           </CollapsibleTrigger>
@@ -173,17 +194,26 @@ function Fila({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {c.convocados.map((a) => (
+                  {c.convocados.map((a) => {
+                    const prueba = partirPrueba(a.competition);
+                    return (
                     <TableRow key={a.id}>
                       <TableCell className="pl-0 align-top whitespace-normal">
                         <span className="block text-sm">{a.athleteName}</span>
-                        <span className="block text-xs text-muted-foreground md:hidden">
-                          {[
-                            a.competition,
-                            PLACE_TYPE_LABEL[a.placeType].toLowerCase(),
-                          ]
-                            .filter(Boolean)
-                            .join(' · ')}
+                        <span className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground md:hidden">
+                          {prueba ? (
+                            <span>
+                              {prueba.prueba}
+                              {prueba.categoria ? ` ${prueba.categoria}` : ''}
+                            </span>
+                          ) : null}
+                          <span
+                            className={
+                              a.placeType === 'ranking' ? 'text-gold' : undefined
+                            }
+                          >
+                            {PLAZA_CORTA[a.placeType]}
+                          </span>
                         </span>
                         {a.clubName ? (
                           <span className="hidden text-xs text-muted-foreground md:block">
@@ -191,8 +221,20 @@ function Fila({
                           </span>
                         ) : null}
                       </TableCell>
-                      <TableCell className="hidden align-top text-muted-foreground md:table-cell">
-                        {a.competition ?? 'sin prueba'}
+                      <TableCell className="hidden align-top md:table-cell">
+                        {prueba ? (
+                          <>
+                            <span className="text-foreground">{prueba.prueba}</span>
+                            {prueba.categoria ? (
+                              <span className="text-muted-foreground">
+                                {' '}
+                                {prueba.categoria}
+                              </span>
+                            ) : null}
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">sin prueba</span>
+                        )}
                       </TableCell>
                       <TableCell className="hidden align-top md:table-cell">
                         <span
@@ -203,7 +245,7 @@ function Fila({
                           }
                         >
                           {a.placeType === 'ranking'
-                            ? `Ranking${a.rankingPositionAtCutoff ? ` · ${a.rankingPositionAtCutoff}.º` : ''}`
+                            ? `Ranking${a.rankingPositionAtCutoff ? `, ${a.rankingPositionAtCutoff}.º al corte` : ''}`
                             : 'Técnica'}
                         </span>
                       </TableCell>
@@ -225,7 +267,8 @@ function Fila({
                         ) : null}
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             )}
@@ -363,10 +406,10 @@ function Recuento({
 }) {
   return (
     <span className="flex min-w-14 flex-col items-center leading-none">
-      <span className={cn('cifra text-xl', valor === 0 ? 'text-muted-foreground' : clase)}>
+      <span className={cn('cifra text-3xl', valor === 0 ? 'text-muted-foreground' : clase)}>
         {valor}
       </span>
-      <span className="mt-1 text-center text-[11px] text-muted-foreground">
+      <span className="mt-1 text-center text-xs text-muted-foreground">
         {palabra}
       </span>
     </span>

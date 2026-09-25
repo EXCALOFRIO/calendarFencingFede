@@ -129,9 +129,11 @@ export function UsuariosPanel({
                       </Badge>
                     ) : null}
                   </span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    {a.email}
-                    {a.clubNombre ? ` · ${a.clubNombre}` : ''}
+                  <span className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                    <span className="min-w-0 truncate">{a.email}</span>
+                    {a.clubNombre ? (
+                      <span className="min-w-0 truncate">{a.clubNombre}</span>
+                    ) : null}
                   </span>
                   {a.fichas.length > 0 ? (
                     <span className="truncate text-xs text-muted-foreground">
@@ -745,11 +747,20 @@ function ImportadorCsv() {
                       </Badge>
                     ))}
                   </span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    {f.requiereTutor ? (f.guardianEmail || 'sin correo de tutor') : (f.email || 'sin correo')}
-                    {f.birthDate ? ` · ${formatDateEs(f.birthDate)}` : ''}
-                    {f.clubName ? ` · ${f.clubName}` : ''}
-                    {f.rfeeLicense ? ` · ${f.rfeeLicense}` : ''}
+                  {/* Cada dato en su hueco, no encadenados con puntos. */}
+                  <span className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                    <span className="min-w-0 truncate">
+                      {f.requiereTutor
+                        ? f.guardianEmail || 'sin correo de tutor'
+                        : f.email || 'sin correo'}
+                    </span>
+                    {f.birthDate ? <span>{formatDateEs(f.birthDate)}</span> : null}
+                    {f.clubName ? (
+                      <span className="min-w-0 truncate">{f.clubName}</span>
+                    ) : null}
+                    {f.rfeeLicense ? (
+                      <span>Licencia {f.rfeeLicense}</span>
+                    ) : null}
                   </span>
 
                   {f.errores.map((e, i) => (

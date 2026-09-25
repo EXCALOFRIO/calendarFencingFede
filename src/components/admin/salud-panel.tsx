@@ -188,7 +188,7 @@ export function SaludPanel({
                   ].map(([palabra, valor]) => (
                     <div key={palabra as string} className="flex flex-col">
                       <dd className="cifra text-lg">{valor as number}</dd>
-                      <dt className="text-[11px] text-muted-foreground">
+                      <dt className="text-xs text-muted-foreground">
                         {palabra as string}
                       </dt>
                     </div>

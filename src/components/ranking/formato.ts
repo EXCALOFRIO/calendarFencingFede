@@ -31,10 +31,12 @@ export function clave(g: ClaveGrupo): string {
   return `${g.weapon}|${g.gender}|${g.category}`;
 }
 
-/** "Espada femenino · M17" */
+/** "Espada femenino M17" */
 export function etiquetaGrupo(g: ClaveGrupo): string {
   const arma = WEAPON_LABEL[g.weapon as keyof typeof WEAPON_LABEL] ?? g.weapon;
   const genero = GENDER_LABEL[g.gender as keyof typeof GENDER_LABEL] ?? g.gender;
   const cat = CATEGORY_LABEL[g.category as keyof typeof CATEGORY_LABEL] ?? g.category;
-  return `${arma} ${genero.toLowerCase()} · ${cat}`;
+  // Sin punto medio: la etiqueta se lee entera como el nombre de un grupo,
+  // no como tres datos encadenados.
+  return `${arma} ${genero.toLowerCase()} ${cat}`;
 }
