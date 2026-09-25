@@ -9,6 +9,10 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "cf:build": "node scripts/compilar-cloudflare.mjs",
+    "cf:preview": "npm run cf:build && opennextjs-cloudflare preview",
+    "cf:deploy": "npm run cf:build && opennextjs-cloudflare deploy",
+    "cf:typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -24,7 +28,9 @@
     "demo": "tsx scripts/demo.ts",
     "demo:borrar": "tsx scripts/demo.ts --borrar",
     "mirar": "tsx tests/ui/mirar.mts",
-    "barrido": "tsx tests/ui/barrido.mts"
+    "barrido": "tsx tests/ui/barrido.mts",
+    "ficha": "tsx tests/ui/ficha.mts",
+    "iconos": "node tests/ui/iconos.mjs"
   },
   "dependencies": {
     "@neondatabase/auth": "^0.5.0-beta",
@@ -45,8 +51,8 @@
     "@radix-ui/react-switch": "^1.2.5",
     "@radix-ui/react-tabs": "^1.1.12",
     "@radix-ui/react-tooltip": "^1.2.7",
+    "@opennextjs/cloudflare": "^1.20.6",
     "@tanstack/react-table": "^8.21.3",
-    "@vercel/blob": "^1.1.1",
     "better-auth": "^1.3.7",
     "cheerio": "^1.1.2",
     "class-variance-authority": "^0.7.1",
@@ -70,7 +76,6 @@
     "zod": "^4.0.15"
   },
   "devDependencies": {
-    "@opennextjs/cloudflare": "^1.20.6",
     "@tailwindcss/postcss": "^4.1.11",
     "@types/node": "^24.2.0",
     "@types/react": "^19.1.9",

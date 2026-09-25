@@ -125,13 +125,38 @@ async function verificarCodigo(formData: FormData) {
  *
  * Existe para poder enseñar y trastear la aplicación con los usuarios de
  * demostración, cuyos correos son inventados y por tanto nunca van a recibir
- * un código. En producción esta acción se niega antes de hacer nada, así que
- * no abre ninguna puerta en el despliegue real.
+ * un código. Solo funciona si `accesoConContrasena()` lo permite; si no, se
+ * niega antes de hacer nada.
  */
+
+/**
+ * ¿Se permite entrar con contraseña?
+ *
+ * El acceso normal es un código de un solo uso por correo, y es el que se
+ * queda cuando esto sea de verdad. Pero el correo sale por Resend, que hasta
+ * que no haya un dominio verificado **solo puede escribir a la dirección del
+ * titular de la cuenta**. En un despliegue recién hecho eso significa que no
+ * podría entrar nadie, ni siquiera para enseñarlo.
+ *
+ * Por eso hay una segunda puerta, y está **apagada salvo que se encienda a
+ * mano** con `ACCESO_CON_CONTRASENA=1`. No se usa `NODE_ENV` para decidirlo:
+ * un despliegue de demostración es «producción» a todos los efectos y aun
+ * así la necesita, mientras que una producción de verdad tiene que poder
+ * cerrarla sin tocar código. Es un interruptor explícito, se ve en el panel
+ * de Cloudflare y se quita borrando la variable.
+ *
+ * Mientras está encendida, la pantalla lo dice en voz alta: nadie debe
+ * descubrir por sorpresa que hay una puerta más.
+ */
+function accesoConContrasena(): boolean {
+  if (process.env.ACCESO_CON_CONTRASENA === '1') return true;
+  return process.env.NODE_ENV !== 'production';
+}
+
 async function entrarConContrasena(formData: FormData) {
   'use server';
 
-  if (process.env.NODE_ENV === 'production') {
+  if (!accesoConContrasena()) {
     redirect('/entrar?error=solo-desarrollo');
   }
 
@@ -339,15 +364,16 @@ export default async function EntrarPage({
           </Card>
 
           {/*
-            Bloque de desarrollo. No se dibuja en producción, así que ni
-            siquiera aparece en el HTML del despliegue real.
+            Segunda puerta. Si el interruptor está apagado ni siquiera
+            aparece en el HTML, así que no se puede ni intentar.
           */}
-          {process.env.NODE_ENV !== 'production' && !esPasoCodigo ? (
-            <div className="mt-4 rounded-lg border border-dashed p-3">
+          {accesoConContrasena() && !esPasoCodigo ? (
+            <div className="mt-4 rounded-md border border-dashed p-3">
               <p className="text-xs text-muted-foreground">
-                Acceso de desarrollo. Solo en local, con los usuarios de
-                demostración; la contraseña de todos es{' '}
-                <code className="text-foreground">Demo-2026-Esgrima!</code>
+                <span className="text-foreground">Acceso con contraseña.</span>{' '}
+                Está abierto porque todavía no hay dominio verificado para
+                enviar los códigos por correo. Se cierra quitando la variable{' '}
+                <code className="text-foreground">ACCESO_CON_CONTRASENA</code>.
               </p>
               <form action={entrarConContrasena} className="mt-2 flex flex-col gap-2">
                 <Campo

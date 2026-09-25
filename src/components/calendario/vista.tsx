@@ -529,35 +529,70 @@ export function VistaCalendario({
  * es el torneo— en lugar de ocupar sitio por ocupar.
  */
 function CabeceraFicha({ evento }: { evento: EventView }) {
+  const [fallo, setFallo] = React.useState(false);
+  React.useEffect(() => setFallo(false), [evento.id]);
+
+  const hayFoto = Boolean(evento.imageUrl) && !fallo;
   const organismo = organismoDe(evento.source, evento.scope, evento.circuit);
   const tinte = {
-    RFEE: 'from-org-rfee/35',
-    FIE: 'from-org-fie/30',
-    EFC: 'from-org-efc/35',
-    AUT: 'from-muted',
+    RFEE: 'from-org-rfee/40',
+    FIE: 'from-org-fie/35',
+    EFC: 'from-org-efc/40',
+    AUT: 'from-muted-foreground/30',
   }[organismo];
 
   return (
     <div className="relative">
-      {evento.imageUrl ? (
-        <img
-          src={evento.imageUrl}
-          alt=""
-          className="h-44 w-full object-cover sm:h-52"
-          loading="lazy"
-          decoding="async"
-        />
+      {/*
+        Sin cartel no se reserva sitio para el cartel.
+
+        Antes, cuando la fuente no publicaba imagen se pintaba una franja
+        de 96 px con un degradado tan sutil que en pantalla era un hueco
+        negro: 140 px de nada antes del título. Solo 26 de los 249 torneos
+        traen cartel, así que el caso normal es este. Ahora sin foto queda
+        una banda fina del color de quien organiza, que además dice algo.
+      */}
+      {hayFoto ? (
+        /*
+          El hueco de la foto lleva el color de quien organiza DEBAJO.
+
+          Los carteles de la FIE son JPEG de 4000 px enlazados a
+          `static.fie.org`: tardan medio segundo largo en pintar y durante
+          ese rato la hoja abria con un rectángulo negro de 200 px. Con el
+          tinte detras, el hueco se lee como parte del diseño mientras la
+          foto llega, y si no llega nunca tampoco pasa nada.
+        */
+        <div className={cn('relative w-full bg-gradient-to-br to-card', tinte)}>
+          <img
+            src={evento.imageUrl ?? ''}
+            alt=""
+            className="h-44 w-full object-cover sm:h-52"
+            fetchPriority="high"
+            /* Nada de `lazy`: es lo primero que se ve de la hoja. Con carga
+               diferida el hueco se reservaba y la foto entraba medio segundo
+               despues, de modo que la ficha siempre abria con un boquete. */
+            loading="eager"
+            decoding="async"
+            /* Y si el cartel ha desaparecido de `static.fie.org`, se quita el
+               hueco en vez de dejar 200 px de nada con un icono roto. */
+            onError={() => setFallo(true)}
+          />
+          {/* Velo de abajo arriba para que el texto se lea sobre la foto. */}
+          <div
+            className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/10"
+            aria-hidden
+          />
+        </div>
       ) : (
-        <div className={cn('h-24 w-full bg-gradient-to-br to-card', tinte)} aria-hidden />
+        <div className={cn('h-1 w-full bg-gradient-to-r to-transparent', tinte)} aria-hidden />
       )}
 
-      {/* Velo de abajo arriba para que el texto se lea sobre cualquier foto. */}
-      <div
-        className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/10"
-        aria-hidden
-      />
-
-      <SheetHeader className="relative -mt-16 gap-2 px-4 pb-0 sm:-mt-20">
+      <SheetHeader
+        className={cn(
+          'relative gap-2 px-4 pb-0',
+          hayFoto ? '-mt-16 sm:-mt-20' : 'pt-4',
+        )}
+      >
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant="secondary">{organismo}</Badge>
           <Badge variant="outline">
