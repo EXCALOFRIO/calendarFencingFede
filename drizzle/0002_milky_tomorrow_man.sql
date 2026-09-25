@@ -1,0 +1,1 @@
+ALTER TABLE "event" ADD COLUMN "image_url" text;

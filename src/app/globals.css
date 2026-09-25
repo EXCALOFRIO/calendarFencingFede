@@ -1,0 +1,273 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/**
+ * ===========================================================================
+ * TEMA
+ * ===========================================================================
+ *
+ * Se usan los nombres de variable estándar de shadcn/ui (`--background`,
+ * `--card`, `--primary`, `--muted-foreground`…) y no unos inventados. Es
+ * deliberado: así los componentes que se instalan con su CLI se ven bien sin
+ * tocarlos y se pueden actualizar sin romper nada. La versión anterior tenía
+ * tokens propios, y por eso había que reescribir cada componente entero.
+ *
+ * Tres decisiones de color, con su porqué:
+ *
+ * 1. **Gris muy oscuro, no negro puro.** Sobre #000 nada parece un objeto:
+ *    no hay diferencia entre el fondo y una superficie y la pantalla se lee
+ *    plana. Con el fondo en L=0.16 y las tarjetas en L=0.21 hay separación
+ *    real sin necesidad de poner bordes por todas partes.
+ * 2. **Carmesí de marca, con dos tonos.** Medido: el carmesí saturado da
+ *    3,98:1 como texto sobre fondo oscuro, por debajo de AA. `--primary` es
+ *    para rellenos y `--primary-text` para cuando el carmesí es texto.
+ * 3. **Oro exclusivo de las convocatorias de selección.** Si se usa para
+ *    otra cosa deja de significar "te han convocado", que es el aviso más
+ *    importante de la aplicación.
+ */
+
+:root {
+  --radius: 0.75rem;
+
+  --background: oklch(0.16 0.003 285);
+  --foreground: oklch(0.97 0.002 285);
+
+  --card: oklch(0.21 0.004 285);
+  --card-foreground: oklch(0.97 0.002 285);
+
+  --popover: oklch(0.23 0.004 285);
+  --popover-foreground: oklch(0.97 0.002 285);
+
+  --primary: oklch(0.586 0.222 17.6);
+  --primary-foreground: oklch(0.99 0 0);
+  /* Carmesí legible como texto; el de relleno se queda en 3,98:1. */
+  --primary-text: oklch(0.72 0.17 17.6);
+
+  --secondary: oklch(0.27 0.005 285);
+  --secondary-foreground: oklch(0.97 0.002 285);
+
+  --muted: oklch(0.27 0.005 285);
+  --muted-foreground: oklch(0.72 0.007 286);
+
+  --accent: oklch(0.29 0.005 285);
+  --accent-foreground: oklch(0.97 0.002 285);
+
+  --destructive: oklch(0.65 0.21 22);
+  --destructive-foreground: oklch(0.99 0 0);
+
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.72 0.17 17.6);
+
+  /* Convocatorias de selección, y nada más. */
+  --gold: oklch(0.8 0.13 82);
+  --gold-foreground: oklch(0.2 0.03 84);
+
+  /* Semáforo de plazos. Los tres pasan AA sobre el fondo. */
+  --ok: oklch(0.78 0.15 158);
+  --warn: oklch(0.82 0.14 82);
+  --danger: oklch(0.7 0.19 20);
+  --off: oklch(0.6 0.007 286);
+
+  /* Quién organiza: es la lectura rápida del calendario. */
+  --org-rfee: oklch(0.65 0.2 17.6);
+  --org-fie: oklch(0.8 0.13 82);
+  --org-efc: oklch(0.72 0.14 240);
+  --org-aut: oklch(0.65 0.01 286);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-text: var(--primary-text);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-gold: var(--gold);
+  --color-gold-foreground: var(--gold-foreground);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-off: var(--off);
+  --color-org-rfee: var(--org-rfee);
+  --color-org-fie: var(--org-fie);
+  --color-org-efc: var(--org-efc);
+  --color-org-aut: var(--org-aut);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: var(--font-sans-ui), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display), 'Barlow Condensed', sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    /* Las cifras no bailan al cambiar de mes ni al actualizarse. */
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /**
+   * Titulares en condensada.
+   *
+   * Dos familias con papeles claros: Barlow Condensed golpea en titulares y
+   * cifras (es una condensada de marcador: entra grande en poco sitio) e
+   * Inter se lee bien a 12 y 14 px, que es donde vive casi toda la interfaz.
+   * El contraste entre las dos ES la jerarquía.
+   */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+    text-wrap: balance;
+  }
+
+  /**
+   * Objetivo táctil mínimo.
+   *
+   * Incluye los enlaces con aspecto de botón, que se escapaban de la regla
+   * y se quedaban en 38 × 32 px medidos. Se excluyen interruptor y casilla:
+   * tienen forma propia y se les da área con un pseudoelemento en vez de
+   * deformarlos.
+   *
+   * Y se excluye `.objetivo-libre`, que son las barras del calendario: su
+   * alto lo calcula el propio calendario a partir del hueco que hay en
+   * pantalla, y forzarlas a 44 px hace que una semana con cuatro torneos se
+   * salga de su fila. Se aceptan más pequeñas a propósito: van pegadas unas
+   * a otras formando una superficie continua, que es como se tocan en
+   * cualquier aplicación de calendario del móvil.
+   */
+  @media (pointer: coarse) {
+    button:not([role='switch']):not([role='checkbox']):not(.objetivo-libre),
+    a[role='button'],
+    [role='tab'] {
+      min-height: 44px;
+    }
+
+    [role='switch'],
+    [role='checkbox'] {
+      position: relative;
+    }
+
+    [role='switch']::after,
+    [role='checkbox']::after {
+      content: '';
+      position: absolute;
+      inset: -13px;
+    }
+
+    /**
+     * El aspa de las hojas laterales.
+     *
+     * La regla de arriba le sube el alto a 44 px pero no el ancho, y el
+     * botón redondo se quedaba en un óvalo de 36 × 44. Aquí se le da el
+     * ancho que le corresponde.
+     */
+    .cerrar-hoja {
+      width: 44px;
+    }
+  }
+
+  /**
+   * Autorrelleno del navegador.
+   *
+   * Chrome pinta los campos autorrellenados con un fondo azul claro fijo y
+   * el texto en negro, y no hay forma de cambiarlo con `background`: hay que
+   * taparlo con una sombra interior del tamaño del campo. Sin esto, en un
+   * tema oscuro aparece de golpe un recuadro blanco en mitad de la pantalla
+   * en cuanto el navegador rellena el correo.
+   */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  textarea:-webkit-autofill,
+  select:-webkit-autofill {
+    -webkit-text-fill-color: var(--foreground);
+    -webkit-box-shadow: 0 0 0 1000px var(--background) inset;
+    box-shadow: 0 0 0 1000px var(--background) inset;
+    caret-color: var(--foreground);
+    transition: background-color 600000s 0s;
+  }
+
+  /* La selección de texto también tenía el azul del sistema. */
+  ::selection {
+    background-color: color-mix(in oklch, var(--primary) 40%, transparent);
+    color: var(--foreground);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  /** Cifra de marcador: condensada, tabular y apretada. */
+  .cifra {
+    font-family: var(--font-display);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    line-height: 0.92;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /** Ancho de lectura cómodo: nunca más de 68 caracteres por línea. */
+  .medida {
+    max-width: 68ch;
+  }
+
+  /** Hueco de la barra inferior, que crece con el área segura del iPhone. */
+  .hueco-barra {
+    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+
+  @media (min-width: 1024px) {
+    .hueco-barra {
+      padding-bottom: 0;
+    }
+  }
+}

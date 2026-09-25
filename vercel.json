@@ -1,0 +1,32 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": [
+    "fra1"
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/ingest/skermo_rfee",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/ingest/fie",
+      "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cron/ingest/efc",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/ingest/skermo_regional",
+      "schedule": "30 4 * * *"
+    },
+    {
+      "path": "/api/cron/ingest/rfee_wp",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/notify",
+      "schedule": "0 7 * * *"
+    }
+  ]
+}

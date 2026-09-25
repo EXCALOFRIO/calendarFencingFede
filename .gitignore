@@ -1,0 +1,23 @@
+node_modules
+.next
+out
+build
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
+coverage
+
+# Secretos. Se ignora cualquier variante de .env salvo el ejemplo, para que un
+# backup tipo ".env.backup" no acabe en el repositorio sin que nadie lo note.
+.env
+.env.*
+!.env.example
+
+# Capturas: el script sí se versiona, las imágenes no.
+capturas/*.png
+
+# Cloudflare
+.wrangler
+.open-next
+tests/ui/informe.json

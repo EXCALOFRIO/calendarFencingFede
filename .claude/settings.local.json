@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(nslookup eurofencing.info 8.8.8.8)",
+      "Bash(cd /tmp)",
+      "Bash(ls -la fie_events.html)",
+      "Bash(grep -oE 'href=\"/_fie/[A-Za-z0-9_.-]+\\\\.js\"' fie_events.html)",
+      "Read(//tmp/**)",
+      "Bash(sed -i 's/\"drizzle-orm\": \"\\\\^0.44.4\"/\"drizzle-orm\": \"^0.45.3\"/' package.json)",
+      "Bash(sed -i 's/\"drizzle-kit\": \"\\\\^0.31.4\"/\"drizzle-kit\": \"^0.31.5\"/' package.json)",
+      "Bash(python -c ' *)",
+      "Bash(tail -c 1500 /tmp/e2e-f3.log)",
+      "Bash(ls src/app/\\\\\\(app\\\\\\)/)",
+      "Bash(git add *)",
+      "Bash(git -c core.autocrlf=false commit -q -F -)"
+    ]
+  }
+}
