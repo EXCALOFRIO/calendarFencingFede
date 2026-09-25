@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { titularTorneo } from '../src/lib/utils';
+import { titularDocumento, titularTorneo } from '../src/lib/utils';
 
 /**
  * La aplicación está en castellano y el calendario no puede tener la mitad
@@ -42,5 +42,32 @@ describe('los nombres de la FIE se enseñan en castellano', () => {
 
   it('no inventa una ciudad cuando el nombre es solo el tipo de prueba', () => {
     expect(titularTorneo('World Cup')).toBe('Copa del Mundo');
+  });
+});
+
+/**
+ * La RFEE sube los PDF con el nombre del fichero tal cual. Los casos de aquí
+ * son títulos REALES de la tabla `official_document`.
+ */
+describe('los títulos de las circulares se leen como títulos', () => {
+  it('quita los guiones bajos y la extensión', () => {
+    expect(
+      titularDocumento('Circular_11-26_competiciones_por_equipos_26-27_completa'),
+    ).toBe('Circular 11-26 Competiciones por Equipos 26-27 Completa');
+    expect(
+      titularDocumento('NORMATIVA-PARA-RANKINGS-NACIONALES_26-27_V1.pdf'),
+    ).toBe('Normativa para Rankings Nacionales 26-27 V1');
+  });
+
+  it('conserva el número de circular y la temporada, que es la referencia', () => {
+    // El guion de «11-26» y «26-27» NO es un separador de palabras.
+    expect(titularDocumento('Circular_11-26_material')).toContain('11-26');
+    expect(titularDocumento('algo_26-27_v1')).toContain('26-27');
+  });
+
+  it('respeta las siglas y baja las preposiciones', () => {
+    expect(titularDocumento('Circular_07-26_clasificados_cto_españa_m17')).toBe(
+      'Circular 07-26 Clasificados CTO España M17',
+    );
   });
 });

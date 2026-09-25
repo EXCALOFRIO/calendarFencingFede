@@ -18,6 +18,7 @@ import {
   formatDateTimeEs,
   formatEur,
   titular,
+  titularDocumento,
 } from '@/lib/utils';
 import type { QuienVa as QuienVaDatos } from '@/app/(app)/inscritos';
 import { ENTRY_STATUS_LABEL } from '@/lib/entries/state-machine';
@@ -213,7 +214,7 @@ export function FichaEvento({
                   className="flex items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent"
                 >
                   <FileText className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate">{titular(d.title)}</span>
+                  <span className="min-w-0 flex-1 truncate">{titularDocumento(d.title)}</span>
                   <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
                 </a>
               </li>

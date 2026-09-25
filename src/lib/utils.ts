@@ -432,3 +432,35 @@ export function titularTorneo(nombre: string): string {
 
   return titular(nombre);
 }
+
+/**
+ * Título de un documento oficial.
+ *
+ * La RFEE sube los PDF con el nombre del fichero tal cual, así que en la
+ * lista de circulares aparecían cosas como
+ * `Circular_11-26_competiciones_por_equipos_26-27_completa` y
+ * `NORMATIVA-PARA-RANKINGS-NACIONALES_26-27_V1.pdf`.
+ *
+ * Se quita la extensión, los guiones bajos pasan a espacios y los guiones
+ * normales **solo si separan palabras**: los que van entre cifras son el
+ * número de circular y la temporada (`11-26`, `26-27`), que es justo la
+ * referencia con la que la gente los cita.
+ *
+ * Y se pasa a mayúsculas antes de llamar a `titular()` a propósito. Esa
+ * función respeta lo que ya viene escrito como texto, y aquí no hay texto
+ * escrito por nadie: hay un nombre de fichero, donde las mayúsculas y
+ * minúsculas son accidentales. Forzándolo se aplican siempre las mismas
+ * reglas —siglas arriba, preposiciones abajo— y la lista deja de parecer
+ * media copiada de un explorador de archivos.
+ */
+export function titularDocumento(nombre: string): string {
+  const limpio = nombre
+    .replace(/\.(pdf|docx?|xlsx?)$/i, '')
+    .replace(/_+/g, ' ')
+    // Guion entre letras: separador. Entre cifras: parte del número.
+    .replace(/(?<=[^\W\d])-(?=[^\W\d])/gu, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  return titular(limpio.toLocaleUpperCase('es-ES'));
+}

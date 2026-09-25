@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { db } from '@/db';
 import { officialDocument } from '@/db/schema';
 import { requireProfile } from '@/lib/auth/session';
-import { formatDateEs, titular } from '@/lib/utils';
+import { formatDateEs, titular, titularDocumento } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -199,7 +199,7 @@ export default async function DocumentosPage({
 
                   <span className="min-w-0">
                     <span className="line-clamp-2 text-sm font-medium sm:truncate">
-                      {titular(d.title)}
+                      {titularDocumento(d.title)}
                     </span>
                     <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs">
                       {/* En el móvil la fecha va aquí; donde hay sitio se va a
