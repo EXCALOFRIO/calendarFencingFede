@@ -26,7 +26,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { formatDateTimeEs } from '@/lib/utils';
+import { formatDateEs, formatDateTimeEs, formatEur, titular } from '@/lib/utils';
 
 /**
  * Revisión de la extracción asistida.
@@ -85,6 +85,29 @@ function etiquetaDeCampo(campo: string): string {
     return `${ETIQUETA_CAMPO[raiz]}, ${resto.join('.').replace(/-/g, ' ')}`;
   }
   return campo;
+}
+
+/**
+ * Cómo se enseña el valor propuesto.
+ *
+ * Dos decisiones, las dos aprendidas mirando la pantalla con datos reales:
+ *
+ *  - El valor se FORMATEA como se formatea en el resto de la aplicación:
+ *    `25.00` se lee «25 €» y `2025-05-23` se lee «23 may 2025». El valor
+ *    crudo es lo que se guardará, pero lo que hay que comparar con el PDF es
+ *    lo que el PDF dice, y el PDF dice «25 euros», no «25.00».
+ *  - Solo los valores CORTOS van en `.cifra` de marcador. «Autorización de
+ *    acceso a pista» a 30 px en condensada parecía un titular y tapaba la
+ *    cita, que es lo que de verdad hay que leer aquí.
+ */
+function valorLegible(campo: string, valor: string): { texto: string; cifra: boolean } {
+  if (campo === 'fee_eur' || campo.endsWith('.surcharge_eur')) {
+    return { texto: formatEur(valor), cifra: true };
+  }
+  if (campo.startsWith('deadline.') && /^\d{4}-\d{2}-\d{2}$/.test(valor)) {
+    return { texto: formatDateEs(valor), cifra: true };
+  }
+  return { texto: valor, cifra: valor.length <= 14 };
 }
 
 const MOTIVO_SIN_DATOS: Record<string, string> = {
@@ -307,7 +330,7 @@ function BandaCircular({
       <div className="flex min-w-0 flex-col gap-2 border-b pb-2">
         <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <h2 className="min-w-0 text-lg break-words sm:text-xl">
-            {extraccion.titulo ?? 'Circular sin título'}
+            {extraccion.titulo ? titular(extraccion.titulo) : 'Circular sin título'}
           </h2>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" asChild>
@@ -376,7 +399,12 @@ function BandaCircular({
                   <Rotulos
                     disposicion="linea"
                     datos={[
-                      [etiquetaDeCampo(campo.campo), campo.valor || 'sin valor'],
+                      [
+                        etiquetaDeCampo(campo.campo),
+                        campo.valor
+                          ? valorLegible(campo.campo, campo.valor).texto
+                          : 'sin valor',
+                      ],
                     ]}
                   />
                   <p className="medida text-xs break-words text-danger">
@@ -405,6 +433,7 @@ function FilaPropuesta({
   ) => Promise<void>;
 }) {
   const pendiente = propuesta.estado === 'pendiente';
+  const valor = valorLegible(propuesta.campo, propuesta.valorPropuesto);
 
   return (
     <li className="flex min-w-0 flex-wrap items-start gap-x-4 gap-y-2 py-3">
@@ -415,8 +444,8 @@ function FilaPropuesta({
           leía plana y había que buscar el dato en cada fila.
         */}
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <span className="cifra shrink-0 text-3xl break-all">
-            {propuesta.valorPropuesto}
+          <span className={valor.cifra ? 'cifra shrink-0 text-3xl' : 'font-medium'}>
+            {valor.texto}
           </span>
           <span className="text-xs text-muted-foreground">
             {etiquetaDeCampo(propuesta.campo)}
