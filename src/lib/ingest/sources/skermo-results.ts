@@ -3,9 +3,11 @@ import type { AnyNode, Element } from 'domhandler';
 import { z } from 'zod';
 import {
   eventCompetition as eventCompetitionTable,
+  eventDocument as eventDocumentTable,
   event as eventTable,
   athlete as athleteTable,
   ingestQuarantine,
+  liveSource as liveSourceTable,
   result as resultTable,
 } from '@/db/schema';
 import { sha256 } from '../../utils';
@@ -111,7 +113,14 @@ export function skermoNationalRankingUrl(
   return `${SKERMO_BASE_URL}/ranking-rfee/public/${code}?${qs.toString()}`;
 }
 
-/** Ficha de un tirador en el ranking nacional. Es donde sí sale la licencia. */
+/**
+ * Ficha de un tirador en el ranking nacional. Es donde sí sale la licencia.
+ *
+ * CUIDADO: así, sin el contexto del ranking, Skermo responde **302** y una
+ * página sin tabla. Solo sirve como respaldo. Lo que funciona es el href que
+ * publica la propia fila (`SkermoNationalRankingRow.athleteUrl`), que lleva
+ * `seasonId`, `weapon`, `category`, `gender` y `position`.
+ */
 export function skermoRankingAthleteUrl(code: string, skermoAthleteId: string): string {
   return `${SKERMO_BASE_URL}/ranking-rfee/public/${code}/${skermoAthleteId}?setLang=es`;
 }
@@ -297,6 +306,15 @@ export type SkermoResultsIndexRow = {
   city: string | null;
   country: string | null;
   documents: { title: string; url: string }[];
+  /**
+   * Directos y resultados en vivo que Skermo enlaza desde el índice.
+   *
+   * Son enlaces a Engarde (`engarde-service.com/tournament/rfee/...`), que
+   * es donde la RFEE publica poules, cuadros y pista. Estaban a la vista en
+   * la misma tabla —34 en la temporada 2025-2026— y no se leían: la tabla
+   * `live_source` se había pensado para que los pegara el admin a mano.
+   */
+  liveLinks: { platform: string; kind: string; url: string; label: string }[];
 };
 
 /**
@@ -345,6 +363,34 @@ export function parseSkermoResultsIndex(
         });
       });
 
+    /**
+     * Enlaces al directo. El `<a>` solo lleva un icono, sin texto, así que la
+     * etiqueta se pone aquí; la plataforma se deduce del dominio y no se
+     * inventa ninguna que no se reconozca.
+     */
+    const liveLinks: SkermoResultsIndexRow['liveLinks'] = [];
+    $(row.row)
+      .find('a[href]')
+      .each((_, a) => {
+        const url = $(a).attr('href');
+        if (!url || !url.startsWith('http')) return;
+        if (/engarde-service\.com/i.test(url)) {
+          liveLinks.push({
+            platform: 'engarde',
+            kind: 'resultados',
+            url,
+            label: 'Resultados en Engarde',
+          });
+        } else if (/fencingtimelive\.com/i.test(url)) {
+          liveLinks.push({
+            platform: 'fencingtimelive',
+            kind: 'resultados',
+            url,
+            label: 'Resultados en Fencing Time Live',
+          });
+        }
+      });
+
     const { city, country } = parseLocation(pickCell($, row, 'Población'), {
       // Misma convención que el calendario: lo extranjero viene marcado con el
       // código de país entre paréntesis, así que lo no marcado es español.
@@ -366,6 +412,7 @@ export function parseSkermoResultsIndex(
       city,
       country,
       documents,
+      liveLinks,
     };
   });
 
@@ -540,12 +587,26 @@ export function parseSkermoNationalRanking(
     const positionText = pickCell($, row, 'Posición');
     const position = positionText ? Number.parseInt(positionText, 10) : null;
 
+    /**
+     * Se usa el href TAL CUAL lo publica Skermo, no uno reconstruido.
+     *
+     * Motivo, comprobado en vivo: `/ranking-rfee/public/RFEE/366?setLang=es`
+     * a secas devuelve **302** y una página sin tabla. La ficha solo se
+     * sirve con todo el contexto del ranking
+     * (`?seasonId=17&weapon=E&category=6&gender=W&position=1`), que es justo
+     * lo que ya viene en el enlace de la fila. Reconstruir la URL costó una
+     * ejecución entera con 150 fichas pedidas y 0 licencias resueltas.
+     */
+    const athleteUrl = href
+      ? new URL(href, SKERMO_BASE_URL).toString()
+      : skermoAthleteId
+        ? skermoRankingAthleteUrl(options.federationCode, skermoAthleteId)
+        : null;
+
     return {
       position: position !== null && Number.isFinite(position) ? position : null,
       skermoAthleteId,
-      athleteUrl: skermoAthleteId
-        ? skermoRankingAthleteUrl(options.federationCode, skermoAthleteId)
-        : null,
+      athleteUrl,
       sourceAthleteName: [firstName, lastName].filter(Boolean).join(' ').trim(),
       sourceFirstName: firstName,
       sourceLastName: lastName,
@@ -702,6 +763,10 @@ export type SkermoResultsIngestStats = {
   unmatchedAthletes: number;
   competitionsFetched: number;
   competitionsUnmatched: number;
+  /** PDFs de clasificación del índice que se han enlazado a su torneo. */
+  documentosEnlazados: number;
+  /** Directos de Engarde enlazados a su torneo. */
+  directosEnlazados: number;
   note: string | null;
 };
 
@@ -797,6 +862,8 @@ export async function ingestSkermoResults(
     unmatchedAthletes: 0,
     competitionsFetched: 0,
     competitionsUnmatched: 0,
+    documentosEnlazados: 0,
+    directosEnlazados: 0,
     note: null,
   };
 
@@ -857,6 +924,19 @@ export async function ingestSkermoResults(
     }
   }
 
+  /**
+   * DOCUMENTOS Y DIRECTOS DEL ÍNDICE.
+   *
+   * Va aquí arriba, ANTES del tope de descargas y antes del atajo de "no hay
+   * clasificaciones nuevas", porque no cuesta ni una petición: los enlaces ya
+   * vienen en el índice que se acaba de descargar. Estaban parseados y se
+   * tiraban: 217 PDFs de clasificación y 34 directos de Engarde de la
+   * temporada 2025-2026 que nadie llegaba a ver.
+   */
+  const enlazados = await enlazarDocumentosYDirectos(index.rows);
+  stats.documentosEnlazados = enlazados.documentos;
+  stats.directosEnlazados = enlazados.directos;
+
   const pending = withResults
     .filter((r) => force || !alreadyIngested.has(r.competitionId as string))
     // De la más reciente a la más antigua: si hay tope, que entre lo de ahora.
@@ -864,7 +944,13 @@ export async function ingestSkermoResults(
     .slice(0, maxCompetitions);
 
   if (pending.length === 0) {
-    stats.note = [stats.note, 'No hay clasificaciones nuevas que descargar.']
+    stats.note = [
+      stats.note,
+      'No hay clasificaciones nuevas que descargar.',
+      enlazados.documentos + enlazados.directos > 0
+        ? `${enlazados.documentos} documentos y ${enlazados.directos} directos enlazados.`
+        : null,
+    ]
       .filter(Boolean)
       .join(' ');
     return stats;
@@ -1146,6 +1232,12 @@ export async function ingestSkermoResults(
     stats.competitionsUnmatched > 0
       ? `${stats.competitionsUnmatched} pruebas no se han podido casar con el calendario`
       : null,
+    stats.documentosEnlazados > 0
+      ? `${stats.documentosEnlazados} PDFs de clasificación enlazados a su torneo`
+      : null,
+    stats.directosEnlazados > 0
+      ? `${stats.directosEnlazados} directos de Engarde enlazados`
+      : null,
   ]
     .filter(Boolean)
     .join('. ');
@@ -1180,4 +1272,162 @@ export async function fetchSkermoNationalRanking(params: {
   const { body } = await fetchText(url, { timeoutMs: 60_000 });
   const parsed = parseSkermoNationalRanking(body, { federationCode });
   return { rows: parsed.rows, rowsSeen: parsed.rowsSeen, sourceUrl: url };
+}
+
+/**
+ * Cuelga de su torneo los PDFs de clasificación y los directos de Engarde que
+ * publica el índice de resultados.
+ *
+ * Por qué existe: `parseSkermoResultsIndex` ya sacaba los documentos, pero
+ * nadie los escribía. En la temporada 2025-2026 eso son 217 PDFs de
+ * clasificación tirados a la basura en cada pasada. Los directos de Engarde
+ * ni siquiera se leían, y la tabla `live_source` llevaba vacía desde el
+ * principio esperando a que alguien los pegase a mano.
+ *
+ * NO cuesta ninguna petición HTTP: el índice ya está descargado. Cuesta dos
+ * consultas a la base, una de lectura y otra de escritura por lote.
+ *
+ * Se enlaza al EVENTO, no a la prueba: un mismo PDF suele traer la
+ * clasificación de varias pruebas del mismo torneo, y el directo de Engarde
+ * es del torneo entero. Emparejar de más aquí no rompe nada —es un enlace,
+ * no un resultado— pero emparejar mal sí, así que se usa exactamente el mismo
+ * criterio estricto que para los resultados: fecha + arma + género +
+ * categoría + modalidad, y si hay varios candidatos, el nombre. Si sigue
+ * habiendo duda, no se enlaza.
+ */
+async function enlazarDocumentosYDirectos(
+  filas: SkermoResultsIndexRow[],
+): Promise<{ documentos: number; directos: number }> {
+  const conAdjuntos = filas.filter(
+    (r) => r.date && (r.documents.length > 0 || r.liveLinks.length > 0),
+  );
+  if (conAdjuntos.length === 0) return { documentos: 0, directos: 0 };
+
+  const { db } = await import('@/db');
+  const { sql, eq } = await import('drizzle-orm');
+
+  const fechas = [...new Set(conAdjuntos.map((r) => r.date as string))];
+
+  const calendario = await db
+    .select({
+      competitionId: eventCompetitionTable.id,
+      eventId: eventCompetitionTable.eventId,
+      weapon: eventCompetitionTable.weapon,
+      gender: eventCompetitionTable.gender,
+      category: eventCompetitionTable.category,
+      format: eventCompetitionTable.format,
+      competitionDate: eventCompetitionTable.competitionDate,
+      startDate: eventTable.startDate,
+      eventName: eventTable.name,
+    })
+    .from(eventCompetitionTable)
+    .innerJoin(eventTable, eq(eventTable.id, eventCompetitionTable.eventId))
+    .where(
+      sql`to_char(coalesce(${eventCompetitionTable.competitionDate}, ${eventTable.startDate}), 'YYYY-MM-DD') in (${sql.join(
+        fechas.map((f) => sql`${f}`),
+        sql`, `,
+      )})`,
+    );
+
+  const porClave = new Map<string, typeof calendario>();
+  for (const fila of calendario) {
+    const fecha = toIsoDate(fila.competitionDate) ?? toIsoDate(fila.startDate);
+    if (!fecha) continue;
+    const clave = competitionMatchKey({
+      date: fecha,
+      weapon: fila.weapon,
+      gender: fila.gender,
+      category: fila.category,
+      format: fila.format,
+    });
+    const lista = porClave.get(clave) ?? [];
+    lista.push(fila);
+    porClave.set(clave, lista);
+  }
+
+  const documentos: (typeof eventDocumentTable.$inferInsert)[] = [];
+  const directos: (typeof liveSourceTable.$inferInsert)[] = [];
+  const vistosDoc = new Set<string>();
+  const vistosDirecto = new Set<string>();
+
+  for (const fila of conAdjuntos) {
+    if (!fila.weapon || !fila.gender || !fila.category || !fila.format) continue;
+
+    const candidatos =
+      porClave.get(
+        competitionMatchKey({
+          date: fila.date as string,
+          weapon: fila.weapon,
+          gender: fila.gender,
+          category: fila.category,
+          format: fila.format,
+        }),
+      ) ?? [];
+
+    let elegido = candidatos.length === 1 ? candidatos[0] : undefined;
+    if (!elegido && candidatos.length > 1) {
+      const buscado = normalizeLabel(fila.name);
+      elegido = candidatos.find((c) => normalizeLabel(c.eventName) === buscado);
+    }
+    // Ante la duda no se enlaza: un PDF colgado del torneo equivocado es peor
+    // que un torneo sin PDF.
+    if (!elegido) continue;
+
+    for (const doc of fila.documents) {
+      const clave = `${elegido.eventId}|${doc.url}`;
+      if (vistosDoc.has(clave)) continue;
+      vistosDoc.add(clave);
+      documentos.push({
+        eventId: elegido.eventId,
+        title: doc.title,
+        url: doc.url,
+        kind: 'clasificacion',
+      });
+    }
+
+    for (const enlace of fila.liveLinks) {
+      const clave = `${elegido.eventId}|${enlace.url}`;
+      if (vistosDirecto.has(clave)) continue;
+      vistosDirecto.add(clave);
+      directos.push({
+        eventId: elegido.eventId,
+        eventCompetitionId: null,
+        platform: enlace.platform,
+        kind: enlace.kind,
+        url: enlace.url,
+        label: enlace.label,
+        automatic: true,
+      });
+    }
+  }
+
+  let escritosDoc = 0;
+  for (const lote of chunk(documentos, 200)) {
+    const filasNuevas = await db
+      .insert(eventDocumentTable)
+      .values(lote)
+      .onConflictDoNothing({
+        target: [eventDocumentTable.eventId, eventDocumentTable.url],
+      })
+      .returning({ id: eventDocumentTable.id });
+    escritosDoc += filasNuevas.length;
+  }
+
+  let escritosDirecto = 0;
+  for (const lote of chunk(directos, 200)) {
+    const filasNuevas = await db
+      .insert(liveSourceTable)
+      .values(lote)
+      .onConflictDoNothing({
+        target: [
+          liveSourceTable.eventId,
+          liveSourceTable.eventCompetitionId,
+          liveSourceTable.url,
+        ],
+      })
+      .returning({ id: liveSourceTable.id });
+    escritosDirecto += filasNuevas.length;
+  }
+
+  return { documentos: escritosDoc, directos: escritosDirecto };
 }

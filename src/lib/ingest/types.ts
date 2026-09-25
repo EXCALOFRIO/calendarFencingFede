@@ -77,6 +77,30 @@ export const normalizedCompetitionSchema = z.object({
   scratchTime: z.string().nullable(),
   startTime: z.string().nullable(),
   registrationCount: z.number().int().nonnegative().nullable(),
+  /**
+   * Lista NOMINAL de inscritos, cuando la fuente la publica.
+   *
+   * `null` = **la fuente no publica la lista** (la FIE). `[]` = la publica y
+   * no hay nadie inscrito todavía. La diferencia no es una sutileza: con
+   * `null` no se toca nada, y con `[]` se dan de baja los que hubiera, que es
+   * lo correcto cuando la prueba se ha quedado sin inscritos.
+   *
+   * Nunca lleva licencia desde Skermo: su pantalla de inscritos solo da
+   * nombre y, en equipos, el código del equipo. El campo existe porque el
+   * emparejado automático depende de él y alguna fuente futura sí podría
+   * traerlo.
+   */
+  registrations: z
+    .array(
+      z.object({
+        sourceAthleteName: z.string().min(2, 'Un inscrito sin nombre no sirve'),
+        sourceTeam: z.string(),
+        sourceLicense: z.string().nullable().optional(),
+        sourceClub: z.string().nullable().optional(),
+      }),
+    )
+    .nullable()
+    .default(null),
   /** Nunca se inventa: si la fuente no lo publica, va a null. */
   feeEur: z.string().nullable(),
   sourceId: z.string().nullable(),

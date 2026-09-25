@@ -263,3 +263,41 @@ describe('normalización de licencias', () => {
     expect(normalizeLicense('SGL 00510')).toBe('SGL00510');
   });
 });
+
+/**
+ * Documentos y directos del índice de resultados.
+ *
+ * Estaban parseados y se tiraban: nadie los escribía en la base. Son 217
+ * PDFs de clasificación y 34 enlaces a Engarde en la temporada 2025-2026,
+ * todos en el HTML que ya se descargaba.
+ */
+describe('adjuntos del índice de resultados', () => {
+  const { rows } = parseSkermoResultsIndex(INDICE, { federationCode: 'RFEE' });
+
+  it('recoge los PDFs de clasificación de las filas que los publican', () => {
+    const conPdf = rows.filter((r) => r.documents.length > 0);
+    expect(conPdf.length).toBeGreaterThan(150);
+    expect(
+      rows.flatMap((r) => r.documents).every((d) => d.url.endsWith('.pdf')),
+    ).toBe(true);
+  });
+
+  it('recoge los directos de Engarde, que antes no se leían', () => {
+    const directos = rows.flatMap((r) => r.liveLinks);
+    expect(directos.length).toBeGreaterThan(0);
+    expect(directos.every((e) => e.url.startsWith('https://'))).toBe(true);
+    expect(new Set(directos.map((e) => e.platform))).toContain('engarde');
+    // El <a> solo lleva un icono: la etiqueta la ponemos nosotros.
+    expect(directos[0].label).toBe('Resultados en Engarde');
+  });
+
+  it('no confunde el directo de Engarde con la clasificación de Skermo', () => {
+    // Los dos enlaces viven en la misma celda y el de Engarde contiene
+    // "/competition/" en algunas variantes: si colara, esa prueba se quedaría
+    // sin clasificación.
+    for (const r of rows) {
+      expect(r.liveLinks.every((e) => !e.url.includes('app.skermo.org'))).toBe(true);
+      expect(r.documents.every((d) => d.url.includes('app.skermo.org'))).toBe(true);
+    }
+  });
+});

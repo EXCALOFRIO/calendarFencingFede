@@ -122,6 +122,23 @@ const sinPais = await sql`
 tabla('Países sin huso completo', sinPais as Record<string, unknown>[]);
 
 const ranking = await sql`
-  select count(*)::int as filas from ranking_entry
-`.catch(() => [{ filas: 'tabla inexistente' }]);
-tabla('Ranking', ranking as Record<string, unknown>[]);
+  select season_label as temporada,
+         count(*)::int as filas,
+         count(distinct skermo_athlete_id)::int as tiradores,
+         count(source_license)::int as filas_con_licencia,
+         count(athlete_id)::int as emparejadas,
+         count(*) filter (where athlete_id is null)::int as en_cola,
+         count(position)::int as clasificados
+  from official_ranking_entry
+  group by 1
+`;
+tabla('Ranking oficial de la RFEE', ranking as Record<string, unknown>[]);
+
+const inscritos = await sql`
+  select count(*)::int as filas,
+         count(distinct event_competition_id)::int as pruebas,
+         count(athlete_id)::int as emparejados,
+         count(*) filter (where withdrawn_at is not null)::int as retirados
+  from competition_registration
+`;
+tabla('Inscritos publicados por la fuente', inscritos as Record<string, unknown>[]);

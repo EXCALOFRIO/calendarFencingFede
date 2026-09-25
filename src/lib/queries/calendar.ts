@@ -2,7 +2,9 @@ import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from 'd
 import { cache } from 'react';
 import { db } from '@/db';
 import {
+  athlete,
   club,
+  competitionRegistration,
   deadlineRule,
   event,
   eventCompetition,
@@ -605,3 +607,124 @@ export const contarPruebas = cache(async (): Promise<number> => {
     );
   return fila?.n ?? 0;
 });
+
+/**
+ * Una fila de la lista de inscritos que PUBLICA la fuente oficial.
+ *
+ * Es información distinta de `inscritosDelEvento`, que son las inscripciones
+ * tramitadas por esta aplicación. Las dos tienen que verse por separado y
+ * etiquetadas, porque responden a preguntas distintas: «lo he pedido yo aquí»
+ * frente a «ya figuro en la lista oficial de Skermo, me haya apuntado quien
+ * me haya apuntado». Justo el caso que pide el usuario: al tirador lo apunta
+ * su club y él no se entera.
+ */
+export type InscritoPublicado = {
+  competitionId: string;
+  /** El nombre tal cual lo publica la fuente. No se retoca ni se acentúa. */
+  nombre: string;
+  /** Código de equipo en pruebas por equipos ("CCC-M 1"); null si individual. */
+  equipo: string | null;
+  club: string | null;
+  /**
+   * Id de nuestro tirador cuando la fila está emparejada. Hoy Skermo no
+   * publica la licencia en esta pantalla, así que casi siempre es `null` y lo
+   * resuelve el admin. Nunca se empareja por nombre.
+   */
+  athleteId: string | null;
+  /** `true` si es uno de los tiradores que gestiona quien está mirando. */
+  esMio: boolean;
+  /** Fecha en la que dejó de figurar en la lista oficial, si ha dejado. */
+  retiradoEn: Date | null;
+  /** Fuente que lo publica, para poder decirlo en pantalla. */
+  fuente: string;
+  sourceUrl: string | null;
+};
+
+/**
+ * Lista de inscritos publicada por la fuente oficial, para todas las pruebas
+ * de un torneo.
+ *
+ * Una sola consulta para el torneo entero: el driver de Neon habla por HTTP y
+ * una consulta por prueba serían ocho viajes de red para abrir una ficha.
+ *
+ * `athleteIdsPropios` es opcional y sirve solo para marcar cuáles son tuyos
+ * sin tener que cruzar nada en el cliente. Va como parámetro y no se deduce de
+ * la sesión aquí para que esta función siga siendo una consulta pura.
+ */
+export async function inscritosPublicados(
+  eventId: string,
+  opciones: { athleteIdsPropios?: string[]; incluirRetirados?: boolean } = {},
+): Promise<InscritoPublicado[]> {
+  const propios = new Set(opciones.athleteIdsPropios ?? []);
+
+  const filas = await db
+    .select({
+      competitionId: competitionRegistration.eventCompetitionId,
+      nombre: competitionRegistration.sourceAthleteName,
+      equipo: competitionRegistration.sourceTeam,
+      clubPublicado: competitionRegistration.sourceClub,
+      athleteId: competitionRegistration.athleteId,
+      retiradoEn: competitionRegistration.withdrawnAt,
+      fuente: competitionRegistration.source,
+      sourceUrl: competitionRegistration.sourceUrl,
+      clubNombre: club.name,
+    })
+    .from(competitionRegistration)
+    .innerJoin(
+      eventCompetition,
+      eq(competitionRegistration.eventCompetitionId, eventCompetition.id),
+    )
+    .leftJoin(athlete, eq(competitionRegistration.athleteId, athlete.id))
+    .leftJoin(club, eq(athlete.clubId, club.id))
+    .where(
+      opciones.incluirRetirados
+        ? eq(eventCompetition.eventId, eventId)
+        : and(
+            eq(eventCompetition.eventId, eventId),
+            isNull(competitionRegistration.withdrawnAt),
+          ),
+    )
+    .orderBy(asc(competitionRegistration.sourceAthleteName));
+
+  return filas.map((f) => ({
+    competitionId: f.competitionId,
+    nombre: f.nombre,
+    equipo: f.equipo === '' ? null : f.equipo,
+    club: f.clubPublicado ?? f.clubNombre ?? null,
+    athleteId: f.athleteId,
+    esMio: f.athleteId !== null && propios.has(f.athleteId),
+    retiradoEn: f.retiradoEn,
+    fuente: f.fuente,
+    sourceUrl: f.sourceUrl,
+  }));
+}
+
+/**
+ * Cuántos inscritos publica la fuente en cada prueba de un torneo.
+ *
+ * Sirve para pintar el contador sin traerse los nombres, que es lo que
+ * interesa en la rejilla del calendario.
+ */
+export async function contarInscritosPublicados(
+  eventId: string,
+): Promise<Record<string, number>> {
+  const filas = await db
+    .select({
+      competitionId: competitionRegistration.eventCompetitionId,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(competitionRegistration)
+    .innerJoin(
+      eventCompetition,
+      eq(competitionRegistration.eventCompetitionId, eventCompetition.id),
+    )
+    .where(
+      and(
+        eq(eventCompetition.eventId, eventId),
+        isNull(competitionRegistration.withdrawnAt),
+      ),
+    )
+    .groupBy(competitionRegistration.eventCompetitionId);
+
+  return Object.fromEntries(filas.map((f) => [f.competitionId, f.n]));
+}

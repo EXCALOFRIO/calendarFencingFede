@@ -12,6 +12,7 @@ import { recalcularEnlaces } from './enlazar';
 import { fetchText } from './fetcher';
 import { fetchEfcCalendar } from './sources/efc';
 import { currentFieSeason, fetchFieSeason } from './sources/fie';
+import { ingestRankingRfee } from './sources/ranking-rfee';
 import { fetchOfficialDocuments } from './sources/rfee-wp';
 import { parseSkermoCalendar, skermoCalendarUrl } from './sources/skermo';
 import { ingestSkermoResults } from './sources/skermo-results';
@@ -25,6 +26,7 @@ export const INGEST_SOURCES = [
   'fie',
   'efc',
   'rfee_wp',
+  'skermo_ranking',
 ] as const;
 
 export type IngestSource = (typeof INGEST_SOURCES)[number];
@@ -46,6 +48,7 @@ export const SOURCE_DESCRIPTION: Record<IngestSource, string> = {
   fie: 'Calendario internacional de la FIE (API JSON pública)',
   efc: 'Circuito europeo de la EFC',
   rfee_wp: 'Circulares oficiales de esgrima.es',
+  skermo_ranking: 'Ranking nacional oficial de la RFEE en Skermo',
 };
 
 /**
@@ -137,7 +140,7 @@ export async function runIngest(
      * Si falla, la ingestión NO falla: el calendario con duplicados sigue
      * siendo un calendario correcto; se anota y ya está.
      */
-    if (source !== 'rfee_wp') {
+    if (source !== 'rfee_wp' && source !== 'skermo_ranking') {
       try {
         const enlaces = await recalcularEnlaces();
         const partes = [
@@ -215,6 +218,8 @@ async function dispatch(source: IngestSource, runId: string): Promise<Dispatched
       return ingestEfc();
     case 'rfee_wp':
       return ingestOfficialDocuments();
+    case 'skermo_ranking':
+      return ingestRanking(runId);
   }
 }
 
@@ -335,6 +340,30 @@ async function ingestEfc(): Promise<Dispatched> {
     status: 'parcial',
     itemsSeen: outcome.rowsSeen,
     note: outcome.unavailableReason,
+  };
+}
+
+/**
+ * Ranking nacional oficial de la RFEE.
+ *
+ * Fuente propia y no un apéndice de `skermo_rfee` por dos motivos: son 60
+ * peticiones (una por arma × género × categoría) más las fichas de tirador, y
+ * si Skermo va lento no puede arrastrar consigo al calendario, que es la
+ * pantalla principal de la aplicación.
+ *
+ * No recalcula enlaces de eventos —no toca el calendario—, así que el runner
+ * se salta ese paso para esta fuente.
+ */
+async function ingestRanking(runId: string): Promise<Dispatched> {
+  const stats = await ingestRankingRfee(runId);
+  return {
+    status: stats.itemsSeen > 0 ? 'ok' : 'parcial',
+    itemsSeen: stats.itemsSeen,
+    itemsCreated: stats.itemsCreated,
+    itemsUpdated: stats.itemsUpdated,
+    itemsUnchanged: stats.itemsUnchanged,
+    itemsQuarantined: stats.itemsQuarantined,
+    note: stats.note,
   };
 }
 

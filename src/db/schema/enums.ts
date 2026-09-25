@@ -37,13 +37,21 @@ export const categoryEnum = pgEnum('category_code', [
 
 export const eventTypeEnum = pgEnum('competition_format', ['INDIVIDUAL', 'EQUIPOS']);
 
-/** Fuentes de ingestión. Una por scraper, para poder aislar fallos. */
+/**
+ * Fuentes de ingestión. Una por scraper, para poder aislar fallos.
+ *
+ * `skermo_ranking` no produce eventos de calendario: alimenta
+ * `official_ranking_entry` con el ranking nacional de la RFEE. Va aparte y no
+ * dentro de `skermo_rfee` porque son 60 peticiones (3 armas × 2 géneros × 10
+ * categorías) y no tienen por qué arrastrar al calendario si Skermo tarda.
+ */
 export const sourceEnum = pgEnum('event_source', [
   'skermo_rfee',
   'skermo_regional',
   'fie',
   'efc',
   'rfee_wp',
+  'skermo_ranking',
 ]);
 
 /**

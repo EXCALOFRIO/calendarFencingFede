@@ -159,8 +159,109 @@ type RawRow = {
   location: LabelMap;
   documents: { title: string; url: string; kind: string | null }[];
   registrationCount: number | null;
+  registrations: { sourceAthleteName: string; sourceTeam: string }[];
   notes: string | null;
 };
+
+/**
+ * Lee la lista NOMINAL de inscritos de la pestaña "Inscritos" del modal.
+ *
+ * Marcado real, comprobado sobre las 425 competiciones del calendario de la
+ * RFEE 2026-2027:
+ *
+ * - Individuales (407 pruebas): una sola columna, `<th>Nombre <b>(12)</b></th>`.
+ *   El número entre paréntesis es el total, y es de donde ya salía
+ *   `registrationCount`.
+ * - Equipos (18 pruebas): dos columnas, `Nombre` y `Equipos`, y **sin número
+ *   en la cabecera**. De ahí que 18 pruebas se quedaran sin nº de inscritos:
+ *   no es que no lo publique, es que hay que contar las filas.
+ *
+ * La tabla anidada tiene `id="resultsInner"` DUPLICADO en todo el documento,
+ * así que no vale como selector: se busca dentro del contenedor del modal.
+ */
+function readRegistrations(
+  $: cheerio.CheerioAPI,
+  container: cheerio.Cheerio<AnyNode>,
+): { sourceAthleteName: string; sourceTeam: string; sourceClub: string | null }[] {
+  const table = container.find('table').first();
+  if (table.length === 0) return [];
+
+  /** Índice de la columna "Equipos", si la prueba es por equipos. */
+  const headers = table
+    .find('thead th')
+    .toArray()
+    .map((th) => normalizeLabel($(th).text()));
+  const teamColumn = headers.findIndex((h) => h.startsWith('EQUIPO'));
+
+  const out: {
+    sourceAthleteName: string;
+    sourceTeam: string;
+    sourceClub: string | null;
+  }[] = [];
+  const vistos = new Set<string>();
+
+  table.find('tbody tr').each((_, tr) => {
+    const cells = $(tr).find('td').toArray();
+    if (cells.length === 0) return;
+
+    /**
+     * El estado vacío de Skermo es UNA FILA MÁS de la tabla:
+     * `<tr><td colspan="2" class="text-center">No se han encontrado
+     * inscripciones</td></tr>`. Sin este filtro, las 407 pruebas sin
+     * inscritos "tenían" un inscrito llamado "No se han encontrado
+     * inscripciones" —lo cazó el test que compara la lista con el número de
+     * la cabecera—. Se detecta por el `colspan`, que es estructural, y no por
+     * el texto, que cambia con el idioma de la página.
+     */
+    if (cells.some((td) => $(td).attr('colspan'))) return;
+
+    // Skermo mete la numeración de la vista móvil DENTRO de la celda del
+    // nombre (`<span class="hidden-lg hidden-md">3. </span>`): fuera.
+    const nameCell = $(cells[0]).clone();
+    nameCell.find('[class*="hidden-lg"]').remove();
+    let sourceAthleteName = nameCell.text().replace(/\s+/g, ' ').trim();
+    if (!sourceAthleteName) return;
+
+    const sourceTeam =
+      teamColumn > 0 && cells[teamColumn]
+        ? $(cells[teamColumn]).text().replace(/\s+/g, ' ').trim()
+        : '';
+
+    /**
+     * Fila de TOTALES al pie de las tablas por equipos:
+     * `<tr><td><b>7</b></td><td><b>(2)</b></td></tr>` — 7 tiradores en 2
+     * equipos. No lleva `colspan`, así que el filtro anterior no la caza, y
+     * sin esto entraba un "inscrito" llamado "7".
+     */
+    if (/^\d+$/.test(sourceAthleteName) || /^\(\d+\)$/.test(sourceTeam)) return;
+
+    /**
+     * Tiradores EXTERNOS. Skermo los agrupa bajo una cabecera
+     * "EXTERNAS / EXTERNOS" y les pone detrás del nombre el código de su
+     * federación: `DARIA STANCIULESCU | ROU`. Si no se separa, el nombre
+     * guardado lleva pegado un " | ROU" y ya no se parece al de nadie.
+     *
+     * Este es también el motivo de que el número de la cabecera y la lista no
+     * cuadren: `(80)` cuenta solo a los españoles y la lista trae 82.
+     */
+    let sourceClub: string | null = null;
+    const externo = sourceAthleteName.match(/^(.*?)\s*\|\s*([A-Za-z]{2,3})$/);
+    if (externo && externo[1].trim().length >= 2) {
+      sourceAthleteName = externo[1].trim();
+      sourceClub = externo[2].toUpperCase();
+    }
+
+    // La clave única de la base es (prueba, nombre, equipo): si la fuente
+    // repite la pareja, se queda una. Dos filas idénticas no son dos personas.
+    const clave = `${sourceAthleteName}|${sourceTeam}`;
+    if (vistos.has(clave)) return;
+    vistos.add(clave);
+
+    out.push({ sourceAthleteName, sourceTeam, sourceClub });
+  });
+
+  return out;
+}
 
 function readRows($: cheerio.CheerioAPI): RawRow[] {
   const seen = new Set<string>();
@@ -197,6 +298,7 @@ function readRows($: cheerio.CheerioAPI): RawRow[] {
     // El total de inscritos viene entre paréntesis en el <th>.
     const countText = registrations.find('thead th').text();
     const countMatch = countText.match(/\((\d+)\)/);
+    const listaInscritos = readRegistrations($, registrations);
 
     // "Observaciones" es texto libre; se coge lo que haya tras esa cabecera.
     let notes: string | null = null;
@@ -225,7 +327,17 @@ function readRows($: cheerio.CheerioAPI): RawRow[] {
       general: labelMap($, general),
       location: labelMap($, location),
       documents,
-      registrationCount: countMatch ? Number.parseInt(countMatch[1], 10) : null,
+      /**
+       * Si la cabecera no trae el número —le pasa a las 18 pruebas por
+       * equipos— se cuenta la lista. No es inventar un dato: es contar el que
+       * la fuente publica nombre a nombre en la misma pantalla.
+       */
+      registrationCount: countMatch
+        ? Number.parseInt(countMatch[1], 10)
+        : listaInscritos.length > 0
+          ? listaInscritos.length
+          : null,
+      registrations: listaInscritos,
       notes,
     });
   });
@@ -307,6 +419,11 @@ export function parseSkermoCalendar(
       scratchTime: pick(general, 'Scratch'),
       startTime: pick(general, 'Hora inicio'),
       registrationCount: row.registrationCount,
+      /**
+       * La lista nominal. Viene en el mismo HTML, así que no cuesta ni una
+       * petición más: 2.176 nombres en la pasada del calendario de la RFEE.
+       */
+      registrations: row.registrations,
       // Skermo no publica cuotas en ninguna parte: null, no un importe supuesto.
       feeEur: null,
       sourceId: row.skermoId,
@@ -347,6 +464,10 @@ export function parseSkermoCalendar(
 
     const key = eventKey(row.name, city, dateRange.startDate);
     const existing = grouped.get(key);
+    const officialSiteRaw = pick(location, 'Enlace');
+    const officialSite = officialSiteRaw?.startsWith('http') ? officialSiteRaw : null;
+    const venue = pick(location, 'Lugar');
+    const venueAddress = pick(location, 'Dirección');
 
     if (existing) {
       // Un torneo con varias pruebas: se amplía el rango de fechas al conjunto.
@@ -356,6 +477,23 @@ export function parseSkermoCalendar(
       if (dateRange.endDate > existing.event.endDate) {
         existing.event.endDate = dateRange.endDate;
       }
+      /**
+       * Los datos de sede se RELLENAN, no se pisan.
+       *
+       * La pestaña "Ubicación" la cumplimenta el organizador prueba a prueba,
+       * así que dentro del mismo torneo unas filas la traen y otras no. Quedarse
+       * con lo que dijera la primera fila significaba tirar el pabellón entero
+       * si esa fila no lo tenía. Hoy no pasa en el calendario de la RFEE
+       * (comprobado: 0 torneos lo perderían), pero es un accidente de cómo
+       * vienen ordenadas las filas, no una garantía de la fuente.
+       */
+      existing.event.venue ??= venue;
+      existing.event.venueAddress ??= venueAddress;
+      existing.event.city ??= city;
+      existing.event.country ??= country;
+      existing.event.timezone ??= timezoneForCountry(country);
+      existing.event.officialSite ??= officialSite;
+      existing.event.notes ??= row.notes;
       existing.event.competitions.push(competition as unknown as NormalizedCompetition);
       for (const doc of row.documents) {
         if (!existing.event.documents.some((d) => d.url === doc.url)) {
@@ -365,8 +503,6 @@ export function parseSkermoCalendar(
       continue;
     }
 
-    const officialSite = pick(location, 'Enlace');
-
     grouped.set(key, {
       event: {
         source: options.source,
@@ -375,12 +511,12 @@ export function parseSkermoCalendar(
         name: row.name,
         startDate: dateRange.startDate,
         endDate: dateRange.endDate,
-        venue: pick(location, 'Lugar'),
-        venueAddress: pick(location, 'Dirección'),
+        venue,
+        venueAddress,
         city,
         country,
         timezone: timezoneForCountry(country),
-        officialSite: officialSite?.startsWith('http') ? officialSite : null,
+        officialSite,
         // Skermo no publica imágenes de los torneos.
         imageUrl: null,
         circuit,

@@ -1,4 +1,5 @@
 import {
+  date,
   index,
   integer,
   jsonb,
@@ -57,6 +58,101 @@ export const result = pgTable(
     unique('result_key').on(t.eventCompetitionId, t.sourceAthleteName, t.position),
     index('result_athlete_idx').on(t.athleteId),
     index('result_unmatched_idx').on(t.athleteId, t.ingestedAt),
+  ],
+);
+
+/**
+ * RANKING OFICIAL DE LA RFEE, tal y como lo publica Skermo.
+ *
+ * Es una copia fiel de lo que hay en
+ * `app.skermo.org/ranking-rfee/public/RFEE?season&weapon&category&gender`, y
+ * NO se mezcla nunca con `ranking_point` / `ranking_snapshot`, que son el
+ * cálculo interno de esta aplicación. Son dos números distintos y confundirlos
+ * sería grave: el oficial es el que decide convocatorias; el nuestro es el que
+ * se puede auditar puesto a puesto. La pantalla tiene que poder enseñar los
+ * dos y decir cuál es cuál.
+ *
+ * Dos cosas de la fuente condicionan el diseño:
+ *
+ * 1. La tabla del ranking **no publica el número de licencia**: solo puesto,
+ *    nombre, apellidos, fecha de nacimiento, club y puntuación. La licencia
+ *    está una pantalla más adentro, en `/ranking-rfee/public/RFEE/<id>`, a una
+ *    petición por tirador. Por eso `source_license` se rellena a posteriori y
+ *    con presupuesto por ejecución, y `skermo_athlete_id` se guarda siempre:
+ *    es la clave estable que permite no volver a pedir esa ficha nunca más.
+ * 2. `athlete_id` solo se rellena por LICENCIA. Nunca por nombre. Lo que no
+ *    empareja se queda a null y lo resuelve una persona.
+ */
+export const officialRankingEntry = pgTable(
+  'official_ranking_entry',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** "2026-2027", leído del propio selector de temporada de Skermo. */
+    seasonLabel: text('season_label').notNull(),
+    /** El id interno que Skermo usa en el parámetro `season` ("17"). */
+    skermoSeasonId: text('skermo_season_id').notNull(),
+    weapon: weaponEnum('weapon').notNull(),
+    gender: genderEnum('gender').notNull(),
+    category: categoryEnum('category').notNull(),
+    /** "VET50" y "M20" se normalizan a VET y M20; aquí queda el literal. */
+    categoryRaw: text('category_raw').notNull(),
+    /**
+     * Puesto en el ranking, o `null` si el tirador todavía NO está
+     * clasificado.
+     *
+     * Skermo marca a los no clasificados con el puesto **9999**: 59 de los
+     * 259 de espada masculina absoluta, todos con 0 puntos. Es un centinela,
+     * no un puesto, y guardarlo tal cual pondría a medio ranking en el puesto
+     * nueve mil novecientos noventa y nueve. Se traduce a `null`, que es lo
+     * que significa.
+     */
+    position: integer('position'),
+    totalPoints: numeric('total_points', { precision: 10, scale: 2 }),
+    athleteId: uuid('athlete_id').references(() => athlete.id, {
+      onDelete: 'set null',
+    }),
+    /** Clave interna del tirador en Skermo. No es la licencia. */
+    skermoAthleteId: text('skermo_athlete_id'),
+    /** Licencia resuelta desde la ficha del tirador, cuando se ha pedido. */
+    sourceLicense: text('source_license'),
+    sourceAthleteName: text('source_athlete_name').notNull(),
+    sourceFirstName: text('source_first_name'),
+    sourceLastName: text('source_last_name'),
+    sourceClub: text('source_club'),
+    sourceBirthDate: date('source_birth_date'),
+    sourceUrl: text('source_url'),
+    contentHash: text('content_hash').notNull(),
+    ingestedAt: timestamp('ingested_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    /**
+     * La clave natural es EL TIRADOR dentro del ranking, no su puesto.
+     *
+     * Empezó siendo el puesto y la primera ejecución contra Skermo lo tumbó:
+     * los no clasificados comparten el puesto 9999, así que el puesto no es
+     * único. El id de Skermo sí lo es, y además hace que "ha subido del 12 al
+     * 7" sea una modificación de su fila en vez de dos filas distintas.
+     */
+    unique('official_ranking_entry_key').on(
+      t.skermoSeasonId,
+      t.weapon,
+      t.gender,
+      t.categoryRaw,
+      t.skermoAthleteId,
+    ),
+    index('official_ranking_entry_lookup_idx').on(
+      t.seasonLabel,
+      t.weapon,
+      t.gender,
+      t.category,
+    ),
+    index('official_ranking_entry_athlete_idx').on(t.athleteId),
+    index('official_ranking_entry_skermo_idx').on(t.skermoAthleteId),
   ],
 );
 

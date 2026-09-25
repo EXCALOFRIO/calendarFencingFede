@@ -12,7 +12,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { userProfile } from './core';
+import { athlete, userProfile } from './core';
 import {
   categoryEnum,
   circuitEnum,
@@ -268,6 +268,75 @@ export const eventDeadline = pgTable(
   (t) => [
     unique('event_deadline_key').on(t.eventId, t.eventCompetitionId, t.type),
     index('event_deadline_at_idx').on(t.deadlineAt),
+  ],
+);
+
+/**
+ * Lista NOMINAL de inscritos que publica Skermo en cada prueba.
+ *
+ * Por qué hace falta, con las palabras del usuario: «que pueda recuperar si
+ * estás o no ya inscrito, porque igual le ha inscrito otra persona». En la
+ * práctica al tirador lo apunta su club o el seleccionador por fuera de esta
+ * aplicación, y hasta ahora aquí solo se guardaba el NÚMERO
+ * (`event_competition.registration_count`), así que la app no podía decirle
+ * «tranquilo, ya estás en la lista oficial».
+ *
+ * La lista viene en el MISMO HTML del calendario que ya descargamos, en la
+ * pestaña "Inscritos" de cada modal (`#registrations<id>`): 2.176 nombres en
+ * una sola petición. Cero peticiones extra por prueba.
+ *
+ * EMPAREJADO: Skermo NO publica la licencia en esta pantalla, solo el nombre
+ * y —en las pruebas por equipos— el código del equipo. Así que
+ * `athlete_id` se queda a null salvo que la fuente traiga licencia, y la fila
+ * va a la cola que resuelve una persona. Emparejar por nombre está prohibido
+ * en este proyecto y aquí con más motivo: decirle a alguien que está inscrito
+ * cuando el inscrito es su homónimo es el peor error posible de esta pantalla.
+ *
+ * `withdrawn_at` marca a quien ya no aparece en la lista: se marca, no se
+ * borra, porque "te han quitado de la lista" es justo lo que hay que poder
+ * contar.
+ */
+export const competitionRegistration = pgTable(
+  'competition_registration',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    eventCompetitionId: uuid('event_competition_id')
+      .notNull()
+      .references(() => eventCompetition.id, { onDelete: 'cascade' }),
+    /** Null mientras nadie lo haya emparejado a mano. Nunca por nombre. */
+    athleteId: uuid('athlete_id').references(() => athlete.id, {
+      onDelete: 'set null',
+    }),
+    /** El nombre tal y como lo publica la fuente, sin retocar. */
+    sourceAthleteName: text('source_athlete_name').notNull(),
+    /**
+     * Código de equipo en las pruebas por equipos ("CCC-M 1"). Cadena vacía en
+     * las individuales, no null: forma parte de la clave única y en Postgres
+     * dos NULL no chocan, con lo que un null dejaría entrar duplicados.
+     */
+    sourceTeam: text('source_team').notNull().default(''),
+    /** Skermo no la publica en esta pantalla; queda por si otra fuente sí. */
+    sourceLicense: text('source_license'),
+    sourceClub: text('source_club'),
+    source: sourceEnum('source').notNull(),
+    sourceUrl: text('source_url'),
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** Dejó de figurar en la lista oficial: baja, no borrado. */
+    withdrawnAt: timestamp('withdrawn_at', { withTimezone: true }),
+  },
+  (t) => [
+    unique('competition_registration_key').on(
+      t.eventCompetitionId,
+      t.sourceAthleteName,
+      t.sourceTeam,
+    ),
+    index('competition_registration_competition_idx').on(t.eventCompetitionId),
+    index('competition_registration_athlete_idx').on(t.athleteId),
   ],
 );
 

@@ -1,6 +1,8 @@
 import { and, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import {
+  athlete,
+  competitionRegistration,
   entry,
   event,
   eventCompetition,
@@ -19,6 +21,12 @@ export type UpsertStats = {
   unchanged: number;
   competitionsCreated: number;
   competitionsUpdated: number;
+  /** Inscritos publicados por la fuente que se han leído en esta pasada. */
+  registrationsSeen: number;
+  /** De esos, cuántos han casado con un tirador nuestro POR LICENCIA. */
+  registrationsMatched: number;
+  /** Los que ya no figuran en la lista oficial: se marcan, no se borran. */
+  registrationsWithdrawn: number;
   notificationsQueued: number;
   /** Cambios detectados, para poder enseñarlos en el panel de admin. */
   changes: ChangeRecord[];
@@ -38,6 +46,15 @@ export type ChangeRecord = {
  * Se incluyen solo los campos cuyo cambio le importa a alguien. `lastSeenAt` o
  * el nº de inscritos quedan fuera a propósito: si entraran, el hash cambiaría
  * todos los días y la comprobación de idempotencia no valdría para nada.
+ *
+ * `timezone` SÍ entra, aunque sea un valor derivado del país y no algo que
+ * publique la fuente. Estaba fuera y eso tenía una consecuencia que costó
+ * encontrar: al ampliar la tabla de husos, los eventos ya guardados no se
+ * actualizaban nunca —su hash no había cambiado—, así que Perú, Baréin o
+ * Costa Rica seguían sin huso indefinidamente mientras los eventos nuevos del
+ * mismo país sí lo tenían. Con él dentro, mejorar la tabla arregla el pasado
+ * en la siguiente pasada. No dispara avisos por correo: `timezone` no está en
+ * `NOTIFIABLE_FIELDS`.
  */
 async function eventContentHash(e: NormalizedEvent): Promise<string> {
   return sha256(
@@ -49,6 +66,7 @@ async function eventContentHash(e: NormalizedEvent): Promise<string> {
       e.venueAddress,
       e.city,
       e.country,
+      e.timezone,
       e.circuit,
       e.scope,
       e.officialSite,
@@ -137,6 +155,9 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
     unchanged: 0,
     competitionsCreated: 0,
     competitionsUpdated: 0,
+    registrationsSeen: 0,
+    registrationsMatched: 0,
+    registrationsWithdrawn: 0,
     notificationsQueued: 0,
     changes: [],
   };
@@ -274,6 +295,17 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
     values: Partial<typeof eventCompetition.$inferInsert>;
   }[] = [];
   const competitionTouched: { id: string; registrationCount: number | null }[] = [];
+  /**
+   * Listas nominales de inscritos, por prueba. Solo entran las pruebas cuya
+   * fuente publica la lista (`registrations !== null`); con `null` no se toca
+   * nada, que es lo que hace falta con la FIE.
+   */
+  const registrationBatches: {
+    competitionKey: string;
+    source: NormalizedEvent['source'];
+    sourceUrl: string | null;
+    rows: NonNullable<NormalizedEvent['competitions'][number]['registrations']>;
+  }[] = [];
   const documentInserts: (typeof eventDocument.$inferInsert)[] = [];
   const liveInserts: (typeof liveSource.$inferInsert)[] = [];
   /** Plazos publicados por la fuente; se resuelven tras insertar las pruebas. */
@@ -337,6 +369,15 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
         competitionTouched.push({
           id: existing.id,
           registrationCount: c.registrationCount,
+        });
+      }
+
+      if (c.registrations !== null) {
+        registrationBatches.push({
+          competitionKey: key,
+          source: normalized.source,
+          sourceUrl: c.sourceUrl,
+          rows: c.registrations,
         });
       }
 
@@ -460,6 +501,29 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
   }
 
   /**
+   * LISTA NOMINAL DE INSCRITOS.
+   *
+   * Se escribe después de las pruebas porque hace falta su `id`, y siempre en
+   * lote: son 2.176 filas en la pasada de la RFEE y el driver de Neon es HTTP.
+   *
+   * El emparejado con nuestros tiradores es SOLO por licencia. Skermo no la
+   * publica en esta pantalla, así que hoy todas las filas entran con
+   * `athlete_id = null` y las resuelve una persona. El camino por licencia se
+   * deja escrito y probado para el día que una fuente la traiga; lo que no se
+   * hace jamás es emparejar por nombre, que aquí sería especialmente dañino:
+   * decirle a alguien "ya estás inscrito" porque coincide con su homónimo es
+   * cómo se pierde un torneo.
+   */
+  const registrationStats = await upsertRegistrations(
+    registrationBatches,
+    existingCompetitions,
+    now,
+  );
+  stats.registrationsSeen = registrationStats.seen;
+  stats.registrationsMatched = registrationStats.matched;
+  stats.registrationsWithdrawn = registrationStats.withdrawn;
+
+  /**
    * El cierre que publica la fuente se guarda como plazo de origen PUBLICADO,
    * que gana sobre cualquier estimación calculada con `deadline_rule`.
    *
@@ -526,6 +590,149 @@ function competitionKey(
   c: { weapon: string; gender: string; category: string; format: string },
 ): string {
   return `${eventId}|${c.weapon}|${c.gender}|${c.category}|${c.format}`;
+}
+
+/** Una licencia comparable: sin espacios, sin guiones y en mayúsculas. */
+function normalizeLicense(value: string): string {
+  return value.replace(/[\s-]/g, '').toUpperCase();
+}
+
+/**
+ * Guarda las listas nominales publicadas por la fuente.
+ *
+ * Idempotente por `(prueba, nombre, equipo)`: repetir la ingestión no duplica
+ * ni una fila. Quien deja de figurar en la lista se marca con `withdrawn_at`
+ * en vez de borrarse, porque "me han quitado de la lista oficial" es
+ * exactamente lo que hay que poder contarle a alguien.
+ */
+async function upsertRegistrations(
+  batches: {
+    competitionKey: string;
+    source: NormalizedEvent['source'];
+    sourceUrl: string | null;
+    rows: { sourceAthleteName: string; sourceTeam: string; sourceLicense?: string | null; sourceClub?: string | null }[];
+  }[],
+  competitions: Map<string, typeof eventCompetition.$inferSelect>,
+  now: Date,
+): Promise<{ seen: number; matched: number; withdrawn: number }> {
+  if (batches.length === 0) return { seen: 0, matched: 0, withdrawn: 0 };
+
+  const inserts: (typeof competitionRegistration.$inferInsert)[] = [];
+  /** Pruebas cuya lista hemos leído de verdad: solo en ellas se dan bajas. */
+  const touchedCompetitionIds: string[] = [];
+
+  for (const batch of batches) {
+    const competition = competitions.get(batch.competitionKey);
+    if (!competition) continue;
+    touchedCompetitionIds.push(competition.id);
+
+    for (const row of batch.rows) {
+      inserts.push({
+        eventCompetitionId: competition.id,
+        sourceAthleteName: row.sourceAthleteName,
+        sourceTeam: row.sourceTeam,
+        sourceLicense: row.sourceLicense ?? null,
+        sourceClub: row.sourceClub ?? null,
+        source: batch.source,
+        sourceUrl: batch.sourceUrl,
+        lastSeenAt: now,
+        withdrawnAt: null,
+      });
+    }
+  }
+
+  if (touchedCompetitionIds.length === 0) {
+    return { seen: 0, matched: 0, withdrawn: 0 };
+  }
+
+  /**
+   * Emparejado por licencia, en UNA consulta para toda la tanda. Si ninguna
+   * fila trae licencia —el caso de Skermo hoy— no se consulta nada.
+   */
+  let matched = 0;
+  const licencias = [
+    ...new Set(
+      inserts
+        .map((r) => r.sourceLicense)
+        .filter((l): l is string => Boolean(l))
+        .map(normalizeLicense),
+    ),
+  ];
+  if (licencias.length > 0) {
+    const porLicencia = new Map<string, string>();
+    for (const lote of chunk(licencias, 300)) {
+      const filas = await db
+        .select({ id: athlete.id, rfeeLicense: athlete.rfeeLicense })
+        .from(athlete)
+        .where(inArray(sql`upper(replace(replace(${athlete.rfeeLicense}, ' ', ''), '-', ''))`, lote));
+      for (const f of filas) {
+        if (f.rfeeLicense) porLicencia.set(normalizeLicense(f.rfeeLicense), f.id);
+      }
+    }
+    for (const row of inserts) {
+      const id = row.sourceLicense
+        ? porLicencia.get(normalizeLicense(row.sourceLicense))
+        : undefined;
+      if (id) {
+        row.athleteId = id;
+        matched += 1;
+      }
+    }
+  }
+
+  const deduped = dedupeBy(
+    inserts,
+    (r) => `${r.eventCompetitionId}|${r.sourceAthleteName}|${r.sourceTeam}`,
+  );
+
+  for (const lote of chunk(deduped, 300)) {
+    await db
+      .insert(competitionRegistration)
+      .values(lote)
+      .onConflictDoUpdate({
+        target: [
+          competitionRegistration.eventCompetitionId,
+          competitionRegistration.sourceAthleteName,
+          competitionRegistration.sourceTeam,
+        ],
+        /**
+         * `athlete_id` NO se pisa: puede haberlo puesto una persona desde el
+         * panel y la fuente nunca lo sabe. Solo se refresca lo que es de la
+         * fuente, y se deshace la baja si vuelve a aparecer.
+         */
+        set: {
+          lastSeenAt: now,
+          withdrawnAt: null,
+          sourceUrl: sql`excluded."source_url"`,
+          sourceLicense: sql`coalesce(excluded."source_license", "competition_registration"."source_license")`,
+          sourceClub: sql`coalesce(excluded."source_club", "competition_registration"."source_club")`,
+        },
+      });
+  }
+
+  /**
+   * Bajas. En vez de comparar listas fila a fila, se aprovecha que a todo lo
+   * visto se le acaba de poner `last_seen_at = now`: lo que siga con una marca
+   * anterior dentro de una prueba que SÍ hemos leído es que ya no está. Una
+   * sola sentencia por lote de pruebas, en vez de una por prueba.
+   */
+  let withdrawn = 0;
+  for (const lote of chunk([...new Set(touchedCompetitionIds)], 300)) {
+    const filas = await db
+      .update(competitionRegistration)
+      .set({ withdrawnAt: now })
+      .where(
+        and(
+          inArray(competitionRegistration.eventCompetitionId, lote),
+          isNull(competitionRegistration.withdrawnAt),
+          sql`${competitionRegistration.lastSeenAt} < ${now}`,
+        ),
+      )
+      .returning({ id: competitionRegistration.id });
+    withdrawn += filas.length;
+  }
+
+  return { seen: deduped.length, matched, withdrawn };
 }
 
 /**

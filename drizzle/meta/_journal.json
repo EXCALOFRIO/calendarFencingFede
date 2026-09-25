@@ -36,6 +36,20 @@
       "when": 1790344509604,
       "tag": "0004_circuitos_por_nombre",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790353919936,
+      "tag": "0005_inscritos_y_ranking_oficial",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790355767508,
+      "tag": "0006_ranking_clave_por_tirador",
+      "breakpoints": true
     }
   ]
 }

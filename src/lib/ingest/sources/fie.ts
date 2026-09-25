@@ -1,5 +1,6 @@
 import { fetchJson, fixDoubleEncodedUtf8 } from '../fetcher';
 import {
+  esUbicacionDesconocida,
   fieCountryToIso2,
   inferScope,
   mapCategory,
@@ -104,6 +105,23 @@ export function currentFieSeason(now: Date = new Date()): number {
   return now.getUTCMonth() >= 8 ? year + 1 : year;
 }
 
+/**
+ * Ciudad publicada por la FIE, o `null` si lo que publica es un "todavía no se
+ * sabe".
+ *
+ * Comprobado en vivo el 25/09/2026 sobre `/api/fie/competitions?season=2027`:
+ * de 61 pruebas, **35 traen `location: "TBD"`, `locationName: "TBD"`,
+ * `country: "FIE"` y `flag: "FF"`**. No es un fallo de lectura: es como la FIE
+ * dice "sede por adjudicar". Guardarlo literalmente dejaba 34 torneos con la
+ * ciudad "TBD" y un botón «Cómo llegar» que buscaba "TBD" en Google Maps.
+ */
+function ciudadPublicada(valor: string | null | undefined): string | null {
+  if (!valor) return null;
+  const limpio = fixDoubleEncodedUtf8(valor).replace(/\s+/g, ' ').trim();
+  if (!limpio || esUbicacionDesconocida(limpio)) return null;
+  return limpio;
+}
+
 /** Clave "ciudad|fecha" normalizada, para cruzar pruebas con torneos. */
 function claveSede(ciudad: string, fechaIso: string): string {
   const limpia = ciudad
@@ -197,15 +215,35 @@ export async function fetchFieSeason(
    */
   const porSedeYFecha = new Map<string, FieTournament>();
   for (const t of tournaments.values()) {
-    if (!t.city || !t.startDate) continue;
-    porSedeYFecha.set(claveSede(t.city, t.startDate), t);
+    // Un torneo con la sede sin adjudicar NO entra en el índice: si entrase,
+    // su clave sería "tbd|fecha" y absorbería cualquier otra prueba de ese día
+    // que tampoco tuviera sede. Peor todavía, el cruce inverso le colgaría a
+    // una prueba con sede real el nombre y la ciudad del torneo sin sede.
+    const ciudad = ciudadPublicada(t.city);
+    if (!ciudad || !t.startDate) continue;
+    porSedeYFecha.set(claveSede(ciudad, t.startDate), t);
   }
 
   const buscarTorneo = (c: FieCompetition): FieTournament | undefined => {
+    /**
+     * `competitionId` NO es el id del torneo (para Samsun la prueba trae 47 y
+     * el torneo es el 108), así que esta búsqueda directa acierta por
+     * casualidad y falla en silencio: en la base había una prueba de Barcelona
+     * a la que le había tocado un torneo "TBD" por esta vía, y se quedó con
+     * ciudad "TBD" y sede "Barcelone". Solo se acepta si la ciudad coincide.
+     */
     const directo = tournaments.get(c.competitionId);
-    if (directo) return directo;
+    const ciudadPrueba = ciudadPublicada(c.locationName ?? c.location);
+    if (directo) {
+      const ciudadTorneo = ciudadPublicada(directo.city);
+      const coinciden =
+        ciudadPrueba && ciudadTorneo
+          ? claveSede(ciudadPrueba, '') === claveSede(ciudadTorneo, '')
+          : !ciudadPrueba && !ciudadTorneo;
+      if (coinciden) return directo;
+    }
 
-    const ciudad = c.locationName ?? c.location;
+    const ciudad = ciudadPrueba;
     if (!ciudad || !c.startDate) return undefined;
 
     // La prueba puede caer en cualquier día del torneo: se prueban los tres
@@ -264,6 +302,12 @@ export async function fetchFieSeason(
       scratchTime: null,
       startTime: c.startTime,
       registrationCount: null,
+      /**
+       * La FIE no publica la lista de inscritos en esta API (solo el total de
+       * tiradores del TORNEO en `/api/fie/tournaments/<id>`, y a posteriori).
+       * `null` = no la publica, que no es lo mismo que "no hay nadie".
+       */
+      registrations: null,
       // La FIE no publica la cuota en esta API: null, nunca un importe supuesto.
       feeEur: null,
       sourceId: String(c.id),
@@ -283,9 +327,25 @@ export async function fetchFieSeason(
     }
 
     const circuit = mapFieCircuit(tournament?.type ?? c.competitionCategory, category);
-    const city = tournament?.city
-      ? fixDoubleEncodedUtf8(tournament.city)
-      : (c.location ?? null);
+    const city = ciudadPublicada(tournament?.city) ?? ciudadPublicada(c.location);
+
+    /**
+     * LA FIE NO PUBLICA LA SEDE. Comprobado campo a campo sobre las 61 pruebas
+     * de 2026-2027 y las 414 de 2025-2026: `locationAddress` viene a null en
+     * el 100 % de los casos, y `locationName` es **la misma ciudad** que
+     * `location` (0 diferencias en 100 pruebas muestreadas). Tampoco la hay en
+     * `/api/fie/tournaments/<id>`, que solo añade nº de tiradores y naciones.
+     *
+     * Por eso `venue` solo se rellena si `locationName` dice algo DISTINTO de
+     * la ciudad. Copiar la ciudad en la sede no aporta un dato: hace que la
+     * ficha repita "San Salvador" dos veces y que el botón prometa un pabellón
+     * que nadie ha publicado.
+     */
+    const nombreSede = ciudadPublicada(c.locationName);
+    const venue =
+      nombreSede && (!city || claveSede(nombreSede, '') !== claveSede(city, ''))
+        ? nombreSede
+        : null;
 
     grouped.set(key, {
       source: 'fie',
@@ -295,8 +355,8 @@ export async function fetchFieSeason(
       name: tournament?.name ?? c.name ?? `Torneo FIE ${tournamentId}`,
       startDate: c.startDate ?? '',
       endDate: c.endDate ?? c.startDate ?? '',
-      venue: c.locationName ?? null,
-      venueAddress: c.locationAddress ?? null,
+      venue,
+      venueAddress: c.locationAddress?.trim() || null,
       city,
       country,
       timezone,

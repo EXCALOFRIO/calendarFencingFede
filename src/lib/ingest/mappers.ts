@@ -332,7 +332,39 @@ export type ParsedLocation = {
   country: string | null;
 };
 
-const UNKNOWN_LOCATIONS = new Set(['TBD', 'TBC', 'POR DETERMINAR', 'A DETERMINAR', '-']);
+const UNKNOWN_LOCATIONS = new Set([
+  'TBD',
+  'TBC',
+  'TBA',
+  'POR DETERMINAR',
+  'A DETERMINAR',
+  'SIN DETERMINAR',
+  'PENDIENTE',
+  'N/A',
+  'NA',
+  '?',
+  '-',
+  '--',
+]);
+
+/**
+ * ¿Es esto un "todavía no se sabe" disfrazado de sede?
+ *
+ * La API de la FIE publica literalmente `location: "TBD"` en las 35 pruebas de
+ * la temporada 2026-2027 cuya sede aún no está decidida. Guardarlo tal cual
+ * llenaba el calendario de torneos «en TBD», con botón de mapa incluido, que
+ * abría una búsqueda de Google por la palabra "TBD". Eso es peor que no tener
+ * el dato: es un dato falso con pinta de oficial.
+ *
+ * Se exporta porque lo necesitan los dos adaptadores (Skermo por la
+ * "Población" del modal, la FIE por `location`/`locationName`).
+ */
+export function esUbicacionDesconocida(raw: string | null | undefined): boolean {
+  if (!raw) return true;
+  const texto = normalizeLabel(raw).trim();
+  if (!texto) return true;
+  return UNKNOWN_LOCATIONS.has(texto);
+}
 
 export function parseLocation(
   raw: string | null | undefined,
@@ -485,7 +517,62 @@ const FIE_COUNTRY_TO_ISO2: Record<string, string> = {
   MRI: 'MU',
   ZIM: 'ZW',
   LBA: 'LY',
+  // Códigos del COI que no coinciden con el ISO y aparecen en el calendario
+  // real de la RFEE. "SINGAPUR (SIN)" se quedaba sin país y, con él, sin huso.
+  SIN: 'SG',
+  RUS: 'RU',
+  KGZ: 'KG',
+  TJK: 'TJ',
+  TKM: 'TM',
+  NEP: 'NP',
+  SRI: 'LK',
+  PAK: 'PK',
+  BAN: 'BD',
+  HON: 'HN',
+  NCA: 'NI',
+  JAM: 'JM',
+  TTO: 'TT',
+  BAR: 'BB',
+  GUY: 'GY',
+  SUR: 'SR',
+  AND: 'AD',
+  MON: 'MC',
+  SMR: 'SM',
+  LIE: 'LI',
+  KOS: 'XK',
+  SYR: 'SY',
+  IRQ: 'IQ',
+  YEM: 'YE',
+  SUD: 'SD',
+  ETH: 'ET',
+  KEN: 'KE',
+  GHA: 'GH',
+  ANG: 'AO',
+  MAD: 'MG',
+  MOZ: 'MZ',
+  NAM: 'NA',
+  BOT: 'BW',
+  ZAM: 'ZM',
+  UGA: 'UG',
+  TAN: 'TZ',
+  GAB: 'GA',
+  CGO: 'CG',
+  COD: 'CD',
+  MLI: 'ML',
+  NIG: 'NE',
+  GUI: 'GN',
+  MTN: 'MR',
 };
+
+/**
+ * Códigos que la FIE usa como "no hay país", no como país.
+ *
+ * `FF` es su propia bandera (la de la Fédération, `country: "FIE"`), y viaja
+ * en las pruebas cuya sede todavía no está adjudicada. Pasaba el filtro de
+ * "dos letras = ISO2" y acabábamos con 34 eventos cuyo país era "FF": un país
+ * inexistente que, además, nunca iba a encontrar huso horario en la tabla.
+ */
+const NON_COUNTRY_CODES = new Set(['FF', 'FIE', 'ZZ', 'XX', 'TBD', 'TBA', 'NA']);
 
 /**
  * Se prefiere el `flag` ISO2 que ya da la API de la FIE; esta tabla es el
@@ -494,6 +581,7 @@ const FIE_COUNTRY_TO_ISO2: Record<string, string> = {
 export function fieCountryToIso2(code: string | null | undefined): string | null {
   if (!code) return null;
   const v = code.trim().toUpperCase();
+  if (NON_COUNTRY_CODES.has(v)) return null;
   if (v.length === 2) return v;
   return FIE_COUNTRY_TO_ISO2[v] ?? null;
 }
@@ -575,6 +663,94 @@ const ISO2_TIMEZONE: Record<string, string> = {
   AE: 'Asia/Dubai',
   SA: 'Asia/Riyadh',
   ME: 'Europe/Podgorica',
+  /**
+   * Resto de países que la tabla `FIE_COUNTRY_TO_ISO2` sabe traducir pero que
+   * se quedaban sin huso. Un país sin huso no rompe nada (la app calla el
+   * aviso de diferencia horaria), pero calla justo donde más falta hace: en
+   * los torneos de fuera. Se añaden solo los que tienen un huso único; para
+   * los países con varios se elige el de la capital, que es el criterio que ya
+   * seguía la tabla con US, CA o BR, y se anota cuáles son.
+   */
+  MK: 'Europe/Skopje',
+  BA: 'Europe/Sarajevo',
+  AL: 'Europe/Tirane',
+  CY: 'Asia/Nicosia',
+  MT: 'Europe/Malta',
+  MD: 'Europe/Chisinau',
+  BY: 'Europe/Minsk',
+  XK: 'Europe/Belgrade',
+  AD: 'Europe/Andorra',
+  MC: 'Europe/Monaco',
+  SM: 'Europe/San_Marino',
+  LI: 'Europe/Vaduz',
+  KW: 'Asia/Kuwait',
+  OM: 'Asia/Muscat',
+  JO: 'Asia/Amman',
+  LB: 'Asia/Beirut',
+  IR: 'Asia/Tehran',
+  IQ: 'Asia/Baghdad',
+  SY: 'Asia/Damascus',
+  YE: 'Asia/Aden',
+  VN: 'Asia/Ho_Chi_Minh',
+  PH: 'Asia/Manila',
+  TW: 'Asia/Taipei',
+  MN: 'Asia/Ulaanbaatar',
+  KG: 'Asia/Bishkek',
+  TJ: 'Asia/Dushanbe',
+  TM: 'Asia/Ashgabat',
+  NP: 'Asia/Kathmandu',
+  LK: 'Asia/Colombo',
+  PK: 'Asia/Karachi',
+  BD: 'Asia/Dhaka',
+  UY: 'America/Montevideo',
+  PY: 'America/Asuncion',
+  VE: 'America/Caracas',
+  EC: 'America/Guayaquil',
+  BO: 'America/La_Paz',
+  PA: 'America/Panama',
+  GT: 'America/Guatemala',
+  DO: 'America/Santo_Domingo',
+  PR: 'America/Puerto_Rico',
+  CU: 'America/Havana',
+  HN: 'America/Tegucigalpa',
+  NI: 'America/Managua',
+  JM: 'America/Jamaica',
+  TT: 'America/Port_of_Spain',
+  BB: 'America/Barbados',
+  GY: 'America/Guyana',
+  SR: 'America/Paramaribo',
+  NG: 'Africa/Lagos',
+  SN: 'Africa/Dakar',
+  CI: 'Africa/Abidjan',
+  CM: 'Africa/Douala',
+  BJ: 'Africa/Porto-Novo',
+  TG: 'Africa/Lome',
+  BF: 'Africa/Ouagadougou',
+  ML: 'Africa/Bamako',
+  NE: 'Africa/Niamey',
+  GN: 'Africa/Conakry',
+  MR: 'Africa/Nouakchott',
+  MU: 'Indian/Mauritius',
+  ZW: 'Africa/Harare',
+  LY: 'Africa/Tripoli',
+  SD: 'Africa/Khartoum',
+  ET: 'Africa/Addis_Ababa',
+  KE: 'Africa/Nairobi',
+  GH: 'Africa/Accra',
+  AO: 'Africa/Luanda',
+  MG: 'Indian/Antananarivo',
+  MZ: 'Africa/Maputo',
+  NA: 'Africa/Windhoek',
+  BW: 'Africa/Gaborone',
+  ZM: 'Africa/Lusaka',
+  UG: 'Africa/Kampala',
+  TZ: 'Africa/Dar_es_Salaam',
+  GA: 'Africa/Libreville',
+  CG: 'Africa/Brazzaville',
+  // Con varios husos: se toma el de la capital, como ya se hacía con US/CA/BR.
+  RU: 'Europe/Moscow',
+  ID: 'Asia/Jakarta',
+  CD: 'Africa/Kinshasa',
 };
 
 export function timezoneForCountry(iso2: string | null | undefined): string | null {
