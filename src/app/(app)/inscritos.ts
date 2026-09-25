@@ -3,30 +3,34 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { db } from '@/db';
 import { athlete, club, entry, eventCompetition } from '@/db/schema';
-import { requireProfile } from '@/lib/auth/session';
+import { getManagedAthletes, requireProfile } from '@/lib/auth/session';
 import type { EntryStatus } from '@/lib/entries/state-machine';
+import { inscritosPublicados, type InscritoPublicado } from '@/lib/queries/calendar';
 
 /**
  * Quién va a cada prueba de un torneo.
  *
- * Es la pregunta que hoy se resuelve por WhatsApp: «¿quién va al TNR de
- * Alcobendas?». La aplicación ya tiene la respuesta —son sus propias
- * inscripciones—, solo había que enseñarla.
+ * Son DOS listas distintas y se enseñan por separado a propósito:
  *
- * Tres decisiones, con su porqué:
+ * 1. **La lista oficial**, la que publica la organización. Es la que manda.
+ *    Aquí aparece quien se haya apuntado por donde sea: por esta aplicación,
+ *    por su club directamente en Skermo o porque le apuntó el seleccionador.
+ *    Responde a la pregunta que pidió el usuario con estas palabras: *«que
+ *    pueda recuperar si estás o no ya inscrito, porque igual le ha inscrito
+ *    otra persona»*.
+ * 2. **Lo pedido desde aquí** y que todavía no ha llegado a esa lista: una
+ *    solicitud esperando al club o a la RFEE no es una inscripción, y
+ *    mezclarlas haría que alguien viajase creyendo que está dentro.
  *
- * 1. **Solo lo que está en marcha de verdad.** Un borrador no es una
- *    inscripción, y una retirada o rechazada tampoco: enseñarlas haría que
- *    alguien contara con un compañero que no va.
- * 2. **Solo nacional e internacional.** Es el ámbito de esta aplicación y de
- *    la selección. No se publica quién compite en una prueba autonómica.
- * 3. **Nombre, club y categoría, y nada más.** Ni fecha de nacimiento, ni
- *    licencia, ni correo. Hay menores en estas listas y lo que hace falta
- *    para responder a la pregunta es el nombre.
+ * Tres decisiones más, con su porqué:
  *
- * Se pide al abrir la ficha, no con el calendario entero: son 249 torneos y
- * cargar las inscripciones de todos sería un viaje de red enorme para una
- * información que casi nunca se mira.
+ * - **Solo lo que está en marcha de verdad** en la lista nuestra. Un
+ *   borrador no es una inscripción, y una retirada o rechazada tampoco.
+ * - **Nombre, club y estado, y nada más.** Ni fecha de nacimiento, ni
+ *   licencia, ni correo. Hay menores en estas listas.
+ * - Se pide **al abrir la ficha**, no con el calendario: son 249 torneos y
+ *   cargar los inscritos de todos sería un viaje de red enorme para una
+ *   información que casi nunca se mira.
  */
 
 const EN_MARCHA: EntryStatus[] = [
@@ -41,36 +45,66 @@ export type Inscrito = {
   nombre: string;
   club: string | null;
   estado: EntryStatus;
+  /** Si es uno de los tiradores que gestiona quien está mirando. */
+  esMio: boolean;
 };
 
-export async function inscritosDelEvento(eventId: string): Promise<Inscrito[]> {
-  // Sesión obligatoria: esto no es información pública.
-  await requireProfile();
+export type QuienVa = {
+  /** Lo que publica la organización. Es la lista que manda. */
+  oficiales: InscritoPublicado[];
+  /** Solicitudes hechas desde aquí que aún no figuran en la oficial. */
+  pendientes: Inscrito[];
+};
 
-  const filas = await db
-    .select({
-      competitionId: entry.eventCompetitionId,
-      firstName: athlete.firstName,
-      lastName: athlete.lastName,
-      clubName: club.name,
-      status: entry.status,
-    })
-    .from(entry)
-    .innerJoin(eventCompetition, eq(entry.eventCompetitionId, eventCompetition.id))
-    .innerJoin(athlete, eq(entry.athleteId, athlete.id))
-    .leftJoin(club, eq(athlete.clubId, club.id))
-    .where(
-      and(
-        eq(eventCompetition.eventId, eventId),
-        inArray(entry.status, EN_MARCHA),
-      ),
-    )
-    .orderBy(asc(athlete.lastName), asc(athlete.firstName));
+/** Quita la marca de los datos de demostración de un texto visible. */
+function limpio(texto: string): string {
+  return texto.replace(/\bDEMO\b\s*·?\s*/gi, '').trim();
+}
 
-  return filas.map((f) => ({
-    competitionId: f.competitionId,
-    nombre: `${f.firstName} ${f.lastName}`.replace(/\bDEMO\b\s*/g, '').trim(),
-    club: f.clubName?.replace(/^DEMO\s*·?\s*/i, '') ?? null,
-    estado: f.status as EntryStatus,
-  }));
+export async function inscritosDelEvento(eventId: string): Promise<QuienVa> {
+  // Sesión obligatoria: esto no es información pública dentro de la app.
+  const perfil = await requireProfile();
+  const mios = await getManagedAthletes(perfil.profileId);
+  const idsPropios = mios.map((a) => a.id);
+
+  const [oficiales, filas] = await Promise.all([
+    inscritosPublicados(eventId, { athleteIdsPropios: idsPropios }),
+    db
+      .select({
+        competitionId: entry.eventCompetitionId,
+        athleteId: entry.athleteId,
+        firstName: athlete.firstName,
+        lastName: athlete.lastName,
+        clubName: club.name,
+        status: entry.status,
+      })
+      .from(entry)
+      .innerJoin(eventCompetition, eq(entry.eventCompetitionId, eventCompetition.id))
+      .innerJoin(athlete, eq(entry.athleteId, athlete.id))
+      .leftJoin(club, eq(athlete.clubId, club.id))
+      .where(
+        and(eq(eventCompetition.eventId, eventId), inArray(entry.status, EN_MARCHA)),
+      )
+      .orderBy(asc(athlete.lastName), asc(athlete.firstName)),
+  ]);
+
+  /**
+   * Quien ya figura en la lista oficial no se repite abajo: la solicitud
+   * cumplió su función y lo importante es que está dentro.
+   */
+  const yaOficiales = new Set(
+    oficiales.map((o) => `${o.competitionId}|${o.athleteId ?? ''}`),
+  );
+
+  const pendientes = filas
+    .filter((f) => !yaOficiales.has(`${f.competitionId}|${f.athleteId}`))
+    .map((f) => ({
+      competitionId: f.competitionId,
+      nombre: limpio(`${f.firstName} ${f.lastName}`),
+      club: f.clubName ? limpio(f.clubName) : null,
+      estado: f.status as EntryStatus,
+      esMio: idsPropios.includes(f.athleteId),
+    }));
+
+  return { oficiales, pendientes };
 }

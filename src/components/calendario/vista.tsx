@@ -23,7 +23,7 @@ import {
   titular,
   titularTorneo,
 } from '@/lib/utils';
-import type { Inscrito } from '@/app/(app)/inscritos';
+import type { QuienVa } from '@/app/(app)/inscritos';
 import { FichaEvento } from './ficha-evento';
 import { IconoArma } from './iconos-arma';
 import { NOMBRE_ARMA } from './marca-arma';
@@ -77,7 +77,7 @@ export function VistaCalendario({
     athleteId: string,
   ) => Promise<{ ok: true; message: string } | { ok: false; error: string }>;
   /** Quién va a un torneo. Se pide al abrir la ficha, no antes. */
-  cargarInscritos: (eventId: string) => Promise<Inscrito[]>;
+  cargarInscritos: (eventId: string) => Promise<QuienVa>;
 }) {
   /**
    * Con quién se está mirando el calendario.
@@ -141,7 +141,7 @@ export function VistaCalendario({
    * viaje de red enorme a cambio de nada. `null` significa «todavía no ha
    * llegado», que en pantalla es «Mirando quién va…».
    */
-  const [inscritos, setInscritos] = React.useState<Inscrito[] | null>(null);
+  const [inscritos, setInscritos] = React.useState<QuienVa | null>(null);
 
   React.useEffect(() => {
     if (!abierto) return;
@@ -154,7 +154,7 @@ export function VistaCalendario({
       // Que no se sepa quién va no puede tumbar la ficha: se deja la lista
       // vacía y el resto de la información sigue estando.
       .catch(() => {
-        if (vigente) setInscritos([]);
+        if (vigente) setInscritos({ oficiales: [], pendientes: [] });
       });
     return () => {
       vigente = false;

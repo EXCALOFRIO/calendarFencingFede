@@ -21,3 +21,4 @@ capturas/*.png
 .wrangler
 .open-next
 tests/ui/informe.json
+dev.log

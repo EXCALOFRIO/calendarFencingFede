@@ -7,8 +7,9 @@ import { chromium, devices } from 'playwright';
  *
  *   npm run ficha
  *
- * Variables: `EMAIL` (por defecto la tiradora de demostración) y `VISTA`
- * (`mes` o `trimestre`).
+ * Variables: `EMAIL` (por defecto la tiradora de demostración) y `BUSCAR`,
+ * que filtra el calendario antes de abrir la primera barra y sirve para
+ * llegar a un torneo concreto.
  */
 
 const BASE = process.env.BASE ?? 'http://localhost:3000';
@@ -68,12 +69,20 @@ for (const [nombre, config] of [
     .catch(() => {});
   await pagina.waitForTimeout(400);
 
+  const buscar = process.env.BUSCAR;
+  if (buscar) {
+    await pagina.getByRole('searchbox', { name: /Buscar/ }).fill(buscar);
+    await pagina.waitForTimeout(500);
+  }
+
   const barras = pagina.locator('div.relative.grid.grid-cols-7 > button');
   const cuantas = await barras.count();
   if (cuantas === 0) throw new Error('No hay ninguna barra en el calendario.');
 
   await barras.first().click({ force: true });
-  await pagina.waitForTimeout(800);
+  // La lista de inscritos llega por una acción de servidor, así que hay que
+  // esperar a que vuelva: con 800 ms la captura salía con «Mirando quién va…».
+  await pagina.waitForTimeout(2500);
 
   await pagina.screenshot({ path: `capturas/ficha-${nombre}.png` });
 

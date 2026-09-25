@@ -1,6 +1,6 @@
 'use client';
 
-import { ExternalLink, FileText, Navigation } from 'lucide-react';
+import { CircleCheck, ExternalLink, FileText, Navigation } from 'lucide-react';
 import * as React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,8 +17,9 @@ import {
   formatDateEs,
   formatDateTimeEs,
   formatEur,
+  titular,
 } from '@/lib/utils';
-import type { Inscrito } from '@/app/(app)/inscritos';
+import type { QuienVa as QuienVaDatos } from '@/app/(app)/inscritos';
 import { ENTRY_STATUS_LABEL } from '@/lib/entries/state-machine';
 import type { TiradorOpcion } from './vista';
 
@@ -49,7 +50,7 @@ export function FichaEvento({
   tirador: TiradorOpcion | null;
   inscripciones: Record<string, string>;
   /** Quién va, por prueba. `null` mientras se está pidiendo. */
-  inscritos: Inscrito[] | null;
+  inscritos: QuienVaDatos | null;
   onSolicitar: (competitionId: string) => Promise<void>;
 }) {
   const elegibles = React.useMemo(
@@ -107,7 +108,7 @@ export function FichaEvento({
         <div className="flex flex-col gap-2">
           {sede ? (
             <p className="text-sm">
-              {sede}
+              {titular(sede)}
               {evento.venueAddress ? (
                 <span className="block text-muted-foreground">
                   {evento.venueAddress}
@@ -212,7 +213,7 @@ export function FichaEvento({
                   className="flex items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent"
                 >
                   <FileText className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate">{d.title}</span>
+                  <span className="min-w-0 flex-1 truncate">{titular(d.title)}</span>
                   <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
                 </a>
               </li>
@@ -266,13 +267,16 @@ function DetallePrueba({
   onSolicitar,
 }: {
   prueba: CompetitionView;
-  inscritos: Inscrito[] | null;
+  inscritos: QuienVaDatos | null;
   puedeInscribirse: boolean;
   estadoInscripcion: string | null;
   enviando: boolean;
   onSolicitar: () => void;
 }) {
   const tono = TONO[prueba.status.state];
+  const hayLista =
+    inscritos !== null &&
+    inscritos.oficiales.some((i) => i.competitionId === prueba.id);
   const horarios: [string, string][] = (
     [
       ['Apertura', prueba.installationOpen],
@@ -323,7 +327,15 @@ function DetallePrueba({
       )}
 
       {horarios.length > 0 ? (
-        <dl className="grid grid-cols-4 gap-px overflow-hidden rounded-md bg-border">
+        <dl
+          className="grid gap-px overflow-hidden rounded-md bg-border"
+          /* Tantas columnas como horarios publicados. Con `grid-cols-4` fijo,
+             un torneo que publica llamada, scratch e inicio dejaba una cuarta
+             celda vacía que parecía un dato que falta. */
+          style={{
+            gridTemplateColumns: `repeat(${horarios.length}, minmax(0, 1fr))`,
+          }}
+        >
           {horarios.map(([k, v]) => (
             <div key={k} className="flex flex-col items-center bg-card py-2">
               <dt className="text-xs text-muted-foreground">{k}</dt>
@@ -335,9 +347,13 @@ function DetallePrueba({
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
         <span>Cuota: {formatEur(prueba.feeEur)}</span>
-        {/* Los inscritos que publica la organización, que no son los mismos
-            que los de esta aplicación: se distinguen a propósito. */}
-        {prueba.registrationCount !== null ? (
+        {/*
+          El recuento que publica la organización, solo cuando NO se tienen
+          los nombres. Si se tienen, el número ya va en la cabecera de la
+          lista y repetirlo dos veces en la misma ficha se lee como si
+          fueran dos datos distintos.
+        */}
+        {prueba.registrationCount !== null && !hayLista ? (
           <span>{prueba.registrationCount} inscritos en la organización</span>
         ) : null}
         <span>{GENDER_LABEL[prueba.gender]}</span>
@@ -402,58 +418,150 @@ function enlacesDeFuente(
 /**
  * Quién va a esta prueba.
  *
- * La pregunta que hoy se resuelve por WhatsApp. Son las inscripciones de
- * esta aplicación, no las de la organización: por eso lo dice, y por eso
- * cada nombre lleva en qué punto está su trámite. Si alguien se apuntó por
- * su cuenta en Skermo, aquí no sale, y prometer lo contrario sería peor que
- * no enseñar nada.
+ * La pregunta que hoy se resuelve por WhatsApp, y la que pidió el usuario
+ * con estas palabras: *«que pueda recuperar si estás o no ya inscrito,
+ * porque igual le ha inscrito otra persona»*.
+ *
+ * Se enseñan las dos listas por separado porque **no son lo mismo**: la
+ * oficial es la que publica la organización y es la que vale; lo pedido
+ * desde aquí y aún sin validar no es una inscripción. Mezclarlas haría que
+ * alguien cogiese un vuelo creyendo que está dentro.
  */
 function QuienVa({
   inscritos,
   competitionId,
 }: {
-  inscritos: Inscrito[] | null;
+  inscritos: QuienVaDatos | null;
   competitionId: string;
 }) {
+  /**
+   * La lista completa va plegada.
+   *
+   * Un TNR absoluto tiene 107 inscritos, y ciento siete nombres seguidos
+   * entierran todo lo demás de la ficha: el plazo, los horarios y el botón
+   * de inscribirse quedan a tres pantallas de scroll. Se enseñan los tuyos
+   * —que es lo que se viene a mirar— más los primeros de la lista, y el
+   * resto a un toque.
+   */
+  const [todos, setTodos] = React.useState(false);
+  React.useEffect(() => setTodos(false), [competitionId]);
+
   if (inscritos === null) {
     return <p className="text-sm text-muted-foreground">Mirando quién va…</p>;
   }
 
-  const suyos = inscritos.filter((i) => i.competitionId === competitionId);
+  const oficiales = inscritos.oficiales.filter(
+    (i) => i.competitionId === competitionId,
+  );
+  const pendientes = inscritos.pendientes.filter(
+    (i) => i.competitionId === competitionId,
+  );
+  const estasDentro = oficiales.some((o) => o.esMio);
 
-  if (suyos.length === 0) {
+  /** Los tuyos primero, y del resto los primeros del alfabético. */
+  const ASOMAN = 6;
+  const ordenados = [...oficiales].sort(
+    (a, b) => Number(b.esMio) - Number(a.esMio),
+  );
+  const visibles = todos ? ordenados : ordenados.slice(0, ASOMAN);
+  const ocultos = ordenados.length - visibles.length;
+
+  if (oficiales.length === 0 && pendientes.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        Todavía no se ha apuntado nadie desde aquí.
+        La organización todavía no ha publicado la lista de inscritos, y desde
+        aquí no se ha apuntado nadie.
       </p>
     );
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <p className="text-sm">
-        <span className="cifra text-base">{suyos.length}</span>{' '}
-        {suyos.length === 1 ? 'tirador apuntado' : 'tiradores apuntados'} desde esta
-        aplicación
-      </p>
-      <ul className="flex flex-col gap-1">
-        {suyos.map((i) => (
-          <li
-            key={`${i.nombre}-${i.competitionId}`}
-            className="flex items-baseline justify-between gap-3 text-sm"
-          >
-            <span className="min-w-0 truncate">
-              {i.nombre}
-              {i.club ? (
-                <span className="text-muted-foreground"> · {i.club}</span>
-              ) : null}
+    <div className="flex flex-col gap-3">
+      {estasDentro ? (
+        <p className="flex items-center gap-2 text-sm font-medium text-ok">
+          <CircleCheck className="size-4 shrink-0" aria-hidden />
+          Estás en la lista oficial de inscritos.
+        </p>
+      ) : null}
+
+      {oficiales.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <h4 className="text-sm font-medium">Lista oficial</h4>
+            <span className="text-xs text-muted-foreground">
+              <span className="cifra text-base text-foreground">
+                {oficiales.length}
+              </span>{' '}
+              {oficiales.length === 1 ? 'inscrito' : 'inscritos'}
             </span>
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {ENTRY_STATUS_LABEL[i.estado]}
-            </span>
-          </li>
-        ))}
-      </ul>
+          </div>
+
+          <ul className="flex flex-col divide-y rounded-md border">
+            {visibles.map((i) => (
+              <li
+                key={`${i.competitionId}-${i.nombre}`}
+                className={cn(
+                  'flex items-baseline justify-between gap-3 px-2.5 py-1.5 text-sm',
+                  i.esMio && 'bg-primary/10',
+                )}
+              >
+                <span className="min-w-0 truncate">
+                  {titular(i.nombre)}
+                  {i.esMio ? <span className="text-primary-text"> · tú</span> : null}
+                </span>
+                {i.club ? (
+                  <span className="shrink-0 truncate text-xs text-muted-foreground">
+                    {titular(i.club)}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+
+          {ocultos > 0 ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-fit px-2"
+              onClick={() => setTodos(true)}
+            >
+              Ver los {oficiales.length} inscritos
+            </Button>
+          ) : null}
+
+          <p className="text-xs text-muted-foreground">
+            Publicada por {SOURCE_LABEL[oficiales[0].fuente] ?? oficiales[0].fuente}.
+            Si te ha apuntado tu club o el seleccionador, sales aquí.
+          </p>
+        </div>
+      ) : null}
+
+      {pendientes.length > 0 ? (
+        <div className="flex flex-col gap-1.5">
+          <h4 className="text-sm font-medium">Pedido desde aquí, sin confirmar</h4>
+          <ul className="flex flex-col gap-1">
+            {pendientes.map((i) => (
+              <li
+                key={`${i.competitionId}-${i.nombre}`}
+                className="flex items-baseline justify-between gap-3 text-sm"
+              >
+                <span className="min-w-0 truncate">
+                  {i.nombre}
+                  {i.club ? (
+                    <span className="text-muted-foreground"> · {i.club}</span>
+                  ) : null}
+                </span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {ENTRY_STATUS_LABEL[i.estado]}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-muted-foreground">
+            Todavía no figuran en la lista de la organización.
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }
