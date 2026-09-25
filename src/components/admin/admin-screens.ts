@@ -1,6 +1,7 @@
 import {
   Activity,
   FileCheck2,
+  FileSearch,
   Inbox,
   Link2,
   Scale,
@@ -76,6 +77,13 @@ export const PANTALLAS_ADMIN: PantallaAdmin[] = [
     unidad: ['fuente con retraso', 'fuentes con retraso'],
   },
   {
+    href: '/admin/extraccion',
+    titulo: 'Extracción de circulares',
+    resumen:
+      'Plazos, cuotas, horarios y sedes que un modelo ha sacado del PDF, cada uno con la frase del documento, para aprobarlos o rechazarlos.',
+    icono: FileSearch,
+  },
+  {
     href: '/admin/normativa',
     titulo: 'Normativa',
     resumen:
@@ -106,6 +114,7 @@ export const TITULO_CORTO: Record<string, string> = {
   '/admin/emparejar': 'Emparejar',
   '/admin/cuarentena': 'Cuarentena',
   '/admin/salud': 'Ingestión',
+  '/admin/extraccion': 'Extracción',
   '/admin/normativa': 'Normativa',
   '/admin/usuarios': 'Usuarios',
   '/admin/ajustes': 'Ajustes',

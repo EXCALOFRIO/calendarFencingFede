@@ -1,0 +1,69 @@
+{
+  "_comentario": [
+    "Respuestas de modelo GUARDADAS para probar el embudo entero sin gastar una",
+    "llamada. Se usan con:",
+    "  npx tsx tests/extraccion-real.mts --simular tests/fixtures/extraccion-simulada.json --titulo '17-25 CTO ESPANA'",
+    "La clave es un trozo de la URL del PDF. Cada respuesta imita lo que",
+    "devolvería el modelo, incluidas A PROPOSITO citas inventadas que el",
+    "verificador tiene que tumbar: son las marcadas con '(inventada)' aqui abajo."
+  ],
+  "CIRCULAR_17-25_CTO_ESPANA_SENIOR": {
+    "sede": {
+      "nombre": "Instalación deportiva Gallur",
+      "cita": "serán habilitados los siguientes horarios en la instalación deportiva Gallur"
+    },
+    "cuota": {
+      "importeEur": 25,
+      "concepto": "Autorización de acceso a pista",
+      "cita": "abonando la cuota de 25 euros"
+    },
+    "horarios": [
+      {
+        "etiqueta": "apertura_instalacion",
+        "hora": "17:00",
+        "prueba": "control de material del viernes",
+        "cita": "De 17:00 a 21:00 – Todas las armas"
+      },
+      {
+        "etiqueta": "apertura_instalacion",
+        "hora": "07:30",
+        "prueba": "control de material del sábado",
+        "cita": "De 07:30 a 09:00 – Armas masculinas"
+      },
+      {
+        "etiqueta": "inicio",
+        "hora": "09:00",
+        "prueba": "competición individual",
+        "cita": "La competición individual dará comienzo a las 09:00 horas del sábado."
+      }
+    ],
+    "plazos": [
+      {
+        "tipo": "L1",
+        "fechaLimite": "2025-05-23",
+        "cita": "El plazo de inscripción finaliza el 23 de mayo de 2025 a las 12:00."
+      }
+    ],
+    "categoriasAdmitidas": []
+  },
+  "CIRCULAR_16-25_CLASIFICADOS_CTO_ESPANA_SENIOR": {
+    "plazos": [
+      {
+        "tipo": "L1",
+        "fechaLimite": "2025-05-23",
+        "cita": "el día 23 de mayo de 2025 a las 12:00 AM"
+      }
+    ],
+    "cuota": {
+      "importeEur": 30,
+      "cita": "La cuota de inscripción es de 30 euros por tirador."
+    },
+    "horarios": [],
+    "categoriasAdmitidas": []
+  },
+  "CIRCULAR_12-26_GESTION_ADMINISTRATIVA_26-27": {
+    "plazos": [],
+    "horarios": [],
+    "categoriasAdmitidas": []
+  }
+}

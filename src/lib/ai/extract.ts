@@ -1,3 +1,4 @@
+import { getCloudflareContext } from '@opennextjs/cloudflare';
 import { z } from 'zod';
 
 /**
@@ -44,21 +45,27 @@ import { z } from 'zod';
  *
  * PRIVACIDAD: POR QUÉ HAY UN CORTAFUEGOS ANTES DE ENVIAR NADA
  * -----------------------------------------------------------
- * Verificado en los términos de Gemini: en el tier GRATUITO Google usa el
- * contenido enviado para mejorar sus productos; en el de pago, no. Los
- * dossieres de convocatoria pueden contener NOMBRES DE MENORES (listas
- * nominales de convocados, fechas de nacimiento, nº de licencia, DNI). Por eso
- * `pareceContenerDatosPersonales` se ejecuta ANTES de cualquier llamada: si la
- * clave es de tier gratuito y el documento parece llevar datos personales, NO
- * SE ENVÍA. Se registra el motivo y se acabó. Las listas nominales de
- * convocados no se mandan nunca a un tier gratuito.
+ * Los dossieres de convocatoria contienen NOMBRES DE MENORES (listas nominales
+ * de convocados, fechas de nacimiento, nº de licencia, DNI). La regla de este
+ * proyecto es absoluta y no depende del proveedor ni de si la cuenta es de
+ * pago: un documento con datos personales NO SE MANDA A NINGÚN MODELO.
+ *
+ * Por eso `pareceContenerDatosPersonales` se ejecuta ANTES de construir la
+ * petición y antes siquiera de instanciar el cliente. Si salta, se registra el
+ * motivo y se acabó. Que Cloudflare no entrene con lo que se le envía no
+ * cambia nada: el dato personal de un menor no tiene por qué salir de aquí
+ * para que alguien averigüe a qué hora empieza una prueba.
+ *
+ * `tierDePago` sobrevive, pero ya solo decide una cosa distinta: si se puede
+ * mandar a transcribir un PDF ESCANEADO, del que por definición no se puede
+ * saber qué lleva dentro hasta haberlo enviado.
  */
 
 // ---------------------------------------------------------------------------
 // Configuración por entorno
 // ---------------------------------------------------------------------------
 
-export type ProveedorIa = 'gemini' | 'openrouter';
+export type ProveedorIa = 'workers_ai' | 'gemini' | 'openrouter';
 
 export type ConfiguracionIa = {
   activa: boolean;
@@ -67,23 +74,67 @@ export type ConfiguracionIa = {
   modelo: string;
   /** `true` solo con una clave de pago. Condiciona qué se puede enviar. */
   tierDePago: boolean;
+  /** Cloudflare: solo hacen falta para la vía REST (local y scripts). */
+  cuentaCloudflare: string | null;
+  tokenCloudflare: string | null;
+};
+
+/**
+ * Modelo por defecto de cada proveedor.
+ *
+ * WORKERS AI: `@cf/google/gemma-4-26b-a4b-it`.
+ *
+ * Por qué ese y no otro, con la fuente delante
+ * (https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/ y
+ * https://developers.cloudflare.com/workers-ai/platform/pricing/):
+ *
+ *  1. VENTANA DE 256.000 TOKENS. Es el criterio que descarta a casi todos. Una
+ *     circular de la RFEE ronda los 6.000-40.000 caracteres, pero las hay de
+ *     20 páginas con horarios de tres días. `@cf/meta/llama-3.3-70b-instruct-fp8-fast`
+ *     es mejor modelo y soporta JSON mode, pero su ventana son 24.000 tokens:
+ *     recortaría los dossieres largos justo por donde están los horarios.
+ *  2. PRECIO: 0,10 $ / 0,30 $ por millón de tokens (entrada/salida), y NO está
+ *     en la lista de modelos excluidos de la capa gratuita, así que entra en
+ *     los 10.000 neurons diarios de balde. 278 circulares caben de sobra.
+ *  3. SOPORTA `response_format` con JSON Schema, que es lo que convierte la
+ *     salida en estructurada de verdad en vez de en texto que hay que adivinar.
+ *  4. Es multimodal, lo que deja abierta la puerta al OCR de escaneados sin
+ *     cambiar de proveedor (hoy no se usa: ver `transcribirPdf`).
+ *
+ * Alternativa barata y con JSON mode explícitamente documentado en
+ * https://developers.cloudflare.com/workers-ai/features/json-mode/ :
+ * `@cf/meta/llama-3.1-8b-instruct-fp8-fast` (32.000 tokens, 0,045 $/M). Se
+ * cambia con AI_MODEL, sin tocar código.
+ */
+export const MODELO_POR_DEFECTO: Record<ProveedorIa, string> = {
+  workers_ai: '@cf/google/gemma-4-26b-a4b-it',
+  gemini: 'gemini-2.5-flash',
+  openrouter: 'google/gemini-2.5-flash',
 };
 
 /**
  * Se lee en cada llamada y no al cargar el módulo: el interruptor tiene que
- * poder cambiarse en Vercel sin desplegar, y los tests necesitan alterarlo.
+ * poder cambiarse en el panel de Cloudflare sin desplegar, y los tests
+ * necesitan alterarlo.
  */
 export function leerConfiguracionIa(): ConfiguracionIa {
-  const proveedorBruto = (process.env.AI_PROVIDER ?? 'gemini').trim().toLowerCase();
-  const proveedor: ProveedorIa = proveedorBruto === 'openrouter' ? 'openrouter' : 'gemini';
+  const proveedorBruto = (process.env.AI_PROVIDER ?? 'workers_ai').trim().toLowerCase();
+  const proveedor: ProveedorIa =
+    proveedorBruto === 'gemini'
+      ? 'gemini'
+      : proveedorBruto === 'openrouter'
+        ? 'openrouter'
+        : 'workers_ai';
   return {
     activa: process.env.AI_EXTRACTION_ENABLED === 'true',
     proveedor,
     apiKey: process.env.AI_API_KEY?.trim() || null,
-    modelo: process.env.AI_MODEL?.trim() || 'gemini-2.5-flash',
+    modelo: process.env.AI_MODEL?.trim() || MODELO_POR_DEFECTO[proveedor],
     // Cualquier valor distinto de "true" se trata como tier gratuito. El fallo
     // seguro es no enviar, no enviar de más.
     tierDePago: process.env.AI_PAID_TIER === 'true',
+    cuentaCloudflare: process.env.CLOUDFLARE_ACCOUNT_ID?.trim() || null,
+    tokenCloudflare: process.env.CLOUDFLARE_API_TOKEN?.trim() || null,
   };
 }
 
@@ -133,29 +184,77 @@ const RE_COMILLA_DOBLE = new RegExp(
 );
 
 /**
- * Normaliza para cotejar cita contra documento.
+ * Normaliza para cotejar cita contra documento, CARÁCTER A CARÁCTER, y guarda
+ * de dónde salió cada carácter del resultado.
  *
  * Los PDFs meten guiones blandos, espacios de ancho cero, comillas
  * tipográficas y saltos de línea en mitad de una frase. Comparar en crudo
  * daría falsos negativos constantes y acabaríamos descartando citas buenas,
  * que es tan malo como aceptar las malas: la verificación dejaría de usarse.
+ *
+ * Por qué se hace por caracteres en lugar de con cinco `.replace()` seguidos,
+ * que es más corto: la pantalla de revisión enseña el TROZO DEL PDF alrededor
+ * de la cita, y para eso hace falta saber a qué posición del texto ORIGINAL
+ * corresponde la coincidencia encontrada en el texto normalizado. Sin el mapa
+ * de índices solo se podría enseñar el texto aplastado, en minúsculas y sin
+ * acentos, que es justo lo que un revisor no puede comparar con el PDF.
  */
-export function normalizarParaCotejo(texto: string): string {
-  return texto
-    .normalize('NFD')
-    // Sin acentos: las fuentes escriben "Espana" y "España" indistintamente.
-    .replace(RE_DIACRITICOS, '')
-    // Invisibles que pdf.js arrastra: guion blando, anchos cero, BOM.
-    .replace(RE_INVISIBLES, '')
-    // Guiones y comillas tipográficas -> ASCII.
-    .replace(RE_GUIONES, '-')
-    .replace(RE_COMILLA_SIMPLE, "'")
-    .replace(RE_COMILLA_DOBLE, '"')
+export type TextoNormalizado = {
+  normalizado: string;
+  /** `indices[i]` = posición en el texto original del carácter i. */
+  indices: number[];
+};
+
+export function normalizarConIndices(texto: string): TextoNormalizado {
+  const piezas: string[] = [];
+  const indices: number[] = [];
+  let pendienteEspacio = false;
+
+  for (let i = 0; i < texto.length; i += 1) {
+    const original = texto[i];
+
     // `\s` en JavaScript ya incluye el espacio duro (A0), así que este colapso
-    // se lo lleva por delante junto con los saltos de línea.
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
+    // se lleva por delante los saltos de línea y los espacios duros.
+    if (/\s/.test(original)) {
+      // El espacio no se emite todavía: si el texto se acaba aquí, sobra
+      // (equivale al `.trim()` final).
+      if (piezas.length > 0) pendienteEspacio = true;
+      continue;
+    }
+
+    const convertido = original
+      .normalize('NFD')
+      // Sin acentos: las fuentes escriben "Espana" y "España" indistintamente.
+      .replace(RE_DIACRITICOS, '')
+      // Invisibles que pdf.js arrastra: guion blando, anchos cero, BOM.
+      .replace(RE_INVISIBLES, '')
+      // Guiones y comillas tipográficas -> ASCII.
+      .replace(RE_GUIONES, '-')
+      .replace(RE_COMILLA_SIMPLE, "'")
+      .replace(RE_COMILLA_DOBLE, '"')
+      .toLowerCase();
+
+    // Un invisible desaparece entero: no cuenta como carácter ni como espacio.
+    if (convertido.length === 0) continue;
+
+    if (pendienteEspacio) {
+      piezas.push(' ');
+      indices.push(i);
+      pendienteEspacio = false;
+    }
+
+    for (const caracter of convertido) {
+      piezas.push(caracter);
+      indices.push(i);
+    }
+  }
+
+  return { normalizado: piezas.join(''), indices };
+}
+
+/** El texto normalizado a secas, que es lo que se compara. */
+export function normalizarParaCotejo(texto: string): string {
+  return normalizarConIndices(texto).normalizado;
 }
 
 /**
@@ -179,6 +278,37 @@ export function localizarCita(cita: string, textoDocumento: string): number {
   return normalizarParaCotejo(textoDocumento).indexOf(aguja);
 }
 
+/**
+ * Trozo del texto ORIGINAL del PDF alrededor de la cita, para ponerlo al lado
+ * del valor en la pantalla de revisión.
+ *
+ * Se devuelve el texto tal como está en el documento —con sus acentos, sus
+ * mayúsculas y sus erratas— y no el normalizado: el revisor tiene que poder
+ * comparar lo que ve con el PDF abierto al lado. Si la cita no aparece,
+ * devuelve `null`; no hay contexto que enseñar de algo que no está.
+ */
+export function extraerContexto(
+  cita: string,
+  textoDocumento: string,
+  margen = 200,
+): string | null {
+  const aguja = normalizarParaCotejo(cita);
+  if (aguja.length < MIN_LONGITUD_CITA) return null;
+
+  const { normalizado, indices } = normalizarConIndices(textoDocumento);
+  const posicion = normalizado.indexOf(aguja);
+  if (posicion < 0) return null;
+
+  const inicioOriginal = indices[posicion];
+  const finOriginal = indices[Math.min(posicion + aguja.length, indices.length - 1)];
+
+  const desde = Math.max(0, inicioOriginal - margen);
+  const hasta = Math.min(textoDocumento.length, finOriginal + margen);
+
+  const trozo = textoDocumento.slice(desde, hasta).replace(/\s+/g, ' ').trim();
+  return `${desde > 0 ? '…' : ''}${trozo}${hasta < textoDocumento.length ? '…' : ''}`;
+}
+
 // ---------------------------------------------------------------------------
 // Cortafuegos de privacidad
 // ---------------------------------------------------------------------------
@@ -190,20 +320,41 @@ export type DeteccionDatosPersonales = {
 
 const PATRON_DNI = /\b\d{8}\s?-?\s?[A-Za-z]\b/;
 const PATRON_NIE = /\b[XYZxyz]\s?-?\s?\d{7}\s?-?\s?[A-Za-z]\b/;
-const PATRON_EMAIL = /\b[\w.+-]+@[\w-]+\.[a-zA-Z]{2,}\b/;
-const PATRON_TELEFONO = /\b(?:\+34[\s-]?)?[6-9]\d{2}[\s-]?\d{2}[\s-]?\d{2}[\s-]?\d{2}\b/;
+const PATRON_EMAIL = /[\w.+-]+@[\w-]+\.[a-zA-Z]{2,}/g;
+const PATRON_TELEFONO = /(?:\+34[\s-]?)?\b[6-9]\d{2}[\s-]?\d{2}[\s-]?\d{2}[\s-]?\d{2}\b/g;
+/**
+ * Etiquetas de fecha de nacimiento.
+ *
+ * Deliberadamente NO incluye "nacidos en 2009", que es como las normativas
+ * definen las categorías ("M17: nacidos en 2009 y 2010"). Eso no es el dato de
+ * una persona, es la definición de una categoría, y bloquear por ahí dejaba
+ * fuera justo los documentos que más interesa leer.
+ */
 const PATRON_ETIQUETA_NACIMIENTO =
-  /\b(fecha\s+de\s+nacimiento|f\.?\s?nac\.?|nacid[oa]s?\s+(el|en)|a[nñ]o\s+de\s+nacimiento)\b/i;
+  /\b(fecha\s+de\s+nacimiento|f\.?\s?nac\.?|a[nñ]o\s+de\s+nacimiento)\b/i;
 const PATRON_ETIQUETA_LICENCIA =
   /\blicencia\s*(federativa|deportiva)?\s*(n[.º°o]?)?\s*[:\-–.]?\s*[A-Za-z]{0,4}\s?\d{3,6}\b/i;
 /** Formato de licencia observado en Skermo: 3 letras + 5 dígitos ("SGL00510"). */
 const PATRON_LICENCIA_SUELTA = /\b[A-Z]{3}\d{5}\b/;
 const PATRON_LISTA_NOMINAL =
   /\b(relaci[oó]n\s+de\s+(convocad|seleccionad|inscrit)|list(a|ado)\s+de\s+(convocad|seleccionad|inscrit|participantes|tiradores)|convocad[oa]s\s*:|seleccionad[oa]s\s*:)/i;
+/**
+ * Fórmula exacta con la que la RFEE encabeza una selección: "ha seleccionado
+ * para participar … a los/as siguientes deportistas". Detrás de esa frase
+ * viene SIEMPRE la lista de nombres, y en categorías cadete son menores.
+ */
+const PATRON_ANUNCIO_SELECCION =
+  /\b(ha\s+seleccionad[oa]\s+para\s+participar|siguientes\s+(deportistas|tiradores|tiradores\/as|convocad))/i;
 
 /**
- * Palabras que aparecen en cualquier dossier y que, si no se excluyen, hacen
+ * Palabras que aparecen en cualquier circular y que, si no se excluyen, hacen
  * que "CAMPEONATO DE ESPAÑA" cuente como nombre de persona.
+ *
+ * La lista creció al pasar las circulares reales: con la versión corta, una
+ * normativa de 18 páginas daba 17 "nombres" que eran todos títulos de
+ * apartado ("VENCEDOR LIGA", "REGLAS ESPECIALES", "CLASIFICACION FINAL"), y
+ * el documento entero se bloqueaba por nada. Un cortafuegos que salta siempre
+ * es un cortafuegos que acaba desconectado.
  */
 const PALABRAS_NO_PERSONA = new Set([
   'CAMPEONATO',
@@ -241,28 +392,147 @@ const PALABRAS_NO_PERSONA = new Set([
   'REGLAMENTO',
   'ARBITROS',
   'DIRECTOR',
+  // Vocabulario de normativa, que es donde estaban todos los falsos positivos.
+  'NORMATIVA',
+  'NORMATIVAS',
+  'PARTICIPACION',
+  'CLASIFICACION',
+  'CLASIFICACIONES',
+  'DIVISION',
+  'DIVISIONES',
+  'LIGA',
+  'LIGAS',
+  'VENCEDOR',
+  'VENCEDORA',
+  'REGLAS',
+  'REGLA',
+  'ESPECIALES',
+  'COMPETICION',
+  'COMPETICIONES',
+  'COEFICIENTE',
+  'PUNTUACION',
+  'PUNTOS',
+  'TEMPORADA',
+  'ANTERIOR',
+  'MULTA',
+  'MULTAS',
+  'CADETE',
+  'INFANTIL',
+  'JUNIOR',
+  'SENIOR',
+  'VETERANOS',
+  'ABSOLUTO',
+  'ABSOLUTA',
+  'MODIFICACION',
+  'SISTEMA',
+  'CAMBIOS',
+  'RANKING',
+  'RANKINGS',
+  'NACIONAL',
+  'NACIONALES',
+  'AUTONOMICA',
+  'AUTONOMICAS',
+  'ESPANA',
+  'TORNEOS',
+  'CAMPEONATOS',
+  'FINAL',
+  'FINALES',
+  'ORO',
+  'PLATA',
+  'BRONCE',
+  'FASE',
+  'GRUPOS',
+  'CTO',
+  'TNR',
+  'CUADRO',
+  'PISTA',
+  'PISTAS',
+  'TIRADOR',
+  'TIRADORES',
+  'TIRADORA',
+  'TIRADORAS',
+  'EQUIPO',
+  'PRUEBA',
+  'PRUEBAS',
+  'ANEXO',
+  'DOCUMENTACION',
+  'FEDERACIONES',
+  'CLUBES',
+  'LICENCIA',
+  'LICENCIAS',
+  'GESTION',
+  'ADMINISTRATIVA',
+  'ORGANIZACION',
+  'ORGANIZADOR',
 ]);
 
 /**
- * ¿Esta línea tiene pinta de "nombre y apellidos"? 2-5 palabras capitalizadas
- * o en mayúsculas, sin cifras y sin vocabulario propio de un dossier.
+ * ¿Esta línea tiene pinta de "nombre y apellidos"?
+ *
+ * La primera versión aceptaba cualquier línea de 2 a 5 palabras capitalizadas
+ * y era inservible: en una normativa, los títulos de apartado van en
+ * mayúsculas y tienen exactamente esa forma. Ahora se exige una de estas dos
+ * formas, que son las que de verdad tienen los listados federativos:
+ *
+ *   a) "Apellido1 Apellido2, Nombre" — con coma, que es como los exporta
+ *      Skermo y como se escriben en las convocatorias; o
+ *   b) Nombre Propio En Caja De Título ("García Pérez Lucía"), que un título
+ *      de apartado en MAYÚSCULAS no cumple.
+ *
+ *   c) TODO EN MAYÚSCULAS con tres palabras o más, que es como la RFEE
+ *      publica las selecciones ("DANIELA PINYOL TOMAS SEA-T"). Aquí está el
+ *      riesgo de confundirlo con un título de apartado, y por eso se exigen
+ *      tres palabras (los títulos suelen ser dos: "REGLAS ESPECIALES") y se
+ *      pasa por la lista de vocabulario de arriba.
+ *
+ * Medido sobre las circulares reales: las dos normativas de 2026-2027 dan
+ * CERO líneas con esta función, y las circulares de selección al Europeo
+ * Sub23 y al Mundial Cadete-Junior dan 30 y 32.
  */
 function pareceNombreDePersona(linea: string): boolean {
   const limpia = linea.replace(/^\s*\d{1,3}[.)\-]\s*/, '').trim();
   if (limpia.length < 6 || limpia.length > 60) return false;
   if (/\d/.test(limpia)) return false;
-  const palabras = limpia.split(/\s+/).filter((p) => p.length > 1);
+
+  const conComa = /^[^,]{3,40},[^,]{2,25}$/.test(limpia);
+  const palabras = limpia.replace(',', ' ').split(/\s+/).filter((p) => p.length > 1);
   if (palabras.length < 2 || palabras.length > 5) return false;
+
   const normalizadas = palabras.map((p) =>
-    p
-      .normalize('NFD')
-      .replace(RE_DIACRITICOS, '')
-      .toUpperCase(),
+    p.normalize('NFD').replace(RE_DIACRITICOS, '').toUpperCase(),
   );
   if (normalizadas.some((p) => PALABRAS_NO_PERSONA.has(p))) return false;
-  return palabras.every((p) =>
-    /^[A-ZÁÉÍÓÚÜÑ][A-Za-zÀ-ſ'’-]*$/.test(p),
-  );
+  if (!palabras.every((p) => /^[A-ZÁÉÍÓÚÜÑ][A-Za-zÀ-ſ'’-]*$/.test(p))) return false;
+
+  const cajaDeTitulo = palabras.every((p) => /[a-zà-ÿ]/.test(p.slice(1)));
+  return conComa || cajaDeTitulo || palabras.length >= 3;
+}
+
+/**
+ * Cuenta líneas con pinta de nombre que van SEGUIDAS.
+ *
+ * Un listado es un bloque, no tres líneas sueltas repartidas por el
+ * documento. Exigir que estén juntas es lo que distingue "Relación de
+ * convocados" de un par de nombres propios citados de pasada en un párrafo.
+ */
+function lineasDeListadoNominal(texto: string): number {
+  const lineas = texto.split(/\r?\n/);
+  let mayorRacha = 0;
+  let racha = 0;
+  let total = 0;
+
+  for (const linea of lineas) {
+    if (pareceNombreDePersona(linea)) {
+      racha += 1;
+      mayorRacha = Math.max(mayorRacha, racha);
+      total += 1;
+    } else if (linea.trim() !== '') {
+      racha = 0;
+    }
+  }
+
+  // Si nunca hay cuatro seguidas, no es un listado: son coincidencias.
+  return mayorRacha >= 4 ? total : 0;
 }
 
 /**
@@ -280,10 +550,8 @@ export function pareceContenerDatosPersonales(texto: string): DeteccionDatosPers
 
   if (PATRON_DNI.test(texto)) motivos.push('Contiene algo con formato de DNI.');
   if (PATRON_NIE.test(texto)) motivos.push('Contiene algo con formato de NIE.');
-  if (PATRON_EMAIL.test(texto)) motivos.push('Contiene direcciones de correo.');
-  if (PATRON_TELEFONO.test(texto)) motivos.push('Contiene números de teléfono.');
   if (PATRON_ETIQUETA_NACIMIENTO.test(texto)) {
-    motivos.push('Menciona fechas de nacimiento.');
+    motivos.push('Menciona la fecha de nacimiento de alguien.');
   }
   if (PATRON_ETIQUETA_LICENCIA.test(texto) || PATRON_LICENCIA_SUELTA.test(texto)) {
     motivos.push('Contiene números de licencia federativa.');
@@ -291,17 +559,59 @@ export function pareceContenerDatosPersonales(texto: string): DeteccionDatosPers
   if (PATRON_LISTA_NOMINAL.test(texto)) {
     motivos.push('Anuncia una relación nominal de personas (convocados o inscritos).');
   }
+  if (PATRON_ANUNCIO_SELECCION.test(texto)) {
+    motivos.push('Anuncia una selección de deportistas: detrás va la lista de nombres.');
+  }
 
-  const lineasConNombre = texto
-    .split(/\r?\n/)
-    .filter((linea) => pareceNombreDePersona(linea)).length;
+  const lineasConNombre = lineasDeListadoNominal(texto);
   if (lineasConNombre >= 6) {
     motivos.push(
-      `Hay ${lineasConNombre} líneas con aspecto de nombre y apellidos: parece un listado de personas.`,
+      `Hay ${lineasConNombre} líneas seguidas con aspecto de nombre y apellidos: ` +
+        'parece un listado de personas.',
     );
   }
 
   return { contieneDatosPersonales: motivos.length > 0, motivos };
+}
+
+export type Redaccion = {
+  texto: string;
+  correos: number;
+  telefonos: number;
+};
+
+/**
+ * Tacha los datos de contacto ANTES de que el texto salga de aquí.
+ *
+ * Por qué tachar y no bloquear: toda circular de la RFEE lleva en el pie
+ * "rfee@esgrima.es" y un teléfono, y varias dan el correo de la persona que
+ * lleva las inscripciones. Si eso bastara para bloquear, no se procesaría ni
+ * una sola circular y la funcionalidad entera sobraría. Y si se enviara tal
+ * cual, estaríamos mandando datos de contacto de personas concretas a un
+ * modelo sin ninguna necesidad: el dato que buscamos es una hora o un importe.
+ *
+ * Tachar resuelve las dos cosas. Lo que se manda, lo que se guarda en la base
+ * de datos y lo que se enseña en la pantalla de revisión es SIEMPRE el texto
+ * ya tachado, así que las citas se cotejan contra él y todo cuadra.
+ *
+ * Esto NO sustituye al cortafuegos: un documento cuyo contenido SON personas
+ * (una relación de convocados) no se arregla tachando cuatro correos, y ese se
+ * bloquea entero.
+ */
+export function redactarDatosDeContacto(texto: string): Redaccion {
+  let correos = 0;
+  let telefonos = 0;
+
+  const sinCorreos = texto.replace(PATRON_EMAIL, () => {
+    correos += 1;
+    return '[correo oculto]';
+  });
+  const sinTelefonos = sinCorreos.replace(PATRON_TELEFONO, () => {
+    telefonos += 1;
+    return '[teléfono oculto]';
+  });
+
+  return { texto: sinTelefonos, correos, telefonos };
 }
 
 // ---------------------------------------------------------------------------
@@ -487,6 +797,60 @@ export function construirPromptUsuario(
 }
 
 // ---------------------------------------------------------------------------
+// Huella de la extracción: qué hace que un documento haya que reprocesarlo
+// ---------------------------------------------------------------------------
+
+/**
+ * Versión de la FORMA de los datos extraídos. Se sube a mano, y solo cuando
+ * cambia el esquema de salida de manera que valga la pena volver a pasar las
+ * 278 circulares. Añadir un campo nuevo: se sube. Corregir una errata de un
+ * comentario: no.
+ */
+export const VERSION_ESQUEMA = 1;
+
+/**
+ * Versión de los FILTROS previos (cortafuegos de privacidad y tachado).
+ *
+ * Va dentro de la huella por un caso que pasó de verdad al probar con las
+ * circulares reales: el cortafuegos bloqueaba documentos inocentes, se afinó,
+ * y sin esta versión los documentos ya marcados como "bloqueado" se habrían
+ * quedado así para siempre, porque ni el PDF ni el prompt habían cambiado.
+ * Lo que decide si un documento se envía forma parte de la extracción tanto
+ * como el prompt.
+ */
+export const VERSION_FILTROS = 3;
+
+/** SHA-256 de una cadena, en hexadecimal. */
+export async function hashTexto(texto: string): Promise<string> {
+  const datos = new TextEncoder().encode(texto);
+  const digest = await crypto.subtle.digest('SHA-256', datos);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/**
+ * Huella de TODO lo que determina qué se le pregunta al modelo: el prompt de
+ * sistema, el esquema de salida y la versión de los filtros previos.
+ *
+ * La idempotencia no puede colgar solo del hash del PDF. Si colgara, mejorar
+ * el prompt no serviría de nada: los 278 documentos ya estarían marcados como
+ * procesados y nadie volvería a mirarlos jamás. Y si no colgara de nada, cada
+ * ejecución del cron pagaría otra vez la extracción entera.
+ *
+ * Con las tres piezas (contenido del PDF, prompt y versión del esquema) se
+ * reprocesa exactamente cuando hay motivo: cambia el documento, o cambiamos
+ * nosotros la forma de preguntar. Y se reprocesa solo, sin borrar nada: las
+ * filas viejas siguen ahí con su hash de prompt antiguo, así que se puede
+ * comparar qué sacaba la versión anterior.
+ */
+export async function huellaDeExtraccion(): Promise<string> {
+  return hashTexto(
+    `${PROMPT_SISTEMA} | ${JSON.stringify(ESQUEMA_JSON_SALIDA)} | filtros:${VERSION_FILTROS}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Cliente del modelo: un único punto donde vive el proveedor
 // ---------------------------------------------------------------------------
 
@@ -517,14 +881,182 @@ const INSTRUCCION_OCR =
 /**
  * Fábrica del cliente. Cambiar de proveedor es cambiar `AI_PROVIDER`: ningún
  * otro fichero del proyecto sabe qué modelo hay detrás.
+ *
+ * Devuelve `null` cuando no hay a quién preguntar, y eso NO es un error: la
+ * aplicación entera funciona sin IA. El cron lo registra, la pantalla lo dice
+ * y el calendario sigue en pie. Con IA funciona mejor; sin ella, funciona.
+ *
+ * La escalera de abajo existe por un detalle práctico: `AI_PROVIDER` vive en
+ * `wrangler.jsonc`, que es de otra persona. Si apunta a un proveedor sin
+ * credenciales pero el Worker sí trae el binding de Workers AI, usar el
+ * binding es mejor que quedarse sin extraer nada, y se registra qué modelo se
+ * acabó usando, así que no hay magia invisible.
  */
 export function crearClienteModelo(
   config: ConfiguracionIa = leerConfiguracionIa(),
 ): ClienteModelo | null {
-  if (!config.apiKey) return null;
-  return config.proveedor === 'openrouter'
-    ? clienteOpenRouter(config)
-    : clienteGemini(config);
+  if (config.proveedor === 'workers_ai') return clienteWorkersAi(config);
+  if (config.apiKey) {
+    return config.proveedor === 'openrouter'
+      ? clienteOpenRouter(config)
+      : clienteGemini(config);
+  }
+  // Proveedor configurado pero sin clave: se intenta Workers AI antes de
+  // rendirse, con SU modelo por defecto (el de Gemini no existe allí).
+  return clienteWorkersAi({ ...config, modelo: MODELO_POR_DEFECTO.workers_ai });
+}
+
+// ---------------------------------------------------------------------------
+// Workers AI
+// ---------------------------------------------------------------------------
+
+/**
+ * Lo mínimo del binding `AI` de Workers, escrito a mano en vez de traerse
+ * `@cloudflare/workers-types`: ese paquete redefine `Response` y `fetch` y
+ * choca con la `lib: ["dom"]` del tsconfig, que sí necesitan los componentes
+ * de React. Mismo criterio que en `src/lib/storage.ts` con el cubo de R2.
+ */
+export type BindingWorkersAi = {
+  run(modelo: string, entradas: Record<string, unknown>): Promise<unknown>;
+};
+
+declare global {
+  interface CloudflareEnv {
+    /** Binding de Workers AI. Se declara en `wrangler.jsonc` con `"ai": { "binding": "AI" }`. */
+    AI?: BindingWorkersAi;
+  }
+}
+
+/**
+ * Devuelve el binding `AI`, o `null` si no estamos dentro de un Worker.
+ *
+ * `getCloudflareContext()` LANZA fuera del contexto de Cloudflare, que es
+ * exactamente lo que pasa con `next dev`, con los scripts de `tsx` y con
+ * Vitest. Por eso el `try`: aquí no tener binding no es un error, es el caso
+ * normal en local, y para eso está la vía REST.
+ */
+export function bindingWorkersAi(): BindingWorkersAi | null {
+  try {
+    return getCloudflareContext().env.AI ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Los ids de modelo de Workers AI son "@cf/proveedor/modelo". */
+const RE_MODELO_WORKERS_AI = /^[@a-zA-Z0-9._/-]+$/;
+
+/**
+ * Cliente de Workers AI con dos caminos y el mismo comportamiento:
+ *
+ *  a) el BINDING `env.AI` cuando corremos dentro del Worker. Es el camino de
+ *     producción: no sale a Internet, no hay token que rotar y no cuenta como
+ *     subrequest.
+ *  b) la REST API cuando no hay binding (local, `tsx`, Vitest). Necesita
+ *     CLOUDFLARE_ACCOUNT_ID y un CLOUDFLARE_API_TOKEN con permiso
+ *     "Workers AI: Read" y "Workers AI: Edit".
+ *     https://developers.cloudflare.com/workers-ai/get-started/rest-api/
+ *
+ * Si no hay ninguno de los dos, devuelve `null` y el sistema sigue sin IA.
+ */
+export function clienteWorkersAi(config: ConfiguracionIa): ClienteModelo | null {
+  const binding = bindingWorkersAi();
+  const porRest = Boolean(config.cuentaCloudflare && config.tokenCloudflare);
+  if (!binding && !porRest) return null;
+
+  const modelo = config.modelo;
+  if (!RE_MODELO_WORKERS_AI.test(modelo)) {
+    // Un id de modelo raro acabaría concatenado en una URL. No se sanea a
+    // medias: se rechaza.
+    return null;
+  }
+
+  async function ejecutar(entradas: Record<string, unknown>): Promise<string> {
+    if (binding) return respuestaDeWorkersAi(await binding.run(modelo, entradas));
+
+    const url =
+      `https://api.cloudflare.com/client/v4/accounts/${config.cuentaCloudflare}` +
+      `/ai/run/${modelo}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.tokenCloudflare}`,
+      },
+      body: JSON.stringify(entradas),
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (!res.ok) {
+      throw new Error(
+        `Workers AI devolvió ${res.status}: ${(await res.text()).slice(0, 300)}`,
+      );
+    }
+    const datos = (await res.json()) as {
+      success?: boolean;
+      result?: unknown;
+      errors?: { message?: string }[];
+    };
+    if (datos.success === false) {
+      const detalle = datos.errors?.map((e) => e.message).join('; ') || 'sin detalle';
+      throw new Error(`Workers AI rechazó la petición: ${detalle}`);
+    }
+    return respuestaDeWorkersAi(datos.result);
+  }
+
+  return {
+    modelo,
+    async generarJson(peticion) {
+      return ejecutar({
+        messages: [
+          { role: 'system', content: peticion.sistema },
+          { role: 'user', content: peticion.usuario },
+        ],
+        /**
+         * Salida estructurada de Workers AI. El esquema va DIRECTAMENTE dentro
+         * de `json_schema`, sin el envoltorio `{ name, schema }` de OpenAI.
+         * https://developers.cloudflare.com/workers-ai/features/json-mode/
+         *
+         * Cloudflare avisa de que no puede garantizar que el modelo respete el
+         * esquema, así que esto es una ayuda, no la garantía: la garantía es el
+         * `esquemaExtraccion.parse()` de más abajo.
+         */
+        response_format: { type: 'json_schema', json_schema: peticion.esquemaJson },
+        temperature: 0,
+        max_tokens: 4096,
+      });
+    },
+    async transcribirPdf() {
+      /**
+       * Workers AI NO interpreta PDFs: los modelos de visión reciben imágenes.
+       * Habría que rasterizar cada página, y rasterizar dentro de un Worker
+       * requiere un canvas que no existe allí.
+       *
+       * Se lanza en vez de devolver una transcripción vacía a propósito: un
+       * escaneado tiene que acabar en estado `sin_texto` y visible en el panel,
+       * no en una extracción "correcta" sobre un texto que nadie leyó.
+       */
+      throw new Error(
+        'Workers AI no lee PDFs: para un escaneado habría que rasterizar las ' +
+          'páginas a imagen, que no se puede hacer dentro de un Worker. El ' +
+          'documento se marca como "sin capa de texto" y se revisa a mano.',
+      );
+    },
+  };
+}
+
+/**
+ * La respuesta útil de Workers AI. Con `response_format` unos modelos
+ * devuelven `response` como cadena y otros como objeto ya parseado; aquí se
+ * normaliza a cadena, que es lo que espera `generarJson`.
+ */
+function respuestaDeWorkersAi(resultado: unknown): string {
+  if (typeof resultado === 'string') return resultado;
+  if (resultado && typeof resultado === 'object' && 'response' in resultado) {
+    const respuesta = (resultado as { response?: unknown }).response;
+    if (typeof respuesta === 'string') return respuesta;
+    if (respuesta && typeof respuesta === 'object') return JSON.stringify(respuesta);
+  }
+  throw new Error('Workers AI no devolvió texto en la respuesta');
 }
 
 function clienteGemini(config: ConfiguracionIa): ClienteModelo {
@@ -661,11 +1193,17 @@ function clienteOpenRouter(config: ConfiguracionIa): ClienteModelo {
 // ---------------------------------------------------------------------------
 
 export type PropuestaCampo = {
-  /** Clave estable: forma parte de la clave única (documentHash, field). */
+  /** Clave estable: forma parte de la clave única (extracción, campo). */
   field: string;
   proposedValue: string;
   quote: string;
   quoteVerified: boolean;
+  /**
+   * Trozo del PDF alrededor de la cita, en su forma original. Es lo que se
+   * enseña junto al valor: aprobar un dato sin ver de dónde sale es firmarlo
+   * a ciegas.
+   */
+  contexto?: string | null;
   /** Presente solo en las descartadas, para poder explicar el descarte. */
   motivoDescarte?: string;
 };
@@ -762,7 +1300,11 @@ export function verificarPropuestas(
 
   for (const propuesta of propuestas) {
     if (verificarCita(propuesta.quote, textoDocumento)) {
-      verificadas.push({ ...propuesta, quoteVerified: true });
+      verificadas.push({
+        ...propuesta,
+        quoteVerified: true,
+        contexto: extraerContexto(propuesta.quote, textoDocumento),
+      });
     } else {
       descartadas.push({
         ...propuesta,
@@ -826,7 +1368,7 @@ export type ResultadoExtraccion =
       motivo: string;
       motivosDeteccion: string[];
     }
-  | { estado: 'sin_texto'; documentHash: string; motivo: string }
+  | { estado: 'sin_texto'; documentHash: string; motivo: string; paginas?: number }
   | { estado: 'error'; documentHash: string; motivo: string }
   | {
       estado: 'ok';
@@ -837,6 +1379,12 @@ export type ResultadoExtraccion =
       origenTexto: 'unpdf' | 'ocr_modelo';
       propuestas: PropuestaCampo[];
       descartadas: PropuestaCampo[];
+      /** Lo que devolvió el modelo, ya validado. Se guarda tal cual. */
+      datos?: DatosExtraidos;
+      paginas?: number;
+      caracteresTexto?: number;
+      /** Correos y teléfonos tachados antes de enviar nada. */
+      redactados?: number;
     };
 
 const MOTIVO_DESACTIVADO =
@@ -849,6 +1397,8 @@ export type OpcionesExtraccionTexto = {
   texto: string;
   eventId?: string | null;
   origenTexto?: 'unpdf' | 'ocr_modelo';
+  /** Solo informativo: viaja hasta el libro de registro. */
+  paginas?: number;
   /** Inyectable para los tests; en producción sale de `crearClienteModelo`. */
   cliente?: ClienteModelo | null;
   config?: ConfiguracionIa;
@@ -863,27 +1413,35 @@ export async function extraerDeTexto(
   opciones: OpcionesExtraccionTexto,
 ): Promise<ResultadoExtraccion> {
   const config = opciones.config ?? leerConfiguracionIa();
-  const { documentHash, documentUrl, texto } = opciones;
+  const { documentHash, documentUrl } = opciones;
 
   if (!config.activa) return { estado: 'desactivado', motivo: MOTIVO_DESACTIVADO };
 
-  // ORDEN IMPORTANTE: el cortafuegos de privacidad va ANTES de construir la
-  // petición y antes siquiera de instanciar el cliente. Nada sale de aquí sin
-  // pasar por aquí.
-  if (!config.tierDePago) {
-    const deteccion = pareceContenerDatosPersonales(texto);
-    if (deteccion.contieneDatosPersonales) {
-      return {
-        estado: 'bloqueado_por_datos_personales',
-        documentHash,
-        motivo:
-          'El documento parece contener datos personales y la clave configurada es de ' +
-          'tier gratuito, donde el proveedor usa el contenido enviado para mejorar sus ' +
-          'productos. Puede haber nombres de menores: no se envía. Si hace falta ' +
-          'procesarlo, hay que usar una clave de pago y poner AI_PAID_TIER="true".',
-        motivosDeteccion: deteccion.motivos,
-      };
-    }
+  /**
+   * ORDEN IMPORTANTE: tachar primero, mirar después, y todo ANTES de construir
+   * la petición y de instanciar siquiera el cliente. Nada sale de aquí sin
+   * pasar por aquí, y no hay interruptor que lo apague: da igual el proveedor
+   * y da igual que la cuenta sea de pago. En estos documentos hay menores.
+   *
+   * A partir de esta línea, `texto` es el texto YA TACHADO. Es el que se
+   * envía, contra el que se verifican las citas y del que sale el trozo que
+   * ve quien revisa: si fueran textos distintos, una cita válida podría
+   * parecer inventada solo por culpa de un correo tachado.
+   */
+  const redaccion = redactarDatosDeContacto(opciones.texto);
+  const texto = redaccion.texto;
+
+  const deteccion = pareceContenerDatosPersonales(texto);
+  if (deteccion.contieneDatosPersonales) {
+    return {
+      estado: 'bloqueado_por_datos_personales',
+      documentHash,
+      motivo:
+        'El documento parece contener datos personales (puede haber menores), así ' +
+        'que no se manda a ningún modelo. Los plazos y las cuotas de esta circular ' +
+        'hay que leerlos a mano.',
+      motivosDeteccion: deteccion.motivos,
+    };
   }
 
   const cliente = opciones.cliente ?? crearClienteModelo(config);
@@ -928,6 +1486,10 @@ export async function extraerDeTexto(
     origenTexto: opciones.origenTexto ?? 'unpdf',
     propuestas: verificadas,
     descartadas,
+    datos,
+    paginas: opciones.paginas,
+    caracteresTexto: texto.length,
+    redactados: redaccion.correos + redaccion.telefonos,
   };
 }
 
@@ -978,10 +1540,11 @@ export async function extraerDeDossierPdf(opciones: {
       return {
         estado: 'sin_texto',
         documentHash,
+        paginas: lectura.paginas,
         motivo:
-          'El PDF está escaneado (no tiene capa de texto) y la clave es de tier ' +
-          'gratuito. No se puede comprobar si lleva datos personales antes de ' +
-          'enviarlo, así que no se envía.',
+          'El PDF está escaneado: no tiene capa de texto. No se puede comprobar si ' +
+          'lleva datos personales antes de enviarlo, así que no se envía. Hay que ' +
+          'leerlo a mano.',
       };
     }
     const cliente = opciones.cliente ?? crearClienteModelo(config);
@@ -1011,6 +1574,7 @@ export async function extraerDeDossierPdf(opciones: {
     texto,
     eventId: opciones.eventId ?? null,
     origenTexto,
+    paginas: lectura.paginas,
     cliente: opciones.cliente,
     config,
   });
@@ -1050,109 +1614,391 @@ export async function descargarPdf(url: string): Promise<Uint8Array> {
 }
 
 /**
- * ¿Ya procesamos este documento? Se consulta ANTES de gastar una llamada al
- * modelo: la idempotencia del hash no sirve de nada si igualmente pagamos la
- * extracción cada noche.
+ * ¿Ya procesamos este documento CON ESTE prompt y ESTE esquema?
+ *
+ * Se consulta ANTES de gastar una llamada al modelo: la idempotencia del hash
+ * no sirve de nada si igualmente pagamos la extracción cada noche. Las tres
+ * piezas de la clave están explicadas en `src/db/schema/extraccion.ts`.
  */
-export async function documentoYaProcesado(documentHash: string): Promise<boolean> {
+export async function extraccionYaRegistrada(clave: {
+  hashDocumento: string;
+  hashPrompt: string;
+  versionEsquema: number;
+}): Promise<boolean> {
   // Importación dinámica a propósito: `@/db` lanza si falta DATABASE_URL, y la
   // lógica de extracción tiene que poder probarse sin base de datos delante.
   const { db } = await import('@/db');
-  const { extractionProposal } = await import('@/db/schema');
-  const { eq } = await import('drizzle-orm');
+  const { extraccionDocumento } = await import('@/db/schema');
+  const { and, eq, ne } = await import('drizzle-orm');
+
   const filas = await db
-    .select({ id: extractionProposal.id })
-    .from(extractionProposal)
-    .where(eq(extractionProposal.documentHash, documentHash))
+    .select({ id: extraccionDocumento.id })
+    .from(extraccionDocumento)
+    .where(
+      and(
+        eq(extraccionDocumento.hashDocumento, clave.hashDocumento),
+        eq(extraccionDocumento.hashPrompt, clave.hashPrompt),
+        eq(extraccionDocumento.versionEsquema, clave.versionEsquema),
+        /**
+         * Un 'error' NO cuenta como procesado. Un 401 del proveedor, una
+         * descarga que se cayó o un timeout son accidentes, no conclusiones
+         * sobre el documento: si contaran, un fallo de configuración de una
+         * noche dejaría esa circular sin leer para siempre.
+         */
+        ne(extraccionDocumento.estado, 'error'),
+      ),
+    )
     .limit(1);
+
   return filas.length > 0;
 }
 
+/** Una circular candidata a que la lea el modelo. */
+export type DocumentoPendiente = {
+  id: string;
+  titulo: string;
+  pdfUrl: string;
+  eventId: string | null;
+  fileHash: string | null;
+};
+
 /**
- * Encola las propuestas VERIFICADAS con estado 'pendiente'.
+ * Circulares que todavía no se han procesado con el prompt y el esquema
+ * actuales, de la más reciente a la más antigua.
  *
- * Solo las verificadas: una cita que no está en el PDF no llega siquiera a la
- * pantalla de revisión, para no gastarle el tiempo a nadie revisando
- * invenciones. El descarte queda en el resultado, para el panel de admin.
+ * El orden importa: si el cron solo llega a cinco por pasada, que sean las
+ * cinco cuyos plazos están a punto de vencer, no las de 2019.
  */
-export async function guardarPropuestas(
-  resultado: Extract<ResultadoExtraccion, { estado: 'ok' }>,
-): Promise<number> {
-  if (resultado.propuestas.length === 0) return 0;
-
+export async function documentosPendientesDeExtraer(
+  limite: number,
+  huella: { hashPrompt: string; versionEsquema: number },
+): Promise<DocumentoPendiente[]> {
   const { db } = await import('@/db');
-  const { extractionProposal } = await import('@/db/schema');
+  const { extraccionDocumento, officialDocument } = await import('@/db/schema');
+  const { and, desc, eq, ne, notExists, sql } = await import('drizzle-orm');
 
-  const filas = resultado.propuestas.map((p) => ({
-    documentHash: resultado.documentHash,
-    documentUrl: resultado.documentUrl,
-    eventId: resultado.eventId,
-    field: p.field,
-    proposedValue: p.proposedValue,
-    quote: p.quote,
-    // La columna es numeric(1,0): '1' verificada, '0' sin verificar.
-    quoteVerified: p.quoteVerified ? '1' : '0',
-    model: resultado.modelo,
-    status: 'pendiente' as const,
-  }));
-
-  const insertadas = await db
-    .insert(extractionProposal)
-    .values(filas)
-    // Idempotencia: la clave única es (documentHash, field). Si ya está, no se
-    // pisa: una propuesta ya revisada no puede volver sola a 'pendiente'.
-    .onConflictDoNothing({
-      target: [extractionProposal.documentHash, extractionProposal.field],
+  return db
+    .select({
+      id: officialDocument.id,
+      titulo: officialDocument.title,
+      pdfUrl: officialDocument.pdfUrl,
+      eventId: officialDocument.eventId,
+      fileHash: officialDocument.fileHash,
     })
-    .returning({ id: extractionProposal.id });
-
-  return insertadas.length;
+    .from(officialDocument)
+    .where(
+      notExists(
+        db
+          .select({ existe: sql`1` })
+          .from(extraccionDocumento)
+          .where(
+            and(
+              eq(extraccionDocumento.documentoId, officialDocument.id),
+              eq(extraccionDocumento.hashPrompt, huella.hashPrompt),
+              eq(extraccionDocumento.versionEsquema, huella.versionEsquema),
+              // Lo que acabó en error se vuelve a intentar: ver
+              // `extraccionYaRegistrada`.
+              ne(extraccionDocumento.estado, 'error'),
+            ),
+          ),
+      ),
+    )
+    .orderBy(desc(officialDocument.publishedAt))
+    .limit(limite);
 }
 
+/** Estado del libro de registro que corresponde a cada final posible. */
+function estadoRegistrado(
+  resultado: ResultadoExtraccion,
+): 'ok' | 'sin_texto' | 'bloqueado_datos_personales' | 'sin_modelo' | 'error' {
+  switch (resultado.estado) {
+    case 'ok':
+      return 'ok';
+    case 'sin_texto':
+      return 'sin_texto';
+    case 'bloqueado_por_datos_personales':
+      return 'bloqueado_datos_personales';
+    case 'sin_clave':
+    case 'desactivado':
+      return 'sin_modelo';
+    default:
+      return 'error';
+  }
+}
+
+export type ContextoRegistro = {
+  documentoId: string | null;
+  documentoUrl: string;
+  documentoTitulo: string | null;
+  hashDocumento: string;
+  hashPrompt: string;
+  versionEsquema: number;
+  modelo: string | null;
+};
+
 /**
- * Orquestación completa de un documento: idempotencia -> descarga -> extracción
- * -> cola de revisión. Es lo que llamarán el cron o el botón del admin.
+ * Escribe el libro de registro y, si hay algo que revisar, la cola.
+ *
+ * SIEMPRE se escribe la fila de registro, acabara como acabara: es lo que
+ * impide reprocesar mañana un escaneado que hoy ya sabemos que no se puede
+ * leer, y lo que contesta en la pantalla a "¿por qué esta circular no tiene
+ * datos?".
+ *
+ * Solo se encolan las propuestas VERIFICADAS: una cita que no está en el PDF
+ * no llega siquiera a la pantalla de revisión, para no gastarle el tiempo a
+ * nadie revisando invenciones. Lo descartado se guarda en el registro, que es
+ * donde sirve: una tasa de descartes que sube avisa de que el modelo o el
+ * prompt se han degradado.
  */
-export async function procesarDocumento(opciones: {
-  documentUrl: string;
+export async function registrarExtraccion(
+  resultado: ResultadoExtraccion,
+  contexto: ContextoRegistro,
+): Promise<{ extraccionId: string; encoladas: number }> {
+  const { db } = await import('@/db');
+  const { extraccionDocumento, extraccionPropuesta } = await import('@/db/schema');
+  const { eq } = await import('drizzle-orm');
+
+  const propuestas = resultado.estado === 'ok' ? resultado.propuestas : [];
+  const descartadas = resultado.estado === 'ok' ? resultado.descartadas : [];
+
+  const valores = {
+    documentoId: contexto.documentoId,
+    documentoUrl: contexto.documentoUrl,
+    documentoTitulo: contexto.documentoTitulo,
+    hashDocumento: contexto.hashDocumento,
+    hashPrompt: contexto.hashPrompt,
+    versionEsquema: contexto.versionEsquema,
+    estado: estadoRegistrado(resultado),
+    motivo: 'motivo' in resultado ? resultado.motivo : null,
+    modelo: resultado.estado === 'ok' ? resultado.modelo : contexto.modelo,
+    origenTexto: resultado.estado === 'ok' ? resultado.origenTexto : null,
+    paginas:
+      resultado.estado === 'ok' || resultado.estado === 'sin_texto'
+        ? (resultado.paginas ?? null)
+        : null,
+    caracteresTexto:
+      resultado.estado === 'ok' ? (resultado.caracteresTexto ?? null) : null,
+    propuestaJson: resultado.estado === 'ok' ? (resultado.datos ?? null) : null,
+    descartadasJson: descartadas.length > 0 ? descartadas : null,
+    camposPropuestos: propuestas.length,
+    camposDescartados: descartadas.length,
+    creadoEn: new Date(),
+  };
+
+  const [fila] = await db
+    .insert(extraccionDocumento)
+    .values(valores)
+    /**
+     * Qué pasa si ya hay una fila con esta clave:
+     *
+     *  - si la que había acabó en ERROR, se pisa con este intento. Es el
+     *    reintento del que habla `extraccionYaRegistrada`, y sin este `set`
+     *    el segundo intento no podría escribir nada aunque saliera bien.
+     *  - si la que había es buena, no se toca NADA: una extracción ya revisada
+     *    no puede volver sola a 'pendiente' porque el cron se solape consigo
+     *    mismo.
+     */
+    .onConflictDoUpdate({
+      target: [
+        extraccionDocumento.hashDocumento,
+        extraccionDocumento.hashPrompt,
+        extraccionDocumento.versionEsquema,
+      ],
+      set: valores,
+      setWhere: eq(extraccionDocumento.estado, 'error'),
+    })
+    .returning({ id: extraccionDocumento.id });
+
+  if (!fila) {
+    const [existente] = await db
+      .select({ id: extraccionDocumento.id })
+      .from(extraccionDocumento)
+      .where(eq(extraccionDocumento.hashDocumento, contexto.hashDocumento))
+      .limit(1);
+    return { extraccionId: existente?.id ?? '', encoladas: 0 };
+  }
+
+  if (propuestas.length === 0) return { extraccionId: fila.id, encoladas: 0 };
+
+  try {
+    const insertadas = await db
+      .insert(extraccionPropuesta)
+      .values(
+        propuestas.map((p) => ({
+          extraccionId: fila.id,
+          documentoId: contexto.documentoId,
+          hashDocumento: contexto.hashDocumento,
+          campo: p.field,
+          valorPropuesto: p.proposedValue,
+          cita: p.quote,
+          citaVerificada: p.quoteVerified,
+          contexto: p.contexto ?? null,
+          estado: 'pendiente' as const,
+        })),
+      )
+      // Un campo una vez por extracción: una propuesta ya revisada no puede
+      // volver sola a 'pendiente'.
+      .onConflictDoNothing({
+        target: [extraccionPropuesta.extraccionId, extraccionPropuesta.campo],
+      })
+      .returning({ id: extraccionPropuesta.id });
+
+    return { extraccionId: fila.id, encoladas: insertadas.length };
+  } catch (error) {
+    /**
+     * El driver HTTP de Neon no tiene transacciones, así que la atomicidad se
+     * consigue deshaciendo: si la cola no se pudo escribir, se borra también
+     * la fila de registro. Si no, el documento quedaría marcado como
+     * "procesado, cero campos" y nadie volvería a mirarlo nunca.
+     */
+    await db.delete(extraccionDocumento).where(eq(extraccionDocumento.id, fila.id));
+    throw error;
+  }
+}
+
+/** Lo que devuelve procesar una circular, ya resumido para el cron. */
+export type ResumenProceso = {
+  documentoId: string | null;
+  documentoUrl: string;
+  titulo: string | null;
+  estado:
+    | 'ok'
+    | 'ya_procesado'
+    | 'sin_texto'
+    | 'bloqueado_datos_personales'
+    | 'sin_modelo'
+    | 'desactivado'
+    | 'error';
+  motivo?: string;
+  modelo?: string;
+  encoladas?: number;
+  descartadas?: number;
+  hashDocumento?: string;
+};
+
+/**
+ * Orquestación completa de una circular: idempotencia -> descarga -> lectura
+ * local -> cortafuegos -> modelo -> verificación -> cola. Es lo que llaman el
+ * cron y el botón de «Procesar ahora».
+ *
+ * El orden de las dos comprobaciones de idempotencia no es casual:
+ *
+ *  1. Si la circular ya trae `file_hash` de una pasada anterior y esa terna ya
+ *     está registrada, se sale SIN DESCARGAR nada.
+ *  2. Si no, se descarga (que es barato) y se vuelve a comprobar con el hash
+ *     real del contenido, ANTES de llamar al modelo (que es lo caro). Así el
+ *     mismo PDF republicado en otra URL tampoco se paga dos veces.
+ */
+export async function procesarDocumentoOficial(opciones: {
+  documentoId: string | null;
+  documentoUrl: string;
+  documentoTitulo?: string | null;
+  fileHash?: string | null;
   eventId?: string | null;
   cliente?: ClienteModelo | null;
   config?: ConfiguracionIa;
-}): Promise<ResultadoExtraccion & { encoladas?: number }> {
+  huella?: { hashPrompt: string; versionEsquema: number };
+}): Promise<ResumenProceso> {
   const config = opciones.config ?? leerConfiguracionIa();
-  if (!config.activa) return { estado: 'desactivado', motivo: MOTIVO_DESACTIVADO };
+  const base = {
+    documentoId: opciones.documentoId,
+    documentoUrl: opciones.documentoUrl,
+    titulo: opciones.documentoTitulo ?? null,
+  };
+
+  if (!config.activa) {
+    return { ...base, estado: 'desactivado', motivo: MOTIVO_DESACTIVADO };
+  }
+
+  const huella = opciones.huella ?? {
+    hashPrompt: await huellaDeExtraccion(),
+    versionEsquema: VERSION_ESQUEMA,
+  };
+
+  // (1) Atajo sin descargar: ya sabemos el hash de este fichero de otra vez.
+  if (
+    opciones.fileHash &&
+    (await extraccionYaRegistrada({ hashDocumento: opciones.fileHash, ...huella }))
+  ) {
+    return { ...base, estado: 'ya_procesado', hashDocumento: opciones.fileHash };
+  }
 
   let pdf: Uint8Array;
   try {
-    pdf = await descargarPdf(opciones.documentUrl);
+    pdf = await descargarPdf(opciones.documentoUrl);
   } catch (error) {
-    return { estado: 'error', documentHash: '', motivo: mensajeDeError(error) };
+    return { ...base, estado: 'error', motivo: mensajeDeError(error) };
   }
 
-  const documentHash = await hashDocumento(pdf);
-  if (await documentoYaProcesado(documentHash)) {
-    // Ya procesado: se devuelve 'ok' sin propuestas y sin llamar al modelo.
-    return {
-      estado: 'ok',
-      documentHash,
-      documentUrl: opciones.documentUrl,
-      eventId: opciones.eventId ?? null,
-      modelo: config.modelo,
-      origenTexto: 'unpdf',
-      propuestas: [],
-      descartadas: [],
-      encoladas: 0,
-    };
+  const hashContenido = await hashDocumento(pdf);
+
+  // (2) Comprobación real, con el contenido en la mano y antes del modelo.
+  if (await extraccionYaRegistrada({ hashDocumento: hashContenido, ...huella })) {
+    await guardarHashDelDocumento(opciones.documentoId, hashContenido);
+    return { ...base, estado: 'ya_procesado', hashDocumento: hashContenido };
   }
 
   const resultado = await extraerDeDossierPdf({
-    documentUrl: opciones.documentUrl,
+    documentUrl: opciones.documentoUrl,
     pdf,
     eventId: opciones.eventId ?? null,
     cliente: opciones.cliente,
     config,
   });
 
-  if (resultado.estado !== 'ok') return resultado;
-  return { ...resultado, encoladas: await guardarPropuestas(resultado) };
+  const { encoladas } = await registrarExtraccion(resultado, {
+    documentoId: opciones.documentoId,
+    documentoUrl: opciones.documentoUrl,
+    documentoTitulo: opciones.documentoTitulo ?? null,
+    hashDocumento: hashContenido,
+    hashPrompt: huella.hashPrompt,
+    versionEsquema: huella.versionEsquema,
+    modelo: config.modelo,
+  });
+
+  await guardarHashDelDocumento(opciones.documentoId, hashContenido);
+
+  if (resultado.estado === 'ok') {
+    return {
+      ...base,
+      estado: 'ok',
+      modelo: resultado.modelo,
+      encoladas,
+      descartadas: resultado.descartadas.length,
+      hashDocumento: hashContenido,
+    };
+  }
+
+  return {
+    ...base,
+    estado: estadoRegistrado(resultado) === 'ok' ? 'ok' : estadoRegistrado(resultado),
+    motivo: 'motivo' in resultado ? resultado.motivo : undefined,
+    hashDocumento: hashContenido,
+  };
+}
+
+/**
+ * Guarda el hash del contenido en la circular.
+ *
+ * La columna `official_document.file_hash` existe justo para esto (lo dice su
+ * comentario en el esquema: "para procesar cada PDF una sola vez"). Rellenarla
+ * evita la descarga de la próxima pasada. Si falla, no pasa nada: es una
+ * optimización, no un dato que nadie vaya a leer en pantalla.
+ */
+async function guardarHashDelDocumento(
+  documentoId: string | null,
+  hash: string,
+): Promise<void> {
+  if (!documentoId) return;
+  try {
+    const { db } = await import('@/db');
+    const { officialDocument } = await import('@/db/schema');
+    const { eq } = await import('drizzle-orm');
+    await db
+      .update(officialDocument)
+      .set({ fileHash: hash })
+      .where(eq(officialDocument.id, documentoId));
+  } catch {
+    // Silencio a propósito: ver el comentario de arriba.
+  }
 }

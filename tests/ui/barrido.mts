@@ -37,6 +37,7 @@ const PAPELES: [string, string, string[]][] = [
       '/admin/normativa',
       '/admin/cuarentena',
       '/admin/emparejar',
+      '/admin/extraccion',
     ],
   ],
 ];

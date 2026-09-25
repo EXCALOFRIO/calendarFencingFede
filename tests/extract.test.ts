@@ -47,10 +47,12 @@ const DOSSIER = [
 
 const CONFIG_BASE: ConfiguracionIa = {
   activa: true,
-  proveedor: 'gemini',
+  proveedor: 'workers_ai',
   apiKey: 'clave-de-prueba',
   modelo: 'modelo-de-prueba',
   tierDePago: true,
+  cuentaCloudflare: 'cuenta-de-prueba',
+  tokenCloudflare: 'token-de-prueba',
 };
 
 /** Cliente falso: devuelve lo que se le diga y cuenta las llamadas. */
@@ -256,7 +258,7 @@ describe('extraerDeTexto', () => {
     expect(cliente.llamadas).toBe(0);
   });
 
-  it('BLOQUEA el envío en tier gratuito si el documento parece llevar datos personales', async () => {
+  it('BLOQUEA el envío si el documento parece llevar datos personales', async () => {
     const cliente = clienteFalso(OK);
     const conMenores = [
       'CONVOCATORIA M15',
@@ -277,20 +279,27 @@ describe('extraerDeTexto', () => {
     expect(cliente.llamadas).toBe(0);
     if (resultado.estado === 'bloqueado_por_datos_personales') {
       expect(resultado.motivosDeteccion.length).toBeGreaterThan(0);
-      expect(resultado.motivo).toMatch(/tier gratuito/i);
+      expect(resultado.motivo).toMatch(/datos personales/i);
     }
   });
 
-  it('en tier de pago sí procesa un documento con datos personales', async () => {
+  /**
+   * La regla de privacidad es ABSOLUTA: no depende del proveedor ni de que la
+   * cuenta sea de pago. Antes `tierDePago: true` abría la puerta; ya no. En
+   * estos documentos hay menores, y el dato que buscamos —una hora, una
+   * cuota— nunca justifica sacarlos de aquí.
+   */
+  it('sigue bloqueando aunque la cuenta sea de pago', async () => {
     const cliente = clienteFalso(OK);
-    await extraerDeTexto({
+    const resultado = await extraerDeTexto({
       documentUrl: 'https://ejemplo.test/convocatoria.pdf',
       documentHash: 'hash',
       texto: `${DOSSIER}\nLicencia: SGL00510`,
       cliente,
       config: { ...CONFIG_BASE, tierDePago: true },
     });
-    expect(cliente.llamadas).toBe(1);
+    expect(resultado.estado).toBe('bloqueado_por_datos_personales');
+    expect(cliente.llamadas).toBe(0);
   });
 
   it('encola solo lo verificado y deja constancia de lo descartado', async () => {
