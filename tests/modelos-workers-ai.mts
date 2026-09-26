@@ -102,6 +102,13 @@ const urlProbador = valor('probador');
 const detalle = bandera('detalle');
 const cuantos = Number.parseInt(valor('documentos') ?? '', 10) || 6;
 const cache = valor('cache') ?? '.cache-circulares';
+/**
+ * `--origen dossier` o `--origen circular` para probar solo una procedencia.
+ * Hace falta porque son dos problemas distintos: un dossier de torneo trae
+ * pabellón y horarios, y una normativa de 27 páginas trae, con suerte, un
+ * plazo. Medir las dos cosas mezcladas esconde lo que falla en cada una.
+ */
+const origenPedido = valor('origen');
 
 /**
  * Los candidatos, con su ventana y su precio sacados de
@@ -125,6 +132,22 @@ const CANDIDATOS: { modelo: string; ventana: number; entrada: number; salida: nu
     salida: 0.85,
   },
   { modelo: '@cf/qwen/qwen3-30b-a3b-fp8', ventana: 32_768, entrada: 0.051, salida: 0.335 },
+  {
+    modelo: '@cf/deepseek-ai/deepseek-v4-pro-0813',
+    ventana: 1_048_576,
+    entrada: 1.32,
+    salida: 3.96,
+  },
+  { modelo: '@cf/qwen/qwen3.8-27b', ventana: 0, entrada: 0, salida: 0 },
+  { modelo: '@cf/qwen/qwq-32b', ventana: 32_768, entrada: 0.66, salida: 1.0 },
+  { modelo: '@cf/moonshotai/kimi-k2.6', ventana: 262_100, entrada: 0.95, salida: 4.0 },
+  { modelo: '@cf/openai/gpt-oss-120b', ventana: 128_000, entrada: 0.35, salida: 0.75 },
+  {
+    modelo: '@cf/mistralai/mistral-small-3.1-24b-instruct',
+    ventana: 128_000,
+    entrada: 0.35,
+    salida: 0.56,
+  },
 ];
 
 const modelos = (valor('modelos') ?? '')
@@ -204,7 +227,7 @@ async function documentos(): Promise<Documento[]> {
   const candidatos = [
     ...dossieres.map((d) => ({ ...d, origen: 'dossier' as const })),
     ...circulares.map((c) => ({ ...c, evento: null, origen: 'circular' as const })),
-  ];
+  ].filter((c) => !origenPedido || c.origen === origenPedido);
 
   const listos: Documento[] = [];
   const vistos = new Set<string>();
@@ -275,7 +298,25 @@ function clientePorProbador(
         body: JSON.stringify({ modelo, entradas: entradasParaWorkersAi(peticion, modelo) }),
         signal: AbortSignal.timeout(240_000),
       });
-      const sobre = (await res.json()) as {
+      /**
+       * El probador tiene que contestar JSON. Si contesta HTML es que la
+       * sesión de `wrangler dev --remote` ha caducado y el túnel está muerto,
+       * y entonces esto NO es «el modelo falló»: es que nunca se le preguntó.
+       *
+       * Se revienta a gritos en vez de apuntar un fallo del modelo porque ya
+       * pasó: cuatro modelos aparecieron con 0 de 7 y 30 ms por documento, que
+       * es imposible, y el resumen los daba por malos. Un comparador que
+       * confunde «no contestó» con «contestó mal» no sirve para elegir nada.
+       */
+      const cuerpo = await res.text();
+      if (!cuerpo.trimStart().startsWith('{')) {
+        throw new Error(
+          `EL PROBADOR NO CONTESTA JSON (HTTP ${res.status}). Casi seguro que la ` +
+            'sesión de `wrangler dev --remote` ha caducado: reinícialo y vuelve a ' +
+            `lanzar esto. Recibido: ${cuerpo.slice(0, 120)}`,
+        );
+      }
+      const sobre = JSON.parse(cuerpo) as {
         ok?: boolean;
         crudo?: unknown;
         error?: string;

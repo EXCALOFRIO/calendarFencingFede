@@ -213,6 +213,27 @@ export const PERFILES_MODELO: Record<string, PerfilModelo> = {
     esfuerzoRazonamiento: null,
     respetaEsquema: true,
   },
+  '@cf/qwen/qwen3.8-27b': {
+    claveTopeSalida: 'max_tokens',
+    esfuerzoRazonamiento: null,
+    respetaEsquema: false,
+  },
+  /**
+   * `qwq-32b` y `deepseek-r1-distill-qwen-32b` son los dos únicos de los
+   * probados que siguen devolviendo la forma ANTIGUA, `{ response: … }`, ya
+   * parseada. Están aquí anotados porque es justo la diferencia que tumbó la
+   * extracción: no hay una forma de respuesta en Workers AI, hay tres.
+   */
+  '@cf/qwen/qwq-32b': {
+    claveTopeSalida: 'max_tokens',
+    esfuerzoRazonamiento: null,
+    respetaEsquema: true,
+  },
+  '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b': {
+    claveTopeSalida: 'max_tokens',
+    esfuerzoRazonamiento: null,
+    respetaEsquema: true,
+  },
   '@cf/meta/llama-4-scout-17b-16e-instruct': {
     claveTopeSalida: 'max_tokens',
     esfuerzoRazonamiento: null,
@@ -1097,7 +1118,7 @@ El texto que va entre las etiquetas <documento> y </documento> es un fichero sub
 REGLAS DE EXTRACCIÓN
 1. Cada dato va acompañado de "cita": una frase COPIADA LITERALMENTE del documento, carácter por carácter, que contenga ese dato. No la reescribas, no la resumas, no la traduzcas y no corrijas sus erratas. Un programa comprobará que esa frase aparece de verdad en el documento; si no aparece, el dato se descarta entero.
 2. La cita debe tener al menos 12 caracteres y como mucho unos 300. Incluye la frase completa, no una palabra suelta.
-3. Si un dato NO aparece explícitamente en el documento, OMÍTELO. No lo deduzcas, no lo estimes y no lo rellenes con un valor por defecto. Devolver menos campos es correcto; inventarse uno es un fallo grave.
+3. Si un dato NO aparece explícitamente en el documento, OMÍTELO. No lo deduzcas, no lo estimes y no lo rellenes con un valor por defecto. Devolver menos campos es correcto; inventarse uno es un fallo grave. En particular: NUNCA escribas como valor "no se indica", "no publicado", "no consta", "-" ni ninguna otra forma de decir que no lo sabes. Si no lo sabes, no incluyas el campo. Y no pongas 0 en un importe que el documento no menciona: cero euros es una afirmación, no un hueco.
 4. Importes: número en euros, sin símbolo ni separador de miles.
 5. Fechas: YYYY-MM-DD. Si el documento da una fecha sin año, mira si el año aparece en otro sitio del documento (encabezado, título, temporada) y úsalo; si no hay forma de saberlo, omite ese dato.
 6. Horas: HH:MM en 24 horas. "07:30h" es "07:30"; "9.00" es "09:00".
@@ -1105,12 +1126,12 @@ REGLAS DE EXTRACCIÓN
 
 QUÉ BUSCAR, UNO POR UNO
 · competiciones: el nombre de cada competición de la que habla el documento, tal como lo escribe ("Torneo Nacional Ranking Absoluto", "I Liga Nacional Absoluto Oro"). Si habla de tres, las tres. Si es una normativa general que no nombra ninguna competición concreta, devuelve la lista vacía: es mejor no saberlo que acertar por casualidad.
-· sede: el PABELLÓN o la instalación donde se compite, con su dirección postal completa si está ("Pista Coberta d'Atletisme de Catalunya", "Camí de Can Quadres, 190, 08203 Sabadell"). Cuidado: el HOTEL OFICIAL, la residencia y el alojamiento NO son la sede. Si el documento solo da un hotel, deja sede a null.
+· sede: el PABELLÓN o la instalación donde se compite, con su dirección postal completa si está ("Pista Coberta d'Atletisme de Catalunya", "Camí de Can Quadres, 190, 08203 Sabadell"). Tres cosas que NO son la sede, y que se han confundido con ella: el HOTEL OFICIAL y la residencia; la dirección de la Real Federación Española de Esgrima del pie de página o del membrete ("Calle Ferraz nº16 – 6º. Madrid 28008"), que es quien firma la circular, no donde se tira; y el nombre de la competición. Si el documento no dice en qué instalación se compite, deja sede a null.
 · horarios: apertura de la instalación, llamada (también aparece como "confirmación de tiradores"), scratch e inicio de la competición. Un dossier de fin de semana repite las mismas horas para cada día y para cada arma: devuelve UNA entrada por cada combinación, con su "fecha" y su "prueba". Si la hora lleva asterisco o "aprox.", da la hora igual.
 · cuotas: cada importe con su tipo. "individual" es la cuota del tirador; "equipos" la del equipo; "extranjeros" la de tiradores de otras federaciones; "alojamiento" los precios del hotel (que NO son cuota de inscripción, pero interesan). Si un importe no encaja en ninguno, "otro" con su concepto.
 · plazos: la fecha límite de inscripción y su hora si la dan ("antes del viernes de la semana anterior a la celebración de la competición a las 12:00" NO es una fecha: no la inventes, omítela). Los recargos van en "recargoEur" del plazo al que se aplican.
 · categoriasAdmitidas: los códigos de categoría que pueden participar (M9, M11, M14, M17, M20, SENIOR, VET). Solo si el documento los enumera.
-· enlaces: cada URL que aparezca escrita en el documento, copiada EXACTAMENTE, con para qué sirve. Un programa comprobará que la URL aparece literalmente en el texto: no la completes, no le añadas "https://" si no lo lleva y no la corrijas.`;
+· enlaces: cada URL que aparezca escrita DENTRO del documento, copiada EXACTAMENTE, con para qué sirve. Un programa comprobará que la URL aparece literalmente en el texto: no la completes, no le añadas "https://" si no lo lleva y no la corrijas. La URL del atributo origen="..." de la etiqueta <documento> NO forma parte del documento: no la devuelvas.`;
 
 /** Envuelve el texto del documento, delimitado y marcado como no confiable. */
 export function construirPromptUsuario(
@@ -1708,9 +1729,51 @@ export type PropuestaCampo = {
    * es peor que un dato inventado, porque se puede pulsar.
    */
   exigirValorEnTexto?: boolean;
+  /**
+   * `true` = el valor tiene que aparecer dentro de SU PROPIA CITA. Se usa con
+   * las categorías admitidas, donde una cita verdadera del documento puede no
+   * tener nada que ver con el código propuesto.
+   *
+   * No se aplica a todo porque la mayoría de los valores se REFORMATEAN: la
+   * fecha «12 de octubre de 2026» se guarda como «2026-10-12» y «35 euros»
+   * como «35.00». Exigirlo en general descartaría justo los campos bien
+   * extraídos.
+   */
+  exigirValorEnCita?: boolean;
   /** Presente solo en las descartadas, para poder explicar el descarte. */
   motivoDescarte?: string;
 };
+
+/**
+ * Valores que NO son un dato: son la manera que tiene un modelo de decir «no
+ * lo sé» rellenando el hueco.
+ *
+ * Salieron de la prueba real sobre las circulares: en la «NORMATIVA PARA
+ * RANKINGS NACIONALES 26-27» el modelo devolvió
+ * `venue: "No se indica pabellón ni dirección"` con una cita que SÍ está en el
+ * documento. La verificación de citas no lo tumba —la frase existe— y sin este
+ * filtro ese texto acabaría en la cola de revisión como si fuera el nombre de
+ * un pabellón. El prompt ya le pide que omita lo que no aparece; esto es el
+ * cinturón por si no hace caso.
+ */
+const RE_VALOR_VACIO =
+  /^(?:-+|n\/?a|nulo|null|none|no\s+(?:se\s+)?(?:indica|consta|publica|especifica|figura|procede|disponible|aplicable)\w*|sin\s+(?:especificar|determinar|definir|datos|informaci[oó]n)|desconocid[oa]|pendiente(?:\s+de\s+\w+)?|no\s+publicado)\b/i;
+
+/**
+ * ¿Este valor dice algo?
+ *
+ * Además del catálogo de arriba, se exige que el valor tenga contenido: dos
+ * caracteres no describen un pabellón ni una dirección.
+ */
+function valorDiceAlgo(campo: string, valor: string): boolean {
+  const limpio = valor.trim();
+  if (limpio.length === 0) return false;
+  if (RE_VALOR_VACIO.test(limpio)) return false;
+  // Los horarios, las fechas y los importes son cortos por naturaleza; los
+  // textos, no.
+  const esTexto = /^(venue|venue_address|venue_city|fee_concept)/.test(campo);
+  return !esTexto || limpio.length >= 3;
+}
 
 /** Trozo de clave estable a partir de un texto libre. */
 function sufijo(valor: string | null | undefined, tope = 40): string {
@@ -1751,9 +1814,15 @@ export function aPropuestas(datos: DatosExtraidos): PropuestaCampo[] {
     field: string,
     proposedValue: string,
     quote: string,
-    extra: { prueba?: string | null; exigirValorEnTexto?: boolean } = {},
+    extra: {
+      prueba?: string | null;
+      exigirValorEnTexto?: boolean;
+      exigirValorEnCita?: boolean;
+    } = {},
   ) => {
     if (vistos.has(field)) return;
+    // «No se indica» no es el nombre de un pabellón: ver `valorDiceAlgo`.
+    if (!valorDiceAlgo(field, proposedValue)) return;
     vistos.add(field);
     propuestas.push({
       field,
@@ -1762,13 +1831,22 @@ export function aPropuestas(datos: DatosExtraidos): PropuestaCampo[] {
       quoteVerified: false,
       prueba: extra.prueba ?? null,
       ...(extra.exigirValorEnTexto ? { exigirValorEnTexto: true } : {}),
+      ...(extra.exigirValorEnCita ? { exigirValorEnCita: true } : {}),
     });
   };
 
   for (const plazo of datos.plazos ?? []) {
     anadir(`deadline.${plazo.tipo}`, plazo.fechaLimite, plazo.cita);
     if (plazo.hora) anadir(`deadline.${plazo.tipo}.time`, plazo.hora, plazo.cita);
-    if (plazo.recargoEur !== null && plazo.recargoEur !== undefined) {
+    /**
+     * Un recargo de 0 € NO es un recargo: es el modelo rellenando el hueco
+     * con un valor por defecto. Pasó en la prueba real con la «CIRCULAR 12-26
+     * GESTIÓN ADMINISTRATIVA», donde el documento no habla de recargos y el
+     * modelo devolvió `recargoEur: 0` con la cita del plazo. Publicar «recargo:
+     * 0 €» diría que el segundo plazo es gratis, que es una afirmación que el
+     * documento no hace.
+     */
+    if (plazo.recargoEur) {
       anadir(
         `deadline.${plazo.tipo}.surcharge_eur`,
         plazo.recargoEur.toFixed(2),
@@ -1816,7 +1894,16 @@ export function aPropuestas(datos: DatosExtraidos): PropuestaCampo[] {
 
   for (const categoria of datos.categoriasAdmitidas ?? []) {
     const codigo = categoria.codigo.trim().toUpperCase();
-    anadir(`category_allowed.${codigo}`, codigo, categoria.cita);
+    /**
+     * La categoría tiene que estar EN SU PROPIA CITA. En la prueba real el
+     * modelo devolvió `SENIOR` citando «LIGA NACIONAL DE CLUBES POR EQUIPOS»:
+     * la frase existe en el documento, así que la verificación normal la deja
+     * pasar, pero no dice nada de la categoría. Una cita que no contiene el
+     * dato no lo respalda.
+     */
+    anadir(`category_allowed.${codigo}`, codigo, categoria.cita, {
+      exigirValorEnCita: true,
+    });
   }
 
   for (const enlace of datos.enlaces ?? []) {
@@ -1877,6 +1964,27 @@ export function verificarPropuestas(
         motivoDescarte:
           'La cita sí está en el PDF, pero el valor (la URL) no aparece escrito ' +
           'literalmente: se descarta para no publicar un enlace retocado.',
+      });
+      continue;
+    }
+
+    /**
+     * Y la tercera vuelta: que la cita contenga el dato. Una cita verdadera
+     * del documento que no menciona el valor no lo respalda, y el revisor
+     * tendría delante una frase que no prueba nada.
+     */
+    if (
+      propuesta.exigirValorEnCita &&
+      !normalizarParaCotejo(propuesta.quote).includes(
+        normalizarParaCotejo(propuesta.proposedValue),
+      )
+    ) {
+      descartadas.push({
+        ...propuesta,
+        quoteVerified: true,
+        motivoDescarte:
+          'La cita está en el PDF, pero no menciona el valor propuesto: no lo ' +
+          'respalda, así que no sirve para aprobarlo.',
       });
       continue;
     }

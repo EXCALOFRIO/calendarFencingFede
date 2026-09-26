@@ -13,7 +13,7 @@ import { chromium, devices } from 'playwright';
  * torneos de verdad y deja una captura de lo que se ve.
  */
 
-const BASE = process.env.URL ?? 'https://calendario-fie-fede.aleramlar.workers.dev';
+const BASE = process.env.URL ?? 'https://calendario-fie-fede.excalofrio.workers.dev';
 const EMAIL = process.env.EMAIL ?? 'tiradora@demo.local';
 const CONTRASENA = process.env.CONTRASENA ?? 'Demo-2026-Esgrima!';
 

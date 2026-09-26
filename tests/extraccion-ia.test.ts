@@ -639,6 +639,52 @@ describe('la extracción completa con Workers AI detrás', () => {
     expect(datos.enlaces).toHaveLength(0);
   });
 
+  /**
+   * Tres cosas que un modelo hace de verdad y que la verificación de citas NO
+   * tumba, porque las citas son verdaderas. Las tres salieron de pasar las
+   * circulares reales por GLM-5.3.
+   */
+  it('«No se indica pabellón» no es el nombre de un pabellón', () => {
+    const datos = esquemaExtraccion.parse({
+      sede: {
+        // Cita REAL de la «NORMATIVA PARA RANKINGS NACIONALES 26-27», valor
+        // inventado por el modelo para no dejar el hueco.
+        nombre: 'No se indica pabellón ni dirección',
+        cita: 'El acceso a la zona de competición y que esté habilitada',
+      },
+    });
+    expect(aPropuestas(datos)).toHaveLength(0);
+  });
+
+  it('un recargo de 0 € no se publica: es un hueco, no un importe', () => {
+    const datos = esquemaExtraccion.parse({
+      plazos: [
+        {
+          tipo: 'L1',
+          fechaLimite: '2026-09-02',
+          recargoEur: 0,
+          cita: 'el plazo de inscripción finaliza el viernes de la semana anterior',
+        },
+      ],
+    });
+    const campos = aPropuestas(datos).map((p) => p.field);
+    expect(campos).toEqual(['deadline.L1']);
+    expect(campos).not.toContain('deadline.L1.surcharge_eur');
+  });
+
+  it('una categoría cuya cita no la menciona no la respalda', () => {
+    const pdf = 'LIGA NACIONAL DE CLUBES POR EQUIPOS\nSe disputará en dos jornadas.';
+    const datos = esquemaExtraccion.parse({
+      categoriasAdmitidas: [
+        // La frase SÍ está en el documento; lo que no dice es nada de SENIOR.
+        { codigo: 'SENIOR', cita: 'LIGA NACIONAL DE CLUBES POR EQUIPOS' },
+      ],
+    });
+    const { verificadas, descartadas } = verificarPropuestas(aPropuestas(datos), pdf);
+    expect(verificadas).toHaveLength(0);
+    expect(descartadas[0].motivoDescarte).toMatch(/no menciona el valor/i);
+  });
+
   it('una cuota citada a medias tampoco cuela', () => {
     // El modelo copia media frase y le cambia la cifra: la cadena completa ya
     // no aparece en el documento y el campo se cae solo.

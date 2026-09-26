@@ -12,7 +12,8 @@
       "Bash(tail -c 1500 /tmp/e2e-f3.log)",
       "Bash(ls src/app/\\\\\\(app\\\\\\)/)",
       "Bash(git add *)",
-      "Bash(git -c core.autocrlf=false commit -q -F -)"
+      "Bash(git -c core.autocrlf=false commit -q -F -)",
+      "Bash(git -c core.autocrlf=false commit -q -m 'El README explica los dos pasos que hay que dar cada vez que cambia la URL *)"
     ]
   }
 }

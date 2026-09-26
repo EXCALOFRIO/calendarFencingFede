@@ -692,6 +692,7 @@ type FilaExtraida = {
   contexto: string | null;
   estado: 'pendiente' | 'aprobada' | 'rechazada';
   revisadoEn: Date | null;
+  creadoEn: Date;
   documentoTitulo: string | null;
   documentoUrl: string;
 };
@@ -722,6 +723,7 @@ async function cargarDatosExtraidos(eventIds: string[]): Promise<FilaExtraida[]>
       contexto: extraccionPropuesta.contexto,
       estado: extraccionPropuesta.estado,
       revisadoEn: extraccionPropuesta.revisadoEn,
+      creadoEn: extraccionPropuesta.creadoEn,
       documentoTitulo: extraccionDocumento.documentoTitulo,
       documentoUrl: extraccionDocumento.documentoUrl,
     })
@@ -739,7 +741,48 @@ async function cargarDatosExtraidos(eventIds: string[]): Promise<FilaExtraida[]>
     )
     .orderBy(asc(extraccionPropuesta.campo));
 
-  return filas.filter((f): f is FilaExtraida => f.eventoId !== null);
+  return unaVezPorDato(filas.filter((f): f is FilaExtraida => f.eventoId !== null));
+}
+
+/**
+ * Un dato, una entrada en la ficha.
+ *
+ * POR QUÉ HACE FALTA, con el caso que lo destapó: el libro de registro guarda
+ * una fila por cada intento de extracción y la clave de idempotencia incluye
+ * el hash del prompt, a propósito, para poder reprocesar las circulares cuando
+ * se mejora el prompt sin perder el historial (ver
+ * `src/db/schema/extraccion.ts`). Eso está bien para el registro y es UN
+ * DESASTRE para la ficha: al cambiar el prompt, el mismo dossier se procesa
+ * otra vez, las propuestas viejas siguen ahí con su `evento_id`, y la ficha
+ * pasa a enseñar «Apertura de la instalación 08:15» DOS veces. Se vio con
+ * datos reales en la ficha del TNR M17 de Alcobendas: veinte datos, cada uno
+ * repetido.
+ *
+ * El criterio para quedarse con uno:
+ *  1. lo APROBADO por una persona gana. Nunca se tira la firma de nadie por
+ *     quedarse con una propuesta más reciente sin revisar;
+ *  2. a igualdad, la propuesta más nueva, que es la del prompt de hoy.
+ *
+ * Se agrupa por campo Y VALOR, no solo por campo: si dos documentos del mismo
+ * torneo dicen cosas DISTINTAS del mismo campo, eso no es ruido que haya que
+ * esconder, es una contradicción que alguien tiene que ver.
+ */
+function unaVezPorDato(filas: FilaExtraida[]): FilaExtraida[] {
+  const mejor = new Map<string, FilaExtraida>();
+  for (const fila of filas) {
+    const clave = `${fila.campo} ${fila.valor}`;
+    const previa = mejor.get(clave);
+    if (!previa) {
+      mejor.set(clave, fila);
+      continue;
+    }
+    const gana =
+      (fila.estado === 'aprobada' && previa.estado !== 'aprobada') ||
+      (fila.estado === previa.estado &&
+        fila.creadoEn.getTime() > previa.creadoEn.getTime());
+    if (gana) mejor.set(clave, fila);
+  }
+  return [...mejor.values()];
 }
 
 const ARMAS_EN_TEXTO: [string, Weapon][] = [

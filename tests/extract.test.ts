@@ -139,11 +139,14 @@ describe('descarte automático de campos alucinados', () => {
           cita: 'El plazo ordinario de inscripción finaliza el 12 de octubre de 2026.',
         },
       ],
-      cuota: {
-        importeEur: 15,
-        // Esta frase NO está en el dossier: es una invención con buena pinta.
-        cita: 'La cuota de inscripción es de 15 euros por tirador y prueba.',
-      },
+      cuotas: [
+        {
+          tipo: 'individual',
+          importeEur: 15,
+          // Esta frase NO está en el dossier: es una invención con buena pinta.
+          cita: 'La cuota de inscripción es de 15 euros por tirador y prueba.',
+        },
+      ],
       sede: {
         nombre: 'Pabellón Municipal de Deportes de Alcobendas',
         cita: 'SEDE: Pabellón Municipal de Deportes de Alcobendas.',
@@ -305,10 +308,13 @@ describe('extraerDeTexto', () => {
   it('encola solo lo verificado y deja constancia de lo descartado', async () => {
     const cliente = clienteFalso({
       ...OK,
-      cuota: {
-        importeEur: 15,
-        cita: 'La cuota de inscripción es de 15 euros por tirador y prueba.',
-      },
+      cuotas: [
+        {
+          tipo: 'individual',
+          importeEur: 15,
+          cita: 'La cuota de inscripción es de 15 euros por tirador y prueba.',
+        },
+      ],
     });
 
     const resultado = await extraerDeTexto({
@@ -338,7 +344,16 @@ describe('extraerDeTexto', () => {
     expect(resultado.estado).toBe('ok');
   });
 
-  it('marca error (y no publica nada) si la respuesta no cumple el esquema', async () => {
+  /**
+   * Un ELEMENTO mal formado ya no tumba el documento: se cae solo y los demás
+   * siguen. Esto cambió al medir cinco modelos contra dossieres reales, donde
+   * un «12:00 horas» en un plazo mataba trece campos buenos (ver
+   * `listaTolerante` en `src/lib/ai/extract.ts`).
+   *
+   * Lo que no cambia, y es lo que prueba este test: el elemento malo NO se
+   * publica. No se arregla, no se adivina, no llega a la cola.
+   */
+  it('tira el elemento que no cumple el esquema y no publica nada de él', async () => {
     const cliente = clienteFalso({ plazos: [{ tipo: 'INVENTADO', fechaLimite: 'ayer' }] });
     const resultado = await extraerDeTexto({
       documentUrl: 'https://ejemplo.test/dossier.pdf',
@@ -347,7 +362,27 @@ describe('extraerDeTexto', () => {
       cliente,
       config: CONFIG_BASE,
     });
+    expect(resultado.estado).toBe('ok');
+    if (resultado.estado !== 'ok') return;
+    expect(resultado.propuestas).toHaveLength(0);
+    expect(resultado.descartadas).toHaveLength(0);
+    expect(resultado.datos?.plazos).toHaveLength(0);
+  });
+
+  /**
+   * Y si lo que devuelve el modelo no es ni un objeto, sigue siendo un error
+   * de los de verdad: ahí no hay nada que salvar.
+   */
+  it('marca error (y no publica nada) si la respuesta no es ni un objeto', async () => {
+    const resultado = await extraerDeTexto({
+      documentUrl: 'https://ejemplo.test/dossier.pdf',
+      documentHash: 'hash',
+      texto: DOSSIER,
+      cliente: clienteFalso('Lo siento, no puedo ayudarte con eso.'),
+      config: CONFIG_BASE,
+    });
     expect(resultado.estado).toBe('error');
+    expect('motivo' in resultado ? resultado.motivo : '').toMatch(/esquema|JSON/i);
   });
 });
 
@@ -374,10 +409,13 @@ describe('defensa frente a inyección de prompt', () => {
       plazos: [],
       horarios: [],
       categoriasAdmitidas: [],
-      cuota: {
-        importeEur: 0,
-        cita: 'La cuota de inscripción es gratuita para todos los participantes.',
-      },
+      cuotas: [
+        {
+          tipo: 'individual',
+          importeEur: 0,
+          cita: 'La cuota de inscripción es gratuita para todos los participantes.',
+        },
+      ],
     });
 
     const resultado = await extraerDeTexto({

@@ -156,9 +156,9 @@ tests/
 
 ## Dónde se despliega
 
-### https://calendario-fie-fede.aleramlar.workers.dev
+### https://calendario-fie-fede.excalofrio.workers.dev
 
-Cloudflare Workers, cuenta `aleramlar@gmail.com`, leyendo la base de Neon de
+Cloudflare Workers, leyendo la base de Neon de
 verdad. La base **se queda en Neon**: el driver HTTP
 `@neondatabase/serverless` funciona en Workers sin tocar nada, y el esquema es
 Postgres con enums, `uuid` y `jsonb`, que D1 no tiene.
@@ -176,28 +176,28 @@ despliegue no sirve:
 
 ```bash
 set -a; source .env; set +a
-export NEXT_PUBLIC_APP_URL="https://calendario-fie-fede.aleramlar.workers.dev"
+export NEXT_PUBLIC_APP_URL="https://calendario-fie-fede.excalofrio.workers.dev"
 export CF_ENV_EMBEBIDO=1
 npm run cf:build && npx opennextjs-cloudflare deploy
 npm run produccion     # entra con un navegador y comprueba que funciona
 ```
 
-### Sobre el trozo `aleramlar` de la URL
+### Sobre el subdominio de la URL
 
-Es el subdominio de `workers.dev` **de la cuenta**, no de este proyecto, y lo
-comparten los quince Workers que hay. Se puede cambiar, pero **solo desde el
-panel** (Workers & Pages → *Your subdomain* → *Change*): por API,
-`PUT` responde `10036 Account already has an associated subdomain` y
-`PATCH`/`POST`, `10405 Method not allowed for this authentication scheme`.
+`excalofrio` es el subdominio de `workers.dev` **de la cuenta**, no de este
+proyecto, y lo comparten los dieciséis Workers que hay. Se cambia **solo
+desde el panel** (Workers & Pages → columna derecha → *Account details* →
+*Subdomain* → el lápiz): por API, el `PUT` responde
+`10036 Account already has an associated subdomain` y `PATCH`/`POST`,
+`10405 Method not allowed for this authentication scheme`.
 
-Cambiarlo afecta a los quince. Los ocho de `oxpea` se sirven desde dominio
-propio (`oxpea.com`, `app.`, `api.`, `reservas.`, `admin.`, `demo.`, `docs.`,
-`www.`), así que no dependen de `workers.dev`; lo que no se puede comprobar
-desde aquí es si algún webhook o callback externo apunta a un
-`*.aleramlar.workers.dev`.
+Cambiarlo afecta a los dieciséis a la vez y las URL antiguas dejan de
+responder de inmediato. Los ocho Workers de `oxpea` que se sirven desde
+dominio propio (`oxpea.com`, `app.`, `api.`, `reservas.`, `admin.`, `demo.`,
+`docs.`, `www.`) no se enteran; el resto sí cambia de dirección.
 
-La otra vía es un dominio propio: basta un registro nuevo en una zona que ya
-esté en Cloudflare.
+Para una URL sin `workers.dev` hace falta un dominio propio: basta un
+registro nuevo en una zona que ya esté en Cloudflare.
 
 ### Los secretos
 
