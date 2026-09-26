@@ -156,40 +156,87 @@ tests/
 
 ## Dónde se despliega
 
-### Está en pie: https://calendario-fie-fede.aleramlar.workers.dev
+### https://calendario-fie-fede.aleramlar.workers.dev
 
-Desplegado en Cloudflare Workers, cuenta `aleramlar@gmail.com`, leyendo la
-base de Neon de verdad: la pantalla de acceso enseña las 395 pruebas de la
-temporada, que salen de una consulta.
+Cloudflare Workers, cuenta `aleramlar@gmail.com`, leyendo la base de Neon de
+verdad. La base **se queda en Neon**: el driver HTTP
+`@neondatabase/serverless` funciona en Workers sin tocar nada, y el esquema es
+Postgres con enums, `uuid` y `jsonb`, que D1 no tiene.
 
-**Falta una cosa para poder entrar, y es de panel, no de código.** Neon Auth
-solo confía en dominios declarados, así que el inicio de sesión responde
-`403 INVALID_ORIGIN`. Se arregla en un minuto:
+**Cada vez que cambia la URL hay que hacer dos cosas**, y sin ellas el
+despliegue no sirve:
 
-> Panel de Neon → **Auth › Configuration › Domains** → añadir, con protocolo
-> y sin barra final:
-> `https://calendario-fie-fede.aleramlar.workers.dev`
+1. **Recompilar con la URL nueva.** `NEXT_PUBLIC_APP_URL` se sustituye dentro
+   del código en tiempo de compilación —el feed iCal y los correos construyen
+   direcciones absolutas con ella—, así que ponerla como secreto **no**
+   arregla un paquete compilado con otra.
+2. **Declararla en Neon Auth.** Panel de Neon → **Auth › Configuration ›
+   Domains**, con protocolo y sin barra final. Si falta, el inicio de sesión
+   responde `403 INVALID_ORIGIN`: la pantalla carga y nadie puede entrar.
 
-Después, `npm run produccion` entra con un navegador de verdad y dice si
-funciona.
+```bash
+set -a; source .env; set +a
+export NEXT_PUBLIC_APP_URL="https://calendario-fie-fede.aleramlar.workers.dev"
+export CF_ENV_EMBEBIDO=1
+npm run cf:build && npx opennextjs-cloudflare deploy
+npm run produccion     # entra con un navegador y comprueba que funciona
+```
 
-**Dos cosas más que solo puede hacer el titular de la cuenta**, ninguna
-bloquea que la aplicación se vea:
+### Sobre el trozo `aleramlar` de la URL
 
-1. **Los secretos están dentro del paquete, no en el almacén.** Funciona,
-   pero lo correcto es: `npm run cf:secretos` (los sube leyéndolos del
-   `.env`, sin imprimir ningún valor) y luego recompilar **sin**
-   `CF_ENV_EMBEBIDO=1` y volver a desplegar. El token de despliegue ya no
-   viaja dentro; ver el paso 4 de `scripts/compilar-cloudflare.mjs`.
-2. **Workers de pago (5 $/mes) para que los crons se ejecuten.** El plan
-   gratuito permite 5 Cron Triggers por cuenta y aquí hay 8, y su techo de
-   CPU son 10 ms, insuficiente para analizar 2,5 MB de HTML. Sin esto la
-   aplicación se ve perfectamente, pero el calendario deja de actualizarse
-   solo.
-3. **Permiso de Workers AI en el token** (*Account › Workers AI › Read y
-   Edit*) si se quiere encender la extracción de PDF. Va apagada
-   (`AI_EXTRACTION_ENABLED=false`) y con el interruptor apagado el cron
-   responde 200 explicando que no hizo nada.
+Es el subdominio de `workers.dev` **de la cuenta**, no de este proyecto, y lo
+comparten los quince Workers que hay. Se puede cambiar, pero **solo desde el
+panel** (Workers & Pages → *Your subdomain* → *Change*): por API,
+`PUT` responde `10036 Account already has an associated subdomain` y
+`PATCH`/`POST`, `10405 Method not allowed for this authentication scheme`.
+
+Cambiarlo afecta a los quince. Los ocho de `oxpea` se sirven desde dominio
+propio (`oxpea.com`, `app.`, `api.`, `reservas.`, `admin.`, `demo.`, `docs.`,
+`www.`), así que no dependen de `workers.dev`; lo que no se puede comprobar
+desde aquí es si algún webhook o callback externo apunta a un
+`*.aleramlar.workers.dev`.
+
+La otra vía es un dominio propio: basta un registro nuevo en una zona que ya
+esté en Cloudflare.
+
+### Los secretos
+
+Están en el almacén de Cloudflare (`npm run cf:secretos` los sube leyéndolos
+de `.env`, de uno en uno y por la entrada estándar, sin imprimir ningún
+valor). Pero además van **dentro del paquete** mientras se compile con
+`CF_ENV_EMBEBIDO=1`, que es una muleta: la compilación lo avisa en cada
+pasada. Para quitarla, compilar sin esa variable.
+
+Lo que **nunca** viaja dentro es el `CLOUDFLARE_API_TOKEN`. Next, en modo
+standalone, copia el `.env` del proyecto a la salida y OpenNext lo empaqueta;
+en el primer despliegue subió el fichero entero, incluido ese token, que puede
+desplegar y modificar Workers de toda la cuenta. No era accesible desde fuera
+—se sirve un 404, y tampoco está entre los ficheros públicos— pero un secreto
+de despliegue dentro de la cosa desplegada está mal. El paso 4 de
+`scripts/compilar-cloudflare.mjs` lo borra.
+
+### Crons
+
+Ocho, uno por fuente y a horas distintas: si la FIE cambia su API, el resto
+sigue funcionando. Están registrados y aceptados en Cloudflare, lo que solo
+ocurre con Workers de pago (el plan gratuito corta en cinco).
+
+`vercel.json` se conserva sin borrar, pero **no gobierna nada** del despliegue
+vivo: es la referencia de la que salió la lista. Si cambias una franja ahí, no
+pasa nada hasta que la copies a `triggers.crons` de `wrangler.jsonc` **y** a
+la tabla `TAREAS` de `worker/index.ts`.
+
+```bash
+npm run cf:build     # next build + empaquetado para el Worker
+npm run cf:preview   # el Worker entero en local, con bindings de verdad
+npm run cf:deploy    # compila y despliega
+```
+
+Al compilar en Windows hace falta el guion propio: Next 16 deja en
+`.next/standalone` enlaces a los paquetes que externaliza y OpenNext los
+reproduce con `symlinkSync` sin tipo, lo que exige permisos de administrador.
+`scripts/compilar-cloudflare.mjs` los retira antes de empaquetar. En Linux
+basta `next build && opennextjs-cloudflare build`.
 
 ---
 
