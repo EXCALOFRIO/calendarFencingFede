@@ -1,9 +1,12 @@
 /**
  * Atajo para entrar como un usuario de demostración, SOLO en desarrollo.
  *
+ *   /probar/llavador       Carlos Llavador, 3.º de España en florete ABS
+ *   /probar/marino         María Mariño, 3.ª de España en florete ABS
  *   /probar/tiradora       tiradora absoluta de espada, con cuenta propia
  *   /probar/tutora         madre con dos hijos tiradores
  *   /probar/seleccionador  seleccionador de florete
+ *   /probar/espada         seleccionadora de espada
  *   /probar/admin          dirección técnica
  *   /probar/club           maestro de club
  *
@@ -21,11 +24,41 @@
  */
 
 const CUENTAS: Record<string, string> = {
+  /**
+   * Dos tiradores de verdad del ranking nacional, dados de alta con
+   * `scripts/alta-desde-ranking.ts` a partir de la fila que publica Skermo:
+   * nombre, licencia, fecha de nacimiento, club, arma y puesto son los
+   * oficiales, no inventados.
+   */
+  llavador: 'carlos.llavador@demo.local',
+  marino: 'maria.marino@demo.local',
+
   tiradora: 'tiradora@demo.local',
   tutora: 'madre@demo.local',
   seleccionador: 'seleccionador.florete@demo.local',
+  espada: 'seleccionador.espada@demo.local',
   admin: 'direccion.tecnica@demo.local',
   club: 'maestro.club@demo.local',
+};
+
+/**
+ * Cuentas de verdad, que a propósito NO tienen atajo.
+ *
+ * `aleramlar@gmail.com` existe como dirección técnica, pero su contraseña es
+ * la que puso su dueño, no la de demostración, así que este atajo solo podría
+ * dar un 401. Y en su caso concreto el camino normal sí funciona: Resend, sin
+ * dominio verificado, puede escribir **al titular de la cuenta**, que es
+ * justamente esa dirección. O sea que el código por correo le llega.
+ *
+ * Para ver la aplicación con permisos de administración sin ser él está
+ * `/probar/admin`, que entra como dirección técnica y ve exactamente lo
+ * mismo.
+ */
+const CUENTAS_REALES: Record<string, string> = {
+  aleramlar:
+    'Esa es una cuenta real: entra en /entrar con tu contraseña, o pide un ' +
+    'código por correo, que a tu dirección sí llega. Para ver la aplicación ' +
+    'con permisos de administración usa /probar/admin.',
 };
 
 const CONTRASENA = 'Demo-2026-Esgrima!';
@@ -48,6 +81,10 @@ export async function GET(
   }
 
   const { quien } = await params;
+
+  const aviso = CUENTAS_REALES[quien];
+  if (aviso) return texto(`${aviso}\n`, 409);
+
   const email = CUENTAS[quien];
 
   if (!email) {

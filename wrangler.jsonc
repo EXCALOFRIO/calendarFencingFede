@@ -88,10 +88,12 @@
    * Workers AI, para la extracción asistida de las circulares en PDF
    * (`src/lib/ai/extract.ts`, que lo busca como `env.AI`).
    *
-   * Es el camino barato: dentro del Worker no hacen falta ni
-   * `CLOUDFLARE_ACCOUNT_ID` ni `CLOUDFLARE_API_TOKEN`, y la capa gratuita son
-   * 10.000 neurons al día. Declarar el binding no gasta nada mientras
-   * `AI_EXTRACTION_ENABLED` siga en "false".
+   * Es el camino barato, y además el que **no necesita permisos de token**:
+   * dentro del Worker, Cloudflare inyecta el binding, así que no hacen falta
+   * ni `CLOUDFLARE_ACCOUNT_ID` ni `CLOUDFLARE_API_TOKEN`. Esos dos solo los
+   * usa la vía REST, que es el respaldo para cuando el código corre fuera de
+   * un Worker (local, `tsx`, Vitest). La capa gratuita son 10.000 neurons al
+   * día.
    */
   "ai": {
     "binding": "AI"
@@ -125,7 +127,7 @@
     // Apagada de momento: el token de la cuenta todavía no tiene permiso de
     // Workers AI (ver informe). Con el interruptor en "false" el cron de
     // extracción responde 200 explicando que no hizo nada.
-    "AI_EXTRACTION_ENABLED": "false",
+    "AI_EXTRACTION_ENABLED": "true",
     "AI_PROVIDER": "workers_ai",
     "AI_MODEL": "@cf/google/gemma-4-26b-a4b-it",
     "AI_PAID_TIER": "false",
