@@ -2002,11 +2002,23 @@ export function verificarPropuestas(
      * del documento que no menciona el valor no lo respalda, y el revisor
      * tendría delante una frase que no prueba nada.
      */
+    /**
+     * Aquí se compara SIN signos de puntuación, y no es un descuido: las
+     * normativas escriben «CATEGORIA CADETE M-17» y el código de categoría es
+     * «M17». Con el cotejo normal, el guion tumbaba una categoría bien
+     * extraída y bien citada. Medido sobre la «NORMATIVA PARA RANKINGS
+     * NACIONALES 26-27»: cuatro de los cinco descartes eran de estos.
+     *
+     * Quitar la puntuación aquí no abre ninguna puerta: sigue exigiéndose que
+     * los caracteres del valor estén, en ese orden, dentro de una frase que
+     * además ya se ha comprobado que aparece en el PDF.
+     */
+    const sinPuntuacion = (texto: string) =>
+      normalizarParaCotejo(texto).replace(/[^a-z0-9]/g, '');
+
     if (
       propuesta.exigirValorEnCita &&
-      !normalizarParaCotejo(propuesta.quote).includes(
-        normalizarParaCotejo(propuesta.proposedValue),
-      )
+      !sinPuntuacion(propuesta.quote).includes(sinPuntuacion(propuesta.proposedValue))
     ) {
       descartadas.push({
         ...propuesta,

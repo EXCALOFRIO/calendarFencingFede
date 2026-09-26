@@ -700,6 +700,17 @@ describe('la extracción completa con Workers AI detrás', () => {
     expect(campos).not.toContain('deadline.L1.surcharge_eur');
   });
 
+  it('«M-17» en la cita respalda el código M17: el guion no cuenta', () => {
+    // Cita textual de la «NORMATIVA PARA RANKINGS NACIONALES 26-27».
+    const pdf = 'CATEGORIA CADETE M-17\nSe disputa en tres jornadas.';
+    const datos = esquemaExtraccion.parse({
+      categoriasAdmitidas: [{ codigo: 'M17', cita: 'CATEGORIA CADETE M-17' }],
+    });
+    const { verificadas, descartadas } = verificarPropuestas(aPropuestas(datos), pdf);
+    expect(descartadas).toHaveLength(0);
+    expect(verificadas.map((p) => p.field)).toEqual(['category_allowed.M17']);
+  });
+
   it('una categoría cuya cita no la menciona no la respalda', () => {
     const pdf = 'LIGA NACIONAL DE CLUBES POR EQUIPOS\nSe disputará en dos jornadas.';
     const datos = esquemaExtraccion.parse({
