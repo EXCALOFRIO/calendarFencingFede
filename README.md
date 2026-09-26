@@ -156,7 +156,7 @@ tests/
 
 ## Dónde se despliega
 
-### Está en pie: https://calendario-esgrima.aleramlar.workers.dev
+### Está en pie: https://calendario-fie-fede.aleramlar.workers.dev
 
 Desplegado en Cloudflare Workers, cuenta `aleramlar@gmail.com`, leyendo la
 base de Neon de verdad: la pantalla de acceso enseña las 395 pruebas de la
@@ -168,7 +168,7 @@ solo confía en dominios declarados, así que el inicio de sesión responde
 
 > Panel de Neon → **Auth › Configuration › Domains** → añadir, con protocolo
 > y sin barra final:
-> `https://calendario-esgrima.aleramlar.workers.dev`
+> `https://calendario-fie-fede.aleramlar.workers.dev`
 
 Después, `npm run produccion` entra con un navegador de verdad y dice si
 funciona.

@@ -17,9 +17,13 @@ const PAPELES: [string, string, string[]][] = [
   [
     'tiradora',
     'tiradora@demo.local',
-    ['/', '/estado', '/convocatorias', '/ranking', '/documentos', '/perfil'],
+    // `/alta` entra con dos papeles a propósito: con esta cuenta, que YA tiene
+    // ficha, se barre la pantalla de confirmación; con la de la dirección
+    // técnica, que no tiene, se barre el buscador. Son los dos estados que
+    // puede enseñar la misma URL.
+    ['/', '/estado', '/convocatorias', '/ranking', '/documentos', '/perfil', '/alta'],
   ],
-  ['tutora', 'madre@demo.local', ['/', '/estado', '/perfil']],
+  ['tutora', 'madre@demo.local', ['/', '/estado', '/perfil', '/alta']],
   ['seleccionador', 'seleccionador.florete@demo.local', ['/', '/tiradores', '/convocatorias']],
   [
     'admin',
@@ -38,6 +42,7 @@ const PAPELES: [string, string, string[]][] = [
       '/admin/cuarentena',
       '/admin/emparejar',
       '/admin/extraccion',
+      '/alta',
     ],
   ],
 ];

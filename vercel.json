@@ -29,6 +29,10 @@
       "schedule": "30 5 * * *"
     },
     {
+      "path": "/api/cron/ingest/fie_tiradores",
+      "schedule": "45 6 * * *"
+    },
+    {
       "path": "/api/cron/notify",
       "schedule": "0 7 * * *"
     }

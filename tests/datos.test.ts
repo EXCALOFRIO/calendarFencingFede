@@ -249,6 +249,10 @@ describe('un plazo calculado nunca se presenta igual que uno publicado', () => {
       sources: [{ source: 'skermo_rfee', name: 'Prueba de auditoría', url: null }],
       imageSource: null,
       circuitFie: null,
+      // Campo nuevo de `EventView`: lo que se sacó de los PDFs de las
+      // circulares. Un evento del que nadie ha leído un dossier lo trae
+      // vacío, que es el caso de esta prueba.
+      datosExtraidos: [],
     };
 
     const comp = {
@@ -266,6 +270,7 @@ describe('un plazo calculado nunca se presenta igual que uno publicado', () => {
       registrationCount: null,
       feeEur: null,
       sourceUrl: null,
+      datosExtraidos: [],
     };
 
     const { deadlineStatus } = await import('../src/lib/deadlines');

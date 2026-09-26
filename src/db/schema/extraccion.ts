@@ -10,7 +10,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { officialDocument } from './calendar';
+import { event, eventDocument, officialDocument } from './calendar';
 import { userProfile } from './core';
 
 /**
@@ -94,6 +94,28 @@ export const origenTextoEnum = pgEnum('origen_texto_extraccion', [
 ]);
 
 /**
+ * Cuánto sabemos de a qué evento pertenece el documento.
+ *
+ * Es el campo que decide si un dato aprobado puede llegar a una ficha. Los 278
+ * documentos de `official_document` son circulares de la federación —no
+ * dossieres por torneo— y HOY LOS 278 tienen `event_id` a null: ninguna trae
+ * el id del evento, y varias hablan de tres competiciones a la vez.
+ *
+ *  - 'seguro': el documento cuelga del propio evento (`event_document`), o una
+ *    persona lo ha confirmado. Aprobar un campo aquí sí lo lleva a la ficha.
+ *  - 'dudoso': hay UN candidato que casa por nombre y fechas, pero lo dice una
+ *    heurística, no el documento. Se enseña la sugerencia y la confirma una
+ *    persona; hasta entonces el dato no se aplica a nada.
+ *  - 'desconocido': cero candidatos, o más de uno. Se queda en la cola
+ *    diciendo que no se sabe. NO se adivina.
+ */
+export const certezaEventoEnum = pgEnum('certeza_evento_extraccion', [
+  'seguro',
+  'dudoso',
+  'desconocido',
+]);
+
+/**
  * Libro de registro: un intento de extracción sobre un documento.
  */
 export const extraccionDocumento = pgTable(
@@ -109,10 +131,46 @@ export const extraccionDocumento = pgTable(
     documentoId: uuid('documento_id').references(() => officialDocument.id, {
       onDelete: 'set null',
     }),
+    /**
+     * La OTRA procedencia posible: el dossier que Skermo cuelga del propio
+     * torneo (`event_document`, 25 filas hoy, 15 de ellas de tipo
+     * "convocatoria"). Son los que de verdad llevan el pabellón con su
+     * dirección, los horarios por día y por arma y los importes, y además
+     * vienen ya atados a un evento, así que su certeza es 'seguro' sin tener
+     * que adivinar nada.
+     *
+     * Las dos columnas son excluyentes en la práctica: un documento viene de
+     * una tabla o de la otra. No se fuerza con una restricción porque una fila
+     * con las dos a null sigue siendo válida (un PDF procesado a mano por URL).
+     */
+    eventoDocumentoId: uuid('evento_documento_id').references(
+      () => eventDocument.id,
+      { onDelete: 'set null' },
+    ),
     /** URL del PDF tal cual se descargó, para poder abrirlo desde la revisión. */
     documentoUrl: text('documento_url').notNull(),
     /** Título de la circular, copiado para que la revisión no necesite un join. */
     documentoTitulo: text('documento_titulo'),
+
+    /**
+     * Evento al que se refiere el documento, cuando se sabe o se sospecha.
+     * Ver `certezaEventoEnum`: mientras la certeza no sea 'seguro', esto es
+     * una sugerencia para que la confirme una persona, no un hecho.
+     */
+    eventoId: uuid('evento_id').references(() => event.id, { onDelete: 'set null' }),
+    eventoCerteza: certezaEventoEnum('evento_certeza'),
+    /** Por qué se cree eso, en castellano y para leerlo en pantalla. */
+    eventoMotivo: text('evento_motivo'),
+    /**
+     * Confirmación humana del enlace con el evento. Aprobar campos y confirmar
+     * a qué torneo van son dos decisiones distintas y se firman aparte: se
+     * puede dar por bueno un horario y seguir sin saber de qué torneo es.
+     */
+    eventoConfirmadoEn: timestamp('evento_confirmado_en', { withTimezone: true }),
+    eventoConfirmadoPorPerfilId: uuid('evento_confirmado_por_perfil_id').references(
+      () => userProfile.id,
+      { onDelete: 'set null' },
+    ),
 
     /** SHA-256 del contenido del PDF en hexadecimal. */
     hashDocumento: text('hash_documento').notNull(),
@@ -160,6 +218,8 @@ export const extraccionDocumento = pgTable(
     ),
     index('extraccion_documento_doc_idx').on(t.documentoId),
     index('extraccion_documento_estado_idx').on(t.estado),
+    index('extraccion_documento_evento_doc_idx').on(t.eventoDocumentoId),
+    index('extraccion_documento_evento_idx').on(t.eventoId),
   ],
 );
 
@@ -185,9 +245,31 @@ export const extraccionPropuesta = pgTable(
     /** Repetido desde la extracción para poder filtrar sin join. */
     hashDocumento: text('hash_documento').notNull(),
 
+    /**
+     * Evento al que va este dato, copiado de la extracción al encolar.
+     *
+     * Denormalizado a propósito: la ficha de un torneo pide sus datos
+     * extraídos en cada carga y el driver de Neon es HTTP. Con la columna aquí
+     * es un índice y una consulta; sin ella, un join contra el libro de
+     * registro en el camino crítico del calendario. Mismo criterio que
+     * `event.canonical_event_id`.
+     */
+    eventoId: uuid('evento_id').references(() => event.id, { onDelete: 'set null' }),
+
     /** Clave estable del dato: "deadline.L1", "fee_eur", "venue", "call_time". */
     campo: text('campo').notNull(),
     valorPropuesto: text('valor_propuesto').notNull(),
+    /**
+     * La prueba a la que se refiere el dato, tal como la nombra el documento
+     * ("florete masculino"). `null` = todo el evento.
+     *
+     * Se guarda el TEXTO del documento y no un `event_competition_id`: casar
+     * "florete masculino" con una fila de pruebas es una decisión sobre datos
+     * que aquí no se puede tomar con certeza, y escribir un id equivocado
+     * pondría el horario en la prueba de otro. El revisor ve el texto original
+     * y la ficha lo enseña tal cual.
+     */
+    prueba: text('prueba'),
 
     /** Frase copiada del PDF de la que sale el valor. */
     cita: text('cita').notNull(),
@@ -224,5 +306,11 @@ export const extraccionPropuesta = pgTable(
     unique('extraccion_propuesta_clave').on(t.extraccionId, t.campo),
     index('extraccion_propuesta_estado_idx').on(t.estado),
     index('extraccion_propuesta_doc_idx').on(t.documentoId),
+    /**
+     * El índice que usa la ficha: «dame los datos extraídos de ESTE evento que
+     * estén aprobados o pendientes». Sin él, cada carga de una ficha sería un
+     * recorrido de la tabla entera.
+     */
+    index('extraccion_propuesta_evento_idx').on(t.eventoId, t.estado),
   ],
 );

@@ -13,7 +13,7 @@ import { chromium, devices } from 'playwright';
  * torneos de verdad y deja una captura de lo que se ve.
  */
 
-const BASE = process.env.URL ?? 'https://calendario-esgrima.aleramlar.workers.dev';
+const BASE = process.env.URL ?? 'https://calendario-fie-fede.aleramlar.workers.dev';
 const EMAIL = process.env.EMAIL ?? 'tiradora@demo.local';
 const CONTRASENA = process.env.CONTRASENA ?? 'Demo-2026-Esgrima!';
 
@@ -53,7 +53,20 @@ for (const [nombre, config] of [
     await pagina.locator('input[type="email"]').last().fill(EMAIL);
     await pagina.locator('input[type="password"]').fill(CONTRASENA);
     await pagina.getByRole('button', { name: /Entrar con contraseña/i }).click();
-    await pagina.waitForLoadState('networkidle', { timeout: 90_000 });
+
+    /**
+     * Se espera a que la URL cambie, no a que la red se calme.
+     *
+     * `waitForLoadState('networkidle')` volvía antes de que el navegador
+     * siguiera la redirección de la acción de servidor, así que la
+     * comprobación leía `/entrar` y daba por roto un acceso que funcionaba.
+     * Comprobado: con esta espera, la misma cuenta entra y aparece el
+     * calendario.
+     */
+    await pagina
+      .waitForURL((u) => !u.pathname.startsWith('/entrar'), { timeout: 60_000 })
+      .catch(() => {});
+    await pagina.waitForLoadState('networkidle', { timeout: 90_000 }).catch(() => {});
 
     const ruta = new URL(pagina.url()).pathname;
 

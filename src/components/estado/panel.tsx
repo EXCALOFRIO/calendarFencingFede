@@ -1,6 +1,12 @@
 'use client';
 
-import { ArrowDownRight, ArrowUpRight, ChevronRight, TriangleAlert } from 'lucide-react';
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  ChevronRight,
+  ExternalLink,
+  TriangleAlert,
+} from 'lucide-react';
 import Link from 'next/link';
 import * as React from 'react';
 import type {
@@ -8,9 +14,11 @@ import type {
   PuestoTemporada,
   PuntosDePrueba,
 } from '@/app/(app)/estado/consultas';
+import { puntos as formatoPuntos } from '@/components/ranking/formato';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { MyStatus } from '@/lib/queries/my-status';
+import type { PuestoOficial } from '@/lib/queries/ranking';
 import {
   CATEGORY_LABEL,
   GENDER_LABEL,
@@ -50,6 +58,7 @@ const TODOS = 'todos';
 export function PanelEstado({
   estado,
   puestos,
+  oficiales,
   puntosPorPrueba,
   elegibles,
   temporada,
@@ -58,7 +67,10 @@ export function PanelEstado({
   solicitarInscripcion,
 }: {
   estado: MyStatus;
+  /** Cálculo INTERNO de la aplicación (`ranking_snapshot`). */
   puestos: PuestoTemporada[];
+  /** Clasificación OFICIAL de la RFEE. Son dos números distintos, a la vista. */
+  oficiales: PuestoOficial[];
   /** `athleteId|eventCompetitionId` -> puntos de ranking de esa prueba. */
   puntosPorPrueba: Record<string, PuntosDePrueba>;
   /** Pruebas abiertas que le corresponden y en las que todavía no está. */
@@ -95,6 +107,7 @@ export function PanelEstado({
     a.pending.map((p) => ({ ...p, quien: a.fullName })),
   );
   const misPuestos = mio(puestos);
+  const misOficiales = mio(oficiales);
   const misElegibles = mio(elegibles);
 
   const conNombre = quien === TODOS && varios;
@@ -120,6 +133,15 @@ export function PanelEstado({
   );
   const hayPlazo = Number.isFinite(plazoMasCorto);
 
+  /**
+   * El puesto que va al marcador es el OFICIAL de la RFEE.
+   *
+   * Es el que la gente reconoce y el que decide convocatorias. Antes la celda
+   * leía solo el cálculo interno y le decía «— sin puesto en el ranking» a un
+   * 3.º de España, que es lo contrario de lo que se le pidió a esta pantalla.
+   * El cálculo interno sigue estando, más abajo y con su nombre.
+   */
+  const mejorOficial = misOficiales.find((o) => o.position !== null) ?? null;
   const mejorPuesto = misPuestos[0] ?? null;
   const hayTiradorSinArma = tiradores.some(
     (a) => a.weapons.length === 0 || a.eligibleCategories.length === 0,
@@ -206,19 +228,17 @@ export function PanelEstado({
           />
         ) : (
           <CeldaMarcador
-            valor={mejorPuesto ? mejorPuesto.position : '—'}
+            valor={mejorOficial?.position ?? mejorPuesto?.position ?? '—'}
             /* «en espada M20» a secas se lee como un recuento; la palabra
-               tiene que decir que es un puesto. */
+               tiene que decir que es un puesto, y de qué ranking. */
             palabra={
-              mejorPuesto
-                ? `puesto en ${WEAPON_LABEL[mejorPuesto.weapon].toLowerCase()} ${
-                    CATEGORY_LABEL[
-                      mejorPuesto.category as keyof typeof CATEGORY_LABEL
-                    ] ?? mejorPuesto.category
-                  }`
-                : 'sin puesto en el ranking'
+              mejorOficial
+                ? `puesto oficial en ${etiquetaRanking(mejorOficial)}`
+                : mejorPuesto
+                  ? `puesto en el cálculo interno de ${etiquetaRanking(mejorPuesto)}`
+                  : 'sin puesto en la clasificación oficial'
             }
-            tono={mejorPuesto ? 'normal' : 'apagado'}
+            tono={mejorOficial || mejorPuesto ? 'normal' : 'apagado'}
           />
         )}
       </Marcador>
@@ -354,6 +374,12 @@ export function PanelEstado({
           ) : null}
 
           <SituacionTemporada
+            oficiales={misOficiales}
+            tiradores={tiradores.map((a) => ({ id: a.id, nombre: a.fullName }))}
+            conNombre={conNombre}
+          />
+
+          <CalculoInterno
             puestos={misPuestos}
             tiradores={tiradores.map((a) => ({ id: a.id, nombre: a.fullName }))}
             conNombre={conNombre}
@@ -364,49 +390,90 @@ export function PanelEstado({
   );
 }
 
-/** Puesto y puntos en el ranking, que es la foto de la temporada. */
+/**
+ * «espada M20», «florete absoluto»: para las palabras del marcador, que van en
+ * mitad de una frase y por tanto en minúscula.
+ *
+ * La categoría solo se pasa a minúscula si es una PALABRA. «M20» y «VET» son
+ * códigos y en minúscula se leen como una errata: el marcador decía «puesto
+ * oficial en florete m20».
+ */
+function etiquetaRanking(p: {
+  weapon: keyof typeof WEAPON_LABEL;
+  category: string;
+}): string {
+  const etiqueta =
+    CATEGORY_LABEL[p.category as keyof typeof CATEGORY_LABEL] ?? p.category;
+  // Si la etiqueta es igual al código («M20»), es un código; si es distinta
+  // («ABS» -> «Absoluto»), es una palabra y va en minúscula.
+  const categoria = etiqueta === p.category ? etiqueta : etiqueta.toLowerCase();
+  return `${WEAPON_LABEL[p.weapon].toLowerCase()} ${categoria}`;
+}
+
+/**
+ * Tu temporada: el puesto y los puntos de la CLASIFICACIÓN OFICIAL de la RFEE.
+ *
+ * Es el número que la gente reconoce, el que decide convocatorias y el que se
+ * pidió para esta pantalla. El cálculo interno de la aplicación es otra cosa y
+ * va en su propia sección, con su propio nombre: los dos juntos y sin etiqueta
+ * serían peor que ninguno.
+ *
+ * Si alguien aparece en varias clasificaciones —absoluto y sub-23, o dos
+ * armas— salen todas: quedarse con una es esconderle media temporada.
+ */
 function SituacionTemporada({
-  puestos,
+  oficiales,
   tiradores,
   conNombre,
 }: {
-  puestos: PuestoTemporada[];
+  oficiales: PuestoOficial[];
   tiradores: { id: string; nombre: string }[];
   conNombre: boolean;
 }) {
+  const leidoEl = oficiales[0]?.actualizadoEl ?? null;
+
   return (
-    <Seccion titulo="Tu temporada">
-      {puestos.length === 0 ? (
+    <Seccion
+      titulo="Tu temporada"
+      contexto={
+        oficiales.length > 0
+          ? `Clasificación oficial de la RFEE ${oficiales[0].seasonLabel}`
+          : 'Clasificación oficial de la RFEE'
+      }
+    >
+      {oficiales.length === 0 ? (
         <p className="medida py-4 text-sm text-muted-foreground">
           {/*
-            Se dice «tu arma y tu categoría», no «esta temporada»: puede
-            haber ranking calculado en otros grupos y entonces la frase
-            general se contradice con lo que se ve al abrir el ranking.
+            Se dice «no apareces todavía», no «no hay ranking»: el ranking
+            oficial existe y tiene cientos de tiradores. Lo que falta es una
+            fila suya emparejada con su licencia, que es otra cosa y se
+            arregla de otra forma.
           */}
-          Todavía no hay ranking calculado en tu arma y tu categoría. Aquí
-          verás tu puesto y tus puntos en cuanto haya resultados oficiales
-          emparejados con tu licencia.{' '}
+          Todavía no apareces en la clasificación oficial de la RFEE. Pasa
+          cuando no se ha puntuado esta temporada, o cuando la licencia de tu
+          ficha no coincide con la que publica la federación.{' '}
           <Link href="/ranking" className="underline underline-offset-2">
-            Ver el ranking
+            Ver la clasificación
           </Link>
           .
         </p>
       ) : (
         <ul className="flex flex-col divide-y">
-          {puestos.map((p) => {
+          {oficiales.map((p) => {
             const nombre = tiradores.find((t) => t.id === p.athleteId)?.nombre;
-            const categoria =
-              CATEGORY_LABEL[p.category as keyof typeof CATEGORY_LABEL] ??
-              p.category;
             return (
               <li
-                key={`${p.athleteId}-${p.weapon}-${p.gender}-${p.category}`}
+                key={`${p.athleteId}-${p.weapon}-${p.gender}-${p.categoryRaw}`}
                 className="flex flex-col gap-3 py-4"
               >
                 <div className="flex items-baseline gap-3">
-                  <span className="cifra text-5xl">{p.position}</span>
+                  <span className="cifra text-5xl">{p.position ?? '—'}</span>
                   <span className="text-xs leading-tight text-muted-foreground">
-                    puesto
+                    {p.position
+                      ? p.deCuantos > 0
+                        ? `puesto de ${p.deCuantos}`
+                        : 'puesto'
+                      : 'sin clasificar todavía'}
                     {conNombre && nombre ? (
                       <span className="mt-0.5 block text-foreground">
                         {nombre}
@@ -419,33 +486,126 @@ function SituacionTemporada({
                   datos={[
                     ['Arma', WEAPON_LABEL[p.weapon]],
                     ['Género', GENDER_LABEL[p.gender]],
-                    ['Categoría', categoria],
+                    [
+                      'Categoría',
+                      CATEGORY_LABEL[p.category as keyof typeof CATEGORY_LABEL] ??
+                        p.category,
+                    ],
                     [
                       'Puntos',
                       <span key="p" className="cifra text-base">
-                        {p.totalPoints}
-                      </span>,
-                    ],
-                    [
-                      p.pruebasContadas === 1
-                        ? 'Prueba contada'
-                        : 'Pruebas contadas',
-                      <span key="n" className="cifra text-base">
-                        {p.pruebasContadas}
+                        {p.totalPoints === null
+                          ? 'no publicado'
+                          : formatoPuntos(p.totalPoints)}
                       </span>,
                     ],
                   ]}
                 />
 
-                <Variacion valor={p.variacion} />
-                <span className="text-xs text-muted-foreground">
-                  Calculado el {formatDateEs(p.calculadoEl)}
-                </span>
+                {p.sourceUrl ? (
+                  <a
+                    href={p.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex w-fit items-center gap-1 text-xs text-primary-text underline underline-offset-4"
+                  >
+                    Verlo en la página de la RFEE
+                    <ExternalLink className="size-3 shrink-0" aria-hidden />
+                  </a>
+                ) : null}
               </li>
             );
           })}
+          {leidoEl ? (
+            <li className="pt-3 text-xs text-muted-foreground">
+              Leído de la fuente oficial el {formatDateEs(leidoEl)}. No lo
+              calcula esta aplicación: se copia tal cual.
+            </li>
+          ) : null}
         </ul>
       )}
+    </Seccion>
+  );
+}
+
+/**
+ * El cálculo propio de la aplicación, con su nombre puesto.
+ *
+ * Va aparte de «Tu temporada» a propósito. Son dos números distintos —el
+ * oficial lo publica la federación y decide convocatorias; este se calcula aquí
+ * y se puede auditar prueba a prueba— y presentarlos juntos sin decir cuál es
+ * cuál sería peor que no tener ninguno. Solo aparece si existe: una sección que
+ * explica un cálculo que no se ha hecho es ruido.
+ */
+function CalculoInterno({
+  puestos,
+  tiradores,
+  conNombre,
+}: {
+  puestos: PuestoTemporada[];
+  tiradores: { id: string; nombre: string }[];
+  conNombre: boolean;
+}) {
+  if (puestos.length === 0) return null;
+
+  return (
+    <Seccion titulo="Cálculo de la aplicación" contexto="auditable prueba a prueba">
+      <p className="medida pt-3 text-xs text-muted-foreground">
+        No es el ranking de la federación: es lo que sale de aplicar la
+        normativa a los resultados que esta aplicación tiene emparejados, y
+        sirve para ver de dónde sale cada punto y por qué una prueba no cuenta.
+      </p>
+      <ul className="flex flex-col divide-y">
+        {puestos.map((p) => {
+          const nombre = tiradores.find((t) => t.id === p.athleteId)?.nombre;
+          const categoria =
+            CATEGORY_LABEL[p.category as keyof typeof CATEGORY_LABEL] ??
+            p.category;
+          return (
+            <li
+              key={`${p.athleteId}-${p.weapon}-${p.gender}-${p.category}`}
+              className="flex flex-col gap-3 py-4"
+            >
+              <div className="flex items-baseline gap-3">
+                <span className="cifra text-4xl">{p.position}</span>
+                <span className="text-xs leading-tight text-muted-foreground">
+                  puesto calculado
+                  {conNombre && nombre ? (
+                    <span className="mt-0.5 block text-foreground">{nombre}</span>
+                  ) : null}
+                </span>
+              </div>
+
+              <Rotulos
+                disposicion="linea"
+                datos={[
+                  ['Arma', WEAPON_LABEL[p.weapon]],
+                  ['Categoría', categoria],
+                  [
+                    'Puntos',
+                    <span key="p" className="cifra text-base">
+                      {p.totalPoints}
+                    </span>,
+                  ],
+                  [
+                    p.pruebasContadas === 1
+                      ? 'Prueba contada'
+                      : 'Pruebas contadas',
+                    <span key="n" className="cifra text-base">
+                      {p.pruebasContadas}
+                    </span>,
+                  ],
+                ]}
+              />
+
+              <Variacion valor={p.variacion} />
+              <span className="text-xs text-muted-foreground">
+                Calculado el {formatDateEs(p.calculadoEl)}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
     </Seccion>
   );
 }

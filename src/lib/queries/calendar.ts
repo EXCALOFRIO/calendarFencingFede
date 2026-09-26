@@ -10,10 +10,13 @@ import {
   eventCompetition,
   eventDeadline,
   eventDocument,
+  extraccionDocumento,
+  extraccionPropuesta,
   liveSource,
   season,
   seasonCategory,
 } from '@/db/schema';
+import { etiquetaDeCampo } from '@/lib/ai/campos';
 import type { CategoryCode, SeasonCategoryRow } from '../categories';
 import {
   type ComputedDeadline,
@@ -26,6 +29,52 @@ import {
 export type Weapon = 'FLORETE' | 'ESPADA' | 'SABLE';
 export type Gender = 'M' | 'F' | 'MIXTO';
 export type Scope = 'NACIONAL' | 'INTERNACIONAL' | 'AUTONOMICO';
+
+/**
+ * Un dato que salió de un PDF y no del calendario.
+ *
+ * QUÉ PROBLEMA RESUELVE, con los números de hoy: de los 274 eventos, 246 no
+ * tienen pabellón («La organización internacional no publica el pabellón») y
+ * de las 484 pruebas solo 23 tienen hora de inicio y NINGUNA tiene cuota. El
+ * calendario no lo publica; la convocatoria en PDF sí. Esto es ese dato,
+ * traído del PDF, con su cita y con su procedencia.
+ *
+ * TRES REGLAS QUE VIENEN DE CÓMO YA FUNCIONA EL PROYECTO
+ * -----------------------------------------------------
+ *  1. `pisadoPorPublicado`: si la fuente ya publica ese dato, el publicado
+ *     GANA. Es la misma regla que `event_deadline.origin` (publicado frente a
+ *     calculado) y la misma que la herencia de sede desde la FIE: un hueco se
+ *     rellena, un dato real no se pisa jamás. Cuando viene a `true`, este dato
+ *     sobra en la ficha; se devuelve igualmente para poder decir «la circular
+ *     dice otra cosa», que es información, no ruido.
+ *  2. `estado`: 'aprobado' lo ha firmado una persona con nombre y fecha;
+ *     'sin_revisar' lo propuso el modelo y nadie lo ha comprobado. Lo segundo
+ *     se pinta en gris y nunca como dato oficial.
+ *  3. `cita` y `contexto` viajan SIEMPRE. Un dato extraído sin la frase del
+ *     PDF de la que sale no se puede comprobar, y entonces no vale nada.
+ */
+export type DatoExtraidoView = {
+  id: string;
+  /** Clave estable: 'venue', 'venue_address', 'call_time', 'fee_eur', 'link.inscripcion'… */
+  campo: string;
+  /** El mismo campo en castellano y listo para pintar: 'Pabellón', 'Llamada'. */
+  etiqueta: string;
+  valor: string;
+  /** 'sin_revisar' = pintar en gris; nunca como dato oficial. */
+  estado: 'aprobado' | 'sin_revisar';
+  /** `true` = la fuente ya publica este dato y el publicado manda. */
+  pisadoPorPublicado: boolean;
+  /** La prueba tal como la nombra el PDF ('florete masculino'). Null = todo el evento. */
+  prueba: string | null;
+  /** Frase copiada del PDF de la que sale el valor. */
+  cita: string;
+  /** Trozo del PDF alrededor de la cita, en su forma original. */
+  contexto: string | null;
+  /** De qué circular o dossier salió, con su enlace al PDF. */
+  documento: { titulo: string | null; url: string };
+  /** Cuándo lo firmó una persona. Null cuando está sin revisar. */
+  revisadoEn: Date | null;
+};
 
 export type CompetitionView = {
   id: string;
@@ -44,6 +93,12 @@ export type CompetitionView = {
   sourceUrl: string | null;
   deadlines: ComputedDeadline[];
   status: ReturnType<typeof deadlineStatus>;
+  /**
+   * Lo que se sacó de un PDF y se ha podido atribuir A ESTA PRUEBA, porque el
+   * documento la nombra («Comienzo: 09:00h» bajo «espada masculina senior»).
+   * Vacío mientras nadie haya procesado un dossier de este torneo.
+   */
+  datosExtraidos: DatoExtraidoView[];
 };
 
 /**
@@ -116,6 +171,16 @@ export type EventView = {
    * preciso (satélite, Copa del Mundo, Gran Premio), viene aquí.
    */
   circuitFie: string | null;
+  /**
+   * Lo que se sacó de los PDFs de este torneo y NO se ha podido atribuir a una
+   * prueba concreta: el pabellón, la dirección, los plazos generales, los
+   * enlaces de inscripción o de alojamiento.
+   *
+   * Vacío salvo que se pida con `CalendarFilters.datosExtraidos`, que es lo
+   * que hace `getEvent`. El calendario no lo pide: son 250 eventos por carga y
+   * una consulta más en la pantalla principal se nota en el móvil.
+   */
+  datosExtraidos: DatoExtraidoView[];
 };
 
 export type CalendarFilters = {
@@ -138,6 +203,13 @@ export type CalendarFilters = {
    * torneos duplicados del calendario. Se activa solo para auditar.
    */
   includeLinked?: boolean;
+  /**
+   * Traer también lo extraído de los PDFs (`datosExtraidos`). Apagado por
+   * defecto y encendido solo por `getEvent`: es una consulta más, y en el
+   * calendario —250 eventos, pantalla principal, móvil— una consulta más se
+   * paga en cada carga para enseñar algo que solo se ve al abrir la ficha.
+   */
+  datosExtraidos?: boolean;
 };
 
 /** Temporada marcada como actual, con sus categorías. */
@@ -350,6 +422,20 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
     linkedByEvent.set(l.canonicalEventId, list);
   }
 
+  /**
+   * La séptima consulta, y solo cuando se pide: lo que se sacó de los PDFs.
+   * Fuera del `Promise.all` de arriba a propósito, porque en el calendario no
+   * se ejecuta en absoluto (ver `CalendarFilters.datosExtraidos`).
+   */
+  const extraidasPorEvento = new Map<string, FilaExtraida[]>();
+  if (filters.datosExtraidos) {
+    for (const fila of await cargarDatosExtraidos(eventIds)) {
+      const lista = extraidasPorEvento.get(fila.eventoId) ?? [];
+      lista.push(fila);
+      extraidasPorEvento.set(fila.eventoId, lista);
+    }
+  }
+
   const now = new Date();
   const views: EventView[] = [];
 
@@ -380,7 +466,7 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
      */
     const imageUrl = e.imageUrl ?? conCartel?.imageUrl ?? null;
 
-    views.push({
+    const vista: EventView = {
       id: e.id,
       source: e.source,
       sourceUrl: e.sourceUrl,
@@ -491,9 +577,28 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
           sourceUrl: c.sourceUrl,
           deadlines: merged,
           status: deadlineStatus(merged, now),
+          // Se rellena justo debajo, cuando ya están todas las pruebas
+          // construidas: para saber a cuál va un horario hay que poder
+          // compararlo con TODAS.
+          datosExtraidos: [],
         };
       }),
-    });
+      datosExtraidos: [],
+    };
+
+    const extraidas = extraidasPorEvento.get(e.id);
+    if (extraidas?.length) {
+      // Se pasa `vista` y no `e`: la sede puede venir heredada del registro de
+      // la FIE, y un pabellón heredado es un pabellón publicado. Comparar
+      // contra la fila cruda diría que falta cuando en pantalla ya está.
+      vista.datosExtraidos = repartirDatosExtraidos(
+        extraidas,
+        vista,
+        vista.competitions,
+      ).delEvento;
+    }
+
+    views.push(vista);
   }
 
   return views;
@@ -559,8 +664,228 @@ export async function getEvent(eventId: string): Promise<EventView | null> {
    * por id se trae solo lo de ese evento y el coste deja de crecer con el
    * tamaño del calendario.
    */
-  const [vista] = await listEvents({ ids: [eventId], includePast: true, limit: 1 });
+  const [vista] = await listEvents({
+    ids: [eventId],
+    includePast: true,
+    limit: 1,
+    /**
+     * Aquí SÍ: la ficha es la única pantalla que enseña lo extraído de los
+     * PDFs, y es un evento, no doscientos cincuenta.
+     */
+    datosExtraidos: true,
+  });
   return vista ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Lo que salió de los PDFs
+// ---------------------------------------------------------------------------
+
+/** Una fila de la cola de revisión, ya cruzada con su documento de origen. */
+type FilaExtraida = {
+  id: string;
+  eventoId: string;
+  campo: string;
+  valor: string;
+  prueba: string | null;
+  cita: string;
+  contexto: string | null;
+  estado: 'pendiente' | 'aprobada' | 'rechazada';
+  revisadoEn: Date | null;
+  documentoTitulo: string | null;
+  documentoUrl: string;
+};
+
+/**
+ * Trae lo extraído de los PDFs de estos eventos, en UNA consulta.
+ *
+ * Qué NO entra:
+ *  · lo RECHAZADO. Una persona ha dicho que no lo pone el documento; devolverlo
+ *    en gris sería devolverle la vida a algo que alguien ya mató.
+ *  · lo que tiene la cita sin verificar. En la práctica no existe (la cola solo
+ *    guarda verificadas), pero la condición va escrita: si algún día se
+ *    encolara lo dudoso para revisarlo, no puede colarse en una ficha por la
+ *    puerta de atrás.
+ *  · lo que no está atado a un evento CON CERTEZA. `extraccion_propuesta.evento_id`
+ *    solo se rellena cuando la certeza es 'seguro' (ver `resolverEvento`), así
+ *    que una sugerencia sin confirmar no llega aquí.
+ */
+async function cargarDatosExtraidos(eventIds: string[]): Promise<FilaExtraida[]> {
+  const filas = await db
+    .select({
+      id: extraccionPropuesta.id,
+      eventoId: extraccionPropuesta.eventoId,
+      campo: extraccionPropuesta.campo,
+      valor: extraccionPropuesta.valorPropuesto,
+      prueba: extraccionPropuesta.prueba,
+      cita: extraccionPropuesta.cita,
+      contexto: extraccionPropuesta.contexto,
+      estado: extraccionPropuesta.estado,
+      revisadoEn: extraccionPropuesta.revisadoEn,
+      documentoTitulo: extraccionDocumento.documentoTitulo,
+      documentoUrl: extraccionDocumento.documentoUrl,
+    })
+    .from(extraccionPropuesta)
+    .innerJoin(
+      extraccionDocumento,
+      eq(extraccionDocumento.id, extraccionPropuesta.extraccionId),
+    )
+    .where(
+      and(
+        inArray(extraccionPropuesta.eventoId, eventIds),
+        inArray(extraccionPropuesta.estado, ['pendiente', 'aprobada']),
+        eq(extraccionPropuesta.citaVerificada, true),
+      ),
+    )
+    .orderBy(asc(extraccionPropuesta.campo));
+
+  return filas.filter((f): f is FilaExtraida => f.eventoId !== null);
+}
+
+const ARMAS_EN_TEXTO: [string, Weapon][] = [
+  ['florete', 'FLORETE'],
+  ['espada', 'ESPADA'],
+  ['sable', 'SABLE'],
+];
+
+/**
+ * Categorías tal y como las escriben las convocatorias, con el código al que
+ * corresponden. El orden importa: 'm17' antes que 'm1' nunca, porque se busca
+ * por inclusión y 'm1' casaría dentro de 'm17'. Por eso las claves son
+ * palabras completas o códigos con frontera.
+ */
+const CATEGORIAS_EN_TEXTO: [RegExp, CategoryCode][] = [
+  [/\bm13\b/, 'M13'],
+  [/\bm15\b/, 'M15'],
+  [/\bm17\b|\bcadete\b/, 'M17'],
+  [/\bm20\b|\bjunior\b|\bj[uú]nior\b/, 'M20'],
+  [/\babsolut[oa]\b|\bsenior\b|\bs[eé]nior\b|\babs\b/, 'ABS'],
+  [/\bveteran|\bvet\b/, 'VET'],
+];
+
+/** Sin acentos, en minúsculas: las convocatorias escriben de todo. */
+function aplanar(texto: string): string {
+  return texto
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+}
+
+/**
+ * ¿La prueba que nombra el PDF es ESTA prueba del evento?
+ *
+ * Se exige que coincida todo lo que el texto menciona y que MENCIONE al menos
+ * el arma o la categoría. «Comienzo: 09:00h» a secas no se atribuye a nadie y
+ * se queda a nivel de evento, que es lo honesto: un horario en la prueba
+ * equivocada no se detecta mirando la ficha.
+ */
+function pruebaEncaja(prueba: string, competicion: CompetitionView): boolean {
+  const texto = aplanar(prueba);
+
+  const arma = ARMAS_EN_TEXTO.find(([palabra]) => texto.includes(palabra));
+  if (arma && arma[1] !== competicion.weapon) return false;
+
+  const categoria = CATEGORIAS_EN_TEXTO.find(([patron]) => patron.test(texto));
+  if (categoria && categoria[1] !== competicion.category) return false;
+
+  const femenino = /\bfemenin[ao]\b|\bmujer/.test(texto);
+  const masculino = /\bmasculin[ao]\b|\bhombre/.test(texto);
+  if (femenino && competicion.gender !== 'F') return false;
+  if (masculino && competicion.gender !== 'M') return false;
+
+  const equipos = /\bequipos?\b|\bliga\s+nacional\s+de\s+clubes\b/.test(texto);
+  if (equipos && competicion.format !== 'EQUIPOS') return false;
+
+  // Hace falta al menos una señal fuerte: si el texto no dice ni el arma ni la
+  // categoría, no se atribuye a ninguna prueba.
+  return Boolean(arma || categoria);
+}
+
+/**
+ * ¿La fuente ya publica este campo? Si lo publica, el publicado manda.
+ *
+ * Los nombres de campo son los de las columnas a propósito (ver `aPropuestas`
+ * en `src/lib/ai/extract.ts`), así que la comprobación es directa y no hace
+ * falta una tabla de traducción que se quede vieja.
+ */
+function yaPublicado(
+  campo: string,
+  evento: { venue: string | null; venueAddress: string | null; city: string | null },
+  competicion: CompetitionView | null,
+): boolean {
+  switch (campo) {
+    case 'venue':
+      return evento.venue !== null;
+    case 'venue_address':
+      return evento.venueAddress !== null;
+    case 'venue_city':
+      return evento.city !== null;
+    default:
+      break;
+  }
+  if (!competicion) return false;
+  if (campo === 'fee_eur') return competicion.feeEur !== null;
+  // Los horarios llevan sufijo de día y de prueba ("start_time.2026-10-04.
+  // florete-masculino"): se compara por el prefijo.
+  if (campo.startsWith('installation_open')) return competicion.installationOpen !== null;
+  if (campo.startsWith('call_time')) return competicion.callTime !== null;
+  if (campo.startsWith('scratch_time')) return competicion.scratchTime !== null;
+  if (campo.startsWith('start_time')) return competicion.startTime !== null;
+  return false;
+}
+
+/** Fila de la cola -> lo que ve la ficha. */
+function aDatoExtraido(
+  fila: FilaExtraida,
+  pisado: boolean,
+): DatoExtraidoView {
+  return {
+    id: fila.id,
+    campo: fila.campo,
+    etiqueta: etiquetaDeCampo(fila.campo),
+    valor: fila.valor,
+    estado: fila.estado === 'aprobada' ? 'aprobado' : 'sin_revisar',
+    pisadoPorPublicado: pisado,
+    prueba: fila.prueba,
+    cita: fila.cita,
+    contexto: fila.contexto,
+    documento: { titulo: fila.documentoTitulo, url: fila.documentoUrl },
+    revisadoEn: fila.revisadoEn,
+  };
+}
+
+/**
+ * Reparte lo extraído entre el evento y sus pruebas.
+ *
+ * Un dato va a una prueba solo si el documento la nombra de forma que encaje
+ * con UNA sola (`pruebaEncaja`). Si encaja con varias o con ninguna, se queda
+ * en el evento: es mejor tener el horario en la cabecera de la ficha que en la
+ * prueba equivocada.
+ */
+function repartirDatosExtraidos(
+  filas: FilaExtraida[],
+  evento: { venue: string | null; venueAddress: string | null; city: string | null },
+  competiciones: CompetitionView[],
+): { delEvento: DatoExtraidoView[] } {
+  const delEvento: DatoExtraidoView[] = [];
+
+  for (const fila of filas) {
+    const encajan = fila.prueba
+      ? competiciones.filter((c) => pruebaEncaja(fila.prueba as string, c))
+      : [];
+
+    if (encajan.length === 1) {
+      const competicion = encajan[0];
+      competicion.datosExtraidos.push(
+        aDatoExtraido(fila, yaPublicado(fila.campo, evento, competicion)),
+      );
+      continue;
+    }
+
+    delEvento.push(aDatoExtraido(fila, yaPublicado(fila.campo, evento, null)));
+  }
+
+  return { delEvento };
 }
 
 /** Clubes activos, para los desplegables de alta. */

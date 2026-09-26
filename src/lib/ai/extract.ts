@@ -1,5 +1,7 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import type { SQL } from 'drizzle-orm';
 import { z } from 'zod';
+import { etiquetaDeCampo } from './campos';
 
 /**
  * Fase 8 (opcional): extracción asistida por IA de los dossieres en PDF.
@@ -82,35 +84,163 @@ export type ConfiguracionIa = {
 /**
  * Modelo por defecto de cada proveedor.
  *
- * WORKERS AI: `@cf/google/gemma-4-26b-a4b-it`.
+ * WORKERS AI: `@cf/zai-org/glm-5.3-flash`.
  *
- * Por qué ese y no otro, con la fuente delante
- * (https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/ y
- * https://developers.cloudflare.com/workers-ai/platform/pricing/):
+ * POR QUÉ SE CAMBIÓ EL ANTERIOR (y no fue por gusto)
+ * --------------------------------------------------
+ * `@cf/google/gemma-4-26b-a4b-it` estuvo encendido en producción y devolvió
+ * CINCO errores de cinco: «Workers AI no devolvió texto en la respuesta». La
+ * causa, comprobada con el binding de verdad (`env.AI.run`) y anotada aquí
+ * para que no se repita, era doble:
  *
- *  1. VENTANA DE 256.000 TOKENS. Es el criterio que descarta a casi todos. Una
- *     circular de la RFEE ronda los 6.000-40.000 caracteres, pero las hay de
- *     20 páginas con horarios de tres días. `@cf/meta/llama-3.3-70b-instruct-fp8-fast`
- *     es mejor modelo y soporta JSON mode, pero su ventana son 24.000 tokens:
- *     recortaría los dossieres largos justo por donde están los horarios.
- *  2. PRECIO: 0,10 $ / 0,30 $ por millón de tokens (entrada/salida), y NO está
- *     en la lista de modelos excluidos de la capa gratuita, así que entra en
- *     los 10.000 neurons diarios de balde. 278 circulares caben de sobra.
- *  3. SOPORTA `response_format` con JSON Schema, que es lo que convierte la
- *     salida en estructurada de verdad en vez de en texto que hay que adivinar.
- *  4. Es multimodal, lo que deja abierta la puerta al OCR de escaneados sin
- *     cambiar de proveedor (hoy no se usa: ver `transcribirPdf`).
+ *  1. FORMA DE LA RESPUESTA. Ese modelo NO devuelve `{ response: … }`, que es
+ *     lo que documenta https://developers.cloudflare.com/workers-ai/features/json-mode/
+ *     y lo único que sabía leer este fichero. Devuelve el sobre de
+ *     chat-completions de OpenAI: `{ choices: [{ message: { content } }] }`.
+ *     Al no encontrar `response`, el código lanzaba. El modelo contestaba
+ *     bien; nosotros no sabíamos abrir el sobre. Arreglado en
+ *     `respuestaDeWorkersAi`, que ahora entiende las dos formas.
+ *  2. RAZONA HASTA AGOTAR EL PRESUPUESTO. Es un modelo de razonamiento y
+ *     escribe en `message.reasoning_content`. En la primera prueba real se
+ *     gastó los 64 tokens del tope razonando y dejó `content: ""` con
+ *     `finish_reason: "length"`. Con un dossier de 18 páginas delante, 4.096
+ *     tokens de tope se los come igual. Es decir: incluso con el sobre bien
+ *     abierto, este modelo seguiría devolviendo vacío a ratos.
  *
- * Alternativa barata y con JSON mode explícitamente documentado en
- * https://developers.cloudflare.com/workers-ai/features/json-mode/ :
- * `@cf/meta/llama-3.1-8b-instruct-fp8-fast` (32.000 tokens, 0,045 $/M). Se
- * cambia con AI_MODEL, sin tocar código.
+ * POR QUÉ ESTE, CON LA FUENTE DELANTE
+ * -----------------------------------
+ * https://developers.cloudflare.com/workers-ai/models/glm-5.3-flash/ y
+ * https://developers.cloudflare.com/workers-ai/platform/pricing/
+ *
+ *  1. VENTANA DE 1.310.720 TOKENS. Es el criterio que manda. La circular más
+ *     larga de las 278 son 27 páginas y 50.965 caracteres (la «NORMATIVA PARA
+ *     RANKINGS NACIONALES 26-27»), unos 14.000 tokens; el tope que impone este
+ *     fichero, `MAX_CARACTERES_DOCUMENTO`, deja pasar hasta unos 33.000. Aquí
+ *     sobra ventana por cuarenta veces, así que NINGÚN documento se recorta
+ *     por donde están los horarios. El modelo anterior daba 256.000 y también
+ *     habría cabido; el de la nota vieja (`llama-3.3-70b`, 24.000) no.
+ *  2. RAZONAMIENTO CONTROLABLE. Acepta `reasoning_effort`, y con `"low"`
+ *     devuelve cero tokens de razonamiento (medido: 18 tokens de salida y 1,6
+ *     neurons en la llamada de prueba). Eso es justo lo contrario del problema
+ *     que tumbó a Gemma.
+ *  3. PRECIO: 0,15 $ / 0,50 $ por millón (entrada/salida) y 0,03 $ el millón
+ *     de entrada en caché. En la prueba real sobre las 12 circulares con capa
+ *     de texto fue el más barato por documento de los que tienen ventana
+ *     grande, porque no paga razonamiento.
+ *  4. Es de Z.ai (GLM), que es lo que pedía el usuario: modelo chino, más
+ *     barato y con más rendimiento que el que había.
+ *
+ * QUÉ NO SE ELIGIÓ Y POR QUÉ (todo medido, no supuesto)
+ *  · `@cf/deepseek-ai/deepseek-v4-flash-0731`: 1.048.576 tokens de ventana y
+ *    `reasoning_effort: "none"`, pero 0,44 $/1,32 $ y 11 neurons en la misma
+ *    llamada de prueba en la que GLM gastó 1,6. Es el respaldo natural.
+ *  · `@cf/qwen/qwen3-30b-a3b-fp8`: el más barato de todos (0,051 $/0,335 $) y
+ *    además RESPETA el esquema (devuelve `response` ya parseado), pero su
+ *    ventana son 32.768 tokens. Con el tope de caracteres de este fichero una
+ *    normativa larga se queda al filo, que es exactamente el fallo que no
+ *    queremos. Descartado por el criterio 1.
+ *  · `@cf/meta/llama-4-scout-17b-16e-instruct`: 131.000 tokens y también
+ *    respeta el esquema, pero 0,27 $/0,85 $ y en la prueba real sacó menos
+ *    campos verificados que GLM.
+ *  · `@cf/google/gemma-4-26b-a4b-it`: ver arriba.
+ *
+ * Nada de esto está clavado en el código: se cambia con `AI_MODEL`.
  */
 export const MODELO_POR_DEFECTO: Record<ProveedorIa, string> = {
-  workers_ai: '@cf/google/gemma-4-26b-a4b-it',
+  workers_ai: '@cf/zai-org/glm-5.3-flash',
   gemini: 'gemini-2.5-flash',
   openrouter: 'google/gemini-2.5-flash',
 };
+
+/**
+ * Manías de cada modelo de Workers AI, que NO son iguales.
+ *
+ * Existe esta tabla porque mandar un parámetro que un modelo no conoce es un
+ * 400, y no mandar el que sí conoce es una respuesta vacía. Las dos cosas
+ * pasaron de verdad. Cada entrada se ha comprobado llamando al binding.
+ *
+ * Los modelos que no están aquí usan `PERFIL_POR_DEFECTO`, que es el mínimo
+ * común denominador: `max_tokens` y nada más.
+ */
+export type PerfilModelo = {
+  /** Cómo se llama el tope de tokens de salida en ESTE modelo. */
+  claveTopeSalida: 'max_tokens' | 'max_completion_tokens';
+  /**
+   * Valor de `reasoning_effort`, o `null` si el modelo no acepta el
+   * parámetro. Bajarlo es lo que impide que el modelo se gaste el presupuesto
+   * de salida pensando en voz alta y deje el JSON a medias.
+   */
+  esfuerzoRazonamiento: string | null;
+  /**
+   * `true` = el modelo hace caso de `response_format` con JSON Schema (se
+   * nota porque Workers AI añade un `response` ya parseado al sobre). En los
+   * demás se manda igualmente: ayuda aunque no se garantice, y la garantía
+   * de verdad es el `esquemaExtraccion.parse()` de más abajo.
+   */
+  respetaEsquema: boolean;
+};
+
+const PERFIL_POR_DEFECTO: PerfilModelo = {
+  claveTopeSalida: 'max_tokens',
+  esfuerzoRazonamiento: null,
+  respetaEsquema: false,
+};
+
+export const PERFILES_MODELO: Record<string, PerfilModelo> = {
+  '@cf/zai-org/glm-5.3-flash': {
+    claveTopeSalida: 'max_completion_tokens',
+    // "low" es lo más bajo que acepta: el modelo no permite apagarlo del todo.
+    esfuerzoRazonamiento: 'low',
+    respetaEsquema: false,
+  },
+  '@cf/zai-org/glm-5.2': {
+    claveTopeSalida: 'max_completion_tokens',
+    esfuerzoRazonamiento: 'low',
+    respetaEsquema: false,
+  },
+  '@cf/deepseek-ai/deepseek-v4-flash-0731': {
+    claveTopeSalida: 'max_completion_tokens',
+    esfuerzoRazonamiento: 'none',
+    respetaEsquema: false,
+  },
+  '@cf/deepseek-ai/deepseek-v4-pro-0813': {
+    claveTopeSalida: 'max_completion_tokens',
+    esfuerzoRazonamiento: 'none',
+    respetaEsquema: false,
+  },
+  '@cf/qwen/qwen3-30b-a3b-fp8': {
+    claveTopeSalida: 'max_tokens',
+    esfuerzoRazonamiento: null,
+    respetaEsquema: true,
+  },
+  '@cf/meta/llama-4-scout-17b-16e-instruct': {
+    claveTopeSalida: 'max_tokens',
+    esfuerzoRazonamiento: null,
+    respetaEsquema: true,
+  },
+  '@cf/meta/llama-3.3-70b-instruct-fp8-fast': {
+    claveTopeSalida: 'max_tokens',
+    esfuerzoRazonamiento: null,
+    respetaEsquema: true,
+  },
+  '@cf/google/gemma-4-26b-a4b-it': {
+    claveTopeSalida: 'max_tokens',
+    // No acepta `reasoning_effort`: razona siempre y no hay forma de frenarlo.
+    esfuerzoRazonamiento: null,
+    respetaEsquema: false,
+  },
+};
+
+/**
+ * Se reexporta desde `./campos` para que quien ya lo importaba de este
+ * módulo siga funcionando: la tabla de etiquetas vive aparte para no
+ * arrastrar este fichero entero hasta la consulta del calendario.
+ */
+export { etiquetaDeCampo };
+
+export function perfilDeModelo(modelo: string): PerfilModelo {
+  return PERFILES_MODELO[modelo] ?? PERFIL_POR_DEFECTO;
+}
 
 /**
  * Se lee en cada llamada y no al cargar el módulo: el interruptor tiene que
@@ -623,51 +753,200 @@ const cita = z
   .min(MIN_LONGITUD_CITA, 'La cita es demasiado corta para poder verificarla')
   .max(500);
 
-export const esquemaExtraccion = z.object({
-  /** Plazos de inscripción publicados en el dossier. */
-  plazos: z
-    .array(
-      z.object({
-        tipo: z.enum(['L1', 'L2', 'L3', 'FIE_D7']),
-        fechaLimite: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        recargoEur: z.number().nonnegative().nullable().optional(),
-        cita,
+const RE_FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+const RE_HORA = /^\d{1,2}:\d{2}$/;
+
+/**
+ * Lista que TIRA los elementos malos en vez de tumbar el documento entero.
+ *
+ * Esto no es laxitud, es lo que midió la comparación de modelos sobre
+ * documentos reales (`tests/modelos-workers-ai.mts`): con `z.array(...)` a
+ * secas, un dossier del que el modelo sacaba catorce campos buenos se quedaba
+ * en CERO porque en `plazos[0].hora` había escrito «12:00 horas» en vez de
+ * «12:00». Cuatro de los cinco modelos probados perdieron un documento
+ * completo por un detalle así.
+ *
+ * El elemento malo no se arregla ni se adivina: se descarta. Y lo que
+ * sobrevive pasa después por la verificación de citas igual que todo lo demás,
+ * así que esta tolerancia no relaja ni un poco la comprobación que importa. Lo
+ * que se validó queda guardado tal cual en `extraccion_documento.propuesta_json`,
+ * que es donde se ve qué sobrevivió y qué no.
+ */
+function listaTolerante<T extends z.ZodTypeAny>(elemento: T) {
+  return z
+    .preprocess((bruto) => (Array.isArray(bruto) ? bruto : []), z.array(z.unknown()))
+    .transform((items) =>
+      items.flatMap((item) => {
+        const leido = elemento.safeParse(item);
+        return leido.success ? [leido.data as z.infer<T>] : [];
       }),
-    )
-    .optional()
-    .default([]),
-  /** Cuota de inscripción. Null cuando el documento no la publica. */
-  cuota: z
-    .object({
-      importeEur: z.number().nonnegative(),
-      concepto: z.string().max(120).nullable().optional(),
+    );
+}
+
+/**
+ * Objeto opcional que se queda en `null` cuando no cumple, en vez de tumbar el
+ * documento.
+ *
+ * Mismo motivo y mismo caso real: varios modelos devuelven `sede: { nombre:
+ * "", cita: "" }` cuando el documento no publica el pabellón, en lugar de
+ * omitir el campo. Con la validación estricta, esa cortesía mal entendida
+ * mataba trece campos verificados.
+ */
+function objetoTolerante<T extends z.ZodTypeAny>(objeto: T) {
+  return z.preprocess(
+    (bruto) => (bruto != null && objeto.safeParse(bruto).success ? bruto : null),
+    z.union([objeto, z.null()]),
+  );
+}
+
+/** Los cuatro hitos horarios que la ficha ya sabe pintar. */
+export const ETIQUETAS_HORARIO = [
+  'apertura_instalacion',
+  'llamada',
+  'scratch',
+  'inicio',
+] as const;
+
+/**
+ * Qué clase de importe es. No todo lo que lleva un € en una convocatoria es la
+ * cuota del tirador: en las convocatorias reales de la RFEE convive la cuota
+ * individual con la de equipos, con la de tiradores extranjeros («el coste de
+ * su inscripción será de 200 euros») y con los precios del hotel oficial.
+ * Meterlos todos en `fee_eur` sería publicar el precio de una habitación doble
+ * como cuota de inscripción.
+ */
+export const TIPOS_CUOTA = [
+  'individual',
+  'equipos',
+  'extranjeros',
+  'acompanante',
+  'arbitro',
+  'alojamiento',
+  'otro',
+] as const;
+
+/** Para qué sirve cada enlace que aparece en el documento. */
+export const TIPOS_ENLACE = [
+  'inscripcion',
+  'reglamento',
+  'normativa',
+  'alojamiento',
+  'resultados',
+  'sorteo',
+  'web',
+  'otro',
+] as const;
+
+export const esquemaExtraccion = z.object({
+  /**
+   * A QUÉ COMPETICIÓN SE REFIERE EL DOCUMENTO.
+   *
+   * Es el campo que hace falta para poder llevar un dato a una ficha. Las 278
+   * circulares de `official_document` son circulares de la federación, no
+   * dossieres por torneo: ninguna trae el id del evento, y varias hablan de
+   * tres competiciones a la vez («TNR Absoluto y I Liga Nacional Oro y
+   * Plata»). Sin esta lista, un horario extraído no tiene a dónde ir.
+   *
+   * Es una LISTA a propósito: si el documento habla de varias, se dicen todas
+   * y se deja que decida una persona. Adivinar cuál es sería justo lo que no
+   * se puede hacer.
+   */
+  competiciones: listaTolerante(
+    z.object({
+      nombre: z.string().min(3).max(160),
+      fechaInicio: z.string().regex(RE_FECHA_ISO).nullable().optional(),
+      localidad: z.string().max(120).nullable().optional(),
       cita,
-    })
-    .nullable()
-    .optional(),
-  sede: z
-    .object({
+    }),
+  ),
+  /** Plazos de inscripción publicados en el dossier. */
+  plazos: listaTolerante(
+    z.object({
+      tipo: z.enum(['L1', 'L2', 'L3', 'FIE_D7']),
+      fechaLimite: z.string().regex(RE_FECHA_ISO),
+      /**
+       * Muchas circulares cierran «a las 12:00» del día límite. Se limpia
+       * antes de validar porque los modelos escriben «12:00 horas» y «12:00h»:
+       * eso no es un dato dudoso, es la misma hora con la unidad pegada, y
+       * tirar el plazo entero por la unidad sería absurdo.
+       */
+      hora: z
+        .preprocess(
+          (bruto) =>
+            typeof bruto === 'string'
+              ? (bruto.trim().match(/^\d{1,2}:\d{2}/)?.[0] ?? bruto.trim())
+              : bruto,
+          z.string().regex(RE_HORA),
+        )
+        .nullable()
+        .optional(),
+      recargoEur: z.number().nonnegative().nullable().optional(),
+      cita,
+    }),
+  ),
+  /**
+   * Importes. Lista y no un único importe: ver `TIPOS_CUOTA`.
+   */
+  cuotas: listaTolerante(
+    z.object({
+      tipo: z.enum(TIPOS_CUOTA),
+      importeEur: z.number().nonnegative(),
+      concepto: z.string().max(160).nullable().optional(),
+      cita,
+    }),
+  ),
+  /**
+   * El pabellón. Es EL dato que hoy falta en 246 de los 274 eventos: el
+   * calendario internacional no lo publica y la ficha dice «La organización
+   * internacional no publica el pabellón». La convocatoria en PDF sí lo lleva,
+   * con dirección postal completa.
+   */
+  sede: objetoTolerante(
+    z.object({
       nombre: z.string().min(2).max(200),
       direccion: z.string().max(300).nullable().optional(),
+      localidad: z.string().max(120).nullable().optional(),
       cita,
-    })
-    .nullable()
-    .optional(),
-  horarios: z
-    .array(
-      z.object({
-        etiqueta: z.enum(['apertura_instalacion', 'llamada', 'scratch', 'inicio']),
-        hora: z.string().regex(/^\d{1,2}:\d{2}$/),
-        prueba: z.string().max(80).nullable().optional(),
-        cita,
-      }),
-    )
-    .optional()
-    .default([]),
-  categoriasAdmitidas: z
-    .array(z.object({ codigo: z.string().min(1).max(20), cita }))
-    .optional()
-    .default([]),
+    }),
+  ),
+  horarios: listaTolerante(
+    z.object({
+      etiqueta: z.enum(ETIQUETAS_HORARIO),
+      hora: z.preprocess(
+        (bruto) =>
+          typeof bruto === 'string'
+            ? (bruto.trim().match(/^\d{1,2}:\d{2}/)?.[0] ?? bruto.trim())
+            : bruto,
+        z.string().regex(RE_HORA),
+      ),
+      /**
+       * Día al que corresponde la hora. Una convocatoria de fin de semana
+       * trae «07:30h: Apertura del pabellón» DOS veces, una por día, y sin la
+       * fecha las dos serían el mismo campo y una pisaría a la otra.
+       */
+      fecha: z.string().regex(RE_FECHA_ISO).nullable().optional(),
+      /** La prueba tal como la nombra el documento («florete masculino»). */
+      prueba: z.string().max(80).nullable().optional(),
+      cita,
+    }),
+  ),
+  categoriasAdmitidas: listaTolerante(
+    z.object({ codigo: z.string().min(1).max(20), cita }),
+  ),
+  /**
+   * Enlaces que aparecen escritos en el documento.
+   *
+   * Aquí la verificación es doble: además de la cita, se comprueba que la URL
+   * aparezca LITERALMENTE en el texto del PDF. Un enlace inventado es peor que
+   * un dato inventado, porque se puede pulsar.
+   */
+  enlaces: listaTolerante(
+    z.object({
+      tipo: z.enum(TIPOS_ENLACE),
+      url: z.string().min(8).max(300),
+      cita,
+    }),
+  ),
 });
 
 export type DatosExtraidos = z.infer<typeof esquemaExtraccion>;
@@ -683,9 +962,32 @@ export type DatosExtraidos = z.infer<typeof esquemaExtraccion>;
  * siendo la única garantía real: se valide o no en el proveedor, lo que
  * devuelva pasa por `esquemaExtraccion`.
  */
+const CITA_JSON = {
+  type: 'string',
+  description:
+    'Frase copiada LITERALMENTE del documento, carácter por carácter, que ' +
+    'contenga este dato. Mínimo 12 caracteres.',
+};
+
 export const ESQUEMA_JSON_SALIDA: Record<string, unknown> = {
   type: 'object',
   properties: {
+    competiciones: {
+      type: 'array',
+      description:
+        'Competiciones de las que habla el documento. Si habla de varias, ' +
+        'todas. Si no nombra ninguna competición concreta, lista vacía.',
+      items: {
+        type: 'object',
+        properties: {
+          nombre: { type: 'string', description: 'Nombre tal como lo escribe el documento' },
+          fechaInicio: { type: 'string', nullable: true, description: 'YYYY-MM-DD' },
+          localidad: { type: 'string', nullable: true },
+          cita: CITA_JSON,
+        },
+        required: ['nombre', 'cita'],
+      },
+    },
     plazos: {
       type: 'array',
       items: {
@@ -693,29 +995,36 @@ export const ESQUEMA_JSON_SALIDA: Record<string, unknown> = {
         properties: {
           tipo: { type: 'string', enum: ['L1', 'L2', 'L3', 'FIE_D7'] },
           fechaLimite: { type: 'string', description: 'YYYY-MM-DD' },
+          hora: { type: 'string', nullable: true, description: 'HH:MM en 24 h' },
           recargoEur: { type: 'number', nullable: true },
-          cita: { type: 'string' },
+          cita: CITA_JSON,
         },
         required: ['tipo', 'fechaLimite', 'cita'],
       },
     },
-    cuota: {
-      type: 'object',
-      nullable: true,
-      properties: {
-        importeEur: { type: 'number' },
-        concepto: { type: 'string', nullable: true },
-        cita: { type: 'string' },
+    cuotas: {
+      type: 'array',
+      description: 'Importes en euros que publica el documento, uno por concepto.',
+      items: {
+        type: 'object',
+        properties: {
+          tipo: { type: 'string', enum: [...TIPOS_CUOTA] },
+          importeEur: { type: 'number' },
+          concepto: { type: 'string', nullable: true },
+          cita: CITA_JSON,
+        },
+        required: ['tipo', 'importeEur', 'cita'],
       },
-      required: ['importeEur', 'cita'],
     },
     sede: {
       type: 'object',
       nullable: true,
+      description: 'Pabellón o instalación donde se compite. NO el hotel.',
       properties: {
         nombre: { type: 'string' },
-        direccion: { type: 'string', nullable: true },
-        cita: { type: 'string' },
+        direccion: { type: 'string', nullable: true, description: 'Calle, número y código postal' },
+        localidad: { type: 'string', nullable: true },
+        cita: CITA_JSON,
       },
       required: ['nombre', 'cita'],
     },
@@ -724,13 +1033,11 @@ export const ESQUEMA_JSON_SALIDA: Record<string, unknown> = {
       items: {
         type: 'object',
         properties: {
-          etiqueta: {
-            type: 'string',
-            enum: ['apertura_instalacion', 'llamada', 'scratch', 'inicio'],
-          },
+          etiqueta: { type: 'string', enum: [...ETIQUETAS_HORARIO] },
           hora: { type: 'string', description: 'HH:MM en 24 h' },
+          fecha: { type: 'string', nullable: true, description: 'YYYY-MM-DD del día de esa hora' },
           prueba: { type: 'string', nullable: true },
-          cita: { type: 'string' },
+          cita: CITA_JSON,
         },
         required: ['etiqueta', 'hora', 'cita'],
       },
@@ -741,13 +1048,33 @@ export const ESQUEMA_JSON_SALIDA: Record<string, unknown> = {
         type: 'object',
         properties: {
           codigo: { type: 'string' },
-          cita: { type: 'string' },
+          cita: CITA_JSON,
         },
         required: ['codigo', 'cita'],
       },
     },
+    enlaces: {
+      type: 'array',
+      description: 'URLs escritas en el documento, copiadas tal cual.',
+      items: {
+        type: 'object',
+        properties: {
+          tipo: { type: 'string', enum: [...TIPOS_ENLACE] },
+          url: { type: 'string' },
+          cita: CITA_JSON,
+        },
+        required: ['tipo', 'url', 'cita'],
+      },
+    },
   },
-  required: ['plazos', 'horarios', 'categoriasAdmitidas'],
+  required: [
+    'competiciones',
+    'plazos',
+    'cuotas',
+    'horarios',
+    'categoriasAdmitidas',
+    'enlaces',
+  ],
 };
 
 // ---------------------------------------------------------------------------
@@ -772,9 +1099,18 @@ REGLAS DE EXTRACCIÓN
 2. La cita debe tener al menos 12 caracteres y como mucho unos 300. Incluye la frase completa, no una palabra suelta.
 3. Si un dato NO aparece explícitamente en el documento, OMÍTELO. No lo deduzcas, no lo estimes y no lo rellenes con un valor por defecto. Devolver menos campos es correcto; inventarse uno es un fallo grave.
 4. Importes: número en euros, sin símbolo ni separador de miles.
-5. Fechas: YYYY-MM-DD. Si el documento da una fecha sin año, omite ese plazo.
-6. Horas: HH:MM en 24 horas.
-7. Tipos de plazo: L1 = plazo ordinario; L2 y L3 = plazos posteriores con recargo; FIE_D7 = cierre duro de la FIE a 7 días.`;
+5. Fechas: YYYY-MM-DD. Si el documento da una fecha sin año, mira si el año aparece en otro sitio del documento (encabezado, título, temporada) y úsalo; si no hay forma de saberlo, omite ese dato.
+6. Horas: HH:MM en 24 horas. "07:30h" es "07:30"; "9.00" es "09:00".
+7. Tipos de plazo: L1 = plazo ordinario; L2 y L3 = plazos posteriores con recargo; FIE_D7 = cierre duro de la FIE a 7 días.
+
+QUÉ BUSCAR, UNO POR UNO
+· competiciones: el nombre de cada competición de la que habla el documento, tal como lo escribe ("Torneo Nacional Ranking Absoluto", "I Liga Nacional Absoluto Oro"). Si habla de tres, las tres. Si es una normativa general que no nombra ninguna competición concreta, devuelve la lista vacía: es mejor no saberlo que acertar por casualidad.
+· sede: el PABELLÓN o la instalación donde se compite, con su dirección postal completa si está ("Pista Coberta d'Atletisme de Catalunya", "Camí de Can Quadres, 190, 08203 Sabadell"). Cuidado: el HOTEL OFICIAL, la residencia y el alojamiento NO son la sede. Si el documento solo da un hotel, deja sede a null.
+· horarios: apertura de la instalación, llamada (también aparece como "confirmación de tiradores"), scratch e inicio de la competición. Un dossier de fin de semana repite las mismas horas para cada día y para cada arma: devuelve UNA entrada por cada combinación, con su "fecha" y su "prueba". Si la hora lleva asterisco o "aprox.", da la hora igual.
+· cuotas: cada importe con su tipo. "individual" es la cuota del tirador; "equipos" la del equipo; "extranjeros" la de tiradores de otras federaciones; "alojamiento" los precios del hotel (que NO son cuota de inscripción, pero interesan). Si un importe no encaja en ninguno, "otro" con su concepto.
+· plazos: la fecha límite de inscripción y su hora si la dan ("antes del viernes de la semana anterior a la celebración de la competición a las 12:00" NO es una fecha: no la inventes, omítela). Los recargos van en "recargoEur" del plazo al que se aplican.
+· categoriasAdmitidas: los códigos de categoría que pueden participar (M9, M11, M14, M17, M20, SENIOR, VET). Solo si el documento los enumera.
+· enlaces: cada URL que aparezca escrita en el documento, copiada EXACTAMENTE, con para qué sirve. Un programa comprobará que la URL aparece literalmente en el texto: no la completes, no le añadas "https://" si no lo lleva y no la corrijas.`;
 
 /** Envuelve el texto del documento, delimitado y marcado como no confiable. */
 export function construirPromptUsuario(
@@ -805,8 +1141,14 @@ export function construirPromptUsuario(
  * cambia el esquema de salida de manera que valga la pena volver a pasar las
  * 278 circulares. Añadir un campo nuevo: se sube. Corregir una errata de un
  * comentario: no.
+ *
+ * 2: pabellón con dirección y localidad, horarios con fecha y prueba, importes
+ *    por concepto en vez de una sola cuota, hora del plazo, enlaces del
+ *    documento y a qué competición se refiere. Las filas de la versión 1 se
+ *    quedan donde están con su hash viejo, así que se puede comparar qué sacaba
+ *    cada versión.
  */
-export const VERSION_ESQUEMA = 1;
+export const VERSION_ESQUEMA = 2;
 
 /**
  * Versión de los FILTROS previos (cortafuegos de privacidad y tachado).
@@ -1006,24 +1348,7 @@ export function clienteWorkersAi(config: ConfiguracionIa): ClienteModelo | null 
   return {
     modelo,
     async generarJson(peticion) {
-      return ejecutar({
-        messages: [
-          { role: 'system', content: peticion.sistema },
-          { role: 'user', content: peticion.usuario },
-        ],
-        /**
-         * Salida estructurada de Workers AI. El esquema va DIRECTAMENTE dentro
-         * de `json_schema`, sin el envoltorio `{ name, schema }` de OpenAI.
-         * https://developers.cloudflare.com/workers-ai/features/json-mode/
-         *
-         * Cloudflare avisa de que no puede garantizar que el modelo respete el
-         * esquema, así que esto es una ayuda, no la garantía: la garantía es el
-         * `esquemaExtraccion.parse()` de más abajo.
-         */
-        response_format: { type: 'json_schema', json_schema: peticion.esquemaJson },
-        temperature: 0,
-        max_tokens: 4096,
-      });
+      return ejecutar(entradasParaWorkersAi(peticion, modelo));
     },
     async transcribirPdf() {
       /**
@@ -1044,19 +1369,183 @@ export function clienteWorkersAi(config: ConfiguracionIa): ClienteModelo | null 
   };
 }
 
+/** Tope de tokens de salida. El esquema ampliado da respuestas largas. */
+const MAX_TOKENS_SALIDA = 8192;
+
 /**
- * La respuesta útil de Workers AI. Con `response_format` unos modelos
- * devuelven `response` como cadena y otros como objeto ya parseado; aquí se
- * normaliza a cadena, que es lo que espera `generarJson`.
+ * El cuerpo EXACTO que se le manda a Workers AI.
+ *
+ * Está aparte y exportado para que el banco de pruebas
+ * (`tests/modelos-workers-ai.mts`) mande lo mismo que producción, byte a byte.
+ * Un comparador de modelos que arma su propia petición no compara modelos:
+ * compara peticiones.
  */
-function respuestaDeWorkersAi(resultado: unknown): string {
-  if (typeof resultado === 'string') return resultado;
-  if (resultado && typeof resultado === 'object' && 'response' in resultado) {
-    const respuesta = (resultado as { response?: unknown }).response;
-    if (typeof respuesta === 'string') return respuesta;
-    if (respuesta && typeof respuesta === 'object') return JSON.stringify(respuesta);
+export function entradasParaWorkersAi(
+  peticion: PeticionModelo,
+  modelo: string,
+): Record<string, unknown> {
+  const perfil = perfilDeModelo(modelo);
+  return {
+    messages: [
+      { role: 'system', content: peticion.sistema },
+      { role: 'user', content: peticion.usuario },
+    ],
+    /**
+     * Salida estructurada de Workers AI. El esquema va DIRECTAMENTE dentro de
+     * `json_schema`, sin el envoltorio `{ name, schema }` de OpenAI.
+     * https://developers.cloudflare.com/workers-ai/features/json-mode/
+     *
+     * Cloudflare avisa de que no puede garantizar que el modelo respete el
+     * esquema, así que esto es una ayuda, no la garantía: la garantía es el
+     * `esquemaExtraccion.parse()` de más abajo.
+     */
+    response_format: { type: 'json_schema', json_schema: peticion.esquemaJson },
+    temperature: 0,
+    /**
+     * El tope de salida y el freno del razonamiento salen del perfil del
+     * modelo, no de una constante: unos lo llaman `max_tokens` y otros
+     * `max_completion_tokens`, y a unos se les puede pedir que no razonen y a
+     * otros no. Mandar el parámetro equivocado es un 400; no mandar el bueno
+     * es una respuesta vacía, que es justo lo que pasó en producción. Ver
+     * `PERFILES_MODELO`.
+     */
+    [perfil.claveTopeSalida]: MAX_TOKENS_SALIDA,
+    ...(perfil.esfuerzoRazonamiento
+      ? { reasoning_effort: perfil.esfuerzoRazonamiento }
+      : {}),
+  };
+}
+
+/** Tope de lo que se registra de una respuesta que no se ha sabido leer. */
+const MAX_CARACTERES_RESPUESTA_CRUDA = 1200;
+
+/**
+ * Deja la respuesta cruda en un formato que se pueda registrar y leer.
+ *
+ * El contenido de la respuesta SALE del PDF, así que puede ser largo y puede
+ * llevar cualquier cosa. Aquí se recorta a `MAX_CARACTERES_RESPUESTA_CRUDA` y
+ * NO se toca el documento de entrada: lo que se registra es lo que contestó el
+ * modelo, nunca lo que se le mandó.
+ */
+export function resumirRespuestaCruda(resultado: unknown): string {
+  let texto: string;
+  try {
+    texto = typeof resultado === 'string' ? resultado : JSON.stringify(resultado);
+  } catch {
+    texto = String(resultado);
   }
-  throw new Error('Workers AI no devolvió texto en la respuesta');
+  texto = (texto ?? 'undefined').replace(/\s+/g, ' ');
+  return texto.length > MAX_CARACTERES_RESPUESTA_CRUDA
+    ? `${texto.slice(0, MAX_CARACTERES_RESPUESTA_CRUDA)}…[recortado, ${texto.length} caracteres en total]`
+    : texto;
+}
+
+/**
+ * Se registra UNA sola vez por proceso. Sin este candado, un lote de 25
+ * documentos con el modelo mal configurado escribe 25 veces lo mismo en los
+ * registros del Worker y entierra todo lo demás.
+ */
+let respuestaCrudaYaRegistrada = false;
+
+/** Solo para los tests: permite volver a comprobar el primer registro. */
+export function olvidarRespuestaCrudaRegistrada(): void {
+  respuestaCrudaYaRegistrada = false;
+}
+
+/**
+ * La respuesta útil de Workers AI, en cualquiera de las formas que usa.
+ *
+ * ESTO ES LO QUE ESTABA ROTO EN PRODUCCIÓN. Workers AI no tiene UNA forma de
+ * respuesta, tiene tres, y este fichero solo conocía la primera:
+ *
+ *  a) `{ response: "…" }` o `{ response: { … } }`. Es la que documenta
+ *     https://developers.cloudflare.com/workers-ai/features/json-mode/ y la
+ *     que devuelven los modelos que hacen caso del JSON Schema (llama-3.3,
+ *     llama-4-scout, qwen3, mistral-small: ahí `response` viene ya parseado).
+ *  b) El sobre de chat-completions de OpenAI:
+ *     `{ choices: [{ message: { content, reasoning_content } }] }`. Es lo que
+ *     devuelven los modelos nuevos —Gemma 4, GLM, DeepSeek, Kimi, gpt-oss— y
+ *     lo que hacía que los cinco documentos de la última pasada fallaran con
+ *     «Workers AI no devolvió texto en la respuesta».
+ *  c) El sobre de la Responses API: `{ output: [{ content: [{ text }] }] }`.
+ *
+ * Y un caso que merece mensaje propio porque el diagnóstico es distinto: el
+ * modelo contesta pero con `content` VACÍO porque se ha gastado el tope de
+ * tokens razonando (`finish_reason: "length"` y `reasoning_content` lleno).
+ * Ahí no hay nada que arreglar en el código: o se sube el tope, o se baja el
+ * `reasoning_effort`, o ese modelo no sirve. Decirlo con esas palabras es la
+ * diferencia entre arreglarlo y cambiar de modelo a ciegas.
+ */
+export function respuestaDeWorkersAi(resultado: unknown): string {
+  if (typeof resultado === 'string') return resultado;
+
+  if (resultado && typeof resultado === 'object') {
+    const sobre = resultado as Record<string, unknown>;
+
+    // (a) La forma documentada.
+    if ('response' in sobre) {
+      const respuesta = sobre.response;
+      if (typeof respuesta === 'string' && respuesta.trim() !== '') return respuesta;
+      if (respuesta && typeof respuesta === 'object') return JSON.stringify(respuesta);
+    }
+
+    // (b) El sobre de chat-completions, que es el de los modelos nuevos.
+    const opcion = Array.isArray(sobre.choices)
+      ? (sobre.choices[0] as Record<string, unknown> | undefined)
+      : undefined;
+    if (opcion) {
+      const mensaje = (opcion.message ?? {}) as Record<string, unknown>;
+      const contenido = mensaje.content;
+      if (typeof contenido === 'string' && contenido.trim() !== '') return contenido;
+      if (contenido && typeof contenido === 'object') return JSON.stringify(contenido);
+      // Algunos modelos antiguos ponen el texto en `text` en vez de en
+      // `message.content`.
+      if (typeof opcion.text === 'string' && opcion.text.trim() !== '') {
+        return opcion.text;
+      }
+
+      const razonamiento = mensaje.reasoning_content ?? mensaje.reasoning;
+      if (typeof razonamiento === 'string' && razonamiento.trim() !== '') {
+        throw new Error(
+          `el modelo se gastó el tope de ${MAX_TOKENS_SALIDA} tokens razonando y ` +
+            `dejó la respuesta vacía (finish_reason: ${String(opcion.finish_reason)}). ` +
+            'Hay que bajarle el reasoning_effort en PERFILES_MODELO, subir el tope ' +
+            `o usar otro modelo. Respuesta cruda: ${resumirRespuestaCruda(resultado)}`,
+        );
+      }
+    }
+
+    // (c) El sobre de la Responses API.
+    if (Array.isArray(sobre.output)) {
+      const trozos: string[] = [];
+      for (const bloque of sobre.output as Record<string, unknown>[]) {
+        const contenidos = Array.isArray(bloque?.content) ? bloque.content : [];
+        for (const trozo of contenidos as Record<string, unknown>[]) {
+          if (typeof trozo?.text === 'string') trozos.push(trozo.text);
+        }
+      }
+      const junto = trozos.join('');
+      if (junto.trim() !== '') return junto;
+    }
+  }
+
+  /**
+   * Aquí ya no se sabe leer la respuesta, y el mensaje tiene que servir para
+   * arreglarlo. Se registra la respuesta CRUDA (recortada) una sola vez y se
+   * mete en el mensaje del error, que es lo que acaba en la columna `motivo` y
+   * en la pantalla de revisión. Si el problema es que el id del modelo no
+   * existe, se lee escrito ahí.
+   */
+  const crudo = resumirRespuestaCruda(resultado);
+  if (!respuestaCrudaYaRegistrada) {
+    respuestaCrudaYaRegistrada = true;
+    console.warn(
+      '[extraccion] Workers AI devolvió una respuesta que no se sabe leer. ' +
+        `Sobre recibido (recortado a ${MAX_CARACTERES_RESPUESTA_CRUDA} caracteres, ` +
+        `sin el documento de entrada): ${crudo}`,
+    );
+  }
+  throw new Error(`Workers AI no devolvió texto en la respuesta. Recibido: ${crudo}`);
 }
 
 function clienteGemini(config: ConfiguracionIa): ClienteModelo {
@@ -1204,16 +1693,32 @@ export type PropuestaCampo = {
    * a ciegas.
    */
   contexto?: string | null;
+  /**
+   * La prueba a la que se refiere el dato, tal como la nombra el documento
+   * ("florete masculino", "espada masculina senior"). `null` = todo el evento.
+   *
+   * No se intenta emparejar con `event_competition` aquí: eso es una decisión
+   * sobre datos, y se toma al aplicar, con el evento delante. Aquí se conserva
+   * el texto original, que es lo que el revisor puede comprobar en el PDF.
+   */
+  prueba?: string | null;
+  /**
+   * `true` = además de la cita hay que comprobar que el VALOR aparezca
+   * literalmente en el documento. Se usa con los enlaces: un enlace inventado
+   * es peor que un dato inventado, porque se puede pulsar.
+   */
+  exigirValorEnTexto?: boolean;
   /** Presente solo en las descartadas, para poder explicar el descarte. */
   motivoDescarte?: string;
 };
 
-function sufijoPrueba(prueba: string | null | undefined): string {
-  if (!prueba) return '';
-  const slug = normalizarParaCotejo(prueba)
+/** Trozo de clave estable a partir de un texto libre. */
+function sufijo(valor: string | null | undefined, tope = 40): string {
+  if (!valor) return '';
+  const slug = normalizarParaCotejo(valor)
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
-    .slice(0, 40);
+    .slice(0, tope);
   return slug ? `.${slug}` : '';
 }
 
@@ -1225,25 +1730,44 @@ const NOMBRE_HORARIO = {
 } as const;
 
 /**
- * Convierte la respuesta validada en filas de `extraction_proposal`.
+ * Convierte la respuesta validada en filas de `extraccion_propuesta`.
  *
  * Los nombres de campo siguen la convención del esquema de base de datos
- * ("deadline.L2", "fee_eur", "venue", "call_time"). Si un campo sale repetido
- * gana el primero: la clave única (documentHash, field) no admite dos, y
- * elegir en silencio cuál vale sería inventarse un criterio.
+ * ("deadline.L2", "fee_eur", "venue", "call_time"), y son los mismos que lee
+ * `ETIQUETAS_CAMPO` para pintarlos en castellano en la ficha. Si un campo sale
+ * repetido gana el primero: la clave única (extracción, campo) no admite dos,
+ * y elegir en silencio cuál vale sería inventarse un criterio.
+ *
+ * El sufijo de fecha y de prueba no es cosmético: una convocatoria de fin de
+ * semana repite "07:30h: Apertura del pabellón" una vez por día y una vez por
+ * arma. Sin el sufijo serían todas el campo `installation_open` y solo
+ * sobreviviría la primera, que es como perder los horarios del domingo.
  */
 export function aPropuestas(datos: DatosExtraidos): PropuestaCampo[] {
   const propuestas: PropuestaCampo[] = [];
   const vistos = new Set<string>();
 
-  const anadir = (field: string, proposedValue: string, quote: string) => {
+  const anadir = (
+    field: string,
+    proposedValue: string,
+    quote: string,
+    extra: { prueba?: string | null; exigirValorEnTexto?: boolean } = {},
+  ) => {
     if (vistos.has(field)) return;
     vistos.add(field);
-    propuestas.push({ field, proposedValue, quote, quoteVerified: false });
+    propuestas.push({
+      field,
+      proposedValue,
+      quote,
+      quoteVerified: false,
+      prueba: extra.prueba ?? null,
+      ...(extra.exigirValorEnTexto ? { exigirValorEnTexto: true } : {}),
+    });
   };
 
   for (const plazo of datos.plazos ?? []) {
     anadir(`deadline.${plazo.tipo}`, plazo.fechaLimite, plazo.cita);
+    if (plazo.hora) anadir(`deadline.${plazo.tipo}.time`, plazo.hora, plazo.cita);
     if (plazo.recargoEur !== null && plazo.recargoEur !== undefined) {
       anadir(
         `deadline.${plazo.tipo}.surcharge_eur`,
@@ -1253,10 +1777,21 @@ export function aPropuestas(datos: DatosExtraidos): PropuestaCampo[] {
     }
   }
 
-  if (datos.cuota) {
-    anadir('fee_eur', datos.cuota.importeEur.toFixed(2), datos.cuota.cita);
-    if (datos.cuota.concepto) {
-      anadir('fee_concept', datos.cuota.concepto, datos.cuota.cita);
+  /**
+   * La cuota individual se queda con la clave corta `fee_eur`, que es la que
+   * corresponde a `event_competition.fee_eur` y la que la ficha enseña como
+   * "Cuota". Todo lo demás lleva su tipo en la clave, para que el precio de
+   * una habitación doble no pueda acabar publicado como cuota de inscripción.
+   */
+  for (const cuota of datos.cuotas ?? []) {
+    const clave = cuota.tipo === 'individual' ? 'fee_eur' : `fee_eur.${cuota.tipo}`;
+    anadir(clave, cuota.importeEur.toFixed(2), cuota.cita);
+    if (cuota.concepto) {
+      anadir(
+        cuota.tipo === 'individual' ? 'fee_concept' : `fee_concept.${cuota.tipo}`,
+        cuota.concepto,
+        cuota.cita,
+      );
     }
   }
 
@@ -1265,13 +1800,17 @@ export function aPropuestas(datos: DatosExtraidos): PropuestaCampo[] {
     if (datos.sede.direccion) {
       anadir('venue_address', datos.sede.direccion, datos.sede.cita);
     }
+    if (datos.sede.localidad) {
+      anadir('venue_city', datos.sede.localidad, datos.sede.cita);
+    }
   }
 
   for (const horario of datos.horarios ?? []) {
     anadir(
-      `${NOMBRE_HORARIO[horario.etiqueta]}${sufijoPrueba(horario.prueba)}`,
+      `${NOMBRE_HORARIO[horario.etiqueta]}${sufijo(horario.fecha, 10)}${sufijo(horario.prueba)}`,
       horario.hora,
       horario.cita,
+      { prueba: horario.prueba ?? null },
     );
   }
 
@@ -1280,8 +1819,19 @@ export function aPropuestas(datos: DatosExtraidos): PropuestaCampo[] {
     anadir(`category_allowed.${codigo}`, codigo, categoria.cita);
   }
 
+  for (const enlace of datos.enlaces ?? []) {
+    const url = enlace.url.trim();
+    // Varios enlaces del mismo tipo conviven: `link.alojamiento`,
+    // `link.alojamiento.2`… El sufijo sale de la URL para que sea estable
+    // entre pasadas y no dependa del orden en que los devolviera el modelo.
+    const base = `link.${enlace.tipo}`;
+    const clave = vistos.has(base) ? `${base}${sufijo(url, 24)}` : base;
+    anadir(clave, url, enlace.cita, { exigirValorEnTexto: true });
+  }
+
   return propuestas;
 }
+
 
 /**
  * Separa lo verificable de lo que no lo es.
@@ -1299,20 +1849,43 @@ export function verificarPropuestas(
   const descartadas: PropuestaCampo[] = [];
 
   for (const propuesta of propuestas) {
-    if (verificarCita(propuesta.quote, textoDocumento)) {
-      verificadas.push({
-        ...propuesta,
-        quoteVerified: true,
-        contexto: extraerContexto(propuesta.quote, textoDocumento),
-      });
-    } else {
+    if (!verificarCita(propuesta.quote, textoDocumento)) {
       descartadas.push({
         ...propuesta,
         quoteVerified: false,
         motivoDescarte:
           'La cita no aparece en el texto del PDF: se descarta por posible alucinación.',
       });
+      continue;
     }
+
+    /**
+     * Segunda vuelta solo para los enlaces: la cita puede ser verdadera y la
+     * URL estar retocada («https://» añadido, un guion de más, el dominio
+     * completado de memoria). Un enlace que no está escrito tal cual en el
+     * documento no se publica.
+     */
+    if (
+      propuesta.exigirValorEnTexto &&
+      !normalizarParaCotejo(textoDocumento).includes(
+        normalizarParaCotejo(propuesta.proposedValue),
+      )
+    ) {
+      descartadas.push({
+        ...propuesta,
+        quoteVerified: true,
+        motivoDescarte:
+          'La cita sí está en el PDF, pero el valor (la URL) no aparece escrito ' +
+          'literalmente: se descarta para no publicar un enlace retocado.',
+      });
+      continue;
+    }
+
+    verificadas.push({
+      ...propuesta,
+      quoteVerified: true,
+      contexto: extraerContexto(propuesta.quote, textoDocumento),
+    });
   }
 
   return { verificadas, descartadas };
@@ -1653,8 +2226,22 @@ export async function extraccionYaRegistrada(clave: {
   return filas.length > 0;
 }
 
-/** Una circular candidata a que la lea el modelo. */
+/**
+ * De dónde sale el PDF. Cambia dos cosas: en qué columna se guarda el vínculo
+ * y cuánto sabemos del evento.
+ *
+ *  - 'dossier': `event_document`. Cuelga del propio torneo en Skermo, así que
+ *    el evento se sabe con CERTEZA y es el que de verdad lleva el pabellón,
+ *    los horarios por día y los importes.
+ *  - 'circular': `official_document`. Circular de la federación. El evento no
+ *    se sabe (los 278 tienen `event_id` a null) y hay que deducirlo, o admitir
+ *    que no se puede.
+ */
+export type OrigenDocumento = 'circular' | 'dossier';
+
+/** Un documento candidato a que lo lea el modelo. */
 export type DocumentoPendiente = {
+  origen: OrigenDocumento;
   id: string;
   titulo: string;
   pdfUrl: string;
@@ -1663,21 +2250,75 @@ export type DocumentoPendiente = {
 };
 
 /**
- * Circulares que todavía no se han procesado con el prompt y el esquema
- * actuales, de la más reciente a la más antigua.
+ * Documentos que todavía no se han procesado con el prompt y el esquema
+ * actuales.
  *
- * El orden importa: si el cron solo llega a cinco por pasada, que sean las
- * cinco cuyos plazos están a punto de vencer, no las de 2019.
+ * ORDEN: primero los DOSSIERES de torneo y después las circulares, y no es
+ * una preferencia estética. Un dossier de convocatoria trae el pabellón con su
+ * dirección, la apertura de la instalación, la llamada y la cuota, y viene
+ * atado a un evento: cada uno rellena una ficha entera. Una circular de
+ * normativa trae, con suerte, un plazo que no se sabe de qué torneo es. Si el
+ * cron solo llega a cinco por pasada, que sean las cinco que se notan.
+ *
+ * Dentro de cada grupo, de lo más reciente a lo más antiguo: si hay que elegir,
+ * mejor los plazos que están por vencer que los de 2019.
  */
 export async function documentosPendientesDeExtraer(
   limite: number,
   huella: { hashPrompt: string; versionEsquema: number },
 ): Promise<DocumentoPendiente[]> {
   const { db } = await import('@/db');
-  const { extraccionDocumento, officialDocument } = await import('@/db/schema');
+  const { event, eventDocument, extraccionDocumento, officialDocument } = await import(
+    '@/db/schema'
+  );
   const { and, desc, eq, ne, notExists, sql } = await import('drizzle-orm');
 
-  return db
+  /**
+   * «No hay ya una extracción buena de este documento con este prompt». Se le
+   * pasa la comparación de columnas hecha, porque cada tabla se ata por una
+   * columna distinta del libro de registro.
+   */
+  const sinProcesar = (mismoDocumento: SQL | undefined) =>
+    notExists(
+      db
+        .select({ existe: sql`1` })
+        .from(extraccionDocumento)
+        .where(
+          and(
+            mismoDocumento,
+            eq(extraccionDocumento.hashPrompt, huella.hashPrompt),
+            eq(extraccionDocumento.versionEsquema, huella.versionEsquema),
+            // Lo que acabó en error se vuelve a intentar: ver
+            // `extraccionYaRegistrada`.
+            ne(extraccionDocumento.estado, 'error'),
+          ),
+        ),
+    );
+
+  const dossieres = await db
+    .select({
+      id: eventDocument.id,
+      titulo: eventDocument.title,
+      pdfUrl: eventDocument.url,
+      eventId: eventDocument.eventId,
+      fileHash: eventDocument.fileHash,
+    })
+    .from(eventDocument)
+    .innerJoin(event, eq(event.id, eventDocument.eventId))
+    .where(
+      sinProcesar(eq(extraccionDocumento.eventoDocumentoId, eventDocument.id)),
+    )
+    .orderBy(desc(event.startDate))
+    .limit(limite);
+
+  const pendientes: DocumentoPendiente[] = dossieres.map((fila) => ({
+    origen: 'dossier' as const,
+    ...fila,
+  }));
+
+  if (pendientes.length >= limite) return pendientes;
+
+  const circulares = await db
     .select({
       id: officialDocument.id,
       titulo: officialDocument.title,
@@ -1686,25 +2327,274 @@ export async function documentosPendientesDeExtraer(
       fileHash: officialDocument.fileHash,
     })
     .from(officialDocument)
+    .where(sinProcesar(eq(extraccionDocumento.documentoId, officialDocument.id)))
+    .orderBy(desc(officialDocument.publishedAt))
+    .limit(limite - pendientes.length);
+
+  return [
+    ...pendientes,
+    ...circulares.map((fila) => ({ origen: 'circular' as const, ...fila })),
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// A qué evento pertenece el documento
+// ---------------------------------------------------------------------------
+
+export type SugerenciaEvento = {
+  eventoId: string | null;
+  certeza: 'seguro' | 'dudoso' | 'desconocido';
+  /** En castellano: es lo que se enseña en la pantalla de revisión. */
+  motivo: string;
+};
+
+/**
+ * Palabras que aparecen en casi todos los nombres de competición y que por
+ * tanto no distinguen nada. Sin esta lista, «TORNEO NACIONAL DE RANKING
+ * ABSOLUTO» casaría con los treinta torneos nacionales de la temporada.
+ */
+const PALABRAS_GENERICAS_EVENTO = new Set([
+  'torneo',
+  'torneos',
+  'nacional',
+  'nacionales',
+  'internacional',
+  'ranking',
+  'liga',
+  'copa',
+  'campeonato',
+  'trofeo',
+  'espana',
+  'espanol',
+  'espanola',
+  'jornada',
+  'fase',
+  'individual',
+  'equipos',
+  'masculino',
+  'femenino',
+  'masculina',
+  'femenina',
+  'absoluto',
+  'absoluta',
+  'senior',
+  'cadete',
+  'junior',
+  'infantil',
+  'veteranos',
+  'florete',
+  'espada',
+  'sable',
+  'para',
+  'del',
+  'los',
+  'las',
+  'con',
+]);
+
+/** Palabras distintivas de un nombre de competición (topónimos, sobre todo). */
+function palabrasDistintivas(nombre: string): Set<string> {
+  return new Set(
+    normalizarParaCotejo(nombre)
+      .split(/[^a-z0-9]+/)
+      .filter((p) => p.length >= 4 && !PALABRAS_GENERICAS_EVENTO.has(p)),
+  );
+}
+
+/** Días enteros entre dos fechas ISO, en valor absoluto. */
+function diasEntre(a: string, b: string): number {
+  const uno = Date.parse(`${a}T00:00:00Z`);
+  const otro = Date.parse(`${b}T00:00:00Z`);
+  if (Number.isNaN(uno) || Number.isNaN(otro)) return Number.POSITIVE_INFINITY;
+  return Math.abs(uno - otro) / 86_400_000;
+}
+
+/**
+ * Puntuación mínima para atreverse a SUGERIR un evento, y ventaja mínima sobre
+ * el segundo candidato.
+ *
+ * Los dos números están calibrados para fallar del lado de «no lo sé». Un
+ * empate entre dos torneos del mismo fin de semana se resuelve diciendo que no
+ * se sabe, no echándolo a suertes: el coste de equivocarse es poner el horario
+ * del torneo de Sabadell en la ficha del de Medina del Campo.
+ */
+const PUNTOS_MINIMOS_SUGERENCIA = 5;
+const VENTAJA_MINIMA_SUGERENCIA = 2;
+
+/**
+ * Decide a qué evento pertenece un documento, o admite que no se sabe.
+ *
+ * TRES CAMINOS, en este orden:
+ *
+ *  1. El documento cuelga del evento (`event_document`): certeza 'seguro'. No
+ *     hay nada que deducir, lo dice la propia fuente.
+ *  2. El modelo ha nombrado competiciones: se buscan eventos cuya fecha de
+ *     inicio caiga cerca y cuyo nombre o localidad casen. Si hay UN ganador
+ *     claro, certeza 'dudoso' y a que lo confirme una persona.
+ *  3. Cero candidatos, o varios empatados: 'desconocido', con el motivo
+ *     escrito. Los campos se quedan en la cola sin aplicarse a nada.
+ *
+ * Nunca devuelve 'seguro' por deducción. Que una heurística acierte el 90 % de
+ * las veces no la convierte en una fuente: el 10 % restante son horarios en la
+ * ficha del torneo equivocado, y eso no se puede detectar mirando la ficha.
+ */
+export async function resolverEvento(opciones: {
+  eventoConocido?: string | null;
+  competiciones?: DatosExtraidos['competiciones'];
+}): Promise<SugerenciaEvento> {
+  if (opciones.eventoConocido) {
+    return {
+      eventoId: opciones.eventoConocido,
+      certeza: 'seguro',
+      motivo: 'El documento cuelga de este evento en la fuente: no hay nada que deducir.',
+    };
+  }
+
+  const competiciones = (opciones.competiciones ?? []).filter((c) => c.nombre);
+  if (competiciones.length === 0) {
+    return {
+      eventoId: null,
+      certeza: 'desconocido',
+      motivo:
+        'El documento no nombra ninguna competición concreta (es una normativa o ' +
+        'una circular general), así que no hay a qué evento ligarlo.',
+    };
+  }
+
+  const conFecha = competiciones.filter((c) => c.fechaInicio);
+  if (conFecha.length === 0) {
+    return {
+      eventoId: null,
+      certeza: 'desconocido',
+      motivo:
+        `El documento habla de ${competiciones.length} competición(es) ` +
+        `(${competiciones.map((c) => c.nombre).join('; ')}) pero sin fecha, y sin ` +
+        'fecha no se puede distinguir la edición de este año de la del año pasado.',
+    };
+  }
+
+  const { db } = await import('@/db');
+  const { event } = await import('@/db/schema');
+  const { and, gte, isNull, lte } = await import('drizzle-orm');
+
+  // Ventana de búsqueda: la fecha más temprana menos una semana, la más tardía
+  // más una semana. Una semana cubre los desfases de un día entre fuentes.
+  const fechas = conFecha.map((c) => c.fechaInicio as string).sort();
+  const desde = new Date(`${fechas[0]}T00:00:00Z`);
+  desde.setUTCDate(desde.getUTCDate() - 7);
+  const hasta = new Date(`${fechas[fechas.length - 1]}T00:00:00Z`);
+  hasta.setUTCDate(hasta.getUTCDate() + 7);
+
+  const candidatos = await db
+    .select({
+      id: event.id,
+      nombre: event.name,
+      inicio: event.startDate,
+      ciudad: event.city,
+    })
+    .from(event)
     .where(
-      notExists(
-        db
-          .select({ existe: sql`1` })
-          .from(extraccionDocumento)
-          .where(
-            and(
-              eq(extraccionDocumento.documentoId, officialDocument.id),
-              eq(extraccionDocumento.hashPrompt, huella.hashPrompt),
-              eq(extraccionDocumento.versionEsquema, huella.versionEsquema),
-              // Lo que acabó en error se vuelve a intentar: ver
-              // `extraccionYaRegistrada`.
-              ne(extraccionDocumento.estado, 'error'),
-            ),
-          ),
+      and(
+        gte(event.startDate, desde.toISOString().slice(0, 10)),
+        lte(event.startDate, hasta.toISOString().slice(0, 10)),
+        // Un evento absorbido por otro no es un destino: el dato va al que se
+        // pinta en el calendario.
+        isNull(event.canonicalEventId),
       ),
     )
-    .orderBy(desc(officialDocument.publishedAt))
-    .limit(limite);
+    .limit(200);
+
+  if (candidatos.length === 0) {
+    return {
+      eventoId: null,
+      certeza: 'desconocido',
+      motivo:
+        `No hay ningún evento en el calendario entre ${fechas[0]} y ` +
+        `${fechas[fechas.length - 1]} (±7 días) que pueda ser ` +
+        `«${conFecha[0].nombre}».`,
+    };
+  }
+
+  const puntos = new Map<string, { puntos: number; razones: string[]; nombre: string }>();
+
+  for (const competicion of conFecha) {
+    const distintivas = palabrasDistintivas(competicion.nombre);
+    const localidad = competicion.localidad
+      ? normalizarParaCotejo(competicion.localidad)
+      : '';
+
+    for (const candidato of candidatos) {
+      let suma = 0;
+      const razones: string[] = [];
+
+      const dias = diasEntre(competicion.fechaInicio as string, candidato.inicio);
+      if (dias === 0) {
+        suma += 3;
+        razones.push('empieza el mismo día');
+      } else if (dias <= 2) {
+        suma += 2;
+        razones.push(`empieza a ${dias} día(s)`);
+      } else {
+        // Fuera de rango útil: sin coincidencia de fecha no se puntúa nada más.
+        continue;
+      }
+
+      const ciudad = candidato.ciudad ? normalizarParaCotejo(candidato.ciudad) : '';
+      if (localidad && ciudad && (localidad.includes(ciudad) || ciudad.includes(localidad))) {
+        suma += 3;
+        razones.push(`misma localidad (${candidato.ciudad})`);
+      }
+
+      const comunes = [...palabrasDistintivas(candidato.nombre)].filter((p) =>
+        distintivas.has(p),
+      );
+      if (comunes.length > 0) {
+        suma += Math.min(4, comunes.length * 2);
+        razones.push(`coincide en «${comunes.join('», «')}»`);
+      }
+
+      if (suma <= 0) continue;
+      const previo = puntos.get(candidato.id);
+      if (!previo || previo.puntos < suma) {
+        puntos.set(candidato.id, { puntos: suma, razones, nombre: candidato.nombre });
+      }
+    }
+  }
+
+  const ordenados = [...puntos.entries()].sort((a, b) => b[1].puntos - a[1].puntos);
+  const mejor = ordenados[0];
+  const segundo = ordenados[1];
+
+  if (!mejor || mejor[1].puntos < PUNTOS_MINIMOS_SUGERENCIA) {
+    return {
+      eventoId: null,
+      certeza: 'desconocido',
+      motivo:
+        `Ninguno de los ${candidatos.length} eventos de esas fechas casa lo ` +
+        `bastante con «${conFecha[0].nombre}»: la mejor coincidencia se queda en ` +
+        `${mejor?.[1].puntos ?? 0} de ${PUNTOS_MINIMOS_SUGERENCIA} puntos. No se adivina.`,
+    };
+  }
+
+  if (segundo && mejor[1].puntos - segundo[1].puntos < VENTAJA_MINIMA_SUGERENCIA) {
+    return {
+      eventoId: null,
+      certeza: 'desconocido',
+      motivo:
+        `Hay empate entre «${mejor[1].nombre}» y «${segundo[1].nombre}» ` +
+        `(${mejor[1].puntos} y ${segundo[1].puntos} puntos). Un empate se resuelve ` +
+        'diciendo que no se sabe, no eligiendo uno.',
+    };
+  }
+
+  return {
+    eventoId: mejor[0],
+    certeza: 'dudoso',
+    motivo:
+      `Podría ser «${mejor[1].nombre}» (${mejor[1].razones.join(', ')}). Lo dice una ` +
+      'heurística, no el documento: hace falta que alguien lo confirme antes de que ' +
+      'estos datos lleguen a la ficha.',
+  };
 }
 
 /** Estado del libro de registro que corresponde a cada final posible. */
@@ -1728,12 +2618,16 @@ function estadoRegistrado(
 
 export type ContextoRegistro = {
   documentoId: string | null;
+  /** Id en `event_document` cuando el PDF es un dossier del propio torneo. */
+  eventoDocumentoId?: string | null;
   documentoUrl: string;
   documentoTitulo: string | null;
   hashDocumento: string;
   hashPrompt: string;
   versionEsquema: number;
   modelo: string | null;
+  /** Lo que devolvió `resolverEvento`. Sin esto el dato no va a ninguna ficha. */
+  evento?: SugerenciaEvento;
 };
 
 /**
@@ -1761,10 +2655,20 @@ export async function registrarExtraccion(
   const propuestas = resultado.estado === 'ok' ? resultado.propuestas : [];
   const descartadas = resultado.estado === 'ok' ? resultado.descartadas : [];
 
+  const evento = contexto.evento ?? {
+    eventoId: null,
+    certeza: 'desconocido' as const,
+    motivo: 'No se ha intentado resolver a qué evento pertenece.',
+  };
+
   const valores = {
     documentoId: contexto.documentoId,
+    eventoDocumentoId: contexto.eventoDocumentoId ?? null,
     documentoUrl: contexto.documentoUrl,
     documentoTitulo: contexto.documentoTitulo,
+    eventoId: evento.eventoId,
+    eventoCerteza: evento.certeza,
+    eventoMotivo: evento.motivo,
     hashDocumento: contexto.hashDocumento,
     hashPrompt: contexto.hashPrompt,
     versionEsquema: contexto.versionEsquema,
@@ -1828,8 +2732,17 @@ export async function registrarExtraccion(
           extraccionId: fila.id,
           documentoId: contexto.documentoId,
           hashDocumento: contexto.hashDocumento,
+          /**
+           * Solo se copia el evento cuando la certeza es 'seguro'. Con una
+           * sugerencia 'dudosa' la propuesta se encola SIN evento: así el dato
+           * no puede colarse en una ficha por el camino de lectura antes de
+           * que alguien confirme de qué torneo es. La sugerencia sigue viva en
+           * el libro de registro, que es donde la ve el revisor.
+           */
+          eventoId: evento.certeza === 'seguro' ? evento.eventoId : null,
           campo: p.field,
           valorPropuesto: p.proposedValue,
+          prueba: p.prueba ?? null,
           cita: p.quote,
           citaVerificada: p.quoteVerified,
           contexto: p.contexto ?? null,
@@ -1874,6 +2787,8 @@ export type ResumenProceso = {
   encoladas?: number;
   descartadas?: number;
   hashDocumento?: string;
+  /** A qué evento se ha podido ligar, y con cuánta certeza. */
+  evento?: SugerenciaEvento;
 };
 
 /**
@@ -1891,6 +2806,8 @@ export type ResumenProceso = {
  */
 export async function procesarDocumentoOficial(opciones: {
   documentoId: string | null;
+  /** 'dossier' = el PDF viene de `event_document`. Por defecto, circular. */
+  origen?: OrigenDocumento;
   documentoUrl: string;
   documentoTitulo?: string | null;
   fileHash?: string | null;
@@ -1900,6 +2817,8 @@ export async function procesarDocumentoOficial(opciones: {
   huella?: { hashPrompt: string; versionEsquema: number };
 }): Promise<ResumenProceso> {
   const config = opciones.config ?? leerConfiguracionIa();
+  const origen = opciones.origen ?? 'circular';
+  const esDossier = origen === 'dossier';
   const base = {
     documentoId: opciones.documentoId,
     documentoUrl: opciones.documentoUrl,
@@ -1934,7 +2853,7 @@ export async function procesarDocumentoOficial(opciones: {
 
   // (2) Comprobación real, con el contenido en la mano y antes del modelo.
   if (await extraccionYaRegistrada({ hashDocumento: hashContenido, ...huella })) {
-    await guardarHashDelDocumento(opciones.documentoId, hashContenido);
+    await guardarHashDelDocumento(opciones.documentoId, hashContenido, origen);
     return { ...base, estado: 'ya_procesado', hashDocumento: hashContenido };
   }
 
@@ -1946,17 +2865,29 @@ export async function procesarDocumentoOficial(opciones: {
     config,
   });
 
+  /**
+   * A qué evento va esto. Se resuelve DESPUÉS de extraer porque la pista
+   * buena la da el propio documento: el nombre de la competición y su fecha,
+   * con su cita. Antes de extraer solo se tendría el título del fichero.
+   */
+  const evento = await resolverEvento({
+    eventoConocido: opciones.eventId ?? null,
+    competiciones: resultado.estado === 'ok' ? resultado.datos?.competiciones : [],
+  });
+
   const { encoladas } = await registrarExtraccion(resultado, {
-    documentoId: opciones.documentoId,
+    documentoId: esDossier ? null : opciones.documentoId,
+    eventoDocumentoId: esDossier ? opciones.documentoId : null,
     documentoUrl: opciones.documentoUrl,
     documentoTitulo: opciones.documentoTitulo ?? null,
     hashDocumento: hashContenido,
     hashPrompt: huella.hashPrompt,
     versionEsquema: huella.versionEsquema,
     modelo: config.modelo,
+    evento,
   });
 
-  await guardarHashDelDocumento(opciones.documentoId, hashContenido);
+  await guardarHashDelDocumento(opciones.documentoId, hashContenido, origen);
 
   if (resultado.estado === 'ok') {
     return {
@@ -1966,6 +2897,11 @@ export async function procesarDocumentoOficial(opciones: {
       encoladas,
       descartadas: resultado.descartadas.length,
       hashDocumento: hashContenido,
+      evento: {
+        eventoId: evento.eventoId,
+        certeza: evento.certeza,
+        motivo: evento.motivo,
+      },
     };
   }
 
@@ -1988,12 +2924,20 @@ export async function procesarDocumentoOficial(opciones: {
 async function guardarHashDelDocumento(
   documentoId: string | null,
   hash: string,
+  origen: OrigenDocumento,
 ): Promise<void> {
   if (!documentoId) return;
   try {
     const { db } = await import('@/db');
-    const { officialDocument } = await import('@/db/schema');
+    const { eventDocument, officialDocument } = await import('@/db/schema');
     const { eq } = await import('drizzle-orm');
+    if (origen === 'dossier') {
+      await db
+        .update(eventDocument)
+        .set({ fileHash: hash })
+        .where(eq(eventDocument.id, documentoId));
+      return;
+    }
     await db
       .update(officialDocument)
       .set({ fileHash: hash })

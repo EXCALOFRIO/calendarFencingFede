@@ -6,6 +6,9 @@ import {
   club as clubTable,
   eventCompetition as eventCompetitionTable,
   event as eventTable,
+  fieFencer as fieFencerTable,
+  fieWorldRanking as fieWorldRankingTable,
+  officialRankingEntry as officialRankingEntryTable,
   rankingPoint as rankingPointTable,
   rankingSnapshot as rankingSnapshotTable,
   result as resultTable,
@@ -20,6 +23,8 @@ import {
   loadRankingRules,
   pickRule,
 } from '../ranking/compute';
+import { fotoFieAncho } from '../ingest/sources/fie-tiradores';
+import { titular, yearFromIsoDate } from '../utils';
 
 /**
  * Consultas de la pantalla de ranking.
@@ -680,6 +685,711 @@ export async function getRankingScreenData(): Promise<RankingScreenData> {
 
   return { status, groups, tables, cutoffs, breakdowns };
 }
+
+// ------------------------------------ Ranking OFICIAL de la RFEE (Skermo) ---
+
+/**
+ * La clasificación oficial de la RFEE, que es distinta del cálculo interno.
+ *
+ * Son dos números y confundirlos sería grave, así que viven en funciones
+ * separadas con nombres separados y la interfaz tiene que decir cuál es cuál:
+ *
+ *   - el OFICIAL (`official_ranking_entry`) es el que publica la federación y
+ *     el que decide convocatorias. Es el que la gente reconoce y el que se
+ *     enseña primero. Hoy son 1.235 filas y 808 tiradores.
+ *   - el INTERNO (`ranking_snapshot` / `ranking_point`) es el que esta
+ *     aplicación calcula y puede abrir puesto a puesto. Sirve para auditar y
+ *     para contestar «¿por qué no me cuenta aquella prueba?», y solo existe
+ *     para los tiradores cuyos resultados están emparejados.
+ *
+ * El oficial NO se recalcula ni se retoca: se enseña tal y como se leyó, con la
+ * fecha de la última lectura y el enlace a la página de la que salió.
+ */
+
+export type FilaOficial = {
+  /** Fila de `official_ranking_entry`, no de `athlete`. */
+  id: string;
+  /** `null` cuando el tirador todavía no está clasificado. */
+  position: number | null;
+  nombre: string;
+  /** Código del club tal y como lo publica Skermo («FED-M-C»). */
+  club: string | null;
+  totalPoints: number | null;
+  anioNacimiento: number | null;
+  /** Ficha de esta aplicación, si la fila está emparejada por licencia. */
+  athleteId: string | null;
+};
+
+export type TablaOficial = {
+  group: RankingGroupKey;
+  seasonLabel: string;
+  rows: FilaOficial[];
+  /** Cuántos tienen puesto. El resto aparecen en la fuente pero sin clasificar. */
+  clasificados: number;
+  /** Última vez que se leyó este grupo de la fuente. */
+  actualizadoEl: Date | null;
+  sourceUrl: string | null;
+  /**
+   * Normativa de la temporada. Es DATOS de la federación, no cálculo nuestro,
+   * así que se puede aplicar al ranking oficial: es la que dice cuántas plazas
+   * salen por ranking y dónde está el corte de convocatoria.
+   */
+  rule: RankingTableView['rule'];
+};
+
+export type RankingOficialScreenData = {
+  seasonLabel: string | null;
+  groups: (RankingGroupKey & { tiradores: number })[];
+  /** Tabla por grupo, indexada por `groupKey`. */
+  tables: Record<string, TablaOficial>;
+  /** `grupo` -> `athleteId` -> a cuántos puestos está del corte. */
+  cutoffs: Record<string, Record<string, CutoffStatus>>;
+  total: number;
+  /** Filas sin ficha en esta aplicación. Cada alta por `/alta` baja el número. */
+  sinFicha: number;
+};
+
+/**
+ * Todo el ranking oficial en una pasada.
+ *
+ * Se carga entero y se manda al cliente, igual que el calendario y por el mismo
+ * motivo: en un pabellón con mala cobertura, cambiar de arma no puede ser un
+ * viaje a la red. El volumen lo permite —1.235 filas de seis campos cortos, el
+ * grupo más grande son 259— y crece con la federación, no con el tiempo.
+ */
+export async function getRankingOficialScreenData(): Promise<RankingOficialScreenData> {
+  const [temporada, filas] = await Promise.all([
+    getRankingSeason(),
+    db
+      .select({
+        id: officialRankingEntryTable.id,
+        seasonLabel: officialRankingEntryTable.seasonLabel,
+        weapon: officialRankingEntryTable.weapon,
+        gender: officialRankingEntryTable.gender,
+        category: officialRankingEntryTable.category,
+        position: officialRankingEntryTable.position,
+        totalPoints: officialRankingEntryTable.totalPoints,
+        nombre: officialRankingEntryTable.sourceAthleteName,
+        club: officialRankingEntryTable.sourceClub,
+        nacimiento: officialRankingEntryTable.sourceBirthDate,
+        athleteId: officialRankingEntryTable.athleteId,
+        sourceUrl: officialRankingEntryTable.sourceUrl,
+        updatedAt: officialRankingEntryTable.updatedAt,
+      })
+      .from(officialRankingEntryTable)
+      .orderBy(
+        asc(officialRankingEntryTable.weapon),
+        asc(officialRankingEntryTable.category),
+        asc(officialRankingEntryTable.gender),
+        sql`${officialRankingEntryTable.position} asc nulls last`,
+        asc(officialRankingEntryTable.sourceAthleteName),
+      ),
+  ]);
+
+  const vacio: RankingOficialScreenData = {
+    seasonLabel: null,
+    groups: [],
+    tables: {},
+    cutoffs: {},
+    total: 0,
+    sinFicha: 0,
+  };
+
+  if (filas.length === 0) return vacio;
+
+  /**
+   * Solo la temporada más reciente que trae la fuente. Guardar varias es
+   * deliberado (el histórico no se tira), pero mezclar dos en la misma tabla
+   * pondría a la misma persona dos veces con puestos distintos.
+   */
+  const temporadaVigente = [...new Set(filas.map((f) => f.seasonLabel))]
+    .sort()
+    .at(-1);
+  if (!temporadaVigente) return vacio;
+
+  const delAno = filas.filter((f) => f.seasonLabel === temporadaVigente);
+
+  const { rules } = temporada
+    ? await loadRankingRules(temporada.id)
+    : { rules: [] };
+
+  const tables: Record<string, TablaOficial> = {};
+  const groups: (RankingGroupKey & { tiradores: number })[] = [];
+  const cutoffs: Record<string, Record<string, CutoffStatus>> = {};
+
+  for (const fila of delAno) {
+    const group: RankingGroupKey = {
+      weapon: fila.weapon as Weapon,
+      gender: fila.gender as Gender,
+      category: fila.category as RankingCategory,
+    };
+    const key = groupKey(group);
+
+    let tabla = tables[key];
+    if (!tabla) {
+      const rule = pickRule(rules, group.weapon, group.category);
+      tabla = {
+        group,
+        seasonLabel: temporadaVigente,
+        rows: [],
+        clasificados: 0,
+        actualizadoEl: null,
+        sourceUrl: fila.sourceUrl,
+        rule: rule
+          ? {
+              countingEvents: rule.countingEvents,
+              rankingPlaces: rule.rankingPlaces,
+              technicalPlaces: rule.technicalPlaces,
+              cutoffDate: rule.cutoffDate,
+              sourceDocument: rule.sourceDocument,
+              sourceUrl: rule.sourceUrl,
+            }
+          : null,
+      };
+      tables[key] = tabla;
+      groups.push({ ...group, tiradores: 0 });
+    }
+
+    tabla.rows.push({
+      id: fila.id,
+      position: fila.position,
+      nombre: titular(fila.nombre),
+      club: fila.club,
+      totalPoints: fila.totalPoints === null ? null : Number.parseFloat(fila.totalPoints),
+      anioNacimiento: fila.nacimiento ? yearFromIsoDate(fila.nacimiento) : null,
+      athleteId: fila.athleteId,
+    });
+    if (fila.position !== null) tabla.clasificados += 1;
+    if (!tabla.actualizadoEl || fila.updatedAt > tabla.actualizadoEl) {
+      tabla.actualizadoEl = fila.updatedAt;
+    }
+  }
+
+  for (const grupo of groups) {
+    const key = groupKey(grupo);
+    grupo.tiradores = tables[key].rows.length;
+  }
+
+  /**
+   * Distancia al corte, calculada sobre los puestos OFICIALES.
+   *
+   * Es la corrección que faltaba: el corte de convocatoria lo decide la
+   * clasificación de la federación, no la nuestra, así que medirlo sobre el
+   * cálculo interno —que hoy tiene tres filas— daba una respuesta bonita y
+   * falsa. La normativa (cuántas plazas y en qué fecha) sigue siendo la misma.
+   *
+   * Se indexa por `athleteId` porque es lo que la pantalla sabe de quien mira,
+   * y solo entran los clasificados: sin puesto no hay distancia que medir.
+   */
+  for (const [key, tabla] of Object.entries(tables)) {
+    if (!tabla.rule) continue;
+    const clasificados = tabla.rows
+      .filter((r) => r.position !== null)
+      .map((r) => ({
+        athleteId: r.athleteId ?? r.id,
+        position: r.position as number,
+        totalPoints: r.totalPoints ?? 0,
+      }));
+
+    cutoffs[key] = {};
+    for (const fila of tabla.rows) {
+      if (!fila.athleteId || fila.position === null) continue;
+      const corte = cutoffStatus(clasificados, fila.athleteId, {
+        rankingPlaces: tabla.rule.rankingPlaces,
+        technicalPlaces: tabla.rule.technicalPlaces,
+        cutoffDate: tabla.rule.cutoffDate,
+      });
+      if (corte) cutoffs[key][fila.athleteId] = corte;
+    }
+  }
+
+  return {
+    seasonLabel: temporadaVigente,
+    groups,
+    tables,
+    cutoffs,
+    total: delAno.length,
+    sinFicha: delAno.filter((f) => f.athleteId === null).length,
+  };
+}
+
+/**
+ * Cuánta gente hay en el ranking oficial y cuánta tiene ficha aquí.
+ *
+ * Es una consulta de dos números y se usa para poder hacer una oferta concreta
+ * en vez de vaga: «búscate entre los 808 tiradores de la clasificación oficial»
+ * convence, «vincula tu ficha» no dice de dónde saldría el dato.
+ */
+export const contarRankingOficial = cache(
+  async (): Promise<{ filas: number; tiradores: number; sinFicha: number }> => {
+    const [fila] = await db
+      .select({
+        filas: sql<number>`count(*)::int`,
+        tiradores: sql<number>`count(distinct ${officialRankingEntryTable.skermoAthleteId})::int`,
+        sinFicha: sql<number>`count(*) filter (where ${officialRankingEntryTable.athleteId} is null)::int`,
+      })
+      .from(officialRankingEntryTable);
+
+    return {
+      filas: fila?.filas ?? 0,
+      tiradores: fila?.tiradores ?? 0,
+      sinFicha: fila?.sinFicha ?? 0,
+    };
+  },
+);
+
+/** Puesto y puntos oficiales de un tirador, en un ranking concreto. */
+export type PuestoOficial = {
+  athleteId: string;
+  seasonLabel: string;
+  weapon: Weapon;
+  gender: Gender;
+  category: string;
+  /** Literal de la fuente: «VET50» se normaliza a VET y aquí queda el original. */
+  categoryRaw: string;
+  /** `null` si aparece en la clasificación pero todavía sin puesto. */
+  position: number | null;
+  totalPoints: number | null;
+  club: string | null;
+  /**
+   * Cuántos tiradores CLASIFICADOS hay en esa clasificación: un 3.º de 50 no es
+   * un 3.º de 3.
+   *
+   * Se cuentan solo los que tienen puesto, no todos los que aparecen. Es la
+   * diferencia entre «3.º de 50» y «3.º de 88», y la primera es la cierta: los
+   * 38 restantes salen en la lista de la federación con cero puntos y sin
+   * puesto, así que no hay nadie por detrás al que ganar en ellos. Y tiene que
+   * ser el mismo número aquí y en la tabla del ranking, que es donde se vio
+   * primero que no cuadraba.
+   */
+  deCuantos: number;
+  actualizadoEl: Date;
+  sourceUrl: string | null;
+};
+
+/**
+ * Las clasificaciones oficiales de unos tiradores.
+ *
+ * Es lo que contesta «¿voy bien?» de verdad, y lo que faltaba en «Mi estado»:
+ * un 3.º de España con 1.387,77 puntos estaba en la base y la pantalla decía
+ * «sin puesto en el ranking» porque solo miraba el cálculo interno.
+ *
+ * Devuelve TODAS las suyas: un tirador puede estar en absoluto y en sub-23, o
+ * en dos armas, y quedarse con una sola es esconderle media temporada.
+ */
+export async function getPuestosOficiales(
+  athleteIds: string[],
+): Promise<PuestoOficial[]> {
+  if (athleteIds.length === 0) return [];
+
+  const suyas = await db
+    .select({
+      athleteId: officialRankingEntryTable.athleteId,
+      seasonLabel: officialRankingEntryTable.seasonLabel,
+      weapon: officialRankingEntryTable.weapon,
+      gender: officialRankingEntryTable.gender,
+      category: officialRankingEntryTable.category,
+      categoryRaw: officialRankingEntryTable.categoryRaw,
+      position: officialRankingEntryTable.position,
+      totalPoints: officialRankingEntryTable.totalPoints,
+      club: officialRankingEntryTable.sourceClub,
+      updatedAt: officialRankingEntryTable.updatedAt,
+      sourceUrl: officialRankingEntryTable.sourceUrl,
+    })
+    .from(officialRankingEntryTable)
+    .where(inArray(officialRankingEntryTable.athleteId, athleteIds));
+
+  if (suyas.length === 0) return [];
+
+  /**
+   * Cuánta gente hay en cada clasificación suya. Sin esto, «3.º» no dice nada:
+   * la pantalla tiene que poder escribir «3.º de 88».
+   */
+  const tamanos = await db
+    .select({
+      seasonLabel: officialRankingEntryTable.seasonLabel,
+      weapon: officialRankingEntryTable.weapon,
+      gender: officialRankingEntryTable.gender,
+      categoryRaw: officialRankingEntryTable.categoryRaw,
+      cuantos: sql<number>`count(*) filter (where ${officialRankingEntryTable.position} is not null)::int`,
+    })
+    .from(officialRankingEntryTable)
+    .groupBy(
+      officialRankingEntryTable.seasonLabel,
+      officialRankingEntryTable.weapon,
+      officialRankingEntryTable.gender,
+      officialRankingEntryTable.categoryRaw,
+    );
+
+  const clave = (r: {
+    seasonLabel: string;
+    weapon: string;
+    gender: string;
+    categoryRaw: string;
+  }) => `${r.seasonLabel}|${r.weapon}|${r.gender}|${r.categoryRaw}`;
+
+  const cuantos = new Map(tamanos.map((t) => [clave(t), t.cuantos]));
+
+  return suyas
+    .filter((r): r is typeof r & { athleteId: string } => r.athleteId !== null)
+    .map((r) => ({
+      athleteId: r.athleteId,
+      seasonLabel: r.seasonLabel,
+      weapon: r.weapon as Weapon,
+      gender: r.gender as Gender,
+      category: r.category,
+      categoryRaw: r.categoryRaw,
+      position: r.position,
+      totalPoints: r.totalPoints === null ? null : Number.parseFloat(r.totalPoints),
+      club: r.club,
+      deCuantos: cuantos.get(clave(r)) ?? 0,
+      actualizadoEl: r.updatedAt,
+      sourceUrl: r.sourceUrl,
+    }))
+    // Mejor puesto primero; los que aún no están clasificados, al final.
+    .sort((a, b) => (a.position ?? 9e9) - (b.position ?? 9e9));
+}
+
+// ------------------------------------------------------------ Ficha FIE ---
+
+/**
+ * Se reexporta para que la interfaz no tenga que importar de `lib/ingest`:
+ * pedir la foto a un ancho concreto es cosa de la pantalla, aunque la regla de
+ * cómo se pide sea cosa de la fuente. Ver el comentario largo en
+ * `fie-tiradores.ts`: la redimensiona la FIE, no nosotros, y eso no es un
+ * detalle de eficiencia sino la condición legal de poder usarla.
+ */
+export { fotoFieAncho };
+
+/**
+ * Un puesto en el ranking MUNDIAL. No confundir con `PuestoOficial`, que es el
+ * ranking nacional de la RFEE: son dos números distintos y la pantalla tiene
+ * que decir cuál es cuál.
+ */
+export type PuestoMundialFie = {
+  season: number;
+  weapon: Weapon;
+  gender: Gender;
+  category: string;
+  /** Literal de la FIE: "S", "J", "C", "V". */
+  categoryRaw: string;
+  /** Tramo de edad, solo en veteranos ("40-49"). */
+  ageBand: string | null;
+  /** `null` si aparece en la lista pero sin puesto. */
+  position: number | null;
+  points: number | null;
+  /** Nº de pruebas que le puntúan esa temporada. `null` = la FIE no lo dio. */
+  eventCount: number | null;
+};
+
+/**
+ * Lo que la FIE publica de un tirador nuestro.
+ *
+ * `fotoUrl` apunta SIEMPRE a `static.fie.org`: se pone tal cual en el `src` de
+ * la imagen y no se descarga, no se cachea y no se pasa por el optimizador de
+ * imágenes (optimizarla sería servir una copia nuestra, y eso es rehospedar).
+ * `fichaUrl` es su ficha en fie.org, y hay que enlazarla siempre que se
+ * enseñe la foto: es la condición con la que se usa este dato.
+ */
+export type FichaFie = {
+  athleteId: string;
+  fieId: number;
+  /** Como lo publica la FIE: "LLAVADOR Carlos". Útil para el pie de la foto. */
+  nombrePublicado: string;
+  /** La original. Pesa casi 1 MB: para el perfil usa `fotoUrlRetrato`. */
+  fotoUrl: string | null;
+  /** 320 px de ancho, redimensionada por la FIE. Es la del perfil. */
+  fotoUrlRetrato: string | null;
+  /** 96 px, para cuando la ficha se usa en una lista. */
+  fotoUrlMini: string | null;
+  fichaUrl: string;
+  /** "L" zurdo, "R" diestro, o null si no lo publica. */
+  mano: string | null;
+  /** El puesto mundial vigente (mejor puesto de la temporada más reciente). */
+  actual: PuestoMundialFie | null;
+  /** Su mejor puesto mundial de siempre, con el año en que lo hizo. */
+  mejorHistorico: PuestoMundialFie | null;
+  /** Todas sus clasificaciones mundiales, de la más reciente a la más vieja. */
+  clasificaciones: PuestoMundialFie[];
+  actualizadoEl: Date;
+};
+
+/**
+ * Las fichas de la FIE de unos tiradores, ya enlazadas y confirmadas.
+ *
+ * Dos consultas y se cose en memoria, igual que el resto del fichero: con
+ * Neon por HTTP lo caro es el viaje, y un JOIN repetiría la fila del tirador
+ * una vez por cada temporada suya (Llavador tiene 19).
+ *
+ * Solo devuelve enlaces `CONFIRMADO`. Una propuesta sin revisar NO sale por
+ * aquí: enseñar la foto de un candidato es exactamente el error que la cola de
+ * revisión existe para evitar.
+ */
+export async function getFichasFie(
+  athleteIds: string[],
+): Promise<Map<string, FichaFie>> {
+  const out = new Map<string, FichaFie>();
+  if (athleteIds.length === 0) return out;
+
+  const fichas = await db
+    .select({
+      athleteId: fieFencerTable.athleteId,
+      fieId: fieFencerTable.fieId,
+      sourceName: fieFencerTable.sourceName,
+      photoUrl: fieFencerTable.photoUrl,
+      profileUrl: fieFencerTable.profileUrl,
+      hand: fieFencerTable.hand,
+      updatedAt: fieFencerTable.updatedAt,
+    })
+    .from(fieFencerTable)
+    .where(
+      and(
+        inArray(fieFencerTable.athleteId, athleteIds),
+        eq(fieFencerTable.linkStatus, 'CONFIRMADO'),
+      ),
+    );
+
+  if (fichas.length === 0) return out;
+
+  const clasificaciones = await db
+    .select({
+      fieId: fieWorldRankingTable.fieId,
+      season: fieWorldRankingTable.season,
+      weapon: fieWorldRankingTable.weapon,
+      gender: fieWorldRankingTable.gender,
+      category: fieWorldRankingTable.category,
+      categoryRaw: fieWorldRankingTable.categoryRaw,
+      ageBand: fieWorldRankingTable.ageBand,
+      position: fieWorldRankingTable.position,
+      points: fieWorldRankingTable.points,
+      eventCount: fieWorldRankingTable.eventCount,
+    })
+    .from(fieWorldRankingTable)
+    .where(
+      inArray(
+        fieWorldRankingTable.fieId,
+        fichas.map((f) => f.fieId),
+      ),
+    );
+
+  const porFieId = new Map<number, PuestoMundialFie[]>();
+  for (const c of clasificaciones) {
+    const lista = porFieId.get(c.fieId) ?? [];
+    lista.push({
+      season: c.season,
+      weapon: c.weapon as Weapon,
+      gender: c.gender as Gender,
+      category: c.category,
+      categoryRaw: c.categoryRaw,
+      ageBand: c.ageBand,
+      position: c.position,
+      points: c.points === null ? null : Number.parseFloat(c.points),
+      eventCount: c.eventCount,
+    });
+    porFieId.set(c.fieId, lista);
+  }
+
+  for (const ficha of fichas) {
+    if (!ficha.athleteId) continue;
+    const suyas = (porFieId.get(ficha.fieId) ?? []).sort(
+      (a, b) => b.season - a.season || (a.position ?? 9e9) - (b.position ?? 9e9),
+    );
+
+    const temporadaMasNueva = suyas[0]?.season ?? null;
+    const actual =
+      temporadaMasNueva === null
+        ? null
+        : (suyas.find(
+            (c) => c.season === temporadaMasNueva && c.position !== null,
+          ) ?? null);
+
+    /**
+     * El mejor puesto de siempre. Se ignoran las temporadas sin puesto: un
+     * `null` no es un buen puesto, es la ausencia de uno, y colarlo aquí
+     * pondría "mejor puesto: —" a quien fue 11.º del mundo.
+     */
+    const conPuesto = suyas.filter(
+      (c): c is PuestoMundialFie & { position: number } => c.position !== null,
+    );
+    const mejorHistorico =
+      conPuesto.length === 0
+        ? null
+        : conPuesto.reduce((mejor, c) =>
+            c.position < mejor.position ? c : mejor,
+          );
+
+    out.set(ficha.athleteId, {
+      athleteId: ficha.athleteId,
+      fieId: ficha.fieId,
+      nombrePublicado: ficha.sourceName,
+      fotoUrl: ficha.photoUrl,
+      fotoUrlRetrato: fotoFieAncho(ficha.photoUrl, 320),
+      fotoUrlMini: fotoFieAncho(ficha.photoUrl, 96),
+      fichaUrl: ficha.profileUrl,
+      mano: ficha.hand,
+      actual,
+      mejorHistorico,
+      clasificaciones: suyas,
+      actualizadoEl: ficha.updatedAt,
+    });
+  }
+
+  return out;
+}
+
+/** Lo mínimo para pintar una foto pequeña al lado de un nombre. */
+export type AvatarFie = {
+  athleteId: string;
+  fieId: number;
+  /** 96 px, redimensionada por la FIE. **Esta es la que hay que pintar.** */
+  fotoUrl: string;
+  /** La original, por si hace falta un `srcset` de 2x. Pesa casi 1 MB. */
+  fotoUrlOriginal: string;
+  fichaUrl: string;
+};
+
+/**
+ * Solo la foto y el enlace, para las listas.
+ *
+ * Existe aparte de `getFichasFie` porque la lista de inscritos y la de
+ * «Tiradores» pintan decenas de filas y no necesitan las 19 temporadas de
+ * nadie: esto es UNA consulta que devuelve tres campos, y las filas sin foto
+ * no salen (así la interfaz no tiene que distinguir "sin foto" de "sin
+ * ficha": si no está en el mapa, se pinta la inicial de siempre).
+ */
+export async function getAvataresFie(
+  athleteIds: string[],
+): Promise<Map<string, AvatarFie>> {
+  const out = new Map<string, AvatarFie>();
+  if (athleteIds.length === 0) return out;
+
+  const filas = await db
+    .select({
+      athleteId: fieFencerTable.athleteId,
+      fieId: fieFencerTable.fieId,
+      photoUrl: fieFencerTable.photoUrl,
+      profileUrl: fieFencerTable.profileUrl,
+    })
+    .from(fieFencerTable)
+    .where(
+      and(
+        inArray(fieFencerTable.athleteId, athleteIds),
+        eq(fieFencerTable.linkStatus, 'CONFIRMADO'),
+        sql`${fieFencerTable.photoUrl} is not null`,
+      ),
+    );
+
+  for (const f of filas) {
+    if (!f.athleteId || !f.photoUrl) continue;
+    out.set(f.athleteId, {
+      athleteId: f.athleteId,
+      fieId: f.fieId,
+      fotoUrl: fotoFieAncho(f.photoUrl, 96) ?? f.photoUrl,
+      fotoUrlOriginal: f.photoUrl,
+      fichaUrl: f.profileUrl,
+    });
+  }
+
+  return out;
+}
+
+/** Una propuesta de ficha FIE esperando que la mire una persona. */
+export type PropuestaFie = {
+  fieId: number;
+  /** Como lo publica la FIE: "LLAVADOR Carlos". */
+  nombrePublicado: string;
+  fotoUrl: string | null;
+  fichaUrl: string;
+  fechaNacimientoFie: string | null;
+  licenciaFie: string | null;
+  /** La frase de evidencia, para poder decidir sin salir de la pantalla. */
+  evidencia: string | null;
+  /** El tirador nuestro que propone la ingestión. */
+  candidatoAthleteId: string | null;
+  candidatoNombre: string | null;
+  candidatoFechaNacimiento: string | null;
+};
+
+/**
+ * La cola de fichas FIE por emparejar.
+ *
+ * Es la misma idea que `listUnmatchedResults`, y por el mismo motivo: aquí no
+ * se empareja por nombre. La FIE no comparte ningún identificador con la
+ * RFEE —su número de licencia es la fecha de nacimiento en DDMMAAAA más tres
+ * dígitos, no la licencia española—, así que la única vía automática es que
+ * alguien haya rellenado `athlete.fie_license`. Todo lo demás llega aquí con
+ * la evidencia escrita y lo decide una persona.
+ */
+export async function listPropuestasFie(limit = 100): Promise<PropuestaFie[]> {
+  const filas = await db
+    .select({
+      fieId: fieFencerTable.fieId,
+      sourceName: fieFencerTable.sourceName,
+      photoUrl: fieFencerTable.photoUrl,
+      profileUrl: fieFencerTable.profileUrl,
+      sourceBirthDate: fieFencerTable.sourceBirthDate,
+      fieLicense: fieFencerTable.fieLicense,
+      matchEvidence: fieFencerTable.matchEvidence,
+      candidatoAthleteId: fieFencerTable.proposedAthleteId,
+      candidatoNombre: sql<
+        string | null
+      >`nullif(concat_ws(' ', ${athleteTable.firstName}, ${athleteTable.lastName}), '')`,
+      candidatoFechaNacimiento: athleteTable.birthDate,
+    })
+    .from(fieFencerTable)
+    .leftJoin(athleteTable, eq(athleteTable.id, fieFencerTable.proposedAthleteId))
+    .where(
+      and(
+        eq(fieFencerTable.linkStatus, 'PROPUESTO'),
+        sql`${fieFencerTable.proposedAthleteId} is not null`,
+      ),
+    )
+    .orderBy(asc(fieFencerTable.sourceName))
+    .limit(limit);
+
+  return filas.map((f) => ({
+    fieId: f.fieId,
+    nombrePublicado: f.sourceName,
+    fotoUrl: f.photoUrl,
+    fichaUrl: f.profileUrl,
+    fechaNacimientoFie: isoDate(f.sourceBirthDate),
+    licenciaFie: f.fieLicense,
+    evidencia: f.matchEvidence,
+    candidatoAthleteId: f.candidatoAthleteId,
+    candidatoNombre: f.candidatoNombre,
+    candidatoFechaNacimiento: isoDate(f.candidatoFechaNacimiento),
+  }));
+}
+
+/**
+ * Dos números para el panel de admin: cuántos tiradores tienen ficha FIE y
+ * cuántas propuestas están esperando. Igual que `contarRankingOficial`, sirve
+ * para poder decir algo concreto en vez de vago.
+ */
+export const contarFichasFie = cache(
+  async (): Promise<{
+    confirmadas: number;
+    propuestas: number;
+    rechazadas: number;
+    conFoto: number;
+  }> => {
+    const [fila] = await db
+      .select({
+        confirmadas: sql<number>`count(*) filter (where ${fieFencerTable.linkStatus} = 'CONFIRMADO')::int`,
+        propuestas: sql<number>`count(*) filter (where ${fieFencerTable.linkStatus} = 'PROPUESTO')::int`,
+        rechazadas: sql<number>`count(*) filter (where ${fieFencerTable.linkStatus} = 'RECHAZADO')::int`,
+        conFoto: sql<number>`count(*) filter (where ${fieFencerTable.linkStatus} = 'CONFIRMADO' and ${fieFencerTable.photoUrl} is not null)::int`,
+      })
+      .from(fieFencerTable);
+
+    return {
+      confirmadas: fila?.confirmadas ?? 0,
+      propuestas: fila?.propuestas ?? 0,
+      rechazadas: fila?.rechazadas ?? 0,
+      conFoto: fila?.conFoto ?? 0,
+    };
+  },
+);
 
 function isoDate(value: string | Date | null): string | null {
   if (!value) return null;

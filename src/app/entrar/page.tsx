@@ -1,11 +1,10 @@
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { userProfile } from '@/db/schema';
 import { auth } from '@/lib/auth/server';
 import { getSessionProfile } from '@/lib/auth/session';
-import { contarPruebas, getCurrentSeason, getDataFreshness } from '@/lib/queries/calendar';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -174,14 +173,71 @@ async function entrarConContrasena(formData: FormData) {
   if (!profile) redirect('/entrar?error=sin-invitacion');
   if (profile.inviteStatus === 'revocada') redirect('/entrar?error=revocado');
 
-  // Si el usuario de autenticación no existe todavía se crea al vuelo: los
-  // perfiles de demostración se siembran en nuestra base, no en Neon Auth.
-  await auth.signUp
-    .email({ email, password, name: email.split('@')[0] })
-    .catch(() => null);
+  /**
+   * Se entra por NUESTRO proxy `/api/auth/...`, no por el SDK de servidor.
+   *
+   * Es el mismo camino que recorre la pantalla de acceso de verdad y el que
+   * usa `/probar/[quien]`. El SDK (`auth.signIn.email`) funciona en local
+   * pero en el despliegue devolvía error y dejaba al usuario de vuelta en
+   * `/entrar` aunque la contraseña fuese correcta: comprobado contra la URL
+   * de producción, donde el proxy contestaba 200 con su token y el SDK no.
+   *
+   * La URL se compone con la cabecera `host` de la petición en curso, no con
+   * `NEXT_PUBLIC_APP_URL`, para que funcione igual en local, en el
+   * despliegue y en cualquier dominio que se le ponga delante.
+   */
+  const cabeceras = await headers();
+  const host = cabeceras.get('host') ?? 'localhost:3000';
+  const esquema = host.startsWith('localhost') ? 'http' : 'https';
+  const origen = `${esquema}://${host}`;
+  const cuerpo = JSON.stringify({ email, password, name: email.split('@')[0] });
+  const tipo = { 'Content-Type': 'application/json' };
 
-  const { error } = await auth.signIn.email({ email, password });
-  if (error) redirect('/entrar?error=contrasena');
+  // La cuenta de autenticación no existe hasta el primer acceso: los perfiles
+  // se siembran en nuestra base, no en Neon Auth. Si ya existe, el alta falla
+  // y se sigue adelante.
+  await fetch(`${origen}/api/auth/sign-up/email`, {
+    method: 'POST',
+    headers: tipo,
+    body: cuerpo,
+  }).catch(() => null);
+
+  const entrada = await fetch(`${origen}/api/auth/sign-in/email`, {
+    method: 'POST',
+    headers: tipo,
+    body: cuerpo,
+  }).catch(() => null);
+
+  const recibidas = entrada?.ok ? (entrada.headers.getSetCookie?.() ?? []) : [];
+  if (recibidas.length === 0) redirect('/entrar?error=contrasena');
+
+  /**
+   * Las cookies que devuelve el proxy se vuelven a poner en la respuesta de
+   * esta acción. Se copian los atributos que importan y no se inventa
+   * ninguno: si la cookie venía marcada `HttpOnly` y `Secure`, sale igual.
+   */
+  const almacen = await cookies();
+  for (const cabecera of recibidas) {
+    const [par, ...atributos] = cabecera.split(';');
+    const i = par.indexOf('=');
+    if (i === -1) continue;
+
+    const opciones: Parameters<typeof almacen.set>[2] = { path: '/' };
+    for (const atributo of atributos) {
+      const [clave, valor] = atributo.split('=').map((t) => t.trim());
+      const nombre = clave.toLowerCase();
+      if (nombre === 'httponly') opciones.httpOnly = true;
+      else if (nombre === 'secure') opciones.secure = true;
+      else if (nombre === 'path') opciones.path = valor;
+      else if (nombre === 'max-age') opciones.maxAge = Number(valor);
+      else if (nombre === 'samesite') {
+        const v = valor?.toLowerCase();
+        if (v === 'lax' || v === 'strict' || v === 'none') opciones.sameSite = v;
+      }
+    }
+
+    almacen.set(par.slice(0, i).trim(), par.slice(i + 1), opciones);
+  }
 
   redirect('/');
 }
@@ -239,12 +295,6 @@ export default async function EntrarPage({
   // Nunca de la URL: ver `recordarCorreoEnCurso`.
   const correoEnCurso = esPasoCodigo ? await leerCorreoEnCurso() : '';
 
-  const [temporada, frescura, pruebas] = await Promise.all([
-    getCurrentSeason(),
-    getDataFreshness(),
-    contarPruebas(),
-  ]);
-
   return (
     <main className="grid min-h-dvh lg:grid-cols-[1.1fr_1fr]">
       {/*
@@ -288,14 +338,6 @@ export default async function EntrarPage({
           </p>
         </div>
 
-        <dl className="hidden gap-8 sm:flex">
-          <Dato cifra={String(pruebas)} texto="pruebas en el calendario" />
-          {temporada ? <Dato cifra={temporada.label} texto="temporada" /> : null}
-          <Dato
-            cifra={frescura.stale ? 'Sin datos' : 'Cada día'}
-            texto="se lee de la fuente oficial"
-          />
-        </dl>
       </section>
 
       {/* Mitad del formulario. */}
@@ -404,15 +446,5 @@ export default async function EntrarPage({
         </div>
       </section>
     </main>
-  );
-}
-
-/** Cifra grande con su rótulo debajo. Lo que la hace creíble es que es real. */
-function Dato({ cifra, texto }: { cifra: string; texto: string }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <dt className="cifra text-3xl">{cifra}</dt>
-      <dd className="max-w-44 text-xs text-muted-foreground">{texto}</dd>
-    </div>
   );
 }

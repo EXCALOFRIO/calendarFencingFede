@@ -1,15 +1,13 @@
 import 'dotenv/config';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '../src/db';
+import { userProfile } from '../src/db/schema';
 import {
-  athlete,
-  athleteWeapon,
-  club,
-  officialRankingEntry,
-  userProfile,
-} from '../src/db/schema';
+  buscarCandidatos,
+  vincularFichaDesdeRanking,
+} from '../src/lib/altas/desde-ranking';
+import { sinAcentos } from '../src/lib/altas/texto';
 import { newIcalToken } from '../src/lib/auth/session';
-import { titular } from '../src/lib/utils';
 
 /**
  * Da de alta a un tirador a partir del ranking oficial de la RFEE.
@@ -23,14 +21,26 @@ import { titular } from '../src/lib/utils';
  * en `app.skermo.org/ranking-rfee/public/RFEE` y que esta aplicación ingiere
  * cada noche. No se teclea nada ni se inventa nada.
  *
- * Y de propina hace lo que el panel de administración llama «emparejar»:
- * deja la fila del ranking apuntando a la ficha recién creada, así que el
- * puesto y los puntos oficiales aparecen en la aplicación desde el primer
- * momento.
+ * -------------------------------------------------------------------------
+ * LA REGLA DE NEGOCIO NO ESTÁ AQUÍ
+ * -------------------------------------------------------------------------
+ * Buscar, crear la ficha con los datos oficiales, asignar las armas y
+ * emparejar todas las filas del ranking por licencia vive en
+ * `src/lib/altas/desde-ranking.ts`, y es exactamente el mismo código que usa la
+ * pantalla `/alta`. Antes estaba escrito aquí y solo aquí: la consecuencia es
+ * que la pantalla habría tenido que reimplementarlo y en un mes las dos altas
+ * harían cosas distintas.
  *
- * La cuenta se crea con correo `@demo.local` a propósito, para que
- * `npm run demo:borrar` se la lleve. Cuando haya altas de verdad, el correo
- * será el de la persona y la contraseña la pondrá ella con su código.
+ * Lo que sí es de este guion es lo de alrededor: inventarse un correo
+ * `@demo.local` para que `npm run demo:borrar` se lo lleve y crear la cuenta de
+ * acceso. Cuando haya altas de verdad, el correo será el de la persona y la
+ * contraseña la pondrá ella.
+ *
+ * Y una diferencia deliberada con la pantalla: aquí NO se pide el número de
+ * licencia como prueba de identidad. Quien ejecuta esto es la dirección
+ * técnica, que ya es la autoridad que da de alta a la gente; pedirle la
+ * licencia del tirador sería teatro. En `/alta`, donde quien pulsa es la propia
+ * persona, la licencia es obligatoria.
  */
 
 const BUSQUEDA = process.argv[2];
@@ -46,42 +56,10 @@ if (!BUSQUEDA) {
   process.exit(1);
 }
 
-/** Quita acentos y deja un hueco entre nombre y apellidos para el correo. */
-function sinAcentos(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase();
-}
+const candidatos = await buscarCandidatos(BUSQUEDA, 5);
+const candidato = candidatos[0];
 
-/**
- * Parte «CARLOS LLAVADOR FERNANDEZ» en nombre y apellidos.
- *
- * Skermo publica el nombre completo en una sola cadena, y en España lo normal
- * son dos apellidos. Cuando la fila trae los campos separados se usan esos,
- * que es el dato bueno; esto es solo el respaldo.
- */
-function partirNombre(completo: string): { nombre: string; apellidos: string } {
-  const trozos = completo.trim().split(/\s+/);
-  if (trozos.length <= 1) return { nombre: completo, apellidos: '' };
-  // Con tres o más trozos, el primero es el nombre y el resto apellidos.
-  return {
-    nombre: trozos[0],
-    apellidos: trozos.slice(1).join(' '),
-  };
-}
-
-const [fila] = await db
-  .select()
-  .from(officialRankingEntry)
-  .where(
-    sql`${officialRankingEntry.sourceLicense} ilike ${BUSQUEDA}
-        or ${officialRankingEntry.sourceAthleteName} ilike ${`%${BUSQUEDA}%`}`,
-  )
-  .orderBy(sql`${officialRankingEntry.position} asc nulls last`)
-  .limit(1);
-
-if (!fila) {
+if (!candidato) {
   console.error(
     `No hay nadie que case con «${BUSQUEDA}» en el ranking oficial ingerido.\n` +
       'Comprueba la licencia o prueba con parte del apellido.',
@@ -89,70 +67,54 @@ if (!fila) {
   process.exit(1);
 }
 
-if (!fila.sourceLicense) {
+if (candidatos.length > 1) {
+  console.log(
+    `Hay ${candidatos.length} que casan con «${BUSQUEDA}». Se coge el primero:\n` +
+      candidatos
+        .map(
+          (c, i) =>
+            `  ${i === 0 ? '→' : ' '} ${c.nombre} (${c.anioNacimiento ?? '?'}, ${
+              c.club ?? 'sin club'
+            })`,
+        )
+        .join('\n') +
+      '\nSi no es el que querías, busca por su número de licencia.\n',
+  );
+}
+
+if (candidato.sinLicencia) {
   console.error(
-    `«${fila.sourceAthleteName}» está en el ranking pero sin número de ` +
-      'licencia, y sin licencia no se empareja: hay homónimos. Resuélvelo a ' +
-      'mano desde /admin/emparejar.',
+    `«${candidato.nombre}» está en el ranking pero sin número de licencia, y ` +
+      'sin licencia no se empareja: hay homónimos. Resuélvelo a mano desde ' +
+      '/admin/emparejar.',
   );
   process.exit(1);
 }
 
-const { nombre, apellidos } = partirNombre(fila.sourceAthleteName ?? '');
-/**
- * Skermo publica los nombres en MAYÚSCULAS. Se guardan como se leen, que es
- * como se escribe un nombre: «Carlos Llavador Fernández», no
- * «CARLOS LLAVADOR FERNANDEZ». El original queda en la fila del ranking, que
- * no se toca.
- */
-const nombrePila = titular(fila.sourceFirstName?.trim() || nombre);
-const apellidosReales = titular(fila.sourceLastName?.trim() || apellidos);
-const nombreCompleto = `${nombrePila} ${apellidosReales}`.trim();
+const mejor = candidato.clasificaciones[0];
 
-const correo = `${sinAcentos(nombrePila).replace(/\s+/g, '')}.${sinAcentos(
-  apellidosReales,
-)
-  .split(/\s+/)[0]
-  ?.replace(/\s+/g, '')}@demo.local`;
-
-console.log(`\nDando de alta a ${nombreCompleto}`);
-console.log(`  licencia      ${fila.sourceLicense}`);
-console.log(`  nacimiento    ${fila.sourceBirthDate ?? 'no publicado'}`);
-console.log(`  arma/género   ${fila.weapon} ${fila.gender}`);
-console.log(`  categoría     ${fila.category}`);
-console.log(
-  `  ranking       ${fila.position ?? 'sin clasificar'}.º con ${fila.totalPoints} puntos (${fila.seasonLabel})`,
-);
-console.log(`  club          ${fila.sourceClub ?? 'no publicado'}`);
-console.log(`  correo        ${correo}\n`);
-
-/**
- * El club se crea si no existe, con el código tal y como lo publica Skermo.
- * No se traduce a un nombre bonito: `FED-M-C` es como aparece en la fuente y
- * lo que permite cruzarlo después.
- */
-let clubId: string | null = null;
-if (fila.sourceClub) {
-  const [existente] = await db
-    .select({ id: club.id })
-    .from(club)
-    .where(eq(club.name, fila.sourceClub))
-    .limit(1);
-
-  clubId =
-    existente?.id ??
-    (
-      await db
-        .insert(club)
-        .values({
-          name: fila.sourceClub,
-          contactEmail: `${sinAcentos(fila.sourceClub)}@demo.local`,
-        })
-        .returning({ id: club.id })
-    )[0].id;
+console.log(`\nDando de alta a ${candidato.nombre}`);
+console.log(`  nacimiento    ${candidato.anioNacimiento ?? 'no publicado'}`);
+console.log(`  club          ${candidato.club ?? 'no publicado'}`);
+console.log(`  armas         ${candidato.armas.join(', ')}`);
+for (const c of candidato.clasificaciones) {
+  console.log(
+    `  ranking       ${c.arma} ${c.genero} ${c.categoriaOriginal}: ` +
+      `${c.puesto ?? 'sin clasificar'}.º con ${c.puntos ?? 0} puntos (${c.temporada})`,
+  );
 }
 
-// 1. La cuenta.
+/**
+ * El correo de demostración. Se construye con el nombre y el primer apellido,
+ * sin acentos, que es lo que hacen las federaciones de verdad y lo que permite
+ * reconocer la cuenta de un vistazo en `/admin/usuarios`.
+ */
+const correo = `${sinAcentos(candidato.nombrePila).replace(/\s+/g, '')}.${
+  sinAcentos(candidato.apellidos).split(/\s+/)[0] ?? 'tirador'
+}@demo.local`;
+
+console.log(`  correo        ${correo}\n`);
+
 const [perfilExistente] = await db
   .select({ id: userProfile.id })
   .from(userProfile)
@@ -166,86 +128,45 @@ const perfilId =
       .insert(userProfile)
       .values({
         email: correo,
-        fullName: nombreCompleto,
+        fullName: candidato.nombre,
         role: 'athlete',
-        clubId,
         icalToken: newIcalToken(),
         inviteStatus: 'pendiente',
       })
       .returning({ id: userProfile.id })
   )[0].id;
 
-// 2. La ficha de tirador, con los datos oficiales.
-const [fichaExistente] = await db
-  .select({ id: athlete.id })
-  .from(athlete)
-  .where(eq(athlete.rfeeLicense, fila.sourceLicense))
-  .limit(1);
+const resultado = await vincularFichaDesdeRanking({
+  profileId: perfilId,
+  clave: candidato.clave,
+  origen: 'guion',
+});
 
-const atletaId =
-  fichaExistente?.id ??
-  (
-    await db
-      .insert(athlete)
-      .values({
-        firstName: nombrePila,
-        lastName: apellidosReales,
-        birthDate: fila.sourceBirthDate ?? '1900-01-01',
-        gender: fila.gender === 'F' ? 'F' : 'M',
-        clubId,
-        rfeeLicense: fila.sourceLicense,
-        rfeeLicenseValidUntil: '2027-08-31',
-        consentSignedAt: new Date(),
-        userProfileId: perfilId,
-        notes:
-          'Alta creada a partir del ranking oficial de la RFEE con ' +
-          'scripts/alta-desde-ranking.ts.',
-      })
-      .returning({ id: athlete.id })
-  )[0].id;
+if (!resultado.ok) {
+  console.error(`\nNo se ha dado de alta (${resultado.motivo}):\n  ${resultado.error}`);
+  // `YA_TIENES_FICHA` no es un fallo del guion: es que ya estaba hecho.
+  process.exit(resultado.motivo === 'YA_TIENES_FICHA' ? 0 : 1);
+}
 
-await db
-  .update(athlete)
-  .set({ userProfileId: perfilId, clubId })
-  .where(eq(athlete.id, atletaId));
-
-// 3. El arma, que es lo que determina todo lo que ve en el calendario.
-await db
-  .insert(athleteWeapon)
-  .values({ athleteId: atletaId, weapon: fila.weapon })
-  .onConflictDoNothing();
-
-/**
- * 4. Emparejar TODAS sus filas del ranking, no solo la que se buscó.
- *
- * Un tirador puede estar en varias: absoluto y sub-23, o dos armas. Se
- * emparejan por licencia, nunca por nombre.
- */
-const emparejadas = await db
-  .update(officialRankingEntry)
-  .set({ athleteId: atletaId })
-  .where(
-    and(
-      eq(officialRankingEntry.sourceLicense, fila.sourceLicense),
-      isNull(officialRankingEntry.athleteId),
-    ),
-  )
-  .returning({ id: officialRankingEntry.id });
-
-// 5. La cuenta de acceso, por el mismo camino que usa la pantalla de entrada.
+// La cuenta de acceso, por el mismo camino que usa la pantalla de entrada.
 const alta = await fetch(`${BASE}/api/auth/sign-up/email`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     email: correo,
     password: CONTRASENA,
-    name: nombreCompleto,
+    name: candidato.nombre,
   }),
 }).catch(() => null);
 
-console.log(`Ficha        ${atletaId}`);
+console.log(`Ficha        ${resultado.alta.atletaId}`);
 console.log(`Cuenta       ${perfilId}`);
-console.log(`Ranking      ${emparejadas.length} filas emparejadas por licencia`);
+console.log(`Licencia     ${resultado.alta.licencia}`);
+console.log(`Armas        ${resultado.alta.armas.join(', ')}`);
+console.log(
+  `Ranking      ${resultado.alta.filasEmparejadas} filas emparejadas por licencia` +
+    (mejor?.puesto ? ` (mejor puesto: ${mejor.puesto}.º)` : ''),
+);
 console.log(
   `Acceso       ${
     alta?.ok

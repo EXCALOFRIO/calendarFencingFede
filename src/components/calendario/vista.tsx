@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, MapPin, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, MapPin, Search, X } from 'lucide-react';
 import * as React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,10 +11,16 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { EventView, Gender, Weapon } from '@/lib/queries/calendar';
 import {
+  CATEGORY_LABEL,
   CIRCUIT_LABEL,
   capitalizar,
   cn,
@@ -47,6 +53,29 @@ const GENEROS: { v: 'M' | 'F'; t: string; largo: string }[] = [
 
 function esArma(v: string): v is Weapon {
   return ARMAS.includes(v as Weapon);
+}
+
+/**
+ * Orden de las categorías, de la más pequeña a la más grande. Se usa para
+ * presentarlas siempre igual, sin depender del orden en que lleguen.
+ */
+const ORDEN_CATEGORIAS = [
+  'M9',
+  'M11',
+  'M13',
+  'M14',
+  'M15',
+  'M17',
+  'M20',
+  'M23',
+  'ABS',
+  'VET',
+];
+
+function ordenarCategorias(codigos: string[]): string[] {
+  return [...codigos].sort(
+    (a, b) => ORDEN_CATEGORIAS.indexOf(a) - ORDEN_CATEGORIAS.indexOf(b),
+  );
 }
 
 /**
@@ -114,10 +143,42 @@ export function VistaCalendario({
     [tirador],
   );
 
+  /**
+   * Categorías que hay DE VERDAD en el calendario.
+   *
+   * No se ofrece M9 si esta temporada no hay ninguna prueba M9: un filtro con
+   * opciones que no cambian nada es ruido.
+   */
+  const categoriasDisponibles = React.useMemo(
+    () =>
+      ordenarCategorias([
+        ...new Set(eventos.flatMap((e) => e.competitions.map((c) => c.category))),
+      ]),
+    [eventos],
+  );
+
+  /**
+   * Las categorías en las que PUEDE tirar.
+   *
+   * Aquí estaba el fallo gordo: el calendario filtraba por arma y por género,
+   * pero no por categoría, así que a Carlos Llavador —absoluto, 34 años— le
+   * salían las Copas del Mundo cadete de florete masculino como si le
+   * tocaran. `deriveCategoriesFromBirthDate` ya calcula la escalera correcta
+   * (a un absoluto le corresponden absoluto y veteranos; a un M17, M17, M20 y
+   * absoluto) y solo hacía falta usarla.
+   */
+  const categoriasPropias = React.useMemo(() => {
+    const suyas = (tirador?.eligibleCategories ?? []).filter((c) =>
+      categoriasDisponibles.includes(c),
+    );
+    return suyas.length > 0 ? ordenarCategorias(suyas) : categoriasDisponibles;
+  }, [tirador, categoriasDisponibles]);
+
   const [vista, setVista] = React.useState<Vista>('mes');
   const [ancla, setAncla] = React.useState(() => new Date());
   const [armas, setArmas] = React.useState<Weapon[]>(armasPropias);
   const [generos, setGeneros] = React.useState<('M' | 'F')[]>(generosPropios);
+  const [categorias, setCategorias] = React.useState<string[]>(categoriasPropias);
   const [busqueda, setBusqueda] = React.useState('');
   /**
    * Hacia dónde se movió la última vez.
@@ -162,15 +223,19 @@ export function VistaCalendario({
   }, [abierto, cargarInscritos]);
 
   const todoPuesto =
-    armas.length === ARMAS.length && generos.length === GENEROS.length;
+    armas.length === ARMAS.length &&
+    generos.length === GENEROS.length &&
+    categorias.length === categoriasDisponibles.length;
 
   const verTodo = () => {
     setArmas([...ARMAS]);
     setGeneros(['M', 'F']);
+    setCategorias(categoriasDisponibles);
   };
   const verLoMio = () => {
     setArmas(armasPropias);
     setGeneros(generosPropios);
+    setCategorias(categoriasPropias);
   };
 
   /**
@@ -189,6 +254,14 @@ export function VistaCalendario({
     setGeneros(
       nuevo.gender === 'M' || nuevo.gender === 'F' ? [nuevo.gender] : ['M', 'F'],
     );
+    const suyasCategorias = nuevo.eligibleCategories.filter((c) =>
+      categoriasDisponibles.includes(c),
+    );
+    setCategorias(
+      suyasCategorias.length > 0
+        ? ordenarCategorias(suyasCategorias)
+        : categoriasDisponibles,
+    );
   };
 
   const filtrados = React.useMemo(() => {
@@ -201,7 +274,8 @@ export function VistaCalendario({
             armas.includes(c.weapon) &&
             // Las pruebas por equipos mixtos no tienen género propio: se ven
             // siempre, porque descartarlas sería esconder competiciones.
-            (c.gender === 'MIXTO' || generos.includes(c.gender as 'M' | 'F')),
+            (c.gender === 'MIXTO' || generos.includes(c.gender as 'M' | 'F')) &&
+            categorias.includes(c.category),
         ),
       }))
       .filter((e) => {
@@ -209,7 +283,7 @@ export function VistaCalendario({
         if (t && !`${e.name} ${e.city ?? ''}`.toLowerCase().includes(t)) return false;
         return true;
       });
-  }, [eventos, armas, generos, busqueda]);
+  }, [eventos, armas, generos, categorias, busqueda]);
 
   /** Se cuentan pruebas, no torneos: es lo que de verdad se puede tirar. */
   const numPruebas = React.useMemo(
@@ -403,6 +477,110 @@ export function VistaCalendario({
         </ToggleGroup>
 
         {/*
+          Categoría: aquí no valen pastillas.
+
+          Hay hasta diez —de M9 a veteranos— y diez pastillas se comen la fila
+          entera y media pantalla del móvil. Va en un desplegable que dice en
+          su propia etiqueta qué está filtrando, así que no hay que abrirlo
+          para saberlo: «Absoluto», «3 categorías» o «Todas».
+        */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="order-7 h-9 gap-1 px-2 sm:gap-1.5 sm:px-3"
+              aria-label="Categoría"
+            >
+              {/*
+                En el móvil va el código y en escritorio la palabra: «ABS»
+                ocupa tres caracteres y «Absoluto» ocho, y esos cinco de
+                diferencia son los que hacen que la fila de controles quepa
+                en dos renglones en vez de tres.
+              */}
+              {categorias.length === categoriasDisponibles.length ? (
+                'Todas'
+              ) : categorias.length === 1 ? (
+                <>
+                  <span className="sm:hidden">{categorias[0]}</span>
+                  <span className="hidden sm:inline">
+                    {CATEGORY_LABEL[categorias[0] as keyof typeof CATEGORY_LABEL] ??
+                      categorias[0]}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="sm:hidden">{categorias.length} cat.</span>
+                  <span className="hidden sm:inline">
+                    {categorias.length} categorías
+                  </span>
+                </>
+              )}
+              <ChevronDown className="size-3.5 opacity-60" aria-hidden />
+            </Button>
+          </PopoverTrigger>
+
+          <PopoverContent align="end" className="w-52 p-1.5">
+            <ul className="flex flex-col">
+              {categoriasDisponibles.map((c) => {
+                const puesta = categorias.includes(c);
+                return (
+                  <li key={c}>
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={puesta}
+                      onClick={() =>
+                        setCategorias((previas) => {
+                          const siguientes = puesta
+                            ? previas.filter((x) => x !== c)
+                            : ordenarCategorias([...previas, c]);
+                          // Nunca vacío: un calendario en blanco no responde
+                          // a ninguna pregunta.
+                          return siguientes.length > 0 ? siguientes : previas;
+                        })
+                      }
+                      className={cn(
+                        'flex w-full cursor-pointer items-center justify-between rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-accent',
+                        puesta ? 'text-foreground' : 'text-muted-foreground',
+                      )}
+                    >
+                      {CATEGORY_LABEL[c as keyof typeof CATEGORY_LABEL] ?? c}
+                      {puesta ? (
+                        <span className="text-primary-text" aria-hidden>
+                          ✓
+                        </span>
+                      ) : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+
+            <div className="mt-1 flex gap-1 border-t pt-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 flex-1 px-2 text-xs"
+                onClick={() => setCategorias(categoriasDisponibles)}
+              >
+                Todas
+              </Button>
+              {tirador ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 flex-1 px-2 text-xs"
+                  onClick={() => setCategorias(categoriasPropias)}
+                >
+                  Las mías
+                </Button>
+              ) : null}
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        {/*
           Selector de tirador: solo cuando la cuenta lleva a más de uno. Con
           un solo tirador sería un control que nunca cambia nada.
         */}
@@ -413,7 +591,7 @@ export function VistaCalendario({
             onValueChange={(v) => v && cambiarTirador(v)}
             variant="outline"
             aria-label="Tirador"
-            className="order-8 h-9"
+            className="order-9 h-9"
           >
             {tiradores.map((t) => (
               <ToggleGroupItem

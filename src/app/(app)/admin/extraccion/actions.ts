@@ -3,7 +3,7 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
-import { extraccionPropuesta } from '@/db/schema';
+import { extraccionDocumento, extraccionPropuesta } from '@/db/schema';
 import {
   VERSION_ESQUEMA,
   crearClienteModelo,
@@ -102,6 +102,114 @@ export async function aprobarCircular(extraccionId: string): Promise<ResultadoAc
 }
 
 /**
+ * Confirma a qué torneo se refiere la circular, y con eso los datos llegan a
+ * la ficha.
+ *
+ * ES LA SEGUNDA FIRMA, y hace falta porque son dos preguntas distintas:
+ * «¿esto lo pone el documento?» (aprobar un campo) y «¿de qué torneo habla?».
+ * Se puede acertar la primera y fallar la segunda, y el fallo de la segunda es
+ * el peor de los dos: un horario correcto en la ficha del torneo equivocado no
+ * se detecta mirando la ficha, porque el dato parece bueno.
+ *
+ * Las circulares de la federación llegan con una sugerencia de certeza
+ * 'dudoso' como mucho (ver `resolverEvento`), y mientras nadie la confirme sus
+ * propuestas se encolan SIN evento, así que no aparecen en ninguna ficha.
+ * Confirmar aquí es lo que las reparte: se copia el evento a todas las
+ * propuestas de esa extracción de una sola vez.
+ *
+ * Los dossieres que cuelgan del propio torneo no pasan por aquí: su certeza ya
+ * es 'seguro' porque lo dice la fuente, no una heurística.
+ */
+export async function confirmarEventoDeExtraccion(
+  extraccionId: string,
+): Promise<ResultadoAccion> {
+  const perfil = await requireRole('admin');
+
+  const [extraccion] = await db
+    .select({
+      id: extraccionDocumento.id,
+      eventoId: extraccionDocumento.eventoId,
+      certeza: extraccionDocumento.eventoCerteza,
+    })
+    .from(extraccionDocumento)
+    .where(eq(extraccionDocumento.id, extraccionId))
+    .limit(1);
+
+  if (!extraccion) return { ok: false, error: 'Esa extracción ya no existe.' };
+  if (!extraccion.eventoId) {
+    return {
+      ok: false,
+      error:
+        'No hay ningún torneo que confirmar: el documento no dice de qué competición ' +
+        'habla, o había varias candidatas empatadas. Los datos se quedan aquí.',
+    };
+  }
+
+  await db
+    .update(extraccionDocumento)
+    .set({
+      eventoCerteza: 'seguro',
+      eventoConfirmadoEn: new Date(),
+      eventoConfirmadoPorPerfilId: perfil.profileId,
+      eventoMotivo: 'Confirmado a mano en la pantalla de revisión.',
+    })
+    .where(eq(extraccionDocumento.id, extraccionId));
+
+  const repartidas = await db
+    .update(extraccionPropuesta)
+    .set({ eventoId: extraccion.eventoId })
+    .where(eq(extraccionPropuesta.extraccionId, extraccionId))
+    .returning({ id: extraccionPropuesta.id });
+
+  revalidatePath('/admin/extraccion');
+  // La ficha del torneo ya puede enseñar estos datos.
+  revalidatePath('/');
+
+  return {
+    ok: true,
+    message:
+      `Confirmado. ${repartidas.length} campos van a la ficha de ese torneo; ` +
+      'los que estén sin aprobar se enseñarán en gris hasta que los firmes.',
+  };
+}
+
+/**
+ * Dice que NO es ese torneo. La sugerencia se borra y los datos se quedan en
+ * la cola sin aplicarse a nada, que es donde tienen que estar mientras no se
+ * sepa de qué competición hablan.
+ */
+export async function descartarEventoDeExtraccion(
+  extraccionId: string,
+): Promise<ResultadoAccion> {
+  await requireRole('admin');
+
+  const filas = await db
+    .update(extraccionDocumento)
+    .set({
+      eventoId: null,
+      eventoCerteza: 'desconocido',
+      eventoMotivo:
+        'Una persona ha dicho que el torneo sugerido no era el correcto. Los datos ' +
+        'se quedan sin aplicar.',
+      eventoConfirmadoEn: null,
+      eventoConfirmadoPorPerfilId: null,
+    })
+    .where(eq(extraccionDocumento.id, extraccionId))
+    .returning({ id: extraccionDocumento.id });
+
+  if (filas.length === 0) return { ok: false, error: 'Esa extracción ya no existe.' };
+
+  await db
+    .update(extraccionPropuesta)
+    .set({ eventoId: null })
+    .where(eq(extraccionPropuesta.extraccionId, extraccionId));
+
+  revalidatePath('/admin/extraccion');
+  revalidatePath('/');
+  return { ok: true, message: 'Descartado: estos datos no van a ninguna ficha.' };
+}
+
+/**
  * Lee ahora mismo las siguientes circulares sin procesar.
  *
  * Es el mismo camino que el cron, con un lote más corto: aquí hay alguien
@@ -149,6 +257,7 @@ export async function procesarSiguientes(): Promise<ResultadoAccion> {
   for (const documento of pendientes) {
     const resultado = await procesarDocumentoOficial({
       documentoId: documento.id,
+      origen: documento.origen,
       documentoUrl: documento.pdfUrl,
       documentoTitulo: documento.titulo,
       fileHash: documento.fileHash,

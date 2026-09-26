@@ -20,7 +20,7 @@
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
-const WORKER = 'calendario-esgrima';
+const WORKER = 'calendario-fie-fede';
 
 /**
  * Los secretos de verdad. Lo que no es secreto —la URL pública, el agente de
@@ -74,10 +74,21 @@ function leerEnv() {
 
 function subir(nombre, valor) {
   return new Promise((resolve) => {
+    /**
+     * `shell: true` en Windows.
+     *
+     * Sin ello, Node se niega a lanzar `npx.cmd` con `EINVAL`: desde la
+     * versión 18.20 no ejecuta ficheros `.cmd` ni `.bat` directamente, por
+     * una vulnerabilidad de inyección de argumentos. Aquí los argumentos son
+     * constantes menos el nombre del secreto, que viene de una lista fija de
+     * este mismo fichero, así que no hay nada que inyectar. El VALOR del
+     * secreto no pasa por la línea de órdenes: va por la entrada estándar,
+     * que es lo que de verdad importa proteger.
+     */
     const hijo = spawn(
-      process.platform === 'win32' ? 'npx.cmd' : 'npx',
+      'npx',
       ['wrangler', 'secret', 'put', nombre, '--name', WORKER],
-      { stdio: ['pipe', 'ignore', 'pipe'] },
+      { stdio: ['pipe', 'ignore', 'pipe'], shell: process.platform === 'win32' },
     );
     let error = '';
     hijo.stderr.on('data', (d) => (error += d.toString()));

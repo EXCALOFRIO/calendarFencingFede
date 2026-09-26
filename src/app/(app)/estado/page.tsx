@@ -1,3 +1,4 @@
+import { IdCard } from 'lucide-react';
 import Link from 'next/link';
 import { PanelEstado } from '@/components/estado/panel';
 import { Button } from '@/components/ui/button';
@@ -6,6 +7,7 @@ import { responderConvocatoria } from '@/lib/callups/actions';
 import { requestEntry } from '@/lib/entries/actions';
 import { getCurrentSeason } from '@/lib/queries/calendar';
 import { getMyStatus } from '@/lib/queries/my-status';
+import { contarRankingOficial, getPuestosOficiales } from '@/lib/queries/ranking';
 import {
   getCompeticionesElegibles,
   getPuestosDeTemporada,
@@ -35,8 +37,16 @@ export default async function Pagina() {
   }
 
   const ids = estado.athletes.map((a) => a.id);
-  const [puestos, puntosPorPrueba, elegibles] = await Promise.all([
+  const [puestos, oficiales, puntosPorPrueba, elegibles] = await Promise.all([
     getPuestosDeTemporada(ids),
+    /*
+      El ranking OFICIAL de la RFEE, que es distinto del cálculo interno y es
+      el que la gente reconoce. Faltaba: un 3.º de España con 1.387,77 puntos
+      estaba en la base y esta pantalla decía «sin puesto en el ranking»,
+      porque solo miraba `ranking_snapshot`. Cierto respecto al cálculo propio
+      y completamente engañoso respecto a la realidad.
+    */
+    getPuestosOficiales(ids),
     getPuntosPorPrueba(ids),
     /*
       En qué NO está y todavía podría estar. La elegibilidad sale de lo que
@@ -59,6 +69,7 @@ export default async function Pagina() {
     <PanelEstado
       estado={estado}
       puestos={puestos}
+      oficiales={oficiales}
       puntosPorPrueba={puntosPorPrueba}
       elegibles={elegibles}
       temporada={temporada?.label ?? null}
@@ -72,25 +83,48 @@ export default async function Pagina() {
 }
 
 /**
- * Sin tiradores vinculados no hay estado que enseñar. Se dice qué falta y
- * quién lo arregla, en vez de una pantalla vacía.
+ * Sin tiradores vinculados no hay estado que enseñar.
+ *
+ * Y para un tirador o un tutor esto ya no es un callejón: la ficha se la puede
+ * crear él mismo desde `/alta`, buscándose en el ranking oficial de la RFEE. Es
+ * la puerta de entrada principal a esa pantalla, porque este es el sitio donde
+ * el hueco se nota.
  */
-function SinTiradores({ rol }: { rol: string }) {
+async function SinTiradores({ rol }: { rol: string }) {
   const esPersonal = rol === 'athlete' || rol === 'guardian';
+  const oficial = esPersonal ? await contarRankingOficial() : null;
 
   return (
     <div className="flex flex-col gap-3">
       <h1 className="text-2xl sm:text-3xl">Mi estado</h1>
       <p className="medida text-sm text-muted-foreground">
         {esPersonal
-          ? 'Tu cuenta todavía no tiene ninguna ficha de tirador vinculada, así ' +
-            'que no hay inscripciones ni plazos que seguir. La vincula la ' +
-            'dirección técnica o tu club desde el listado de tiradores.'
+          ? 'Tu cuenta todavía no está unida a ninguna ficha de tirador, así ' +
+            'que no hay inscripciones ni plazos que seguir y el calendario no ' +
+            'sabe cuál es tu arma.'
           : 'Esta pantalla sigue las inscripciones de los tiradores de tu ' +
             'cuenta, y la tuya no gestiona ninguno. Si buscas las de toda la ' +
             'federación, están en el panel de inscripciones.'}
       </p>
-      <div className="flex flex-wrap gap-2">
+      {esPersonal ? (
+        <p className="medida text-sm text-muted-foreground">
+          Puedes unirla tú mismo:{' '}
+          {oficial && oficial.tiradores > 0
+            ? `búscate entre los ${oficial.tiradores} tiradores de la clasificación oficial de la RFEE`
+            : 'búscate en la clasificación oficial de la RFEE'}{' '}
+          y confírmalo con tu número de licencia. Tarda menos que escribir a
+          nadie.
+        </p>
+      ) : null}
+      <div className="flex flex-wrap gap-2 pt-1">
+        {esPersonal ? (
+          <Button asChild>
+            <Link href="/alta">
+              <IdCard aria-hidden />
+              Vincular mi ficha
+            </Link>
+          </Button>
+        ) : null}
         <Button variant="outline" asChild>
           <Link href="/">Ver el calendario</Link>
         </Button>

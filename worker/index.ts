@@ -58,6 +58,9 @@ const TAREAS: Record<string, string> = {
   // Extracción asistida de las circulares en PDF. Va después de todas las
   // ingestiones: así procesa lo que se acaba de descubrir esa misma noche.
   '0 6 * * *': '/api/cron/extraer',
+  // Fichas de la FIE de NUESTROS tiradores: foto y puesto mundial. Va al
+  // final porque depende de que existan las fichas, no de las fuentes.
+  '45 6 * * *': '/api/cron/ingest/fie_tiradores',
   '0 7 * * *': '/api/cron/notify',
 };
 

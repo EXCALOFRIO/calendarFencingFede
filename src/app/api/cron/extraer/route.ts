@@ -106,6 +106,7 @@ export async function GET(request: Request) {
       resultados.push(
         await procesarDocumentoOficial({
           documentoId: documento.id,
+          origen: documento.origen,
           documentoUrl: documento.pdfUrl,
           documentoTitulo: documento.titulo,
           fileHash: documento.fileHash,

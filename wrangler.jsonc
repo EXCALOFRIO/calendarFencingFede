@@ -1,9 +1,15 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
 
-  // Nombre del Worker y, por tanto, del subdominio de pruebas:
-  // https://calendario-esgrima.<tu-subdominio>.workers.dev
-  "name": "calendario-esgrima",
+  /**
+   * Nombre del Worker y, por tanto, primera parte de la URL:
+   * https://calendario-fie-fede.<subdominio-de-la-cuenta>.workers.dev
+   *
+   * El subdominio (`aleramlar`) es de la cuenta entera y lo comparten otros
+   * catorce Workers, así que cambiarlo rompería las URL de todos. Lo que sí
+   * se puede elegir es esta parte, y es la que se lee primero.
+   */
+  "name": "calendario-fie-fede",
 
   // Punto de entrada PROPIO, no el generado. `worker/index.ts` reexporta el
   // `fetch` que produce OpenNext y añade el manejador `scheduled` que
@@ -80,6 +86,7 @@
       "0 5 * * *",
       "30 5 * * *",
       "0 6 * * *",
+      "45 6 * * *",
       "0 7 * * *"
     ]
   },
