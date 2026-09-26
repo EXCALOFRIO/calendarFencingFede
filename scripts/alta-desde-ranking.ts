@@ -143,9 +143,25 @@ const resultado = await vincularFichaDesdeRanking({
 });
 
 if (!resultado.ok) {
+  /**
+   * `YA_TIENES_FICHA` no es un fallo: es que ya estaba hecho, y volver a
+   * ejecutar el guion tiene que poder darse por bueno.
+   *
+   * Y se escribe aquí en tercera persona en lugar de repetir el texto de
+   * `resultado.error`, que está redactado para la persona que pulsa en `/alta`
+   * («tu cuenta ya tiene una ficha»). Quien ejecuta esto es la dirección
+   * técnica hablando de otra persona, no de sí misma.
+   */
+  if (resultado.motivo === 'YA_TIENES_FICHA') {
+    console.log(
+      `\nYa estaba dado de alta: la cuenta ${correo} tiene su ficha de ` +
+        'tirador vinculada. No se ha tocado nada.',
+    );
+    process.exit(0);
+  }
+
   console.error(`\nNo se ha dado de alta (${resultado.motivo}):\n  ${resultado.error}`);
-  // `YA_TIENES_FICHA` no es un fallo del guion: es que ya estaba hecho.
-  process.exit(resultado.motivo === 'YA_TIENES_FICHA' ? 0 : 1);
+  process.exit(1);
 }
 
 // La cuenta de acceso, por el mismo camino que usa la pantalla de entrada.
