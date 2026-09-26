@@ -13,8 +13,12 @@ import {
   leerConfiguracionIa,
   normalizarConIndices,
   normalizarParaCotejo,
+  olvidarRespuestaCrudaRegistrada,
   pareceContenerDatosPersonales,
   redactarDatosDeContacto,
+  resolverEvento,
+  respuestaDeWorkersAi,
+  resumirRespuestaCruda,
   verificarPropuestas,
   aPropuestas,
 } from '@/lib/ai/extract';
@@ -46,7 +50,7 @@ const CONFIG_WORKERS: ConfiguracionIa = {
   activa: true,
   proveedor: 'workers_ai',
   apiKey: null,
-  modelo: '@cf/google/gemma-4-26b-a4b-it',
+  modelo: '@cf/zai-org/glm-5.3-flash',
   tierDePago: false,
   cuentaCloudflare: 'cuenta-de-prueba',
   tokenCloudflare: 'token-de-prueba',
@@ -123,7 +127,7 @@ describe('cliente de Workers AI', () => {
     expect(llamadas).toHaveLength(1);
     expect(llamadas[0].url).toBe(
       'https://api.cloudflare.com/client/v4/accounts/cuenta-de-prueba' +
-        '/ai/run/@cf/google/gemma-4-26b-a4b-it',
+        '/ai/run/@cf/zai-org/glm-5.3-flash',
     );
     expect(llamadas[0].cuerpo.response_format).toEqual({
       type: 'json_schema',
@@ -131,6 +135,98 @@ describe('cliente de Workers AI', () => {
     });
     // Temperatura 0: extraer no es escribir, no queremos variedad.
     expect(llamadas[0].cuerpo.temperature).toBe(0);
+    /**
+     * Y los parámetros que dependen del modelo, que es de lo que iba el fallo
+     * de producción: este modelo llama al tope `max_completion_tokens` y
+     * acepta `reasoning_effort`. Mandar `max_tokens` a secas le dejaba sitio
+     * para razonar hasta quedarse sin presupuesto.
+     */
+    expect(llamadas[0].cuerpo.max_completion_tokens).toBeGreaterThan(0);
+    expect(llamadas[0].cuerpo.reasoning_effort).toBe('low');
+    expect(llamadas[0].cuerpo.max_tokens).toBeUndefined();
+  });
+
+  /**
+   * LA PRUEBA DE REGRESIÓN DEL FALLO DE PRODUCCIÓN.
+   *
+   * `@cf/google/gemma-4-26b-a4b-it` devolvió cinco errores de cinco con
+   * «Workers AI no devolvió texto en la respuesta». No era que el modelo
+   * callara: era que devolvía el sobre de chat-completions de OpenAI y este
+   * código solo sabía abrir `{ response: … }`. Comprobado contra el binding de
+   * verdad, la respuesta era exactamente la de abajo.
+   */
+  it('entiende el sobre de chat-completions, que es el que rompió producción', () => {
+    const sobreDeGemma = {
+      id: '6124d985b7ce449f8aebce3f3d8821c3',
+      object: 'chat.completion',
+      model: '@cf/google/gemma-4-26b-a4b-it-external',
+      choices: [
+        {
+          index: 0,
+          finish_reason: 'stop',
+          message: { role: 'assistant', content: '{"plazos":[]}' },
+        },
+      ],
+      usage: { prompt_tokens: 26, completion_tokens: 64 },
+    };
+    expect(respuestaDeWorkersAi(sobreDeGemma)).toBe('{"plazos":[]}');
+  });
+
+  it('sigue entendiendo la forma documentada, la de `response`', () => {
+    expect(respuestaDeWorkersAi({ response: '{"plazos":[]}' })).toBe('{"plazos":[]}');
+    expect(respuestaDeWorkersAi({ response: { plazos: [] } })).toBe('{"plazos":[]}');
+  });
+
+  /**
+   * El otro motivo por el que Gemma devolvía vacío, y el que NO se arregla con
+   * código: se gasta el presupuesto de salida razonando y deja `content` a "".
+   * El error tiene que decir eso con esas palabras, porque el arreglo es
+   * cambiar de modelo o bajarle el razonamiento, no tocar el parseo.
+   */
+  it('dice que el modelo se gastó el tope razonando, en vez de «no devolvió texto»', () => {
+    const razonandoSinAcabar = {
+      choices: [
+        {
+          finish_reason: 'length',
+          message: {
+            role: 'assistant',
+            content: '',
+            reasoning_content: 'Vamos a ver. El usuario quiere un JSON con…',
+          },
+        },
+      ],
+    };
+    expect(() => respuestaDeWorkersAi(razonandoSinAcabar)).toThrow(/razonando/i);
+    expect(() => respuestaDeWorkersAi(razonandoSinAcabar)).toThrow(/finish_reason: length/);
+  });
+
+  /**
+   * Y cuando de verdad no se sabe leer la respuesta, el error tiene que traer
+   * el sobre recortado: si el id del modelo no existe, se lee escrito ahí en
+   * vez de tener que adivinarlo.
+   */
+  it('cuando no sabe leer la respuesta, la registra recortada en el error', () => {
+    olvidarRespuestaCrudaRegistrada();
+    const avisos: string[] = [];
+    vi.stubGlobal('console', {
+      ...console,
+      warn: (mensaje: string) => avisos.push(mensaje),
+    });
+
+    const desconocido = { errors: [{ message: 'No such model @cf/inventado/no-existe' }] };
+    expect(() => respuestaDeWorkersAi(desconocido)).toThrow(/No such model/);
+    expect(avisos.join(' ')).toMatch(/no se sabe leer/i);
+
+    // Y no se repite: 25 documentos con el modelo mal configurado no pueden
+    // escribir 25 veces lo mismo en los registros del Worker.
+    expect(() => respuestaDeWorkersAi(desconocido)).toThrow();
+    expect(avisos).toHaveLength(1);
+  });
+
+  it('recorta la respuesta cruda para no volcar un PDF entero en el registro', () => {
+    const largo = resumirRespuestaCruda({ texto: 'a'.repeat(50_000) });
+    expect(largo.length).toBeLessThan(1400);
+    expect(largo).toMatch(/recortado, \d+ caracteres en total/);
   });
 
   it('entiende la respuesta tanto si viene en texto como ya parseada', async () => {
@@ -305,6 +401,47 @@ describe('privacidad: tachar lo de contacto, bloquear lo nominal', () => {
   });
 });
 
+/**
+ * A qué torneo va el dato. Es la otra mitad del problema y la que más daño
+ * hace si se falla: un horario correcto en la ficha del torneo equivocado no
+ * se detecta mirando la ficha.
+ *
+ * Aquí solo se prueban los caminos que NO tocan la base de datos, que son
+ * justo los que dicen «no lo sé». Que esos funcionen es lo importante: la
+ * heurística puede afinarse, pero la negativa tiene que ser fiable.
+ */
+describe('a qué evento pertenece el documento', () => {
+  it('un dossier que cuelga del torneo se liga con certeza, sin deducir nada', async () => {
+    const resultado = await resolverEvento({ eventoConocido: 'evento-1' });
+    expect(resultado).toEqual({
+      eventoId: 'evento-1',
+      certeza: 'seguro',
+      motivo: expect.stringContaining('cuelga de este evento'),
+    });
+  });
+
+  it('una normativa que no nombra competiciones se queda en «no se sabe»', async () => {
+    const resultado = await resolverEvento({ competiciones: [] });
+    expect(resultado.eventoId).toBeNull();
+    expect(resultado.certeza).toBe('desconocido');
+    expect(resultado.motivo).toMatch(/no nombra ninguna competición/i);
+  });
+
+  it('una competición sin fecha tampoco se liga: no se distingue la edición', async () => {
+    const resultado = await resolverEvento({
+      competiciones: [
+        {
+          nombre: 'Torneo Nacional de Ranking Absoluto',
+          cita: 'Torneo Nacional de Ranking Absoluto',
+        },
+      ],
+    });
+    expect(resultado.eventoId).toBeNull();
+    expect(resultado.certeza).toBe('desconocido');
+    expect(resultado.motivo).toMatch(/sin fecha/i);
+  });
+});
+
 describe('la extracción completa con Workers AI detrás', () => {
   it('encola lo verificable y DESCARTA la cita inventada', async () => {
     /**
@@ -326,10 +463,13 @@ describe('la extracción completa con Workers AI detrás', () => {
                 cita: 'El plazo ordinario de inscripción finaliza el 12 de octubre de 2026.',
               },
             ],
-            cuota: {
-              importeEur: 15,
-              cita: 'La cuota de inscripción es de 15 euros para los clubes federados.',
-            },
+            cuotas: [
+              {
+                tipo: 'individual',
+                importeEur: 15,
+                cita: 'La cuota de inscripción es de 15 euros para los clubes federados.',
+              },
+            ],
             horarios: [
               {
                 etiqueta: 'llamada',
@@ -366,14 +506,150 @@ describe('la extracción completa con Workers AI detrás', () => {
     expect(plazo?.quoteVerified).toBe(true);
   });
 
+  it('saca el pabellón, los horarios por día y prueba, los importes y los enlaces', () => {
+    /**
+     * Esto es un trozo de una convocatoria REAL (la del TNR Absoluto y la I
+     * Liga Nacional de Sabadell), con la forma en la que de verdad vienen los
+     * horarios: las mismas horas repetidas por día y por arma. Sin el sufijo
+     * de fecha y de prueba, las cuatro «Apertura del pabellón» serían el mismo
+     * campo y solo sobreviviría una, que es como perder el domingo.
+     */
+    const datos = esquemaExtraccion.parse({
+      sede: {
+        nombre: "Pista Coberta d'Atletisme de Catalunya",
+        direccion: 'Camí de Can Quadres, 190, 08203 Sabadell',
+        localidad: 'Sabadell',
+        cita: "Pista Coberta d'Atletisme de Catalunya",
+      },
+      horarios: [
+        {
+          etiqueta: 'apertura_instalacion',
+          hora: '07:30',
+          fecha: '2026-10-03',
+          cita: '07:30h: Apertura del pabellón.',
+        },
+        {
+          etiqueta: 'inicio',
+          hora: '09:00',
+          fecha: '2026-10-03',
+          prueba: 'florete masculino',
+          cita: 'Inicio de la competición florete masculino',
+        },
+        {
+          etiqueta: 'inicio',
+          hora: '11:30',
+          fecha: '2026-10-03',
+          prueba: 'florete femenino',
+          cita: 'Inicio de la competición florete femenino',
+        },
+      ],
+      cuotas: [
+        {
+          tipo: 'extranjeros',
+          importeEur: 200,
+          cita: 'el coste de su inscripción será de 200 euros',
+        },
+      ],
+      enlaces: [
+        {
+          tipo: 'alojamiento',
+          url: 'https://hotel-san-roque.marketinghotelero.top',
+          cita: 'https://hotel-san-roque.marketinghotelero.top',
+        },
+      ],
+    });
+
+    const campos = aPropuestas(datos).map((p) => p.field);
+
+    // El pabellón con su dirección y su localidad, que es lo que hoy falta en
+    // 246 de los 274 eventos.
+    expect(campos).toContain('venue');
+    expect(campos).toContain('venue_address');
+    expect(campos).toContain('venue_city');
+
+    // Los dos inicios sobreviven porque llevan el día y la prueba en la clave.
+    expect(campos).toContain('installation_open.2026-10-03');
+    expect(campos).toContain('start_time.2026-10-03.florete-masculino');
+    expect(campos).toContain('start_time.2026-10-03.florete-femenino');
+
+    // El importe de los extranjeros NO se hace pasar por la cuota del tirador.
+    expect(campos).toContain('fee_eur.extranjeros');
+    expect(campos).not.toContain('fee_eur');
+
+    expect(campos).toContain('link.alojamiento');
+  });
+
+  /**
+   * Los enlaces llevan verificación DOBLE: la cita y la URL. Un enlace
+   * retocado es peor que un dato retocado, porque se puede pulsar.
+   */
+  it('descarta un enlace cuya URL no está escrita tal cual en el PDF', () => {
+    const pdf = [
+      'INSCRIPCIONES',
+      'Toda la información en esgrima.es/circulares y en la app.',
+    ].join('\n');
+
+    const datos = esquemaExtraccion.parse({
+      enlaces: [
+        {
+          tipo: 'web',
+          // El modelo le ha añadido el esquema y la barra final: la cita es
+          // verdadera pero la URL no aparece así en ningún sitio.
+          url: 'https://esgrima.es/circulares/',
+          cita: 'Toda la información en esgrima.es/circulares y en la app.',
+        },
+      ],
+    });
+
+    const { verificadas, descartadas } = verificarPropuestas(aPropuestas(datos), pdf);
+    expect(verificadas).toHaveLength(0);
+    expect(descartadas[0].field).toBe('link.web');
+    expect(descartadas[0].motivoDescarte).toMatch(/no aparece escrito|retocado/i);
+  });
+
+  /**
+   * Medido con cinco modelos sobre documentos reales: cuatro de los cinco
+   * perdían un dossier ENTERO porque devolvían `sede: { nombre: "", cita: "" }`
+   * cuando el documento no publicaba el pabellón, o escribían la hora del
+   * plazo como «12:00 horas». Un detalle así no puede tirar trece campos
+   * buenos.
+   */
+  it('un elemento mal formado se cae solo, sin llevarse el documento entero', () => {
+    const datos = esquemaExtraccion.parse({
+      // Cortesía mal entendida del modelo: la sede vacía se queda en null.
+      sede: { nombre: '', cita: '' },
+      plazos: [
+        {
+          tipo: 'L1',
+          fechaLimite: '2026-10-09',
+          hora: '12:00 horas',
+          cita: 'antes del viernes de la semana anterior a las 12:00 horas',
+        },
+        // Sin fecha válida: este plazo se cae, y solo este.
+        { tipo: 'L2', fechaLimite: 'la semana anterior', cita: 'una cita bien larga' },
+      ],
+      // Tipo de enlace que no existe en el esquema: se cae el enlace, no el
+      // documento.
+      enlaces: [{ tipo: 'inventado', url: 'https://x.es/a', cita: 'una cita bien larga' }],
+    });
+
+    expect(datos.sede).toBeNull();
+    expect(datos.plazos).toHaveLength(1);
+    expect(datos.plazos[0].hora).toBe('12:00');
+    expect(datos.enlaces).toHaveLength(0);
+  });
+
   it('una cuota citada a medias tampoco cuela', () => {
     // El modelo copia media frase y le cambia la cifra: la cadena completa ya
     // no aparece en el documento y el campo se cae solo.
     const datos = esquemaExtraccion.parse({
-      cuota: {
-        importeEur: 350,
-        cita: 'La cuota de inscripción es de 350 euros por tirador y prueba.',
-      },
+      cuotas: [
+        {
+          tipo: 'individual',
+          importeEur: 350,
+          cita: 'La cuota de inscripción es de 350 euros por tirador y prueba.',
+        },
+      ],
     });
     const { verificadas, descartadas } = verificarPropuestas(aPropuestas(datos), DOSSIER);
     expect(verificadas).toHaveLength(0);

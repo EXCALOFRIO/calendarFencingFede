@@ -83,9 +83,20 @@ export default async function CalendarioPage() {
     );
   }
 
+  /**
+   * ¿Esta cuenta se ha quedado sin ficha de tirador?
+   *
+   * Solo se pregunta para tiradores y tutores: un seleccionador o la
+   * dirección técnica tampoco tienen ficha y no les hace falta, así que
+   * invitarles a vincularse sería un aviso que no les toca.
+   */
+  const sinFicha =
+    atletas.length === 0 && (perfil.role === 'athlete' || perfil.role === 'guardian');
+
   return (
     <VistaCalendario
       eventos={eventos}
+      sinFicha={sinFicha}
       tiradores={tiradores}
       inscripciones={inscripciones}
       temporada={temporada?.label ?? null}

@@ -1,6 +1,12 @@
 'use client';
 
-import { CircleCheck, ExternalLink, FileText, Navigation } from 'lucide-react';
+import {
+  CircleCheck,
+  ExternalLink,
+  FileText,
+  Navigation,
+  Radio,
+} from 'lucide-react';
 import * as React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,6 +29,53 @@ import {
 import type { QuienVa as QuienVaDatos } from '@/app/(app)/inscritos';
 import { ENTRY_STATUS_LABEL } from '@/lib/entries/state-machine';
 import type { TiradorOpcion } from './vista';
+
+/**
+ * Una sección de la ficha.
+ *
+ * La ficha tenía todo seguido, separado solo por unas rayas, y con el
+ * pabellón, los cuatro plazos, los horarios, los inscritos, los documentos y
+ * la procedencia dentro era un muro de datos: para encontrar el horario había
+ * que leer el resto. Petición del usuario: *«mete secciones para ordenarlo
+ * mucho mejor»*.
+ *
+ * Cada sección lleva **rótulo a la izquierda y contenido a la derecha** en
+ * escritorio, y rótulo encima en el móvil. Es el patrón de bandas
+ * horizontales con filete de un píxel que manda `UI.md`, y no tarjetas: lo
+ * que ordena es la retícula, no una caja alrededor de cada cosa.
+ *
+ * `extra` es para lo que acompaña al rótulo sin ser el contenido: un
+ * recuento, un aviso de que el dato es una estimación.
+ */
+function Seccion({
+  titulo,
+  extra,
+  children,
+}: {
+  titulo: string;
+  extra?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="grid gap-1.5 border-t py-3 sm:grid-cols-[7.5rem_1fr] sm:gap-4">
+      <div className="flex items-baseline gap-2 sm:flex-col sm:gap-0.5">
+        <h3 className="text-sm font-medium text-muted-foreground">{titulo}</h3>
+        {extra ? <div className="text-xs text-muted-foreground/80">{extra}</div> : null}
+      </div>
+      <div className="flex min-w-0 flex-col gap-2">{children}</div>
+    </section>
+  );
+}
+
+/** Un dato con su rótulo encima. Sustituye a las cadenas «A · B · C». */
+function Dato({ titulo, valor }: { titulo: string; valor: string }) {
+  return (
+    <div className="flex min-w-0 flex-col">
+      <dt className="text-xs text-muted-foreground">{titulo}</dt>
+      <dd className="truncate">{valor}</dd>
+    </div>
+  );
+}
 
 const TONO = {
   verde: { texto: 'text-ok', palabra: 'A tiempo' },
@@ -106,7 +159,7 @@ export function FichaEvento({
         peor que no tener botón.
       */}
       {mapas || huso ? (
-        <div className="flex flex-col gap-2">
+        <Seccion titulo="Cómo llegar">
           {sede ? (
             <p className="text-sm">
               {titular(sede)}
@@ -152,13 +205,18 @@ export function FichaEvento({
               ) : null}
             </p>
           ) : null}
-        </div>
+        </Seccion>
       ) : null}
 
-      <Separator />
-
       {/* Pruebas del torneo. */}
-      <div className="flex flex-col gap-3">
+      <Seccion
+        titulo="Pruebas"
+        extra={
+          evento.competitions.length > 1
+            ? `${evento.competitions.length} en este torneo`
+            : undefined
+        }
+      >
         <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1">
           {evento.competitions.map((c) => {
             const puede = elegibles.some((e) => e.id === c.id);
@@ -184,9 +242,10 @@ export function FichaEvento({
             );
           })}
         </div>
+      </Seccion>
 
-        {prueba ? (
-          <DetallePrueba
+      {prueba ? (
+        <DetallePrueba
             prueba={prueba}
             inscritos={inscritos}
             puedeInscribirse={elegibles.some((e) => e.id === prueba.id)}
@@ -196,36 +255,72 @@ export function FichaEvento({
               setEnviando(true);
               await onSolicitar(prueba.id);
               setEnviando(false);
-            }}
-          />
-        ) : null}
-      </div>
+          }}
+        />
+      ) : null}
 
+      {/*
+        Documentos. Es de lo que más se busca y estaba escondido al final
+        entre dos rayas, sin decir qué era.
+      */}
       {evento.documents.length > 0 ? (
-        <>
-          <Separator />
-          <ul className="flex flex-col gap-1">
+        <Seccion
+          titulo="Documentos"
+          extra={`${evento.documents.length} ${
+            evento.documents.length === 1 ? 'archivo' : 'archivos'
+          }`}
+        >
+          <ul className="-my-1 flex flex-col">
             {evento.documents.map((d) => (
               <li key={d.id}>
                 <a
                   href={d.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-accent"
+                  className="flex items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors hover:bg-accent"
                 >
                   <FileText className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate">{titularDocumento(d.title)}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {titularDocumento(d.title)}
+                  </span>
                   <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
                 </a>
               </li>
             ))}
           </ul>
-        </>
+        </Seccion>
       ) : null}
 
-      <Separator />
+      {/*
+        Retransmisión y resultados en directo. Casi nunca hay: la RFEE
+        publica los enlaces de Engarde cuando la competición está encima, no
+        antes. Cuando aparecen, es lo único que se mira ese día.
+      */}
+      {evento.liveLinks.length > 0 ? (
+        <Seccion titulo="En directo">
+          <ul className="-my-1 flex flex-col">
+            {evento.liveLinks.map((l) => (
+              <li key={l.id}>
+                <a
+                  href={l.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors hover:bg-accent"
+                >
+                  <Radio className="size-4 shrink-0 text-ok" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {l.label ? titular(l.label) : titular(l.platform)}
+                  </span>
+                  <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
+                </a>
+              </li>
+            ))}
+          </ul>
+        </Seccion>
+      ) : null}
 
-      <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+      <Seccion titulo="De dónde sale">
+        <div className="flex flex-col gap-1 text-xs text-muted-foreground">
         <p>
           Fuente: {SOURCE_LABEL[evento.source] ?? evento.source} · leído{' '}
           {formatDateTimeEs(evento.lastSeenAt)}
@@ -254,7 +349,8 @@ export function FichaEvento({
           ))}
         </div>
         <p>Publicado como «{evento.name}»</p>
-      </div>
+        </div>
+      </Seccion>
     </div>
   );
 }
@@ -288,103 +384,138 @@ function DetallePrueba({
   ).filter((h): h is [string, string] => Boolean(h[1]));
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* El plazo manda: cifra grande y la palabra al lado. */}
-      <div className="flex items-baseline gap-2">
-        {prueba.status.daysLeft !== null ? (
-          <>
-            <span className={cn('cifra text-6xl', tono.texto)}>
-              {prueba.status.daysLeft}
-            </span>
-            <span className="text-sm text-muted-foreground">
-              {prueba.status.daysLeft === 1 ? 'día' : 'días'} para el cierre
-              {prueba.status.next?.origin === 'CALCULADO' ? ' (estimado)' : ''}
-            </span>
-          </>
-        ) : (
-          <span className={cn('text-sm font-medium', tono.texto)}>{tono.palabra}</span>
-        )}
-      </div>
-
-      {prueba.deadlines.length > 0 ? (
-        <ul className="flex flex-col gap-1 text-sm">
-          {prueba.deadlines.map((d) => (
-            <li
-              key={`${d.type}-${d.deadlineAt.toISOString()}`}
-              className="flex items-baseline justify-between gap-3"
-            >
-              <span className="text-muted-foreground">
-                {d.label}
-                {d.origin === 'CALCULADO' ? ' · estimado' : ' · publicado'}
+    <>
+      {/*
+        El plazo, con la acción al lado.
+        La cifra y el botón son la misma decisión: cuántos días quedan y qué
+        hago con eso. Tenerlos separados por los horarios y la lista de
+        inscritos obligaba a subir y bajar para decidir.
+      */}
+      <Seccion
+        titulo="Plazo"
+        extra={
+          prueba.status.hasEstimates ? 'alguno es una estimación' : undefined
+        }
+      >
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          {prueba.status.daysLeft !== null ? (
+            <>
+              <span className={cn('cifra text-6xl leading-none', tono.texto)}>
+                {prueba.status.daysLeft}
               </span>
-              <span className="tabular-nums">{formatDateEs(d.deadlineAt)}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          La fuente no publica plazo para esta prueba.
-        </p>
-      )}
+              <span className="text-sm text-muted-foreground">
+                {prueba.status.daysLeft === 1 ? 'día' : 'días'} para el cierre
+                {prueba.status.next?.origin === 'CALCULADO' ? ' (estimado)' : ''}
+              </span>
+            </>
+          ) : (
+            <span className={cn('text-base font-medium', tono.texto)}>
+              {tono.palabra}
+            </span>
+          )}
+        </div>
 
+        {prueba.deadlines.length > 0 ? (
+          <ul className="flex flex-col gap-1 text-sm">
+            {prueba.deadlines.map((d) => (
+              <li
+                key={`${d.type}-${d.deadlineAt.toISOString()}`}
+                className="flex items-baseline justify-between gap-3"
+              >
+                <span className="text-muted-foreground">
+                  {d.label}
+                  {d.origin === 'CALCULADO' ? ' · estimado' : ' · publicado'}
+                </span>
+                <span className="tabular-nums">{formatDateEs(d.deadlineAt)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            La fuente no publica plazo para esta prueba.
+          </p>
+        )}
+
+        {estadoInscripcion ? (
+          <Badge variant="secondary" className="w-fit">
+            {estadoInscripcion}
+          </Badge>
+        ) : puedeInscribirse ? (
+          <Button
+            onClick={onSolicitar}
+            disabled={enviando || prueba.status.closed}
+            className="w-full sm:w-fit"
+          >
+            {prueba.status.closed
+              ? 'Inscripción cerrada'
+              : enviando
+                ? 'Enviando…'
+                : 'Solicitar inscripción'}
+          </Button>
+        ) : (
+          <p className="medida text-sm text-muted-foreground">
+            Esta prueba no es de tu arma, género o categoría. Puedes
+            consultarla, pero no inscribirte.
+          </p>
+        )}
+      </Seccion>
+
+      {/*
+        Horario. Medido: solo 23 de 424 pruebas lo publican, así que es la
+        excepción y por eso tiene su propia sección en vez de una línea
+        perdida: el día que está, es lo único que se mira.
+      */}
       {horarios.length > 0 ? (
-        <dl
-          className="grid gap-px overflow-hidden rounded-md bg-border"
-          /* Tantas columnas como horarios publicados. Con `grid-cols-4` fijo,
-             un torneo que publica llamada, scratch e inicio dejaba una cuarta
-             celda vacía que parecía un dato que falta. */
-          style={{
-            gridTemplateColumns: `repeat(${horarios.length}, minmax(0, 1fr))`,
-          }}
-        >
-          {horarios.map(([k, v]) => (
-            <div key={k} className="flex flex-col items-center bg-card py-2">
-              <dt className="text-xs text-muted-foreground">{k}</dt>
-              <dd className="cifra text-xl">{v}</dd>
-            </div>
-          ))}
-        </dl>
+        <Seccion titulo="Horario">
+          <dl
+            className="grid gap-px overflow-hidden rounded-md bg-border"
+            /* Tantas columnas como horarios publicados. Con cuatro fijas, un
+               torneo que publica llamada, scratch e inicio dejaba una celda
+               vacía que se leía como un dato que falta. */
+            style={{
+              gridTemplateColumns: `repeat(${horarios.length}, minmax(0, 1fr))`,
+            }}
+          >
+            {horarios.map(([k, v]) => (
+              <div key={k} className="flex flex-col items-center bg-card py-2">
+                <dt className="text-xs text-muted-foreground">{k}</dt>
+                <dd className="cifra text-xl">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </Seccion>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-        <span>Cuota: {formatEur(prueba.feeEur)}</span>
-        {/*
-          El recuento que publica la organización, solo cuando NO se tienen
-          los nombres. Si se tienen, el número ya va en la cabecera de la
-          lista y repetirlo dos veces en la misma ficha se lee como si
-          fueran dos datos distintos.
-        */}
-        {prueba.registrationCount !== null && !hayLista ? (
-          <span>{prueba.registrationCount} inscritos en la organización</span>
-        ) : null}
-        <span>{GENDER_LABEL[prueba.gender]}</span>
-      </div>
+      <Seccion titulo="La prueba">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
+          <Dato titulo="Género" valor={GENDER_LABEL[prueba.gender]} />
+          <Dato
+            titulo="Categoría"
+            valor={
+              CATEGORY_LABEL[prueba.category as keyof typeof CATEGORY_LABEL] ??
+              prueba.category
+            }
+          />
+          <Dato titulo="Formato" valor={prueba.format === 'EQUIPOS' ? 'Equipos' : 'Individual'} />
+          <Dato titulo="Cuota" valor={formatEur(prueba.feeEur)} />
+          {/*
+            El recuento que publica la organización, solo cuando NO se tienen
+            los nombres: si se tienen, el número ya va en la cabecera de la
+            lista y repetirlo se lee como si fueran dos datos distintos.
+          */}
+          {prueba.registrationCount !== null && !hayLista ? (
+            <Dato
+              titulo="Inscritos"
+              valor={`${prueba.registrationCount} en la organización`}
+            />
+          ) : null}
+        </dl>
+      </Seccion>
 
-      <QuienVa inscritos={inscritos} competitionId={prueba.id} />
-
-      {estadoInscripcion ? (
-        <Badge variant="secondary" className="w-fit">
-          {estadoInscripcion}
-        </Badge>
-      ) : puedeInscribirse ? (
-        <Button
-          onClick={onSolicitar}
-          disabled={enviando || prueba.status.closed}
-          className="w-full"
-        >
-          {prueba.status.closed
-            ? 'Inscripción cerrada'
-            : enviando
-              ? 'Enviando…'
-              : 'Solicitar inscripción'}
-        </Button>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          Esta prueba no es de tu arma, género o categoría. Puedes consultarla,
-          pero no inscribirte.
-        </p>
-      )}
-    </div>
+      <Seccion titulo="Quién va">
+        <QuienVa inscritos={inscritos} competitionId={prueba.id} />
+      </Seccion>
+    </>
   );
 }
 

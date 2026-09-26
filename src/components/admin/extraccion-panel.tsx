@@ -1,12 +1,23 @@
 'use client';
 
-import { Check, ChevronDown, ExternalLink, Loader2, Undo2, X } from 'lucide-react';
+import {
+  CalendarCheck,
+  CalendarOff,
+  Check,
+  ChevronDown,
+  ExternalLink,
+  Loader2,
+  Undo2,
+  X,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { toast } from 'sonner';
 import {
   aprobarCircular,
   aprobarPropuesta,
+  confirmarEventoDeExtraccion,
+  descartarEventoDeExtraccion,
   procesarSiguientes,
   rechazarPropuesta,
   reabrirPropuesta,
@@ -62,12 +73,35 @@ const ETIQUETA_CAMPO: Record<string, string> = {
   'deadline.FIE_D7': 'Cierre duro de la FIE',
   fee_eur: 'Cuota de inscripción',
   fee_concept: 'Concepto de la cuota',
-  venue: 'Sede',
+  venue: 'Pabellón',
   venue_address: 'Dirección de la sede',
+  venue_city: 'Localidad de la sede',
   installation_open: 'Apertura de la instalación',
   call_time: 'Hora de llamada',
   scratch_time: 'Hora del scratch',
   start_time: 'Inicio de la competición',
+};
+
+/** Los importes que NO son la cuota del tirador, con su nombre entero. */
+const ETIQUETA_IMPORTE: Record<string, string> = {
+  equipos: 'Cuota por equipo',
+  extranjeros: 'Cuota de tiradores extranjeros',
+  acompanante: 'Cuota de acompañante',
+  arbitro: 'Cuota de árbitro',
+  alojamiento: 'Precio de alojamiento',
+  otro: 'Otro importe',
+};
+
+/** Para qué sirve el enlace. */
+const ETIQUETA_ENLACE: Record<string, string> = {
+  inscripcion: 'Enlace de inscripción',
+  reglamento: 'Enlace al reglamento',
+  normativa: 'Enlace a la normativa',
+  alojamiento: 'Enlace de alojamiento',
+  resultados: 'Enlace a resultados',
+  sorteo: 'Enlace al sorteo',
+  web: 'Web del torneo',
+  otro: 'Enlace',
 };
 
 function etiquetaDeCampo(campo: string): string {
@@ -76,13 +110,30 @@ function etiquetaDeCampo(campo: string): string {
     const base = campo.replace('.surcharge_eur', '');
     return `Recargo de ${ETIQUETA_CAMPO[base] ?? base}`;
   }
+  if (campo.endsWith('.time')) {
+    const base = campo.replace('.time', '');
+    return `Hora del ${(ETIQUETA_CAMPO[base] ?? base).toLowerCase()}`;
+  }
   if (campo.startsWith('category_allowed.')) {
     return `Categoría admitida ${campo.slice('category_allowed.'.length)}`;
   }
-  // Un horario por prueba llega como "start_time.espada-femenina".
+  if (campo.startsWith('fee_eur.')) {
+    const tipo = campo.slice('fee_eur.'.length);
+    return ETIQUETA_IMPORTE[tipo] ?? `Importe de ${tipo}`;
+  }
+  if (campo.startsWith('fee_concept.')) {
+    const tipo = campo.slice('fee_concept.'.length);
+    return `Concepto de ${(ETIQUETA_IMPORTE[tipo] ?? tipo).toLowerCase()}`;
+  }
+  if (campo.startsWith('link.')) {
+    const [tipo] = campo.slice('link.'.length).split('.');
+    return ETIQUETA_ENLACE[tipo] ?? 'Enlace';
+  }
+  // Un horario por día y por prueba llega como
+  // "start_time.2026-10-04.florete-masculino".
   const [raiz, ...resto] = campo.split('.');
   if (ETIQUETA_CAMPO[raiz] && resto.length > 0) {
-    return `${ETIQUETA_CAMPO[raiz]}, ${resto.join('.').replace(/-/g, ' ')}`;
+    return `${ETIQUETA_CAMPO[raiz]}, ${resto.join(' · ').replace(/-/g, ' ')}`;
   }
   return campo;
 }
@@ -101,12 +152,15 @@ function etiquetaDeCampo(campo: string): string {
  *    cita, que es lo que de verdad hay que leer aquí.
  */
 function valorLegible(campo: string, valor: string): { texto: string; cifra: boolean } {
-  if (campo === 'fee_eur' || campo.endsWith('.surcharge_eur')) {
+  if (campo.startsWith('fee_eur') || campo.endsWith('.surcharge_eur')) {
     return { texto: formatEur(valor), cifra: true };
   }
   if (campo.startsWith('deadline.') && /^\d{4}-\d{2}-\d{2}$/.test(valor)) {
     return { texto: formatDateEs(valor), cifra: true };
   }
+  // Una URL nunca en `.cifra`: a 30 px en condensada tapa la cita y además se
+  // parte por donde no debe.
+  if (campo.startsWith('link.')) return { texto: valor, cifra: false };
   return { texto: valor, cifra: valor.length <= 14 };
 }
 
@@ -362,6 +416,8 @@ function BandaCircular({
         />
       </div>
 
+      <BandaEvento extraccion={extraccion} ocupado={ocupado} ejecutar={ejecutar} />
+
       {extraccion.propuestas.length === 0 ? (
         <p className="medida text-sm text-muted-foreground">
           {extraccion.motivo ?? MOTIVO_SIN_DATOS[extraccion.estado] ?? 'Sin datos.'}
@@ -407,10 +463,7 @@ function BandaCircular({
                       ],
                     ]}
                   />
-                  <p className="medida text-xs break-words text-danger">
-                    «{campo.cita}» no aparece en el texto del PDF, así que el dato no
-                    ha llegado a la cola.
-                  </p>
+                  <p className="medida text-xs break-words text-danger">{campo.motivo}</p>
                 </li>
               ))}
             </ul>
@@ -418,6 +471,91 @@ function BandaCircular({
         </Collapsible>
       ) : null}
     </li>
+  );
+}
+
+/**
+ * A qué torneo van estos datos.
+ *
+ * Es la mitad de la revisión que no existía y sin la que nada llega a una
+ * ficha. Va arriba, antes de los campos, a propósito: si no se sabe de qué
+ * torneo habla la circular, da igual lo bien citado que esté un horario,
+ * porque no tiene sitio donde ponerse.
+ *
+ * Tres estados y tres mensajes distintos, ninguno ambiguo:
+ *  · 'seguro' → dice a qué ficha va, y ya está.
+ *  · 'dudoso' → enseña el candidato con el motivo y pide una confirmación. El
+ *    dato NO está en ninguna ficha todavía.
+ *  · 'desconocido' → dice que no se sabe y por qué. No hay botón que valga:
+ *    inventarse el torneo es el error que esto evita.
+ */
+function BandaEvento({
+  extraccion,
+  ocupado,
+  ejecutar,
+}: {
+  extraccion: ExtraccionRevision;
+  ocupado: boolean;
+  ejecutar: (
+    accion: () => Promise<{ ok: boolean; message?: string; error?: string }>,
+  ) => Promise<void>;
+}) {
+  const { evento } = extraccion;
+
+  if (evento.certeza === 'seguro' && evento.nombre) {
+    return (
+      <p className="medida text-sm text-muted-foreground">
+        <CalendarCheck className="mr-1 inline size-4 text-ok" aria-hidden />
+        Los campos aprobados van a la ficha de{' '}
+        <strong className="font-medium text-foreground">{titular(evento.nombre)}</strong>
+        {evento.ciudad ? ` · ${evento.ciudad}` : ''}
+        {evento.inicio ? ` · ${formatDateEs(evento.inicio)}` : ''}.
+      </p>
+    );
+  }
+
+  if (evento.certeza === 'dudoso' && evento.nombre) {
+    return (
+      <div className="flex min-w-0 flex-col gap-2 border-l-2 border-warn pl-3">
+        <p className="medida text-sm">
+          <strong className="font-medium">¿Es «{titular(evento.nombre)}»?</strong>{' '}
+          {evento.ciudad ? `${evento.ciudad} · ` : ''}
+          {evento.inicio ? formatDateEs(evento.inicio) : ''}
+        </p>
+        {evento.motivo ? (
+          <p className="medida text-xs text-muted-foreground">{evento.motivo}</p>
+        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={ocupado}
+            onClick={() => ejecutar(() => confirmarEventoDeExtraccion(extraccion.id))}
+          >
+            <Check className="text-ok" />
+            Sí, es ese torneo
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={ocupado}
+            onClick={() => ejecutar(() => descartarEventoDeExtraccion(extraccion.id))}
+          >
+            <X />
+            No es ese
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <p className="medida text-sm text-muted-foreground">
+      <CalendarOff className="mr-1 inline size-4" aria-hidden />
+      No se sabe a qué torneo se refiere, así que estos datos no aparecen en
+      ninguna ficha.{' '}
+      {evento.motivo ?? 'El documento no nombra ninguna competición con fecha.'}
+    </p>
   );
 }
 
@@ -450,6 +588,16 @@ function FilaPropuesta({
           <span className="text-xs text-muted-foreground">
             {etiquetaDeCampo(propuesta.campo)}
           </span>
+          {/*
+            La prueba tal como la nombra el PDF. Va aquí y no en el nombre del
+            campo porque es lo que decide a qué fila de la ficha acaba yendo el
+            horario: sin ella, «09:00» es una hora que no se sabe de qué.
+          */}
+          {propuesta.prueba ? (
+            <Badge variant="outline" className="font-normal">
+              {propuesta.prueba}
+            </Badge>
+          ) : null}
           <EstadoPastilla propuesta={propuesta} />
         </div>
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { ChevronDown, ChevronLeft, ChevronRight, MapPin, Search, X } from 'lucide-react';
+import Link from 'next/link';
 import * as React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -89,6 +90,7 @@ function ordenarCategorias(codigos: string[]): string[] {
 export function VistaCalendario({
   eventos,
   tiradores,
+  sinFicha = false,
   inscripciones,
   temporada,
   actualizado,
@@ -97,6 +99,8 @@ export function VistaCalendario({
 }: {
   eventos: EventView[];
   tiradores: TiradorOpcion[];
+  /** La cuenta es de tirador o tutor y todavía no tiene ficha vinculada. */
+  sinFicha?: boolean;
   /** competitionId -> estado legible de la inscripción de esta cuenta. */
   inscripciones: Record<string, string>;
   temporada: string | null;
@@ -607,6 +611,28 @@ export function VistaCalendario({
 
 
       </div>
+
+      {/*
+        Sin ficha, el calendario no sabe tu arma ni tu categoría, así que lo
+        que se ve es «todo» y no sirve para organizarse. El aviso va aquí y
+        no en un menú porque es justo aquí donde se nota el hueco, y
+        desaparece solo en cuanto la ficha existe.
+      */}
+      {sinFicha ? (
+        <Link
+          href="/alta"
+          className="flex shrink-0 items-center gap-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm transition-colors hover:bg-primary/15"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="font-medium">Vincula tu ficha</span>{' '}
+            <span className="text-muted-foreground">
+              y el calendario se filtrará por tu arma y tu categoría. Se busca
+              en el ranking oficial de la RFEE.
+            </span>
+          </span>
+          <ChevronRight className="size-4 shrink-0" aria-hidden />
+        </Link>
+      ) : null}
 
       {aviso ? (
         <p className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm">
