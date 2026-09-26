@@ -656,6 +656,34 @@ describe('la extracción completa con Workers AI detrás', () => {
     expect(aPropuestas(datos)).toHaveLength(0);
   });
 
+  /**
+   * El pie de página de la federación aparece en las 278 circulares y el
+   * modelo lo devolvía como pabellón con una cita perfecta. La verificación de
+   * citas no puede tumbarlo —la frase está en el documento—, así que tiene que
+   * caerse por otro sitio.
+   */
+  it('el membrete de la RFEE no es el pabellón de ningún torneo', () => {
+    const datos = esquemaExtraccion.parse({
+      sede: {
+        nombre: 'Real Federación Española de Esgrima',
+        direccion: 'Calle Ferraz nº16 – 6º. Madrid 28008',
+        cita: 'Real Federación Española de Esgrima Calle Ferraz nº16 – 6º. Madrid 28008',
+      },
+    });
+    expect(aPropuestas(datos)).toHaveLength(0);
+  });
+
+  it('pero un pabellón de verdad sí pasa', () => {
+    const datos = esquemaExtraccion.parse({
+      sede: {
+        nombre: 'Polideportivo Pablo Cáceres',
+        direccion: 'Carretera de Peñaranda s/n, 47400 Medina del Campo',
+        cita: 'POLIDEPORTIVO PABLO CÁCERES Carretera de Peñaranda s/n, 47400 Medina del Campo',
+      },
+    });
+    expect(aPropuestas(datos).map((p) => p.field)).toEqual(['venue', 'venue_address']);
+  });
+
   it('un recargo de 0 € no se publica: es un hueco, no un importe', () => {
     const datos = esquemaExtraccion.parse({
       plazos: [

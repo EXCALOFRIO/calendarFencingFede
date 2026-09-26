@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { cache } from 'react';
 import { db } from '@/db';
 import {
@@ -712,10 +713,34 @@ type FilaExtraida = {
  *    que una sugerencia sin confirmar no llega aquí.
  */
 async function cargarDatosExtraidos(eventIds: string[]): Promise<FilaExtraida[]> {
+  /**
+   * Segunda vía para llegar al evento, y no es un adorno: el MISMO dossier
+   * cuelga de varios torneos. La convocatoria conjunta del TNR Absoluto y de
+   * la Liga Nacional Oro y Plata es un único PDF en tres filas de
+   * `event_document`, una por evento.
+   *
+   * La idempotencia va por contenido —y tiene que ir por contenido, o se
+   * pagaría tres veces la misma lectura—, así que solo la PRIMERA de esas
+   * filas se procesa y solo ella deja `evento_id` en las propuestas. Sin este
+   * enlace por URL, dos de los tres torneos tendrían la ficha vacía teniendo
+   * el dato ya extraído y guardado.
+   */
+  const docDelEvento = alias(eventDocument, 'doc_del_evento');
+
   const filas = await db
     .select({
       id: extraccionPropuesta.id,
-      eventoId: extraccionPropuesta.eventoId,
+      /**
+       * PRIMERO el evento del documento que cuelga de ESTE torneo, y solo si
+       * no hay, el de la propuesta.
+       *
+       * El orden importa y costó un rato: con el `coalesce` al revés, las
+       * propuestas del dossier compartido se quedaban etiquetadas con el
+       * primer torneo que lo procesó y los otros cuatro seguían con la ficha
+       * vacía. El `leftJoin` de abajo ya garantiza que este id es uno de los
+       * eventos pedidos.
+       */
+      eventoId: sql<string>`coalesce(${docDelEvento.eventId}, ${extraccionPropuesta.eventoId})`,
       campo: extraccionPropuesta.campo,
       valor: extraccionPropuesta.valorPropuesto,
       prueba: extraccionPropuesta.prueba,
@@ -732,16 +757,53 @@ async function cargarDatosExtraidos(eventIds: string[]): Promise<FilaExtraida[]>
       extraccionDocumento,
       eq(extraccionDocumento.id, extraccionPropuesta.extraccionId),
     )
+    .leftJoin(
+      docDelEvento,
+      and(
+        eq(docDelEvento.url, extraccionDocumento.documentoUrl),
+        inArray(docDelEvento.eventId, eventIds),
+      ),
+    )
     .where(
       and(
-        inArray(extraccionPropuesta.eventoId, eventIds),
+        or(
+          inArray(extraccionPropuesta.eventoId, eventIds),
+          inArray(docDelEvento.eventId, eventIds),
+        ),
         inArray(extraccionPropuesta.estado, ['pendiente', 'aprobada']),
         eq(extraccionPropuesta.citaVerificada, true),
+        /**
+         * SOLO LA ÚLTIMA LECTURA DE CADA DOCUMENTO, salvo lo ya aprobado.
+         *
+         * Sin esto, cada mejora del prompt deja basura en las fichas PARA
+         * SIEMPRE. El caso real: el modelo devolvía el membrete de la
+         * federación («Pabellón: Real Federación Española de Esgrima») con una
+         * cita impecable, porque la frase está en el pie de cada circular. Se
+         * añadió el filtro que lo tumba y se reprocesaron los documentos…  y
+         * las propuestas viejas seguían ahí, con su `evento_id`, enseñando en
+         * la ficha justo el dato que se acababa de arreglar. Reprocesar no
+         * borra nada, y no debe: el libro de registro es historia.
+         *
+         * Lo APROBADO sobrevive a la regla. Si una persona firmó un dato, no
+         * se lo quita una relectura automática: esa firma es una decisión, y
+         * deshacerla en silencio sería peor que enseñar el dato viejo.
+         */
+        or(
+          eq(extraccionPropuesta.estado, 'aprobada'),
+          sql`not exists (
+            select 1 from ${extraccionDocumento} as mas_nueva
+            where mas_nueva.hash_documento = ${extraccionDocumento.hashDocumento}
+              and mas_nueva.estado <> 'error'
+              and mas_nueva.creado_en > ${extraccionDocumento.creadoEn}
+          )`,
+        ),
       ),
     )
     .orderBy(asc(extraccionPropuesta.campo));
 
-  return unaVezPorDato(filas.filter((f): f is FilaExtraida => f.eventoId !== null));
+  return unaVezPorDato(
+    filas.filter((f): f is FilaExtraida => Boolean(f.eventoId)),
+  );
 }
 
 /**
@@ -766,11 +828,15 @@ async function cargarDatosExtraidos(eventIds: string[]): Promise<FilaExtraida[]>
  * Se agrupa por campo Y VALOR, no solo por campo: si dos documentos del mismo
  * torneo dicen cosas DISTINTAS del mismo campo, eso no es ruido que haya que
  * esconder, es una contradicción que alguien tiene que ver.
+ *
+ * Y por EVENTO, porque esta función recibe de golpe las filas de todos los
+ * eventos de la consulta: sin el id en la clave, el pabellón del primer torneo
+ * se comería el del segundo.
  */
 function unaVezPorDato(filas: FilaExtraida[]): FilaExtraida[] {
   const mejor = new Map<string, FilaExtraida>();
   for (const fila of filas) {
-    const clave = `${fila.campo} ${fila.valor}`;
+    const clave = `${fila.eventoId} | ${fila.campo} | ${fila.valor}`;
     const previa = mejor.get(clave);
     if (!previa) {
       mejor.set(clave, fila);

@@ -1180,8 +1180,15 @@ export const VERSION_ESQUEMA = 2;
  * quedado así para siempre, porque ni el PDF ni el prompt habían cambiado.
  * Lo que decide si un documento se envía forma parte de la extracción tanto
  * como el prompt.
+ *
+ * 4: se añadieron los filtros de valor (`valorDiceAlgo`): «No se indica
+ *    pabellón» no es un pabellón, el membrete de la federación no es una sede
+ *    y un recargo de 0 € no es un recargo. Los tres salieron de mirar la
+ *    pantalla de revisión con las circulares de verdad delante, y los tres
+ *    pasaban la verificación de citas porque las citas eran ciertas. Subirlo
+ *    reprocesa los documentos ya leídos para que dejen de proponerlos.
  */
-export const VERSION_FILTROS = 3;
+export const VERSION_FILTROS = 4;
 
 /** SHA-256 de una cadena, en hexadecimal. */
 export async function hashTexto(texto: string): Promise<string> {
@@ -1760,6 +1767,24 @@ const RE_VALOR_VACIO =
   /^(?:-+|n\/?a|nulo|null|none|no\s+(?:se\s+)?(?:indica|consta|publica|especifica|figura|procede|disponible|aplicable)\w*|sin\s+(?:especificar|determinar|definir|datos|informaci[oó]n)|desconocid[oa]|pendiente(?:\s+de\s+\w+)?|no\s+publicado)\b/i;
 
 /**
+ * El MEMBRETE de la federación, que no es la sede de nada.
+ *
+ * Toda circular de la RFEE lleva en el pie «Real Federación Española de
+ * Esgrima · Calle Ferraz nº16 – 6º. Madrid 28008», y el modelo lo devuelve
+ * como pabellón con una cita impecable: la frase está en el documento, así que
+ * la verificación de citas no puede tumbarla. Se vio en la pantalla de
+ * revisión con datos reales: tres circulares seguidas proponiendo «Pabellón:
+ * Real Federación Española de Esgrima».
+ *
+ * El prompt ya lo dice explícitamente y no basta, así que va también en
+ * código. No es una lista de palabras prohibidas creciendo sin control: es UNA
+ * dirección concreta, la del remitente de las 278 circulares, y en un sexto
+ * piso de oficinas no se monta una pista de esgrima.
+ */
+const RE_MEMBRETE_FEDERACION =
+  /^(?:real\s+)?federacion\s+espanola\s+de\s+esgrima\b|\bferraz\s*n?[.º°o]?\s*16\b|^calle\s+ferraz\b/i;
+
+/**
  * ¿Este valor dice algo?
  *
  * Además del catálogo de arriba, se exige que el valor tenga contenido: dos
@@ -1769,6 +1794,10 @@ function valorDiceAlgo(campo: string, valor: string): boolean {
   const limpio = valor.trim();
   if (limpio.length === 0) return false;
   if (RE_VALOR_VACIO.test(limpio)) return false;
+
+  const esSede = campo === 'venue' || campo === 'venue_address' || campo === 'venue_city';
+  if (esSede && RE_MEMBRETE_FEDERACION.test(normalizarParaCotejo(limpio))) return false;
+
   // Los horarios, las fechas y los importes son cortos por naturaleza; los
   // textos, no.
   const esTexto = /^(venue|venue_address|venue_city|fee_concept)/.test(campo);
@@ -2386,21 +2415,56 @@ export async function documentosPendientesDeExtraer(
    * pasa la comparación de columnas hecha, porque cada tabla se ata por una
    * columna distinta del libro de registro.
    */
-  const sinProcesar = (mismoDocumento: SQL | undefined) =>
-    notExists(
-      db
-        .select({ existe: sql`1` })
-        .from(extraccionDocumento)
-        .where(
-          and(
-            mismoDocumento,
-            eq(extraccionDocumento.hashPrompt, huella.hashPrompt),
-            eq(extraccionDocumento.versionEsquema, huella.versionEsquema),
-            // Lo que acabó en error se vuelve a intentar: ver
-            // `extraccionYaRegistrada`.
-            ne(extraccionDocumento.estado, 'error'),
+  const sinProcesar = (mismoDocumento: SQL | undefined, hashDelFichero: SQL | undefined) =>
+    and(
+      notExists(
+        db
+          .select({ existe: sql`1` })
+          .from(extraccionDocumento)
+          .where(
+            and(
+              mismoDocumento,
+              eq(extraccionDocumento.hashPrompt, huella.hashPrompt),
+              eq(extraccionDocumento.versionEsquema, huella.versionEsquema),
+              // Lo que acabó en error se vuelve a intentar: ver
+              // `extraccionYaRegistrada`.
+              ne(extraccionDocumento.estado, 'error'),
+            ),
           ),
-        ),
+      ),
+      /**
+       * Y TAMPOCO por contenido, que es la mitad que faltaba y que dejó el
+       * cron dando vueltas.
+       *
+       * El MISMO PDF cuelga de hasta cinco torneos (`event_document` tiene
+       * cinco filas con la misma URL para la convocatoria conjunta del TNR y
+       * la Liga). La idempotencia real va por contenido, así que solo la
+       * primera fila se procesa y solo ella queda atada a una extracción. Las
+       * otras cuatro seguían saliendo como «pendientes» en cada pasada, se
+       * descargaban, se resolvían como `ya_procesado` y volvían a salir al día
+       * siguiente: el lote de cinco se lo comían siempre ellas y las 278
+       * circulares no llegaban NUNCA a su turno. Medido: cuatro pasadas
+       * seguidas con «revisadas=6, nuevas=0, ya=6».
+       *
+       * `file_hash` lo rellena `guardarHashDelDocumento` en la primera pasada,
+       * también en el camino `ya_procesado`, así que a partir de entonces esta
+       * condición las saca de la cola. Si está a null —nunca se descargó— la
+       * subconsulta no encuentra nada y el documento sigue pendiente, que es
+       * lo correcto.
+       */
+      notExists(
+        db
+          .select({ existe: sql`1` })
+          .from(extraccionDocumento)
+          .where(
+            and(
+              eq(extraccionDocumento.hashDocumento, hashDelFichero as never),
+              eq(extraccionDocumento.hashPrompt, huella.hashPrompt),
+              eq(extraccionDocumento.versionEsquema, huella.versionEsquema),
+              ne(extraccionDocumento.estado, 'error'),
+            ),
+          ),
+      ),
     );
 
   const dossieres = await db
@@ -2414,7 +2478,10 @@ export async function documentosPendientesDeExtraer(
     .from(eventDocument)
     .innerJoin(event, eq(event.id, eventDocument.eventId))
     .where(
-      sinProcesar(eq(extraccionDocumento.eventoDocumentoId, eventDocument.id)),
+      sinProcesar(
+        eq(extraccionDocumento.eventoDocumentoId, eventDocument.id),
+        sql`${eventDocument.fileHash}`,
+      ),
     )
     .orderBy(desc(event.startDate))
     .limit(limite);
@@ -2435,7 +2502,12 @@ export async function documentosPendientesDeExtraer(
       fileHash: officialDocument.fileHash,
     })
     .from(officialDocument)
-    .where(sinProcesar(eq(extraccionDocumento.documentoId, officialDocument.id)))
+    .where(
+      sinProcesar(
+        eq(extraccionDocumento.documentoId, officialDocument.id),
+        sql`${officialDocument.fileHash}`,
+      ),
+    )
     .orderBy(desc(officialDocument.publishedAt))
     .limit(limite - pendientes.length);
 
