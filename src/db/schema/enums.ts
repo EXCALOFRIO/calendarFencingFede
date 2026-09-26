@@ -52,6 +52,7 @@ export const sourceEnum = pgEnum('event_source', [
   'efc',
   'rfee_wp',
   'skermo_ranking',
+  'fie_tiradores',
 ]);
 
 /**
@@ -190,6 +191,30 @@ export const proposalStatusEnum = pgEnum('proposal_status', [
 export const eventLinkStatusEnum = pgEnum('event_link_status', [
   'AUTOMATICO',
   'DUDOSO',
+  'CONFIRMADO',
+  'RECHAZADO',
+]);
+
+/**
+ * Estado del enlace entre un tirador nuestro y su ficha de la FIE.
+ *
+ * Deliberadamente SIN un valor `AUTOMATICO`, al contrario que
+ * `event_link_status`. Unir dos registros del mismo torneo por ciudad y fecha
+ * es reversible y visible; colgarle a una persona la foto y el puesto mundial
+ * de otra es una difamación silenciosa. Así que aquí no hay automatismo por
+ * nombre: o coincide el número de licencia FIE, o lo confirma alguien.
+ *
+ * - `PROPUESTO`: hay un candidato con evidencia (mismo nombre normalizado y
+ *   misma fecha de nacimiento), y NO se ha enlazado nada. `athlete_id` sigue a
+ *   null; el candidato vive en `proposed_athlete_id`, que no se usa para nada
+ *   más que enseñárselo a una persona.
+ * - `CONFIRMADO`: o coincidió el número de licencia FIE, o lo aprobó una
+ *   persona. Es el único estado en el que `athlete_id` está relleno.
+ * - `RECHAZADO`: alguien ha dicho que no es la misma persona. No se vuelve a
+ *   proponer nunca, y la ingestión respeta esa decisión.
+ */
+export const fieLinkStatusEnum = pgEnum('fie_link_status', [
+  'PROPUESTO',
   'CONFIRMADO',
   'RECHAZADO',
 ]);

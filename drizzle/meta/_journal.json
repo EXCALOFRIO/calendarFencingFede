@@ -50,6 +50,13 @@
       "when": 1790355767508,
       "tag": "0006_ranking_clave_por_tirador",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790426222014,
+      "tag": "0007_ficha_fie_tirador",
+      "breakpoints": true
     }
   ]
 }

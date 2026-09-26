@@ -12,6 +12,7 @@ import { recalcularEnlaces } from './enlazar';
 import { fetchText } from './fetcher';
 import { fetchEfcCalendar } from './sources/efc';
 import { currentFieSeason, fetchFieSeason } from './sources/fie';
+import { ingestFieTiradores } from './sources/fie-tiradores';
 import { ingestRankingRfee } from './sources/ranking-rfee';
 import { fetchOfficialDocuments } from './sources/rfee-wp';
 import { parseSkermoCalendar, skermoCalendarUrl } from './sources/skermo';
@@ -27,6 +28,7 @@ export const INGEST_SOURCES = [
   'efc',
   'rfee_wp',
   'skermo_ranking',
+  'fie_tiradores',
 ] as const;
 
 export type IngestSource = (typeof INGEST_SOURCES)[number];
@@ -49,6 +51,7 @@ export const SOURCE_DESCRIPTION: Record<IngestSource, string> = {
   efc: 'Circuito europeo de la EFC',
   rfee_wp: 'Circulares oficiales de esgrima.es',
   skermo_ranking: 'Ranking nacional oficial de la RFEE en Skermo',
+  fie_tiradores: 'Fichas de tirador de la FIE (foto enlazada y puesto mundial)',
 };
 
 /**
@@ -140,7 +143,11 @@ export async function runIngest(
      * Si falla, la ingestión NO falla: el calendario con duplicados sigue
      * siendo un calendario correcto; se anota y ya está.
      */
-    if (source !== 'rfee_wp' && source !== 'skermo_ranking') {
+    if (
+      source !== 'rfee_wp' &&
+      source !== 'skermo_ranking' &&
+      source !== 'fie_tiradores'
+    ) {
       try {
         const enlaces = await recalcularEnlaces();
         const partes = [
@@ -220,6 +227,8 @@ async function dispatch(source: IngestSource, runId: string): Promise<Dispatched
       return ingestOfficialDocuments();
     case 'skermo_ranking':
       return ingestRanking(runId);
+    case 'fie_tiradores':
+      return ingestFichasFie(runId);
   }
 }
 
@@ -358,6 +367,34 @@ async function ingestRanking(runId: string): Promise<Dispatched> {
   const stats = await ingestRankingRfee(runId);
   return {
     status: stats.itemsSeen > 0 ? 'ok' : 'parcial',
+    itemsSeen: stats.itemsSeen,
+    itemsCreated: stats.itemsCreated,
+    itemsUpdated: stats.itemsUpdated,
+    itemsUnchanged: stats.itemsUnchanged,
+    itemsQuarantined: stats.itemsQuarantined,
+    note: stats.note,
+  };
+}
+
+/**
+ * Fichas de tirador de la FIE: foto enlazada y puesto mundial.
+ *
+ * Fuente propia y no un apéndice de `fie`, que ya trae el calendario, por dos
+ * motivos. Uno: no produce eventos, así que el recálculo de duplicados entre
+ * fuentes no tiene nada que hacer aquí (el runner se lo salta). Y dos: su
+ * coste no depende de la FIE sino de NUESTROS tiradores —una petición para el
+ * censo del país y una por tirador con ficha—, así que su presupuesto y su
+ * horario de cron son distintos de los del calendario.
+ */
+async function ingestFichasFie(runId: string): Promise<Dispatched> {
+  const stats = await ingestFieTiradores(runId);
+  return {
+    /**
+     * "parcial" si no se enlazó a nadie: no hay nada roto —el censo se leyó—
+     * pero tampoco hay nada que enseñar, y eso tiene que verse en el panel en
+     * vez de pasar por un "ok" tranquilizador.
+     */
+    status: stats.enlazados > 0 ? 'ok' : 'parcial',
     itemsSeen: stats.itemsSeen,
     itemsCreated: stats.itemsCreated,
     itemsUpdated: stats.itemsUpdated,
