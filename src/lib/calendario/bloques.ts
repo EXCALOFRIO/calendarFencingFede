@@ -422,22 +422,12 @@ export function nombreDeMes(anio: number, mes: number, conAnio = true): string {
   );
 }
 
-/**
- * ¿ES MES DE PRETEMPORADA?
- *
- * Existe para el estado vacío, y existe **acotada** porque es lo único de esta
- * pantalla que no sale de la base. El brief pedía que septiembre dijera
- * «Septiembre es mes de pretemporada y descanso», y es cierto para septiembre:
- * la temporada española arranca en octubre y en julio, agosto y septiembre no
- * hay competición oficial ni la ha habido ninguna de las temporadas cargadas.
- *
- * Pero la frase **no vale para cualquier mes vacío**. Un enero sin torneos con
- * los filtros puestos no es pretemporada: es que el filtro se ha comido el
- * mes. Decir «pretemporada» ahí sería inventarse una explicación, que es lo
- * que prohíbe la regla número uno del proyecto. Así que los meses de verano
- * llevan su frase y el resto lleva la verdad: que no hay nada publicado con
- * estos filtros.
- */
-export function esPretemporada(mes: number): boolean {
-  return mes === 5 || mes === 6 || mes === 7 || mes === 8; // jun, jul, ago, sep
-}
+/*
+  `esPretemporada()` vivía aquí y se ha ido entera.
+
+  Servía para que un septiembre vacío dijera «mes de pretemporada y descanso».
+  Era falso, y lo corrigió el usuario: en septiembre hay satélites y otras
+  pruebas; lo que pasa es que no las hemos ingerido. La función afirmaba algo
+  sobre el calendario español a partir de lo que tenemos en la base, que son
+  dos cosas distintas. El estado vacío ahora no explica nada.
+*/

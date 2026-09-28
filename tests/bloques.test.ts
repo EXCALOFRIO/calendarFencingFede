@@ -4,7 +4,6 @@ import {
   capsulaDeFecha,
   diasSemanaOcupados,
   esEntreSemana,
-  esPretemporada,
   huecoEntre,
   itemsDelMes,
   lunesDeLaSemana,
@@ -12,7 +11,6 @@ import {
   rangoRealDeEvento,
   textoDeDuracion,
 } from '@/lib/calendario/bloques';
-import { etiquetasDeChips } from '@/lib/calendario/rotulos';
 import type { CompetitionView, EventView } from '@/lib/queries/calendar';
 
 /**
@@ -361,66 +359,5 @@ describe('el reparto por meses', () => {
     ]);
     // Septiembre de 2026 está vacío de verdad en el calendario real.
     expect(itemsDelMes(bloques, 2026, 8)).toEqual([]);
-  });
-});
-
-describe('los chips de un bloque múltiple se distinguen entre sí', () => {
-  /**
-   * El caso salió de mirar la captura del calendario sin filtros: el fin de
-   * semana del 5 al 8 de noviembre de 2026 tenía cinco chips que decían todos
-   * «Copa Mundo Cadete» o «Copa Mundo Júnior», cada uno abriendo una ficha
-   * distinta. Es el mismo fallo que el usuario cazó con las tres jornadas de
-   * liga, por el otro lado: allí el nombre se cortaba, aquí el nombre entero
-   * no distingue, porque la fuente publica cada arma de una Copa del Mundo
-   * como un evento propio.
-   */
-  it('añade la ciudad cuando dos torneos del bloque se llamarían igual', () => {
-    const a = evento({ name: 'TNR M17', city: 'ALCOBENDAS' });
-    const b = evento({ name: 'TNR M17', city: 'SABADELL' });
-    const m = etiquetasDeChips([a, b]);
-    expect(m.get(a.id)).toBe('TNR M17 · Alcobendas');
-    expect(m.get(b.id)).toBe('TNR M17 · Sabadell');
-  });
-
-  it('si la ciudad es la misma, los separa el arma', () => {
-    const a = evento({
-      name: 'Copa del Mundo Cadete',
-      city: 'MANAMA',
-      competitions: [prueba({ weapon: 'SABLE' })],
-    });
-    const b = evento({
-      name: 'Copa del Mundo Cadete',
-      city: 'MANAMA',
-      competitions: [prueba({ weapon: 'FLORETE' })],
-    });
-    const m = etiquetasDeChips([a, b]);
-    expect(m.get(a.id)).toBe('C. Mundo Cadete · SAB');
-    expect(m.get(b.id)).toBe('C. Mundo Cadete · FLO');
-  });
-
-  /** Y si el nombre ya es único, el chip se queda corto: cada carácter de más
-   *  es un chip menos por fila. */
-  it('no añade nada cuando el nombre ya distingue', () => {
-    const a = evento({ name: 'Liga Nacional de Oro 1ª Jornada' });
-    const b = evento({ name: 'Liga Nacional de Plata 1ª Jornada' });
-    const m = etiquetasDeChips([a, b]);
-    expect(m.get(a.id)).toBe('Liga de Oro 1ª J.');
-    expect(m.get(b.id)).toBe('Liga de Plata 1ª J.');
-  });
-});
-
-describe('el estado vacío no se inventa una explicación', () => {
-  /**
-   * El brief pedía «Septiembre es mes de pretemporada y descanso», y para
-   * septiembre es verdad: la temporada española arranca en octubre. Pero un
-   * enero vacío no es pretemporada, es que el filtro se ha comido el mes, y
-   * escribir «pretemporada» ahí sería inventarse una explicación oficial.
-   */
-  it('solo el verano es pretemporada', () => {
-    expect(esPretemporada(8)).toBe(true); // septiembre
-    expect(esPretemporada(6)).toBe(true); // julio
-    expect(esPretemporada(0)).toBe(false); // enero
-    expect(esPretemporada(9)).toBe(false); // octubre
-    expect(esPretemporada(2)).toBe(false); // marzo
   });
 });

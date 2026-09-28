@@ -118,62 +118,15 @@ export function apretarNombre(nombre: string): string {
     .trim();
 }
 
-/**
- * TRES CHIPS QUE DICEN «COPA MUNDO CADETE» NO SON TRES CHIPS.
- *
- * Esto sale de mirar la captura del calendario sin filtros, que es el caso
- * peor y el que de verdad se rompe: el fin de semana del 5 al 8 de noviembre
- * de 2026 tiene seis torneos y la fila de chips salía
- *
- *   [Copa Mundo Cadete] [Copa Mundo Cadete] [Copa Mundo Cadete]
- *   [Copa Mundo Júnior] [Copa Mundo Júnior]
- *
- * O sea: cinco botones que se leen igual, cada uno abriendo una ficha
- * distinta. Es el mismo fallo que el usuario cazó en la rejilla con las tres
- * jornadas de liga —*«tres barras idénticas para tres competiciones
- * distintas»*— y reaparece aquí por el otro lado: allí el nombre se cortaba,
- * aquí el nombre entero **no distingue**, porque la fuente publica cada
- * prueba de una Copa del Mundo como un evento propio.
- *
- * Lo que los separa, por orden de utilidad para quien mira:
- *
- *   1. **La ciudad**, si es distinta. Dos «TNR M17» el mismo domingo son
- *      Alcobendas y Sabadell, y eso es lo primero que se pregunta.
- *   2. **El arma**, si la ciudad es la misma. Las cinco Copas del Mundo de
- *      Manama se distinguen por sable, florete y espada, y nada más.
- *
- * Y solo se añade **cuando hace falta**: si el nombre ya es único en el
- * bloque, el chip se queda corto, porque cada carácter de más es un chip
- * menos por fila.
- */
-export function etiquetasDeChips(eventos: EventView[]): Map<string, string> {
-  const corto = new Map(eventos.map((e) => [e.id, apretarNombre(titularTorneo(e.name))]));
+/*
+  `etiquetasDeChips()` vivía aquí y se ha ido.
 
-  const cuantos = new Map<string, number>();
-  for (const n of corto.values()) cuantos.set(n, (cuantos.get(n) ?? 0) + 1);
-
-  const salida = new Map<string, string>();
-  for (const e of eventos) {
-    const nombre = corto.get(e.id) ?? e.name;
-    if ((cuantos.get(nombre) ?? 0) < 2) {
-      salida.set(e.id, nombre);
-      continue;
-    }
-
-    const homonimos = eventos.filter((o) => corto.get(o.id) === nombre);
-    const ciudadDistingue = homonimos.some((o) => (o.city ?? '') !== (e.city ?? ''));
-    if (ciudadDistingue && e.city) {
-      salida.set(e.id, `${nombre} · ${titular(e.city)}`);
-      continue;
-    }
-
-    const armas = armasDe(e)
-      .map((a) => WEAPON_SHORT[a])
-      .join('/');
-    salida.set(e.id, armas ? `${nombre} · ${armas}` : nombre);
-  }
-  return salida;
-}
+  Acortaba el nombre de un torneo para que cupiera en un chip, y le pegaba la
+  ciudad o el arma cuando dos chips del mismo bloque se llamarían igual. Ya no
+  hay chips: en un bloque múltiple todas las competiciones llevan su fila
+  entera, con su nombre completo y su sede, así que no hay nada que acortar ni
+  que desambiguar.
+*/
 
 /**
  * Dónde se tira.

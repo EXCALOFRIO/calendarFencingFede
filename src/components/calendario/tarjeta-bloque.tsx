@@ -14,7 +14,6 @@ import {
 import {
   armasDe,
   categoriasDe,
-  etiquetasDeChips,
   generosDe,
   pastillaDeCircuito,
   plazoDe,
@@ -142,10 +141,24 @@ export function TarjetaBloque({
         esProximo && !resaltado && 'ring-1 ring-primary-text',
       )}
     >
-      <span
-        aria-hidden
-        className={cn('absolute inset-y-0 left-0 w-[3px]', color.punto)}
-      />
+      {/*
+        EL FILETE, PARTIDO CUANDO EL BLOQUE MEZCLA ORGANISMOS.
+
+        Era del color del primer torneo, y eso pintaba de turquesa —«Europeo
+        (EFC)», según la leyenda— una tarjeta en la que tres de las cuatro
+        competiciones son de la RFEE. Es el mismo fallo que la bandera del
+        titular, del que viene todo este cambio: el resumen de arriba
+        contradecía el contenido de abajo.
+
+        Con un organismo, una barra. Con varios, un tramo por organismo en el
+        orden en que aparecen: se ve de un vistazo que ahí hay de dos sitios, y
+        cuál pesa más. Las etiquetas de cada fila siguen diciéndolo con letras.
+      */}
+      <span aria-hidden className="absolute inset-y-0 left-0 flex w-[3px] flex-col">
+        {organismosDelBloque(bloque).map((c, i) => (
+          <span key={i} className={cn('flex-1', c.punto)} />
+        ))}
+      </span>
 
       {variante === 'zonas' ? (
         <div className="flex min-w-0 items-stretch pl-[3px]">
@@ -190,6 +203,19 @@ export function TarjetaBloque({
       )}
     </article>
   );
+}
+
+/**
+ * Los colores de organismo del bloque, sin repetir y en el orden en que
+ * aparecen las competiciones. Casi siempre devuelve uno solo.
+ */
+function organismosDelBloque(bloque: Bloque): ColorOrganismo[] {
+  const vistos = new Map<string, ColorOrganismo>();
+  for (const e of bloque.eventos) {
+    const c = colorDe(e);
+    if (!vistos.has(c.punto)) vistos.set(c.punto, c);
+  }
+  return [...vistos.values()];
 }
 
 function colorDe(evento: EventView): ColorOrganismo {
@@ -533,17 +559,46 @@ function CuerpoUnico({
  *
  *   1. Una etiqueta pequeña arriba, `Competición múltiple`, para que no
  *      parezca que la tarjeta se ha comido datos.
- *   2. **Primero el internacional**, con su nombre entero y su sede: es lo que
- *      decide un viaje y un billete.
- *   3. Un filete interno, y debajo los nacionales.
- *   4. Y cuando los nacionales son tres o más —el caso de las ligas— van como
- *      **chips horizontales compactos** en vez de una lista con guiones. Tres
- *      ligas en tres renglones son tres renglones; en una fila de chips son
- *      uno, y lo que se quiere saber de ellas es que están, no sus detalles.
+ *   2. Y debajo **una sección por competición**, cada una completa: nombre,
+ *      bandera, sede, organismo, prueba y plazo, separadas por un filete.
  *
- * Cada nombre y cada chip sigue abriendo SU ficha. Eso es lo que separa esto
- * de un resumen: el agrupamiento es visual, no destruye el acceso a nada.
+ * Cada sección abre SU ficha. El agrupamiento es visual, no destruye el
+ * acceso a nada.
+ *
+ * ---------------------------------------------------------------------------
+ * POR QUÉ YA NO HAY UN TORNEO ASCENDIDO A TITULAR Y EL RESTO EN CHIPS
+ * ---------------------------------------------------------------------------
+ * Esto estaba mal, y el usuario lo pilló con el caso exacto: el sábado 3 de
+ * octubre la tarjeta ponía arriba «Eurofence League · Antony» **con la bandera
+ * de Francia**, y el TNR absoluto de Sabadell quedaba abajo como un chip sin
+ * bandera ni ciudad. Sus palabras: *«me estaba volviendo loco viendo la
+ * bandera francesa, que no veía que era el TNR que es en España, en Sabadell,
+ * y no lo veo visualmente»*.
+ *
+ * O sea que el resumen no era neutro: **la cápsula entera parecía francesa**.
+ * Con una sola bandera arriba, el chip no es «menos detalle», es detalle
+ * contradicho — y el dato que más se busca de un vistazo en este calendario es
+ * precisamente si el torneo es en España.
+ *
+ * Así que ya no se asciende a nadie. Todas las competiciones van iguales, con
+ * su fila entera. Ocupa más, y es lo correcto: *«aunque ocupe más, pero es
+ * normal, porque son 4 competiciones»*.
+ *
+ * El único límite es `TOPE`, y no es para ahorrar sitio sino para el caso sin
+ * filtros de la dirección técnica, donde un fin de semana junta diez torneos y
+ * una columna de mes se convertiría en una sola tarjeta. Pasado el tope, los
+ * que faltan **no se enseñan a medias**: se cuentan y se despliegan con un
+ * toque, que es honesto de las dos maneras.
  */
+
+/**
+ * Cuántas secciones enteras caben antes de plegar el resto.
+ *
+ * Cuatro porque es el caso que se señaló y porque cuatro filas de nombre+sede
+ * son ~150 px: la tarjeta sigue siendo una tarjeta dentro de la columna del
+ * mes. A partir de ahí manda el contador.
+ */
+const TOPE = 4;
 function CuerpoMultiple({
   bloque,
   inscripciones,
@@ -552,8 +607,9 @@ function CuerpoMultiple({
   mostrarCategoria,
   onAbrir,
 }: { bloque: Bloque } & Comun) {
-  const { destacados, agrupados } = repartir(bloque);
-  const etiquetas = etiquetasDeChips(bloque.eventos);
+  const [todos, setTodos] = React.useState(false);
+  const visibles = todos ? bloque.eventos : bloque.eventos.slice(0, TOPE);
+  const ocultos = bloque.eventos.length - visibles.length;
 
   return (
     <div className="flex min-w-0 flex-col px-2.5 py-2">
@@ -561,7 +617,7 @@ function CuerpoMultiple({
         Competición múltiple · {bloque.eventos.length} torneos
       </span>
 
-      {destacados.map((evento, i) => (
+      {visibles.map((evento, i) => (
         <FilaEvento
           key={evento.id}
           evento={evento}
@@ -574,47 +630,24 @@ function CuerpoMultiple({
         />
       ))}
 
-      {agrupados.length > 0 ? (
-        <div
-          className={cn(
-            'flex min-w-0 flex-wrap items-center gap-1',
-            destacados.length > 0 && 'mt-1.5 border-t border-filete pt-1.5',
-          )}
+      {ocultos > 0 ? (
+        <button
+          type="button"
+          onClick={() => setTodos(true)}
+          className="objetivo-libre mt-1.5 w-full border-t border-filete pt-1.5 text-left text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
-          {agrupados.map((evento) => (
-            <ChipTorneo
-              key={evento.id}
-              evento={evento}
-              etiqueta={etiquetas.get(evento.id) ?? titularTorneo(evento.name)}
-              inscrito={estaInscrito(evento, inscripciones)}
-              onAbrir={onAbrir}
-            />
-          ))}
-        </div>
+          Ver {ocultos === 1 ? 'el otro torneo' : `los otros ${ocultos} torneos`}
+        </button>
       ) : null}
     </div>
   );
 }
 
-/**
- * Quién va con nombre entero y quién va como chip.
- *
- * El corte no es «internacional arriba, nacional abajo» sin más: es **cuántos
- * hay**. Con dos torneos el sitio da para los dos con su sede, y convertir uno
- * en chip sería esconder información que cabía. Con cinco no cabe ninguno, así
- * que se queda con nombre entero el más importante —el internacional, y si no
- * hay, el circuito de más rango— y el resto pasa a chips.
- *
- * El número es dos porque es lo que mide: dos filas de nombre + sede son 72 px
- * y la tarjeta se queda en el alto de su cápsula; la tercera la desborda y
- * empieza a descuadrar la columna, que es el problema del que se venía.
- */
-function repartir(bloque: Bloque): { destacados: EventView[]; agrupados: EventView[] } {
-  if (bloque.eventos.length <= 2) {
-    return { destacados: bloque.eventos, agrupados: [] };
-  }
-  return { destacados: bloque.eventos.slice(0, 1), agrupados: bloque.eventos.slice(1) };
-}
+/*
+  `repartir()` vivía aquí y se ha ido: era la función que ascendía un torneo a
+  titular y mandaba el resto a chips. Ver el comentario de `CuerpoMultiple`:
+  el ascenso hacía que un bloque con un TNR español pareciera francés.
+*/
 
 /** Una fila con nombre entero, sede y pastillas, dentro de un bloque múltiple. */
 function FilaEvento({
@@ -666,52 +699,12 @@ function FilaEvento({
   );
 }
 
-/**
- * Un torneo como chip compacto.
- *
- * La etiqueta la resuelve `etiquetasDeChips()`: apretada, porque lo que
- * distingue a las tres ligas del mismo sábado está al final —Iberdrola, Oro,
- * Plata— y con el nombre entero el chip mide 200 px y solo cabe uno por fila;
- * y con la ciudad o el arma detrás **solo cuando dos chips del mismo bloque se
- * llamarían igual**, que es lo que pasa con las cinco Copas del Mundo del
- * mismo fin de semana.
- *
- * `objetivo-libre` a propósito: la regla de 44 px de `globals.css` convertiría
- * un chip de 20 px de alto en un bloque de 44 y tres chips en 132 px de
- * tarjeta. Aquí se acepta más pequeño porque van pegados formando una
- * superficie continua, que es el mismo motivo por el que se aceptaba en las
- * barras del calendario.
- */
-function ChipTorneo({
-  evento,
-  etiqueta,
-  inscrito,
-  onAbrir,
-}: {
-  evento: EventView;
-  /** Ya resuelta por `etiquetasDeChips`: corta, y desambiguada si hacía falta. */
-  etiqueta: string;
-  inscrito: boolean;
-  onAbrir: (e: EventView) => void;
-}) {
-  const color = colorDe(evento);
-  return (
-    <button
-      type="button"
-      data-barra="torneo"
-      onClick={() => onAbrir(evento)}
-      className={cn(
-        'objetivo-libre flex min-h-[22px] cursor-pointer items-center gap-1 rounded-[4px] px-1.5 py-0.5 text-[0.7rem] font-medium leading-none transition-colors hover:brightness-125 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        color.tintePastilla,
-        color.texto,
-      )}
-      aria-label={`${titularTorneo(evento.name)}. Abrir la ficha.`}
-    >
-      {inscrito ? <Check className="size-3 shrink-0 text-ok" aria-hidden /> : null}
-      {etiqueta}
-    </button>
-  );
-}
+/*
+  `ChipTorneo` vivía aquí y se ha ido con el reparto en titular + chips. Los
+  chips eran el síntoma: un torneo sin bandera ni ciudad debajo de otro que sí
+  las tenía. Ahora todas las competiciones de un bloque van con su fila
+  entera; ver `CuerpoMultiple`.
+*/
 
 /**
  * ===========================================================================
@@ -809,13 +802,16 @@ function ApiladaUnica({
 }
 
 /**
- * El fin de semana múltiple en el móvil: dos chips y un «+N más».
+ * El fin de semana múltiple en el móvil: una sección por competición.
  *
- * Con cinco torneos y 380 px, cinco chips son tres filas y la tarjeta mide 200
- * px. Dos chips y el resto contados caben en una, y el «+3 más» abre la
- * tarjeta entera en el sitio donde de verdad se puede leer: la lista de
- * pruebas de la ficha. No es un recorte silencioso —la cuenta se ve— y es lo
- * que el usuario pidió.
+ * Aquí había un torneo con nombre, bandera y sede, y el resto como chips.
+ * Mismo fallo que en el escritorio y por el mismo motivo: con una sola
+ * bandera arriba, un fin de semana que incluye el TNR de Sabadell se lee como
+ * francés. En una pantalla de 390 px, donde solo caben dos o tres tarjetas,
+ * eso es peor todavía.
+ *
+ * Ahora todas las competiciones llevan su fila entera, plegadas a partir de
+ * `TOPE`. Ver el comentario largo de `CuerpoMultiple`.
  */
 function ApiladaMultiple({
   bloque,
@@ -836,11 +832,8 @@ function ApiladaMultiple({
   entreSemana: boolean;
 } & Comun) {
   const [todos, setTodos] = React.useState(false);
-  const etiquetas = etiquetasDeChips(bloque.eventos);
-  const principal = bloque.eventos[0];
-  const resto = bloque.eventos.slice(1);
-  const visibles = todos ? resto : resto.slice(0, 2);
-  const ocultos = resto.length - visibles.length;
+  const visibles = todos ? bloque.eventos : bloque.eventos.slice(0, TOPE);
+  const ocultos = bloque.eventos.length - visibles.length;
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5 px-2.5 py-2">
@@ -853,53 +846,48 @@ function ApiladaMultiple({
         Competición múltiple · {bloque.eventos.length} torneos
       </span>
 
-      <button
-        type="button"
-        data-agenda="tarjeta"
-        data-barra="torneo"
-        onClick={() => onAbrir(principal)}
-        className="flex w-full min-w-0 cursor-pointer flex-col gap-1 rounded-sm text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-        aria-label={`${titularTorneo(principal.name)}. Abrir la ficha.`}
-      >
-        <span className="flex w-full min-w-0 items-start gap-2">
-          <span className="min-w-0 flex-1 text-sm font-semibold leading-snug">
-            {titularTorneo(principal.name)}
+      {visibles.map((evento, k) => (
+        <button
+          key={evento.id}
+          type="button"
+          data-agenda="tarjeta"
+          data-barra="torneo"
+          onClick={() => onAbrir(evento)}
+          className={cn(
+            'flex w-full min-w-0 cursor-pointer flex-col gap-1 rounded-sm text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+            k > 0 && 'border-t border-filete pt-1.5',
+          )}
+          aria-label={`${titularTorneo(evento.name)}. Abrir la ficha.`}
+        >
+          <span className="flex w-full min-w-0 items-start gap-2">
+            <span className="min-w-0 flex-1 text-sm font-semibold leading-snug">
+              {titularTorneo(evento.name)}
+            </span>
+            {estaInscrito(evento, inscripciones) ? <Inscrito clase="mt-px" /> : null}
           </span>
-          {estaInscrito(principal, inscripciones) ? <Inscrito clase="mt-px" /> : null}
-        </span>
-        <Sede evento={principal} />
-        <span className="flex w-full min-w-0 flex-wrap items-center gap-1">
-          <PastillaCircuito evento={principal} />
-          <PastillasPrueba
-            evento={principal}
-            mostrarArma={mostrarArma}
-            mostrarGenero={mostrarGenero}
-            mostrarCategoria={mostrarCategoria}
-          />
-          <Plazo evento={principal} />
-        </span>
-      </button>
+          <Sede evento={evento} />
+          <span className="flex w-full min-w-0 flex-wrap items-center gap-1">
+            <PastillaCircuito evento={evento} />
+            <PastillasPrueba
+              evento={evento}
+              mostrarArma={mostrarArma}
+              mostrarGenero={mostrarGenero}
+              mostrarCategoria={mostrarCategoria}
+            />
+            <Plazo evento={evento} />
+          </span>
+        </button>
+      ))}
 
-      <div className="flex min-w-0 flex-wrap items-center gap-1 border-t border-filete pt-1.5">
-        {visibles.map((evento) => (
-          <ChipTorneo
-            key={evento.id}
-            evento={evento}
-            etiqueta={etiquetas.get(evento.id) ?? titularTorneo(evento.name)}
-            inscrito={estaInscrito(evento, inscripciones)}
-            onAbrir={onAbrir}
-          />
-        ))}
-        {ocultos > 0 ? (
-          <button
-            type="button"
-            onClick={() => setTodos(true)}
-            className="objetivo-libre min-h-[22px] cursor-pointer rounded-[4px] bg-secondary px-1.5 py-0.5 text-[0.7rem] font-medium leading-none text-muted-foreground transition-colors hover:text-foreground"
-          >
-            +{ocultos} más
-          </button>
-        ) : null}
-      </div>
+      {ocultos > 0 ? (
+        <button
+          type="button"
+          onClick={() => setTodos(true)}
+          className="objetivo-libre w-full border-t border-filete pt-1.5 text-left text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
+          Ver {ocultos === 1 ? 'el otro torneo' : `los otros ${ocultos} torneos`}
+        </button>
+      ) : null}
     </div>
   );
 }

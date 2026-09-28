@@ -250,6 +250,23 @@ export function BanderaPais({
   const pastilla = (
     <abbr
       title={nombre ?? undefined}
+      /*
+        EL `title` NO SE COMPARA EN LA HIDRATACIÓN, Y ES A PROPÓSITO.
+
+        Sale de `Intl.DisplayNames`, o sea de los datos de idioma del runtime
+        que lo pinta — y esos NO coinciden: el ICU de Node dice «RAE de Hong
+        Kong (China)» y el de Chrome dice «Hong Kong». React lo cazaba como
+        desajuste de hidratación en cuanto el calendario enseñaba un torneo de
+        Hong Kong, y era un error de consola en toda la portada.
+
+        Los dos nombres son correctos; es la versión de CLDR la que cambia. Y
+        esto es un rótulo emergente, no un dato de la aplicación: el código del
+        país, que sí es nuestro, se pinta como texto y ese sí se compara. Así
+        que se silencia solo este atributo, con el motivo escrito, en vez de
+        renunciar al nombre o calcularlo después de montar y que el primer
+        segundo no tenga tooltip.
+      */
+      suppressHydrationWarning
       aria-hidden={conNombre && nombre ? true : undefined}
       className={cn(
         'inline-grid shrink-0 place-items-center rounded-sm border bg-secondary',
@@ -279,7 +296,17 @@ export function BanderaPais({
     <span className={cn('inline-flex items-center gap-1.5', className)}>
       {bandera}
       {pastilla}
-      <span className={tamaño === 'fila' ? 'text-xs' : 'text-sm'}>
+      {/*
+        Mismo motivo que el `title` de la pastilla: el nombre lo pone
+        `Intl.DisplayNames` y las dos versiones de CLDR —la de Node y la del
+        navegador— dan nombres distintos para un puñado de territorios. Los
+        dos son correctos y el que manda es el del navegador, que es el que se
+        queda. Lo que no puede es tumbar la hidratación de la página entera.
+      */}
+      <span
+        suppressHydrationWarning
+        className={tamaño === 'fila' ? 'text-xs' : 'text-sm'}
+      >
         {nombre ?? codigo}
       </span>
     </span>

@@ -236,7 +236,13 @@ export function VistaCalendario({
     [perfil, tirador, categoriasDisponibles],
   );
 
-  const [vista, setVista] = React.useState<Vista>('mes');
+  /*
+    ARRANCA EN TRES MESES, no en uno. Petición literal: *«pon por defecto
+    siempre 3 meses vista»*. Y tiene sentido con los bloques: una temporada de
+    esgrima se planifica por trimestres —hay que pedir vuelos y pedir días—, y
+    un mes solo deja fuera justo lo que se está decidiendo.
+  */
+  const [vista, setVista] = React.useState<Vista>('trimestre');
   const [ancla, setAncla] = React.useState(() => new Date());
   const [armas, setArmas] = React.useState<Weapon[]>(propio.armas);
   const [generos, setGeneros] = React.useState<('M' | 'F')[]>(propio.generos);
@@ -842,13 +848,23 @@ export function VistaCalendario({
               mostrarGenero={mostrarGenero}
               mostrarCategoria={mostrarCategoria}
               onAbrir={setAbierto}
+              /*
+                «Lo próximo, fuera de este mes» SOLO en la vista de un mes.
+                En el trimestre no tiene sentido y era la queja: la sección
+                existe para responder «¿y entonces cuándo compito?» cuando el
+                mes que miras está flojo. Con tres meses delante esa pregunta
+                ya está contestada arriba, y lo que hacía era empujar hacia
+                abajo torneos que sí estaban en el tramo.
+              */
               pie={
-                <LoQueViene
-                  eventos={fuera}
-                  variante="apilada"
-                  inscripciones={inscripciones}
-                  onAbrir={setAbierto}
-                />
+                vista === 'mes' ? (
+                  <LoQueViene
+                    eventos={fuera}
+                    variante="apilada"
+                    inscripciones={inscripciones}
+                    onAbrir={setAbierto}
+                  />
+                ) : null
               }
             />
           </div>
@@ -883,10 +899,10 @@ export function VistaCalendario({
             un relleno: la segunda responde a la única pregunta que deja un mes
             flojo, que es «y entonces cuándo compito».
 
-            En trimestre las tres columnas ya se llevan el ancho, y «lo
-            próximo» va debajo a lo ancho, en su propia rejilla de tres. Una
-            sola vez y no una por columna: tres listas idénticas serían el mismo
-            torneo repetido tres veces.
+            En trimestre no hay «lo próximo» en absoluto. Estuvo debajo, a lo
+            ancho, y sobraba: la sección contesta «¿y entonces cuándo compito?»
+            para un mes flojo, y con tres meses delante eso ya se ve. Además
+            repetía torneos que estaban dos columnas más allá.
           */}
           <div
             /*
@@ -948,16 +964,6 @@ export function VistaCalendario({
               ) : null}
             </div>
 
-            {/* En trimestre, debajo y a lo ancho. */}
-            {vista === 'trimestre' ? (
-              <LoQueViene
-                eventos={fuera}
-                variante="zonas"
-                enRejilla
-                inscripciones={inscripciones}
-                onAbrir={setAbierto}
-              />
-            ) : null}
           </div>
 
           <Leyenda />

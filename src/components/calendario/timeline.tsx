@@ -3,7 +3,6 @@
 import { CalendarOff } from 'lucide-react';
 import * as React from 'react';
 import {
-  esPretemporada,
   itemsDelMes,
   nombreDeMes,
   rangoCorto,
@@ -147,31 +146,26 @@ function ItemDeLista({
  * información.
  *
  * ---------------------------------------------------------------------------
- * LA SEGUNDA LÍNEA NO SE INVENTA, Y ESTE ES EL MATIZ QUE IMPORTA
+ * NI «SIN COMPETICIONES OFICIALES» NI «PRETEMPORADA»: LAS DOS ERAN MENTIRA
  * ---------------------------------------------------------------------------
- * El brief pedía literalmente «Septiembre es mes de pretemporada y descanso».
- * Para septiembre es verdad —la temporada española arranca en octubre y
- * ninguna de las temporadas cargadas tiene competición oficial en julio,
- * agosto ni septiembre— y ahí va esa frase.
+ * Aquí ponía «Sin competiciones oficiales · Septiembre es mes de pretemporada
+ * y descanso», y el usuario lo corrigió con el dato: *«es falso, hay satélites
+ * y cosas, solo que no lo has ingestado»*. Y tiene razón — el fallo era de
+ * bulto: la aplicación estaba afirmando algo sobre **el calendario español**
+ * cuando lo único que sabe es **lo que tiene cargado**. Un mes que no hemos
+ * ingerido no es un mes sin competiciones.
  *
- * Pero **no vale para cualquier mes vacío**, y por eso `esPretemporada()`
- * existe y está acotada. Un enero sin torneos no es pretemporada: es que el
- * filtro de arma, género o categoría se ha comido el mes. Escribir
- * «pretemporada» ahí sería inventarse una explicación oficial, que es la regla
- * número uno del proyecto. Así que fuera del verano se dice la verdad —que con
- * estos filtros no hay nada— y se ofrece la salida real, que es abrir los
- * filtros.
+ * Así que la casilla no explica nada. Dice que aquí no hay nada cargado, que
+ * es lo único que nos consta, y se calla. Por eso también se ha ido
+ * `esPretemporada()`: no había forma honesta de usarla.
  */
 function MesVacioEscritorio({ anio, mes }: { anio: number; mes: number }) {
   const nombre = nombreDeMes(anio, mes, false);
   return (
     <div className="flex min-h-[10rem] flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-6 text-center">
       <CalendarOff className="size-8 opacity-20" aria-hidden />
-      <p className="text-sm font-semibold">Sin competiciones oficiales</p>
       <p className="medida text-xs text-muted-foreground">
-        {esPretemporada(mes)
-          ? `${nombre} es mes de pretemporada y descanso.`
-          : `No hay nada publicado en ${nombre.toLowerCase()} con los filtros puestos.`}
+        Nada cargado en {nombre.toLowerCase()}.
       </p>
     </div>
   );
@@ -351,10 +345,8 @@ function MesVacioMovil({ anio, mes }: { anio: number; mes: number }) {
     <div className="mb-2 flex items-center gap-2.5 rounded-lg border border-dashed px-3 py-3">
       <CalendarOff className="size-5 shrink-0 opacity-20" aria-hidden />
       <p className="min-w-0 text-xs">
-        <span className="font-semibold">
-          {esPretemporada(mes) ? `${nombre}: mes de pretemporada` : nombre}
-        </span>{' '}
-        <span className="text-muted-foreground">· Sin competiciones programadas.</span>
+        <span className="font-semibold">{nombre}</span>{' '}
+        <span className="text-muted-foreground">· nada cargado.</span>
       </p>
     </div>
   );
