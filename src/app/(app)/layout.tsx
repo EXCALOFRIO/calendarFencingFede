@@ -1,4 +1,5 @@
 import { LogOut } from 'lucide-react';
+import { salir } from './salir';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Marca } from '@/components/marca';
@@ -151,7 +152,7 @@ export default async function AppLayout({
               </span>
             </Link>
 
-            <form action="/api/auth/sign-out" method="post">
+            <form action={salir}>
               <Button variant="ghost" size="icon" type="submit" aria-label="Salir">
                 <LogOut />
               </Button>

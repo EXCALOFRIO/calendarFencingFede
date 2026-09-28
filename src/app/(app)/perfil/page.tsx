@@ -1,4 +1,5 @@
 import { LogOut } from 'lucide-react';
+import { salir } from '../salir';
 import { headers } from 'next/headers';
 import Link from 'next/link';
 import { Seccion } from '@/components/estado/piezas';
@@ -155,7 +156,7 @@ export default async function Pagina() {
             Se cierra la sesión en este dispositivo. Los calendarios que tengas
             suscritos siguen actualizándose: no dependen de estar dentro.
           </p>
-          <form action="/api/auth/sign-out" method="post">
+          <form action={salir}>
             <Button variant="outline" type="submit">
               <LogOut /> Salir de la sesión
             </Button>
