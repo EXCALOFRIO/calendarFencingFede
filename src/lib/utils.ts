@@ -154,6 +154,7 @@ export const GENDER_LABEL = {
 export const GENDER_SHORT = { M: 'M', F: 'F', MIXTO: 'Mx' } as const;
 
 export const CATEGORY_LABEL = {
+  M7: 'M7',
   M9: 'M9',
   M11: 'M11',
   M13: 'M13',

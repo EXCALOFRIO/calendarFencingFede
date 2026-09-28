@@ -1033,7 +1033,43 @@ async function saveQuarantine(
    * día (cientos), y es justo el día en que la función no se puede permitir
    * gastar un viaje a Neon por cada una.
    */
-  for (const lote of chunk(items, 100)) {
+  /**
+   * ===========================================================================
+   * LO MISMO NO SE ENCUARENTENA DOS VECES
+   * ===========================================================================
+   *
+   * Sin esto, cada pasada nocturna vuelve a meter las MISMAS filas, porque el
+   * dato de origen sigue igual de mal. Resultado medido en la bandeja: 139
+   * pendientes de las que 19 eran **el mismo torneo** —«Championnats
+   * asiatiques cadets par equipes», con la fecha de fin anterior a la de
+   * inicio— repetido una vez por noche, y otras treinta con dos y tres copias.
+   *
+   * Con la bandeja así no se revisa: hay que bajar veinte tarjetas idénticas
+   * para llegar a la siguiente causa distinta, y el contador de pendientes
+   * mide noches en vez de problemas.
+   *
+   * La clave es `source` + `source_id`, y se salta si ya hay una **sin
+   * resolver**. Que no sea el error exacto es a propósito: si el mismo torneo
+   * falla hoy por la fecha y mañana por la categoría, sigue siendo un torneo
+   * que hay que mirar una vez. Y si alguien la marca revisada y la fila vuelve
+   * a fallar, entra de nuevo, que es lo que se quiere: eso sí es información
+   * nueva.
+   */
+  const yaPendientes = new Set(
+    (
+      await db
+        .select({ sourceId: ingestQuarantine.sourceId })
+        .from(ingestQuarantine)
+        .where(
+          and(eq(ingestQuarantine.source, source), isNull(ingestQuarantine.resolvedAt)),
+        )
+    ).map((f) => f.sourceId ?? ''),
+  );
+
+  const nuevos = items.filter((item) => !yaPendientes.has(item.sourceId ?? ''));
+  if (nuevos.length === 0) return 0;
+
+  for (const lote of chunk(nuevos, 100)) {
     await db.insert(ingestQuarantine).values(
       lote.map((item) => ({
         ingestRunId: runId,
@@ -1044,7 +1080,7 @@ async function saveQuarantine(
       })),
     );
   }
-  return items.length;
+  return nuevos.length;
 }
 
 /**

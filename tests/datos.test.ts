@@ -330,16 +330,31 @@ describe('un plazo calculado nunca se presenta igual que uno publicado', () => {
 // ---------------------------------------------------------------------------
 
 describe('lo que no valida va a cuarentena y NO al calendario', () => {
-  it('ninguna fila en cuarentena ha entrado como evento', async () => {
+  /**
+   * La regla es sobre lo que está **sin resolver**, y no es un matiz: una fila
+   * resuelta significa justo que ya no bloquea.
+   *
+   * Antes esto miraba la tabla entera, y era correcto mientras una fila en
+   * cuarentena no pudiera entrar nunca. Cambió al arreglar las causas: los
+   * tramos de veteranos («+50») y M7 ya se mapean, y el torneo de la FIE con
+   * la fecha de fin anterior a la de inicio ya entra usando el inicio. Esos
+   * eventos están ahora en el calendario Y en el historial de cuarentena, que
+   * es lo que se quiere —qué falló, cuándo y que se arregló—, y comprobarlo
+   * sobre la tabla entera convertía el arreglo en un fallo de prueba.
+   *
+   * Lo que sigue sin poder pasar, y es lo que de verdad importa: que algo
+   * pendiente de revisar esté publicado en el calendario.
+   */
+  it('ninguna fila pendiente en cuarentena ha entrado como evento', async () => {
+    const { isNull } = await import('drizzle-orm');
     const filas = await db
       .select({
         source: esquema.ingestQuarantine.source,
         sourceId: esquema.ingestQuarantine.sourceId,
         errores: esquema.ingestQuarantine.validationErrors,
       })
-      .from(esquema.ingestQuarantine);
-
-    expect(filas.length).toBeGreaterThan(0);
+      .from(esquema.ingestQuarantine)
+      .where(isNull(esquema.ingestQuarantine.resolvedAt));
 
     const { and, eq } = await import('drizzle-orm');
     for (const f of filas) {

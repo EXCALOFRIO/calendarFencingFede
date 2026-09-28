@@ -92,6 +92,13 @@
       "when": 1790540000000,
       "tag": "0013_inscritos_fie",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790550000000,
+      "tag": "0014_categoria_m7",
+      "breakpoints": true
     }
   ]
 }

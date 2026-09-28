@@ -51,6 +51,27 @@ export function mapCategory(raw: string | null | undefined): Category | null {
   const v = normalizeLabel(raw).replace(/[\s.]/g, '');
 
   if (v.startsWith('VET') || v === 'V' || v.startsWith('VETERAN')) return 'VET';
+
+  /**
+   * LOS TRAMOS DE VETERANOS: «+30», «+40», «+50», «+60», «+70».
+   *
+   * Así los escriben las federaciones autonómicas en Skermo, y era **la
+   * primera causa de cuarentena de toda la aplicación**: 456 pruebas de 488
+   * rechazadas por esto, o sea ligas catalanas y madrileñas enteras fuera del
+   * calendario. La cuarentena lo decía y nadie lo había mirado: «la categoría
+   * de una prueba, valor que no reconocemos, 30 veces».
+   *
+   * Son veteranos, sin ninguna duda: en esgrima «+40» es la categoría de
+   * cuarenta años o más. Se colapsan a `VET` igual que los `VET30`, `VET40`
+   * de otras federaciones —que ya funcionaban dos líneas arriba— y **el
+   * literal se guarda en `category_raw`**, que existe justo para esto: quien
+   * mire la prueba ve «+50», y el filtro por categoría la encuentra en
+   * veteranos.
+   *
+   * Se piden dos dígitos por lo bajo para no tragarse un «+1» que no
+   * signifique una edad.
+   */
+  if (/^\+\d{2}$/.test(v)) return 'VET';
   if (v === 'ABS' || v.startsWith('ABSOLUT') || v === 'S' || v.startsWith('SENIOR')) {
     return 'ABS';
   }
@@ -61,7 +82,11 @@ export function mapCategory(raw: string | null | undefined): Category | null {
   const m = v.match(/^M(\d{1,2})$/);
   if (m) {
     const code = `M${m[1]}` as Category;
-    if ((['M9', 'M11', 'M13', 'M14', 'M15', 'M17', 'M20', 'M23'] as string[]).includes(code)) {
+    if (
+      (['M7', 'M9', 'M11', 'M13', 'M14', 'M15', 'M17', 'M20', 'M23'] as string[]).includes(
+        code,
+      )
+    ) {
       return code;
     }
   }

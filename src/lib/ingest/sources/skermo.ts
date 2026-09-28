@@ -409,7 +409,24 @@ export function parseSkermoCalendar(
 
     const competition = {
       weapon: mapWeapon(pick(general, 'Arma')),
-      gender: mapGender(pick(general, 'Género')),
+      /**
+       * EL GÉNERO, Y SI NO ESTÁ, EL DEL NOMBRE DEL TORNEO.
+       *
+       * Hay pruebas en las que Skermo **no rellena el campo «Género»**: las
+       * mixtas de M9 de la federación madrileña, ocho en el calendario actual,
+       * llegan con el campo vacío. Sin género no pasan la validación y el
+       * torneo entero se quedaba en cuarentena, o sea fuera del calendario.
+       *
+       * Y el dato está publicado, solo que en otro sitio: el torneo se llama
+       * «1 FASE M9 SABLE MIXTO». Leerlo de ahí no es deducir nada —es la misma
+       * fuente diciendo lo mismo con otras palabras—, y solo se hace cuando el
+       * campo propio está vacío: si Skermo dice el género, manda Skermo.
+       *
+       * Si el nombre tampoco lo dice, sigue siendo `null` y la prueba va a
+       * cuarentena, que es lo correcto: inventar un género pondría a niñas en
+       * una prueba masculina.
+       */
+      gender: mapGender(pick(general, 'Género')) ?? generoDelNombre(row.name),
       category: mapCategory(categoryRaw),
       categoryRaw,
       format: mapFormat(pick(general, 'Modalidad')),
@@ -538,4 +555,26 @@ export function parseSkermoCalendar(
     candidates: [...grouped.values()].map((g) => g.event),
     rowsSeen: rows.length,
   };
+}
+
+/**
+ * El género leído del NOMBRE del torneo, para cuando Skermo deja el campo
+ * vacío.
+ *
+ * Solo se usa como respaldo (ver `gender` en `parseDetail`). Va por palabra
+ * completa: «MIXTO» dentro de otra palabra no cuenta, y «masculino» no puede
+ * casar dentro de «femenino masculino» sin que se vea. Y si el nombre menciona
+ * dos géneros distintos NO se elige uno: se devuelve `null` y la prueba va a
+ * cuarentena, que es mejor que apuntar a alguien a la prueba equivocada.
+ */
+export function generoDelNombre(nombre: string): 'M' | 'F' | 'MIXTO' | null {
+  const v = normalizeLabel(nombre);
+  const mixto = /\bMIXT[OA]S?\b|\bMIXED\b/.test(v);
+  const femenino = /\bFEM\b|\bFEMENIN[OA]S?\b|\bF\b/.test(v);
+  const masculino = /\bMAS\b|\bMASCULIN[OA]S?\b|\bM\b/.test(v);
+
+  if (mixto && !femenino && !masculino) return 'MIXTO';
+  if (femenino && !masculino && !mixto) return 'F';
+  if (masculino && !femenino && !mixto) return 'M';
+  return null;
 }

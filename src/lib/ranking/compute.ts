@@ -48,8 +48,16 @@ import {
 export type Weapon = 'FLORETE' | 'ESPADA' | 'SABLE';
 export type Gender = 'M' | 'F' | 'MIXTO';
 
-/** Las diez categorías del enum de base de datos, no las seis de la escalera. */
+/**
+ * Las categorías del enum de base de datos, no las seis de la escalera.
+ *
+ * Tiene que ser la lista COMPLETA del enum: esto no es la lista de categorías
+ * que puntúan, es el tipo con el que se leen las filas de la base. Al añadir
+ * `M7` al enum sin añadirlo aquí, `tsc` cazó el desfase en el cálculo del
+ * corte de convocatoria, que es exactamente para lo que sirve.
+ */
 export const RANKING_CATEGORIES = [
+  'M7',
   'M9',
   'M11',
   'M13',

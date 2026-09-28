@@ -23,6 +23,13 @@ export const genderEnum = pgEnum('gender', ['M', 'F', 'MIXTO']);
  * conserva en `event_competition.category_raw`, para no perder información.
  */
 export const categoryEnum = pgEnum('category_code', [
+  /**
+   * M7 existe: es la categoría de los más pequeños en las ligas
+   * autonómicas, y sin ella 24 pruebas se quedaban en cuarentena con
+   * «valor que no reconocemos». Va delante de M9 porque el orden del enum es
+   * el orden en que se ofrecen las categorías.
+   */
+  'M7',
   'M9',
   'M11',
   'M13',

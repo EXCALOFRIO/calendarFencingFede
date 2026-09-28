@@ -812,7 +812,28 @@ export async function fetchFieSeason(
       /** Se usa el nombre del torneo, no el genérico "Coupe du Monde". */
       name: tournament?.name ?? c.name ?? `Torneo FIE ${tournamentId}`,
       startDate: c.startDate ?? '',
-      endDate: c.endDate ?? c.startDate ?? '',
+      /**
+       * SI LA FIE PUBLICA UN FIN ANTERIOR AL INICIO, MANDA EL INICIO.
+       *
+       * No es hipotético: «Championnats asiatiques cadets par equipes» viene
+       * con 2026-02-26 → 2026-02-09 desde que existe, y por eso el torneo
+       * entero se quedaba en cuarentena —«la fecha de fin no puede ser anterior
+       * a la de inicio»— y volvía a quedarse **cada noche**: 19 filas del mismo
+       * evento en la bandeja.
+       *
+       * Qué se hace con eso. No se invierten las fechas, porque suponer un
+       * dedazo es suponer; y no se tira el torneo, porque entonces no existe
+       * para nadie. Se usa el inicio como fin, que es lo que ya hace la línea
+       * de arriba cuando la FIE no publica fin, y además es la forma en la que
+       * la FIE publica las pruebas por equipos: un día.
+       *
+       * El dato malo no se esconde: el `endDate` de origen sigue en el
+       * `raw_payload` del registro de ingestión.
+       */
+      endDate:
+        c.endDate && c.startDate && c.endDate < c.startDate
+          ? c.startDate
+          : (c.endDate ?? c.startDate ?? ''),
       venue,
       venueAddress: c.locationAddress?.trim() || null,
       city,
