@@ -10,7 +10,50 @@ import {
 } from '@/db/schema';
 import { auth } from './server';
 
-export type Role = 'admin' | 'coach' | 'club' | 'athlete' | 'guardian';
+/**
+ * Los papeles que existen en la aplicación.
+ *
+ * **Ya no hay `club`.** Esto se montó pensando en que el club validara las
+ * inscripciones de sus tiradores, como se hace en Skermo, y esa no es la
+ * aplicación que se ha construido: la usa la **selección española**, no los
+ * clubes. Son tres papeles y nada más:
+ *
+ *   admin      la dirección técnica: lo ve y lo gestiona todo
+ *   coach      el seleccionador de un arma; lleva sus dos géneros
+ *   athlete    el tirador (los de la cabeza del ranking, que son los que
+ *              tienen acceso)
+ *   guardian   el padre, madre o tutor, cuando el tirador es menor de 14 y no
+ *              puede consentir el tratamiento por sí mismo (RGPD)
+ *
+ * El valor `club` **sigue existiendo en el tipo `user_role` de Postgres** a
+ * propósito: en Postgres no se puede quitar un valor de un enum sin recrearlo
+ * y migrar la columna, y no merece la pena para algo que ya no se usa. Lo que
+ * se ha quitado es de aquí hacia arriba: no se puede dar de alta a nadie con
+ * ese papel y ninguna pantalla lo ofrece.
+ *
+ * El club **sí sigue siendo un dato del tirador** (`athlete.club_id`), porque
+ * el ranking oficial y las listas de inscritos de Skermo vienen con él y forma
+ * parte de cómo se identifica a una persona. Lo que desaparece es el club como
+ * usuario que aprueba cosas.
+ *
+ * **Y tampoco hay `guardian`.** Petición del usuario: *«no es para madres ni
+ * nada, es solo el seleccionador y los tiradores y ya»*. Los tiradores con
+ * acceso son la cabeza del ranking, que tienen 14 años o más y **pueden
+ * consentir el tratamiento de sus datos por sí mismos**, así que la cuenta a
+ * nombre del tutor no hace falta.
+ *
+ * Lo que **no** se ha quitado, y es lo importante, es la barrera legal: en
+ * España un menor de 14 años no puede consentir por sí mismo (RGPD, art. 8 y
+ * LOPDGDD art. 7). `requiresGuardianAccount()` en `src/lib/categories.ts`
+ * sigue en pie y el alta **se niega** si la fecha de nacimiento cae por debajo
+ * de esa edad, en vez de crear una cuenta que no debería existir. Quitar un
+ * papel de la interfaz es una decisión de producto; quitar la comprobación
+ * sería un problema legal, y son cosas distintas.
+ *
+ * `athlete.guardian_profile_id` se queda en el esquema: hay tres fichas que lo
+ * usan y borrar la columna dejaría huérfano ese enlace sin ganar nada.
+ */
+export type Role = 'admin' | 'coach' | 'athlete';
 
 export type Weapon = 'FLORETE' | 'ESPADA' | 'SABLE';
 

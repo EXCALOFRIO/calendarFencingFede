@@ -69,12 +69,24 @@ describe('categorías derivadas de la fecha de nacimiento', () => {
 });
 
 describe('plazos y semáforo', () => {
+  /**
+   * Lo que comparten las reglas de la FIE: cuentan días, no días de la semana.
+   * El anclaje semanal es de la RFEE y se prueba aparte, más abajo.
+   */
+  const SIN_ANCLA = {
+    format: null,
+    weekday: null,
+    weeksBefore: 0,
+    timeOfDay: null,
+  } as const;
+
   const REGLAS: DeadlineRuleRow[] = [
     {
       id: 'r1',
       scope: 'INTERNACIONAL',
       circuit: null,
       category: null,
+      ...SIN_ANCLA,
       type: 'L1',
       label: 'Límite ordinario',
       daysBefore: 28,
@@ -88,6 +100,7 @@ describe('plazos y semáforo', () => {
       scope: 'INTERNACIONAL',
       circuit: null,
       category: null,
+      ...SIN_ANCLA,
       type: 'L2',
       label: 'Segundo plazo',
       daysBefore: 21,
@@ -101,6 +114,7 @@ describe('plazos y semáforo', () => {
       scope: 'INTERNACIONAL',
       circuit: null,
       category: null,
+      ...SIN_ANCLA,
       type: 'FIE_D7',
       label: 'Cierre FIE',
       daysBefore: 7,
@@ -115,6 +129,7 @@ describe('plazos y semáforo', () => {
       scope: 'INTERNACIONAL',
       circuit: 'SEN_GP',
       category: null,
+      ...SIN_ANCLA,
       type: 'L1',
       label: 'Límite ordinario (Gran Premio)',
       daysBefore: 35,
@@ -169,6 +184,188 @@ describe('plazos y semáforo', () => {
     const l1 = unidos.find((x) => x.type === 'L1');
     expect(l1?.origin).toBe('PUBLICADO');
     expect(l1?.deadlineAt.toISOString().slice(0, 10)).toBe('2026-10-15');
+  });
+
+  /**
+   * Gana la FECHA del publicado, pero no su silencio sobre el importe.
+   *
+   * El calendario oficial publica una fecha y nada más —no tiene campo de
+   * recargo—, y la multa vive en la circular. Sin herencia, en cuanto la
+   * fuente publicaba el plazo la aplicación perdía el importe: fecha correcta
+   * y un guion donde tenía que poner «+5 €».
+   */
+  it('el publicado impone la fecha pero hereda el importe del calculado', () => {
+    const calculado: ComputedDeadline[] = [
+      {
+        type: 'L1',
+        label: 'Cierre ordinario',
+        deadlineAt: new Date('2026-10-02T10:00:00Z'),
+        surchargeEur: '5.00',
+        blocking: false,
+        origin: 'CALCULADO',
+        sourceDocument: 'Circular 12-26 (punto 5)',
+        sourceUrl: 'https://esgrima.es/c.pdf',
+      },
+    ];
+    const publicado: ComputedDeadline[] = [
+      {
+        type: 'L1',
+        label: 'Cierre de inscripción',
+        deadlineAt: new Date('2026-10-02T10:00:00Z'),
+        surchargeEur: null,
+        blocking: false,
+        origin: 'PUBLICADO',
+        sourceDocument: 'Calendario oficial',
+        sourceUrl: null,
+      },
+    ];
+
+    const [l1] = mergeDeadlines(publicado, calculado);
+    expect(l1.origin).toBe('PUBLICADO');
+    expect(l1.surchargeEur).toBe('5.00');
+    // Y se dice de dónde sale cada mitad del dato.
+    expect(l1.sourceDocument).toContain('Calendario oficial');
+    expect(l1.sourceDocument).toContain('Circular 12-26');
+  });
+
+  /**
+   * ANCLAJE SEMANAL
+   *
+   * La RFEE no cuenta días, ancla al calendario: «el viernes de la semana
+   * anterior a la competición a las 12:00 h» (Circular 12-26) y «hasta el
+   * lunes / martes anterior a las 23:59» (Normativa de Rankings, 3.3.2).
+   *
+   * Con un contador de días eso solo salía bien para las competiciones de
+   * sábado, y de 28 nacionales 9 empiezan en domingo y 2 en martes.
+   */
+  describe('plazos anclados al día de la semana, como los escribe la RFEE', () => {
+    const ancla = (
+      type: 'L1' | 'L2' | 'L3',
+      weekday: number,
+      weeksBefore: number,
+      timeOfDay: string,
+    ): DeadlineRuleRow => ({
+      id: `n-${type}`,
+      scope: 'NACIONAL',
+      circuit: null,
+      category: null,
+      format: null,
+      type,
+      label: type,
+      daysBefore: 99, // A propósito absurdo: si se usara, el test lo cantaría.
+      weekday,
+      weeksBefore,
+      timeOfDay,
+      surchargeEur: null,
+      blocking: false,
+      sourceDocument: null,
+      sourceUrl: null,
+    });
+
+    const ESCALERA = [
+      ancla('L1', 5, 1, '12:00'), // viernes de la semana anterior
+      ancla('L2', 1, 0, '23:59'), // lunes anterior
+      ancla('L3', 2, 0, '23:59'), // martes anterior
+    ];
+
+    /** Día y hora en Madrid, que es en lo que está escrita la normativa. */
+    const enMadrid = (d: Date) =>
+      new Intl.DateTimeFormat('es-ES', {
+        weekday: 'short',
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Europe/Madrid',
+      }).format(d);
+
+    it.each([
+      ['2026-10-03', 'sábado'],
+      ['2026-10-04', 'domingo'],
+    ])(
+      'una competición del fin de semana (%s, %s) cierra el viernes de la semana anterior',
+      (inicio) => {
+        const [l1, l2, l3] = computeDeadlines(inicio, ESCALERA, {
+          scope: 'NACIONAL',
+          circuit: 'TNR',
+          category: 'ABS',
+          format: 'INDIVIDUAL',
+        });
+        expect(enMadrid(l1.deadlineAt)).toBe('vie, 25/09, 12:00');
+        expect(enMadrid(l2.deadlineAt)).toBe('lun, 28/09, 23:59');
+        expect(enMadrid(l3.deadlineAt)).toBe('mar, 29/09, 23:59');
+      },
+    );
+
+    it('una competición de martes no desplaza el día, solo la semana', () => {
+      const [l1, l2] = computeDeadlines('2026-10-06', ESCALERA, {
+        scope: 'NACIONAL',
+        circuit: 'TNR',
+        category: 'ABS',
+        format: 'INDIVIDUAL',
+      });
+      expect(enMadrid(l1.deadlineAt)).toBe('vie, 02/10, 12:00');
+      expect(enMadrid(l2.deadlineAt)).toBe('lun, 05/10, 23:59');
+    });
+
+    /**
+     * El cambio de hora. En invierno España está en +01:00 y en verano en
+     * +02:00; el código anterior tenía el desfase escrito a mano como `+02:00`
+     * y todos los plazos de invierno se guardaban una hora tarde.
+     */
+    it('el cambio de hora no mueve el plazo: sigue siendo a las 12:00 en Madrid', () => {
+      const verano = computeDeadlines('2026-10-03', ESCALERA, {
+        scope: 'NACIONAL',
+        circuit: 'TNR',
+        category: 'ABS',
+        format: 'INDIVIDUAL',
+      })[0];
+      const invierno = computeDeadlines('2026-12-05', ESCALERA, {
+        scope: 'NACIONAL',
+        circuit: 'TNR',
+        category: 'ABS',
+        format: 'INDIVIDUAL',
+      })[0];
+
+      expect(enMadrid(verano.deadlineAt)).toContain('12:00');
+      expect(enMadrid(invierno.deadlineAt)).toContain('12:00');
+      // Y el instante absoluto SÍ cambia, que es la prueba de que no está fijo.
+      expect(verano.deadlineAt.toISOString()).toContain('T10:00');
+      expect(invierno.deadlineAt.toISOString()).toContain('T11:00');
+    });
+
+    /**
+     * La RFEE cobra 5 € a un tirador y 25 € a un equipo por la misma demora.
+     * Antes la tabla no distinguía y un club veía el importe de un tirador.
+     */
+    it('el importe distingue individual de equipos', () => {
+      const conImporte = (format: 'INDIVIDUAL' | 'EQUIPOS', eur: string) => ({
+        ...ancla('L1', 5, 1, '12:00'),
+        id: `n-L1-${format}`,
+        format,
+        surchargeEur: eur,
+      });
+      const reglas = [
+        conImporte('INDIVIDUAL', '5.00'),
+        conImporte('EQUIPOS', '25.00'),
+      ];
+      const objetivo = {
+        scope: 'NACIONAL' as const,
+        circuit: 'TNR',
+        category: 'ABS' as const,
+      };
+
+      expect(
+        computeDeadlines('2026-10-03', reglas, {
+          ...objetivo,
+          format: 'INDIVIDUAL',
+        })[0].surchargeEur,
+      ).toBe('5.00');
+      expect(
+        computeDeadlines('2026-10-03', reglas, { ...objetivo, format: 'EQUIPOS' })[0]
+          .surchargeEur,
+      ).toBe('25.00');
+    });
   });
 
   it('el semáforo distingue a tiempo, atención y urgente', () => {

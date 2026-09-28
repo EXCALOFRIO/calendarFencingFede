@@ -58,20 +58,41 @@ import { WEAPON_LABEL, cn, formatDateEs } from '@/lib/utils';
 const ARMAS: Weapon[] = ['FLORETE', 'ESPADA', 'SABLE'];
 const SIN_CLUB = '__sin_club__';
 
+/**
+ * LOS PAPELES SON TRES Y MEDIO, Y «CLUB» YA NO ES UNO.
+ *
+ * `Role` en `src/lib/auth/session.ts` es `'admin' | 'coach' | 'athlete' |
+ * 'guardian'`: el club se quitó de la aplicación y con él el papel. Así que
+ * «Responsable de club» sale de este desplegable — ofrecer un papel que el
+ * tipo no admite es prometer un alta que no se puede hacer.
+ *
+ * El club sigue existiendo como DATO del tirador, porque viene en el ranking
+ * oficial y en las listas de Skermo. Lo que no existe es un club que valide
+ * nada.
+ */
 const ROLES = [
   { valor: 'athlete', etiqueta: 'Tirador' },
-  { valor: 'guardian', etiqueta: 'Padre, madre o tutor' },
-  { valor: 'club', etiqueta: 'Responsable de club' },
-  { valor: 'admin', etiqueta: 'Administración' },
+  { valor: 'coach', etiqueta: 'Seleccionador' },
+  { valor: 'admin', etiqueta: 'Dirección técnica' },
 ];
 
+/**
+ * Cómo se nombra el papel de una cuenta que YA existe.
+ *
+ * Aquí sí está `club`, y a propósito: en la base queda una cuenta con ese
+ * papel de antes del cambio, y pintarla como «Tirador» sería mentir mientras
+ * dejar `club` a pelo se lee como una errata. Se dice lo que es —un papel que
+ * ya no se usa— para que alguien la reasigne.
+ */
 const ROL_LABEL: Record<string, string> = {
-  admin: 'Administración',
+  admin: 'Dirección técnica',
   coach: 'Seleccionador',
-  club: 'Responsable de club',
   athlete: 'Tirador',
   guardian: 'Padre, madre o tutor',
+  club: 'Papel retirado (club)',
 };
+
+const ROL_RETIRADO = new Set(['club']);
 
 export function UsuariosPanel({
   clubes,
@@ -111,16 +132,28 @@ export function UsuariosPanel({
             explicacion="Da de alta a la primera persona con el formulario de arriba, o importa el listado entero desde un CSV."
           />
         ) : (
-          <ul className="divide-y overflow-hidden rounded-lg border bg-card">
+          /*
+            LA FILA ES UNA TARJETA EN MÓVIL Y UNA FILA EN ESCRITORIO.
+            Cada dato en su renglón con su rótulo: la fecha, que en escritorio
+            va a la derecha, en móvil baja debajo del correo en vez de
+            apretujar el nombre contra el borde.
+          */
+          <ul className="divide-y overflow-hidden rounded-lg border-t border-filete bg-card">
             {altas.map((a) => (
               <li
                 key={a.id}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5"
+                className="flex min-w-0 flex-col gap-1.5 px-3 py-3 sm:flex-row sm:items-start sm:gap-4"
               >
-                <div className="flex min-w-40 flex-1 flex-col">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="truncate font-medium">{a.fullName}</span>
-                    <Badge variant="secondary" className="font-normal">
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="text-[0.95rem] font-medium">{a.fullName}</span>
+                    <Badge
+                      variant={ROL_RETIRADO.has(a.role) ? 'outline' : 'secondary'}
+                      className={cn(
+                        'font-normal',
+                        ROL_RETIRADO.has(a.role) && 'border-warn/40 text-warn',
+                      )}
+                    >
                       {ROL_LABEL[a.role] ?? a.role}
                     </Badge>
                     {a.inviteStatus === 'revocada' ? (
@@ -129,21 +162,50 @@ export function UsuariosPanel({
                       </Badge>
                     ) : null}
                   </span>
-                  <span className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
-                    <span className="min-w-0 truncate">{a.email}</span>
-                    {a.clubNombre ? (
-                      <span className="min-w-0 truncate">{a.clubNombre}</span>
-                    ) : null}
+
+                  {/*
+                    El correo va en una línea propia y se parte por donde haga
+                    falta: recortado con puntos suspensivos no sirve para nada,
+                    porque un correo a medias no se puede ni leer ni copiar.
+                  */}
+                  <span className="min-w-0 break-all text-xs text-muted-foreground">
+                    {a.email}
                   </span>
+
+                  <span className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+                    <span>
+                      Alta el{' '}
+                      <span className="tabular-nums text-foreground">
+                        {formatDateEs(a.createdAt)}
+                      </span>
+                    </span>
+                    {a.clubNombre ? <span>Club {a.clubNombre}</span> : null}
+                  </span>
+
+                  {/*
+                    LAS FICHAS, UNA PASTILLA CADA UNA Y NO UNA LISTA RECORTADA.
+
+                    Estaba como «Fichas de tirador: Lucía Fernández Lacalle,
+                    Marcos Fernández…» con `truncate`, y medido en un iPhone se
+                    comía el 56 % de la línea: se veía el primer nombre y del
+                    segundo la mitad. Era el único texto de verdad cortado de
+                    las cuatro pantallas. En pastillas que envuelven caben los
+                    dos nombres enteros y además se leen como lo que son, dos
+                    fichas distintas, no una frase.
+                  */}
                   {a.fichas.length > 0 ? (
-                    <span className="truncate text-xs text-muted-foreground">
-                      Fichas de tirador: {a.fichas.join(', ')}
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                      <span>
+                        {a.fichas.length === 1 ? 'Ficha de tirador' : 'Fichas de tirador'}
+                      </span>
+                      {a.fichas.map((ficha) => (
+                        <Badge key={ficha} variant="outline" className="font-normal">
+                          {ficha}
+                        </Badge>
+                      ))}
                     </span>
                   ) : null}
                 </div>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {formatDateEs(a.createdAt)}
-                </span>
               </li>
             ))}
           </ul>
@@ -174,6 +236,7 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
   const [guardianName, setGuardianName] = React.useState('');
 
   const esTirador = rol === 'athlete';
+  const esSeleccionador = rol === 'coach';
   const edad = birthDate ? ageOn(birthDate) : null;
   const menor = Boolean(esTirador && birthDate && requiresGuardianAccount(birthDate));
 
@@ -261,7 +324,9 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            Los seleccionadores se dan de alta en Ajustes, con su arma.
+            {esSeleccionador
+              ? 'Marca abajo de qué arma se ocupa. Es lo que decide qué tiradores y qué competiciones ve al entrar.'
+              : 'Ningún alta envía correo: la persona entra escribiendo su dirección en la pantalla de acceso.'}
           </p>
         </div>
 
@@ -351,30 +416,47 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
               </p>
             </div>
 
-            <fieldset className="flex flex-col gap-2">
-              <legend className="mb-1.5 text-sm font-medium">Armas</legend>
-              <div className="flex flex-wrap gap-4">
-                {ARMAS.map((arma) => (
-                  <div key={arma} className="flex items-center gap-2.5">
-                    <Checkbox
-                      id={`alta-arma-${arma}`}
-                      checked={armas.includes(arma)}
-                      onCheckedChange={(valor) =>
-                        setArmas(
-                          valor === true
-                            ? [...armas, arma]
-                            : armas.filter((a) => a !== arma),
-                        )
-                      }
-                    />
-                    <Label htmlFor={`alta-arma-${arma}`} className="font-normal">
-                      {WEAPON_LABEL[arma]}
-                    </Label>
-                  </div>
-                ))}
-              </div>
-            </fieldset>
           </>
+        ) : null}
+
+        {/*
+          Armas: las mismas casillas para un tirador y para un seleccionador,
+          porque la pregunta es la misma —«de qué arma»— aunque se guarden en
+          sitios distintos (`athlete_weapon` frente a `profile_weapon`).
+        */}
+        {esTirador || esSeleccionador ? (
+          <fieldset className="flex flex-col gap-2 sm:col-span-2">
+            <legend className="mb-1.5 text-sm font-medium">
+              {esSeleccionador ? 'Armas que lleva' : 'Armas'}
+            </legend>
+            <div className="flex flex-wrap gap-4">
+              {ARMAS.map((arma) => (
+                <div key={arma} className="flex items-center gap-2.5">
+                  <Checkbox
+                    id={`alta-arma-${arma}`}
+                    checked={armas.includes(arma)}
+                    onCheckedChange={(valor) =>
+                      setArmas(
+                        valor === true
+                          ? [...armas, arma]
+                          : armas.filter((a) => a !== arma),
+                      )
+                    }
+                  />
+                  <Label htmlFor={`alta-arma-${arma}`} className="font-normal">
+                    {WEAPON_LABEL[arma]}
+                  </Label>
+                </div>
+              ))}
+            </div>
+            {esSeleccionador ? (
+              <p className="text-xs text-muted-foreground">
+                Lleva los dos géneros de su arma, masculino y femenino. El
+                calendario le arrancará en absoluto, y el resto de categorías
+                le quedan a un toque.
+              </p>
+            ) : null}
+          </fieldset>
         ) : null}
       </div>
 

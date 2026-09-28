@@ -24,7 +24,7 @@ export default async function Pagina() {
     <div className="flex min-w-0 flex-col gap-6">
       <Cabecera
         titulo="Cuarentena"
-        contexto="Filas que no validaron al leerlas y por eso no entraron en el calendario. Aquí está el porqué de cada una."
+        contexto="Lo que no validó al leerlo y no entró al calendario, con el porqué."
       />
       <CuarentenaPanel filas={filas} />
     </div>

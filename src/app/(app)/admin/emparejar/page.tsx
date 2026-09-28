@@ -32,7 +32,7 @@ export default async function Pagina() {
     <div className="flex min-w-0 flex-col gap-6">
       <Cabecera
         titulo="Emparejar resultados"
-        contexto="Resultados leídos de la fuente que no se han podido asignar por licencia. Nunca se emparejan por nombre solos: hay homónimos."
+        contexto="Resultados que llegaron sin licencia. Nunca se emparejan solos por el nombre: hay homónimos."
       />
       <EmparejarPanel
         resultados={resultados}

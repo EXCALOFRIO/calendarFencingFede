@@ -619,6 +619,55 @@ export type AltaReciente = {
   fichas: string[];
 };
 
+/**
+ * Cuántas cuentas hay y de qué papel.
+ *
+ * Se cuenta en la base y no sobre la lista de «últimas altas», que llega
+ * cortada a 30: con 40 cuentas, contar sobre la lista diría 30 y sería una
+ * cifra falsa en tamaño de marcador. Y se cuenta por papel porque es la
+ * pregunta real del panel —«¿está cada arma cubierta?»—, no el total.
+ *
+ * `retirados` son las cuentas con un papel que ya no existe en el tipo `Role`:
+ * quedó una de `club` cuando se quitó el club de la aplicación. No se inventa
+ * que sea un tirador ni se esconde: se cuenta aparte para que se pueda
+ * arreglar a mano.
+ */
+export type RecuentoCuentas = {
+  total: number;
+  admin: number;
+  coach: number;
+  athlete: number;
+  guardian: number;
+  retirados: number;
+  sinAcceso: number;
+};
+
+const PAPELES_VIVOS = ['admin', 'coach', 'athlete', 'guardian'];
+
+export async function contarCuentas(): Promise<RecuentoCuentas> {
+  const [porPapel, revocadas] = await Promise.all([
+    db.select({ role: userProfile.role, n: count() }).from(userProfile).groupBy(userProfile.role),
+    db
+      .select({ n: count() })
+      .from(userProfile)
+      .where(eq(userProfile.inviteStatus, 'revocada')),
+  ]);
+
+  const de = (papel: string) => porPapel.find((f) => f.role === papel)?.n ?? 0;
+
+  return {
+    total: porPapel.reduce((suma, f) => suma + f.n, 0),
+    admin: de('admin'),
+    coach: de('coach'),
+    athlete: de('athlete'),
+    guardian: de('guardian'),
+    retirados: porPapel
+      .filter((f) => !PAPELES_VIVOS.includes(f.role))
+      .reduce((suma, f) => suma + f.n, 0),
+    sinAcceso: revocadas[0]?.n ?? 0,
+  };
+}
+
 export async function listarAltasRecientes(): Promise<AltaReciente[]> {
   const perfiles = await db
     .select({

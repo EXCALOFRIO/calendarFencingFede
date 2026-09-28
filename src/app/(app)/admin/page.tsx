@@ -31,10 +31,6 @@ export default async function Pagina() {
   const resumen = await resumenGestion();
 
   const contadores: Record<string, { valor: number; tono: 'aviso' | 'apagado' }> = {
-    inscripciones: {
-      valor: resumen.esperandoFederacion,
-      tono: resumen.esperandoFederacion > 0 ? 'aviso' : 'apagado',
-    },
     cuarentena: {
       valor: resumen.cuarentena,
       tono: resumen.cuarentena > 0 ? 'aviso' : 'apagado',
@@ -61,20 +57,22 @@ export default async function Pagina() {
         }
       />
 
+      {/*
+        CUATRO CIFRAS, NO CINCO.
+
+        Había dos de inscripciones («esperan a la RFEE», «listas para enviar»)
+        que llevaban a una pantalla que ya no está en el menú y que contaban un
+        montón que hoy no recibe nada. Y cinco cifras en un iPhone dejaban la
+        quinta sola en su fila, que se lee como un hueco. Con cuatro, la chapa
+        es una rejilla de dos por dos y todas las cifras llevan a trabajo real.
+      */}
       <TiraCifras>
         <Cifra
-          valor={resumen.esperandoFederacion}
-          palabra="esperan a la RFEE"
-          detalle="validadas por su club"
-          tono={resumen.esperandoFederacion > 0 ? 'aviso' : 'apagado'}
-          href="/admin/inscripciones"
-        />
-        <Cifra
-          valor={resumen.listasParaEnviar}
-          palabra="listas para enviar"
-          detalle="aprobadas, sin exportar"
-          tono={resumen.listasParaEnviar > 0 ? 'ok' : 'apagado'}
-          href="/admin/inscripciones"
+          valor={resumen.cuarentena}
+          palabra="filas en cuarentena"
+          detalle="no entraron al calendario"
+          tono={resumen.cuarentena > 0 ? 'urgente' : 'apagado'}
+          href="/admin/cuarentena"
         />
         <Cifra
           valor={resumen.sinEmparejar}
@@ -84,18 +82,17 @@ export default async function Pagina() {
           href="/admin/emparejar"
         />
         <Cifra
-          valor={resumen.cuarentena}
-          palabra="filas en cuarentena"
-          detalle="no entraron al calendario"
-          tono={resumen.cuarentena > 0 ? 'urgente' : 'apagado'}
-          href="/admin/cuarentena"
-        />
-        <Cifra
           valor={`${resumen.fuentesTotales - resumen.fuentesConRetraso}/${resumen.fuentesTotales}`}
           palabra="fuentes al día"
           detalle="leídas hace menos de 48 h"
           tono={resumen.fuentesConRetraso > 0 ? 'aviso' : 'ok'}
           href="/admin/salud"
+        />
+        <Cifra
+          valor={resumen.cuentas}
+          palabra="cuentas con acceso"
+          detalle="tiradores, tutores y seleccionadores"
+          href="/admin/usuarios"
         />
       </TiraCifras>
 

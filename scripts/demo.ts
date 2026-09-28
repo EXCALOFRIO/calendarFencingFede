@@ -145,7 +145,15 @@ const PERSONAS: PersonaDemo[] = [
   { etiqueta: 'direccion.tecnica', nombre: 'Beatriz Colomer Ríos', rol: 'admin' },
   { etiqueta: 'seleccionador.florete', nombre: 'Álvaro Nieto Bermúdez', rol: 'coach', armas: ['FLORETE'] },
   { etiqueta: 'seleccionador.espada', nombre: 'Marta Quintela Aguirre', rol: 'coach', armas: ['ESPADA'] },
-  { etiqueta: 'maestro.club', nombre: 'Ignacio Prats Elizalde', rol: 'club' },
+  /*
+    Aquí había un «maestro de club». **Se ha ido, y no es una limpieza
+    cosmética**: el papel `club` ya no existe en el tipo `Role`, porque esta
+    aplicación es de la selección y no de los clubes. Dejar la persona de
+    demostración habría creado una cuenta con un papel que ninguna pantalla
+    reconoce: entraba, y veía una barra de navegación a medias sin saber por
+    qué. El club sigue siendo un DATO del tirador —viene en el ranking oficial
+    y en las listas de Skermo—, pero ya no es un usuario que aprueba nada.
+  */
   { etiqueta: 'madre', nombre: 'Rosa Lacalle Vergara', rol: 'guardian' },
   // Tiradora con cuenta propia: es el caso más común de toda la aplicación,
   // una adulta que se gestiona sola. Sirve para ver la app tal y como la ve
@@ -373,7 +381,7 @@ async function main() {
           ? perfiles.get(ficha.cuenta)
           : null) ??
         perfiles.get('madre') ??
-        perfiles.get('maestro.club')!;
+        perfiles.get('direccion.tecnica')!;
 
       const [creada] = await db
         .insert(entry)
@@ -385,7 +393,9 @@ async function main() {
           requestedAt: new Date(Date.now() - 6 * 86_400_000),
           clubDecidedAt: estado !== 'pending_club' ? new Date(Date.now() - 4 * 86_400_000) : null,
           clubDecidedByProfileId:
-            estado !== 'pending_club' ? (perfiles.get('maestro.club') ?? null) : null,
+            estado !== 'pending_club'
+              ? (perfiles.get('direccion.tecnica') ?? null)
+              : null,
           federationDecidedAt:
             estado === 'federation_approved' || estado === 'submitted'
               ? new Date(Date.now() - 2 * 86_400_000)

@@ -25,7 +25,8 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const ENLACES_PROBLEMATICOS = '.next/standalone/.next/node_modules';
 
@@ -142,6 +143,60 @@ for (const ruta of buscarEnv('.open-next')) {
     })
     .join('\n');
   writeFileSync(ruta, `${filtrado}\n`);
+}
+
+/**
+ * 5. Y EL OTRO SITIO DONDE VIAJA EL `.env`, QUE NO SE LLAMA `.env`.
+ *
+ * El paso 4 busca ficheros llamados `.env`, y con eso no basta. OpenNext
+ * genera además `.open-next/cloudflare/next-env.mjs` con **todas** las
+ * variables del `.env` incrustadas como objetos de JavaScript:
+ *
+ *   export const production = { DATABASE_URL: "...", CLOUDFLARE_API_TOKEN: "..." };
+ *
+ * y `cloudflare/init.js` lo importa (`import * as nextEnvVars from
+ * "./next-env.mjs"`). Como nuestra entrada (`worker/index.ts`) importa
+ * `.open-next/worker.js`, ese fichero entra en el grafo que empaqueta
+ * wrangler: los valores acaban **dentro del código del Worker desplegado**,
+ * incluidos el token de despliegue, la contraseña de Neon, `CRON_SECRET` y la
+ * clave de cifrado. Comprobado buscando el prefijo del token en `.open-next`:
+ * el único fichero que lo tenía era este.
+ *
+ * No se sirve desde fuera, pero cualquiera con acceso de lectura a la cuenta
+ * de Cloudflare ve el código del Worker, y un secreto de despliegue dentro de
+ * la cosa desplegada está mal igual. En ejecución no hace falta: con
+ * `compatibility_date` >= 2025-04-01 Cloudflare rellena `process.env` con las
+ * `vars` de `wrangler.jsonc` y con los secretos del almacén.
+ *
+ * Se vacía, y con `CF_ENV_EMBEBIDO=1` se deja solo la lista de ejecución, la
+ * misma muleta y con el mismo criterio que el paso 4.
+ */
+const RUTA_ENV_MJS = '.open-next/cloudflare/next-env.mjs';
+if (existsSync(RUTA_ENV_MJS)) {
+  const modulo = await import(pathToFileURL(resolve(RUTA_ENV_MJS)).href);
+  const lineas = [
+    '// Vaciado por scripts/compilar-cloudflare.mjs: este fichero entra en el',
+    '// paquete del Worker y no puede llevar secretos dentro. Los valores los',
+    '// pone Cloudflare en process.env (vars + almacén de secretos).',
+  ];
+  let retiradas = 0;
+  for (const [nombre, valor] of Object.entries(modulo)) {
+    const esObjeto = valor && typeof valor === 'object' && !Array.isArray(valor);
+    const filtrado = esObjeto
+      ? Object.fromEntries(
+          Object.entries(valor).filter(([clave]) => {
+            const se_queda = embebido && VARIABLES_DE_EJECUCION.has(clave);
+            if (!se_queda) retiradas += 1;
+            return se_queda;
+          }),
+        )
+      : valor;
+    lineas.push(`export const ${nombre} = ${JSON.stringify(filtrado)};`);
+  }
+  writeFileSync(RUTA_ENV_MJS, `${lineas.join('\n')}\n`);
+  console.log(
+    `\n[cloudflare] ${RUTA_ENV_MJS}: ${retiradas} valores fuera del paquete.`,
+  );
 }
 
 console.log(

@@ -3,6 +3,8 @@
 import { ChevronDown, FileText, Send, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
+import { convocatoriaVisible, ocultasPorArma } from '@/app/(app)/convocatorias/filtro';
+import { MarcaArma } from '@/components/calendario/iconos-arma';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,64 +29,154 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { ARMAS } from '@/lib/ambito';
+import type { Weapon } from '@/lib/auth/session';
 import { eliminarConvocatoria, publicarConvocatoria } from '@/lib/callups/actions';
 import { CALL_UP_STATUS_LABEL } from '@/lib/callups/tipos';
 import type { CallUpDetail, EventoConvocable } from '@/lib/callups/tipos';
-import { cn, formatDateRangeEs, formatDateTimeEs, titular } from '@/lib/utils';
+import {
+  WEAPON_LABEL,
+  cn,
+  formatDateRangeEs,
+  formatDateTimeEs,
+  titular,
+} from '@/lib/utils';
 import { ElegirConvocados } from './elegir-convocados';
 import { PLAZA_CORTA, partirPrueba } from './etiquetas';
+import { FiltroArmas } from './filtro-armas';
 import { NuevaConvocatoria } from './nueva-convocatoria';
+import { Respuestas } from './respuestas';
 
 /**
- * Panel del seleccionador y de la dirección técnica.
+ * ===========================================================================
+ * EL PANEL DEL SELECCIONADOR Y DE LA DIRECCIÓN TÉCNICA
+ * ===========================================================================
  *
- * Lo que se viene a mirar aquí es una sola cosa: quién ha dicho que sí y
- * quién no ha dicho nada todavía, porque de eso depende llamar al siguiente.
- * Por eso los tres recuentos van en cifra y en la fila cerrada, y la lista
- * completa se despliega solo si hace falta.
+ * Lo que se viene a mirar aquí es una sola cosa: **quién ha dicho que sí y
+ * quién no ha dicho nada todavía**, porque de eso depende llamar al siguiente.
+ * Por eso los tres recuentos van en cifra y con su barra en la fila cerrada, y
+ * la lista completa se despliega solo si hace falta.
+ *
+ * ---------------------------------------------------------------------------
+ * Y AHORA FILTRA POR ARMA, QUE ERA EL FALLO
+ * ---------------------------------------------------------------------------
+ * Antes decía, con todas las letras, «puedes ver las convocatorias y las
+ * respuestas de todas las armas», y eso hacía que el seleccionador de florete
+ * entrase viendo «Selección Sub-23 de espada femenina». Ahora arranca con su
+ * arma —`armasDeArranque()` de `src/lib/ambito.ts`, la misma regla que el
+ * calendario y la pantalla de tiradores— y tiene el botón para salir de ahí,
+ * igual que en el calendario. La dirección técnica arranca con las tres.
  */
 export function PanelConvocatorias({
   convocatorias,
   eventos,
   puedeGestionar,
+  armasPorConvocatoria,
+  armasArranque,
 }: {
   convocatorias: CallUpDetail[];
   eventos: EventoConvocable[];
   puedeGestionar: boolean;
+  /** `callUpId` -> armas de las pruebas a las que se convoca. */
+  armasPorConvocatoria: Record<string, Weapon[]>;
+  /** Con qué armas se abre, según quién mire. Sale de `armasDeArranque()`. */
+  armasArranque: Weapon[];
 }) {
+  const [armas, setArmas] = React.useState<Weapon[]>(armasArranque);
+
+  const visibles = convocatorias.filter((c) =>
+    convocatoriaVisible(armasPorConvocatoria[c.id] ?? [], armas),
+  );
+  const ocultas = ocultasPorArma(convocatorias, armasPorConvocatoria, armas);
+
+  const sinContestar = visibles.reduce((n, c) => n + c.pendientes, 0);
+
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+    <section className="flex min-w-0 flex-col gap-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 border-b pb-2">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
           <h2 className="text-xl">Convocatorias que gestionas</h2>
           <p className="text-sm text-muted-foreground">
-            {convocatorias.length === 0
-              ? 'ninguna todavía'
-              : `${convocatorias.length} en total`}
+            {visibles.length === 0
+              ? 'ninguna'
+              : sinContestar > 0
+                ? `${visibles.length}, con ${sinContestar} sin contestar`
+                : `${visibles.length}, todas contestadas`}
           </p>
         </div>
         {puedeGestionar ? <NuevaConvocatoria eventos={eventos} /> : null}
       </div>
 
+      {convocatorias.length > 0 ? (
+        <FiltroArmas
+          armas={armas}
+          onCambiar={setArmas}
+          arranque={armasArranque}
+          conAtajo={visibles.length > 0}
+        />
+      ) : null}
+
       {!puedeGestionar ? (
         <p className="medida text-sm text-muted-foreground">
-          Puedes ver las convocatorias y las respuestas de todas las armas. Crear,
-          modificar y publicar lo hace la dirección técnica.
+          Puedes ver y seguir las respuestas de{' '}
+          {armasArranque.length < ARMAS.length
+            ? `tu arma (${armasArranque.map((a) => WEAPON_LABEL[a].toLowerCase()).join(' y ')}), con los dos géneros`
+            : 'todas las armas'}
+          . Crear, modificar y publicar lo hace la dirección técnica.
         </p>
       ) : null}
 
       {convocatorias.length === 0 ? (
-        <p className="medida text-sm text-muted-foreground">
+        <p className="medida py-2 text-sm text-muted-foreground">
           Aquí aparecerá cada convocatoria con su lista de convocados y lo que ha
           contestado cada uno.{' '}
           {puedeGestionar
             ? 'Empieza por crear un borrador: eliges la competición, marcas las plazas y publicas cuando esté.'
             : 'Se verán en cuanto la dirección técnica cree la primera.'}
         </p>
+      ) : visibles.length === 0 ? (
+        /*
+          El estado vacío del filtro dice el número, no solo «nada»: «ninguna de
+          florete» a secas deja pensando si el panel está roto. Con «hay 2 de
+          otras armas» se entiende que el filtro está puesto y que quitarlo las
+          trae, y el botón lo hace.
+        */
+        /*
+          En una banda con su filete, no suelto en medio de la página. En
+          escritorio, dos frases flotando dejaban 500 px de vacío debajo y la
+          pantalla se leía como si hubiera fallado la carga. Visto en
+          `capturas/prueba-coach-escritorio-convocatorias.png`.
+        */
+        <div className="fondo-panel mt-1 flex max-w-2xl flex-col items-start gap-3 rounded-lg border-t border-filete bg-card px-4 py-6 sm:px-5">
+          <p className="medida text-sm text-muted-foreground">
+            Ninguna convocatoria de{' '}
+            {armas.map((a) => WEAPON_LABEL[a].toLowerCase()).join(' ni ')}.
+            {ocultas > 0
+              ? ocultas === 1
+                ? ' Hay 1 de otra arma.'
+                : ` Hay ${ocultas} de otras armas.`
+              : ''}
+          </p>
+          {ocultas > 0 ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="cursor-pointer"
+              onClick={() => setArmas([...ARMAS])}
+            >
+              Ver todas las armas
+            </Button>
+          ) : null}
+        </div>
       ) : (
-        <ul className="flex flex-col">
-          {convocatorias.map((c) => (
-            <Fila key={c.id} convocatoria={c} puedeGestionar={puedeGestionar} />
+        <ul className="flex flex-col divide-y">
+          {visibles.map((c) => (
+            <Fila
+              key={c.id}
+              convocatoria={c}
+              puedeGestionar={puedeGestionar}
+              armas={armasPorConvocatoria[c.id] ?? []}
+            />
           ))}
         </ul>
       )}
@@ -95,19 +187,21 @@ export function PanelConvocatorias({
 function Fila({
   convocatoria: c,
   puedeGestionar,
+  armas,
 }: {
   convocatoria: CallUpDetail;
   puedeGestionar: boolean;
+  armas: Weapon[];
 }) {
   const router = useRouter();
   /**
    * Abierta de entrada si queda alguien por contestar.
    *
    * A esta pantalla se viene a saber QUIÉN no ha contestado, porque de eso
-   * depende llamar al siguiente. Si para averiguarlo hay que desplegar una
-   * a una las convocatorias, la pantalla no contesta la pregunta: la
-   * esconde. Las que ya están resueltas siguen plegadas, que es lo que
-   * evita el muro de veinte tablas.
+   * depende llamar al siguiente. Si para averiguarlo hay que desplegar una a
+   * una las convocatorias, la pantalla no contesta la pregunta: la esconde. Las
+   * que ya están resueltas siguen plegadas, que es lo que evita el muro de
+   * veinte tablas.
    */
   const [abierta, setAbierta] = React.useState(c.pendientes > 0);
   const [confirmar, setConfirmar] = React.useState<'publicar' | 'borrar' | null>(null);
@@ -129,17 +223,23 @@ function Fila({
   }
 
   return (
-    <li className="border-b py-3 last:border-b-0">
+    <li className="py-4">
       <Collapsible open={abierta} onOpenChange={setAbierta}>
-        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
-          <CollapsibleTrigger className="group flex min-w-48 flex-1 cursor-pointer items-start gap-2 text-left">
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:gap-6">
+          <CollapsibleTrigger className="group flex min-w-0 flex-1 cursor-pointer items-start gap-2 text-left">
             <ChevronDown
-              className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180"
+              className="mt-1.5 size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180"
               aria-hidden
             />
-            <span className="min-w-0">
-              <span className="flex flex-wrap items-center gap-2">
-                <span className="text-base font-medium">{c.title}</span>
+            <span className="min-w-0 flex-1">
+              <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                {/* El arma primero y en dibujo: es lo que distingue una
+                    convocatoria de otra de un vistazo, y ahora además es lo que
+                    dice el filtro. */}
+                {armas.length > 0 ? (
+                  <MarcaArma armas={armas} px={22} className="text-muted-foreground" />
+                ) : null}
+                <span className="min-w-0 text-base font-medium">{c.title}</span>
                 {c.published ? (
                   <Badge variant="outline" className="border-gold/50 text-gold">
                     Publicada
@@ -148,8 +248,9 @@ function Fila({
                   <Badge variant="secondary">Borrador</Badge>
                 )}
               </span>
+
               {/* Con el rótulo delante, no encadenados con puntos medios. */}
-              <span className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+              <span className="mt-1 flex min-w-0 flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
                 <span className="min-w-0 truncate">{titular(c.eventName)}</span>
                 <span>
                   <span className="text-muted-foreground">Se compite </span>
@@ -169,11 +270,12 @@ function Fila({
 
           {/* En móvil los recuentos bajan a su propia línea: apretados contra
               el título lo partían en tres renglones de dos palabras. */}
-          <div className="flex w-full shrink-0 items-start gap-2 pl-6 sm:w-auto sm:pl-0">
-            <Recuento valor={c.confirmados} palabra="sí" clase="text-ok" />
-            <Recuento valor={c.pendientes} palabra="sin contestar" />
-            <Recuento valor={c.rechazados} palabra="no" clase="text-danger" />
-          </div>
+          <Respuestas
+            confirmados={c.confirmados}
+            pendientes={c.pendientes}
+            rechazados={c.rechazados}
+            className="w-full shrink-0 pl-6 sm:w-56 sm:pl-0"
+          />
         </div>
 
         <CollapsibleContent className="pt-4 pl-6">
@@ -197,76 +299,71 @@ function Fila({
                   {c.convocados.map((a) => {
                     const prueba = partirPrueba(a.competition);
                     return (
-                    <TableRow key={a.id}>
-                      <TableCell className="pl-0 align-top whitespace-normal">
-                        <span className="block text-sm">{a.athleteName}</span>
-                        <span className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground md:hidden">
-                          {prueba ? (
-                            <span>
-                              {prueba.prueba}
-                              {prueba.categoria ? ` ${prueba.categoria}` : ''}
-                            </span>
-                          ) : null}
-                          <span
-                            className={
-                              a.placeType === 'ranking' ? 'text-gold' : undefined
-                            }
-                          >
-                            {PLAZA_CORTA[a.placeType]}
-                          </span>
-                        </span>
-                        {a.clubName ? (
-                          <span className="hidden text-xs text-muted-foreground md:block">
-                            {a.clubName}
-                          </span>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="hidden align-top md:table-cell">
-                        {prueba ? (
-                          <>
-                            <span className="text-foreground">{prueba.prueba}</span>
-                            {prueba.categoria ? (
-                              <span className="text-muted-foreground">
-                                {' '}
-                                {prueba.categoria}
+                      <TableRow key={a.id}>
+                        <TableCell className="pl-0 align-top whitespace-normal">
+                          <span className="block text-sm">{a.athleteName}</span>
+                          <span className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground md:hidden">
+                            {prueba ? (
+                              <span>
+                                {prueba.prueba}
+                                {prueba.categoria ? ` ${prueba.categoria}` : ''}
                               </span>
                             ) : null}
-                          </>
-                        ) : (
-                          <span className="text-muted-foreground">sin prueba</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="hidden align-top md:table-cell">
-                        <span
-                          className={
-                            a.placeType === 'ranking'
-                              ? 'text-gold'
-                              : 'text-muted-foreground'
-                          }
-                        >
-                          {a.placeType === 'ranking'
-                            ? `Ranking${a.rankingPositionAtCutoff ? `, ${a.rankingPositionAtCutoff}.º al corte` : ''}`
-                            : 'Técnica'}
-                        </span>
-                      </TableCell>
-                      <TableCell className="pr-0 text-right align-top whitespace-normal">
-                        <span
-                          className={cn(
-                            'text-sm',
-                            a.status === 'confirmado' && 'text-ok',
-                            a.status === 'rechazado' && 'text-danger',
-                            a.status === 'pendiente' && 'text-muted-foreground',
-                          )}
-                        >
-                          {CALL_UP_STATUS_LABEL[a.status]}
-                        </span>
-                        {a.rejectionReason ? (
-                          <span className="mt-0.5 ml-auto block max-w-64 text-xs text-muted-foreground">
-                            {a.rejectionReason}
+                            <span
+                              className={
+                                a.placeType === 'ranking' ? 'text-gold' : undefined
+                              }
+                            >
+                              {PLAZA_CORTA[a.placeType]}
+                            </span>
                           </span>
-                        ) : null}
-                      </TableCell>
-                    </TableRow>
+                        </TableCell>
+                        <TableCell className="hidden align-top md:table-cell">
+                          {prueba ? (
+                            <>
+                              <span className="text-foreground">{prueba.prueba}</span>
+                              {prueba.categoria ? (
+                                <span className="text-muted-foreground">
+                                  {' '}
+                                  {prueba.categoria}
+                                </span>
+                              ) : null}
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">sin prueba</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="hidden align-top md:table-cell">
+                          <span
+                            className={
+                              a.placeType === 'ranking'
+                                ? 'text-gold'
+                                : 'text-muted-foreground'
+                            }
+                          >
+                            {a.placeType === 'ranking'
+                              ? `Ranking${a.rankingPositionAtCutoff ? `, ${a.rankingPositionAtCutoff}.º al corte` : ''}`
+                              : 'Técnica'}
+                          </span>
+                        </TableCell>
+                        <TableCell className="pr-0 text-right align-top whitespace-normal">
+                          <span
+                            className={cn(
+                              'text-sm',
+                              a.status === 'confirmado' && 'text-ok',
+                              a.status === 'rechazado' && 'text-danger',
+                              a.status === 'pendiente' && 'text-muted-foreground',
+                            )}
+                          >
+                            {CALL_UP_STATUS_LABEL[a.status]}
+                          </span>
+                          {a.rejectionReason ? (
+                            <span className="mt-0.5 ml-auto block max-w-64 text-xs text-muted-foreground">
+                              {a.rejectionReason}
+                            </span>
+                          ) : null}
+                        </TableCell>
+                      </TableRow>
                     );
                   })}
                 </TableBody>
@@ -392,26 +489,5 @@ function Fila({
         </DialogContent>
       </Dialog>
     </li>
-  );
-}
-
-function Recuento({
-  valor,
-  palabra,
-  clase,
-}: {
-  valor: number;
-  palabra: string;
-  clase?: string;
-}) {
-  return (
-    <span className="flex min-w-14 flex-col items-center leading-none">
-      <span className={cn('cifra text-3xl', valor === 0 ? 'text-muted-foreground' : clase)}>
-        {valor}
-      </span>
-      <span className="mt-1 text-center text-xs text-muted-foreground">
-        {palabra}
-      </span>
-    </span>
   );
 }

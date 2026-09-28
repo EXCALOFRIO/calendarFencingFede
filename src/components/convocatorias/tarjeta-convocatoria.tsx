@@ -3,6 +3,7 @@
 import {
   Check,
   CircleAlert,
+  CircleCheck,
   FileText,
   MapPin,
   Medal,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
+import { BanderaPais } from '@/components/bandera';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -98,8 +100,16 @@ export function TarjetaConvocatoria({
       Es la única superficie de la aplicación que lo lleva, y es el canto de
       chapa del tema aplicado a lo que de verdad significa algo: sin leer una
       palabra, una banda con el borde superior dorado es «te han convocado».
+
+      Y la superficie es SÓLIDA: `bg-card` con la textura teñida de oro encima
+      (`fondo-cabecera tinte-oro`). Antes era `bg-gold/[0.04]`, o sea un 4 % de
+      oro sobre el fondo de la página: un tinte con alfa baja, que es lo que el
+      usuario ha rechazado tres veces con capturas. El acrílico y la
+      transparencia se reservan para lo que de verdad flota sobre una imagen, y
+      aquí detrás no hay foto que desenfocar. Al pasar a sólido + tinte, el oro
+      se ve más y no queda turbio.
     */
-    <article className="flex flex-col gap-4 rounded-lg border-t-2 border-gold bg-gold/[0.04] p-4 sm:p-5">
+    <article className="fondo-cabecera tinte-oro flex flex-col gap-4 rounded-lg border-t-2 border-gold bg-card p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="min-w-56 flex-1">
           <p className="flex items-center gap-1.5 text-xs font-medium text-gold">
@@ -152,12 +162,22 @@ export function TarjetaConvocatoria({
           <Dato
             rotulo="Dónde"
             valor={
-              <span className="inline-flex items-center gap-1">
+              <span className="inline-flex items-center gap-1.5">
                 <MapPin className="size-3.5 shrink-0" aria-hidden />
                 {titular(c.eventCity)}
-                {c.eventCountry && c.eventCountry !== 'ES'
-                  ? ` (${c.eventCountry})`
-                  : ''}
+                {/*
+                  El país, en la pastilla compartida de `bandera.tsx`, y no
+                  como el código ISO crudo entre paréntesis que había antes:
+                  «(FR)» es un dato de base de datos, «FRA» es como lo escriben
+                  la FIE y la RFEE.
+
+                  Solo cuando NO es España, que es lo que ya hacía: en una
+                  aplicación española, marcar «ESP» en nueve de cada diez
+                  competiciones es ruido que no distingue nada.
+                */}
+                {c.eventCountry && c.eventCountry !== 'ES' ? (
+                  <BanderaPais pais={c.eventCountry} tamaño="fila" />
+                ) : null}
               </span>
             }
           />
@@ -197,8 +217,13 @@ export function TarjetaConvocatoria({
               : 'border-danger/40 text-danger',
           )}
         >
+          {/*
+            `CircleCheck` y no `Check`: esto es un estado ya cerrado, no el
+            botón de confirmar. En toda la aplicación el visto dentro de un
+            círculo significa «ya está», y el visto suelto es la acción.
+          */}
           {c.status === 'confirmado' ? (
-            <Check className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
           ) : (
             <X className="mt-0.5 size-4 shrink-0" aria-hidden />
           )}

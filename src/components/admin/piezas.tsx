@@ -14,6 +14,22 @@ import { cn, formatDateEs } from '@/lib/utils';
 /**
  * Cabecera de pantalla: titular y una línea de contexto al lado, con las
  * acciones a la derecha. Nada de "eyebrow" en mayúsculas encima del título.
+ *
+ * -------------------------------------------------------------------------
+ * DOS COSAS MEDIDAS EN UN IPHONE
+ * -------------------------------------------------------------------------
+ * 1. LA LÍNEA DE CONTEXTO ARRANCA EN `text-xs`. A `text-sm` estas frases
+ *    ocupaban tres renglones de 24 px cada uno —«Filas que no validaron al
+ *    leerlas y por eso no entraron en el calendario. Aquí está el porqué de
+ *    cada una.»— y sumaban 170 px de prosa gris antes del primer dato. Es
+ *    exactamente la sensación de «plano» que el usuario describe: una pantalla
+ *    entera al mismo tamaño no jerarquiza nada. En `sm` sube a `text-sm`,
+ *    porque ahí cabe al lado del titular y no roba alto a nada.
+ *
+ * 2. EL FILETE DE ABAJO. La estructura de esta aplicación son bandas
+ *    horizontales separadas por filetes de un píxel —la pista—, y el
+ *    calendario ya cierra su cabecera así. Sin él, el titular flotaba sobre la
+ *    textura y el bloque de debajo parecía otro trozo suelto.
  */
 export function Cabecera({
   titulo,
@@ -25,11 +41,13 @@ export function Cabecera({
   acciones?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-filete pb-3">
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
         <h1 className="text-2xl sm:text-3xl">{titulo}</h1>
         {contexto ? (
-          <p className="medida text-sm text-muted-foreground">{contexto}</p>
+          <p className="medida text-xs leading-snug text-muted-foreground sm:text-sm">
+            {contexto}
+          </p>
         ) : null}
       </div>
       {acciones ? (

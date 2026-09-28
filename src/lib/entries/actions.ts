@@ -39,28 +39,8 @@ export async function requestEntry(
    * secreto (sale en listados y en el CSV), así que la comprobación tiene que
    * ser de pertenencia, no de rol: un club solo puede inscribir a los suyos.
    */
-  if (!target) {
-    if (profile.role === 'club') {
-      /**
-       * Sin club asignado no hay "sus" tiradores que valgan. Se corta aquí en
-       * vez de consultar con la cadena vacía: `''` no es un UUID válido y
-       * Postgres respondería con un error, que la pantalla enseñaría como un
-       * fallo del servidor en lugar de como "esto no es tuyo".
-       */
-      if (!profile.clubId) {
-        return { ok: false, error: 'Tu cuenta no tiene club asignado.' };
-      }
-      const [propio] = await db
-        .select({ id: athlete.id })
-        .from(athlete)
-        .where(and(eq(athlete.id, athleteId), eq(athlete.clubId, profile.clubId)))
-        .limit(1);
-      if (!propio) {
-        return { ok: false, error: 'Ese tirador no es de tu club.' };
-      }
-    } else if (profile.role !== 'admin') {
-      return { ok: false, error: 'Ese tirador no está vinculado a tu cuenta.' };
-    }
+  if (!target && profile.role !== 'admin') {
+    return { ok: false, error: 'Ese tirador no está vinculado a tu cuenta.' };
   }
 
   const [competition] = await db
@@ -164,29 +144,18 @@ export async function transitionEntry(
   if (!row) return { ok: false, error: 'Esa inscripción ya no existe.' };
 
   /**
-   * Un club solo puede tocar inscripciones de SUS tiradores. Sin esto,
-   * cualquier responsable de club podría validar o rechazar las de otro.
-   */
-  if (profile.role === 'club') {
-    /**
-     * Ojo con los nulos: sin este primer corte, un responsable de club SIN
-     * club asignado (`clubId = null`) pasaba la comparación para cualquier
-     * tirador que tampoco tuviera club, porque `null !== null` es falso.
-     */
-    if (!profile.clubId || row.athleteClubId !== profile.clubId) {
-      return { ok: false, error: 'Esa inscripción no es de un tirador de tu club.' };
-    }
-  }
-
-  /**
    * SEGURIDAD: un tirador o un tutor solo puede tocar las inscripciones de los
-   * tiradores que gestiona. Antes solo se comprobaba el caso `club`, así que
+   * tiradores que gestiona. Antes solo se comprobaba el caso del club, así que
    * cualquiera con sesión podía retirar ("withdrawn") o volver a solicitar la
    * inscripción de otra persona con solo conocer su `entryId`, que no es un
    * secreto. La máquina de estados no lo impedía: `withdrawn` está permitido
    * precisamente para el rol `athlete`.
+   *
+   * Al desaparecer el papel de club esta comprobación se queda **sola**, y por
+   * eso importa más que antes: ya no hay ninguna rama que se salte la
+   * pertenencia. Solo la dirección técnica puede tocar lo de cualquiera.
    */
-  if (profile.role !== 'admin' && profile.role !== 'club') {
+  if (profile.role !== 'admin') {
     const gestionados = await getManagedAthletes(profile.profileId);
     if (!gestionados.some((a) => a.id === row.athleteId)) {
       return { ok: false, error: 'Esa inscripción no es de un tirador de tu cuenta.' };
@@ -375,17 +344,5 @@ export async function canManageAthlete(athleteId: string): Promise<boolean> {
     )
     .limit(1);
 
-  if (row) return true;
-  if (profile.role === 'club') {
-    // Igual que en `requestEntry`: sin club no hay nada que gestionar, y
-    // consultar con `''` haría fallar la consulta por UUID mal formado.
-    if (!profile.clubId) return false;
-    const [byClub] = await db
-      .select({ id: athlete.id })
-      .from(athlete)
-      .where(and(eq(athlete.id, athleteId), eq(athlete.clubId, profile.clubId)))
-      .limit(1);
-    return Boolean(byClub);
-  }
-  return false;
+  return Boolean(row);
 }

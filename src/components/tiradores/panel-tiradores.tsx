@@ -2,6 +2,7 @@
 
 import { ChevronDown, TriangleAlert } from 'lucide-react';
 import * as React from 'react';
+import { Buscador } from '@/components/admin/buscador';
 import { Vacio } from '@/components/admin/piezas';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,9 +11,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { Input } from '@/components/ui/input';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { Weapon } from '@/lib/auth/session';
+import { ARMAS, armasDeArranque, esArma, type PerfilAmbito } from '@/lib/ambito';
 import {
   CATEGORY_LABEL,
   WEAPON_LABEL,
@@ -33,10 +34,12 @@ import type { TiradorVista } from './tipos';
  *
  * El filtro por arma empieza en la del seleccionador porque es lo suyo, pero
  * puede ver el resto: no se le esconde nada a nadie.
+ *
+ * Se marcan VARIAS armas a la vez, igual que en el calendario. Antes era de
+ * una sola, y un seleccionador que lleve florete y espada —los hay— no tenía
+ * forma de pedir sus dos armas: le arrancaba en «Todas», o sea con los
+ * tiradores de sable de otro dentro de su lista.
  */
-
-const ARMAS: Weapon[] = ['FLORETE', 'ESPADA', 'SABLE'];
-const TODAS = '__todas__';
 
 /**
  * Concordancia de género al hablar de UNA persona concreta.
@@ -46,6 +49,13 @@ const TODAS = '__todas__';
  * que la concordancia sale gratis. Cuando no se sabe —o la ficha es mixta— se
  * usa una fórmula que no marca género en vez de elegir uno por defecto.
  */
+/** «florete», «florete y espada», «florete, espada y sable». */
+function nombresDeArmas(armas: Weapon[]): string {
+  const nombres = armas.map((a) => WEAPON_LABEL[a].toLowerCase());
+  if (nombres.length <= 1) return nombres[0] ?? 'ninguna arma';
+  return `${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]}`;
+}
+
 function nacimiento(genero: 'M' | 'F' | 'MIXTO', fechaIso: string): string {
   const anio = fechaIso.slice(0, 4);
   if (genero === 'F') return `nacida en ${anio}`;
@@ -55,18 +65,19 @@ function nacimiento(genero: 'M' | 'F' | 'MIXTO', fechaIso: string): string {
 
 export function PanelTiradores({
   tiradores,
-  armasPropias,
+  perfil,
   esAdmin,
 }: {
   tiradores: TiradorVista[];
-  armasPropias: Weapon[];
+  /** Papel y armas: deciden con qué armas arranca la lista. */
+  perfil: PerfilAmbito;
   esAdmin: boolean;
 }) {
   const [vista, setVista] = React.useState<'tiradores' | 'competiciones'>('tiradores');
-  const [arma, setArma] = React.useState<string>(
-    armasPropias.length === 1 ? armasPropias[0] : TODAS,
-  );
+  const [armas, setArmas] = React.useState<Weapon[]>(() => armasDeArranque(perfil));
   const [busqueda, setBusqueda] = React.useState('');
+
+  const todasPuestas = armas.length === ARMAS.length;
 
   const porArma = React.useMemo(() => {
     const cuenta = new Map<string, number>();
@@ -79,14 +90,14 @@ export function PanelTiradores({
   const visibles = React.useMemo(() => {
     const texto = busqueda.trim().toLowerCase();
     return tiradores.filter((t) => {
-      if (arma !== TODAS && !t.weapons.includes(arma as Weapon)) return false;
+      if (!t.weapons.some((a) => armas.includes(a as Weapon))) return false;
       if (!texto) return true;
       return (
         t.fullName.toLowerCase().includes(texto) ||
         (t.clubName ?? '').toLowerCase().includes(texto)
       );
     });
-  }, [tiradores, arma, busqueda]);
+  }, [tiradores, armas, busqueda]);
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -103,21 +114,17 @@ export function PanelTiradores({
           <ToggleGroupItem value="competiciones">Por competición</ToggleGroupItem>
         </ToggleGroup>
 
+        {/* Nunca se queda vacío: una lista en blanco no responde a nada. */}
         <ToggleGroup
-          type="single"
-          value={arma}
-          onValueChange={(v) => v && setArma(v)}
+          type="multiple"
+          value={armas}
+          onValueChange={(v) => v.length > 0 && setArmas(v.filter(esArma))}
           variant="outline"
           size="sm"
           spacing={1}
+          aria-label="Armas"
           className="max-w-full flex-wrap"
         >
-          <ToggleGroupItem value={TODAS} className="gap-1.5">
-            Todas
-            <span className="cifra text-xs text-muted-foreground">
-              {tiradores.length}
-            </span>
-          </ToggleGroupItem>
           {ARMAS.map((a) => (
             <ToggleGroupItem key={a} value={a} className="gap-1.5">
               {WEAPON_LABEL[a]}
@@ -128,12 +135,35 @@ export function PanelTiradores({
           ))}
         </ToggleGroup>
 
-        <Input
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
-          placeholder="Buscar tirador o club"
-          className="h-8 w-full sm:w-56"
-          aria-label="Buscar tirador"
+        {/*
+          Con las tres marcadas no hace falta ofrecer «todas»: ya lo están.
+          El botón es el camino de vuelta para el seleccionador, que arranca
+          en la suya.
+        */}
+        {!todasPuestas ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2"
+            onClick={() => setArmas([...ARMAS])}
+          >
+            Ver las tres armas
+            <span className="cifra ml-1.5 text-xs text-muted-foreground">
+              {tiradores.length}
+            </span>
+          </Button>
+        ) : null}
+
+        {/*
+          El buscador es un ICONO en el móvil. Ver `components/admin/buscador`:
+          en 393 px no cabe al lado de las tres armas y se llevaba un renglón
+          entero para algo que se usa de vez en cuando.
+        */}
+        <Buscador
+          valor={busqueda}
+          onCambio={setBusqueda}
+          etiqueta="Buscar tirador o club"
+          marcador="Buscar tirador"
         />
       </div>
 
@@ -142,10 +172,11 @@ export function PanelTiradores({
           titulo="Nadie coincide con este filtro"
           explicacion={
             busqueda
-              ? `Nadie coincide con «${busqueda}» en ${arma === TODAS ? 'ninguna arma' : WEAPON_LABEL[arma as Weapon].toLowerCase()}. Prueba con «Todas».`
+              ? `Nadie coincide con «${busqueda}» en ${nombresDeArmas(armas)}. ` +
+                'Prueba con las tres armas o con otro nombre.'
               : esAdmin
-                ? 'Todavía no hay ninguna ficha de esa arma. Las fichas se crean en Gestión › Usuarios.'
-                : 'Todavía no hay ninguna ficha de esa arma. Pídeselo a la dirección técnica.'
+                ? `Todavía no hay ninguna ficha de ${nombresDeArmas(armas)}. Las fichas se crean en Gestión › Usuarios.`
+                : `Todavía no hay ninguna ficha de ${nombresDeArmas(armas)}. Pídeselo a la dirección técnica.`
           }
         />
       ) : vista === 'tiradores' ? (
@@ -287,8 +318,8 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
                   <h3 className="text-sm">A dónde va</h3>
                   {t.upcoming.length === 0 && t.enClub.length === 0 ? (
                     <p className="text-xs text-muted-foreground">
-                      No tiene ninguna inscripción viva. Si debería ir a algo, su club
-                      todavía no lo ha pedido.
+                      No tiene ninguna inscripción viva. Si debería ir a algo,
+                      todavía no se ha pedido.
                     </p>
                   ) : (
                     <ul className="flex flex-col gap-1">
@@ -321,7 +352,7 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
                           <span className="min-w-0 flex-1 truncate">
                             {titular(u.name)}
                           </span>
-                          <span className="text-warn">pendiente en su club</span>
+                          <span className="text-warn">sin confirmar</span>
                         </li>
                       ))}
                     </ul>
@@ -395,7 +426,7 @@ function EstadoInscripciones({ tirador }: { tirador: TiradorVista }) {
         ) : null}
         {esperando > 0 ? (
           <span className="text-warn">
-            {esperando} {esperando === 1 ? 'esperando' : 'esperando'} al club
+            {esperando} sin confirmar
           </span>
         ) : null}
       </span>
@@ -478,7 +509,7 @@ function ListaCompeticiones({ tiradores }: { tiradores: TiradorVista[] }) {
     return (
       <Vacio
         titulo="Todavía no va nadie a ninguna competición"
-        explicacion="En cuanto sus clubes soliciten inscripciones para competiciones futuras, aparecerán aquí agrupadas por competición."
+        explicacion="En cuanto se pida una inscripción para una competición futura, aparecerá aquí agrupada por competición, con quién va a cada una."
       />
     );
   }
@@ -519,34 +550,47 @@ function ListaCompeticiones({ tiradores }: { tiradores: TiradorVista[] }) {
               </span>
             </div>
 
+            {/*
+              LA FILA ES UNA TARJETA EN MÓVIL.
+
+              Eran cuatro datos en una línea que envolvía —nombre recortado,
+              arma, avisos y estado— y en un iPhone el nombre se quedaba en
+              `min-w-32` con puntos suspensivos mientras el estado se iba a su
+              propia línea. Quién va es el dato de esta lista, así que va
+              entero en su renglón y lo demás baja debajo, apagado.
+            */}
             <ul className="divide-y">
               {g.asistentes.map((a, i) => (
                 <li
                   key={`${a.id}-${a.weapon}-${a.category}-${i}`}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2"
+                  className="flex min-w-0 flex-col gap-0.5 px-3 py-2 sm:flex-row sm:items-center sm:gap-3"
                 >
-                  <span className="min-w-32 flex-1 truncate text-sm">{a.nombre}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {WEAPON_LABEL[a.weapon]}{' '}
-                    {CATEGORY_LABEL[a.category as keyof typeof CATEGORY_LABEL] ??
-                      a.category}
-                  </span>
-                  {a.avisos.length > 0 ? (
-                    <span
-                      className="flex shrink-0 items-center gap-1 text-xs text-warn"
-                      title={a.avisos.join('. ')}
-                    >
-                      <TriangleAlert className="size-3.5" aria-hidden />
-                      {a.avisos.length === 1 ? a.avisos[0] : `${a.avisos.length} avisos`}
+                  <span className="min-w-0 flex-1 text-sm leading-tight">{a.nombre}</span>
+                  <span className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+                    <span className="text-muted-foreground">
+                      {WEAPON_LABEL[a.weapon]}{' '}
+                      {CATEGORY_LABEL[a.category as keyof typeof CATEGORY_LABEL] ??
+                        a.category}
                     </span>
-                  ) : null}
-                  <span
-                    className={cn(
-                      'shrink-0 text-xs font-medium',
-                      a.estado === 'en_marcha' ? 'text-ok' : 'text-warn',
-                    )}
-                  >
-                    {a.estado === 'en_marcha' ? 'Inscripción en marcha' : 'Pendiente en su club'}
+                    {a.avisos.length > 0 ? (
+                      <span
+                        className="flex items-center gap-1 text-warn"
+                        title={a.avisos.join('. ')}
+                      >
+                        <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
+                        {a.avisos.length === 1
+                          ? a.avisos[0]
+                          : `${a.avisos.length} avisos`}
+                      </span>
+                    ) : null}
+                    <span
+                      className={cn(
+                        'font-medium',
+                        a.estado === 'en_marcha' ? 'text-ok' : 'text-warn',
+                      )}
+                    >
+                      {a.estado === 'en_marcha' ? 'En marcha' : 'Sin confirmar'}
+                    </span>
                   </span>
                 </li>
               ))}

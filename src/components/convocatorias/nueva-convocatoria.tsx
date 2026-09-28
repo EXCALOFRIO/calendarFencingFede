@@ -153,11 +153,21 @@ export function NuevaConvocatoria({ eventos }: { eventos: EventoConvocable[] }) 
                           value={`${e.name} ${e.city ?? ''}`}
                           onSelect={() => elegirEvento(e)}
                           className="cursor-pointer"
+                          /*
+                            La competición elegida se marca como cualquier otro
+                            control de la aplicación: lo pinta `CommandItem` a
+                            partir de este atributo. Antes la única señal era
+                            el visto, y en una lista larga con desplazamiento
+                            eso es un detalle de 16 px que hay que buscar.
+                          */
+                          data-marcado={e.id === eventId}
                         >
                           <Check
                             className={cn(
                               'size-4',
-                              e.id === eventId ? 'opacity-100' : 'opacity-0',
+                              e.id === eventId
+                                ? 'text-primary-text opacity-100'
+                                : 'opacity-0',
                             )}
                             aria-hidden
                           />

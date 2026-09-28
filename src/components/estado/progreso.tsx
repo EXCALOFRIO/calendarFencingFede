@@ -7,6 +7,27 @@ import {
 import { cn } from '@/lib/utils';
 
 /**
+ * ===========================================================================
+ * SIN USAR A PROPÓSITO: EL TRÁMITE ESTÁ OCULTO, NO DESTRUIDO
+ * ===========================================================================
+ *
+ * Esta línea de progreso —«Solicitada → Tu club → La RFEE → Enviada»— salía en
+ * cada fila de «Mi estado» y es justo lo que el usuario mandó quitar:
+ *
+ *   «quita todo lo de clubes, lo de códigos de licencia, lo de darse o no de
+ *    alta en los torneos, eso está oculto: solo ver calendario, si estoy o no»
+ *
+ * El fichero **se queda** y no lo importa nadie. Igual que `src/lib/entries/` y
+ * su máquina de estados, esto se oculta para poder volver atrás sin
+ * reconstruirlo: si algún día la federación delega la tramitación en la
+ * aplicación, basta con volver a importarlo. Borrarlo obligaría a rehacer las
+ * etiquetas cortas, que están medidas contra el ancho de un iPhone.
+ *
+ * Quien sí sigue enseñando el estado de una solicitud es `/admin/inscripciones`,
+ * que es de la dirección técnica y no de esta pantalla.
+ *
+ * ---------------------------------------------------------------------------
+ *
  * Etiqueta corta de cada paso.
  *
  * Debajo de la barra solo cabe una palabra en un iPhone, así que el nombre

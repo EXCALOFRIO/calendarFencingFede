@@ -14,12 +14,20 @@ import { revocarCalendario } from './acciones';
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Mi perfil' };
 
+/**
+ * Cómo se llama tu papel en tu propia ficha.
+ *
+ * `club` sigue en el mapa aunque ya no sea un papel de `Role`: quedó una
+ * cuenta con ese valor en la base, y si entra, ver «club» a secas —o peor, el
+ * valor crudo— no le dice nada. Se le dice que su papel ya no se usa, que es
+ * la verdad y además es accionable: puede pedir que se lo cambien.
+ */
 const PAPEL: Record<string, string> = {
   admin: 'Dirección técnica',
   coach: 'Seleccionador',
-  club: 'Club',
   athlete: 'Tirador',
-  guardian: 'Tutor',
+  guardian: 'Padre, madre o tutor',
+  club: 'Papel retirado (club)',
 };
 
 /**
@@ -66,9 +74,15 @@ export default async function Pagina() {
   return (
     /* Pantalla de lectura: más de 900 px por línea de dato no se lee mejor. */
     <div className="flex w-full max-w-4xl flex-col gap-6">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      {/* Mismo filete que en `Cabecera` y en el calendario. */}
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-b border-filete pb-3">
         <h1 className="text-2xl sm:text-3xl">Mi perfil</h1>
-        <p className="min-w-0 truncate text-sm text-muted-foreground">
+        {/*
+          El correo se parte, no se recorta: un correo con puntos suspensivos
+          no se puede leer ni comprobar, y en esta pantalla está justamente
+          para comprobar con qué cuenta has entrado.
+        */}
+        <p className="min-w-0 break-all text-xs text-muted-foreground sm:text-sm">
           {perfil.email}
         </p>
       </div>
@@ -112,10 +126,15 @@ export default async function Pagina() {
           </div>
         ) : (
           <div className="flex flex-col items-start gap-3 py-4">
+            {/*
+              «o tu club» se ha ido: el club ya no es un papel de la
+              aplicación, así que no puede vincular nada. Quien lo hace es la
+              dirección técnica, y punto.
+            */}
             <p className="medida text-sm text-muted-foreground">
               Tu cuenta no tiene ninguna ficha de tirador vinculada. Aquí
               aparecerían sus armas, sus categorías y sus licencias. La vincula
-              la dirección técnica o tu club desde el listado de tiradores.
+              la dirección técnica desde Gestión › Usuarios.
             </p>
             <Button variant="outline" asChild>
               <Link href="/">Ver el calendario</Link>

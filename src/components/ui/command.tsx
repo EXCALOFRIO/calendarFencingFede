@@ -148,6 +148,25 @@ function CommandItem({
       data-slot="command-item"
       className={cn(
         "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
+        /*
+          MARCADO Y CURSOR SON DOS COSAS, Y CMDK SOLO SABE DE UNA.
+          `data-selected` de cmdk es **la fila bajo el cursor**, no la elegida:
+          se mueve con las flechas y cmdk la pone y la quita él. Quien elige es
+          la aplicación, así que el marcado viaja en un atributo propio,
+          `data-marcado`, y se pinta con la convención de siempre: tinte, rojo
+          y negrita.
+
+          Esto arregla además un fallo de accesibilidad real: en los filtros
+          del calendario se escribía `aria-selected={puesta}` a mano, que es el
+          mismo atributo con el que cmdk anuncia el cursor. O sea que un
+          lector de pantalla oía «seleccionado» en varias filas a la vez y no
+          sabía en cuál estabas.
+
+          El par `data-[marcado=true]:data-[selected=true]:` devuelve el
+          `bg-accent` del cursor cuando el cursor cae sobre algo ya marcado,
+          con los dos selectores para ganar el orden sin depender de Tailwind.
+        */
+        "data-[marcado=true]:bg-marcado data-[marcado=true]:font-semibold data-[marcado=true]:text-primary-text data-[marcado=true]:data-[selected=true]:bg-accent",
         className
       )}
       {...props}

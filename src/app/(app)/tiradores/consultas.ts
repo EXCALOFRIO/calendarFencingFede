@@ -11,11 +11,16 @@ import type { Weapon } from '@/lib/auth/session';
  * cosas que no están allí y que la pantalla necesita:
  *
  *  1. El puesto en el ranking, que vive en `ranking_snapshot`.
- *  2. Las solicitudes que siguen paradas en el club. `upcoming[]` arranca en
- *     «validada por el club» a propósito, pero para responder «¿quién va al
- *     Cto. de Europa?» hace falta ver también a quien lo ha pedido y todavía
- *     no le han dado el visto bueno: si no, esa persona desaparece de la
- *     lista justo cuando alguien tendría que estar reclamándole al club.
+ *  2. Las solicitudes pedidas y todavía SIN CONFIRMAR. `upcoming[]` arranca
+ *     en el estado que la base llama `club_approved` a propósito, pero para
+ *     responder «¿quién va al Cto. de Europa?» hace falta ver también a quien
+ *     lo ha pedido y todavía no ha recibido el visto bueno: si no, esa persona
+ *     desaparece de la lista justo cuando habría que estar revisándola.
+ *
+ *     El nombre del estado en la base sigue siendo `pending_club` porque
+ *     renombrarlo es una migración, pero ya no hay ningún club que valide
+ *     nada: `Role` es `admin | coach | athlete | guardian`. Quien da por buena
+ *     una solicitud es la dirección técnica, en `/admin/inscripciones`.
  *
  * Va en un módulo normal, sin `'use server'`: son lecturas para un componente
  * de servidor, no endpoints públicos.
@@ -83,7 +88,7 @@ export type SolicitudEnClub = {
   category: string;
 };
 
-/** Solicitudes de eventos futuros que siguen esperando al club. */
+/** Solicitudes de eventos futuros pedidas y todavía sin confirmar. */
 export async function solicitudesEnClub(
   athleteIds: string[],
 ): Promise<SolicitudEnClub[]> {

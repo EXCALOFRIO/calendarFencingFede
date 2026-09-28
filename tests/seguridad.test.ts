@@ -330,22 +330,37 @@ describe('inscripciones: el identificador lo pone el cliente, así que se compru
       .where(eqId(esquema.entry.id, ctx.entryA));
   });
 
-  it('un club no puede validar la inscripción de un tirador de otro club', async () => {
+  /**
+   * Estos dos comprobaban que un responsable de club no tocara lo de otro
+   * club. **El papel `club` ya no existe**: la aplicación es de la selección y
+   * quedan tres papeles (dirección técnica, seleccionador y tirador).
+   *
+   * Pero lo que comprobaban sigue siendo lo importante, y ahora MÁS, porque la
+   * comprobación se ha quedado sola: antes había una rama por pertenencia al
+   * club y otra por tiradores gestionados, y ahora solo queda la segunda. Si
+   * alguien la rompe, cualquiera con sesión podría retirar o volver a solicitar
+   * la inscripción de otra persona sabiendo su `entryId`, que no es un secreto.
+   *
+   * Así que no se borran: se repuntan a la regla que manda hoy —**solo puedes
+   * tocar lo de los tiradores que gestionas, y la dirección técnica lo de
+   * cualquiera**— y se comprueba contra el mensaje nuevo.
+   */
+  it('nadie puede validar la inscripción de un tirador que no gestiona', async () => {
     const { transitionEntry } = await import('../src/lib/entries/actions');
     await entrarComo(ctx.perfilClubA);
 
     const r = await transitionEntry(ctx.entryB, 'club_approved');
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toMatch(/tu club/i);
+    if (!r.ok) expect(r.error).toMatch(/no es de un tirador de tu cuenta/i);
   });
 
-  it('un club no puede INSCRIBIR a un tirador de otro club', async () => {
+  it('nadie puede INSCRIBIR a un tirador que no gestiona', async () => {
     const { requestEntry } = await import('../src/lib/entries/actions');
     await entrarComo(ctx.perfilClubA);
 
     const r = await requestEntry(ctx.competicion, ctx.tiradorB);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toMatch(/tu club/i);
+    if (!r.ok) expect(r.error).toMatch(/no está vinculado a tu cuenta/i);
   });
 
   it('un tirador no puede inscribir a otro tirador', async () => {

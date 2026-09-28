@@ -1,4 +1,4 @@
-import { Check, ExternalLink } from 'lucide-react';
+import { CircleCheck, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import type { ResumenFicha } from '@/app/(app)/alta/consultas';
 import { Cuenta, Rotulos, Seccion } from '@/components/estado/piezas';
@@ -53,7 +53,7 @@ export function FichaVinculada({
 
       {reciente ? (
         <p className="medida flex items-start gap-2 text-sm text-ok">
-          <Check className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
           <span>
             Hecho. Nada de esto lo has escrito tú: si el puesto y los puntos son
             los tuyos, está bien vinculada.

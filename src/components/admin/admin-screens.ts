@@ -4,6 +4,7 @@ import {
   FileSearch,
   Inbox,
   Link2,
+  Medal,
   Scale,
   ShieldAlert,
   UserCog,
@@ -18,17 +19,26 @@ import {
  * ficheros es como acaban apareciendo secciones que existen en el menú y no
  * en la portada.
  *
- * El orden no es alfabético: va de lo que caduca (inscripciones, que tienen
- * plazo) a lo que casi nunca se toca (ajustes del equipo).
+ * El orden no es alfabético: va de lo que caduca (resultados sin emparejar y
+ * filas en cuarentena, que bloquean el calendario) a lo que casi nunca se toca
+ * (ajustes del equipo).
+ *
+ * -------------------------------------------------------------------------
+ * «INSCRIPCIONES» NO ESTÁ EN ESTA LISTA, Y ES A PROPÓSITO
+ * -------------------------------------------------------------------------
+ * `/admin/inscripciones` sigue existiendo y sigue funcionando por URL, pero
+ * se ha sacado del índice. El menú es donde la aplicación declara para qué
+ * sirve, y esta ya no sirve para inscribirse: sirve para planificarse. La
+ * bandeja además estaba construida alrededor de un club que validaba, y el
+ * club dejó de ser un papel (`Role` ya no lo tiene).
+ *
+ * La razón para no borrarla está en la cabecera de
+ * `src/app/(app)/admin/inscripciones/page.tsx`. Y `src/lib/entries/` se queda
+ * entero: se oculta, no se destruye.
  */
 
 /** Contadores que la portada calcula y enseña al lado de cada sección. */
-export type ClaveContador =
-  | 'inscripciones'
-  | 'cuarentena'
-  | 'emparejar'
-  | 'fuentes'
-  | 'usuarios';
+export type ClaveContador = 'cuarentena' | 'emparejar' | 'fuentes' | 'usuarios';
 
 export type PantallaAdmin = {
   href: string;
@@ -42,14 +52,30 @@ export type PantallaAdmin = {
 };
 
 export const PANTALLAS_ADMIN: PantallaAdmin[] = [
+  /*
+    CONVOCATORIAS Y TIRADORES VIVEN AQUÍ DESDE QUE SALIERON DE LA BARRA.
+
+    El usuario las quitó de la navegación —*«esas secciones fuera, no las
+    entiendo»*— y tenía razón en que un tirador no necesita ir a una sección
+    para enterarse de que está convocado: eso le sale solo, en «Mi estado»,
+    con la banda de oro.
+
+    Pero quien publica la convocatoria es la dirección técnica, y sin una
+    puerta se quedaba sin poder convocar salvo escribiendo la URL a mano. Así
+    que pasan a Gestión, que es donde están las cosas que se HACEN, no las que
+    se miran. Fuera de la barra y a un clic.
+  */
   {
-    href: '/admin/inscripciones',
-    titulo: 'Inscripciones',
-    resumen:
-      'Bandeja federativa: lo que ya validó el club, esperando el visto bueno de la RFEE y el envío.',
-    icono: Inbox,
-    contador: 'inscripciones',
-    unidad: ['esperando', 'esperando'],
+    href: '/convocatorias',
+    titulo: 'Convocatorias',
+    resumen: 'Publicar una convocatoria de selección y ver quién ha confirmado.',
+    icono: Medal,
+  },
+  {
+    href: '/tiradores',
+    titulo: 'Tiradores',
+    resumen: 'Los tiradores de tus armas, con su puesto y su licencia.',
+    icono: Users,
   },
   {
     href: '/admin/emparejar',
@@ -107,10 +133,15 @@ export const PANTALLAS_ADMIN: PantallaAdmin[] = [
   },
 ];
 
-/** Etiqueta corta para la tira de navegación, donde no cabe el título largo. */
+/**
+ * Etiqueta corta para la tira de navegación, donde no cabe el título largo.
+ *
+ * `/admin/inscripciones` sigue aquí aunque no esté en `PANTALLAS_ADMIN`: si
+ * alguien entra por URL, la tira tiene que saber cómo llamar a la pantalla en
+ * la que está. Sin esto se pintaba la ruta en crudo.
+ */
 export const TITULO_CORTO: Record<string, string> = {
   '/admin': 'Portada',
-  '/admin/inscripciones': 'Inscripciones',
   '/admin/emparejar': 'Emparejar',
   '/admin/cuarentena': 'Cuarentena',
   '/admin/salud': 'Ingestión',
@@ -118,6 +149,7 @@ export const TITULO_CORTO: Record<string, string> = {
   '/admin/normativa': 'Normativa',
   '/admin/usuarios': 'Usuarios',
   '/admin/ajustes': 'Ajustes',
+  '/admin/inscripciones': 'Inscripciones',
 };
 
 export const ICONO_PORTADA = FileCheck2;

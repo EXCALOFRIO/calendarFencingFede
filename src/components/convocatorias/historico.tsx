@@ -1,4 +1,4 @@
-import { Check, Clock, FileText, X } from 'lucide-react';
+import { CircleCheck, Clock, FileText, X } from 'lucide-react';
 import type { CallUpForAthlete } from '@/lib/callups/tipos';
 import { PLACE_TYPE_LABEL } from '@/lib/callups/tipos';
 import { cn, formatDateRangeEs, formatDateTimeEs, titular } from '@/lib/utils';
@@ -70,7 +70,8 @@ export function Historico({
 
 function Respuesta({ convocatoria: c }: { convocatoria: CallUpForAthlete }) {
   const estilo = {
-    confirmado: { clase: 'text-ok', icono: Check, texto: 'Fue' },
+    // Estado cerrado del pasado, no una acción: círculo.
+    confirmado: { clase: 'text-ok', icono: CircleCheck, texto: 'Fue' },
     rechazado: { clase: 'text-danger', icono: X, texto: 'No fue' },
     pendiente: { clase: 'text-muted-foreground', icono: Clock, texto: 'Sin responder' },
   }[c.status];

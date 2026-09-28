@@ -2,7 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import * as React from 'react';
 import { PANTALLAS_ADMIN, TITULO_CORTO } from '@/components/admin/admin-screens';
+import { ACTIVO, INACTIVO } from '@/components/nav';
 import { cn } from '@/lib/utils';
 
 /**
@@ -20,7 +22,36 @@ import { cn } from '@/lib/utils';
 export function TiraSecciones() {
   const pathname = usePathname();
 
-  const enlaces = [{ href: '/admin' }, ...PANTALLAS_ADMIN];
+  const delMenu = ['/admin', ...PANTALLAS_ADMIN.map((p) => p.href)];
+
+  /**
+   * Las secciones del menú, más la de ahora si no está en el menú.
+   *
+   * `/admin/inscripciones` se sacó del índice pero sigue viva por URL. Sin
+   * este añadido, al entrar en ella la tira no marcaba nada como activo y no
+   * había forma de saber en qué sección estabas: pintaba ocho pestañas y
+   * ninguna encendida.
+   */
+  const enlaces = delMenu.includes(pathname)
+    ? delMenu.map((href) => ({ href }))
+    : [...delMenu, pathname].map((href) => ({ href }));
+
+  /**
+   * La pestaña de ahora se trae a la vista.
+   *
+   * Son nueve y la tira se desplaza en horizontal: en un iPhone caben tres y
+   * media, así que al entrar en «Ajustes» —o en «Inscripciones», que va al
+   * final por no estar en el menú— la pestaña encendida quedaba fuera de
+   * pantalla y la tira mentía: parecía que estabas en la portada. Se comprobó
+   * en captura.
+   *
+   * `block: 'nearest'` es lo que evita que el navegador desplace también la
+   * página en vertical para centrar la tira.
+   */
+  const activa = React.useRef<HTMLAnchorElement | null>(null);
+  React.useEffect(() => {
+    activa.current?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [pathname]);
 
   return (
     <nav
@@ -33,12 +64,18 @@ export function TiraSecciones() {
           <Link
             key={href}
             href={href}
+            ref={activo ? activa : undefined}
             aria-current={activo ? 'page' : undefined}
+            /*
+              El par activo/inactivo se importa de la barra de navegación en
+              vez de repetirse aquí. Estaba copiado letra por letra, y una
+              convención escrita dos veces son dos convenciones en cuanto
+              alguien toca una: la barra de arriba y esta tira se ven seguidas
+              en la misma pantalla de gestión.
+            */
             className={cn(
               'shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-              activo
-                ? 'bg-secondary text-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+              activo ? ACTIVO : INACTIVO,
             )}
           >
             {TITULO_CORTO[href] ?? href}

@@ -3,7 +3,7 @@
 import { asc, eq, inArray, isNotNull, or } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
-import { athlete, athleteWeapon, club, userProfile } from '@/db/schema';
+import { athlete, athleteWeapon, club, profileWeapon, userProfile } from '@/db/schema';
 import { newIcalToken, requireRole } from '@/lib/auth/session';
 import { ageOn, requiresGuardianAccount } from '@/lib/categories';
 
@@ -11,17 +11,31 @@ export type ResultadoAccion =
   | { ok: true; message: string }
   | { ok: false; error: string };
 
-export type Rol = 'admin' | 'club' | 'athlete' | 'guardian';
+/**
+ * Los papeles que se pueden dar de alta.
+ *
+ * Son los tres de `Role` en `src/lib/auth/session.ts` y ni uno más. `club` y
+ * `guardian` salieron de aquí cuando se retiraron de la aplicación: dejarlos
+ * permitía crear **por CSV** una cuenta con un papel que el resto del código ya
+ * no reconoce, y esa cuenta entraba sin poder ver nada. Este fichero valida la
+ * importación además del formulario, así que es el sitio donde de verdad
+ * importa.
+ */
+export type Rol = 'admin' | 'coach' | 'athlete';
 export type Genero = 'M' | 'F' | 'MIXTO';
 export type Arma = 'FLORETE' | 'ESPADA' | 'SABLE';
 
 /**
  * Altas de usuarios y tiradores.
  *
- * La regla que manda sobre todo lo demás es el RGPD: en España un menor de 14
- * años no puede consentir el tratamiento por sí mismo, así que NO se le crea
- * cuenta. La cuenta es del padre, madre o tutor y el menor queda como perfil
- * vinculado (`guardianProfileId`). Esto no es configurable a propósito.
+ * La regla que manda sobre todo lo demás sigue siendo el RGPD: en España un
+ * menor de 14 años **no puede consentir el tratamiento por sí mismo**, así que
+ * no se le crea cuenta. Lo que ha cambiado es la salida: antes la cuenta se
+ * creaba a nombre del tutor y el menor quedaba como ficha vinculada; ahora que
+ * el papel de tutor se ha retirado, **el alta se niega y se explica por qué**.
+ *
+ * Su ficha sí puede existir —para el ranking y las convocatorias— pero sin
+ * acceso propio. Esto no es configurable a propósito.
  */
 
 // ------------------------------------------------------------ utilidades ---
@@ -34,7 +48,7 @@ function emailValido(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
 }
 
-const ROLES: Rol[] = ['admin', 'club', 'athlete', 'guardian'];
+const ROLES: Rol[] = ['admin', 'coach', 'athlete'];
 
 /**
  * Etiquetas de rol. Están aquí duplicadas respecto a la interfaz porque un
@@ -42,11 +56,19 @@ const ROLES: Rol[] = ['admin', 'club', 'athlete', 'guardian'];
  * esta constante convertiría el módulo en inválido.
  */
 const ROL_LABEL: Record<Rol, string> = {
-  admin: 'Administración',
-  club: 'Responsable de club',
+  admin: 'Dirección técnica',
+  coach: 'Seleccionador',
   athlete: 'Tirador',
-  guardian: 'Padre, madre o tutor',
 };
+
+/** Mismo motivo que `ROL_LABEL`: aquí no se puede exportar una constante. */
+const ARMA_LABEL: Record<Arma, string> = {
+  FLORETE: 'Florete',
+  ESPADA: 'Espada',
+  SABLE: 'Sable',
+};
+
+const ARMAS_VALIDAS: Arma[] = ['FLORETE', 'ESPADA', 'SABLE'];
 
 /** Acepta `2011-04-07`, `07/04/2011` y `7-4-2011`. */
 function normalizarFecha(valor: string): string | null {
@@ -102,9 +124,14 @@ function normalizarRol(valor: string): Rol | null {
     .toLowerCase();
   if (!v) return null;
   if (['admin', 'administracion', 'administrador', 'rfee'].includes(v)) return 'admin';
-  if (['club', 'responsable', 'responsable de club'].includes(v)) return 'club';
+  if (
+    ['coach', 'seleccionador', 'seleccionadora', 'entrenador', 'entrenadora'].includes(v)
+  ) {
+    return 'coach';
+  }
+  // 'club' ya no es un papel: un CSV con esa columna se rechaza fila a fila en
+  // la previsualización en vez de crear una cuenta que no puede ver nada.
   if (['athlete', 'tirador', 'tiradora', 'atleta'].includes(v)) return 'athlete';
-  if (['guardian', 'tutor', 'padre', 'madre'].includes(v)) return 'guardian';
   return null;
 }
 
@@ -143,8 +170,8 @@ export async function crearClub(formData: FormData): Promise<ResultadoAccion> {
 /**
  * Alta de una persona.
  *
- * Si el tirador es menor de 14, la cuenta se crea a nombre del tutor y el
- * tirador se queda como ficha vinculada sin acceso propio.
+ * Si el tirador es menor de 14 años, **no se da de alta**: la ley exige el
+ * consentimiento del tutor y esta aplicación ya no gestiona esas cuentas.
  */
 export async function crearUsuario(formData: FormData): Promise<ResultadoAccion> {
   await requireRole('admin');
@@ -157,7 +184,19 @@ export async function crearUsuario(formData: FormData): Promise<ResultadoAccion>
   const birthDate = normalizarFecha(limpiar(formData.get('birthDate')));
   const gender = normalizarGenero(limpiar(formData.get('gender')));
   const rfeeLicense = limpiar(formData.get('rfeeLicense'));
-  const armas = formData.getAll('weapons').map(String) as Arma[];
+  /**
+   * Se filtra contra el enum en vez de castear a ciegas: estas armas van a una
+   * columna `weapon` de PostgreSQL, y un valor que no esté en el enum no da un
+   * error de validación bonito, da una excepción de la base a mitad del alta.
+   */
+  const armas = [
+    ...new Set(
+      formData
+        .getAll('weapons')
+        .map((v) => String(v).trim().toUpperCase())
+        .filter((v): v is Arma => (ARMAS_VALIDAS as string[]).includes(v)),
+    ),
+  ];
   const guardianEmail = limpiar(formData.get('guardianEmail')).toLowerCase();
   const guardianName = limpiar(formData.get('guardianName'));
 
@@ -167,6 +206,22 @@ export async function crearUsuario(formData: FormData): Promise<ResultadoAccion>
   if (!ROLES.includes(rol)) return { ok: false, error: 'Ese rol no existe.' };
 
   const esTirador = rol === 'athlete';
+  const esSeleccionador = rol === 'coach';
+
+  /**
+   * Un seleccionador SIN arma no es un seleccionador: entraría viendo las tres
+   * y todas las categorías, que es exactamente el problema que el rol viene a
+   * resolver. Se exige aquí y no solo en la interfaz porque esto es una acción
+   * de servidor y se puede llamar sin pasar por el formulario.
+   */
+  if (esSeleccionador && armas.length === 0) {
+    return {
+      ok: false,
+      error:
+        'Un seleccionador se ocupa de al menos un arma: sin ninguna vería las tres ' +
+        'y no sabría cuáles son sus tiradores. Marca florete, espada o sable.',
+    };
+  }
 
   if (esTirador) {
     if (!birthDate) {
@@ -182,17 +237,37 @@ export async function crearUsuario(formData: FormData): Promise<ResultadoAccion>
 
   const menor = esTirador && birthDate ? requiresGuardianAccount(birthDate) : false;
 
-  // Menor de 14: la cuenta es del tutor, sin excepciones (RGPD).
+  /**
+   * MENOR DE 14: NO SE DA DE ALTA. Y la comprobación se queda aunque el papel
+   * de tutor ya no exista.
+   *
+   * Antes, si el tirador era menor de 14, la cuenta se creaba a nombre del
+   * padre o la madre y el menor quedaba como ficha vinculada. Ese papel se ha
+   * retirado a petición del usuario —*«no es para madres ni nada, es solo el
+   * seleccionador y los tiradores y ya»*—, y encaja: quienes tienen acceso son
+   * la cabeza del ranking, con 14 años o más, que **pueden consentir el
+   * tratamiento de sus datos por sí mismos**.
+   *
+   * Pero lo que NO se puede hacer es quitar la comprobación y seguir creando
+   * cuentas. En España un menor de 14 no puede consentir por sí mismo (RGPD
+   * art. 8 y LOPDGDD art. 7), así que sin el tutor **no hay alta posible** y
+   * se dice por qué. Quitar un papel de la interfaz es una decisión de
+   * producto; crear la cuenta de todas formas sería un problema legal.
+   *
+   * Si algún día entra un M13 en la selección, esto es lo que hay que volver a
+   * abrir, y el camino está escrito en el historial.
+   */
   if (menor) {
-    if (!guardianEmail || !emailValido(guardianEmail)) {
-      return {
-        ok: false,
-        error:
-          `${firstName} tiene ${ageOn(birthDate!)} años. Por debajo de 14 la cuenta ` +
-          'tiene que ir a nombre del padre, madre o tutor: hace falta su correo.',
-      };
-    }
-  } else if (!emailValido(email)) {
+    return {
+      ok: false,
+      error:
+        `${firstName} tiene ${ageOn(birthDate!)} años. Por debajo de 14 años no se ` +
+        'puede crear una cuenta: la ley exige el consentimiento del padre, madre o ' +
+        'tutor, y esta aplicación ya no gestiona cuentas de tutor. Su ficha puede ' +
+        'existir para el ranking y las convocatorias, pero sin acceso propio.',
+    };
+  }
+  if (!emailValido(email)) {
     return { ok: false, error: 'El correo no tiene forma de correo.' };
   }
 
@@ -223,7 +298,7 @@ export async function crearUsuario(formData: FormData): Promise<ResultadoAccion>
         fullName: menor
           ? guardianName || `Tutor de ${firstName} ${lastName}`
           : `${firstName} ${lastName}`,
-        role: menor ? 'guardian' : rol,
+        role: rol,
         clubId: clubId || null,
         icalToken: newIcalToken(),
         inviteStatus: 'pendiente',
@@ -234,10 +309,29 @@ export async function crearUsuario(formData: FormData): Promise<ResultadoAccion>
   }
 
   if (!esTirador) {
+    /**
+     * Las armas de un seleccionador van a `profile_weapon`, no a
+     * `athlete_weapon`: no es un tirador, es el alcance de su cargo. Es lo que
+     * luego lee la sesión para abrirle el calendario en su arma.
+     */
+    if (esSeleccionador) {
+      await db
+        .insert(profileWeapon)
+        .values(armas.map((weapon) => ({ profileId, weapon })))
+        .onConflictDoNothing();
+    }
+
     revalidatePath('/admin/usuarios');
+    revalidatePath('/admin/ajustes');
+
     return {
       ok: true,
-      message: `${firstName} ${lastName} dado de alta como ${ROL_LABEL[rol]}.`,
+      message: esSeleccionador
+        ? `${firstName} ${lastName} dado de alta como seleccionador de ` +
+          `${armas.map((a) => ARMA_LABEL[a].toLowerCase()).join(' y ')}. ` +
+          'No se ha enviado ningún correo: ya puede entrar escribiendo ' +
+          `${correoCuenta} en la pantalla de acceso.`
+        : `${firstName} ${lastName} dado de alta como ${ROL_LABEL[rol]}.`,
     };
   }
 
@@ -476,7 +570,12 @@ async function analizarCsv(texto: string): Promise<PrevisualizacionCsv | ErrorCs
     if (!lastName) errores.push('Faltan los apellidos.');
 
     const role = rolTexto ? normalizarRol(rolTexto) : 'athlete';
-    if (!role) errores.push(`Rol no reconocido: "${rolTexto}".`);
+    if (!role) {
+      errores.push(
+        `Papel no reconocido: "${rolTexto}". Los que hay son tirador, tutor, ` +
+          'seleccionador y dirección técnica.',
+      );
+    }
 
     const birthDate = fechaTexto ? normalizarFecha(fechaTexto) : null;
     if (fechaTexto && !birthDate) {
@@ -643,7 +742,7 @@ export async function importarUsuarios(
           fullName: fila.requiereTutor
             ? fila.guardianName || `Tutor de ${fila.firstName} ${fila.lastName}`
             : `${fila.firstName} ${fila.lastName}`,
-          role: fila.requiereTutor ? 'guardian' : (fila.role ?? 'athlete'),
+          role: fila.role ?? 'athlete',
           clubId: fila.clubId,
           icalToken: newIcalToken(),
           inviteStatus: 'pendiente',

@@ -27,6 +27,19 @@ function SheetPortal({
   return <SheetPrimitive.Portal data-slot="sheet-portal" {...props} />
 }
 
+/**
+ * El velo: lo que dice que el foco se ha movido.
+ *
+ * Ya estaba puesto —`bg-black/50`— y aun así la auditoría concluyó que no
+ * había velo. Tenía razón en el síntoma y no en la causa: el velo oscurecía
+ * el calendario, pero **el panel iba con `bg-background`, el mismo color que
+ * el lienzo**, así que el ojo no tenía dónde ver el límite y leía todo como
+ * una sola superficie. Medido en 1440: panel contra calendario, **1,03:1**.
+ *
+ * Ahora el velo es `--velo` (65 %) y el panel sube al nivel 3. Los dos
+ * cambios van juntos: subir solo el velo habría oscurecido el calendario
+ * sin dar un borde, y subir solo el panel habría dejado el fondo compitiendo.
+ */
 function SheetOverlay({
   className,
   ...props
@@ -35,7 +48,7 @@ function SheetOverlay({
     <SheetPrimitive.Overlay
       data-slot="sheet-overlay"
       className={cn(
-        "fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
+        "fixed inset-0 z-50 bg-velo data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
         className
       )}
       {...props}
@@ -56,32 +69,72 @@ function SheetContent({
   return (
     <SheetPortal>
       <SheetOverlay />
+      {/*
+        EL PANEL ES UNA SUPERFICIE DE NIVEL 3, NO UN TROZO DE LIENZO.
+
+        Era `bg-background shadow-lg`, es decir: el color del lienzo (nivel 0)
+        y la sombra blanda de Tailwind, `rgb(0 0 0 / 10%)` hacia abajo. Con eso
+        el panel no existía como objeto. Lo que se veía en
+        `capturas/auditoria/aud-6.png` es exactamente la consecuencia: las
+        barras del calendario **se cortaban a mitad de palabra** en el borde
+        izquierdo y el texto de la ficha parecía escrito sobre el mes.
+
+        Tres cosas, y ninguna sobra:
+
+        - `bg-popover`: nivel 3 sólido. El panel es más claro que el lienzo
+          velado, que es la regla del modo oscuro.
+        - `border-filete-alto`: el canto de luz al 12 %. Da la línea de un
+          píxel que dice dónde empieza el panel.
+        - La sombra **dirigida hacia el contenido que tapa** y dura: negro al
+          70 % y 30 px de radio. Una sombra hacia abajo no separa dos cosas
+          que están una al lado de la otra.
+
+        Y `overscroll-contain`, que no es estética: sin él, al llegar al final
+        de una ficha larga en el móvil el gesto seguía desplazando el
+        calendario de detrás.
+      */}
       <SheetPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          "fixed z-50 flex flex-col gap-4 bg-background shadow-lg transition ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:animate-in data-[state=open]:duration-500",
+          "fixed z-50 flex flex-col gap-4 overscroll-contain bg-popover transition ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:animate-in data-[state=open]:duration-500",
           side === "right" &&
-            "inset-y-0 right-0 h-full w-3/4 border-l data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm",
+            "inset-y-0 right-0 h-full w-3/4 border-l border-filete-alto shadow-[var(--sombra-hoja-der)] data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm",
           side === "left" &&
-            "inset-y-0 left-0 h-full w-3/4 border-r data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:max-w-sm",
+            "inset-y-0 left-0 h-full w-3/4 border-r border-filete-alto shadow-[var(--sombra-hoja-izq)] data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:max-w-sm",
           side === "top" &&
-            "inset-x-0 top-0 h-auto border-b data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top",
+            "inset-x-0 top-0 h-auto border-b border-filete-alto shadow-[var(--sombra-hoja-arr)] data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top",
           side === "bottom" &&
-            "inset-x-0 bottom-0 h-auto border-t data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
+            "inset-x-0 bottom-0 h-auto border-t border-filete-alto shadow-[var(--sombra-hoja-aba)] data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
           className
         )}
         {...props}
       >
         {children}
         {/*
-          El aspa lleva fondo propio, no solo opacidad: la ficha de un torneo
-          empieza con el cartel de la FIE, y sobre una foto clara el aspa
-          blanca desaparecía. Con el disco detrás se ve sobre cualquier
-          imagen.
+          EL ASPA: un disco de verdad, y con área de clic.
+
+          Tenía `bg-background/70`, o sea el color del lienzo con alfa, encima
+          de un panel que también era `bg-background`: el disco era del mismo
+          color que lo que tenía detrás y el resultado era el que describe la
+          auditoría, «una ✕ diminuta sin fondo». Medida: **36 × 36 px** en el
+          escritorio y **41 × 44** en el iPhone, porque la regla
+          `.cerrar-hoja { width: 44px }` de `globals.css` perdía contra
+          `size-9`.
+
+          Ahora:
+          - el disco es un **control de nivel 2+** (`bg-accent`), sólido: sobre
+            el panel queda 0,045 de L por encima, así que se lee como un botón
+            que sobresale, y sobre el cartel de la FIE sigue siendo una mancha
+            oscura con el aspa blanca a 12,85:1, que es para lo que se puso;
+          - el canto de luz al 12 % lo separa también de una foto oscura;
+          - el `hover` invierte a blanco en vez de bajar la opacidad, que es
+            el mismo recurso que ya usa el `Tooltip`;
+          - `size-10` (40 px) y la regla de `globals.css` pasada a
+            `min-width`, que sí gana: 44 × 44 con el dedo.
         */}
         {showCloseButton && (
-          <SheetPrimitive.Close className="absolute top-3.5 right-3.5 cerrar-hoja grid size-9 place-items-center rounded-full bg-background/70 text-foreground/80 backdrop-blur transition-colors hover:bg-background hover:text-foreground focus:ring-2 focus:ring-ring focus:outline-hidden disabled:pointer-events-none">
-            <XIcon className="size-4" />
+          <SheetPrimitive.Close className="cerrar-hoja absolute top-3.5 right-3.5 grid size-10 place-items-center rounded-full border border-filete-alto bg-accent text-foreground transition-colors hover:bg-foreground hover:text-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden disabled:pointer-events-none">
+            <XIcon className="size-4.5" />
             <span className="sr-only">Cerrar</span>
           </SheetPrimitive.Close>
         )}

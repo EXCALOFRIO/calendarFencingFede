@@ -9,6 +9,7 @@ import {
   exportarInscripcionesCsv,
   moverInscripciones,
 } from '@/app/(app)/admin/inscripciones/actions';
+import { Buscador } from '@/components/admin/buscador';
 import { Vacio } from '@/components/admin/piezas';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,10 +22,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { EntryStatus } from '@/lib/entries/state-machine';
 import {
   CATEGORY_LABEL,
@@ -36,22 +42,46 @@ import {
 } from '@/lib/utils';
 
 /**
- * Bandeja federativa.
+ * Bandeja de inscripciones de la dirección técnica.
  *
- * Se agrupa POR COMPETICIÓN y no por tirador porque la decisión se toma por
- * competición: se aprueba la lista entera de un torneo y se exporta ese CSV,
- * no una inscripción suelta. Agrupado por tirador habría que ir saltando de
- * un sitio a otro para reunir la misma lista.
+ * -------------------------------------------------------------------------
+ * ESTA PANTALLA ESTABA EN UN CALLEJÓN SIN SALIDA, Y ESTÁ MEDIDO
+ * -------------------------------------------------------------------------
+ * Se escribió cuando el club era un papel de la aplicación: el club validaba
+ * («pending_club» → «club_approved») y la RFEE aprobaba lo validado. Ese papel
+ * ya no existe —`Role` en `src/lib/auth/session.ts` es `admin | coach |
+ * athlete | guardian`— y la bandeja se quedó sin el eslabón de entrada:
  *
+ *  · el filtro de arranque era «Esperan a la RFEE» = `club_approved`;
+ *  · las cuatro acciones salían todas de `club_approved`;
+ *  · y NINGUNA interfaz ofrecía `pending_club` → `club_approved`.
+ *
+ * O sea que cada inscripción nueva que se pide desde `/estado` entra como
+ * `pending_club` y se queda ahí para siempre, mientras la pantalla enseña por
+ * defecto una lista vacía. Las filas que hoy se ven en `club_approved` son de
+ * la semilla de demostración, no de nadie usando la aplicación.
+ *
+ * Se arregla con la acción que faltaba, sin inventar un club: la dirección
+ * técnica da por buena la solicitud ella misma. La máquina de estados
+ * (`src/lib/entries/state-machine.ts`) ya lo permitía —`roles: ['club',
+ * 'admin']`—, así que no hay que tocarla: solo faltaba el botón.
+ *
+ * Y se quita «Devolver al club», que no tiene destinatario.
+ *
+ * -------------------------------------------------------------------------
+ * CÓMO SE MIRA EN UN MÓVIL
+ * -------------------------------------------------------------------------
  * No hay tabla: en un iPhone una tabla de siete columnas se sale de la
  * pantalla o se convierte en un desplazamiento lateral que nadie descubre.
- * Cada fila es una rejilla que se apila en móvil y se alinea en columnas a
- * partir de `sm`.
+ * La fila es una TARJETA apilada en móvil y una fila alineada en `sm`.
+ *
+ * Se agrupa POR COMPETICIÓN y no por tirador porque la decisión se toma por
+ * competición: se aprueba la lista entera de un torneo y se exporta ese CSV.
  */
 
 type Destino = Extract<
   EntryStatus,
-  'federation_approved' | 'submitted' | 'pending_club' | 'rejected'
+  'club_approved' | 'federation_approved' | 'submitted' | 'rejected'
 >;
 
 const ACCIONES: {
@@ -63,12 +93,20 @@ const ACCIONES: {
   ayuda: string;
 }[] = [
   {
+    destino: 'club_approved',
+    etiqueta: 'Dar por buena',
+    desde: ['pending_club'],
+    motivo: false,
+    variante: 'default',
+    ayuda: 'Solo se da por buena una solicitud que todavía no se ha revisado.',
+  },
+  {
     destino: 'federation_approved',
-    etiqueta: 'Aprobar (federación)',
+    etiqueta: 'Aprobar para enviar',
     desde: ['club_approved'],
     motivo: false,
     variante: 'default',
-    ayuda: 'Solo se puede aprobar lo que ya validó el club.',
+    ayuda: 'Antes de aprobarla hay que darla por buena.',
   },
   {
     destino: 'submitted',
@@ -77,14 +115,6 @@ const ACCIONES: {
     motivo: false,
     variante: 'outline',
     ayuda: 'Solo se marca como enviada una inscripción ya aprobada.',
-  },
-  {
-    destino: 'pending_club',
-    etiqueta: 'Devolver al club',
-    desde: ['club_approved'],
-    motivo: true,
-    variante: 'outline',
-    ayuda: 'Solo se devuelve al club lo que el club ya había validado.',
   },
   {
     destino: 'rejected',
@@ -96,11 +126,18 @@ const ACCIONES: {
   },
 ];
 
+/**
+ * Los cuatro montones, y el orden es el del recorrido.
+ *
+ * Arranca en «Sin revisar», que es donde cae todo lo que se pide de verdad.
+ * Antes arrancaba en `club_approved`, que hoy no recibe nada: la pantalla
+ * abría vacía y parecía rota.
+ */
 const FILTROS: { clave: string; etiqueta: string; estados: EntryStatus[] }[] = [
-  { clave: 'rfee', etiqueta: 'Esperan a la RFEE', estados: ['club_approved'] },
+  { clave: 'nuevas', etiqueta: 'Sin revisar', estados: ['pending_club'] },
+  { clave: 'buenas', etiqueta: 'Dadas por buenas', estados: ['club_approved'] },
   { clave: 'enviar', etiqueta: 'Listas para enviar', estados: ['federation_approved'] },
-  { clave: 'club', etiqueta: 'En el club', estados: ['pending_club'] },
-  { clave: 'enviadas', etiqueta: 'Enviadas', estados: ['submitted'] },
+  { clave: 'enviadas', etiqueta: 'Ya enviadas', estados: ['submitted'] },
   {
     clave: 'todas',
     etiqueta: 'Todas',
@@ -109,17 +146,19 @@ const FILTROS: { clave: string; etiqueta: string; estados: EntryStatus[] }[] = [
 ];
 
 /**
- * Cómo se llama cada estado DESDE LA FEDERACIÓN.
+ * Cómo se llama cada estado EN ESTA PANTALLA, sin nombrar al club.
  *
  * `ENTRY_STATUS_LABEL` está escrito para el tirador («Pendiente de tu club»,
- * «Aceptada por la RFEE») y aquí quedaba raro: en esta pantalla la RFEE es
- * quien mira, así que el club es «su club» y la RFEE somos nosotros. Es la
- * misma máquina de estados con otra voz, no otra máquina de estados.
+ * «Aceptada por la RFEE»). Aquí quien mira es la dirección técnica, y además
+ * el club ya no valida nada: los nombres de la base (`pending_club`,
+ * `club_approved`) se quedan porque cambiarlos es una migración, pero lo que
+ * se lee en pantalla dice lo que pasa de verdad. Es la misma máquina de
+ * estados con otra voz, no otra máquina de estados.
  */
 const ESTADO_FEDERACION: Record<EntryStatus, string> = {
-  draft: 'Borrador del club',
-  pending_club: 'En su club, sin validar',
-  club_approved: 'Validada por su club',
+  draft: 'Borrador, sin pedir',
+  pending_club: 'Pedida, sin revisar',
+  club_approved: 'Dada por buena',
   federation_approved: 'Aprobada, lista para enviar',
   submitted: 'Enviada a la organización',
   rejected: 'Rechazada',
@@ -138,7 +177,7 @@ const TONO_ESTADO: Record<EntryStatus, string> = {
 
 export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
   const router = useRouter();
-  const [filtro, setFiltro] = React.useState('rfee');
+  const [filtro, setFiltro] = React.useState('nuevas');
   const [busqueda, setBusqueda] = React.useState('');
   const [elegidas, setElegidas] = React.useState<Set<string>>(new Set());
   const [ocupado, setOcupado] = React.useState(false);
@@ -188,6 +227,12 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
 
   const seleccionadas = filas.filter((f) => elegidas.has(f.id));
   const sinLicencia = seleccionadas.filter((f) => !f.licenciaRfee);
+
+  /** Las acciones que de verdad moverían algo de lo que está marcado. */
+  const aplicables = ACCIONES.map((accion) => ({
+    ...accion,
+    cuantas: seleccionadas.filter((f) => accion.desde.includes(f.status)).length,
+  })).filter((accion) => accion.cuantas > 0);
 
   function alternar(id: string) {
     setElegidas((previas) => {
@@ -267,34 +312,51 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      {/* Controles en UNA fila que envuelve. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <ToggleGroup
-          type="single"
-          value={filtro}
-          onValueChange={(valor) => valor && setFiltro(valor)}
-          variant="outline"
-          size="sm"
-          spacing={1}
-          className="max-w-full flex-wrap"
-        >
-          {FILTROS.map((f) => {
-            const cuantas = filas.filter((fila) => f.estados.includes(fila.status)).length;
-            return (
-              <ToggleGroupItem key={f.clave} value={f.clave} className="gap-1.5">
-                {f.etiqueta}
-                <span className="cifra text-xs text-muted-foreground">{cuantas}</span>
-              </ToggleGroupItem>
-            );
-          })}
-        </ToggleGroup>
+      {/*
+        CONTROLES EN UNA FILA, Y EL MONTÓN EN UN `SELECT`.
 
-        <Input
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
-          placeholder="Buscar tirador, club o torneo"
-          className="h-8 w-full sm:w-56"
-          aria-label="Buscar en la bandeja"
+        Eran cinco pastillas en `ToggleGroup`, y medidas en un iPhone ocupaban
+        dos pisos de 62 px cada uno más un tercero para el buscador: 190 px de
+        filtros antes de la primera inscripción. Además incumplía la
+        convención del proyecto (`REFERENCIAS.md` § 9.1, regla 3): elegir UNO
+        de varios va en `Select`, no en una fila de pastillas, y con más de
+        cuatro opciones con más razón.
+
+        El `Select` cabe al lado del buscador y deja la lista empezando en el
+        primer pliegue. El recuento de cada montón no se pierde: va dentro de
+        cada opción y el del elegido se lee en el disparador.
+      */}
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <Select value={filtro} onValueChange={(valor) => valor && setFiltro(valor)}>
+          <SelectTrigger
+            className="h-9 w-auto min-w-44 flex-1 basis-44 sm:flex-none"
+            aria-label="Qué inscripciones se enseñan"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {FILTROS.map((f) => {
+              const cuantas = filas.filter((fila) =>
+                f.estados.includes(fila.status),
+              ).length;
+              return (
+                <SelectItem key={f.clave} value={f.clave}>
+                  {f.etiqueta}
+                  <span className="cifra ms-1.5 text-xs text-muted-foreground">
+                    {cuantas}
+                  </span>
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+
+        {/* Icono en el móvil, campo en el escritorio. Ver `admin/buscador`. */}
+        <Buscador
+          valor={busqueda}
+          onCambio={setBusqueda}
+          etiqueta="Buscar en la bandeja"
+          marcador="Buscar tirador o torneo"
         />
       </div>
 
@@ -309,8 +371,18 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
             </span>
           </span>
 
+          {/*
+            SOLO LOS BOTONES QUE HARÍAN ALGO.
+
+            Estaban los cuatro siempre, y en un iPhone eran dos pisos de
+            botones de los que tres avisaban «ninguna de las seleccionadas
+            admite esa acción» al tocarlos. Un botón que solo sirve para
+            explicarte que no sirve no es un botón. Ahora se pinta el que tiene
+            al menos una fila a la que aplicarse, así que la barra dice qué se
+            puede hacer con lo que hay marcado.
+          */}
           <div className="ms-auto flex flex-wrap items-center gap-2">
-            {ACCIONES.map((accion) => (
+            {aplicables.map((accion) => (
               <Button
                 key={accion.destino}
                 size="sm"
@@ -321,6 +393,7 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
                 }
               >
                 {accion.etiqueta}
+                <span className="cifra text-xs opacity-70">{accion.cuantas}</span>
               </Button>
             ))}
             <Button size="sm" variant="secondary" disabled={ocupado} onClick={exportar}>
@@ -353,8 +426,8 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
           titulo="Aquí no hay nada esperando"
           explicacion={
             busqueda
-              ? `Ninguna inscripción coincide con «${busqueda}» en este filtro. Prueba con «Todas».`
-              : 'Cuando un club valide una solicitud, aparecerá en esta lista para que la federación la apruebe y la exporte.'
+              ? `Ninguna inscripción coincide con «${busqueda}» en este montón. Prueba con «Todas».`
+              : 'Cuando alguien pida inscripción desde su pantalla de estado, aparecerá aquí en «Sin revisar» para darla por buena, aprobarla y exportarla.'
           }
         />
       ) : (
@@ -393,32 +466,49 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
                   </span>
                 </div>
 
-                <ul className="divide-y overflow-hidden rounded-lg border bg-card">
+                <ul className="divide-y overflow-hidden rounded-lg border-t border-filete bg-card">
                   {grupo.filas.map((f) => (
                     <li
                       key={f.id}
                       className={cn(
-                        'grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-1 px-3 py-3 sm:grid-cols-[auto_minmax(0,1.4fr)_minmax(0,1.2fr)_auto] sm:items-center',
-                        elegidas.has(f.id) && 'bg-accent/40',
+                        'grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-1.5 px-3 py-3 sm:grid-cols-[auto_minmax(0,1.3fr)_minmax(0,1fr)_auto] sm:items-center',
+                        /*
+                          La fila marcada, con el token del proyecto. Iba con
+                          `bg-accent/40`, que es un alfa de superficie: está
+                          prohibido porque el mismo marcado sale de un color
+                          distinto según lo que tenga detrás y deja pasar la
+                          textura del lienzo. Y al 40 % de un gris que ya está
+                          a medio paso de la tarjeta, no se veía. Ahora es la
+                          misma señal que en el resto de la aplicación, y la
+                          casilla marcada la acompaña como señal de forma.
+                        */
+                        elegidas.has(f.id) && 'bg-marcado',
                       )}
                     >
                       <Checkbox
                         checked={elegidas.has(f.id)}
                         onCheckedChange={() => alternar(f.id)}
                         aria-label={`Seleccionar la inscripción de ${f.tirador}`}
-                        className="mt-0.5 sm:mt-0"
+                        className="mt-1 sm:mt-0"
                       />
 
                       <div className="flex min-w-0 flex-col">
-                        <span className="truncate font-medium">{f.tirador}</span>
-                        <span className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
-                          <span className="min-w-0 truncate">
+                        {/*
+                          El nombre NO se recorta con puntos: envuelve. Un
+                          nombre a medias en una bandeja donde se aprueba gente
+                          es exactamente el dato que no se puede adivinar.
+                        */}
+                        <span className="text-[0.95rem] font-medium leading-tight">
+                          {f.tirador}
+                        </span>
+                        <span className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                          <span className="min-w-0">
                             {f.clubNombre ?? 'Sin club en su ficha'}
                           </span>
                           {f.licenciaRfee ? (
                             <span>
                               Licencia{' '}
-                              <span className="text-foreground">
+                              <span className="tabular-nums text-foreground">
                                 {f.licenciaRfee}
                               </span>
                             </span>
@@ -433,7 +523,7 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
                           «Sable femenino · M17» pero jerarquizada: lo que
                           se busca al repasar la bandeja es el arma.
                         */}
-                        <span className="truncate text-sm">
+                        <span className="text-sm">
                           {WEAPON_LABEL[f.weapon as keyof typeof WEAPON_LABEL] ??
                             f.weapon}{' '}
                           {(
@@ -447,7 +537,7 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
                             {f.format === 'EQUIPOS' ? ', equipos' : ''}
                           </span>
                         </span>
-                        <span className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                        <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                           <span>
                             {f.diasHastaEvento <= 0 ? (
                               'Empieza hoy'
@@ -463,11 +553,7 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
                               </>
                             )}
                           </span>
-                          {f.eventoCiudad ? (
-                            <span className="min-w-0 truncate">
-                              {f.eventoCiudad}
-                            </span>
-                          ) : null}
+                          {f.eventoCiudad ? <span>{f.eventoCiudad}</span> : null}
                         </span>
                       </div>
 
@@ -507,11 +593,9 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              {pidiendoMotivo === 'rejected' ? 'Rechazar' : 'Devolver al club'}
-            </DialogTitle>
+            <DialogTitle>Rechazar la inscripción</DialogTitle>
             <DialogDescription>
-              El motivo llega al club y al tirador, y queda en el historial de la
+              El motivo llega al tirador y queda en el historial de la
               inscripción. Sin él no se sabe qué hay que arreglar.
             </DialogDescription>
           </DialogHeader>
@@ -538,11 +622,12 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
               Cancelar
             </Button>
             <Button
+              variant="destructive"
               disabled={ocupado || motivo.trim().length === 0}
               onClick={() => pidiendoMotivo && aplicar(pidiendoMotivo, motivo.trim())}
             >
               {ocupado ? <Loader2 className="animate-spin" /> : null}
-              {pidiendoMotivo === 'rejected' ? 'Rechazar' : 'Devolver al club'}
+              Rechazar
             </Button>
           </DialogFooter>
         </DialogContent>

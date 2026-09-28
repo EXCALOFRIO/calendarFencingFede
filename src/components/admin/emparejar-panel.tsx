@@ -13,6 +13,7 @@ import {
   asignarTodosConEseNombre,
   desasignarResultado,
 } from '@/app/(app)/admin/emparejar/actions';
+import { Buscador } from '@/components/admin/buscador';
 import { Vacio } from '@/components/admin/piezas';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,7 +25,6 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
@@ -48,6 +48,9 @@ import {
  * se emparejan solos. Es la diferencia entre resolver 80 filas una vez y
  * resolverlas cada semana.
  */
+
+/** Cuántas FILAS se pintan de golpe, repartidas entre sus competiciones. */
+const PASO = 20;
 export function EmparejarPanel({
   resultados,
   tiradores,
@@ -60,6 +63,7 @@ export function EmparejarPanel({
   const router = useRouter();
   const [busqueda, setBusqueda] = React.useState('');
   const [ocupado, setOcupado] = React.useState<string | null>(null);
+  const [tope, setTope] = React.useState(PASO);
 
   const visibles = React.useMemo(() => {
     const texto = busqueda.trim().toLowerCase();
@@ -87,6 +91,43 @@ export function EmparejarPanel({
       filas: [...filas].sort((a, b) => a.position - b.position),
     }));
   }, [visibles]);
+
+  /**
+   * Se pintan unas cuantas FILAS, no unas cuantas competiciones.
+   *
+   * Medido: 10.265 px en un iPhone, trece pantallas de desplazamiento. El
+   * primer intento cortó por competiciones y no sirvió de nada —bajó a 10.245
+   * px—, porque los 77 resultados sueltos caen en cuatro o cinco
+   * competiciones: cortar por grupo deja el grupo entero dentro.
+   *
+   * Así que se corta por filas y los grupos se van llenando hasta el tope. El
+   * último grupo puede salir incompleto, y eso está bien: la cuenta que lleva
+   * al lado del título es la del grupo completo, así que se ve que falta.
+   *
+   * Al buscar se vuelve al principio, que es lo que se espera.
+   */
+  const gruposVisibles = React.useMemo(() => {
+    const salida: typeof grupos = [];
+    let llevadas = 0;
+    for (const grupo of grupos) {
+      if (llevadas >= tope) break;
+      const hueco = tope - llevadas;
+      salida.push(
+        grupo.filas.length <= hueco
+          ? grupo
+          : { ...grupo, filas: grupo.filas.slice(0, hueco) },
+      );
+      llevadas += Math.min(grupo.filas.length, hueco);
+    }
+    return salida;
+  }, [grupos, tope]);
+
+  const pintadas = gruposVisibles.reduce((n, g) => n + g.filas.length, 0);
+  const quedanFilas = visibles.length - pintadas;
+
+  React.useEffect(() => {
+    setTope(PASO);
+  }, [busqueda]);
 
   /** Cuántas filas comparten exactamente el mismo nombre de origen. */
   const repeticiones = React.useMemo(() => {
@@ -154,16 +195,31 @@ export function EmparejarPanel({
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
-          placeholder="Buscar nombre, licencia, club o prueba"
-          className="h-8 w-full sm:w-72"
-          aria-label="Buscar en la cola de emparejado"
+        {/* Icono en el móvil, campo en el escritorio. Ver `admin/buscador`. */}
+        <Buscador
+          valor={busqueda}
+          onCambio={setBusqueda}
+          etiqueta="Buscar en la cola de emparejado"
+          marcador="Buscar nombre, licencia o prueba"
         />
-        <span className="text-xs text-muted-foreground">
-          {visibles.length} de {resultados.length} sin emparejar
-          {yaEmparejados > 0 ? ` · ${yaEmparejados} ya asignados` : ''}
+        {/* Cada cifra con su palabra, no encadenadas con un punto medio. */}
+        <span className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+          <span>
+            <span className="cifra text-foreground">{visibles.length}</span> de{' '}
+            <span className="cifra text-foreground">{resultados.length}</span> sin
+            emparejar
+          </span>
+          {quedanFilas > 0 ? (
+            <span>
+              se ven <span className="cifra text-foreground">{pintadas}</span>
+            </span>
+          ) : null}
+          {yaEmparejados > 0 ? (
+            <span>
+              <span className="cifra text-foreground">{yaEmparejados}</span> ya
+              asignados
+            </span>
+          ) : null}
         </span>
       </div>
 
@@ -174,17 +230,20 @@ export function EmparejarPanel({
         />
       ) : null}
 
-      {grupos.map((grupo) => (
+      {gruposVisibles.map((grupo) => (
         <section key={grupo.evento} className="flex min-w-0 flex-col gap-2">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h2 className="min-w-0 text-base">{titular(grupo.evento)}</h2>
-            <span className="text-xs text-muted-foreground">
-              {grupo.fecha ? `${formatDateEs(grupo.fecha)} · ` : ''}
-              {grupo.filas.length} sin emparejar
+            <span className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+              {grupo.fecha ? <span>{formatDateEs(grupo.fecha)}</span> : null}
+              <span>
+                <span className="cifra text-foreground">{grupo.filas.length}</span> sin
+                emparejar
+              </span>
             </span>
           </div>
 
-          <ul className="divide-y overflow-hidden rounded-lg border bg-card">
+          <ul className="divide-y overflow-hidden rounded-lg border-t border-filete bg-card">
             {grupo.filas.map((fila) => (
               <li
                 key={fila.id}
@@ -245,6 +304,19 @@ export function EmparejarPanel({
           </ul>
         </section>
       ))}
+
+      {quedanFilas > 0 ? (
+        <Button
+          variant="outline"
+          className="h-11 w-full"
+          onClick={() => setTope((n) => n + PASO)}
+        >
+          Ver {Math.min(quedanFilas, PASO)} resultados más
+          <span className="cifra text-xs text-muted-foreground">
+            quedan {quedanFilas}
+          </span>
+        </Button>
+      ) : null}
     </div>
   );
 }

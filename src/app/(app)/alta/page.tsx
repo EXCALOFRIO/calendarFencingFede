@@ -64,7 +64,7 @@ export default async function Pagina({
       buscar={buscarEnRanking}
       vincular={vincularFicha}
       nombreCuenta={perfil.fullName}
-      esPersonal={perfil.role === 'athlete' || perfil.role === 'guardian'}
+      esPersonal={perfil.role === 'athlete'}
     />
   );
 }

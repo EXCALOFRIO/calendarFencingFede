@@ -1,6 +1,13 @@
 'use client';
 
-import { CircleAlert, CircleCheck, CircleDashed, Loader2, RefreshCw } from 'lucide-react';
+import {
+  CircleAlert,
+  CircleCheck,
+  CircleDashed,
+  CircleX,
+  Loader2,
+  RefreshCw,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { toast } from 'sonner';
@@ -51,13 +58,22 @@ export type EjecucionFila = {
   triggeredBy: string;
 };
 
+/**
+ * Los tres estados de una lectura, cada uno con SU forma.
+ *
+ * «Parcial» y «Con error» llevaban el mismo círculo de admiración y solo los
+ * separaba el color: ámbar y rojo. El contrato de interfaz dice que el color
+ * nunca comunica solo, y aquí la palabra queda tres líneas más abajo, así que
+ * de un vistazo eran el mismo estado. Ahora son tres siluetas distintas:
+ * visto, admiración, tachado.
+ */
 const ESTADO: Record<
   string,
   { palabra: string; color: string; icono: typeof CircleCheck }
 > = {
   ok: { palabra: 'Correcta', color: 'text-ok', icono: CircleCheck },
   parcial: { palabra: 'Parcial', color: 'text-warn', icono: CircleAlert },
-  error: { palabra: 'Con error', color: 'text-danger', icono: CircleAlert },
+  error: { palabra: 'Con error', color: 'text-danger', icono: CircleX },
 };
 
 function antiguedad(horas: number | null): string {

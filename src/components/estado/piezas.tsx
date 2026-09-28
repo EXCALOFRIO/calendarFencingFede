@@ -1,12 +1,12 @@
 import { cn } from '@/lib/utils';
 
 /**
- * Las tres piezas con las que está hecha «Mi estado».
+ * Las piezas con las que está hecha «Mi estado».
  *
- * Salen de la pista y del marcador, que es de donde sale el aspecto de toda
- * la aplicación: una línea blanca fina que separa bandas horizontales, una
- * cifra enorme con una palabra diminuta al lado, y los datos en columnas con
- * su rótulo en lugar de encadenados con puntos medios.
+ * Salen de la pista y del marcador, que es de donde sale el aspecto de toda la
+ * aplicación: una línea blanca fina que separa bandas horizontales, una cifra
+ * enorme con una palabra diminuta debajo, y los datos en columnas con su
+ * rótulo en lugar de encadenados con puntos medios.
  */
 
 /**
@@ -108,40 +108,72 @@ export function Cuenta({
 }
 
 /**
- * El marcador de la pantalla: de dos a cuatro cifras en una chapa.
+ * El marcador de la pantalla: una cifra por pregunta, en una chapa.
  *
- * Es lo primero que se ve en el móvil y contesta «¿cómo voy?» sin tocar
- * nada. La chapa se separa del fondo con un filete de luz arriba, no con una
+ * Es lo primero que se ve en el móvil y contesta las tres preguntas de la
+ * pantalla —¿estoy dentro?, ¿cuánto me queda?, ¿cómo voy?— sin tocar nada y sin
+ * bajar. La chapa se separa del fondo con un filete de luz arriba, no con una
  * sombra, y las celdas se separan entre sí con líneas de un píxel.
+ *
+ * **Las celdas caben en UNA fila en el móvil, y eso es la mitad del arreglo.**
+ * La versión anterior ponía cuatro celdas en dos filas con el rótulo AL LADO de
+ * la cifra, y en un iPhone medía 230 px: el primer contenido de verdad quedaba a
+ * 660 px. Con la palabra debajo de la cifra, tres celdas ocupan 104 px medidos y
+ * la lista de competiciones entra en la primera pantalla.
  */
 export function Marcador({ children }: { children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border-t border-filete bg-border sm:grid-cols-4">
+    <div
+      className={cn(
+        'grid grid-cols-3 gap-px overflow-hidden rounded-lg border-t border-filete bg-border',
+        // Con cuatro celdas (hay convocatoria sin contestar) la cuarta se pone
+        // debajo en el móvil en vez de estrujar las tres primeras a 80 px.
+        '[&:has(>*:nth-child(4))]:grid-cols-2 sm:[&:has(>*:nth-child(4))]:grid-cols-4',
+      )}
+    >
       {children}
     </div>
   );
 }
 
 /**
- * Una celda del marcador: la cifra enorme y el rótulo diminuto AL LADO.
+ * Una celda del marcador: la cifra grande y el rótulo diminuto DEBAJO.
  *
- * Al lado y no debajo. Apilados, el rótulo de tres palabras hacía la celda
- * el doble de alta que la cifra y el conjunto dejaba de parecer un marcador
- * para parecer cuatro párrafos con un número encima.
+ * Debajo y no al lado. Al lado, el rótulo de tres palabras pedía el doble de
+ * ancho que la cifra y solo entraban dos celdas por fila; debajo entran tres, y
+ * tres celdas en una fila se leen como un marcador de verdad y no como cuatro
+ * párrafos con un número encima.
  */
 export function CeldaMarcador({
   valor,
   palabra,
   tono = 'normal',
+  /**
+   * `compacto` para las cifras de cuatro dígitos o más.
+   *
+   * No es una preferencia: con la celda a 113 px en un iPhone, «1387,77» a
+   * `text-4xl` se salía y el navegador lo cortaba en «1387,7». Un total de
+   * puntos cortado por la derecha es un dato falso, y lo cazó la captura.
+   */
+  tamano = 'normal',
 }: {
   valor: React.ReactNode;
   palabra: string;
   tono?: Tono;
+  tamano?: 'normal' | 'compacto';
 }) {
   return (
-    <div className="flex min-w-0 items-baseline gap-2 bg-card px-3 py-3 sm:px-4">
-      <span className={cn('cifra shrink-0 text-5xl', TONO[tono])}>{valor}</span>
-      <span className="min-w-0 text-xs leading-tight text-muted-foreground">
+    <div className="flex min-w-0 flex-col gap-1 bg-card px-3 py-3 sm:px-4">
+      <span
+        className={cn(
+          'cifra',
+          tamano === 'compacto' ? 'text-2xl sm:text-3xl' : 'text-4xl sm:text-5xl',
+          TONO[tono],
+        )}
+      >
+        {valor}
+      </span>
+      <span className="text-[0.7rem] leading-tight text-muted-foreground sm:text-xs">
         {palabra}
       </span>
     </div>
@@ -191,6 +223,45 @@ export function Rotulos({
         >
           <dt className="shrink-0 text-xs text-muted-foreground">{rotulo}</dt>
           <dd className="min-w-0 text-sm">{valor}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/**
+ * Los horarios del día, como un marcador de cuatro cifras.
+ *
+ * Es lo único que importa cuando ya estás en el pabellón, así que va en cifra
+ * grande y separado por filetes. Si la organización no publica ninguno se dice;
+ * no se rellena con una hora plausible.
+ */
+export function Horarios({
+  horas,
+}: {
+  horas: [string, string | null][];
+}) {
+  const publicadas = horas.filter((h): h is [string, string] => Boolean(h[1]));
+
+  if (publicadas.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        La organización no ha publicado los horarios de esta prueba.
+      </p>
+    );
+  }
+
+  return (
+    <dl
+      className="grid gap-px overflow-hidden rounded-md bg-border"
+      style={{
+        gridTemplateColumns: `repeat(${publicadas.length}, minmax(0, 1fr))`,
+      }}
+    >
+      {publicadas.map(([rotulo, hora]) => (
+        <div key={rotulo} className="flex flex-col gap-0.5 bg-background px-2 py-2">
+          <dd className="cifra text-2xl">{hora}</dd>
+          <dt className="text-xs leading-tight text-muted-foreground">{rotulo}</dt>
         </div>
       ))}
     </dl>

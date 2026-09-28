@@ -251,6 +251,7 @@ export async function getMyStatus(profileId: string): Promise<MyStatus> {
       scope: r.scope as 'NACIONAL' | 'INTERNACIONAL' | 'AUTONOMICO',
       circuit: r.circuit,
       category: r.category as never,
+      format: r.format,
     });
     const merged = mergeDeadlines(published, calculated);
     const res = resultByKey.get(`${r.competitionId}|${r.athleteId}`);

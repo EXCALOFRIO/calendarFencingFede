@@ -70,7 +70,15 @@ export default async function Pagina() {
   const conInscripciones = vista.filter(
     (t) => t.upcoming.length > 0 || t.enClub.length > 0,
   ).length;
-  const esperandoClub = vista.reduce((total, t) => total + t.enClub.length, 0);
+  /**
+   * Inscripciones pedidas y todavía sin dar por buenas.
+   *
+   * En la base el estado se llama `pending_club` y antes se rotulaba «esperan
+   * a su club». Ya no hay club que valide nada —`Role` es `admin | coach |
+   * athlete | guardian`—, así que lo que espera no es un club: espera a que
+   * alguien de la dirección técnica la revise. Se dice eso.
+   */
+  const sinConfirmar = vista.reduce((total, t) => total + t.enClub.length, 0);
   const conAvisos = vista.filter((t) => t.warnings.length > 0).length;
   const competiciones = new Set(
     vista.flatMap((t) => [...t.upcoming, ...t.enClub].map((u) => u.eventId)),
@@ -89,28 +97,35 @@ export default async function Pagina() {
         }
       />
 
+      {/*
+        CUATRO CIFRAS FIJAS, NO CINCO.
+
+        Eran cinco y en un iPhone la quinta se quedaba sola en su fila, que se
+        lee como un hueco de maquetación. Y una de ellas era «esperan a su
+        club»: contaba un estado que ya no depende de ningún club. Lo que
+        quedaba por decir —cuántas están sin confirmar— cabe en el matiz de
+        «van a algo», que es la cifra a la que pertenece.
+      */}
       <TiraCifras>
         <Cifra
           valor={vista.length}
           palabra="tiradores en activo"
-          detalle="con ficha y licencia al día o no"
+          detalle="con ficha en la aplicación"
         />
         <Cifra
           valor={conInscripciones}
           palabra="van a algo"
-          detalle="tienen inscripción viva"
+          detalle={
+            sinConfirmar > 0
+              ? `${sinConfirmar} ${sinConfirmar === 1 ? 'inscripción' : 'inscripciones'} sin confirmar`
+              : 'todas sus inscripciones confirmadas'
+          }
           tono={conInscripciones > 0 ? 'ok' : 'apagado'}
         />
         <Cifra
           valor={competiciones}
           palabra="competiciones por delante"
           detalle="a las que va alguien"
-        />
-        <Cifra
-          valor={esperandoClub}
-          palabra="esperan a su club"
-          detalle="solicitadas, sin validar"
-          tono={esperandoClub > 0 ? 'aviso' : 'apagado'}
         />
         <Cifra
           valor={conAvisos}
@@ -122,7 +137,7 @@ export default async function Pagina() {
 
       <PanelTiradores
         tiradores={vista}
-        armasPropias={armasPropias}
+        perfil={{ role: acceso.perfil.role, weapons: armasPropias }}
         esAdmin={esAdmin}
       />
     </div>

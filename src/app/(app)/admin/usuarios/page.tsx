@@ -1,7 +1,7 @@
 import { SinAcceso, exigirRol } from '@/components/admin/guardia';
-import { Cabecera } from '@/components/admin/piezas';
+import { Cabecera, Cifra, TiraCifras } from '@/components/admin/piezas';
 import { UsuariosPanel } from '@/components/admin/usuarios-panel';
-import { listarAltasRecientes, listarClubesParaAlta } from '../consultas';
+import { contarCuentas, listarAltasRecientes, listarClubesParaAlta } from '../consultas';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Usuarios' };
@@ -18,17 +18,62 @@ export default async function Pagina() {
     );
   }
 
-  const [clubes, altas] = await Promise.all([
+  const [clubes, altas, recuento] = await Promise.all([
     listarClubesParaAlta(),
     listarAltasRecientes(),
+    contarCuentas(),
   ]);
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <Cabecera
         titulo="Usuarios"
-        contexto="Alta de una persona o importación de un listado entero. La importación se previsualiza fila a fila antes de escribir nada."
+        contexto="Quién tiene cuenta, y cómo se da de alta a alguien más."
       />
+
+      {/*
+        La chapa de cifras va ANTES del formulario.
+
+        Antes esta pantalla abría con un campo «Nombre» vacío: en un iPhone se
+        veían tres campos en blanco y nada más, y para saber cuántas cuentas
+        había que bajar dos mil píxeles hasta el final. El estado se lee
+        primero y se actúa después, que es el orden en que se mira una
+        pantalla de gestión.
+      */}
+      <TiraCifras>
+        <Cifra valor={recuento.total} palabra="cuentas" detalle="con acceso creado" />
+        <Cifra
+          valor={recuento.athlete}
+          palabra="tiradores"
+          detalle="entran a ver su ranking y sus plazos"
+        />
+        <Cifra
+          valor={recuento.coach}
+          palabra="seleccionadores"
+          detalle="uno por arma, con su género"
+        />
+        {/*
+          Solo cuando hay algo que arreglar. Una cifra en cero con la palabra
+          «revocadas» al lado invita a buscar un problema que no existe.
+        */}
+        {recuento.sinAcceso > 0 ? (
+          <Cifra
+            valor={recuento.sinAcceso}
+            palabra="con el acceso revocado"
+            detalle="siguen en la base, no pueden entrar"
+            tono="aviso"
+          />
+        ) : null}
+        {recuento.retirados > 0 ? (
+          <Cifra
+            valor={recuento.retirados}
+            palabra="con un papel retirado"
+            detalle="el club ya no es un papel: hay que reasignarlas"
+            tono="aviso"
+          />
+        ) : null}
+      </TiraCifras>
+
       <UsuariosPanel clubes={clubes} altas={altas} />
     </div>
   );

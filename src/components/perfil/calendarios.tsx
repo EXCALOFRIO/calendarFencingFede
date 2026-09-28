@@ -19,7 +19,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 
 export type FeedVista = {
   tipo: string;
@@ -57,28 +56,44 @@ function Fila({
         </p>
       </div>
 
+      {/*
+        LAS ACCIONES PRIMERO Y LA DIRECCIÓN DEBAJO, QUE ENVUELVE.
+
+        Aquí había un `<input readOnly>` con la dirección dentro. Medido en un
+        iPhone: campo de 355 px con 702 px de valor, o sea que se veía la
+        primera mitad de la URL y el resto había que sacarlo arrastrando el
+        cursor dentro del campo. En escritorio, 488 de 724. No era «texto
+        cortado» en el sentido de una etiqueta truncada —un `input` se
+        desplaza por dentro a propósito— pero sí era una dirección que no se
+        puede leer ni comprobar, que es justo lo que se viene a hacer aquí:
+        confirmar que lo copiado es lo que se pega en Google Calendar.
+
+        Ahora es un `<code>` con `break-all`: se lee entera en dos renglones,
+        se selecciona con un toque largo y nunca desborda. Y las dos acciones
+        —suscribir, que es lo que se usa en el móvil, y copiar, que es lo del
+        ordenador— van delante, porque son lo que se quiere hacer.
+      */}
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          id={`url-${feed.tipo}`}
-          readOnly
-          value={feed.url}
-          aria-label={`Dirección de ${feed.nombre}`}
-          onFocus={(e) => e.currentTarget.select()}
-          className="h-9 min-w-0 flex-1 basis-56 font-mono text-xs"
-        />
+        <Button variant="outline" size="sm" asChild>
+          <a href={feed.webcal}>Suscribir en este dispositivo</a>
+        </Button>
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
           onClick={() => onCopiar(feed)}
           aria-label={`Copiar la dirección de ${feed.nombre}`}
         >
           {copiado ? <Check /> : <Copy />}
-          {copiado ? 'Copiada' : 'Copiar'}
-        </Button>
-        <Button variant="outline" size="sm" asChild>
-          <a href={feed.webcal}>Suscribir</a>
+          {copiado ? 'Copiada' : 'Copiar la dirección'}
         </Button>
       </div>
+
+      <code
+        id={`url-${feed.tipo}`}
+        className="min-w-0 break-all rounded-md border bg-muted/40 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground"
+      >
+        {feed.url}
+      </code>
     </div>
   );
 }
@@ -103,9 +118,18 @@ export function Calendarios({
       setCopiado(feed.tipo);
       setTimeout(() => setCopiado((c) => (c === feed.tipo ? null : c)), 2500);
     } catch {
-      // Sin permiso de portapapeles (o en http): se selecciona para que la
-      // persona pueda copiar a mano en vez de quedarse sin salida.
-      document.getElementById(`url-${feed.tipo}`)?.focus();
+      // Sin permiso de portapapeles (o en http): se selecciona la dirección
+      // entera para que la persona pueda copiarla a mano en vez de quedarse
+      // sin salida. Al ser un `<code>` y no un `<input>`, se marca con un
+      // rango de selección en lugar de con `select()`.
+      const nodo = document.getElementById(`url-${feed.tipo}`);
+      const seleccion = window.getSelection();
+      if (nodo && seleccion) {
+        const rango = document.createRange();
+        rango.selectNodeContents(nodo);
+        seleccion.removeAllRanges();
+        seleccion.addRange(rango);
+      }
     }
   };
 

@@ -99,7 +99,7 @@ for (const [nombre, config] of [
     } else {
       // 3. Y lo que se ve es el calendario CON DATOS, no una pantalla vacía.
       const barras = await pagina
-        .locator('div.relative.grid.grid-cols-7 > button')
+        .locator('[data-barra="torneo"]')
         .count();
       const titulo = await pagina.locator('h1').first().innerText();
       console.log(`  ✓ Entró en ${ruta} · «${titulo}» · ${barras} torneos pintados`);

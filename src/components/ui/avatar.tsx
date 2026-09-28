@@ -45,7 +45,13 @@ function AvatarFallback({
     <AvatarPrimitive.Fallback
       data-slot="avatar-fallback"
       className={cn(
-        "flex size-full items-center justify-center rounded-full bg-muted text-sm text-muted-foreground group-data-[size=sm]/avatar:text-xs",
+        // Las iniciales van en blanco y en negrita, no en `muted-foreground`.
+        // Sobre el disco de nivel 2 el apagado da 6,81:1 sobre el papel, pero
+        // a 11 px con dos letras finas el antialias se come el pico de
+        // luminancia y lo que se veía era lo que dijo la auditoría: «letras en
+        // gris oscuro sobre un círculo gris, parece desactivado». En blanco
+        // son 14,27:1 y el disco sigue siendo el objeto, no las letras.
+        "flex size-full items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground group-data-[size=sm]/avatar:text-xs",
         className
       )}
       {...props}

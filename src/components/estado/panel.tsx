@@ -1,85 +1,103 @@
 'use client';
 
-import {
-  ArrowDownRight,
-  ArrowUpRight,
-  ChevronRight,
-  ExternalLink,
-  TriangleAlert,
-} from 'lucide-react';
-import Link from 'next/link';
 import * as React from 'react';
 import type {
-  CompeticionElegible,
+  CortePropio,
+  PruebaPropia,
   PuestoTemporada,
   PuntosDePrueba,
 } from '@/app/(app)/estado/consultas';
-import { puntos as formatoPuntos } from '@/components/ranking/formato';
-import { Button } from '@/components/ui/button';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import type { MyStatus } from '@/lib/queries/my-status';
 import type { PuestoOficial } from '@/lib/queries/ranking';
-import {
-  CATEGORY_LABEL,
-  GENDER_LABEL,
-  WEAPON_LABEL,
-  cn,
-  formatDateEs,
-} from '@/lib/utils';
-import { type Respuesta, FilaConvocatoria } from './convocatoria';
-import { FilaInscripcion, FilaPasada, PanelHoy } from './inscripcion';
-import { CeldaMarcador, Marcador, Rotulos, Seccion } from './piezas';
-import { type Solicitar, SinInscribir } from './sin-inscribir';
+import { CATEGORY_LABEL, WEAPON_LABEL } from '@/lib/utils';
+import { Celebradas } from './celebradas';
+import { ComoVoy } from './como-voy';
+import { type Respuesta, Convocatorias } from './convocatoria';
+import { CeldaMarcador, Marcador } from './piezas';
+import { Pruebas } from './pruebas';
 
 const TODOS = 'todos';
 
 /**
- * "Mi estado": ¿cómo voy?
+ * ===========================================================================
+ * «MI ESTADO»: TRES PREGUNTAS Y NADA MÁS
+ * ===========================================================================
  *
- * Todo lo de la cuenta se carga de una vez en el servidor y el cambio de
- * tirador ocurre aquí, sin volver a la red: una cuenta gestiona uno o dos
- * tiradores, así que cabe de sobra, y así un padre con dos hijos alterna
- * entre ellos sin esperar.
+ * Esta pantalla era el seguimiento de una solicitud: el progreso «Solicitada →
+ * Validada por tu club → Aceptada por la RFEE → Enviada», los botones de pedir
+ * y retirar, y la lista de lo que te faltaba (licencia, consentimiento). Ya no.
+ * El usuario redefinió la aplicación:
  *
- * -------------------------------------------------------------------------
- * EL ORDEN DE LA PANTALLA ES EL ORDEN DE LA URGENCIA
- * -------------------------------------------------------------------------
- * Arriba del todo, el marcador: de dos a cuatro cifras que contestan «¿cómo
- * voy?» sin tocar nada ni bajar. Debajo, en este orden y sin excepciones:
- * lo que pasa hoy, lo que hay que contestar, lo que se cierra pronto y en lo
- * que todavía no estás, lo que ya está en marcha, y por último lo que solo
- * se consulta.
+ *   «quita todo lo de clubes, lo de códigos de licencia, lo de darse o no de
+ *    alta en los torneos, eso está oculto: solo ver calendario, si estoy o no»
  *
- * En el móvil manda el orden del DOM. En pantalla ancha, lo que solo se
- * consulta —el puesto en el ranking y los trámites pendientes— se va a una
- * columna estrecha de la derecha, pero SIGUE DESPUÉS en el marcado para que
- * en el móvil no se cuele por delante de lo urgente.
+ * Así que contesta tres preguntas, en este orden y sin nada en medio:
+ *
+ *   1. **¿Estoy dentro?**    con la lista OFICIAL, no con nuestras solicitudes.
+ *                            Vale incluso si te inscribió otro, que es el caso
+ *                            que se pidió cubrir.
+ *   2. **¿Cuánto me queda?** los plazos, con la barra de tramos de la ficha de
+ *                            torneo (importada, no reimplementada).
+ *   3. **¿Cómo voy?**        puesto, puntos y —esto faltaba— a cuánto del corte.
+ *
+ * ---------------------------------------------------------------------------
+ * CINCO BANDAS, Y QUÉ SE JUNTÓ CON QUÉ
+ * ---------------------------------------------------------------------------
+ * Antes eran nueve bloques: marcador, «Hoy compites», «Selección», «Todavía no
+ * te has inscrito», «Lo que ya has pedido», «Ya celebradas», «Qué te falta»,
+ * «Tu temporada» y «Cálculo de la aplicación». Ahora son cinco:
+ *
+ *   marcador              tres cifras, una por pregunta, en UNA fila de móvil
+ *   Selección             el oro, solo si hay convocatoria
+ *   Tus competiciones     «Hoy compites» + «no te has inscrito» + «ya pedido»,
+ *                         que hablaban del mismo objeto con tres nombres
+ *   Cómo voy              «Tu temporada» + «Cálculo de la aplicación», este
+ *                         plegado porque sirve para auditar, no para decidir
+ *   Ya celebradas         igual, sin el estado del trámite
+ *
+ * Y «Qué te falta» desaparece: era la licencia y el consentimiento, o sea
+ * justo lo que el usuario mandó esconder. El dato sigue trabajando por dentro
+ * —es lo que empareja a cada tirador con el ranking oficial— y sigue
+ * gestionándose en `/perfil`, pero aquí no se le enseña a nadie.
+ *
+ * En pantalla ancha no hay columna aparte: la de antes metía el ranking y los
+ * trámites a la derecha, y al quitar los trámites lo que quedaba era una
+ * columna de 20 rem con una sola cosa dentro. El contenido va a una columna con
+ * ancho de lectura, que es lo que pide una pantalla que se mira en el móvil.
  */
 export function PanelEstado({
   estado,
-  puestos,
+  pruebas,
   oficiales,
+  cortes,
+  internos,
   puntosPorPrueba,
-  elegibles,
   temporada,
   hoy,
   responderConvocatoria,
-  solicitarInscripcion,
 }: {
   estado: MyStatus;
-  /** Cálculo INTERNO de la aplicación (`ranking_snapshot`). */
-  puestos: PuestoTemporada[];
-  /** Clasificación OFICIAL de la RFEE. Son dos números distintos, a la vista. */
+  /** Lo que le importa de cada prueba: si está dentro y cuánto le queda. */
+  pruebas: PruebaPropia[];
+  /** Clasificación OFICIAL de la RFEE. */
   oficiales: PuestoOficial[];
+  /** A cuánto del corte de convocatoria, con la regla de `/ranking`. */
+  cortes: CortePropio[];
+  /** Cálculo INTERNO de la aplicación (`ranking_snapshot`). */
+  internos: PuestoTemporada[];
   /** `athleteId|eventCompetitionId` -> puntos de ranking de esa prueba. */
   puntosPorPrueba: Record<string, PuntosDePrueba>;
-  /** Pruebas abiertas que le corresponden y en las que todavía no está. */
-  elegibles: CompeticionElegible[];
   temporada: string | null;
   /** Fecha de hoy en ISO, calculada en el servidor. */
   hoy: string;
   responderConvocatoria: Respuesta;
-  solicitarInscripcion: Solicitar;
 }) {
   const varios = estado.athletes.length > 1;
   const [quien, setQuien] = React.useState(() =>
@@ -94,100 +112,111 @@ export function PanelEstado({
       ? estado.athletes
       : estado.athletes.filter((a) => a.id === quien);
 
-  const pasadas = mio(estado.pastEntries);
-  const hoyMismo = mio(estado.today);
-  // Las de hoy tienen su propio panel arriba, con los horarios del día: en la
-  // lista de próximas volverían a salir diciendo lo mismo.
-  const enJuego = new Set(hoyMismo.map((e) => e.entryId));
-  const proximas = mio(estado.upcomingEntries).filter(
-    (e) => !enJuego.has(e.entryId),
-  );
+  const misPruebas = mio(pruebas);
   const convocatorias = mio(estado.callUps);
-  const pendientes = tiradores.flatMap((a) =>
-    a.pending.map((p) => ({ ...p, quien: a.fullName })),
-  );
-  const misPuestos = mio(puestos);
+  const pasadas = mio(estado.pastEntries);
   const misOficiales = mio(oficiales);
-  const misElegibles = mio(elegibles);
+  const misCortes = mio(cortes);
+  const misInternos = mio(internos);
 
   const conNombre = quien === TODOS && varios;
 
-  const enMarcha = mio(estado.upcomingEntries).filter(
-    (e) => e.status !== 'rejected' && e.status !== 'withdrawn',
-  );
-
+  const dentro = misPruebas.filter((p) => p.oficial.estado === 'dentro').length;
   const sinResponder = convocatorias.filter(
     (c) => c.status === 'pendiente',
   ).length;
 
   /**
-   * El plazo más apretado de todos los que le afectan: los de lo que ya pidió
-   * y los de aquello en lo que todavía no está. Es la cifra por la que se
-   * entra a esta pantalla desde la puerta de un pabellón.
+   * El plazo más apretado de todo lo que le afecta y en lo que todavía no
+   * está. Es la cifra por la que se entra a esta pantalla desde la puerta de un
+   * pabellón. Lo ya confirmado no cuenta: su plazo ya no cambia nada.
    */
-  const plazoMasCorto = Math.min(
-    ...enMarcha
-      .map((e) => e.deadlineStatus.daysLeft)
-      .filter((d): d is number => d !== null),
-    ...misElegibles.map((c) => c.diasRestantes),
-  );
-  const hayPlazo = Number.isFinite(plazoMasCorto);
+  const plazos = misPruebas
+    .filter((p) => p.oficial.estado !== 'dentro')
+    .map((p) => p.estado.daysLeft)
+    .filter((d): d is number => d !== null);
+  const plazoMasCorto = plazos.length > 0 ? Math.min(...plazos) : null;
 
-  /**
-   * El puesto que va al marcador es el OFICIAL de la RFEE.
-   *
-   * Es el que la gente reconoce y el que decide convocatorias. Antes la celda
-   * leía solo el cálculo interno y le decía «— sin puesto en el ranking» a un
-   * 3.º de España, que es lo contrario de lo que se le pidió a esta pantalla.
-   * El cálculo interno sigue estando, más abajo y con su nombre.
-   */
-  const mejorOficial = misOficiales.find((o) => o.position !== null) ?? null;
-  const mejorPuesto = misPuestos[0] ?? null;
+  const mejorPuesto = misOficiales.find((o) => o.position !== null) ?? null;
   const hayTiradorSinArma = tiradores.some(
     (a) => a.weapons.length === 0 || a.eligibleCategories.length === 0,
   );
 
   return (
-    <div className="flex min-w-0 flex-col gap-6">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h1 className="text-2xl sm:text-3xl">Mi estado</h1>
-        {temporada ? (
-          <p className="text-sm text-muted-foreground">Temporada {temporada}</p>
+    /*
+      Ancho tope de 56 rem en escritorio.
+
+      El layout da 1.320 px y la pantalla los usaba enteros: con tres celdas de
+      marcador a 376 px, una cifra de 40 px se quedaba sola en medio de la celda,
+      y las filas dejaban 300 px vacíos a la derecha. Medido en
+      `capturas/nuevo-tutora-escritorio-estado.png`. Esto no es una tabla: es
+      una ficha personal, y una ficha se lee en una columna.
+    */
+    <div className="flex min-w-0 max-w-4xl flex-col gap-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h1 className="text-2xl sm:text-3xl">Mi estado</h1>
+          {temporada ? (
+            <p className="text-sm text-muted-foreground">
+              Temporada {temporada}
+            </p>
+          ) : null}
+        </div>
+
+        {/*
+          Elegir de quién es el estado es «elegir uno de varios», y la sección
+          9.1 de `REFERENCIAS.md` dice que eso va en `Select`, no en una fila de
+          pastillas. Antes era un `ToggleGroup`, que es la convención de la
+          selección MÚLTIPLE: la misma señal visual significaba dos cosas
+          distintas según la pantalla. Y de paso ahorra una fila entera de
+          móvil, que es donde se mira esto.
+        */}
+        {varios ? (
+          <Select value={quien} onValueChange={(v) => v && setQuien(v)}>
+            <SelectTrigger
+              className="w-full sm:w-56"
+              aria-label="De quién es el estado"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={TODOS}>Todos mis tiradores</SelectItem>
+              {estado.athletes.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.fullName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         ) : null}
       </div>
 
-      {varios ? (
-        <ToggleGroup
-          type="single"
-          value={quien}
-          onValueChange={(v) => v && setQuien(v)}
-          variant="outline"
-          spacing={2}
-          className="flex-wrap"
-          aria-label="Ver el estado de"
-        >
-          <ToggleGroupItem value={TODOS}>Todos</ToggleGroupItem>
-          {estado.athletes.map((a) => (
-            <ToggleGroupItem key={a.id} value={a.id}>
-              {a.firstName}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      ) : null}
-
-      {/* El marcador. Cuatro cifras y ninguna frase: lo que se mira de pie. */}
+      {/* El marcador: una cifra por pregunta y ninguna frase. */}
       <Marcador>
         <CeldaMarcador
-          valor={hayPlazo ? plazoMasCorto : '—'}
+          valor={dentro}
+          /* «Confirmadas», no «competiciones»: un cero ahí no significa que no
+             estés en ninguna, significa que la aplicación no ha podido
+             confirmarte en ninguna, que es otra cosa y hoy es lo normal. La
+             diferencia se explica al pie de la sección de abajo. */
           palabra={
-            hayPlazo
-              ? plazoMasCorto === 1
+            dentro === 1
+              ? 'confirmada en la lista oficial'
+              : 'confirmadas en la lista oficial'
+          }
+          tono={dentro > 0 ? 'ok' : 'apagado'}
+        />
+        <CeldaMarcador
+          valor={plazoMasCorto ?? '—'}
+          palabra={
+            plazoMasCorto === null
+              ? 'plazos abiertos que te toquen'
+              : plazoMasCorto === 1
                 ? 'día para el plazo más corto'
                 : 'días para el plazo más corto'
-              : 'plazos abiertos'
           }
           tono={
-            !hayPlazo
+            plazoMasCorto === null
               ? 'apagado'
               : plazoMasCorto <= 3
                 ? 'urgente'
@@ -197,24 +226,26 @@ export function PanelEstado({
           }
         />
         <CeldaMarcador
-          valor={enMarcha.length}
-          palabra={
-            enMarcha.length === 1
-              ? 'inscripción en marcha'
-              : 'inscripciones en marcha'
+          valor={
+            mejorPuesto?.position ? (
+              <>
+                {mejorPuesto.position}
+                <span className="text-xl">.º</span>
+              </>
+            ) : (
+              '—'
+            )
           }
-          tono={enMarcha.length > 0 ? 'normal' : 'apagado'}
-        />
-        <CeldaMarcador
-          valor={misElegibles.length}
+          /* Corto a propósito: el `.º` ya dice que es un puesto y la banda de
+             abajo dice de qué clasificación. «en el ranking oficial de florete
+             absoluto» partía la celda en tres renglones y hacía la chapa el
+             doble de alta que las otras dos. Medido en la captura. */
           palabra={
-            misElegibles.length === 1
-              ? 'prueba abierta en la que no estás'
-              : 'pruebas abiertas en las que no estás'
+            mejorPuesto?.position
+              ? `en ${etiquetaRanking(mejorPuesto)}`
+              : 'sin puesto oficial'
           }
-          /* Blanco, no carmesí: el rojo de esta pantalla es el del plazo que
-             se acaba, y dos rojos seguidos no jerarquizan nada. */
-          tono={misElegibles.length > 0 ? 'normal' : 'apagado'}
+          tono={mejorPuesto?.position ? 'normal' : 'apagado'}
         />
         {sinResponder > 0 ? (
           <CeldaMarcador
@@ -226,166 +257,35 @@ export function PanelEstado({
             }
             tono="oro"
           />
-        ) : (
-          <CeldaMarcador
-            valor={mejorOficial?.position ?? mejorPuesto?.position ?? '—'}
-            /* «en espada M20» a secas se lee como un recuento; la palabra
-               tiene que decir que es un puesto, y de qué ranking. */
-            palabra={
-              mejorOficial
-                ? `puesto oficial en ${etiquetaRanking(mejorOficial)}`
-                : mejorPuesto
-                  ? `puesto en el cálculo interno de ${etiquetaRanking(mejorPuesto)}`
-                  : 'sin puesto en la clasificación oficial'
-            }
-            tono={mejorOficial || mejorPuesto ? 'normal' : 'apagado'}
-          />
-        )}
+        ) : null}
       </Marcador>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
-        <div className="flex min-w-0 flex-col gap-6 lg:col-start-1 lg:row-start-1">
-          {hoyMismo.length > 0 ? (
-            <Seccion titulo="Hoy compites">
-              <div className="flex flex-col gap-3 pt-3">
-                {hoyMismo.map((e) => (
-                  <PanelHoy key={e.entryId} entrada={e} conNombre={conNombre} />
-                ))}
-              </div>
-            </Seccion>
-          ) : null}
+      <Convocatorias
+        convocatorias={convocatorias}
+        responder={responderConvocatoria}
+        conNombre={conNombre}
+      />
 
-          {convocatorias.length > 0 ? (
-            <Seccion
-              titulo="Selección"
-              contexto={
-                sinResponder > 0
-                  ? sinResponder === 1
-                    ? 'falta tu respuesta'
-                    : `faltan ${sinResponder} respuestas`
-                  : undefined
-              }
-            >
-              <ul className="flex flex-col divide-y">
-                {convocatorias.map((c) => (
-                  <FilaConvocatoria
-                    key={c.id}
-                    convocatoria={c}
-                    responder={responderConvocatoria}
-                    conNombre={conNombre}
-                  />
-                ))}
-              </ul>
-            </Seccion>
-          ) : null}
+      <Pruebas
+        pruebas={misPruebas}
+        hoy={hoy}
+        conNombre={conNombre}
+        hayTiradorSinArma={hayTiradorSinArma}
+      />
 
-          <SinInscribir
-            competiciones={misElegibles}
-            solicitar={solicitarInscripcion}
-            conNombre={conNombre}
-            hayTiradorSinArma={hayTiradorSinArma}
-          />
+      <ComoVoy
+        oficiales={misOficiales}
+        cortes={misCortes}
+        internos={misInternos}
+        tiradores={tiradores.map((a) => ({ id: a.id, nombre: a.fullName }))}
+        conNombre={conNombre}
+      />
 
-          <Seccion
-            titulo="Lo que ya has pedido"
-            contexto={
-              proximas.length > 0
-                ? `${proximas.length} ${proximas.length === 1 ? 'inscripción' : 'inscripciones'}`
-                : undefined
-            }
-          >
-            {proximas.length > 0 ? (
-              <ul className="flex flex-col divide-y">
-                {proximas.map((e) => (
-                  <FilaInscripcion
-                    key={e.entryId}
-                    entrada={e}
-                    esHoy={e.startDate <= hoy && e.endDate >= hoy}
-                    conNombre={conNombre}
-                  />
-                ))}
-              </ul>
-            ) : (
-              <div className="flex flex-col items-start gap-3 py-4">
-                <p className="medida text-sm text-muted-foreground">
-                  Aquí aparece cada inscripción que pidas, con el paso en el que
-                  está y los días que quedan de plazo. Todavía no has pedido
-                  ninguna.
-                </p>
-                <Button variant="outline" asChild>
-                  <Link href="/">Buscar competición en el calendario</Link>
-                </Button>
-              </div>
-            )}
-          </Seccion>
-
-          {pasadas.length > 0 ? (
-            <Seccion titulo="Ya celebradas" contexto={`${pasadas.length}`}>
-              <ul className="flex flex-col divide-y">
-                {pasadas.map((e) => (
-                  <FilaPasada
-                    key={e.entryId}
-                    entrada={e}
-                    puntos={
-                      puntosPorPrueba[
-                        `${e.athleteId}|${e.eventCompetitionId}`
-                      ] ?? null
-                    }
-                    conNombre={conNombre}
-                  />
-                ))}
-              </ul>
-            </Seccion>
-          ) : null}
-        </div>
-
-        <aside className="flex min-w-0 flex-col gap-6 lg:col-start-2 lg:row-start-1">
-          {pendientes.length > 0 ? (
-            <Seccion titulo="Qué te falta">
-              <ul className="flex flex-col divide-y">
-                {pendientes.map((p) => (
-                  <li key={`${p.quien}-${p.label}`}>
-                    <Link
-                      href={p.href}
-                      className="flex items-start gap-2.5 py-3 hover:text-primary-text"
-                    >
-                      <TriangleAlert
-                        className="mt-0.5 size-4 shrink-0 text-warn"
-                        aria-hidden
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-medium">
-                          {p.label}
-                        </span>
-                        <span className="block text-sm text-muted-foreground">
-                          {p.detail}
-                          {conNombre ? ` (${p.quien})` : ''}
-                        </span>
-                      </span>
-                      <ChevronRight
-                        className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                        aria-hidden
-                      />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </Seccion>
-          ) : null}
-
-          <SituacionTemporada
-            oficiales={misOficiales}
-            tiradores={tiradores.map((a) => ({ id: a.id, nombre: a.fullName }))}
-            conNombre={conNombre}
-          />
-
-          <CalculoInterno
-            puestos={misPuestos}
-            tiradores={tiradores.map((a) => ({ id: a.id, nombre: a.fullName }))}
-            conNombre={conNombre}
-          />
-        </aside>
-      </div>
+      <Celebradas
+        entradas={pasadas}
+        puntosPorPrueba={puntosPorPrueba}
+        conNombre={conNombre}
+      />
     </div>
   );
 }
@@ -408,237 +308,4 @@ function etiquetaRanking(p: {
   // («ABS» -> «Absoluto»), es una palabra y va en minúscula.
   const categoria = etiqueta === p.category ? etiqueta : etiqueta.toLowerCase();
   return `${WEAPON_LABEL[p.weapon].toLowerCase()} ${categoria}`;
-}
-
-/**
- * Tu temporada: el puesto y los puntos de la CLASIFICACIÓN OFICIAL de la RFEE.
- *
- * Es el número que la gente reconoce, el que decide convocatorias y el que se
- * pidió para esta pantalla. El cálculo interno de la aplicación es otra cosa y
- * va en su propia sección, con su propio nombre: los dos juntos y sin etiqueta
- * serían peor que ninguno.
- *
- * Si alguien aparece en varias clasificaciones —absoluto y sub-23, o dos
- * armas— salen todas: quedarse con una es esconderle media temporada.
- */
-function SituacionTemporada({
-  oficiales,
-  tiradores,
-  conNombre,
-}: {
-  oficiales: PuestoOficial[];
-  tiradores: { id: string; nombre: string }[];
-  conNombre: boolean;
-}) {
-  const leidoEl = oficiales[0]?.actualizadoEl ?? null;
-
-  return (
-    <Seccion
-      titulo="Tu temporada"
-      contexto={
-        oficiales.length > 0
-          ? `Clasificación oficial de la RFEE ${oficiales[0].seasonLabel}`
-          : 'Clasificación oficial de la RFEE'
-      }
-    >
-      {oficiales.length === 0 ? (
-        <p className="medida py-4 text-sm text-muted-foreground">
-          {/*
-            Se dice «no apareces todavía», no «no hay ranking»: el ranking
-            oficial existe y tiene cientos de tiradores. Lo que falta es una
-            fila suya emparejada con su licencia, que es otra cosa y se
-            arregla de otra forma.
-          */}
-          Todavía no apareces en la clasificación oficial de la RFEE. Pasa
-          cuando no se ha puntuado esta temporada, o cuando la licencia de tu
-          ficha no coincide con la que publica la federación.{' '}
-          <Link href="/ranking" className="underline underline-offset-2">
-            Ver la clasificación
-          </Link>
-          .
-        </p>
-      ) : (
-        <ul className="flex flex-col divide-y">
-          {oficiales.map((p) => {
-            const nombre = tiradores.find((t) => t.id === p.athleteId)?.nombre;
-            return (
-              <li
-                key={`${p.athleteId}-${p.weapon}-${p.gender}-${p.categoryRaw}`}
-                className="flex flex-col gap-3 py-4"
-              >
-                <div className="flex items-baseline gap-3">
-                  <span className="cifra text-5xl">{p.position ?? '—'}</span>
-                  <span className="text-xs leading-tight text-muted-foreground">
-                    {p.position
-                      ? p.deCuantos > 0
-                        ? `puesto de ${p.deCuantos}`
-                        : 'puesto'
-                      : 'sin clasificar todavía'}
-                    {conNombre && nombre ? (
-                      <span className="mt-0.5 block text-foreground">
-                        {nombre}
-                      </span>
-                    ) : null}
-                  </span>
-                </div>
-
-                <Rotulos
-                  datos={[
-                    ['Arma', WEAPON_LABEL[p.weapon]],
-                    ['Género', GENDER_LABEL[p.gender]],
-                    [
-                      'Categoría',
-                      CATEGORY_LABEL[p.category as keyof typeof CATEGORY_LABEL] ??
-                        p.category,
-                    ],
-                    [
-                      'Puntos',
-                      <span key="p" className="cifra text-base">
-                        {p.totalPoints === null
-                          ? 'no publicado'
-                          : formatoPuntos(p.totalPoints)}
-                      </span>,
-                    ],
-                  ]}
-                />
-
-                {p.sourceUrl ? (
-                  <a
-                    href={p.sourceUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex w-fit items-center gap-1 text-xs text-primary-text underline underline-offset-4"
-                  >
-                    Verlo en la página de la RFEE
-                    <ExternalLink className="size-3 shrink-0" aria-hidden />
-                  </a>
-                ) : null}
-              </li>
-            );
-          })}
-          {leidoEl ? (
-            <li className="pt-3 text-xs text-muted-foreground">
-              Leído de la fuente oficial el {formatDateEs(leidoEl)}. No lo
-              calcula esta aplicación: se copia tal cual.
-            </li>
-          ) : null}
-        </ul>
-      )}
-    </Seccion>
-  );
-}
-
-/**
- * El cálculo propio de la aplicación, con su nombre puesto.
- *
- * Va aparte de «Tu temporada» a propósito. Son dos números distintos —el
- * oficial lo publica la federación y decide convocatorias; este se calcula aquí
- * y se puede auditar prueba a prueba— y presentarlos juntos sin decir cuál es
- * cuál sería peor que no tener ninguno. Solo aparece si existe: una sección que
- * explica un cálculo que no se ha hecho es ruido.
- */
-function CalculoInterno({
-  puestos,
-  tiradores,
-  conNombre,
-}: {
-  puestos: PuestoTemporada[];
-  tiradores: { id: string; nombre: string }[];
-  conNombre: boolean;
-}) {
-  if (puestos.length === 0) return null;
-
-  return (
-    <Seccion titulo="Cálculo de la aplicación" contexto="auditable prueba a prueba">
-      <p className="medida pt-3 text-xs text-muted-foreground">
-        No es el ranking de la federación: es lo que sale de aplicar la
-        normativa a los resultados que esta aplicación tiene emparejados, y
-        sirve para ver de dónde sale cada punto y por qué una prueba no cuenta.
-      </p>
-      <ul className="flex flex-col divide-y">
-        {puestos.map((p) => {
-          const nombre = tiradores.find((t) => t.id === p.athleteId)?.nombre;
-          const categoria =
-            CATEGORY_LABEL[p.category as keyof typeof CATEGORY_LABEL] ??
-            p.category;
-          return (
-            <li
-              key={`${p.athleteId}-${p.weapon}-${p.gender}-${p.category}`}
-              className="flex flex-col gap-3 py-4"
-            >
-              <div className="flex items-baseline gap-3">
-                <span className="cifra text-4xl">{p.position}</span>
-                <span className="text-xs leading-tight text-muted-foreground">
-                  puesto calculado
-                  {conNombre && nombre ? (
-                    <span className="mt-0.5 block text-foreground">{nombre}</span>
-                  ) : null}
-                </span>
-              </div>
-
-              <Rotulos
-                disposicion="linea"
-                datos={[
-                  ['Arma', WEAPON_LABEL[p.weapon]],
-                  ['Categoría', categoria],
-                  [
-                    'Puntos',
-                    <span key="p" className="cifra text-base">
-                      {p.totalPoints}
-                    </span>,
-                  ],
-                  [
-                    p.pruebasContadas === 1
-                      ? 'Prueba contada'
-                      : 'Pruebas contadas',
-                    <span key="n" className="cifra text-base">
-                      {p.pruebasContadas}
-                    </span>,
-                  ],
-                ]}
-              />
-
-              <Variacion valor={p.variacion} />
-              <span className="text-xs text-muted-foreground">
-                Calculado el {formatDateEs(p.calculadoEl)}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </Seccion>
-  );
-}
-
-/** Movimiento desde el cálculo anterior. "Sin comparación" no es "igual". */
-function Variacion({ valor }: { valor: number | null }) {
-  if (valor === null) {
-    return (
-      <span className="text-sm text-muted-foreground">
-        Es el primer cálculo de la temporada: todavía no hay con qué comparar.
-      </span>
-    );
-  }
-  if (valor === 0) {
-    return (
-      <span className="text-sm text-muted-foreground">
-        Mismo puesto que en el cálculo anterior.
-      </span>
-    );
-  }
-  const sube = valor > 0;
-  const Icono = sube ? ArrowUpRight : ArrowDownRight;
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1 text-sm',
-        sube ? 'text-ok' : 'text-danger',
-      )}
-    >
-      <Icono className="size-4 shrink-0" aria-hidden />
-      {sube ? 'Sube' : 'Baja'}{' '}
-      <span className="cifra text-base">{Math.abs(valor)}</span>{' '}
-      {Math.abs(valor) === 1 ? 'puesto' : 'puestos'}
-    </span>
-  );
 }

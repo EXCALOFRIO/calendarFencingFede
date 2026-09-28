@@ -71,6 +71,17 @@ function ToggleGroupItem({
         }),
         "w-auto min-w-0 shrink-0 px-3 focus:z-10 focus-visible:z-10",
         "data-[spacing=0]:rounded-none data-[spacing=0]:shadow-none data-[spacing=0]:first:rounded-l-md data-[spacing=0]:last:rounded-r-md data-[spacing=0]:data-[variant=outline]:border-l-0 data-[spacing=0]:data-[variant=outline]:first:border-l",
+        /*
+          EL CONTORNO DEL MARCADO SE CIERRA POR LOS CUATRO LADOS.
+          Pegados y sin hueco, cada item pierde su borde izquierdo para no
+          doblar la línea con el vecino. Con el marcado en rojo eso deja el
+          contorno **abierto por la izquierda** en cuanto lo marcado no es el
+          primero: se veía como media caja. Aquí el marcado recupera su borde
+          y sube de capa, así que la línea roja pasa por encima de la gris del
+          vecino en vez de sumarse a ella.
+        */
+        "data-[spacing=0]:data-[variant=outline]:data-[state=on]:border-l data-[spacing=0]:data-[variant=outline]:data-[state=on]:-ml-px",
+        "data-[state=on]:z-10",
         className
       )}
       {...props}
