@@ -92,6 +92,28 @@ export type Candidato = {
   yaVinculado: boolean;
 };
 
+/**
+ * La fecha de nacimiento que publica la fuente para una fila del ranking.
+ *
+ * Existe porque el alta de `/admin/usuarios` tiene que poder **negarse antes
+ * de crear nada** si la persona es menor de 14 años, y `Candidato` a propósito
+ * solo lleva el año: es lo que basta para distinguir homónimos en una lista, y
+ * mandar la fecha exacta de nacimiento de cientos de menores al navegador de
+ * quien escriba un apellido no hace falta para eso.
+ *
+ * Aquí se pide UNA, la de la fila que ya se ha elegido, y se resuelve en el
+ * servidor sin que salga de él.
+ */
+export async function nacimientoDeLaFila(clave: string): Promise<string | null> {
+  const [fila] = await db
+    .select({ nacimiento: officialRankingEntry.sourceBirthDate })
+    .from(officialRankingEntry)
+    .where(eq(officialRankingEntry.skermoAthleteId, clave))
+    .limit(1);
+
+  return fila?.nacimiento ?? null;
+}
+
 export type MotivoRechazo =
   | 'YA_TIENES_FICHA'
   | 'NO_ENCONTRADO'
@@ -311,8 +333,14 @@ export async function vincularFichaDesdeRanking({
    * quien decide es ella sobre su propia identidad; el razonamiento completo
    * está en la cabecera de `src/lib/altas/por-nombre.ts`. Lo que sí exige es
    * que quede escrito quién lo confirmó: de ahí `evidencia`.
+   *
+   * `direccion` es el alta desde `/admin/usuarios`. Como el guion, no pide
+   * licencia: quien pulsa ES la autoridad que da de alta a la gente. Y a
+   * diferencia del guion **no da por firmado el consentimiento**, que en el
+   * guion es una comodidad de la demostración y aquí sería falsificar un
+   * documento que nadie ha firmado. Sale en «Qué te falta» hasta que se firme.
    */
-  origen: 'autoservicio' | 'guion' | 'nombre';
+  origen: 'autoservicio' | 'guion' | 'nombre' | 'direccion';
   /** Qué escribió y qué fila reclamó. Obligatorio con `origen: 'nombre'`. */
   evidencia?: string;
 }): Promise<ResultadoAlta> {
@@ -486,8 +514,12 @@ export async function vincularFichaDesdeRanking({
         ? 'Alta de autoservicio por nombre: la persona se reconoció en la ' +
           'clasificación oficial de la RFEE y confirmó ella misma que era su ' +
           'ficha. No la creó la dirección técnica.'
-        : 'Alta creada a partir del ranking oficial de la RFEE con ' +
-          'scripts/alta-desde-ranking.ts.';
+        : origen === 'direccion'
+          ? 'Alta creada por la dirección técnica desde el ranking oficial de ' +
+            'la RFEE: nombre, licencia, fecha de nacimiento, club y armas ' +
+            'salen de la fuente, no del teclado.'
+          : 'Alta creada a partir del ranking oficial de la RFEE con ' +
+            'scripts/alta-desde-ranking.ts.';
 
   /**
    * Cómo quedó vinculada, para poder auditarla después. Mismo vocabulario que

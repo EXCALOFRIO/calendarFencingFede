@@ -13,6 +13,7 @@ import {
   previsualizarCsv,
   type FilaCsv,
 } from '@/app/(app)/admin/usuarios/actions';
+import { AltaTiradorDesdeRanking } from '@/components/admin/alta-tirador';
 import { CampoFecha } from '@/components/admin/campo-fecha';
 import { Vacio } from '@/components/admin/piezas';
 import { Badge } from '@/components/ui/badge';
@@ -224,6 +225,14 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
   const [creandoClub, setCreandoClub] = React.useState(false);
 
   const [rol, setRol] = React.useState('athlete');
+  /*
+    Un tirador se da de alta buscándolo en la clasificación oficial, no
+    tecleando su licencia. Esto solo se pone a `true` desde el enlace de
+    «darlo de alta a mano», que es para quien todavía no tiene clasificación.
+    Se olvida al cambiar de papel: un seleccionador no se busca en un ranking
+    de tiradores.
+  */
+  const [aMano, setAMano] = React.useState(false);
   const [firstName, setFirstName] = React.useState('');
   const [lastName, setLastName] = React.useState('');
   const [email, setEmail] = React.useState('');
@@ -237,6 +246,7 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
 
   const esTirador = rol === 'athlete';
   const esSeleccionador = rol === 'coach';
+  const desdeRanking = esTirador && !aMano;
   const edad = birthDate ? ageOn(birthDate) : null;
   const menor = Boolean(esTirador && birthDate && requiresGuardianAccount(birthDate));
 
@@ -287,6 +297,37 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
   }
 
   return (
+    <div className="flex min-w-0 flex-col gap-4">
+      <div className="flex flex-col gap-1.5 rounded-lg border bg-card p-4">
+        <Label htmlFor="alta-rol-arriba">Papel</Label>
+        <Select
+          value={rol}
+          onValueChange={(v) => {
+            setRol(v);
+            setAMano(false);
+          }}
+        >
+          <SelectTrigger id="alta-rol-arriba" className="w-full sm:w-64">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ROLES.map((r) => (
+              <SelectItem key={r.valor} value={r.valor}>
+                {r.etiqueta}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {esSeleccionador
+            ? 'Marca abajo de qué arma se ocupa. Es lo que decide qué tiradores y qué competiciones ve al entrar.'
+            : 'Ningún alta envía correo: la persona entra escribiendo su dirección en la pantalla de acceso.'}
+        </p>
+      </div>
+
+      {desdeRanking ? <AltaTiradorDesdeRanking aMano={() => setAMano(true)} /> : null}
+
+      {desdeRanking ? null : (
     <div className="flex min-w-0 flex-col gap-4 rounded-lg border bg-card p-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
@@ -307,27 +348,6 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
             onChange={(e) => setLastName(e.target.value)}
             placeholder="Fernández Soto"
           />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="alta-rol">Papel</Label>
-          <Select value={rol} onValueChange={setRol}>
-            <SelectTrigger id="alta-rol" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ROLES.map((r) => (
-                <SelectItem key={r.valor} value={r.valor}>
-                  {r.etiqueta}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">
-            {esSeleccionador
-              ? 'Marca abajo de qué arma se ocupa. Es lo que decide qué tiradores y qué competiciones ve al entrar.'
-              : 'Ningún alta envía correo: la persona entra escribiendo su dirección en la pantalla de acceso.'}
-          </p>
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -509,6 +529,22 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
       </div>
 
       <DialogClub abierto={creandoClub} onCerrar={() => setCreandoClub(false)} />
+    </div>
+      )}
+
+      {aMano && esTirador ? (
+        <p className="text-xs text-muted-foreground">
+          Estás dándolo de alta a mano.{' '}
+          <button
+            type="button"
+            onClick={() => setAMano(false)}
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            Buscarlo en la clasificación
+          </button>
+          , que rellena la licencia, el club y la fecha sin teclearlos.
+        </p>
+      ) : null}
     </div>
   );
 }

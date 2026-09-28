@@ -439,6 +439,8 @@ async function main() {
     await sembrarConvocatorias(temporada.id, porNombre, admin);
   }
 
+  await crearCuentasDeAcceso();
+
   console.log('\nListo. Entra en http://localhost:3000/entrar con cualquiera de:');
   for (const p of PERSONAS) {
     console.log(`  ${p.etiqueta}${SUFIJO_CORREO}   (${p.rol}${p.armas ? ' · ' + p.armas.join(', ') : ''})`);
@@ -1058,6 +1060,50 @@ async function sembrarConvocatorias(
  *     borrar los perfiles (si no, la clave ajena se pone a null y se pierde
  *     el rastro).
  */
+/**
+ * LAS CUENTAS DE ACCESO DE LA DEMOSTRACIÓN.
+ *
+ * Esto no estaba, y hacía falta. El guion creaba los **perfiles** y daba por
+ * hecho que las cuentas de `neon_auth` ya existían de alguna ejecución
+ * anterior. Mientras nadie las borrase, colaba. El día que se vació la base
+ * para dejar solo las cuentas oficiales, `npm run demo` dejó de servir para
+ * lo que sirve: el barrido murió con «Sin sesión para tiradora@demo.local
+ * (HTTP 401)», y montar el entorno de pruebas dejó de ser un comando.
+ *
+ * Se crean por el mismo endpoint que usaría una persona, no escribiendo en
+ * `neon_auth` a mano: ese esquema lo gestiona Neon y el día que cambie cómo
+ * guarda una contraseña, un `insert` nuestro crearía cuentas con las que no
+ * se puede entrar. Si ya existe, el endpoint responde que no y da igual.
+ *
+ * Y solo tiene sentido en local: en producción no hay acceso con contraseña.
+ */
+async function crearCuentasDeAcceso() {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+  let creadas = 0;
+  let yaEstaban = 0;
+
+  for (const persona of PERSONAS) {
+    const correo = `${persona.etiqueta}${SUFIJO_CORREO}`;
+    const r = await fetch(`${base}/api/auth/sign-up/email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: correo,
+        password: 'Demo-2026-Esgrima!',
+        name: persona.etiqueta,
+      }),
+    }).catch(() => null);
+
+    if (r?.ok) creadas += 1;
+    else yaEstaban += 1;
+  }
+
+  console.log(
+    `\nCuentas de acceso: ${creadas} creadas, ${yaEstaban} que ya estaban ` +
+      '(o el servidor de desarrollo no responde).',
+  );
+}
+
 export async function borrarDemo() {
   const perfilesDemo = await db
     .select({ id: userProfile.id })
@@ -1158,10 +1204,35 @@ export async function borrarDemo() {
   console.log(
     `Devueltos a la cola de "por emparejar": ${desemparejados} resultados reales.`,
   );
-  console.log(
-    'Los usuarios de autenticación quedan en el esquema neon_auth (lo gestiona ' +
-      'Neon); se reconocen por el dominio @demo.local.',
+  await borrarCuentasDeAcceso();
+}
+
+/**
+ * Y las cuentas de acceso, que antes se quedaban.
+ *
+ * Aquí se decía que los usuarios de `neon_auth` «quedan» porque los gestiona
+ * Neon, y eso convertía `demo:borrar` en un borrado a medias: los perfiles se
+ * iban y las credenciales seguían. Con la aplicación llena de cuentas de
+ * demostración daba igual; el día que la base se dejó solo con las cuentas
+ * oficiales, cinco usuarios `@demo.local` invisibles en `/admin/usuarios`
+ * —porque esa pantalla lista perfiles— eran justo lo que no podía quedar.
+ *
+ * Que el esquema lo migre Neon no impide borrar filas suyas: lo que no se
+ * hace es **escribir** credenciales a mano, que es distinto y sigue sin
+ * hacerse (las crea el endpoint de registro).
+ */
+async function borrarCuentasDeAcceso() {
+  const patron = `%${SUFIJO_CORREO}`;
+
+  await db.execute(sql`delete from neon_auth."session" where "userId" in
+    (select id from neon_auth."user" where email like ${patron})`);
+  await db.execute(sql`delete from neon_auth."account" where "userId" in
+    (select id from neon_auth."user" where email like ${patron})`);
+  const borradas = await db.execute(
+    sql`delete from neon_auth."user" where email like ${patron} returning id`,
   );
+
+  console.log(`Cuentas de acceso borradas: ${borradas.rows.length}.`);
 }
 
 if (process.argv.includes('--borrar')) {

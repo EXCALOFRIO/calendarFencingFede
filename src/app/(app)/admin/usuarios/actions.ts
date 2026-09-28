@@ -4,6 +4,12 @@ import { asc, eq, inArray, isNotNull, or } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
 import { athlete, athleteWeapon, club, profileWeapon, userProfile } from '@/db/schema';
+import {
+  type Candidato,
+  buscarCandidatos,
+  nacimientoDeLaFila,
+  vincularFichaDesdeRanking,
+} from '@/lib/altas/desde-ranking';
 import { newIcalToken, requireRole } from '@/lib/auth/session';
 import { ageOn, requiresGuardianAccount } from '@/lib/categories';
 
@@ -166,6 +172,167 @@ export async function crearClub(formData: FormData): Promise<ResultadoAccion> {
 }
 
 // ------------------------------------------------------- alta individual ---
+
+/**
+ * ===========================================================================
+ * ALTA DE UN TIRADOR BUSCÁNDOLO EN EL RANKING OFICIAL
+ * ===========================================================================
+ *
+ * Es la forma normal de dar de alta a un tirador, y sustituye a teclear su
+ * licencia, su fecha de nacimiento, su club y sus armas a mano.
+ *
+ * El motivo no es la comodidad, es que **los datos tecleados son peores**. La
+ * licencia es la clave con la que se emparejan los resultados: una letra mal
+ * y esa persona no recibe ni un punto de ranking, y el fallo no se ve hasta
+ * meses después, cuando alguien pregunte por qué no aparece. La fecha de
+ * nacimiento decide su categoría. El club decide con qué código se cruza.
+ * Todo eso lo publica ya la RFEE y lo ingerimos cada noche; copiarlo a mano
+ * es añadir una oportunidad de equivocarse a un dato que ya teníamos bien.
+ *
+ * Petición literal: *«lo de que pida el número de licencia de la española
+ * habría que poner mejor que lo autogenerase del nombre, y lo mismo de los
+ * otros campos, el club y eso, porque son pocos y no se repite; con nombre y
+ * apellido se encontraría bien»*. Y: *«que ni salga como campo»*.
+ *
+ * ---------------------------------------------------------------------------
+ * POR QUÉ ESTO NO ES «EMPAREJAR POR NOMBRE», QUE ESTÁ PROHIBIDO
+ * ---------------------------------------------------------------------------
+ * La regla del proyecto es que **nunca se empareja a un atleta por su nombre
+ * automáticamente**: hay homónimos y acentos inconsistentes. Aquí no se
+ * empareja nada solo. El nombre únicamente **busca**; quien decide cuál de
+ * las filas es la persona es la dirección técnica, mirando el año de
+ * nacimiento, el club, el arma y el puesto que se le enseñan al lado. El
+ * emparejado posterior de todas sus clasificaciones sí es automático, pero se
+ * hace **por licencia**, que es lo que la regla exige.
+ *
+ * Y no se pide la licencia como prueba, a diferencia de `/alta`: allí quien
+ * pulsa es la propia persona demostrando que es ella; aquí quien pulsa ya es
+ * la autoridad que da de alta a la gente. Pedírsela sería teatro.
+ *
+ * La regla de negocio no está aquí: es `vincularFichaDesdeRanking`, la misma
+ * que usan `/alta` y `scripts/alta-desde-ranking.ts`.
+ */
+export async function buscarTiradorEnRanking(
+  texto: string,
+): Promise<{ ok: true; candidatos: Candidato[] } | { ok: false; error: string }> {
+  await requireRole('admin');
+
+  const limpio = texto.trim();
+  if (limpio.length < 3) {
+    return { ok: false, error: 'Escribe al menos tres letras del apellido.' };
+  }
+
+  return { ok: true, candidatos: await buscarCandidatos(limpio, 8) };
+}
+
+export async function crearTiradorDesdeRanking(
+  formData: FormData,
+): Promise<ResultadoAccion> {
+  await requireRole('admin');
+
+  const clave = limpiar(formData.get('clave'));
+  const email = limpiar(formData.get('email')).toLowerCase();
+  const nombre = limpiar(formData.get('nombre'));
+
+  if (!clave) return { ok: false, error: 'Elige a quién das de alta de la lista.' };
+  if (!emailValido(email)) {
+    return { ok: false, error: 'El correo no tiene forma de correo.' };
+  }
+
+  /**
+   * La edad se comprueba **antes** de crear nada, con la fecha de la fuente.
+   * Por debajo de 14 no se crea cuenta (RGPD art. 8 y LOPDGDD art. 7), igual
+   * que en el alta a mano: que los datos vengan del ranking no cambia la ley,
+   * y esta es la puerta por la que ahora entrarán casi todos los tiradores.
+   */
+  const nacimiento = await nacimientoDeLaFila(clave);
+  if (!nacimiento) {
+    return { ok: false, error: 'Esa fila del ranking ya no está. Vuelve a buscar.' };
+  }
+
+  if (requiresGuardianAccount(nacimiento)) {
+    return {
+      ok: false,
+      error:
+        `${nombre || 'Esa persona'} tiene ${ageOn(nacimiento)} años. Por debajo de ` +
+        '14 no se puede crear una cuenta: la ley exige el consentimiento del ' +
+        'padre, madre o tutor, y esta aplicación ya no gestiona cuentas de ' +
+        'tutor. Su ficha puede existir para el ranking y las convocatorias, ' +
+        'pero sin acceso propio.',
+    };
+  }
+
+  const [existente] = await db
+    .select({ id: userProfile.id, fullName: userProfile.fullName })
+    .from(userProfile)
+    .where(eq(userProfile.email, email))
+    .limit(1);
+
+  if (existente) {
+    return {
+      ok: false,
+      error: `Ya hay una cuenta con el correo ${email} (${existente.fullName}).`,
+    };
+  }
+
+  /*
+    El nombre con el que se crea la cuenta es provisional: lo manda el
+    navegador y se corrige abajo con el de la fuente, en cuanto la ficha
+    queda vinculada. Fiarse del que llega de fuera sería dejar que la única
+    parte tecleada de este alta se colara igualmente en la ficha.
+  */
+  const [perfil] = await db
+    .insert(userProfile)
+    .values({
+      email,
+      fullName: nombre,
+      role: 'athlete',
+      icalToken: newIcalToken(),
+      inviteStatus: 'pendiente',
+      invitedAt: new Date(),
+    })
+    .returning({ id: userProfile.id });
+
+  const resultado = await vincularFichaDesdeRanking({
+    profileId: perfil.id,
+    clave,
+    origen: 'direccion',
+  });
+
+  if (!resultado.ok) {
+    /*
+      Si la ficha no se ha podido vincular, el perfil recién creado se
+      deshace. Dejarlo sería una cuenta de tirador sin tirador: entraría y no
+      vería ni su ranking ni sus inscripciones, y en `/admin/usuarios`
+      parecería dada de alta.
+    */
+    await db.delete(userProfile).where(eq(userProfile.id, perfil.id));
+    return { ok: false, error: resultado.error };
+  }
+
+  // El nombre oficial, el de la RFEE, encima del que vino del formulario.
+  await db
+    .update(userProfile)
+    .set({ fullName: resultado.alta.nombre })
+    .where(eq(userProfile.id, perfil.id));
+
+  revalidatePath('/admin/usuarios');
+  revalidatePath('/tiradores');
+
+  const puesto = resultado.alta.clasificaciones[0]?.puesto;
+
+  return {
+    ok: true,
+    message:
+      `${resultado.alta.nombre} dado de alta con la licencia ` +
+      `${resultado.alta.licencia}` +
+      (resultado.alta.club ? ` (${resultado.alta.club})` : '') +
+      `. ${resultado.alta.filasEmparejadas} ` +
+      `${resultado.alta.filasEmparejadas === 1 ? 'fila' : 'filas'} del ranking ` +
+      `emparejadas${puesto ? `, mejor puesto ${puesto}.º` : ''}. ` +
+      `Entra escribiendo ${email} en la pantalla de acceso.`,
+  };
+}
 
 /**
  * Alta de una persona.
