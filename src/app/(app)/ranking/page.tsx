@@ -16,6 +16,7 @@ import {
   getFichasFie,
   getPuestosOficiales,
   getClasificacionFie,
+  gruposDeMisTiradoresFie,
   listGruposClasificacionFie,
   getRankingOficialScreenData,
   getRankingScreenData,
@@ -73,7 +74,7 @@ export default async function Pagina() {
    * Las dos consultas van en paralelo y solo con los identificadores de esta
    * cuenta: son una o dos personas, no la federación entera.
    */
-  const [fichasFie, puestosOficiales, paises, mundial] = await Promise.all([
+  const [fichasFie, puestosOficiales, paises, mundial, misGruposFie] = await Promise.all([
     getFichasFie(mios),
     getPuestosOficiales(mios),
     paisesFie(mios),
@@ -84,6 +85,8 @@ export default async function Pagina() {
      * viajar al navegador para enseñar cincuenta.
      */
     listGruposClasificacionFie(),
+    /** En qué prueba del mundial está cada tirador de esta cuenta. */
+    gruposDeMisTiradoresFie(mios),
   ]);
   const esAdmin = perfil.role === 'admin';
   const esPersonal = perfil.role === 'athlete';
@@ -147,12 +150,30 @@ export default async function Pagina() {
     const individuales = mundial.grupos.filter((g) => g.format === 'INDIVIDUAL');
 
     /**
-     * Y dentro, tu arma y tu género. Ya no se puede mirar «en qué grupo está
-     * mi tirador» sin traerse las tablas, así que se decide con lo que se sabe
-     * de él, que además es más directo: su arma y su género. Petición literal:
-     * *«por defecto en su categoría siempre y en su género»*.
+     * ARRANCA EN LA PRUEBA DONDE ESTÁ TU TIRADOR. No en la primera que encaje.
+     *
+     * Con el criterio anterior —arma y género— Carlos Llavador entraba en
+     * «florete masculino M17», porque M17 va antes que ABS en el orden del
+     * enum y las dos son florete masculino. Y él es absoluto. Petición
+     * literal: *«que me salga el mío; que sí pueda ver otro, pero al cargar
+     * por defecto siempre el mío»*.
+     *
+     * Así que primero se busca el grupo donde la FIE lo publica de verdad
+     * (`gruposDeMisTiradoresFie`), que es el dato y no una deducción. Solo si
+     * no aparece en ninguno se cae a su arma y su género, y al final al arma
+     * del seleccionador.
      */
+    const suyoFie = misGruposFie.find((g) => g.format === 'INDIVIDUAL');
+
     const grupoMundial =
+      (suyoFie
+        ? individuales.find(
+            (g) =>
+              g.weapon === suyoFie.weapon &&
+              g.gender === suyoFie.gender &&
+              g.category === suyoFie.category,
+          )
+        : undefined) ??
       individuales.find((g) => miArma.has(g.weapon) && miGenero.has(g.gender)) ??
       individuales.find((g) => miArma.has(g.weapon)) ??
       individuales.find((g) => perfil.weapons.includes(g.weapon)) ??

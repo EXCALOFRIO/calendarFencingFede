@@ -1511,6 +1511,54 @@ export const listGruposClasificacionFie = cache(
 );
 
 /**
+ * En qué grupos del mundial está uno de MIS tiradores.
+ *
+ * Es lo que decide con qué abre la pantalla, y hace falta una consulta propia
+ * porque la lista de grupos no dice quién está en cada uno y traerse las
+ * tablas para averiguarlo serían 11.561 filas.
+ *
+ * Petición literal, con el caso: *«si soy Carlos Llavador, que soy absoluto y
+ * eso lo sabe la app, al meterme en el ranking FIE internacional no me salga
+ * florete masculino M17; que me salga el mío, que sí pueda ver otro, pero al
+ * cargar por defecto siempre el mío»*.
+ *
+ * Y se resuelve con el DATO, no con la edad: se busca la fila donde está él en
+ * la clasificación. Deducir su categoría del año de nacimiento daría M20 o
+ * ABS según la tabla de la temporada, y lo que importa es en qué prueba
+ * compite de verdad, que es donde la FIE lo publica.
+ */
+export async function gruposDeMisTiradoresFie(
+  athleteIds: string[],
+): Promise<GrupoClasificacion[]> {
+  if (athleteIds.length === 0) return [];
+
+  const filas = await db
+    .selectDistinct({
+      format: fieClasificacionTable.format,
+      weapon: fieClasificacionTable.weapon,
+      gender: fieClasificacionTable.gender,
+      category: fieClasificacionTable.category,
+      position: fieClasificacionTable.position,
+    })
+    .from(fieClasificacionTable)
+    .innerJoin(
+      fieFencerTable,
+      eq(fieFencerTable.fieId, fieClasificacionTable.fieId),
+    )
+    .where(inArray(fieFencerTable.athleteId, athleteIds))
+    /** El mejor puesto primero: si compite en dos categorías, manda la suya. */
+    .orderBy(sql`${fieClasificacionTable.position} asc nulls last`);
+
+  return filas.map((f) => ({
+    format: f.format as FormatoClasificacion,
+    weapon: f.weapon as Weapon,
+    gender: f.gender as Gender,
+    category: f.category as RankingCategory,
+    tiradores: 0,
+  }));
+}
+
+/**
  * La clasificación de UN grupo, que es lo que se está mirando.
  *
  * El grupo más grande es espada masculina absoluta con 1.253 filas; el más

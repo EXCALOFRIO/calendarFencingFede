@@ -73,7 +73,7 @@ import { cn } from '@/lib/utils';
  * que `mappers.ts` exportara su tabla para que no hubiera dos copias de nada:
  * está pedido en el informe a quien lleva la ingestión.
  */
-const ISO2_A_FIE: Record<string, string> = {
+export const ISO2_A_FIE: Record<string, string> = {
   AD: 'AND', AE: 'UAE', AL: 'ALB', AM: 'ARM', AO: 'ANG', AR: 'ARG',
   AT: 'AUT', AU: 'AUS', AZ: 'AZE', BA: 'BIH', BB: 'BAR', BD: 'BAN',
   BE: 'BEL', BF: 'BUR', BG: 'BUL', BH: 'BRN', BJ: 'BEN', BO: 'BOL',
@@ -99,6 +99,22 @@ const ISO2_A_FIE: Record<string, string> = {
   TT: 'TTO', TW: 'TPE', TZ: 'TAN', UA: 'UKR', UG: 'UGA', US: 'USA',
   UY: 'URU', UZ: 'UZB', VE: 'VEN', VN: 'VIE', XK: 'KOS', YE: 'YEM',
   ZA: 'RSA', ZM: 'ZAM', ZW: 'ZIM',
+  /*
+    Los once que faltaban, encontrados contando los países del ranking
+    mundial: de 136, once no tenían código en esta tabla y se quedaban sin
+    bandera. «FIE» no entra a propósito: es lo que la FIE pone cuando alguien
+    compite sin bandera nacional, y eso no es un país.
+  */
+  AG: 'ANT',
+  BM: 'BER',
+  BN: 'BRU',
+  CV: 'CPV',
+  HT: 'HAI',
+  KH: 'CAM',
+  MO: 'MAC',
+  RW: 'RWA',
+  SL: 'SLE',
+  VI: 'ISV',
 };
 
 /**
@@ -129,6 +145,26 @@ export function nombrePais(pais: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** El inverso de `ISO2_A_FIE`, para llegar del «ESP» de la FIE al «es». */
+const FIE_A_ISO2: Record<string, string> = Object.fromEntries(
+  Object.entries(ISO2_A_FIE).map(([dos, tres]) => [tres, dos]),
+);
+
+/**
+ * El ISO de DOS letras, que es el nombre del fichero de la bandera.
+ *
+ * Hace falta porque la aplicación recibe las dos formas: los eventos guardan
+ * «ES» y la FIE publica «ESP». Devuelve `null` cuando no se sabe —por ejemplo
+ * «FIE», que es lo que ponen cuando alguien compite sin bandera nacional y no
+ * es un país— y entonces se pinta solo el código, que es lo honesto.
+ */
+function iso2De(pais: string): string | null {
+  const v = pais.trim().toUpperCase();
+  if (/^[A-Z]{2}$/.test(v)) return v.toLowerCase();
+  const dos = FIE_A_ISO2[v];
+  return dos ? dos.toLowerCase() : null;
 }
 
 export type TamañoBandera = 'fila' | 'ficha';
@@ -162,6 +198,54 @@ export function BanderaPais({
 
   const codigo = codigoPais(pais);
   const nombre = nombrePais(pais);
+  const iso2 = iso2De(pais);
+
+  /**
+   * ===========================================================================
+   * AHORA SÍ ES UNA BANDERA
+   * ===========================================================================
+   *
+   * Lo de arriba explica por qué durante un tiempo fue solo el código: el
+   * emoji no se pinta en Windows y un sprite de un CDN mete a un tercero en el
+   * camino crítico. La tercera opción que ese mismo texto señalaba como «la
+   * única alternativa buena» es esta, y es la que se ha hecho: **las banderas
+   * están en el repositorio**, porque las banderas nacionales son de dominio
+   * público (al revés que los escudos de la FIE y la RFEE, que se enlazan).
+   *
+   * Y van en PNG, no en SVG, por una razón medida: los SVG de `flag-icons`
+   * pesan de forma muy desigual porque algunos llevan el escudo dibujado
+   * vector a vector —la mediana es 0,7 kB pero **España pesa 79 kB, México 83
+   * y Serbia 177**—, y a 16 px de ancho ese detalle no se ve. Rasterizadas a
+   * 48×36 (el doble de lo que se pinta) **todas pesan lo mismo y poco**: 271
+   * banderas en 211 kB, la mayor 3,1 kB. Las genera
+   * `node scripts/banderas.mjs`.
+   *
+   * El código se queda AL LADO, no se sustituye: es lo que hace la propia FIE
+   * en sus clasificaciones, se lee sin depender de reconocer una bandera de
+   * 16 px, y si el fichero no está —un país nuevo— la fila sigue diciendo de
+   * quién es.
+   *
+   * `<img>` y no `next/image`: son estáticas, las sirve la red de Cloudflare
+   * desde `public/` sin tocar el Worker, y pasarlas por `/_next/image` sería
+   * una invocación del Worker por bandera y por tamaño.
+   */
+  const bandera = iso2 ? (
+    <img
+      src={`/banderas/${iso2}.png`}
+      alt=""
+      aria-hidden
+      width={tamaño === 'fila' ? 18 : 22}
+      height={tamaño === 'fila' ? 13.5 : 16.5}
+      loading="lazy"
+      decoding="async"
+      /* El filete la separa del fondo cuando la bandera es casi blanca
+         (Japón, Corea): sin él, la de Japón es un punto rojo flotando. */
+      className={cn(
+        'shrink-0 rounded-[2px] border border-white/15 object-cover',
+        tamaño === 'fila' ? 'h-[13.5px] w-[18px]' : 'h-[16.5px] w-[22px]',
+      )}
+    />
+  ) : null;
 
   const pastilla = (
     <abbr
@@ -181,10 +265,19 @@ export function BanderaPais({
     </abbr>
   );
 
-  if (!conNombre) return pastilla;
+  if (!conNombre) {
+    if (!bandera) return pastilla;
+    return (
+      <span className={cn('inline-flex items-center gap-1.5', className)}>
+        {bandera}
+        {pastilla}
+      </span>
+    );
+  }
 
   return (
     <span className={cn('inline-flex items-center gap-1.5', className)}>
+      {bandera}
       {pastilla}
       <span className={tamaño === 'fila' ? 'text-xs' : 'text-sm'}>
         {nombre ?? codigo}

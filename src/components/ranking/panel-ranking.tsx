@@ -70,11 +70,17 @@ export function PanelRanking({
   } | null;
 }) {
   /**
-   * Arranca en «Nacional», y no es indiferente: la clasificación de la RFEE es
-   * la que decide convocatorias y la que la gente reconoce. El mundial es el
-   * dato bonito; el nacional es el que se viene a mirar.
+   * ARRANCA EN LA FIE, por petición expresa: *«al entrar en ranking por
+   * defecto se pone en nacional y quiero que sea por defecto en la
+   * internacional, en la FIE»*.
+   *
+   * Y tiene sentido con lo que enseña la ficha de arriba: el puesto mundial,
+   * la foto y el histórico de diecinueve temporadas son de la FIE, así que
+   * abrir en nacional obligaba a tocar el conmutador para que la tabla dijera
+   * lo mismo que la ficha. Si no hay mundial cargado, se queda en nacional
+   * sola: `cual` lo resuelve abajo.
    */
-  const [federacion, setFederacion] = React.useState<'RFEE' | 'FIE'>('RFEE');
+  const [federacion, setFederacion] = React.useState<'RFEE' | 'FIE'>('FIE');
 
   const hayMundial = fie !== null && fie.grupos.length > 0;
   const cual = hayMundial ? federacion : 'RFEE';
