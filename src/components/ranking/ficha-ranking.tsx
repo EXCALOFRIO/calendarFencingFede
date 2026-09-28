@@ -108,6 +108,8 @@ export function FichaRanking({
   lados,
   acciones,
   className,
+  elegida: elegidaControlada,
+  onElegir,
 }: {
   apellidos: string;
   nombre: string;
@@ -117,12 +119,34 @@ export function FichaRanking({
   lados: LadoRanking[];
   acciones?: React.ReactNode;
   className?: string;
+  /**
+   * Federación elegida, cuando la manda alguien de fuera.
+   *
+   * Existe porque en la pantalla de ranking había **dos conmutadores
+   * Nacional/Mundial**: este, dentro de la ficha del tirador, y otro debajo
+   * para la tabla. Dos controles que dicen lo mismo en la misma pantalla es
+   * una pregunta —«¿cuál manda?»— y el usuario lo pidió claro: *«pon solo un
+   * selector de nacional o mundial, el de arriba»*.
+   *
+   * Así que ahora el de arriba manda sobre la tabla también, y el estado vive
+   * en el padre (`PanelRanking`). Si no se pasa, la ficha sigue funcionando
+   * sola, que es como la usa el panel del tirador.
+   */
+  elegida?: Federacion;
+  onElegir?: (f: Federacion) => void;
 }) {
   const conDatos = lados.filter((l) => l.variantes.length > 0);
   const arranque =
     conDatos.find((l) => l.federacion === 'FIE') ?? conDatos[0] ?? lados[0];
 
-  const [elegida, setElegida] = React.useState<Federacion>(arranque.federacion);
+  const [elegidaPropia, setElegidaPropia] = React.useState<Federacion>(
+    arranque.federacion,
+  );
+  const elegida = elegidaControlada ?? elegidaPropia;
+  const setElegida = (f: Federacion) => {
+    setElegidaPropia(f);
+    onElegir?.(f);
+  };
   const [clave, setClave] = React.useState<string>(
     arranque.variantes[0]?.clave ?? '',
   );

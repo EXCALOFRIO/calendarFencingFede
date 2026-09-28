@@ -1979,7 +1979,7 @@ function BarraTorneo({
                 <CircleCheck className="ml-0.5 size-3 shrink-0" aria-label="Ya estás inscrito" />
               ) : null}
             </span>
-          ) : registro === 'doble' && compacta ? (
+          ) : registro === 'doble' && compacta && ancho < 3 ? (
             /*
               EN EL TRIMESTRE, LA BARRA ES EL NOMBRE Y EL ARMA. NADA MÁS.
               -----------------------------------------------------------------
@@ -2001,6 +2001,23 @@ function BarraTorneo({
               queda lo que no: **el nombre, a dos líneas**, y el arma, que es
               el filtro con el que se mira esta pantalla y cuesta 22 px. El
               color de la barra sigue diciendo quién organiza.
+
+              -----------------------------------------------------------------
+              PERO SOLO PARA LAS BARRAS ESTRECHAS (`ancho < 3`).
+              -----------------------------------------------------------------
+              La cuenta de arriba es la de una columna de UN día. Una Copa del
+              Mundo ocupa cuatro, o sea unos 240 px, y con este reparto la
+              barra se quedaba con el nombre y **dos tercios vacíos**. Petición
+              literal sobre la captura del trimestre: *«aunque esté en vista de
+              tres meses se puede meter más info que entra, hay espacio de
+              sobra»*. Y es verdad: lo que no cabe en 61 px cabe de sobra en
+              240.
+
+              Así que a partir de tres días la barra cae al reparto normal de
+              más abajo —nombre arriba, insignias y sede debajo—, el mismo que
+              en la vista de mes. La regla no es «en el trimestre, menos»: es
+              «según lo que mida la barra», que es lo que debió ser desde el
+              principio.
             */
             <span className="flex min-w-0 flex-1 items-center gap-1 px-1.5">
               {mostrarArma ? (

@@ -2,10 +2,9 @@ import { IdCard, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ladoMundial, ladoNacional } from '@/components/ranking/armar-ficha';
-import { FichaRanking } from '@/components/ranking/ficha-ranking';
 import { SinRanking } from '@/components/ranking/sin-ranking';
 import { TablaRanking } from '@/components/ranking/tabla-ranking';
-import { ConmutadorFederacion } from '@/components/ranking/conmutador-federacion';
+import { PanelRanking } from '@/components/ranking/panel-ranking';
 import { TablaRankingOficial } from '@/components/ranking/tabla-oficial';
 import {
   type AthleteSummary,
@@ -121,6 +120,41 @@ export default async function Pagina() {
 
     const grupoInicial = suyos[0] ?? deSuArma[0] ?? groupKey(oficial.groups[0]);
 
+    /**
+     * EL MUNDIAL ABRE EN LA PRUEBA DE TU TIRADOR, NO EN LA DE CUALQUIERA.
+     *
+     * Estaba mal y se vio en la captura: entrando como Carlos Llavador
+     * —floretista masculino— la tabla del mundial abría en **florete
+     * femenino**. El motivo: el criterio era «el primer grupo que tenga a
+     * alguien con ficha en la aplicación», y con la ficha de María Mariño
+     * también enlazada, «FLORETE|F» va antes que «FLORETE|M» por orden
+     * alfabético y ganaba ella.
+     *
+     * Ahora se exige que sea **de los tuyos** (`esMio`), y si no hay ninguno,
+     * el arma y el género de tu propio tirador, y solo al final el arma del
+     * seleccionador. Petición literal: *«por defecto en su categoría siempre y
+     * en su género»*.
+     */
+    const miArma = new Set(atletas.flatMap((a) => a.weapons));
+    const miGenero = new Set(atletas.map((a) => a.gender));
+
+    const clavesMundial = (
+      filtro: (g: (typeof mundial.groups)[number]) => boolean,
+    ): string[] => mundial.groups.filter(filtro).map((g) => groupKey(g));
+
+    const grupoInicialMundial =
+      // 1. Un grupo donde esté uno de tus tiradores.
+      clavesMundial((g) =>
+        (mundial.tables[groupKey(g)]?.rows ?? []).some((r) => r.esMio),
+      )[0] ??
+      // 2. Tu arma y tu género.
+      clavesMundial((g) => miArma.has(g.weapon) && miGenero.has(g.gender))[0] ??
+      // 3. Tu arma.
+      clavesMundial((g) => miArma.has(g.weapon))[0] ??
+      // 4. El arma de la que se ocupa el seleccionador.
+      clavesMundial((g) => perfil.weapons.includes(g.weapon))[0] ??
+      groupKey(mundial.groups[0]);
+
     /** Fila del cálculo interno por `grupo|athleteId`, para el panel. */
     const internos: Record<string, RankingRowView> = {};
     for (const [clave, tabla] of Object.entries(interno.tables)) {
@@ -139,13 +173,6 @@ export default async function Pagina() {
           línea de procedencia de cada tabla.
         */}
         <Cabecera contexto={`Temporada ${oficial.seasonLabel}`} />
-
-        <MisFichas
-          atletas={atletas}
-          fichasFie={fichasFie}
-          puestosOficiales={puestosOficiales}
-          paises={paises}
-        />
 
         {/*
           AQUÍ HABÍA DOS AVISOS DE DIAGNÓSTICO Y SE HAN IDO.
@@ -166,7 +193,8 @@ export default async function Pagina() {
           vincularla. Ese habla de ti, no de la base.
         */}
 
-        <ConmutadorFederacion
+        <PanelRanking
+          fichas={armarFichas({ atletas, fichasFie, puestosOficiales, paises })}
           rfee={
             <TablaRankingOficial
               grupos={oficial.groups}
@@ -184,25 +212,7 @@ export default async function Pagina() {
               ? {
                   grupos: mundial.groups,
                   tablas: mundial.tables,
-                  /**
-                   * El mundial abre por el mismo criterio que el nacional: el
-                   * grupo de un tirador propio, si no el del arma de quien
-                   * mira, y si no el primero.
-                   */
-                  grupoInicial:
-                    mundial.groups
-                      .filter((g) =>
-                        Object.values(mundial.tables).some(
-                          (t) =>
-                            groupKey(t.group) === groupKey(g) &&
-                            t.rows.some((r) => r.athleteId !== null),
-                        ),
-                      )
-                      .map((g) => groupKey(g))[0] ??
-                    mundial.groups
-                      .filter((g) => perfil.weapons.includes(g.weapon))
-                      .map((g) => groupKey(g))[0] ??
-                    groupKey(mundial.groups[0]),
+                  grupoInicial: grupoInicialMundial,
                   mios,
                 }
               : null
@@ -302,7 +312,15 @@ export default async function Pagina() {
  *   no está en la base: no hay ninguna tabla de clasificación por equipos, ni
  *   nacional ni de la FIE. Es un encargo de ingestión, no de pantalla.
  */
-function MisFichas({
+/**
+ * Los datos de la ficha de cada tirador de la cuenta.
+ *
+ * Devuelve DATOS y no elementos porque el conmutador Nacional/Mundial de la
+ * ficha manda ahora también sobre la tabla, así que su estado tiene que vivir
+ * en un componente de cliente que envuelva a las dos cosas
+ * (`PanelRanking`). Todo lo que sale de aquí es serializable.
+ */
+function armarFichas({
   atletas,
   fichasFie,
   puestosOficiales,
@@ -332,30 +350,20 @@ function MisFichas({
       (f) => f.nacional.variantes.length > 0 || f.mundial.variantes.length > 0,
     );
 
-  if (fichas.length === 0) return null;
-
-  return (
-    <div className="mb-6 flex flex-col gap-4">
-      {fichas.map(({ atleta, ficha, nacional, mundial }) => (
-        <FichaRanking
-          key={atleta.id}
-          apellidos={atleta.lastName}
-          nombre={atleta.firstName}
-          pais={paises.get(atleta.id) ?? null}
-          foto={
-            ficha
-              ? {
-                  url: ficha.fotoUrlRetrato,
-                  fichaUrl: ficha.fichaUrl,
-                  nombrePublicado: ficha.nombrePublicado,
-                }
-              : null
-          }
-          lados={[mundial, nacional]}
-        />
-      ))}
-    </div>
-  );
+  return fichas.map(({ atleta, ficha, nacional, mundial }) => ({
+    athleteId: atleta.id,
+    apellidos: atleta.lastName,
+    nombre: atleta.firstName,
+    pais: paises.get(atleta.id) ?? null,
+    foto: ficha
+      ? {
+          url: ficha.fotoUrlRetrato,
+          fichaUrl: ficha.fichaUrl,
+          nombrePublicado: ficha.nombrePublicado,
+        }
+      : null,
+    lados: [mundial, nacional],
+  }));
 }
 
 function Cabecera({ contexto }: { contexto: string }) {
