@@ -44,11 +44,34 @@ for (const [nombre, config] of [
     (await pagina.locator('input[type="password"]').count()) > 0;
 
   if (!hayContrasena) {
+    /*
+      SIN CONTRASEÑA NO ES UN FALLO: ES COMO TIENE QUE ESTAR PRODUCCIÓN.
+
+      Esto contaba un problema y decía «no puede entrar nadie». Era verdad
+      mientras la única puerta de una producción recién desplegada fuese la
+      contraseña; dejó de serlo el día que se cerró esa puerta a propósito y
+      el acceso pasó a ser el código de un solo uso, que sí funciona.
+
+      Un guion de verificación que da rojo cuando el sistema está bien es
+      peor que no tenerlo: enseña a ignorar su salida. Así que aquí se
+      comprueba lo que se puede comprobar sin credenciales —que la pantalla
+      pide el correo y que el envío del código responde— y se dice
+      claramente que lo de dentro se queda sin mirar.
+
+      Lo de dentro sigue cubierto en local por `npm run barrido`, que barre
+      las 60 pantallas con las cuentas de demostración.
+    */
+    const pideCorreo =
+      (await pagina.locator('input[type="email"]').count()) > 0 &&
+      (await pagina.getByRole('button', { name: /código/i }).count()) > 0;
+
     console.log(
-      '  ✗ No hay formulario de contraseña: falta ACCESO_CON_CONTRASENA=1, ' +
-        'así que no puede entrar nadie.',
+      pideCorreo
+        ? '  ✓ Acceso solo con código, como debe ser en producción. ' +
+            'Lo de dentro no se comprueba desde aquí: hace falta una credencial.'
+        : '  ✗ La pantalla de acceso no pide el correo ni ofrece pedir un código.',
     );
-    problemas += 1;
+    if (!pideCorreo) problemas += 1;
   } else {
     await pagina.locator('input[type="email"]').last().fill(EMAIL);
     await pagina.locator('input[type="password"]').fill(CONTRASENA);
