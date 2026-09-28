@@ -41,13 +41,14 @@ import type {
 } from '@/lib/queries/calendar';
 import { mapsLinks, timezoneInfo } from '@/lib/travel';
 import { BarraPlazos } from './barra-plazos';
+import { AccesoAlPabellon, HorariosTorneo } from './horarios-torneo';
 import {
   CitaConvocatoria,
   MarcaConvocatoria,
   contradiccion,
   enlacesDeConvocatoria,
+  esImporte,
   huecoDe,
-  importesExtra,
   nombreDeEnlace,
   plazosDeConvocatoria,
 } from './datos-convocatoria';
@@ -457,17 +458,6 @@ function BandaPlazo({
   const tono = TONO[prueba.status.state];
   const dias = prueba.status.daysLeft;
 
-  // La cuota: primero lo publicado; si no, lo que dijera la convocatoria.
-  const cuotaLeida = prueba.feeEur
-    ? null
-    : (huecoDe(prueba.datosExtraidos, 'fee_eur') ??
-      huecoDe(evento.datosExtraidos, 'fee_eur'));
-  const cuota = prueba.feeEur ?? cuotaLeida?.valor ?? null;
-
-  const otrosImportes = [
-    ...importesExtra(prueba.datosExtraidos),
-    ...importesExtra(evento.datosExtraidos),
-  ];
   const plazosDelPapel = [
     ...plazosDeConvocatoria(prueba.datosExtraidos),
     ...plazosDeConvocatoria(evento.datosExtraidos),
@@ -506,61 +496,22 @@ function BandaPlazo({
       />
 
       {/*
-        La cuota, de marcador. Y cuando no se sabe, se dice: ninguna de las
-        484 pruebas del calendario publica cuota, así que este hueco vacío es
-        el caso normal y rellenarlo con un cero sería mentir.
-      */}
-      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 pt-1">
-        {cuota !== null ? (
-          <CitaConvocatoria dato={cuotaLeida}>
-            <p className="flex items-baseline gap-1.5">
-              <span
-                className={cn(
-                  /* Un paso por DEBAJO de la cifra de días, que es el titular
-                     de la banda: si la cuota grita más que el plazo, la
-                     jerarquía dice lo contrario de lo que importa. */
-                  'cifra text-3xl sm:text-2xl',
-                  cuotaLeida && cuotaLeida.estado !== 'aprobado'
-                    ? 'text-muted-foreground'
-                    : '',
-                )}
-              >
-                {formatEur(cuota)}
-              </span>
-              <span className="text-sm text-muted-foreground sm:text-xs">
-                {cuotaLeida ? (
-                  <>
-                    <MarcaConvocatoria className="mr-1 opacity-70" />
-                    cuota, de la convocatoria
-                  </>
-                ) : (
-                  'cuota'
-                )}
-              </span>
-            </p>
-          </CitaConvocatoria>
-        ) : (
-          <p className="text-sm text-muted-foreground">Cuota no publicada.</p>
-        )}
+        AQUÍ IBA LA CUOTA Y SE HA IDO DE LA TARJETA.
 
-        {/*
-          Los otros importes del papel —alojamiento, extranjeras— en pastilla
-          con su concepto. Sin el concepto, «50 €» al lado de «100 €» solo
-          crea la duda de cuál es el precio.
-        */}
-        {otrosImportes.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {otrosImportes.map((d) => (
-              <CitaConvocatoria key={d.id} dato={d}>
-                <Badge variant="outline" className="gap-1 text-muted-foreground">
-                  <MarcaConvocatoria />
-                  {formatEur(d.valor)} · {conceptoDe(d)}
-                </Badge>
-              </CitaConvocatoria>
-            ))}
-          </div>
-        ) : null}
-      </div>
+        Estaban la cuota de inscripción de marcador, las pastillas de los otros
+        importes (equipos, cadete, júnior, extranjeros) y, en la lista de lo
+        leído del PDF, la multa por árbitro que falte y los tramos de árbitros
+        obligatorios. Petición literal del usuario, sobre la ficha de Lima:
+        *«lo del precio porfa quítalo que no lo quiero mostrar, lo de la
+        inscripción y lo de los equipos cuánto cuesta, ni el árbitro; lo de
+        cuotas ocúltalo de las tarjetas»*.
+
+        NO se deja de extraer ni se borra nada: los importes siguen leyéndose,
+        guardados con su cita y visibles en Gestión › Extracción, que es donde
+        los mira quien tramita. Lo que se quita es enseñárselos al tirador.
+        El filtro está en `esImporte`, un sitio, para que valga igual aquí y en
+        la lista de frases del PDF.
+      */}
 
       {/*
         Un plazo que aparece en la convocatoria y no en el calendario. No entra
@@ -668,7 +619,6 @@ function BandaDondeYCuando({
   });
   const huso = timezoneInfo(evento.timezone, evento.startDate, evento.endDate);
 
-  const hitos = lineaDelDia(prueba);
 
   return (
     <Banda titulo="Dónde y cuándo">
@@ -763,6 +713,16 @@ function BandaDondeYCuando({
       ) : null}
 
       {/*
+        POR DÓNDE SE ENTRA, que no es la dirección del recinto.
+
+        Se estaba leyendo del PDF y se quedaba en la lista de frases del final,
+        plegada. Petición literal: *«si sabemos ya por dónde es el acceso,
+        ponlo directo»*. Y no es un adorno: en Lima el pabellón es «VELODROMO -
+        CAR VIDENA (GATE 7)» y la entrada está en otra calle.
+      */}
+      <AccesoAlPabellon evento={evento} />
+
+      {/*
         La acción principal de la ficha, y la única con el color de acento.
         Cuando no hay pabellón el botón lleva a la ciudad y lo dice en su
         propio texto: un botón que promete el pabellón y abre el centro de una
@@ -817,162 +777,21 @@ function BandaDondeYCuando({
           ) : null}
         </p>
       ) : null}
-
       {/*
-        LA LÍNEA DEL DÍA, que antes era una tabla de cuatro celdas.
+        LOS HORARIOS, DÍA A DÍA Y PRUEBA A PRUEBA.
 
-        Los cuatro hitos van en orden y encadenados por un filete, porque son
-        una secuencia: se abre la instalación, se llama, se cierra el scratch y
-        se empieza. Una tabla no dice que lo uno va después de lo otro; una
-        línea sí, y además es lo que pidió el usuario para lo que sale de los
-        PDFs: «una línea de tiempo del día, no una tabla».
+        Aquí había UNA línea con los cuatro hitos de la prueba seleccionada, y
+        se quedaba corta en cuanto el torneo dura más de un día, que es
+        siempre: en las Copas del Mundo y en muchos TNR la individual es
+        viernes y sábado y los equipos el domingo. Ahora se enseña el torneo
+        entero, con todos los hitos que se sepan de cada prueba y de cada día,
+        y la prueba que se está mirando va destacada. Ver `horarios-torneo.tsx`.
       */}
-      {hitos.length > 0 ? (
-        <div className="mt-1 flex items-stretch overflow-hidden rounded-md border border-t-filete bg-card px-2">
-          {hitos.map((h) => (
-            /*
-              El `flex-1` va en un envoltorio propio y no en la cita: cuando
-              el horario está publicado no hay cita, `CitaConvocatoria`
-              devuelve el contenido tal cual y la columna se quedaba del ancho
-              de «08:15», con la línea apelotonada a la izquierda y dos
-              tercios de la caja vacíos. Se vio en la captura del TNR M17.
-            */
-            <div key={h.rotulo} className="min-w-0 flex-1">
-              <CitaConvocatoria
-                dato={h.dato}
-                className="mx-0 w-full rounded-none px-0"
-              >
-                <div className="flex min-w-0 flex-col items-center py-2">
-                  <span
-                    className={cn(
-                      'cifra text-2xl leading-none sm:text-xl',
-                      h.dato && h.dato.estado !== 'aprobado'
-                        ? 'text-muted-foreground'
-                        : '',
-                    )}
-                  >
-                    {h.hora}
-                  </span>
-                  {/*
-                    El hilo de la línea del día. Cada tramo mide el ancho de su
-                    columna y los tramos se tocan, así que los cuatro hitos
-                    quedan ensartados en una sola línea con un punto en cada
-                    parada. Es lo que convierte cuatro celdas en una secuencia:
-                    se abre la instalación, se llama, se cierra el scratch y se
-                    empieza.
-                  */}
-                  <span
-                    className="relative my-1.5 h-px w-full bg-border"
-                    aria-hidden
-                  >
-                    <span className="absolute top-1/2 left-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-muted-foreground" />
-                  </span>
-                  <span className="flex items-center gap-1 text-xs leading-none text-muted-foreground">
-                    {h.dato ? <MarcaConvocatoria className="opacity-70" /> : null}
-                    {h.rotulo}
-                  </span>
-                  {/* El día, solo si no es el de la prueba. Ver `Hito.dia`. */}
-                  {h.dia ? (
-                    <span className="mt-1 text-xs leading-none text-warn">{h.dia}</span>
-                  ) : null}
-                </div>
-              </CitaConvocatoria>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          Los horarios no están publicados. Suelen salir en la convocatoria
-          unos días antes.
-        </p>
-      )}
+      <HorariosTorneo evento={evento} prueba={prueba} />
     </Banda>
   );
 }
 
-type Hito = {
-  rotulo: string;
-  hora: string;
-  dato: DatoExtraidoView | null;
-  /**
-   * El día, SOLO cuando no es el de la prueba.
-   *
-   * La verificación de material de una Copa del Mundo es la tarde ANTERIOR:
-   * en Takamatsu, «13:00-20:00 Weapon control, registration & payment - Men's
-   * Foil» es del día 14 y la prueba es el 15. Sin el día, la línea decía
-   * «Material 13:00» entre la apertura y las poules y se leía como esa misma
-   * mañana. Un hito del día de antes sin fecha no se detecta mirando la
-   * ficha: se detecta llegando cuando ya han cerrado el control.
-   */
-  dia: string | null;
-};
-
-/** «mié 14», para el hito que cae otro día. */
-const DIA_CORTO = new Intl.DateTimeFormat('es-ES', {
-  weekday: 'short',
-  day: 'numeric',
-  timeZone: 'Europe/Madrid',
-});
-
-function diaCorto(iso: string): string {
-  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
-  return DIA_CORTO.format(new Date(Date.UTC(y, m - 1, d, 12))).replace('.', '');
-}
-
-/**
- * Los hitos del día de la prueba, publicados o leídos del papel.
- *
- * Solo se miran los datos atribuidos A ESTA PRUEBA
- * (`CompetitionView.datosExtraidos`). Los horarios que quedaron a nivel de
- * evento están ahí justamente porque no se pudo saber a qué prueba van (ver
- * `repartirDatosExtraidos` en `src/lib/queries/calendar.ts`), y un horario en
- * la prueba equivocada no se detecta mirando la ficha: se detecta llegando
- * tarde.
- */
-function lineaDelDia(prueba: CompetitionView): Hito[] {
-  /**
-   * LOS HITOS QUE PUBLICA LA FIE, ADEMÁS DE LOS CUATRO DE SKERMO.
-   *
-   * Los cuatro primeros son las columnas que publica Skermo. Los tres últimos
-   * no tienen columna porque no los publica nadie en el calendario: salen del
-   * dossier, y son los que usa la FIE.
-   *
-   * Sin ellos, la Copa del Mundo de Takamatsu decía «los horarios no están
-   * publicados» teniendo leído del PDF, con su cita, «08:00 MF team T64» y
-   * «09:00 poules». El dato estaba extraído, atribuido a su prueba y
-   * verificado; simplemente nadie lo miraba.
-   *
-   * Van en el orden del día de competición, que es lo que convierte la fila en
-   * una secuencia y no en cuatro celdas: se abre la instalación, se verifica
-   * el material, se llama, se cierra el scratch, se tiran las poules y
-   * empieza el cuadro (o el de equipos).
-   */
-  const campos: [string, string, string | null][] = [
-    ['Apertura', 'installation_open', prueba.installationOpen],
-    ['Material', 'weapon_control', null],
-    ['Llamada', 'call_time', prueba.callTime],
-    ['Scratch', 'scratch_time', prueba.scratchTime],
-    ['Poules', 'pools_start', null],
-    ['Inicio', 'start_time', prueba.startTime],
-    ['Equipos', 'teams_start', null],
-  ];
-
-  const hitos: Hito[] = [];
-  for (const [rotulo, campo, publicado] of campos) {
-    if (publicado) {
-      hitos.push({ rotulo, hora: publicado, dato: null, dia: null });
-      continue;
-    }
-    const leido = huecoDe(prueba.datosExtraidos, campo);
-    if (!leido) continue;
-    const otroDia =
-      leido.fecha && prueba.competitionDate && leido.fecha !== prueba.competitionDate
-        ? diaCorto(leido.fecha)
-        : null;
-    hitos.push({ rotulo, hora: leido.valor, dato: leido, dia: otroDia });
-  }
-  return hitos;
-}
 
 // ---------------------------------------------------------------------------
 // 3 · ¿Estás dentro?
@@ -1158,10 +977,19 @@ function BandaConvocatoria({
   evento: EventView;
   prueba: CompetitionView | null;
 }) {
+  /**
+   * Todo lo leído del PDF **menos el dinero**.
+   *
+   * Aquí salían la cuota de equipos, las de cadete y júnior, la multa de mil
+   * euros por árbitro que falte y los tramos de árbitros obligatorios, que es
+   * lo que el usuario señaló en la ficha de Lima y pidió ocultar. Se siguen
+   * extrayendo y se ven en Gestión › Extracción; lo que no hacen es ocupar la
+   * ficha del tirador.
+   */
   const leidos = [
     ...evento.datosExtraidos,
     ...(prueba?.datosExtraidos ?? []),
-  ];
+  ].filter((d) => !esImporte(d.campo));
   const enlaces = enlacesDeConvocatoria(evento.datosExtraidos);
   const fuentes = enlacesDeFuente(evento);
 

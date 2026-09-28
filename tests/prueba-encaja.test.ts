@@ -80,10 +80,24 @@ describe('los horarios de la FIE, que vienen en inglés', () => {
     expect(pruebaEncaja('men-s-foil-team', floreteMasculinoAbs)).toBe(false);
   });
 
-  it('«team-event» a secas no se atribuye a nadie', () => {
-    // No dice arma ni categoría, y un torneo puede tener la de equipos
-    // masculina y la femenina: atribuirlo sería adivinar.
-    expect(pruebaEncaja('team-event', floreteMasculinoEquipos)).toBe(false);
+  it('«team-event» encaja con la de equipos, pero no la desempata', () => {
+    /*
+      Esta función dice si el texto ENCAJA con esta prueba, no si es la única.
+      «team-event» encaja con la de equipos masculina y con la femenina, y de
+      ahí no se puede atribuir: quien lo impide es `repartirDatosExtraidos`,
+      que exige que encaje una sola. Aquí lo que importa es que NO encaje con
+      la individual.
+    */
+    expect(pruebaEncaja('team-event', floreteMasculinoEquipos)).toBe(true);
+    expect(pruebaEncaja('team-event', floreteMasculinoAbs)).toBe(false);
+  });
+
+  it('«equipos masculino» sin arma sí encaja: el género es una señal', () => {
+    // El caso de Lima: el dossier no repite el arma porque el torneo es de
+    // florete entero, y aun así eso es una prueba concreta de la tarjeta.
+    expect(pruebaEncaja('equipos masculino', floreteMasculinoEquipos)).toBe(true);
+    expect(pruebaEncaja('equipos masculino', floreteFemeninoAbs)).toBe(false);
+    expect(pruebaEncaja('equipos masculino', floreteMasculinoAbs)).toBe(false);
   });
 
   it('las categorías en inglés', () => {

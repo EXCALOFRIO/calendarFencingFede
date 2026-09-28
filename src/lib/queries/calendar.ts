@@ -1164,9 +1164,24 @@ export function pruebaEncaja(prueba: string, competicion: CompetitionView): bool
 
   if (mencionaEquipos(prueba) && competicion.format !== 'EQUIPOS') return false;
 
-  // Hace falta al menos una señal fuerte: si el texto no dice ni el arma ni la
-  // categoría, no se atribuye a ninguna prueba.
-  return Boolean(arma || categoria);
+  /**
+   * HACE FALTA AL MENOS UNA SEÑAL, Y EL GÉNERO ES UNA SEÑAL.
+   *
+   * Antes se exigía arma o categoría, y eso dejaba sin dueño una fila real: en
+   * Lima el dossier rotula el cuadro por equipos como «equipos masculino», sin
+   * decir el arma —el torneo es de florete y sobra decirlo—, así que la hora
+   * del domingo se quedaba a nivel de torneo y la ficha decía «todo el
+   * torneo» sabiendo perfectamente a qué prueba iba.
+   *
+   * El género y el formato distinguen igual de bien cuando en la tarjeta solo
+   * hay una prueba que encaje, y la ambigüedad no la resuelve esta función:
+   * la resuelve `repartirDatosExtraidos`, que exige que encaje **una sola**.
+   * Con eso, «team-event» a secas sigue sin atribuirse en un torneo con
+   * equipos masculinos y femeninos, que es lo correcto, y «equipos masculino»
+   * sí. Lo que no vale como señal es un texto que no dice nada de la prueba
+   * («Comienzo: 09:00h»): eso no se atribuye nunca.
+   */
+  return Boolean(arma || categoria || femenino || masculino || mencionaEquipos(prueba));
 }
 
 /**

@@ -326,3 +326,32 @@ export function dominioDe(url: string): string {
     return url;
   }
 }
+
+/**
+ * ¿Este campo habla de dinero o de árbitros?
+ *
+ * Es el filtro que quita de la tarjeta la cuota de inscripción, la de equipos,
+ * las de cadete y júnior, la multa por árbitro que falte y los tramos de
+ * árbitros obligatorios. Petición literal del usuario sobre la ficha de Lima:
+ * *«lo del precio porfa quítalo que no lo quiero mostrar, lo de la inscripción
+ * y lo de los equipos cuánto cuesta, ni el árbitro; lo de cuotas ocúltalo de
+ * las tarjetas»*.
+ *
+ * Está en un solo sitio porque hay dos que lo necesitan —el hueco de la cuota y
+ * la lista de frases del PDF— y porque lo que se oculta tiene que ser
+ * exactamente lo mismo en los dos: media ocultación es peor que ninguna, deja
+ * el importe asomando por el sitio que nadie revisó.
+ *
+ * **No se deja de extraer.** Los importes se siguen leyendo, se guardan con su
+ * cita y se ven en Gestión › Extracción, que es donde los mira quien tramita.
+ */
+export function esImporte(campo: string): boolean {
+  return (
+    campo === 'fee_eur' ||
+    campo.startsWith('fee_eur.') ||
+    campo === 'fee_concept' ||
+    campo.startsWith('fee_concept.') ||
+    campo === 'referee_fine_eur' ||
+    campo.startsWith('referee_quota.')
+  );
+}
