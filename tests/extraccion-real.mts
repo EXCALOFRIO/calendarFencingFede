@@ -19,13 +19,13 @@
 
 import 'dotenv/config';
 import { readFile } from 'node:fs/promises';
+import { textoDeDocumento } from '../src/lib/ai/documento.ts';
 import {
   VERSION_ESQUEMA,
   type ClienteModelo,
   crearClienteModelo,
   descargarPdf,
   documentosPendientesDeExtraer,
-  extraerTextoDePdf,
   hashDocumento,
   huellaDeExtraccion,
   leerConfiguracionIa,
@@ -63,24 +63,86 @@ async function porTitulo(trozos: string[]) {
   const { db } = await import('../src/db/index.ts');
   const { officialDocument } = await import('../src/db/schema/index.ts');
   const { ilike, or } = await import('drizzle-orm');
-  return db
-    .select({
-      id: officialDocument.id,
-      titulo: officialDocument.title,
-      pdfUrl: officialDocument.pdfUrl,
-      eventId: officialDocument.eventId,
-      fileHash: officialDocument.fileHash,
-    })
-    .from(officialDocument)
-    .where(or(...trozos.map((t) => ilike(officialDocument.title, `%${t}%`))))
-    .limit(20);
+  return (
+    await db
+      .select({
+        id: officialDocument.id,
+        titulo: officialDocument.title,
+        pdfUrl: officialDocument.pdfUrl,
+        eventId: officialDocument.eventId,
+        fileHash: officialDocument.fileHash,
+      })
+      .from(officialDocument)
+      .where(or(...trozos.map((t) => ilike(officialDocument.title, `%${t}%`))))
+      .limit(20)
+  ).map((f) => ({ ...f, origen: 'circular' as const }));
 }
 
-const pendientes =
-  titulosPedidos.length > 0
-    ? await porTitulo(titulosPedidos)
-    : await documentosPendientesDeExtraer(cuantas, huella);
-console.log(`Circulares en esta pasada: ${pendientes.length}\n`);
+/**
+ * `--dossier <trozo>` (repetible) elige DOSSIERES de torneo, que son los de
+ * `event_document`.
+ *
+ * Hacía falta y no estaba: los dossieres son los documentos que de verdad
+ * llevan el pabellón, el horario por días y las cuotas, y son los únicos que
+ * vienen ya atados a un evento. Sin esta opción no había forma de pasar por el
+ * embudo un torneo concreto —«el de Orán»— sin esperar a que el cron llegara a
+ * él, y son 141 filas.
+ *
+ * Se busca por el TÍTULO o por la URL: el título de una invitación de la FIE
+ * es siempre «Invitación · <nombre del torneo>», así que `--dossier Oran`
+ * acierta, pero `--dossier .docx` también sirve para coger los de Word.
+ */
+async function porDossier(trozos: string[]) {
+  const { db } = await import('../src/db/index.ts');
+  const { event, eventDocument } = await import('../src/db/schema/index.ts');
+  const { asc, eq, ilike, or } = await import('drizzle-orm');
+  return (
+    await db
+      .select({
+        id: eventDocument.id,
+        titulo: eventDocument.title,
+        pdfUrl: eventDocument.url,
+        eventId: eventDocument.eventId,
+        fileHash: eventDocument.fileHash,
+      })
+      .from(eventDocument)
+      .innerJoin(event, eq(event.id, eventDocument.eventId))
+      .where(
+        or(
+          ...trozos.flatMap((t) => [
+            ilike(eventDocument.title, `%${t}%`),
+            ilike(eventDocument.url, `%${t}%`),
+          ]),
+        ),
+      )
+      .orderBy(asc(event.startDate))
+      .limit(20)
+  ).map((f) => ({ ...f, origen: 'dossier' as const }));
+}
+
+const dossieresPedidos = argumentos
+  .map((a, i) => (a === '--dossier' ? argumentos[i + 1] : null))
+  .filter((t): t is string => Boolean(t));
+
+/**
+ * Un mismo documento cuelga de varios eventos —la invitación de Orán está en
+ * las cuatro pruebas del torneo— y procesarlo cuatro veces no aporta nada: la
+ * idempotencia va por contenido, así que las tres siguientes acabarían en
+ * `ya_procesado`. Se deja una fila por URL.
+ */
+function unaPorUrl<T extends { pdfUrl: string }>(filas: T[]): T[] {
+  const vistas = new Set<string>();
+  return filas.filter((f) => (vistas.has(f.pdfUrl) ? false : (vistas.add(f.pdfUrl), true)));
+}
+
+const pendientes = unaPorUrl(
+  dossieresPedidos.length > 0
+    ? await porDossier(dossieresPedidos)
+    : titulosPedidos.length > 0
+      ? await porTitulo(titulosPedidos)
+      : await documentosPendientesDeExtraer(cuantas, huella),
+);
+console.log(`Documentos en esta pasada: ${pendientes.length}\n`);
 
 /**
  * Cliente falso alimentado por un fichero: `{ "<trozo de la url>": { … } }`.
@@ -125,12 +187,15 @@ for (const documento of pendientes) {
     try {
       const pdf = await descargarPdf(documento.pdfUrl);
       const hash = await hashDocumento(pdf);
-      const lectura = await extraerTextoDePdf(pdf);
+      // `textoDeDocumento` y no `extraerTextoDePdf`: un dossier puede ser un
+      // Word, y aquí interesa ver qué formato ha reconocido.
+      const lectura = await textoDeDocumento(pdf, { url: documento.pdfUrl });
       const privacidad = pareceContenerDatosPersonales(lectura.texto);
       console.log(`  hash SHA-256: ${hash.slice(0, 24)}…`);
       console.log(
-        `  páginas: ${lectura.paginas} · caracteres: ${lectura.texto.length} · ` +
-          `capa de texto: ${lectura.tieneCapaDeTexto ? 'sí' : 'NO (escaneado)'}`,
+        `  formato: ${lectura.formato} · páginas: ${lectura.paginas ?? '—'} · ` +
+          `caracteres: ${lectura.texto.length} · ` +
+          `texto: ${lectura.tieneTexto ? 'sí' : 'NO (escaneado o vacío)'}`,
       );
       console.log(
         `  datos personales: ${
@@ -151,6 +216,7 @@ for (const documento of pendientes) {
 
   const resultado = await procesarDocumentoOficial({
     documentoId: documento.id,
+    origen: documento.origen,
     documentoUrl: documento.pdfUrl,
     documentoTitulo: documento.titulo,
     fileHash: documento.fileHash,

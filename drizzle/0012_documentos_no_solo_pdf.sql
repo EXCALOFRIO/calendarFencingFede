@@ -1,0 +1,14 @@
+-- Un dossier de la FIE no siempre es un PDF.
+--
+-- Medido contra su API el 27/09/2026 sobre las 23 copas del mundo de los 60
+-- días siguientes: de las 96 pruebas con invitación publicada, 74 apuntan a un
+-- PDF y 22 a un `.docx`. Entre esas 22 está la de Orán, que es el dossier más
+-- completo que hemos visto. Ahora se leen, así que hace falta poder registrar
+-- de dónde salió el texto sin mentir: 'unpdf' sobre un Word sería una pista
+-- falsa justo en la columna que se mira para depurar una extracción.
+--
+-- `ADD VALUE` es aditivo: no reescribe ninguna fila y no invalida las que ya
+-- dicen 'unpdf' u 'ocr_modelo'. El `IF NOT EXISTS` la hace repetible, que es
+-- lo que permite volver a aplicar las migraciones sobre una base que ya la
+-- tenga sin que la pasada entera se caiga.
+ALTER TYPE "public"."origen_texto_extraccion" ADD VALUE IF NOT EXISTS 'ooxml';

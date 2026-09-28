@@ -1,0 +1,18 @@
+-- El DÍA al que se refiere un dato extraído de un PDF.
+--
+-- POR QUÉ HACE FALTA
+-- El horario de un dossier de la FIE es una TABLA de varias jornadas, no un
+-- valor suelto: la invitación de la Copa del Mundo de Lima 2026 publica cuatro
+-- días seguidos con «7:30 Venue Open». `aPropuestas` ya distinguía cada uno
+-- colgándole la fecha a la clave del campo (`installation_open.2026-10-08`),
+-- así que los datos no se pisaban; lo que no se podía era AGRUPARLOS por día
+-- sin partir la clave por puntos en la interfaz, y eso convierte un formato
+-- interno en contrato de pantalla.
+--
+-- Es `date` y no `timestamp`: «jueves 8 de octubre» es un día de calendario del
+-- documento, no un instante, y no tiene huso horario.
+--
+-- Aditiva y anulable, así que las 98 propuestas que ya están en la cola siguen
+-- valiendo con la fecha a NULL, que es lo correcto: son datos de todo el
+-- evento o datos cuya fecha nunca se leyó.
+ALTER TABLE "extraccion_propuesta" ADD COLUMN "fecha" date;

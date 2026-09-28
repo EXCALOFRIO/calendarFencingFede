@@ -76,6 +76,8 @@ type FilaInscripcion = {
   weapon: 'FLORETE' | 'ESPADA' | 'SABLE';
   gender: 'M' | 'F' | 'MIXTO';
   category: string;
+  /** Hace falta para el plazo: la RFEE multa distinto a un equipo que a un tirador. */
+  format: 'INDIVIDUAL' | 'EQUIPOS';
   feeEur: string | null;
   eventId: string;
   eventName: string;
@@ -114,6 +116,7 @@ async function encolarAvisosDePlazo(
       weapon: eventCompetition.weapon,
       gender: eventCompetition.gender,
       category: eventCompetition.category,
+      format: eventCompetition.format,
       feeEur: eventCompetition.feeEur,
       eventId: event.id,
       eventName: event.name,
@@ -189,6 +192,7 @@ async function encolarAvisosDePlazo(
       scope: fila.scope as Scope,
       circuit: fila.circuit,
       category: fila.category as CategoryCode,
+      format: fila.format,
     });
 
     const plazos = mergeDeadlines(propios, calculados);

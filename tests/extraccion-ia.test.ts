@@ -551,10 +551,23 @@ describe('la extracción completa con Workers AI detrás', () => {
         },
       ],
       enlaces: [
+        /**
+         * El enlace del hotel oficial, que es el que salía en la ficha del TNR
+         * de Alcobendas con el mismo peso que la convocatoria. Ya NO se
+         * extrae: el usuario lo pidió expresamente («el tema de los hoteles
+         * que recomiendan y eso no») y además son datos comerciales que
+         * caducan. `TIPOS_ENLACE` ya no tiene el valor, así que este elemento
+         * ni valida y `listaTolerante` lo tira.
+         */
         {
           tipo: 'alojamiento',
           url: 'https://hotel-san-roque.marketinghotelero.top',
           cita: 'https://hotel-san-roque.marketinghotelero.top',
+        },
+        {
+          tipo: 'inscripcion',
+          url: 'https://engarde-service.com/tnr',
+          cita: 'Inscripciones en https://engarde-service.com/tnr',
         },
       ],
     });
@@ -576,7 +589,14 @@ describe('la extracción completa con Workers AI detrás', () => {
     expect(campos).toContain('fee_eur.extranjeros');
     expect(campos).not.toContain('fee_eur');
 
-    expect(campos).toContain('link.alojamiento');
+    /**
+     * Y LO QUE YA NO SALE: el enlace del hotel. Esta comprobación es la
+     * prueba de que el filtro de alojamiento funciona en la puerta de entrada,
+     * antes de que nadie mire una cita. El enlace de inscripción, que está en
+     * la misma lista, sí pasa: no se ha cerrado la puerta de más.
+     */
+    expect(campos).not.toContain('link.alojamiento');
+    expect(campos).toContain('link.inscripcion');
   });
 
   /**

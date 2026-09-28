@@ -220,6 +220,31 @@ export const eventCompetition = pgTable(
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
+    /**
+     * Hash de la LISTA DE INSCRITOS de esta prueba, aparte de `content_hash`.
+     *
+     * Son dos cosas distintas y por eso son dos columnas: `content_hash` habla
+     * de la prueba (arma, día, horarios, cuota) y si entrase la lista dentro
+     * cambiaría cada vez que alguien se apunta, con lo que todas las pruebas
+     * saldrían como «modificada» todos los días y el registro de cambios
+     * dejaría de valer para nada.
+     *
+     * Con la lista aparte, una segunda pasada con la misma lista **no reescribe
+     * ni una fila**: solo se refresca `last_seen_at`, igual que hace
+     * `upsertEvents` con los eventos que no han cambiado.
+     */
+    registrationsHash: text('registrations_hash'),
+    /**
+     * Cuándo se leyó con éxito la lista de inscritos de esta prueba.
+     *
+     * Es lo que hace que la cadencia exista: sin este dato habría que pedir la
+     * lista de las 54 pruebas de la ventana en cada pasada para saber si algo
+     * ha cambiado. Con él, `tocaLeerInscritos` decide y una segunda pasada el
+     * mismo día cuesta **0 peticiones**.
+     */
+    registrationsCheckedAt: timestamp('registrations_checked_at', {
+      withTimezone: true,
+    }),
   },
   (t) => [
     unique('event_competition_key').on(
@@ -292,6 +317,14 @@ export const eventDeadline = pgTable(
  * en este proyecto y aquí con más motivo: decirle a alguien que está inscrito
  * cuando el inscrito es su homónimo es el peor error posible de esta pantalla.
  *
+ * LA FIE SÍ TRAE IDENTIFICADOR, y con eso el emparejado funciona de verdad.
+ * De sus listas de inscritos se guardan **tres campos y solo tres**: nombre,
+ * licencia y día de inscripción, y **solo de los españoles**. Ni fecha de
+ * nacimiento, ni edad, ni altura, ni foto, ni una fila de otra federación: el
+ * filtro está en el adaptador (`inscritosEspanolesDeLaFie`) con su test, así
+ * que aquí no puede llegar lo que no debe. Ver la nota de
+ * `src/lib/ingest/sources/fie.ts`.
+ *
  * `withdrawn_at` marca a quien ya no aparece en la lista: se marca, no se
  * borra, porque "te han quitado de la lista" es justo lo que hay que poder
  * contar.
@@ -315,9 +348,25 @@ export const competitionRegistration = pgTable(
      * dos NULL no chocan, con lo que un null dejaría entrar duplicados.
      */
     sourceTeam: text('source_team').notNull().default(''),
-    /** Skermo no la publica en esta pantalla; queda por si otra fuente sí. */
+    /**
+     * Licencia publicada por la fuente. Skermo no la da en esta pantalla; la
+     * FIE sí, y es lo que permite emparejar sin tocar el nombre.
+     *
+     * AVISO, comprobado carácter a carácter con tres fichas reales: el
+     * `licenseNumber` de la FIE es **DDMMAAAA + tres dígitos**, o sea que
+     * lleva dentro la fecha de nacimiento ("09122006000" = 09/12/2006). No es
+     * la licencia de la RFEE ("CLF01835"). Está escrito aquí porque quien mire
+     * esta columna tiene que saber qué está mirando.
+     */
     sourceLicense: text('source_license'),
     sourceClub: text('source_club'),
+    /**
+     * Día en que la fuente registró la inscripción, si lo publica
+     * (`registeredAt` en la FIE). Es un día de calendario del publicador, no
+     * un instante nuestro: `first_seen_at` dice cuándo lo vimos NOSOTROS, que
+     * es una cosa distinta y las dos hacen falta.
+     */
+    sourceRegisteredAt: date('source_registered_at'),
     source: sourceEnum('source').notNull(),
     sourceUrl: text('source_url'),
     firstSeenAt: timestamp('first_seen_at', { withTimezone: true })

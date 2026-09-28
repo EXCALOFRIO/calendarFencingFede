@@ -62,6 +62,20 @@ import { formatDateEs, formatDateTimeEs, formatEur, titular } from '@/lib/utils'
 type Pestana = 'pendientes' | 'revisadas' | 'sin_datos';
 
 /**
+ * Cuántas circulares se pintan de golpe.
+ *
+ * Medido en un iPhone: esta pantalla era la más larga de toda la aplicación
+ * con **85.569 px**, o sea ciento ocho pantallas de desplazamiento, porque
+ * pintaba las circulares de un montón enteras y cada banda lleva sus campos
+ * con la cita del documento debajo de cada uno. Y se revisa de arriba abajo,
+ * una a una: nadie llega a la número sesenta bajando con el pulgar.
+ *
+ * Seis bandas son las que se revisan de una sentada y dejan la pantalla en el
+ * mismo orden de alto que el resto.
+ */
+const PASO = 6;
+
+/**
  * Nombre legible de cada campo. La clave interna ("deadline.L2") es estable y
  * sirve para cruzar con el esquema; la persona que revisa no tiene por qué
  * conocerla.
@@ -190,9 +204,18 @@ export function ExtraccionPanel({
   const router = useRouter();
   const [pestana, setPestana] = React.useState<Pestana>('pendientes');
   const [ocupado, setOcupado] = React.useState(false);
+  const [tope, setTope] = React.useState(PASO);
 
-  const visibles =
+  const delMonton =
     pestana === 'pendientes' ? pendientes : pestana === 'revisadas' ? revisadas : sinDatos;
+  const visibles = delMonton.slice(0, tope);
+  const quedan = delMonton.length - visibles.length;
+
+  // Cada montón empieza por el principio: arrastrar el tope de «revisadas»
+  // —que son muchas— a «por revisar» pintaría de golpe todo lo que hay.
+  React.useEffect(() => {
+    setTope(PASO);
+  }, [pestana]);
 
   async function ejecutar(
     accion: () => Promise<{ ok: boolean; message?: string; error?: string }>,
@@ -294,6 +317,14 @@ export function ExtraccionPanel({
               Extracción apagada: lo que se ve aquí es de pasadas anteriores.
             </span>
           )}
+
+          {/* Cuántas se están viendo de cuántas hay en el montón. */}
+          {quedan > 0 ? (
+            <span className="text-xs text-muted-foreground">
+              <span className="cifra text-foreground">{visibles.length}</span> de{' '}
+              <span className="cifra text-foreground">{delMonton.length}</span>
+            </span>
+          ) : null}
         </div>
 
         {visibles.length === 0 ? (
@@ -311,6 +342,17 @@ export function ExtraccionPanel({
             ))}
           </ul>
         )}
+
+        {quedan > 0 ? (
+          <Button
+            variant="outline"
+            className="h-11 w-full"
+            onClick={() => setTope((n) => n + PASO)}
+          >
+            Ver {Math.min(quedan, PASO)} circulares más
+            <span className="cifra text-xs text-muted-foreground">quedan {quedan}</span>
+          </Button>
+        ) : null}
       </div>
     </div>
   );

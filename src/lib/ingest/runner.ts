@@ -1,23 +1,36 @@
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import {
+  competitionRegistration,
   event,
+  eventCompetition,
   ingestQuarantine,
   ingestRun,
   notification,
   officialDocument,
 } from '@/db/schema';
+import { recalcularVigencia } from '../documentos/recalcular';
+import { tocaLeerRanking } from './cadencia-ranking';
 import { sha256 } from '../utils';
 import { recalcularEnlaces } from './enlazar';
 import { fetchText } from './fetcher';
 import { fetchEfcCalendar } from './sources/efc';
-import { currentFieSeason, fetchFieSeason } from './sources/fie';
+import {
+  DIAS_VENTANA_INSCRITOS,
+  currentFieSeason,
+  fetchFieSeason,
+  fetchInscritosFie,
+  fieEntriesUrl,
+  huellaDeInscritos,
+  pruebaFieDeSourceId,
+  tocaLeerInscritos,
+} from './sources/fie';
 import { ingestFieTiradores } from './sources/fie-tiradores';
 import { ingestRankingRfee } from './sources/ranking-rfee';
 import { fetchOfficialDocuments } from './sources/rfee-wp';
 import { parseSkermoCalendar, skermoCalendarUrl } from './sources/skermo';
 import { ingestSkermoResults } from './sources/skermo-results';
-import { markMissingEvents, upsertEvents } from './upsert';
+import { markMissingEvents, upsertEvents, upsertListasDeInscritos } from './upsert';
 import { validateEvents } from './types';
 import { storeIngestSnapshot } from '../storage';
 
@@ -225,8 +238,39 @@ async function dispatch(source: IngestSource, runId: string): Promise<Dispatched
       return ingestEfc();
     case 'rfee_wp':
       return ingestOfficialDocuments();
-    case 'skermo_ranking':
-      return ingestRanking(runId);
+    case 'skermo_ranking': {
+      /**
+       * El ranking no se lee todas las noches, aunque el cron se levante.
+       *
+       * Solo cambia cuando se disputa algo que puntúa, y en una temporada eso
+       * son unas treinta veces. La cadencia la decide `tocaLeerRanking`, que
+       * es una función pura con sus casos en `tests/cadencia-ranking.test.ts`:
+       * los tres días siguientes a cada prueba, y una revisión semanal el
+       * resto del tiempo.
+       *
+       * Cuando no toca se devuelve una ejecución `ok` con su explicación, no
+       * un fallo: no haber hecho nada porque no había nada que hacer es el
+       * resultado correcto, y así el panel de salud no se llena de rojos que
+       * no significan nada.
+       */
+      const decision = await decidirCadenciaRanking();
+      if (!decision.leer) {
+        return {
+          status: 'ok',
+          itemsSeen: 0,
+          itemsCreated: 0,
+          itemsUpdated: 0,
+          itemsUnchanged: 0,
+          itemsQuarantined: 0,
+          note: `No toca leer el ranking. ${decision.explicacion}`,
+        };
+      }
+      const resultado = await ingestRanking(runId);
+      return {
+        ...resultado,
+        note: [decision.explicacion, resultado.note].filter(Boolean).join(' | '),
+      };
+    }
     case 'fie_tiradores':
       return ingestFichasFie(runId);
   }
@@ -322,11 +366,43 @@ async function ingestSkermo(
 
 async function ingestFie(runId: string): Promise<Dispatched> {
   const season = currentFieSeason();
-  const { candidates, rowsSeen } = await fetchFieSeason(season);
+  const { candidates, rowsSeen, futuro } = await fetchFieSeason(season);
 
   const validated = validateEvents(candidates);
   const quarantined = await saveQuarantine(runId, 'fie', validated.quarantined);
   const stats = await upsertEvents(validated.events);
+
+  /**
+   * Y después del calendario, las listas de inscritos.
+   *
+   * Va DESPUÉS a propósito: necesita que las pruebas existan con su día para
+   * poder decidir cuáles están en la ventana. Y si falla, la ingestión del
+   * calendario NO falla: un calendario sin listas sigue siendo un calendario,
+   * y perder las dos por un 500 en una lista sería mucho peor. Mismo criterio
+   * que `recalcularEnlaces()`.
+   */
+  let notaInscritos = '';
+  try {
+    const listas = await ingestInscritosFie();
+    notaInscritos =
+      ` | inscritos: ${listas.peticiones} peticiones (de ${listas.enVentana} pruebas ` +
+      `en ventana, ${listas.saltadas} sin tocar por cadencia), ${listas.listasLeidas} listas, ` +
+      `${listas.espanoles} inscritos españoles de ${listas.publicados} publicados, ` +
+      `${listas.escritas} filas escritas, ${listas.sinCambios} listas sin cambios, ` +
+      `${listas.emparejadas} emparejadas, ${listas.bajas} bajas` +
+      (listas.colisiones > 0
+        ? `, ${listas.colisiones} listas se quedan en la fila de la FIE porque la prueba ya ` +
+          `tiene lista de otro publicador`
+        : '') +
+      (listas.sinEquivalente > 0
+        ? `, ${listas.sinEquivalente} de equipos sin prueba equivalente en el torneo español`
+        : '') +
+      (listas.fallos > 0 ? `, ${listas.fallos} listas no respondieron` : '');
+  } catch (error) {
+    notaInscritos = ` | inscritos: no se pudieron leer (${
+      error instanceof Error ? error.message : 'error'
+    })`;
+  }
 
   return {
     status: 'ok',
@@ -336,8 +412,417 @@ async function ingestFie(runId: string): Promise<Dispatched> {
     itemsUnchanged: stats.unchanged,
     itemsQuarantined: quarantined,
     notificationsQueued: stats.notificationsQueued,
-    note: `Temporada FIE ${season}`,
+    /**
+     * Se dice lo que ha costado el calendario futuro, porque es la parte cara
+     * y la que puede degradarse sin avisar: si un día `torneos` baja a 0, el
+     * listado de la FIE habrá dejado de publicar el índice y los dossieres de
+     * los torneos que vienen desaparecerán en silencio.
+     */
+    note:
+      `Temporada FIE ${season} · futuro: ${futuro.torneos} torneos, ` +
+      `${futuro.pruebas} pruebas, ${futuro.peticiones} peticiones` +
+      notaInscritos,
   };
+}
+
+export type ResumenInscritosFie = {
+  /** Pruebas futuras dentro de la ventana de `DIAS_VENTANA_INSCRITOS`. */
+  enVentana: number;
+  /** De esas, las que la cadencia ha decidido no pedir hoy. */
+  saltadas: number;
+  peticiones: number;
+  listasLeidas: number;
+  fallos: number;
+  /** Inscritos totales que publica la FIE en las listas leídas. */
+  publicados: number;
+  /** De esos, los españoles, que son los únicos que salen del adaptador. */
+  espanoles: number;
+  escritas: number;
+  sinCambios: number;
+  emparejadas: number;
+  bajas: number;
+  colisiones: number;
+  sinEquivalente: number;
+};
+
+/**
+ * ===========================================================================
+ * LAS LISTAS DE INSCRITOS DE LA FIE
+ * ===========================================================================
+ *
+ * Es lo que arregla el agujero que tenía la aplicación: de 2.046 filas de
+ * listas oficiales **ninguna traía licencia**, y sin licencia no se puede
+ * decirle a nadie «estás dentro», que es media aplicación.
+ *
+ * QUÉ SE GUARDA. Solo de los españoles, y solo nombre, licencia y día de
+ * inscripción. El filtro está en el adaptador
+ * (`inscritosEspanolesDeLaFie`), no aquí, y tiene su test con un menor de
+ * otra federación: así lo que no se debe guardar no llega a existir en esta
+ * función y no hay forma de escribirlo por descuido.
+ *
+ * EL COSTE. Una petición por prueba. Con la ventana de 30 días son **54
+ * peticiones en la primera pasada** y **0 en una segunda pasada el mismo
+ * día**, porque la cadencia mira `registrations_checked_at`. Los números y el
+ * porqué de la ventana están en `DIAS_VENTANA_INSCRITOS`.
+ *
+ * ---------------------------------------------------------------------------
+ * DÓNDE SE ESCRIBE LA LISTA, que es la parte que tiene truco
+ * ---------------------------------------------------------------------------
+ * Los 102 registros futuros de la FIE están ABSORBIDOS por el torneo español
+ * que publica Skermo (`event.canonical_event_id`), y la tarjeta que se ve en
+ * el calendario —y la ficha que se abre— es la española. Si la lista se
+ * colgara de la prueba de la FIE, nadie la vería nunca: la ficha lee las
+ * pruebas del evento canónico.
+ *
+ * Así que la lista va a la prueba EQUIVALENTE del torneo español (mismo arma,
+ * género, categoría y formato), que es la misma prueba de verdad publicada dos
+ * veces. Es la misma herencia que ya se hace con el cartel y con el dossier.
+ *
+ * Y con un guardarraíl, porque hay un caso en el que eso mentiría: **si esa
+ * prueba ya tiene lista de otro publicador, no se mezcla**. Skermo publica su
+ * propia lista de inscritos de la Copa del Mundo de Orán (6 nombres, la gente
+ * que la RFEE ha apuntado) y la FIE publica la suya (9 españoles). Son las
+ * mismas personas escritas de otra forma —«JORGE CASAUS PIELAGO» y «CASAUS
+ * PIELAGO Jorge»— así que juntarlas daría 15 filas para 11 personas, un
+ * marcador de 15 y un pie que dice «Lista publicada por Skermo · RFEE» para
+ * dos listas. Tres mentiras en pantalla.
+ *
+ * En ese caso la lista se queda en la prueba de la FIE: guardada, emparejada y
+ * comprobable, pero sin pisar la que se enseña. Es el mismo criterio que
+ * `recalcularEnlaces` con los pares ambiguos: **ante la duda no se une nada y
+ * se deja constancia** en la nota de la ejecución, porque decidir quién manda
+ * en la lista de una prueba internacional —la organizadora o la federación
+ * española— es una decisión de producto, no de ingestión.
+ *
+ * Y es estable en las dos direcciones: si Skermo empieza a publicar la lista
+ * de una prueba en la que ya habíamos escrito la de la FIE, la colisión
+ * aparece y las filas de la FIE se retiran de la prueba española en la misma
+ * pasada. Sin eso, la mezcla habría llegado sola una semana después.
+ */
+export async function ingestInscritosFie(
+  ahora: Date = new Date(),
+): Promise<ResumenInscritosFie> {
+  const resumen: ResumenInscritosFie = {
+    enVentana: 0,
+    saltadas: 0,
+    peticiones: 0,
+    listasLeidas: 0,
+    fallos: 0,
+    publicados: 0,
+    espanoles: 0,
+    escritas: 0,
+    sinCambios: 0,
+    emparejadas: 0,
+    bajas: 0,
+    colisiones: 0,
+    sinEquivalente: 0,
+  };
+
+  const hoy = ahora.toISOString().slice(0, 10);
+  const hasta = new Date(ahora.getTime() + DIAS_VENTANA_INSCRITOS * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+
+  /**
+   * Las candidatas, en una consulta. Se piden ya solo las de la ventana: traer
+   * las 554 pruebas internacionales para descartar 500 en memoria sería pagar
+   * un viaje de red enorme por nada.
+   */
+  const candidatas = await db
+    .select({
+      pruebaFieId: eventCompetition.id,
+      competitionDate: eventCompetition.competitionDate,
+      registrationsHash: eventCompetition.registrationsHash,
+      registrationsCheckedAt: eventCompetition.registrationsCheckedAt,
+      weapon: eventCompetition.weapon,
+      gender: eventCompetition.gender,
+      category: eventCompetition.category,
+      format: eventCompetition.format,
+      eventSourceId: event.sourceId,
+      canonicalEventId: event.canonicalEventId,
+    })
+    .from(eventCompetition)
+    .innerJoin(event, eq(eventCompetition.eventId, event.id))
+    .where(
+      and(
+        eq(event.source, 'fie'),
+        isNull(event.disappearedAt),
+        eq(event.cancelled, false),
+        sql`${eventCompetition.competitionDate} between ${hoy} and ${hasta}`,
+      ),
+    );
+
+  resumen.enVentana = candidatas.length;
+  if (candidatas.length === 0) return resumen;
+
+  /**
+   * La prueba equivalente del torneo español, y si ya tiene lista de otro
+   * publicador. Dos consultas para todas las pruebas de golpe.
+   */
+  const idsCanonicos = [
+    ...new Set(candidatas.map((c) => c.canonicalEventId).filter((v): v is string => !!v)),
+  ];
+  const equivalentes = new Map<string, string>();
+  if (idsCanonicos.length > 0) {
+    for (const lote of chunk(idsCanonicos, 200)) {
+      const filas = await db
+        .select({
+          id: eventCompetition.id,
+          eventId: eventCompetition.eventId,
+          weapon: eventCompetition.weapon,
+          gender: eventCompetition.gender,
+          category: eventCompetition.category,
+          format: eventCompetition.format,
+        })
+        .from(eventCompetition)
+        .where(inArray(eventCompetition.eventId, lote));
+      for (const f of filas) {
+        equivalentes.set(
+          `${f.eventId}|${f.weapon}|${f.gender}|${f.category}|${f.format}`,
+          f.id,
+        );
+      }
+    }
+  }
+
+  /** Pruebas que ya tienen lista de un publicador que NO es la FIE. */
+  const conListaAjena = new Set<string>();
+  const idsDestinoPosibles = [...new Set(equivalentes.values())];
+  if (idsDestinoPosibles.length > 0) {
+    for (const lote of chunk(idsDestinoPosibles, 300)) {
+      const filas = await db
+        .selectDistinct({ id: competitionRegistration.eventCompetitionId })
+        .from(competitionRegistration)
+        .where(
+          and(
+            inArray(competitionRegistration.eventCompetitionId, lote),
+            sql`${competitionRegistration.source} <> 'fie'`,
+          ),
+        );
+      for (const f of filas) conListaAjena.add(f.id);
+    }
+  }
+
+  /** A qué prueba va cada lista, y por qué. */
+  type Destino = {
+    pruebaFieId: string;
+    /** La prueba equivalente del torneo español, si la hay. */
+    equivalenteId: string | null;
+    destinoId: string;
+    /** Si la lista se queda en la fila de la FIE, y el motivo. */
+    retenida: null | 'colision' | 'sin_equivalente';
+    season: number;
+    competitionId: number;
+    hashGuardado: string | null;
+  };
+
+  const aLeer: Destino[] = [];
+
+  for (const c of candidatas) {
+    const ref = pruebaFieDeSourceId(c.eventSourceId);
+    if (!ref) continue;
+
+    const decision = tocaLeerInscritos(ahora, c.competitionDate, c.registrationsCheckedAt);
+    if (!decision.leer) {
+      resumen.saltadas += 1;
+      continue;
+    }
+
+    const equivalente = c.canonicalEventId
+      ? equivalentes.get(
+          `${c.canonicalEventId}|${c.weapon}|${c.gender}|${c.category}|${c.format}`,
+        )
+      : c.pruebaFieId;
+
+    let destinoId = equivalente ?? c.pruebaFieId;
+    let retenida: Destino['retenida'] = null;
+    if (!equivalente) {
+      retenida = 'sin_equivalente';
+      resumen.sinEquivalente += 1;
+    } else if (conListaAjena.has(equivalente)) {
+      destinoId = c.pruebaFieId;
+      retenida = 'colision';
+      resumen.colisiones += 1;
+    }
+
+    aLeer.push({
+      pruebaFieId: c.pruebaFieId,
+      equivalenteId: equivalente ?? null,
+      destinoId,
+      retenida,
+      season: ref.season,
+      competitionId: ref.competitionId,
+      hashGuardado: c.registrationsHash,
+    });
+  }
+
+  if (aLeer.length === 0) return resumen;
+
+  /** De seis en seis, igual que el resto del adaptador de la FIE. */
+  const leidas: {
+    destino: Destino;
+    inscritos: Awaited<ReturnType<typeof fetchInscritosFie>>['inscritos'];
+    huella: string;
+    publicados: number;
+  }[] = [];
+
+  for (let i = 0; i < aLeer.length; i += 6) {
+    const lote = aLeer.slice(i, i + 6);
+    const resultados = await Promise.all(
+      lote.map(async (destino) => {
+        resumen.peticiones += 1;
+        try {
+          const r = await fetchInscritosFie(destino.season, destino.competitionId);
+          return { destino, ...r };
+        } catch {
+          resumen.fallos += 1;
+          return null;
+        }
+      }),
+    );
+    for (const r of resultados) {
+      if (!r) continue;
+      resumen.listasLeidas += 1;
+      resumen.publicados += r.totalPublicados;
+      resumen.espanoles += r.inscritos.length;
+      leidas.push({
+        destino: r.destino,
+        inscritos: r.inscritos,
+        huella: await huellaDeInscritos(r.inscritos, r.destino.destinoId),
+        publicados: r.totalPublicados,
+      });
+    }
+  }
+
+  /**
+   * Y ahora lo que de verdad se escribe: solo las listas cuya huella ha
+   * cambiado. Una lista igual a la de ayer no reescribe ni una fila; se le
+   * refresca `last_seen_at` en una sola sentencia, que es lo mismo que hace
+   * `upsertEvents` con los eventos sin cambios, y así la pantalla puede seguir
+   * diciendo con verdad cuándo se leyó.
+   */
+  const cambiadas = leidas.filter((l) => l.huella !== l.destino.hashGuardado);
+  const iguales = leidas.filter((l) => l.huella === l.destino.hashGuardado);
+  resumen.sinCambios = iguales.length;
+
+  /**
+   * LA COLISIÓN QUE APARECE DESPUÉS, y por qué aquí hay un `delete`.
+   *
+   * Si una prueba española empieza a publicar su propia lista después de que
+   * nosotros hubiéramos escrito allí la de la FIE, la mezcla aparecería sola
+   * en la siguiente pasada. Así que las filas de la FIE se retiran de esa
+   * prueba —y solo esas: `source = 'fie'`, que son exactamente las que escribe
+   * esta función— y se vuelven a escribir en la fila de la FIE justo debajo.
+   *
+   * Se borra en vez de marcar `withdrawn_at` porque no es una baja: el tirador
+   * sigue inscrito. Lo que ha cambiado es DÓNDE se guarda la fila, y una baja
+   * falsa se le contaría a alguien como «te han quitado de la lista».
+   */
+  const aRetirar = [
+    ...new Set(
+      aLeer
+        .filter((d) => d.retenida === 'colision' && d.equivalenteId)
+        .map((d) => d.equivalenteId as string),
+    ),
+  ];
+  for (const lote of chunk(aRetirar, 300)) {
+    if (lote.length === 0) continue;
+    await db
+      .delete(competitionRegistration)
+      .where(
+        and(
+          inArray(competitionRegistration.eventCompetitionId, lote),
+          eq(competitionRegistration.source, 'fie'),
+        ),
+      );
+  }
+
+  if (cambiadas.length > 0) {
+    const stats = await upsertListasDeInscritos(
+      cambiadas.map((l) => ({
+        eventCompetitionId: l.destino.destinoId,
+        source: 'fie' as const,
+        sourceUrl: fieEntriesUrl(l.destino.season, l.destino.competitionId),
+        rows: l.inscritos.map((i) => ({
+          sourceAthleteName: i.nombre,
+          sourceTeam: i.equipo,
+          sourceLicense: i.licencia,
+          sourceRegisteredAt: i.inscritoEl,
+          sourceFieId: i.fieId,
+          // La FIE no publica el club del tirador en la lista de inscritos.
+          sourceClub: null,
+        })),
+      })),
+      ahora,
+    );
+    resumen.escritas = stats.seen;
+    resumen.emparejadas = stats.matched;
+    resumen.bajas = stats.withdrawn;
+  }
+
+  /** Las que no han cambiado: un solo UPDATE por lote, no uno por fila. */
+  for (const lote of chunk(
+    iguales.map((l) => l.destino.destinoId),
+    300,
+  )) {
+    if (lote.length === 0) continue;
+    await db
+      .update(competitionRegistration)
+      .set({ lastSeenAt: ahora })
+      .where(
+        and(
+          inArray(competitionRegistration.eventCompetitionId, lote),
+          eq(competitionRegistration.source, 'fie'),
+        ),
+      );
+  }
+
+  /**
+   * La huella y la marca de lectura, SIEMPRE en la fila de la FIE, aunque las
+   * filas se hayan escrito en la prueba española: la huella describe la lista
+   * que publica la FIE de SU prueba, y así sigue valiendo el día que la
+   * decisión de dónde escribir cambie.
+   */
+  for (const lote of chunk(leidas, 100)) {
+    const valores = sql.join(
+      lote.map((l) => sql`(${l.destino.pruebaFieId}::uuid, ${l.huella}::text)`),
+      sql`, `,
+    );
+    await db.execute(sql`
+      update ${eventCompetition} as ec
+      set registrations_hash = v.huella,
+          registrations_checked_at = ${ahora}
+      from (values ${valores}) as v(id, huella)
+      where ec.id = v.id
+    `);
+  }
+
+  /**
+   * Y una reparación, de paso y en una sola sentencia: la URL de la lista de
+   * las pruebas de la FIE se guardaba con el `id` del índice de torneos en vez
+   * del `competitionId`, y con ese id la página responde **200 con la lista
+   * vacía** (ver `fieEntriesUrl`). Un enlace roto que no da error es peor que
+   * uno que lo dé, y es el enlace que la ficha ofrece cuando no sabe
+   * emparejarte. `is distinct from` la hace idempotente: la segunda pasada no
+   * toca ni una fila.
+   */
+  await db.execute(sql`
+    update event_competition as ec
+    set source_url = 'https://fie.org/competition/'
+      || split_part(e.source_id, '-', 2) || '/'
+      || split_part(e.source_id, '-', 3) || '/entries'
+    from event as e
+    where e.id = ec.event_id
+      and e.source = 'fie'
+      and e.source_id ~ '^fie-[0-9]{4}-[0-9]+$'
+      and ec.source_url is distinct from (
+        'https://fie.org/competition/'
+        || split_part(e.source_id, '-', 2) || '/'
+        || split_part(e.source_id, '-', 3) || '/entries'
+      )
+  `);
+
+  return resumen;
 }
 
 async function ingestEfc(): Promise<Dispatched> {
@@ -502,13 +987,38 @@ async function ingestOfficialDocuments(): Promise<Dispatched> {
     feeAlerts = queued.length;
   }
 
+  /**
+   * VIGENCIA: qué circular manda y cuáles han quedado atrás.
+   *
+   * Va aquí y no en un cron aparte porque depende solo de los títulos y las
+   * fechas que se acaban de escribir, así que es el único momento en que se
+   * sabe que hace falta. Y no cuesta casi nada: es una lectura de las 278
+   * filas, el cálculo entero en memoria (función pura, sin IA y sin descargas)
+   * y dos escrituras en lote. Medido: 4 consultas y menos de un segundo.
+   *
+   * Si falla, la ingestión NO falla: las circulares ya están guardadas, que es
+   * lo importante, y la pantalla sabe enseñarlas sin marcar mientras el
+   * cálculo no esté. Mismo criterio que `recalcularEnlaces()`.
+   */
+  let notaVigencia = '';
+  try {
+    const v = await recalcularVigencia();
+    notaVigencia =
+      `, vigencia: ${v.vigentes} en vigor, ${v.superadas} superadas, ` +
+      `${v.canceladas} canceladas, ${v.duplicadas} duplicadas en ${v.familias} familias`;
+  } catch (error) {
+    notaVigencia = `, vigencia sin recalcular (${
+      error instanceof Error ? error.message : 'error'
+    })`;
+  }
+
   return {
     status: 'ok',
     itemsSeen: rowsSeen,
     itemsCreated: created,
     itemsUpdated: updated,
     notificationsQueued: feeAlerts,
-    note: `${candidates.length} documentos únicos`,
+    note: `${candidates.length} documentos únicos${notaVigencia}`,
   };
 }
 
@@ -642,4 +1152,73 @@ export async function countEventsBetween(from: string, to: string) {
     .from(event)
     .where(and(sql`${event.startDate} >= ${from}`, sql`${event.startDate} <= ${to}`));
   return row?.count ?? 0;
+}
+
+/**
+ * Reúne de la base lo que necesita `tocaLeerRanking` y decide.
+ *
+ * Dos consultas y nada más, que con el driver HTTP de Neon cada una es un
+ * viaje de red:
+ *
+ *  1. Cuándo se leyó el ranking con éxito por última vez.
+ *  2. Las pruebas NACIONALES que han terminado hace poco.
+ *
+ * Solo cuentan las nacionales, y no es un atajo: el ranking de la RFEE lo
+ * mueven las competiciones de la RFEE. Una Copa del Mundo en Takamatsu no
+ * cambia el ranking nacional, así que despertar por ella sería descargar mil
+ * doscientas filas para nada — y de internacionales hay 246 de los 274
+ * eventos.
+ *
+ * Si algo de esto falla, **se lee**: quedarse con el ranking viejo por un
+ * error de consulta sería el fallo peor, porque no se vería.
+ */
+async function decidirCadenciaRanking() {
+  try {
+    const [ultima] = await db
+      .select({ finishedAt: ingestRun.finishedAt })
+      .from(ingestRun)
+      .where(
+        and(
+          eq(ingestRun.source, 'skermo_ranking'),
+          eq(ingestRun.status, 'ok'),
+          /**
+           * Y que haya TERMINADO. Sin esto la cadencia no funcionaba nunca, y
+           * de la forma más silenciosa posible: la fila de la ejecución en
+           * curso se inserta con `finished_at` a null y con el estado `ok` por
+           * defecto, y **Postgres ordena los nulos PRIMERO en un `DESC`**, así
+           * que la consulta se encontraba a sí misma, leía `null` y decidía
+           * «nunca se ha leído el ranking» → descargar. O sea, se seguía
+           * descargando todas las noches y el registro decía que era la
+           * primera vez. Visto ejecutando el cron dos veces seguidas.
+           */
+          isNotNull(ingestRun.finishedAt),
+        ),
+      )
+      .orderBy(desc(ingestRun.finishedAt))
+      .limit(1);
+
+    const ventana = new Date(Date.now() - 8 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+
+    const fines = await db
+      .select({ endDate: event.endDate })
+      .from(event)
+      .where(and(eq(event.scope, 'NACIONAL'), sql`${event.endDate} >= ${ventana}`));
+
+    return tocaLeerRanking(
+      new Date(),
+      ultima?.finishedAt ?? null,
+      fines.map((f) => new Date(`${f.endDate}T23:59:59Z`)),
+    );
+  } catch (error) {
+    return {
+      leer: true as const,
+      motivo: 'primera_vez' as const,
+      explicacion:
+        'No se pudo comprobar la cadencia (' +
+        (error instanceof Error ? error.message : 'error desconocido') +
+        '), así que se lee: más vale gastar una descarga que dejar el ranking viejo.',
+    };
+  }
 }

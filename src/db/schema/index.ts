@@ -6,4 +6,5 @@ export * from './flow';
 export * from './live';
 export * from './results';
 export * from './extraccion';
+export * from './vigencia';
 export * from './fie';

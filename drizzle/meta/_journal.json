@@ -57,6 +57,41 @@
       "when": 1790426222014,
       "tag": "0007_ficha_fie_tirador",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790426223014,
+      "tag": "0008_plazos_ancla_semanal",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790500000000,
+      "tag": "0010_vigencia_documentos",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790520000000,
+      "tag": "0011_dia_del_dato_extraido",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790530000000,
+      "tag": "0012_documentos_no_solo_pdf",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790540000000,
+      "tag": "0013_inscritos_fie",
+      "breakpoints": true
     }
   ]
 }

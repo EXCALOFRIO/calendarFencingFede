@@ -2,6 +2,12 @@ import { getCloudflareContext } from '@opennextjs/cloudflare';
 import type { SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import { etiquetaDeCampo } from './campos';
+import {
+  FormatoNoLeible,
+  MAX_BYTES_DOCUMENTO,
+  type TextoDeDocumento,
+  textoDeDocumento,
+} from './documento';
 
 /**
  * Fase 8 (opcional): extracción asistida por IA de los dossieres en PDF.
@@ -820,21 +826,77 @@ function objetoTolerante<T extends z.ZodTypeAny>(objeto: T) {
   );
 }
 
-/** Los cuatro hitos horarios que la ficha ya sabe pintar. */
+/**
+ * Los hitos horarios de un día de competición.
+ *
+ * LOS CUATRO PRIMEROS son los de las circulares de la RFEE y los que la ficha
+ * ya sabe pintar en la línea del día. LOS SEIS ÚLTIMOS son los que trae el
+ * dossier de la FIE y que no cabían en ninguno de ellos, comprobado sobre la
+ * invitación de la Copa del Mundo de Lima 2026:
+ *
+ *   Wednesday 7 October   16:00-20:00  Registration / Weapon Control
+ *   Thursday 8 October     7:30        Venue Open, Weapon Control Start,
+ *                                      Men's and Women's Pools Cadet
+ *   Friday 9 October       9:00        Men's Pools Junior
+ *                         17:00        Men's Foils Semi Final and Final
+ *   Sunday 11 October      9:00        Start of the Men's Team Event
+ *
+ * Con las cuatro etiquetas viejas, «Weapon Control Start» y «Pools» solo
+ * podían caer en 'inicio' —o perderse—, y las dos cosas son falsas: el control
+ * de armas no es el inicio de la prueba, y las poules y la final no son la
+ * misma hora ni el mismo día.
+ *
+ * `apertura_instalacion` es LA MISMA COSA que el «Venue Open» de la FIE y que
+ * la «apertura del pabellón» de una circular, así que NO se le añade un
+ * sinónimo: dos etiquetas para un hito que acaba en la misma clave de base de
+ * datos (`installation_open`) solo sirven para que el modelo dude.
+ */
 export const ETIQUETAS_HORARIO = [
   'apertura_instalacion',
   'llamada',
   'scratch',
   'inicio',
+  'acreditacion',
+  'control_de_armas',
+  'poules',
+  'semifinales',
+  'final',
+  'equipos',
 ] as const;
 
 /**
  * Qué clase de importe es. No todo lo que lleva un € en una convocatoria es la
  * cuota del tirador: en las convocatorias reales de la RFEE convive la cuota
- * individual con la de equipos, con la de tiradores extranjeros («el coste de
- * su inscripción será de 200 euros») y con los precios del hotel oficial.
- * Meterlos todos en `fee_eur` sería publicar el precio de una habitación doble
- * como cuota de inscripción.
+ * individual con la de equipos y con la de tiradores extranjeros («el coste de
+ * su inscripción será de 200 euros»).
+ *
+ * YA NO HAY 'alojamiento', Y ES A PROPÓSITO. Lo pidió el usuario con estas
+ * palabras: «el tema de los hoteles que recomiendan y eso no». Quitar el valor
+ * del enum es la primera de las dos barreras —el elemento con ese tipo ni
+ * valida—, y la segunda es `pareceAlojamiento`, que tumba el importe aunque el
+ * modelo lo etiquete de otra cosa. Un `if` no se salta una instrucción; un
+ * modelo, sí.
+ *
+ * Y TAMPOCO HAY 'otro'. Es la segunda retirada y se ha hecho mirando lo que
+ * produjo de verdad, no por prudencia. En la cola de revisión, TODO lo que
+ * llegó con la clave `fee_eur.otro` era basura:
+ *
+ *     0,99 €   «Tasa turística no incluida: 0,99 euros/persona/noche»
+ *    18,00 €   «Suplemento en individual: 18,00 €/noche»
+ *    25,00 €   «El precio de entrada es de 25€/día para toda la delegación»
+ *    50,00 €   una tasa de examen de arbitraje de una circular
+ *
+ * Ninguno es la cuota de inscripción de una competición, que es lo único que
+ * este campo tiene que contestar. El usuario lo dijo mirando la ficha: «lo de
+ * la cuota quítalo de "otro", no me interesa».
+ *
+ * 'otro' era además un cajón que HACÍA DAÑO, no solo uno que no aportaba: los
+ * cinco tipos restantes tienen su clave (`fee_eur.equipos`,
+ * `fee_eur.arbitro`…), así que un importe que no encaja en ninguno es, por
+ * definición, un importe que no se sabe qué es. Ofrecerle al modelo un sitio
+ * donde ponerlo garantizaba que lo pusiera. Sin 'otro', el elemento no valida
+ * y se cae en la comprobación de Zod, que es la barrera que un modelo no se
+ * puede saltar.
  */
 export const TIPOS_CUOTA = [
   'individual',
@@ -842,16 +904,73 @@ export const TIPOS_CUOTA = [
   'extranjeros',
   'acompanante',
   'arbitro',
-  'alojamiento',
+] as const;
+
+/**
+ * Cómo se paga. Es un enum y no texto libre porque «en efectivo al
+ * acreditarse» cambia lo que hay que llevar encima, y eso tiene que poder
+ * leerse de un vistazo: una frase escrita por el modelo no se puede comparar
+ * entre dos torneos, un código sí. El detalle («durante la acreditación y
+ * antes del comienzo») sigue entero en la cita.
+ */
+export const FORMAS_DE_PAGO = [
+  'efectivo',
+  'transferencia',
+  'tarjeta',
+  'plataforma',
   'otro',
 ] as const;
 
-/** Para qué sirve cada enlace que aparece en el documento. */
+/**
+ * Los HECHOS DEL PABELLÓN que un dossier publica y que no son su nombre ni su
+ * dirección.
+ *
+ * Esto sale entero de la invitación de Orán, que es la primera que hemos leído
+ * en Word y resultó ser la más detallada. Literalmente:
+ *
+ *     Capacity: 7,000 seats
+ *     Pistes: Salle 1: 8 pistes + piste podium / Salle 2: 8 pistes
+ *     Conditions : Venue with air conditioner
+ *     Central Piste: Podium for finals with dedicated lighting
+ *
+ * Nada de esto existía en la aplicación, y a un tirador le dice mucho: saber
+ * si hay dieciséis pistas o cuatro cambia cuánto va a durar el día, y saber
+ * que hay aire acondicionado en Argelia en octubre cambia lo que se mete en la
+ * bolsa. Además Orán publica una sala de entrenamiento con ocho pistas y sus
+ * días y horas, que es justo lo que se planifica con antelación.
+ *
+ * ES UNA LISTA Y NO UN OBJETO CON CUATRO CAMPOS, y el motivo es la cita. Cada
+ * uno de esos cuatro datos está en una LÍNEA DISTINTA del documento, así que
+ * una sola cita no puede respaldarlos a los cuatro: respaldaría a uno y
+ * mentiría sobre los otros tres. Con una lista, cada hecho lleva la frase de
+ * la que sale y `verificarPropuestas` puede comprobarla de verdad.
+ */
+export const HECHOS_DE_SEDE = [
+  /** «Salle 1: 8 pistes + piste podium / Salle 2: 8 pistes» */
+  'pistas',
+  /** «Capacity: 7,000 seats» */
+  'aforo',
+  /** «Venue with air conditioner» */
+  'condiciones',
+  /** «Podium for finals with dedicated lighting» */
+  'pista_central',
+  /** «A training facility equipped with 8 pistes will be available from…» */
+  'entrenamiento',
+] as const;
+
+/** A quién se le aplica un cupo de plazas. */
+export const AMBITOS_CUPO = ['federacion', 'anfitrion', 'equipos'] as const;
+
+/**
+ * Para qué sirve cada enlace que aparece en el documento.
+ *
+ * Sin 'alojamiento', por el mismo motivo que en `TIPOS_CUOTA`: el enlace de
+ * reserva del hotel oficial es justo lo que el usuario ha dicho que no quiere.
+ */
 export const TIPOS_ENLACE = [
   'inscripcion',
   'reglamento',
   'normativa',
-  'alojamiento',
   'resultados',
   'sorteo',
   'web',
@@ -907,14 +1026,57 @@ export const esquemaExtraccion = z.object({
   ),
   /**
    * Importes. Lista y no un único importe: ver `TIPOS_CUOTA`.
+   *
+   * `categoria` es NUEVA y hace falta de verdad. El dossier de Lima publica
+   * «Cadet individual event: 30 EUR» y «Junior individual event: 40 EUR»: las
+   * dos son `tipo: 'individual'`, así que sin la categoría las dos acababan en
+   * la clave `fee_eur` y la segunda se perdía en silencio (`aPropuestas`
+   * descarta el campo repetido). Perder la cuota júnior porque existe la
+   * cadete es exactamente el fallo que nadie ve mirando la ficha.
    */
   cuotas: listaTolerante(
     z.object({
       tipo: z.enum(TIPOS_CUOTA),
       importeEur: z.number().nonnegative(),
+      /**
+       * Categoría a la que se aplica el importe, tal como la nombra el
+       * documento («cadete», «junior», «senior»). Se normaliza a código en
+       * `aPropuestas`; aquí se acepta el texto porque exigirle al modelo el
+       * código de nuestra tabla sería pedirle que adivine nuestro esquema.
+       */
+      categoria: z.string().max(40).nullable().optional(),
       concepto: z.string().max(160).nullable().optional(),
       cita,
     }),
+  ),
+  /**
+   * Cómo se paga la cuota. Va aparte y no dentro de `cuotas` porque el
+   * documento lo dice UNA vez para todas («The fee must be paid in cash during
+   * the registration process»), no importe por importe.
+   *
+   * ES UNA LISTA DESDE LA VERSIÓN 4, y el motivo es un documento real. Orán
+   * publica esto:
+   *
+   *     «Entry Fees may be paid in cash at registration on the first day of
+   *      the competition before the start of the event OR by bank transfer»
+   *
+   * Son DOS formas de pago, y con un solo `metodo` había que elegir una y
+   * callarse la otra: quien se fiara de «En efectivo» podía aparecer en Argelia
+   * con 80 € en el bolsillo sin saber que podía haber transferido, y quien se
+   * fiara de «Por transferencia» podía no llevar efectivo. Las dos lecturas son
+   * media verdad.
+   *
+   * La alternativa era meter un valor mixto en el enum ('efectivo_o_transferencia'),
+   * y no se ha hecho: no generaliza —haría falta otro para «efectivo o
+   * tarjeta», y otro para los tres— y sobre todo rompe la comparación entre
+   * torneos, que es justo para lo que el campo es un enum y no texto libre.
+   *
+   * Cada forma lleva SU cita, que es lo que permite verificarlas por separado.
+   * Cuando el documento las dice en la misma frase, la cita es la misma y
+   * `aPropuestas` reparte las claves; ver allí.
+   */
+  formasDePago: listaTolerante(
+    z.object({ metodo: z.enum(FORMAS_DE_PAGO), cita }),
   ),
   /**
    * El pabellón. Es EL dato que hoy falta en 246 de los 274 eventos: el
@@ -929,6 +1091,133 @@ export const esquemaExtraccion = z.object({
       localidad: z.string().max(120).nullable().optional(),
       cita,
     }),
+  ),
+  /**
+   * POR DÓNDE SE ENTRA. El dato que el usuario pidió por su nombre y que no
+   * existía: «por dónde se accede».
+   *
+   * No es la dirección de la sede, y confundirlos manda a alguien a la puerta
+   * equivocada de un recinto enorme. En Lima son dos cosas distintas y las dos
+   * están escritas en el mismo PDF:
+   *   sede      → «VELODROMO - CAR VIDENA (GATE 7)»
+   *   acceso    → «Entrance to the Venue: Av. San Luis N° 1308 San Luis, Lima»
+   * El velódromo está dentro de la VIDENA; la calle del acceso es de otro
+   * barrio. Un tirador que llegue por la dirección del recinto se queda fuera.
+   */
+  acceso: objetoTolerante(
+    z.object({
+      /** Puerta, calle y cualquier indicación de por dónde se entra. */
+      descripcion: z.string().min(4).max(300),
+      cita,
+    }),
+  ),
+  /**
+   * EL CÓDIGO DE GOOGLE MAPS DEL PABELLÓN. Es el mejor dato de ubicación que
+   * hemos encontrado en un dossier, y lo publica Orán tal cual:
+   *
+   *     «Location on Google Maps: PFH3+W7 Complexe olympique d'Oran, Bir El Djir»
+   *
+   * Eso es un *plus code* de Open Location Code, y es mucho mejor que lo que
+   * la aplicación tiene hoy. Hoy el botón «Cómo llegar» busca LA CIUDAD en
+   * Google Maps, porque la ciudad es lo único que publica el calendario; con
+   * esto lleva AL PABELLÓN, que es a donde hay que ir. Y funciona sin depender
+   * de que Google acierte con un nombre de recinto en Argelia, que es el otro
+   * fallo que tiene buscar por texto.
+   *
+   * SE VALIDA LA FORMA, y no es celo excesivo: un código inventado no se
+   * distingue de uno bueno mirándolo, y lleva a un sitio equivocado del mundo
+   * con toda la confianza. El alfabeto de Open Location Code son 20 caracteres
+   * —se dejaron fuera a propósito las vocales y las letras que se confunden—,
+   * así que una cadena que no lo cumpla no es un plus code. La comprobación va
+   * en `codigoPlus` y el resto del texto («Complexe olympique d'Oran, Bir El
+   * Djir») se guarda aparte, porque es el nombre del sitio y no el código.
+   */
+  ubicacionMapa: objetoTolerante(
+    z.object({
+      codigoPlus: z.string().min(6).max(24),
+      /** Lo que el documento escribe detrás del código, si escribe algo. */
+      lugar: z.string().max(160).nullable().optional(),
+      cita,
+    }),
+  ),
+  /**
+   * Los hechos del pabellón: pistas, aforo, condiciones. Ver `HECHOS_DE_SEDE`,
+   * que explica por qué es una lista y de qué documento sale cada valor.
+   */
+  instalaciones: listaTolerante(
+    z.object({
+      tipo: z.enum(HECHOS_DE_SEDE),
+      detalle: z.string().min(2).max(240),
+      cita,
+    }),
+  ),
+  /**
+   * La edad mínima para poder competir, en años.
+   *
+   * Va como número y no dentro de `requisitos` porque es LA pregunta que se
+   * hace quien tiene un tirador joven, y un número se puede comparar con una
+   * fecha de nacimiento mientras que un párrafo no. Orán lo dice así:
+   *
+   *     «Minimum age: No fencer may obtain an FIE license, enabling him or her
+   *      to enter for an official FIE competition, until he or she has reached
+   *      their 13th birthday.»
+   *
+   * El rango de 5 a 90 no es decorativo: es lo que impide que «13th» se
+   * convierta en 13.000 o que una fecha se cuele como edad.
+   */
+  edadMinima: objetoTolerante(
+    z.object({ anos: z.number().int().min(5).max(90), cita }),
+  ),
+  /**
+   * Quién organiza, con su dirección postal.
+   *
+   * NO lleva correo ni teléfono, y no es un olvido: `redactarDatosDeContacto`
+   * los tacha ANTES de que el texto salga de aquí, así que el modelo no los ve
+   * y una cita que los contuviera nunca casaría. Ver la nota de privacidad de
+   * la cabecera; el correo sigue estando en el PDF, a un toque del enlace.
+   */
+  organizador: objetoTolerante(
+    z.object({
+      nombre: z.string().min(3).max(200),
+      direccion: z.string().max(300).nullable().optional(),
+      cita,
+    }),
+  ),
+  /**
+   * Cupos de plazas. «Each national federation may enter a maximum of 12
+   * fencers» decide si un seleccionador puede llevar a quien quiere, así que
+   * es de lo más útil del documento para quien usa esta aplicación.
+   */
+  cupos: listaTolerante(
+    z.object({
+      ambito: z.enum(AMBITOS_CUPO),
+      maximo: z.number().int().positive(),
+      cita,
+    }),
+  ),
+  /**
+   * Requisitos para poder inscribirse: licencia en vigor, edad, ranking.
+   * Texto, porque son condiciones y no caben en un enum sin mutilarlas.
+   */
+  requisitos: listaTolerante(
+    z.object({ texto: z.string().min(8).max(300), cita }),
+  ),
+  /**
+   * Obligación de aportar árbitros, por tramos de tiradores. Afecta a la
+   * federación y lleva multa: en Lima, 1.000 € por árbitro que falte.
+   */
+  arbitros: listaTolerante(
+    z.object({
+      tiradoresDesde: z.number().int().nonnegative(),
+      /** `null` = «10 o más»: el tramo no tiene techo. */
+      tiradoresHasta: z.number().int().nonnegative().nullable().optional(),
+      arbitros: z.number().int().nonnegative(),
+      cita,
+    }),
+  ),
+  /** Multa por no cumplir el cupo de árbitros. */
+  multaArbitro: objetoTolerante(
+    z.object({ importeEur: z.number().positive(), cita }),
   ),
   horarios: listaTolerante(
     z.object({
@@ -1025,16 +1314,41 @@ export const ESQUEMA_JSON_SALIDA: Record<string, unknown> = {
     },
     cuotas: {
       type: 'array',
-      description: 'Importes en euros que publica el documento, uno por concepto.',
+      description:
+        'Importes en euros de INSCRIPCIÓN que publica el documento, uno por ' +
+        'concepto y por categoría. NUNCA precios de hotel, habitación, ' +
+        'comidas ni transporte.',
       items: {
         type: 'object',
         properties: {
           tipo: { type: 'string', enum: [...TIPOS_CUOTA] },
           importeEur: { type: 'number' },
+          categoria: {
+            type: 'string',
+            nullable: true,
+            description:
+              'Categoría a la que se aplica, como la escribe el documento: ' +
+              '"cadete", "junior", "senior", "veteranos". Null si es única.',
+          },
           concepto: { type: 'string', nullable: true },
           cita: CITA_JSON,
         },
         required: ['tipo', 'importeEur', 'cita'],
+      },
+    },
+    formasDePago: {
+      type: 'array',
+      description:
+        'Cómo se paga la cuota de inscripción. Si el documento admite VARIAS ' +
+        'formas ("in cash at registration OR by bank transfer"), una entrada ' +
+        'por cada una, las dos con la misma cita si están en la misma frase.',
+      items: {
+        type: 'object',
+        properties: {
+          metodo: { type: 'string', enum: [...FORMAS_DE_PAGO] },
+          cita: CITA_JSON,
+        },
+        required: ['metodo', 'cita'],
       },
     },
     sede: {
@@ -1048,6 +1362,124 @@ export const ESQUEMA_JSON_SALIDA: Record<string, unknown> = {
         cita: CITA_JSON,
       },
       required: ['nombre', 'cita'],
+    },
+    acceso: {
+      type: 'object',
+      nullable: true,
+      description:
+        'Por dónde se entra al recinto: puerta y calle del acceso, cuando el ' +
+        'documento lo dice aparte de la dirección de la sede.',
+      properties: {
+        descripcion: { type: 'string' },
+        cita: CITA_JSON,
+      },
+      required: ['descripcion', 'cita'],
+    },
+    ubicacionMapa: {
+      type: 'object',
+      nullable: true,
+      description:
+        'Código de Google Maps (plus code) del pabellón, cuando el documento ' +
+        'lo publica: "PFH3+W7 Complexe olympique d\'Oran". En "codigoPlus" va ' +
+        'SOLO el código (letras y dígitos con un "+" en medio) y en "lugar" el ' +
+        'resto del texto. No lo inventes ni lo deduzcas de la dirección.',
+      properties: {
+        codigoPlus: { type: 'string' },
+        lugar: { type: 'string', nullable: true },
+        cita: CITA_JSON,
+      },
+      required: ['codigoPlus', 'cita'],
+    },
+    instalaciones: {
+      type: 'array',
+      description:
+        'Datos del pabellón que no son su nombre ni su dirección: número de ' +
+        'pistas, aforo, aire acondicionado, pista central y sala de ' +
+        'entrenamiento. Uno por entrada, cada uno con SU cita.',
+      items: {
+        type: 'object',
+        properties: {
+          tipo: { type: 'string', enum: [...HECHOS_DE_SEDE] },
+          detalle: {
+            type: 'string',
+            description: 'El dato tal como lo dice el documento, en su idioma.',
+          },
+          cita: CITA_JSON,
+        },
+        required: ['tipo', 'detalle', 'cita'],
+      },
+    },
+    edadMinima: {
+      type: 'object',
+      nullable: true,
+      description:
+        'Edad mínima en AÑOS para poder competir, cuando el documento la dice ' +
+        '("until he or she has reached their 13th birthday" son 13).',
+      properties: { anos: { type: 'number' }, cita: CITA_JSON },
+      required: ['anos', 'cita'],
+    },
+    organizador: {
+      type: 'object',
+      nullable: true,
+      description:
+        'Quién organiza (federación o club) y su dirección postal. Sin correo ' +
+        'ni teléfono.',
+      properties: {
+        nombre: { type: 'string' },
+        direccion: { type: 'string', nullable: true },
+        cita: CITA_JSON,
+      },
+      required: ['nombre', 'cita'],
+    },
+    cupos: {
+      type: 'array',
+      description: 'Máximo de plazas por federación, por país anfitrión o por equipos.',
+      items: {
+        type: 'object',
+        properties: {
+          ambito: { type: 'string', enum: [...AMBITOS_CUPO] },
+          maximo: { type: 'number' },
+          cita: CITA_JSON,
+        },
+        required: ['ambito', 'maximo', 'cita'],
+      },
+    },
+    requisitos: {
+      type: 'array',
+      description:
+        'Condiciones para poder inscribirse: licencia en vigor, edad, ranking.',
+      items: {
+        type: 'object',
+        properties: { texto: { type: 'string' }, cita: CITA_JSON },
+        required: ['texto', 'cita'],
+      },
+    },
+    arbitros: {
+      type: 'array',
+      description:
+        'Cuántos árbitros tiene que aportar una delegación según su número de ' +
+        'tiradores.',
+      items: {
+        type: 'object',
+        properties: {
+          tiradoresDesde: { type: 'number' },
+          tiradoresHasta: {
+            type: 'number',
+            nullable: true,
+            description: 'Null cuando el tramo es "10 o más"',
+          },
+          arbitros: { type: 'number' },
+          cita: CITA_JSON,
+        },
+        required: ['tiradoresDesde', 'arbitros', 'cita'],
+      },
+    },
+    multaArbitro: {
+      type: 'object',
+      nullable: true,
+      description: 'Multa en euros por cada árbitro que falte.',
+      properties: { importeEur: { type: 'number' }, cita: CITA_JSON },
+      required: ['importeEur', 'cita'],
     },
     horarios: {
       type: 'array',
@@ -1095,6 +1527,17 @@ export const ESQUEMA_JSON_SALIDA: Record<string, unknown> = {
     'horarios',
     'categoriasAdmitidas',
     'enlaces',
+    /**
+     * Las listas nuevas van en `required` y los objetos sueltos NO.
+     *
+     * Una lista vacía es una respuesta: «este documento no habla de cupos».
+     * Un objeto obligatorio, en cambio, empuja al modelo a rellenarlo, y
+     * rellenar un hueco es justo lo que este fichero entero intenta evitar:
+     * ver `RE_VALOR_VACIO` y el caso del `venue: "No se indica pabellón"`.
+     */
+    'cupos',
+    'requisitos',
+    'arbitros',
   ],
 };
 
@@ -1121,14 +1564,28 @@ REGLAS DE EXTRACCIÓN
 3. Si un dato NO aparece explícitamente en el documento, OMÍTELO. No lo deduzcas, no lo estimes y no lo rellenes con un valor por defecto. Devolver menos campos es correcto; inventarse uno es un fallo grave. En particular: NUNCA escribas como valor "no se indica", "no publicado", "no consta", "-" ni ninguna otra forma de decir que no lo sabes. Si no lo sabes, no incluyas el campo. Y no pongas 0 en un importe que el documento no menciona: cero euros es una afirmación, no un hueco.
 4. Importes: número en euros, sin símbolo ni separador de miles.
 5. Fechas: YYYY-MM-DD. Si el documento da una fecha sin año, mira si el año aparece en otro sitio del documento (encabezado, título, temporada) y úsalo; si no hay forma de saberlo, omite ese dato.
-6. Horas: HH:MM en 24 horas. "07:30h" es "07:30"; "9.00" es "09:00".
+6. Horas: HH:MM en 24 horas. "07:30h" es "07:30"; "9.00" es "09:00"; "4:00 PM" es "16:00".
 7. Tipos de plazo: L1 = plazo ordinario; L2 y L3 = plazos posteriores con recargo; FIE_D7 = cierre duro de la FIE a 7 días.
+8. El documento puede estar en inglés, en francés o en español. Los VALORES se devuelven igual (una hora es una hora y un importe es un importe), pero la "cita" se copia SIEMPRE en el idioma original, sin traducir ni una palabra.
+
+EL ALOJAMIENTO NO SE EXTRAE. NADA DE ÉL.
+Estos documentos traen un apartado de hoteles recomendados con precios por habitación, desayunos, traslados, horas de entrada y salida y correos de reserva. No interesa y no se pide: no devuelvas el hotel como sede, ni su dirección, ni sus tarifas como cuota, ni su enlace de reserva, ni su "check-in" como horario. Si el único sitio del documento donde aparece un dato es el bloque de alojamiento, ese dato NO existe para ti. Un programa lo comprueba después y lo descarta, así que incluirlo solo gasta tu respuesta.
 
 QUÉ BUSCAR, UNO POR UNO
 · competiciones: el nombre de cada competición de la que habla el documento, tal como lo escribe ("Torneo Nacional Ranking Absoluto", "I Liga Nacional Absoluto Oro"). Si habla de tres, las tres. Si es una normativa general que no nombra ninguna competición concreta, devuelve la lista vacía: es mejor no saberlo que acertar por casualidad.
 · sede: el PABELLÓN o la instalación donde se compite, con su dirección postal completa si está ("Pista Coberta d'Atletisme de Catalunya", "Camí de Can Quadres, 190, 08203 Sabadell"). Tres cosas que NO son la sede, y que se han confundido con ella: el HOTEL OFICIAL y la residencia; la dirección de la Real Federación Española de Esgrima del pie de página o del membrete ("Calle Ferraz nº16 – 6º. Madrid 28008"), que es quien firma la circular, no donde se tira; y el nombre de la competición. Si el documento no dice en qué instalación se compite, deja sede a null.
-· horarios: apertura de la instalación, llamada (también aparece como "confirmación de tiradores"), scratch e inicio de la competición. Un dossier de fin de semana repite las mismas horas para cada día y para cada arma: devuelve UNA entrada por cada combinación, con su "fecha" y su "prueba". Si la hora lleva asterisco o "aprox.", da la hora igual.
-· cuotas: cada importe con su tipo. "individual" es la cuota del tirador; "equipos" la del equipo; "extranjeros" la de tiradores de otras federaciones; "alojamiento" los precios del hotel (que NO son cuota de inscripción, pero interesan). Si un importe no encaja en ninguno, "otro" con su concepto.
+· acceso: POR DÓNDE SE ENTRA, cuando el documento lo dice aparte ("Entrance to the Venue: Av. San Luis N° 1308 San Luis, Lima", "acceso por la puerta 7", "entrada por la calle trasera"). Es la puerta y la calle del acceso, NO la dirección de la sede ni la del organizador: en un recinto grande son sitios distintos, y llegar a la puerta equivocada deja a alguien fuera. Si el documento solo da una dirección y es la de la sede, deja acceso a null y no la repitas aquí.
+· organizador: quién organiza y su dirección postal ("Peruvian Fencing Federation", "Avenida del Aire – Puerta 3 – COP, Lima"). No devuelvas correos ni teléfonos: llegan tachados y no sirven de nada.
+· horarios: TODOS los hitos con hora que traiga el documento, uno por entrada, cada uno con su "fecha" y con su "prueba" si se sabe de cuál es. Las etiquetas: "apertura_instalacion" para la apertura del pabellón o "Venue Open"; "acreditacion" para la acreditación, el registro o "Registration"; "control_de_armas" para el control de material o "Weapon Control"; "llamada" para la llamada o confirmación de tiradores; "scratch"; "poules" para las poules, la fase de grupos o "Pools"; "inicio" cuando el documento solo dice que la prueba empieza; "semifinales"; "final" para la final o "Semi Final and Final"; "equipos" para el comienzo de la prueba por equipos o "Team Event". Un dossier de cuatro días repite "7:30 Venue Open" un día tras otro: devuelve UNA entrada POR DÍA, con su fecha, y no las juntes en una. Si la línea trae un rango ("16:00-20:00"), la hora es la de inicio. Si la hora lleva asterisco o "aprox.", da la hora igual.
+· cuotas: cada importe de INSCRIPCIÓN con su tipo y su categoría. "individual" es la cuota del tirador; "equipos" la del equipo; "extranjeros" la de tiradores de otras federaciones; "acompanante" y "arbitro" las suyas. Cuando el documento da un importe por categoría ("Cadet individual event: 30 EUR", "Junior individual event: 40 EUR"), devuelve UNA entrada por categoría con "categoria" puesta; si no lo distingue, "categoria" a null. NO HAY TIPO "otro" Y NO ES UN OLVIDO: si un importe no es ninguno de esos cinco, NO es la cuota de inscripción de la competición y no se pide. Una tasa turística por noche, un suplemento de habitación individual, el precio de una entrada al público, una tasa de examen de arbitraje y cualquier precio de hotel, comida o transporte se OMITEN. Un importe de menos no rompe nada; un importe que no es la cuota se publica como si lo fuera.
+· formasDePago: cómo se paga ("in cash during the registration process" es "efectivo"; "mediante transferencia bancaria" es "transferencia"; "por la plataforma de inscripción" es "plataforma"). Es una LISTA: si el documento admite varias ("may be paid in cash at registration ... OR by bank transfer"), devuelve UNA entrada POR CADA UNA, las dos con la misma cita si están en la misma frase. No elijas una y descartes la otra.
+· ubicacionMapa: el código de Google Maps del pabellón, si el documento lo da ("Location on Google Maps: PFH3+W7 Complexe olympique d'Oran, Bir El Djir" -> codigoPlus "PFH3+W7", lugar "Complexe olympique d'Oran, Bir El Djir"). Es un código corto con un "+" en medio. Si el documento no lo trae, omítelo: NO lo deduzcas de la dirección ni te lo inventes, porque un código equivocado manda a alguien a otro punto del planeta.
+· instalaciones: lo que el documento cuenta del pabellón aparte del nombre y la dirección, una entrada por dato y cada una con SU cita: "pistas" para el número de pistas ("Salle 1: 8 pistes + piste podium / Salle 2: 8 pistes"); "aforo" para las plazas de público ("Capacity: 7,000 seats"); "condiciones" para cosas como el aire acondicionado ("Venue with air conditioner"); "pista_central" para el podio de finales ("Podium for finals with dedicated lighting"); "entrenamiento" para la sala de entrenamiento con sus días y horas. En "detalle" va el dato tal como lo escribe el documento.
+· edadMinima: la edad mínima en años para poder competir ("until he or she has reached their 13th birthday" son 13). Solo el número.
+· cupos: el máximo de plazas. "federacion" es el tope por federación ("a maximum of 12 fencers"); "anfitrion" el del país organizador ("the organizing country may enter up to 30 fencers"); "equipos" el de equipos por país.
+· requisitos: qué hace falta para poder inscribirse, en una frase corta ("Licencia FIE 2026-2027 en vigor", "ser menor de 20 años a 31 de diciembre del año anterior"). Uno por condición.
+· arbitros: la tabla de árbitros obligatorios por tramo de tiradores ("1-4 fencers: no referee required" es tiradoresDesde 1, tiradoresHasta 4, arbitros 0; "10 or more: 2 referees" es tiradoresDesde 10, tiradoresHasta null, arbitros 2).
+· multaArbitro: la multa por cada árbitro que falte ("must pay a fine of EUR 1,000 per referee" es 1000).
 · plazos: la fecha límite de inscripción y su hora si la dan ("antes del viernes de la semana anterior a la celebración de la competición a las 12:00" NO es una fecha: no la inventes, omítela). Los recargos van en "recargoEur" del plazo al que se aplican.
 · categoriasAdmitidas: los códigos de categoría que pueden participar (M9, M11, M14, M17, M20, SENIOR, VET). Solo si el documento los enumera.
 · enlaces: cada URL que aparezca escrita DENTRO del documento, copiada EXACTAMENTE, con para qué sirve. Un programa comprobará que la URL aparece literalmente en el texto: no la completes, no le añadas "https://" si no lo lleva y no la corrijas. La URL del atributo origen="..." de la etiqueta <documento> NO forma parte del documento: no la devuelvas.`;
@@ -1168,8 +1625,37 @@ export function construirPromptUsuario(
  *    documento y a qué competición se refiere. Las filas de la versión 1 se
  *    quedan donde están con su hash viejo, así que se puede comparar qué sacaba
  *    cada versión.
+ * 3: lo que trae el dossier de la FIE y no cabía en la versión 2, medido sobre
+ *    la invitación de la Copa del Mundo de Lima 2026 (14 páginas, 8.685
+ *    caracteres de capa de texto):
+ *      · `acceso` — por dónde se entra al recinto, que no es la dirección de la
+ *        sede y en Lima son dos calles de barrios distintos;
+ *      · seis hitos horarios más (acreditación, control de armas, poules,
+ *        semifinales, final, equipos), porque con cuatro etiquetas el «Weapon
+ *        Control Start» solo podía caer en 'inicio', que es falso;
+ *      · cuotas CON CATEGORÍA: sin ella la cuota júnior se perdía por chocar
+ *        con la cadete en la misma clave;
+ *      · `formaDePago`, `cupos`, `requisitos`, `arbitros`, `multaArbitro` y
+ *        `organizador`;
+ *      · y menos, no solo más: fuera el tipo de cuota 'alojamiento' y el enlace
+ *        'alojamiento'. Los hoteles recomendados ya no se extraen.
+ * 4: lo que trae el dossier de Orán y no cabía en la versión 3. Es el primero
+ *    que se lee en WORD, y resultó ser el más detallado de los vistos (9.204
+ *    caracteres y 185 líneas, con el horario en tablas):
+ *      · `ubicacionMapa` — el código de Google Maps del pabellón. Es el dato
+ *        que convierte el botón «Cómo llegar» de «busca la ciudad» en «lleva
+ *        al recinto»;
+ *      · `instalaciones` — pistas por sala, aforo, aire acondicionado, podio
+ *        de finales y sala de entrenamiento. Nada de esto existía;
+ *      · `edadMinima` — como número, no como párrafo;
+ *      · `formaDePago` pasa a ser `formasDePago`, una LISTA, porque Orán
+ *        admite efectivo O transferencia y con un solo valor había que callarse
+ *        una de las dos;
+ *      · y otra vez menos: fuera el tipo de cuota 'otro'. Todo lo que produjo
+ *        era basura (una tasa turística de 0,99 €, un suplemento de habitación,
+ *        el precio de una entrada); ver `TIPOS_CUOTA`.
  */
-export const VERSION_ESQUEMA = 2;
+export const VERSION_ESQUEMA = 4;
 
 /**
  * Versión de los FILTROS previos (cortafuegos de privacidad y tachado).
@@ -1187,8 +1673,31 @@ export const VERSION_ESQUEMA = 2;
  *    pantalla de revisión con las circulares de verdad delante, y los tres
  *    pasaban la verificación de citas porque las citas eran ciertas. Subirlo
  *    reprocesa los documentos ya leídos para que dejen de proponerlos.
+ *
+ * 5: el filtro de ALOJAMIENTO (`pareceAlojamiento`). Los 27 documentos ya
+ *    leídos con la versión 4 pueden llevar en la cola tarifas de hotel y
+ *    «check-in: 15:00» disfrazado de apertura del pabellón; subir la versión
+ *    los vuelve a pasar por el embudo y esta vez esos campos se quedan en
+ *    `descartadas_json` con su motivo, en vez de en la ficha.
+ *
+ * 6: los formatos que no son PDF (`src/lib/ai/documento.ts`) y la lista de
+ *    CAMPOS RETIRADOS (`esCampoExtraidoVigente`, en `./campos`).
+ *
+ *    Lo primero cambia qué documentos se pueden leer, así que cambia el
+ *    resultado: 23 filas de `event_document` son Word y con la versión 5 no se
+ *    habrían mirado nunca.
+ *
+ *    Lo segundo es lo que cierra el caso de los importes basura. Medido en la
+ *    cola: las 86 extracciones que había eran todas de las versiones 1 y 2, y
+ *    entre sus propuestas quedaban 8 filas `fee_eur.alojamiento` —una de ellas
+ *    la de 109 € que el usuario vio ocupando el hueco de «Cuota», que es el
+ *    precio de una habitación doble de uso individual— y 12 filas
+ *    `fee_eur.otro`, con la tasa turística de 0,99 € entre ellas. Ninguna de
+ *    las dos claves la puede generar ya el extractor, así que no eran datos
+ *    que revisar: eran restos de una versión retirada que la ficha seguía
+ *    pintando porque la consulta no filtraba por campo.
  */
-export const VERSION_FILTROS = 4;
+export const VERSION_FILTROS = 6;
 
 /** SHA-256 de una cadena, en hexadecimal. */
 export async function hashTexto(texto: string): Promise<string> {
@@ -1645,7 +2154,7 @@ function clienteOpenRouter(config: ConfiguracionIa): ClienteModelo {
         Authorization: `Bearer ${apiKey}`,
         // OpenRouter pide identificarse; misma cortesía que el scraper.
         'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000',
-        'X-Title': 'Calendario Esgrima',
+        'X-Title': 'CalendarFencing',
       },
       body: JSON.stringify(cuerpo),
       signal: AbortSignal.timeout(120_000),
@@ -1731,6 +2240,23 @@ export type PropuestaCampo = {
    */
   prueba?: string | null;
   /**
+   * DÍA al que corresponde el dato, en ISO. `null` = vale para todo el evento.
+   *
+   * Es nuevo, y viene de un límite real de la pantalla: el horario de la FIE
+   * es una TABLA de cuatro días («Thursday 8 October 7:30 Venue Open», y otra
+   * vez el viernes, y el sábado, y el domingo), no un valor suelto. La fecha
+   * ya viajaba dentro de la clave del campo como sufijo
+   * (`installation_open.2026-10-08`), lo cual basta para que no se pisen entre
+   * sí, pero obliga a la ficha a PARSEAR la clave para agrupar por día. Eso es
+   * frágil: el día que el sufijo cambie de forma, la agrupación se rompe sin
+   * que falle ningún test.
+   *
+   * Con la fecha en su propio campo —y en su propia columna— la ficha puede
+   * hacer `agrupar(datos, d => d.fecha)` y pintar una línea de tiempo por día,
+   * que es lo que `UI.md` pide («Una línea de tiempo del día, no una tabla»).
+   */
+  fecha?: string | null;
+  /**
    * `true` = además de la cita hay que comprobar que el VALOR aparezca
    * literalmente en el documento. Se usa con los enlaces: un enlace inventado
    * es peor que un dato inventado, porque se puede pulsar.
@@ -1747,6 +2273,21 @@ export type PropuestaCampo = {
    * extraídos.
    */
   exigirValorEnCita?: boolean;
+  /**
+   * `true` = la frase viene del bloque de alojamiento y este dato está
+   * condenado: `verificarPropuestas` lo manda a las descartadas.
+   *
+   * SE MARCA EN VEZ DE TIRARLO AQUÍ MISMO, y hay un motivo concreto detrás.
+   * `aPropuestas` se queda con el PRIMER dato de cada clave, así que si el
+   * modelo devuelve el «Check-in: 3:00 PM» del hotel antes que el «7:30 Venue
+   * Open», el hotel se queda con la clave `installation_open.2026-10-08` y la
+   * apertura de verdad se descarta por repetida. Lo comprobó un test: el
+   * filtro funcionaba y el dato bueno desaparecía igual.
+   *
+   * Marcado y sin ocupar la clave, el dato bueno la reclama y el del hotel
+   * acaba en `descartadas_json` con su motivo, que es donde se puede auditar.
+   */
+  esAlojamiento?: boolean;
   /** Presente solo en las descartadas, para poder explicar el descarte. */
   motivoDescarte?: string;
 };
@@ -1784,6 +2325,318 @@ const RE_VALOR_VACIO =
 const RE_MEMBRETE_FEDERACION =
   /^(?:real\s+)?federacion\s+espanola\s+de\s+esgrima\b|\bferraz\s*n?[.º°o]?\s*16\b|^calle\s+ferraz\b/i;
 
+// ---------------------------------------------------------------------------
+// El alojamiento no se extrae: filtro en CÓDIGO, no en el prompt
+// ---------------------------------------------------------------------------
+
+/**
+ * Vocabulario del bloque de alojamiento.
+ *
+ * POR QUÉ ESTÁ EN CÓDIGO Y NO SOLO EN EL PROMPT
+ * ---------------------------------------------
+ * Lo pidió el usuario con estas palabras: «el tema de los hoteles que
+ * recomiendan y eso no». Y el prompt ya lo dice, en mayúsculas y con su
+ * apartado propio. No basta: este fichero entero está construido sobre la idea
+ * de que una instrucción es una sugerencia y una comprobación es una garantía
+ * (ver `RE_MEMBRETE_FEDERACION`, que existe por lo mismo). Un modelo se salta
+ * una instrucción una vez de cada veinte; un `if` no se la salta nunca.
+ *
+ * Y HAY MOTIVO DE FONDO, no solo de obediencia: son datos comerciales de un
+ * tercero que CADUCAN. Una tarifa de hotel de la temporada pasada publicada en
+ * una ficha es peor que un hueco, porque parece un precio.
+ *
+ * QUÉ CAZA, con el dossier de Lima 2026 delante. Su apartado «Accommodation»
+ * son tres hoteles con esto dentro:
+ *   · «NOVOTEL LIMA» y «IBIS LIMA LARCO MIRAFLORES» → candidatos a `venue`;
+ *   · «Adress: Av. Larco 1140, Miraflores» → candidato a `venue_address`;
+ *   · «Standard 90 USD 105 USD» y «Lunch or Dinner Menu at USD 25.00» →
+ *     candidatos a importe;
+ *   · «Check-in: 3:00 PM | Check-out: 12:00 PM» → candidato a horario, y este
+ *     es el más traicionero: una hora bien formada, con su cita verdadera, que
+ *     acabaría pintada en la línea del día como si el pabellón abriera a las
+ *     tres de la tarde.
+ *
+ * El cotejo va contra la CITA, que es la frase del documento de la que sale el
+ * dato, y no contra el valor: el valor de ese último caso es «15:00», que no
+ * tiene nada de sospechoso. La cita sí.
+ */
+export const PALABRAS_ALOJAMIENTO = [
+  // Tipos de establecimiento, incluidas las dos marcas que están en este PDF.
+  'hotel',
+  'hoteles',
+  'hostal',
+  'hostel',
+  'albergue',
+  'apartotel',
+  'aparthotel',
+  'resort',
+  'novotel',
+  'ibis',
+  // El propio concepto, en los tres idiomas de estos documentos.
+  'alojamiento',
+  'alojamientos',
+  'accommodation',
+  'accomodation',
+  'hebergement',
+  'lodging',
+  // Lo que se vende con la habitación.
+  'habitacion',
+  'habitaciones',
+  'room rate',
+  'room rates',
+  'single room',
+  'double room',
+  'twin room',
+  'per night',
+  'por noche',
+  'per room',
+  'media pension',
+  'pension completa',
+  'half board',
+  'full board',
+  'desayuno',
+  'breakfast',
+  /**
+   * AQUÍ NO ESTÁ «CHECK-IN», Y LO ESTUVO.
+   *
+   * Parecía la palabra más segura de la lista —el «Check-in: 3:00 PM» del
+   * hotel era el caso que motivó todo el filtro— y resultó ser la más
+   * peligrosa. La invitación del Satélite de Dublín 2026 publica su horario
+   * así:
+   *
+   *     Saturday 5th September   Check in closes   Event starts
+   *     Men's Épée               0900              0930
+   *
+   * En esgrima «check in» es la LLAMADA, la confirmación de tiradores. Con
+   * «check in» en esta lista, el filtro se llevaba por delante la hora de
+   * inicio de la prueba de un torneo entero. Comprobado contra el PDF real.
+   *
+   * El check-in del hotel se sigue descartando, pero por el otro camino: está
+   * dentro del apartado de alojamiento, y de eso se encarga
+   * `rangoDeAlojamiento`. Que el sitio del que sale una frase sea una señal
+   * más fiable que sus palabras es justo lo que enseñó este caso.
+   */
+] as const;
+
+/**
+ * Las palabras de arriba, con FRONTERA DE PALABRA.
+ *
+ * El `includes` a secas parecía más simple y tenía un fallo que habría tardado
+ * en aparecer: «ibis» está dentro de «Ibiza», así que un torneo en Ibiza se
+ * habría quedado sin sede sin que nadie supiera por qué. Con `\b` delante y
+ * detrás eso no pasa, y tampoco «rooms» dentro de «ballrooms».
+ */
+const RE_ALOJAMIENTO = new RegExp(
+  `\\b(?:${PALABRAS_ALOJAMIENTO.map((p) => p.replace(/[-]/g, '\\-')).join('|')})\\b`,
+);
+
+/**
+ * ¿Esta frase pertenece al bloque de alojamiento?
+ *
+ * Deliberadamente se mira la CITA entera y no solo el valor: ver la nota de
+ * arriba. Y deliberadamente NO se intenta distinguir «hotel recomendado» de
+ * «se compite en el salón de un hotel», que existe: el usuario ha dicho que
+ * esto no le interesa, así que el fallo seguro es descartar de más. Lo
+ * descartado no desaparece —queda en `descartadas_json` con su motivo, visible
+ * en el panel—, así que si algún día resulta que se está tirando algo bueno,
+ * se ve y se afina.
+ */
+export function pareceAlojamiento(cita: string, valor: string): boolean {
+  return RE_ALOJAMIENTO.test(normalizarParaCotejo(`${cita} ${valor}`));
+}
+
+/**
+ * Encabezados que ABREN el bloque de alojamiento, y los que lo CIERRAN.
+ *
+ * POR QUÉ NO BASTA EL VOCABULARIO, con los dos casos que lo demostraron
+ * --------------------------------------------------------------------
+ * `pareceAlojamiento` mira las palabras de la frase, y hay frases del bloque
+ * de hoteles que no llevan ninguna:
+ *
+ *     «Standard 90 USD 105 USD»              -> tarifa de habitación
+ *     «Adress: Seaside Avenue 1140»          -> dirección del hotel
+ *
+ * Las dos pasaban el filtro de palabras sin tocarlas, y las dos tienen una
+ * cita verdadera, así que la verificación tampoco las tumbaba: la primera
+ * acababa como importe y la segunda como dirección de la sede.
+ *
+ * Lo que de verdad las define no es lo que dicen, es DÓNDE ESTÁN: dentro del
+ * apartado de alojamiento. Así que se localiza el apartado y se descarta todo
+ * lo que salga de ahí, diga lo que diga.
+ *
+ * Se exige que el encabezado sea una LÍNEA CORTA, no una aparición cualquiera
+ * de la palabra. Sin eso, un «los gastos de alojamiento corren a cargo de cada
+ * federación» en mitad de una circular abriría un apartado que no existe y se
+ * llevaría por delante todo lo que viniera detrás.
+ */
+const ENCABEZADOS_ALOJAMIENTO = [
+  'accommodation',
+  'accomodation',
+  'alojamiento',
+  'alojamientos',
+  'hebergement',
+  'hotel',
+  'hoteles',
+  'novotel',
+  'ibis',
+  'where to stay',
+  'donde alojarse',
+];
+
+/** Encabezados de cualquier OTRO apartado: cierran el de alojamiento. */
+const ENCABEZADOS_OTROS = [
+  'visa',
+  'visas',
+  'further information',
+  'contact',
+  'formula',
+  'weapon control',
+  'referee',
+  'entry fee',
+  'entry',
+  'entries',
+  'participation',
+  'schedule',
+  'accreditation',
+  'accreditations',
+  'organizer',
+  'organizers',
+  'competition venue',
+  'transport',
+  'transportation',
+  'prizes',
+  'results',
+  'inscripcion',
+  'inscripciones',
+  'cuota',
+  'cuotas',
+  'horario',
+  'horarios',
+  'arbitraje',
+  'arbitros',
+  'sede',
+  'plazo',
+  'plazos',
+  'documentacion',
+  'reglamento',
+  'normativa',
+  'premios',
+  'sorteo',
+  'resultados',
+  'transporte',
+];
+
+/** Máximo de caracteres de una línea para poder ser un encabezado. */
+const MAX_LARGO_ENCABEZADO = 80;
+
+/**
+ * Una línea del ÍNDICE, que no es un encabezado por mucho que lo parezca.
+ *
+ * Lo descubrió el primer documento de Word que se leyó, el de Orán, y no es un
+ * caso raro: Word genera índices y un PDF exportado desde Word los arrastra
+ * igual. El documento empieza así:
+ *
+ *     Table of Contents
+ *     ...
+ *     ENTRY FEES 4
+ *     REFEREE OBLIGATION 4
+ *     ACCOMMODATION & TRANSPORT 5
+ *     VISA SUPPORT 6
+ *
+ * `rangoDeAlojamiento` se queda con el PRIMER encabezado que abre el apartado,
+ * y ese primero era la línea del índice: abría el apartado en el carácter 224 y
+ * lo cerraba 28 caracteres después, en «VISA SUPPORT 6». Resultado, medido: el
+ * apartado de alojamiento DE VERDAD, que está a mitad del documento, se quedaba
+ * sin cubrir, y con él las tarifas de hotel que el filtro existe para tirar.
+ *
+ * Lo que distingue una línea de índice de un encabezado es el NÚMERO DE PÁGINA
+ * al final. Se exigen de una a tres cifras: un año («TRANSPORTE 2026») tiene
+ * cuatro y sigue siendo un encabezado.
+ */
+const RE_LINEA_DE_INDICE = /\s\d{1,3}$/;
+
+/**
+ * ¿Esta línea es el encabezado de uno de estos apartados?
+ *
+ * El plural NO es un detalle: la invitación de Dublín titula su apartado
+ * «Referees», y con una comparación exacta contra «referee» no casaba, así que
+ * el apartado de alojamiento no se cerraba nunca y se comía la multa de los
+ * árbitros y el horario que venía detrás. Se admite una «s» final y se exige
+ * frontera de palabra después, que es lo que distingue «Entry» de «Entryway».
+ */
+function esEncabezadoDe(linea: string, encabezados: string[]): boolean {
+  const plano = normalizarParaCotejo(linea);
+  if (plano.length === 0 || plano.length > MAX_LARGO_ENCABEZADO) return false;
+  // Ver `RE_LINEA_DE_INDICE`: «ACCOMMODATION & TRANSPORT 5» es el índice.
+  if (RE_LINEA_DE_INDICE.test(plano)) return false;
+  return encabezados.some((e) =>
+    new RegExp(`^${e.replace(/[-]/g, '\\-')}s?(?:\\b|$)`).test(plano),
+  );
+}
+
+/**
+ * Dónde empieza y dónde acaba el apartado de alojamiento, en posiciones del
+ * texto ORIGINAL. `null` si el documento no tiene ese apartado.
+ *
+ * Si no se encuentra un encabezado que lo cierre, el apartado llega hasta el
+ * final del documento. En estos dossieres el alojamiento va casi siempre al
+ * final, y cuando no, el encabezado siguiente está en la lista.
+ */
+export function rangoDeAlojamiento(texto: string): { desde: number; hasta: number } | null {
+  let posicion = 0;
+  let desde = -1;
+
+  for (const linea of texto.split('\n')) {
+    const inicioLinea = posicion;
+    posicion += linea.length + 1;
+
+    if (desde < 0) {
+      if (esEncabezadoDe(linea, ENCABEZADOS_ALOJAMIENTO)) desde = inicioLinea;
+      continue;
+    }
+    // Ya dentro: la primera línea que sea encabezado de otro apartado lo cierra.
+    if (esEncabezadoDe(linea, ENCABEZADOS_OTROS)) {
+      return { desde, hasta: inicioLinea };
+    }
+  }
+
+  return desde < 0 ? null : { desde, hasta: texto.length };
+}
+
+/**
+ * Posición de la cita en el texto ORIGINAL, o -1.
+ *
+ * Se apoya en el mapa de índices de `normalizarConIndices` por lo mismo que
+ * `extraerContexto`: la cita se localiza en el texto aplastado, pero el
+ * apartado se delimita por líneas del texto de verdad.
+ */
+export function posicionOriginalDeCita(cita: string, texto: string): number {
+  const aguja = normalizarParaCotejo(cita);
+  if (aguja.length < MIN_LONGITUD_CITA) return -1;
+  const { normalizado, indices } = normalizarConIndices(texto);
+  const posicion = normalizado.indexOf(aguja);
+  return posicion < 0 ? -1 : indices[posicion];
+}
+
+/**
+ * ¿Este dato sale del apartado de alojamiento del documento?
+ *
+ * Es la unión de las dos comprobaciones: las palabras de la frase y el sitio
+ * del que sale. Cualquiera de las dos basta para descartarlo.
+ */
+export function esDatoDeAlojamiento(
+  cita: string,
+  valor: string,
+  textoDocumento: string,
+): boolean {
+  if (pareceAlojamiento(cita, valor)) return true;
+
+  const rango = rangoDeAlojamiento(textoDocumento);
+  if (!rango) return false;
+  const posicion = posicionOriginalDeCita(cita, textoDocumento);
+  return posicion >= rango.desde && posicion < rango.hasta;
+}
+
 /**
  * ¿Este valor dice algo?
  *
@@ -1814,12 +2667,101 @@ function sufijo(valor: string | null | undefined, tope = 40): string {
   return slug ? `.${slug}` : '';
 }
 
+/**
+ * De etiqueta de horario a clave de campo.
+ *
+ * Las cuatro primeras SON nombres de columna de `event_competition`, y por eso
+ * `yaPublicado` en `src/lib/queries/calendar.ts` sabe compararlas con el dato
+ * publicado sin ninguna tabla de traducción. Las seis nuevas no tienen columna
+ * —el calendario no publica nada parecido— pero se nombran igual, en inglés y
+ * con forma de columna, para que el día que la tengan no haya que renombrar
+ * nada ni migrar propuestas ya aprobadas.
+ */
 const NOMBRE_HORARIO = {
   apertura_instalacion: 'installation_open',
   llamada: 'call_time',
   scratch: 'scratch_time',
   inicio: 'start_time',
+  acreditacion: 'accreditation',
+  control_de_armas: 'weapon_control',
+  poules: 'pools_start',
+  semifinales: 'semifinals_start',
+  final: 'final_start',
+  equipos: 'teams_start',
 } as const;
+
+/**
+ * Categorías como las escribe un dossier, con su código.
+ *
+ * Existe para que «Cadet individual event: 30 EUR» y «Junior individual event:
+ * 40 EUR» acaben en dos claves distintas (`fee_eur.m17` y `fee_eur.m20`) en
+ * vez de pelearse por `fee_eur`. Los códigos son los de `CATEGORIES` en
+ * `src/lib/ingest/types.ts`: los mismos que el resto de la aplicación.
+ *
+ * Lo que NO se reconoce se conserva tal cual, en minúsculas y con guiones: una
+ * categoría rara es preferible a meterla en el cajón de otra.
+ */
+const CODIGO_CATEGORIA: [RegExp, string][] = [
+  [/\bm9\b|\bbenjamin/, 'M9'],
+  [/\bm11\b|\balevin/, 'M11'],
+  [/\bm13\b/, 'M13'],
+  [/\bm14\b|\binfantil/, 'M14'],
+  [/\bm15\b/, 'M15'],
+  [/\bm17\b|\bcadet/, 'M17'],
+  [/\bm20\b|\bjunior/, 'M20'],
+  [/\bm23\b|\bsub\s?23\b/, 'M23'],
+  [/\babsolut|\bsenior\b/, 'ABS'],
+  [/\bveteran/, 'VET'],
+];
+
+/**
+ * El código de Google Maps que hay dentro de un texto, o `null`.
+ *
+ * Un *plus code* (Open Location Code) NO es una cadena cualquiera con un `+`:
+ * usa un alfabeto de veinte caracteres —`23456789CFGHJMPQRVWX`— del que se
+ * quitaron a propósito las vocales, para que ningún código pueda formar una
+ * palabra, y las letras que se confunden al leerlas (0/O, 1/I, L). Así que
+ * comprobar la forma no es un formalismo: descarta de verdad lo que el modelo
+ * se haya inventado, porque inventarse una cadena que cumpla ese alfabeto es
+ * bastante improbable.
+ *
+ * Se aceptan las dos longitudes que se usan:
+ *   · completo, 8 caracteres + '+' + 2 o 3   («8FVC9G8F+6W»)
+ *   · abreviado, 4 o 6 + '+' + 2 o 3         («PFH3+W7», el de Orán)
+ *
+ * Se devuelve el código EN MAYÚSCULAS y sin lo que venga alrededor, porque es
+ * lo que hay que poner en una URL de Google Maps. Y se devuelve solo si
+ * aparece tal cual: no se corrige un código con una letra prohibida, se tira.
+ */
+const ALFABETO_PLUS = '23456789CFGHJMPQRVWX';
+const RE_CODIGO_PLUS = new RegExp(
+  `\\b([${ALFABETO_PLUS}]{4}|[${ALFABETO_PLUS}]{6}|[${ALFABETO_PLUS}]{8})\\+([${ALFABETO_PLUS}]{2,3})\\b`,
+  'i',
+);
+
+export function codigoPlusValido(texto: string | null | undefined): string | null {
+  if (!texto) return null;
+  const encontrado = texto.toUpperCase().match(RE_CODIGO_PLUS);
+  return encontrado ? `${encontrado[1]}+${encontrado[2]}` : null;
+}
+
+/** El código de categoría que corresponde a un texto libre, o `null`. */
+export function codigoDeCategoria(texto: string): string | null {
+  const plano = normalizarParaCotejo(texto);
+  for (const [patron, codigo] of CODIGO_CATEGORIA) {
+    if (patron.test(plano)) return codigo;
+  }
+  return null;
+}
+
+/** Cómo se dice en castellano cada forma de pago. */
+const TEXTO_FORMA_PAGO: Record<(typeof FORMAS_DE_PAGO)[number], string> = {
+  efectivo: 'En efectivo',
+  transferencia: 'Por transferencia',
+  tarjeta: 'Con tarjeta',
+  plataforma: 'Por la plataforma de inscripción',
+  otro: 'Otra forma de pago',
+};
 
 /**
  * Convierte la respuesta validada en filas de `extraccion_propuesta`.
@@ -1835,9 +2777,28 @@ const NOMBRE_HORARIO = {
  * arma. Sin el sufijo serían todas el campo `installation_open` y solo
  * sobreviviría la primera, que es como perder los horarios del domingo.
  */
-export function aPropuestas(datos: DatosExtraidos): PropuestaCampo[] {
+export function aPropuestas(
+  datos: DatosExtraidos,
+  /**
+   * El texto del documento, para poder aplicar el filtro de alojamiento
+   * COMPLETO —vocabulario y apartado— antes de repartir las claves.
+   *
+   * Es opcional para no romper a quien solo quiera ver el aplanado, pero en
+   * producción se pasa siempre (`extraerDeTexto`). Sin él solo se reconoce el
+   * alojamiento por sus palabras, y hay frases del bloque de hoteles que no
+   * llevan ninguna: «Standard 90 USD 105 USD» es una tarifa de habitación y no
+   * lo parece. Si esa frase llega aquí sin el texto, se queda con la clave
+   * `fee_eur.otro`, y la siguiente —que puede ser buena— se descarta por
+   * repetida. Se descarta EN SILENCIO, que es lo malo.
+   */
+  textoDocumento?: string,
+): PropuestaCampo[] {
   const propuestas: PropuestaCampo[] = [];
   const vistos = new Set<string>();
+  const esAlojamiento = (cita: string, valor: string) =>
+    textoDocumento === undefined
+      ? pareceAlojamiento(cita, valor)
+      : esDatoDeAlojamiento(cita, valor, textoDocumento);
 
   const anadir = (
     field: string,
@@ -1845,20 +2806,35 @@ export function aPropuestas(datos: DatosExtraidos): PropuestaCampo[] {
     quote: string,
     extra: {
       prueba?: string | null;
+      fecha?: string | null;
       exigirValorEnTexto?: boolean;
       exigirValorEnCita?: boolean;
     } = {},
   ) => {
-    if (vistos.has(field)) return;
     // «No se indica» no es el nombre de un pabellón: ver `valorDiceAlgo`.
     if (!valorDiceAlgo(field, proposedValue)) return;
-    vistos.add(field);
+
+    /**
+     * El alojamiento se marca y NO reserva la clave: ver
+     * `PropuestaCampo.esAlojamiento`. Con el texto del documento delante se
+     * aplican las dos mitades del filtro (vocabulario y apartado); sin él,
+     * solo el vocabulario. En los dos casos `verificarPropuestas` lo vuelve a
+     * comprobar y es quien escribe el motivo del descarte.
+     */
+    const alojamiento = esAlojamiento(quote, proposedValue);
+    if (!alojamiento) {
+      if (vistos.has(field)) return;
+      vistos.add(field);
+    }
+
     propuestas.push({
       field,
       proposedValue,
       quote,
       quoteVerified: false,
       prueba: extra.prueba ?? null,
+      fecha: extra.fecha ?? null,
+      ...(alojamiento ? { esAlojamiento: true } : {}),
       ...(extra.exigirValorEnTexto ? { exigirValorEnTexto: true } : {}),
       ...(extra.exigirValorEnCita ? { exigirValorEnCita: true } : {}),
     });
@@ -1891,15 +2867,73 @@ export function aPropuestas(datos: DatosExtraidos): PropuestaCampo[] {
    * una habitación doble no pueda acabar publicado como cuota de inscripción.
    */
   for (const cuota of datos.cuotas ?? []) {
-    const clave = cuota.tipo === 'individual' ? 'fee_eur' : `fee_eur.${cuota.tipo}`;
-    anadir(clave, cuota.importeEur.toFixed(2), cuota.cita);
+    /**
+     * La categoría entra en la clave, y esa es la diferencia entre publicar
+     * las dos cuotas de Lima o solo una. Sin ella, «Cadet individual event: 30
+     * EUR» y «Junior individual event: 40 EUR» son las dos `fee_eur` y la
+     * segunda se descarta por repetida unas líneas más arriba.
+     *
+     * La categoría va DETRÁS del tipo para que el prefijo siga siendo
+     * `fee_eur.` y `importesExtra` en la ficha los recoja igual que antes.
+     */
+    const categoria = cuota.categoria ? codigoDeCategoria(cuota.categoria) : null;
+    const cola = [
+      cuota.tipo === 'individual' ? '' : cuota.tipo,
+      categoria ? categoria.toLowerCase() : '',
+    ]
+      .filter(Boolean)
+      .join('.');
+    anadir(cola ? `fee_eur.${cola}` : 'fee_eur', cuota.importeEur.toFixed(2), cuota.cita, {
+      /**
+       * La categoría viaja también como «prueba», que es lo que usa
+       * `repartirDatosExtraidos` para llevar el dato a la prueba que le toca.
+       * Así la cuota cadete aparece en la prueba cadete y no en la cabecera,
+       * sin que la ficha tenga que saber nada de categorías.
+       */
+      prueba: cuota.categoria ?? null,
+    });
     if (cuota.concepto) {
       anadir(
-        cuota.tipo === 'individual' ? 'fee_concept' : `fee_concept.${cuota.tipo}`,
+        cola ? `fee_concept.${cola}` : 'fee_concept',
         cuota.concepto,
         cuota.cita,
+        { prueba: cuota.categoria ?? null },
       );
     }
+  }
+
+  /**
+   * Las formas de pago: la PRIMERA se queda con la clave corta
+   * `payment_method` y las demás llevan su método en la clave
+   * (`payment_method.transferencia`).
+   *
+   * No se juntan en un solo valor («En efectivo o por transferencia») aunque
+   * sería más bonito de leer, y el motivo es la cita: cada propuesta se
+   * verifica contra SU frase, y si las dos formas vinieran de frases distintas
+   * un valor unido tendría que elegir una de las dos citas y quedarse sin
+   * respaldo para la mitad de lo que afirma. Con una clave por forma, cada
+   * afirmación lleva su prueba y la ficha las junta al pintar.
+   *
+   * Se deduplica POR MÉTODO y con su propio conjunto, no con `vistos`. Con
+   * `vistos` no bastaba y es un fallo fácil de no ver: «efectivo» dos veces
+   * habría entrado como `payment_method` y como `payment_method.efectivo`, que
+   * son dos claves distintas y por tanto dos filas, y la ficha diría «En
+   * efectivo» dos veces.
+   *
+   * La clave corta se le da al PRIMERO QUE ENTRE DE VERDAD, no al primero de
+   * la lista: `anadir` puede rechazar uno (el filtro de alojamiento actúa sobre
+   * la cita, y la frase del pago puede caer dentro del bloque de hoteles). Por
+   * eso se consulta `vistos`, que refleja lo que se ha añadido, y no un
+   * contador.
+   */
+  const formasDePagoVistas = new Set<string>();
+  for (const forma of datos.formasDePago ?? []) {
+    if (formasDePagoVistas.has(forma.metodo)) continue;
+    formasDePagoVistas.add(forma.metodo);
+    const clave = vistos.has('payment_method')
+      ? `payment_method.${forma.metodo}`
+      : 'payment_method';
+    anadir(clave, TEXTO_FORMA_PAGO[forma.metodo], forma.cita);
   }
 
   if (datos.sede) {
@@ -1912,12 +2946,87 @@ export function aPropuestas(datos: DatosExtraidos): PropuestaCampo[] {
     }
   }
 
+  if (datos.acceso) {
+    anadir('venue_access', datos.acceso.descripcion, datos.acceso.cita);
+  }
+
+  /**
+   * El código de Google Maps. Se exige que el valor esté EN LA CITA
+   * (`exigirValorEnCita`), que es la comprobación que de verdad protege aquí:
+   * un plus code bien formado pero inventado pasaría cualquier validación de
+   * forma y llevaría a un punto equivocado del mundo con toda la confianza.
+   * Si la frase del documento no lo contiene, el documento no lo dice.
+   */
+  if (datos.ubicacionMapa) {
+    const codigo = codigoPlusValido(datos.ubicacionMapa.codigoPlus);
+    if (codigo) {
+      anadir('venue_plus_code', codigo, datos.ubicacionMapa.cita, {
+        exigirValorEnCita: true,
+      });
+      if (datos.ubicacionMapa.lugar) {
+        anadir('venue_map_place', datos.ubicacionMapa.lugar, datos.ubicacionMapa.cita);
+      }
+    }
+  }
+
+  for (const hecho of datos.instalaciones ?? []) {
+    anadir(`venue_${hecho.tipo}`, hecho.detalle, hecho.cita);
+  }
+
+  if (datos.edadMinima) {
+    anadir('min_age', String(datos.edadMinima.anos), datos.edadMinima.cita);
+  }
+
+  if (datos.organizador) {
+    anadir('organizer', datos.organizador.nombre, datos.organizador.cita);
+    if (datos.organizador.direccion) {
+      anadir('organizer_address', datos.organizador.direccion, datos.organizador.cita);
+    }
+  }
+
+  for (const cupo of datos.cupos ?? []) {
+    anadir(
+      cupo.ambito === 'federacion' ? 'entry_quota' : `entry_quota.${cupo.ambito}`,
+      String(cupo.maximo),
+      cupo.cita,
+    );
+  }
+
+  for (const requisito of datos.requisitos ?? []) {
+    /**
+     * El sufijo sale del propio texto y no de un contador: la clave tiene que
+     * ser estable entre pasadas, y con un contador el orden en que el modelo
+     * devolviera los requisitos cambiaría de qué campo es cuál.
+     */
+    anadir(`entry_requirement${sufijo(requisito.texto, 32)}`, requisito.texto, requisito.cita);
+  }
+
+  for (const tramo of datos.arbitros ?? []) {
+    const hasta = tramo.tiradoresHasta ?? null;
+    const rango = hasta === null ? `${tramo.tiradoresDesde}-mas` : `${tramo.tiradoresDesde}-${hasta}`;
+    anadir(
+      `referee_quota.${rango}`,
+      // «0» es una respuesta aquí y no un hueco: de 1 a 4 tiradores NO hace
+      // falta árbitro, y eso es justo lo que quiere saber una federación.
+      String(tramo.arbitros),
+      tramo.cita,
+    );
+  }
+
+  if (datos.multaArbitro) {
+    anadir(
+      'referee_fine_eur',
+      datos.multaArbitro.importeEur.toFixed(2),
+      datos.multaArbitro.cita,
+    );
+  }
+
   for (const horario of datos.horarios ?? []) {
     anadir(
       `${NOMBRE_HORARIO[horario.etiqueta]}${sufijo(horario.fecha, 10)}${sufijo(horario.prueba)}`,
       horario.hora,
       horario.cita,
-      { prueba: horario.prueba ?? null },
+      { prueba: horario.prueba ?? null, fecha: horario.fecha ?? null },
     );
   }
 
@@ -1965,6 +3074,31 @@ export function verificarPropuestas(
   const descartadas: PropuestaCampo[] = [];
 
   for (const propuesta of propuestas) {
+    /**
+     * PRIMERO el alojamiento, ANTES de comprobar la cita.
+     *
+     * El orden importa: el precio de una habitación viene con una cita
+     * impecable —la frase está en el PDF— así que la verificación de citas no
+     * puede tumbarlo. Si el filtro fuera después, el trabajo de cotejo se
+     * haría para nada; y si el descarte fuese silencioso en `aPropuestas`,
+     * nadie podría auditar cuántos datos se están tirando por esta vía. Aquí
+     * queda registrado con su motivo, que es donde sirve.
+     */
+    if (
+      propuesta.esAlojamiento ||
+      esDatoDeAlojamiento(propuesta.quote, propuesta.proposedValue, textoDocumento)
+    ) {
+      descartadas.push({
+        ...propuesta,
+        quoteVerified: false,
+        motivoDescarte:
+          'La frase sale del bloque de alojamiento (hotel, habitación, tarifas ' +
+          'por noche, check-in). Los hoteles recomendados no se extraen: no se ' +
+          'piden y además son datos comerciales que caducan.',
+      });
+      continue;
+    }
+
     if (!verificarCita(propuesta.quote, textoDocumento)) {
       descartadas.push({
         ...propuesta,
@@ -2055,21 +3189,23 @@ export type TextoDePdf = {
  * Extrae el texto EN LOCAL con `unpdf`, sin modelo y sin que el fichero salga
  * de la máquina. Es el camino normal: casi todos los dossieres llevan capa de
  * texto, y en ese caso el modelo solo ordena lo que ya tenemos.
+ *
+ * Se mantiene además de `textoDeDocumento` porque hay dos sitios —y sus
+ * tests— que piden expresamente un PDF y quieren el número de páginas como
+ * número y no como `null`.
  */
 export async function extraerTextoDePdf(pdf: Uint8Array): Promise<TextoDePdf> {
-  const { extractText, getDocumentProxy } = await import('unpdf');
-  const documento = await getDocumentProxy(pdf);
-  // `mergePages: true` devuelve el documento entero como una sola cadena, que
-  // es justo lo que hace falta para cotejar citas que cruzan de página.
-  const { text: texto, totalPages } = await extractText(documento, { mergePages: true });
+  const leido = await textoDeDocumento(pdf, {
+    minCaracteres: MIN_CARACTERES_CAPA_TEXTO,
+  });
   return {
-    texto,
-    paginas: totalPages,
-    tieneCapaDeTexto: texto.replace(/\s+/g, '').length >= MIN_CARACTERES_CAPA_TEXTO,
+    texto: leido.texto,
+    paginas: leido.paginas ?? 0,
+    tieneCapaDeTexto: leido.tieneTexto,
   };
 }
 
-/** SHA-256 del PDF en hexadecimal: la clave de idempotencia. */
+/** SHA-256 del fichero en hexadecimal: la clave de idempotencia. */
 export async function hashDocumento(pdf: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', pdf as unknown as ArrayBuffer);
   return Array.from(new Uint8Array(digest))
@@ -2080,6 +3216,17 @@ export async function hashDocumento(pdf: Uint8Array): Promise<string> {
 // ---------------------------------------------------------------------------
 // Función principal
 // ---------------------------------------------------------------------------
+
+/**
+ * De dónde salió el texto. Los mismos valores que `origen_texto_extraccion`.
+ *
+ * 'ooxml' es nuevo y cubre los formatos que se leen desenrollando un ZIP y
+ * recorriendo su XML: el `.docx` de Word y el `.odt` de OpenDocument. No se
+ * ha creado un valor por formato porque lo que se registra aquí es CÓMO se
+ * consiguió el texto, y en los dos casos es lo mismo; el formato exacto se ve
+ * en la URL del documento, que está en la misma fila.
+ */
+export type OrigenTexto = 'unpdf' | 'ocr_modelo' | 'ooxml';
 
 export type ResultadoExtraccion =
   | { estado: 'desactivado'; motivo: string }
@@ -2098,7 +3245,7 @@ export type ResultadoExtraccion =
       documentUrl: string;
       eventId: string | null;
       modelo: string;
-      origenTexto: 'unpdf' | 'ocr_modelo';
+      origenTexto: OrigenTexto;
       propuestas: PropuestaCampo[];
       descartadas: PropuestaCampo[];
       /** Lo que devolvió el modelo, ya validado. Se guarda tal cual. */
@@ -2118,7 +3265,7 @@ export type OpcionesExtraccionTexto = {
   documentHash: string;
   texto: string;
   eventId?: string | null;
-  origenTexto?: 'unpdf' | 'ocr_modelo';
+  origenTexto?: OrigenTexto;
   /** Solo informativo: viaja hasta el libro de registro. */
   paginas?: number;
   /** Inyectable para los tests; en producción sale de `crearClienteModelo`. */
@@ -2197,7 +3344,10 @@ export async function extraerDeTexto(
     };
   }
 
-  const { verificadas, descartadas } = verificarPropuestas(aPropuestas(datos), texto);
+  const { verificadas, descartadas } = verificarPropuestas(
+    aPropuestas(datos, texto),
+    texto,
+  );
 
   return {
     estado: 'ok',
@@ -2243,26 +3393,58 @@ export async function extraerDeDossierPdf(opciones: {
 
   const documentHash = await hashDocumento(opciones.pdf);
 
-  let lectura: TextoDePdf;
+  let lectura: TextoDeDocumento;
   try {
-    lectura = await extraerTextoDePdf(opciones.pdf);
+    lectura = await textoDeDocumento(opciones.pdf, {
+      url: opciones.documentUrl,
+      minCaracteres: MIN_CARACTERES_CAPA_TEXTO,
+    });
   } catch (error) {
+    /**
+     * UN FORMATO QUE NO SE SABE LEER NO ES UN ERROR, ES UNA CONCLUSIÓN.
+     *
+     * La diferencia importa para la idempotencia: 'error' se reintenta cada
+     * noche (ver `extraccionYaRegistrada`) y 'sin_texto' no. Un `.doc` binario
+     * de 1997 va a seguir siendo un `.doc` binario mañana, así que
+     * reintentarlo es descargar 2 MB para nada, todas las noches, para
+     * siempre. Se registra como 'sin_texto' con el motivo escrito, que es lo
+     * mismo que se hace con un PDF escaneado.
+     */
+    if (error instanceof FormatoNoLeible) {
+      return { estado: 'sin_texto', documentHash, motivo: error.message };
+    }
     return {
       estado: 'error',
       documentHash,
-      motivo: `No se pudo leer el PDF en local: ${mensajeDeError(error)}`,
+      motivo: `No se pudo leer el documento en local: ${mensajeDeError(error)}`,
     };
   }
 
   let texto = lectura.texto;
-  let origenTexto: 'unpdf' | 'ocr_modelo' = 'unpdf';
+  let origenTexto: OrigenTexto = lectura.formato === 'pdf' ? 'unpdf' : 'ooxml';
 
-  if (!lectura.tieneCapaDeTexto) {
+  if (!lectura.tieneTexto) {
+    /**
+     * Solo un PDF puede estar «escaneado». Un `.docx` sin texto no es un
+     * escaneado: es un documento vacío, o uno cuyo contenido está entero en
+     * imágenes o en cuadros de texto que no se leen. Mandarlo a transcribir no
+     * tiene sentido porque el modelo multimodal espera un PDF.
+     */
+    if (lectura.formato !== 'pdf') {
+      return {
+        estado: 'sin_texto',
+        documentHash,
+        motivo:
+          `El documento (${lectura.formato}) no tiene texto que leer: son ` +
+          `${lectura.texto.length} caracteres. Puede que su contenido esté en ` +
+          'imágenes. Hay que leerlo a mano.',
+      };
+    }
     if (!config.tierDePago) {
       return {
         estado: 'sin_texto',
         documentHash,
-        paginas: lectura.paginas,
+        paginas: lectura.paginas ?? undefined,
         motivo:
           'El PDF está escaneado: no tiene capa de texto. No se puede comprobar si ' +
           'lleva datos personales antes de enviarlo, así que no se envía. Hay que ' +
@@ -2296,11 +3478,17 @@ export async function extraerDeDossierPdf(opciones: {
     texto,
     eventId: opciones.eventId ?? null,
     origenTexto,
-    paginas: lectura.paginas,
+    paginas: lectura.paginas ?? undefined,
     cliente: opciones.cliente,
     config,
   });
 }
+
+/**
+ * El mismo nombre sin el «Pdf», que es lo que hace ahora. `extraerDeDossierPdf`
+ * se queda porque lo llaman el cron, el panel de admin y sus tests.
+ */
+export const extraerDeDossier = extraerDeDossierPdf;
 
 /** Algunos modelos envuelven el JSON en ```json … ``` pese a pedirles que no. */
 function limpiarCercaDeCodigo(valor: string): string {
@@ -2318,22 +3506,58 @@ function mensajeDeError(error: unknown): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Descarga el PDF. Se usa `fetch` directo y no `fetchText` porque aquí hacen
- * falta BYTES, no texto: decodificar un PDF como UTF-8 lo destroza y el hash
- * dejaría de ser el del fichero.
+ * Descarga el documento. Se usa `fetch` directo y no `fetchText` porque aquí
+ * hacen falta BYTES, no texto: decodificar un PDF o un ZIP como UTF-8 lo
+ * destroza y el hash dejaría de ser el del fichero.
+ *
+ * `Accept` ya no dice «application/pdf», y no es un detalle cosmético: un
+ * servidor que respete la negociación de contenido puede contestar 406 a una
+ * petición que solo acepta PDF cuando lo que tiene es un `.docx`. Se piden los
+ * tipos que se saben leer y, al final, `*\/*`.
+ *
+ * Y se pone un TOPE DE TAMAÑO. El `.docx` de Orán son 11,5 MB porque lleva
+ * once imágenes de membrete; un fichero de 200 MB tumbaría el Worker antes de
+ * poder decir que no lo quiere.
  */
+const ACEPTA_DOCUMENTOS = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/msword',
+  'application/vnd.oasis.opendocument.text',
+  'text/plain',
+  '*/*;q=0.8',
+].join(', ');
+
 export async function descargarPdf(url: string): Promise<Uint8Array> {
   const res = await fetch(url, {
     headers: {
       'User-Agent': process.env.INGEST_USER_AGENT || 'CalendarioEsgrima/1.0 (+contacto)',
-      Accept: 'application/pdf',
+      Accept: ACEPTA_DOCUMENTOS,
     },
     signal: AbortSignal.timeout(60_000),
     cache: 'no-store',
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} al descargar ${url}`);
-  return new Uint8Array(await res.arrayBuffer());
+
+  const declarado = Number(res.headers.get('content-length') ?? '0');
+  if (declarado > MAX_BYTES_DOCUMENTO) {
+    throw new Error(
+      `El documento pesa ${Math.round(declarado / 1_048_576)} MB y el tope son ` +
+        `${Math.round(MAX_BYTES_DOCUMENTO / 1_048_576)} MB: no se descarga.`,
+    );
+  }
+
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  if (bytes.length > MAX_BYTES_DOCUMENTO) {
+    throw new Error(
+      `El documento pesa ${Math.round(bytes.length / 1_048_576)} MB, por encima del tope.`,
+    );
+  }
+  return bytes;
 }
+
+/** El mismo nombre que dice lo que hace. `descargarPdf` se queda por compatibilidad. */
+export const descargarDocumento = descargarPdf;
 
 /**
  * ¿Ya procesamos este documento CON ESTE prompt y ESTE esquema?
@@ -2541,6 +3765,31 @@ export type SugerenciaEvento = {
 };
 
 /**
+ * El evento que de verdad se enseña: el canónico si este está absorbido.
+ *
+ * Devuelve el propio id si no está unido a ninguno, y `null` si el evento no
+ * existe o la consulta falla. Perder la subida al canónico deja el dato
+ * guardado pero invisible, que es malo; tirar la extracción entera por un
+ * fallo de red en esta consulta sería peor.
+ */
+async function eventoCanonicoDe(eventoId: string): Promise<string | null> {
+  try {
+    const { db } = await import('@/db');
+    const { event } = await import('@/db/schema');
+    const { eq } = await import('drizzle-orm');
+    const [fila] = await db
+      .select({ canonico: event.canonicalEventId })
+      .from(event)
+      .where(eq(event.id, eventoId))
+      .limit(1);
+    if (!fila) return null;
+    return fila.canonico ?? eventoId;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Palabras que aparecen en casi todos los nombres de competición y que por
  * tanto no distinguen nada. Sin esta lista, «TORNEO NACIONAL DE RANKING
  * ABSOLUTO» casaría con los treinta torneos nacionales de la temporada.
@@ -2635,6 +3884,33 @@ export async function resolverEvento(opciones: {
   competiciones?: DatosExtraidos['competiciones'];
 }): Promise<SugerenciaEvento> {
   if (opciones.eventoConocido) {
+    /**
+     * SE SUBE AL EVENTO CANÓNICO SI ESTE ESTÁ ABSORBIDO POR OTRO.
+     *
+     * El caso es el de Orán y se repite en cada torneo internacional. El
+     * dossier lo publica la FIE, así que cuelga del registro de la FIE; pero
+     * ese registro no es una tarjeta: `recalcularEnlaces` lo ha unido a la fila
+     * de Skermo («COPA MUNDO · ORÁN»), que es la que el usuario abre y la única
+     * que sale en el calendario. Si el dato extraído se queda etiquetado con el
+     * id del registro de la FIE, se guarda bien y no se ve nunca: la ficha pide
+     * lo extraído DE SU id.
+     *
+     * Así que se apunta a la tarjeta, no al registro. Sigue siendo 'seguro' —el
+     * documento cuelga del torneo y el enlace dice que los dos registros son el
+     * mismo torneo— y se explica en el motivo, que es lo que se lee en la
+     * pantalla de revisión.
+     */
+    const canonico = await eventoCanonicoDe(opciones.eventoConocido);
+    if (canonico && canonico !== opciones.eventoConocido) {
+      return {
+        eventoId: canonico,
+        certeza: 'seguro',
+        motivo:
+          'El documento cuelga del registro de la FIE de este torneo, y ese registro ' +
+          'está unido a la ficha de la RFEE, que es la que se enseña. El dato va a la ' +
+          'ficha unida.',
+      };
+    }
     return {
       eventoId: opciones.eventoConocido,
       certeza: 'seguro',
@@ -2935,6 +4211,11 @@ export async function registrarExtraccion(
           campo: p.field,
           valorPropuesto: p.proposedValue,
           prueba: p.prueba ?? null,
+          /**
+           * El día del dato, para que la ficha pueda agrupar el horario por
+           * jornadas sin parsear la clave del campo. Ver `PropuestaCampo.fecha`.
+           */
+          fecha: p.fecha ?? null,
           cita: p.quote,
           citaVerificada: p.quoteVerified,
           contexto: p.contexto ?? null,
@@ -3112,6 +4393,18 @@ export async function procesarDocumentoOficial(opciones: {
  * comentario en el esquema: "para procesar cada PDF una sola vez"). Rellenarla
  * evita la descarga de la próxima pasada. Si falla, no pasa nada: es una
  * optimización, no un dato que nadie vaya a leer en pantalla.
+ *
+ * CON LOS DOSSIERES SE MARCAN TODAS LAS FILAS DE LA MISMA URL, y eso es lo que
+ * convierte una cuenta mala en una buena.
+ *
+ * Los números, medidos contra la API de la FIE el 27/09/2026: de las 485
+ * pruebas de las dos temporadas vivas, 409 traen invitación, pero son SOLO 114
+ * URL distintas —el mismo PDF cubre la prueba cadete y la júnior, el individual
+ * y el de equipos—. Marcando solo la fila procesada, las otras 295 seguirían
+ * saliendo como pendientes, se descargarían una a una y acabarían en
+ * `ya_procesado`: 409 descargas para 114 documentos. Marcándolas todas, son
+ * 114. Es el mismo problema que ya tenía la convocatoria conjunta del TNR y la
+ * Liga, que cuelga de cinco torneos.
  */
 async function guardarHashDelDocumento(
   documentoId: string | null,
@@ -3124,10 +4417,20 @@ async function guardarHashDelDocumento(
     const { eventDocument, officialDocument } = await import('@/db/schema');
     const { eq } = await import('drizzle-orm');
     if (origen === 'dossier') {
+      const [fila] = await db
+        .select({ url: eventDocument.url })
+        .from(eventDocument)
+        .where(eq(eventDocument.id, documentoId))
+        .limit(1);
+      // Dos consultas y no una con subconsulta a propósito: el driver de Neon
+      // es HTTP y esto corre fuera del camino crítico, así que lo que importa
+      // es que se lea de un tirón.
       await db
         .update(eventDocument)
         .set({ fileHash: hash })
-        .where(eq(eventDocument.id, documentoId));
+        .where(
+          fila ? eq(eventDocument.url, fila.url) : eq(eventDocument.id, documentoId),
+        );
       return;
     }
     await db

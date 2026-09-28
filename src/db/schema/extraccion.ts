@@ -1,5 +1,6 @@
 import {
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -91,6 +92,17 @@ export const origenTextoEnum = pgEnum('origen_texto_extraccion', [
   'unpdf',
   /** Transcripción de un escaneado hecha por un modelo multimodal. */
   'ocr_modelo',
+  /**
+   * Documento de Word (`.docx`) u OpenDocument (`.odt`), leído en local
+   * desenrollando su ZIP y recorriendo el XML. Ver `src/lib/ai/documento.ts`.
+   *
+   * Hace falta un valor propio y no vale reutilizar 'unpdf': esta columna es
+   * lo que se mira cuando una extracción sale mal para saber por dónde entró
+   * el texto, y «unpdf» sobre un Word sería una pista falsa. Medido: 22 de las
+   * 96 invitaciones que publica la FIE para los próximos 60 días son `.docx`,
+   * así que este camino no es una rareza.
+   */
+  'ooxml',
 ]);
 
 /**
@@ -270,6 +282,30 @@ export const extraccionPropuesta = pgTable(
      * y la ficha lo enseña tal cual.
      */
     prueba: text('prueba'),
+    /**
+     * DÍA al que corresponde el dato. `null` = vale para todo el evento.
+     *
+     * POR QUÉ HACE FALTA UNA COLUMNA Y NO BASTA LA CLAVE DEL CAMPO
+     * -----------------------------------------------------------
+     * El horario de un dossier de la FIE es una TABLA, no un dato suelto: la
+     * invitación de la Copa del Mundo de Lima 2026 publica cuatro días
+     * seguidos con «7:30 Venue Open», y cada uno es un campo distinto.
+     *
+     * Eso ya funcionaba: `aPropuestas` le cuelga la fecha a la clave
+     * (`installation_open.2026-10-08`) y así no se pisan. Lo que no funcionaba
+     * es LEERLO: para pintar una línea de tiempo por jornada —que es lo que
+     * pide `UI.md`, «una línea de tiempo del día, no una tabla»— la ficha
+     * tendría que partir la clave por puntos y reconocer un ISO por su forma.
+     * Un formato de clave interno convertido en contrato de la interfaz: el
+     * día que la clave cambie, la agrupación se rompe y no falla ningún test.
+     *
+     * Con la fecha en su columna, la ficha agrupa por un campo tipado y la
+     * clave vuelve a ser lo que era, un identificador.
+     *
+     * Es `date` y no `timestamp` porque es un día de calendario del documento,
+     * no un instante: «jueves 8 de octubre» no tiene huso horario.
+     */
+    fecha: date('fecha'),
 
     /** Frase copiada del PDF de la que sale el valor. */
     cita: text('cita').notNull(),

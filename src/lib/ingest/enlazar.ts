@@ -110,6 +110,46 @@ function clavePrueba(c: {
   return `${c.weapon}-${c.gender}-${c.category}-${c.format}`;
 }
 
+/**
+ * La misma identidad SIN el formato: «ESPADA-F-ABS».
+ *
+ * POR QUÉ HACEN FALTA LAS DOS, con el número que lo motivó
+ * -------------------------------------------------------
+ * Desde que se ingiere el calendario FUTURO de la FIE (ver
+ * `src/lib/ingest/sources/fie.ts`), la FIE publica de cada copa del mundo
+ * cuatro pruebas —individual y equipos, masculino y femenino— mientras que
+ * Skermo publica solo las individuales. Con la comparación estricta, las de
+ * equipos no encajaban en ninguna fila de Skermo y se quedaban como tarjetas
+ * sueltas: **42 tarjetas nuevas, las 42 con prueba por equipos**, junto a la
+ * tarjeta española del mismo torneo. En Orán eran tres tarjetas para un solo
+ * torneo.
+ *
+ * Y son el mismo torneo. La prueba por equipos de la Copa del Mundo de Orán se
+ * disputa en el mismo pabellón, el último día del mismo torneo, y es lo que un
+ * seleccionador mira justo después de la individual.
+ *
+ * LO QUE ESTA CLAVE RELAJA Y LO QUE NO
+ * ------------------------------------
+ * Relaja UNA cosa: ya no se exige que Skermo publique la variante por equipos.
+ * Sigue exigiendo arma, género y categoría, que son las tres que de verdad
+ * distinguen dos torneos a la vez en la misma ciudad —el caso de Samsun, con la
+ * Copa del Mundo cadete y la júnior el mismo fin de semana, sigue resuelto
+ * porque la CATEGORÍA se compara igual— y siguen exigiéndose la ciudad
+ * canónica, el solape de fechas y el país.
+ *
+ * Dicho de otra forma: para que esta relajación funda dos torneos distintos
+ * tendrían que celebrarse en la misma ciudad, en fechas que se pisan, del mismo
+ * arma, el mismo género y la misma categoría, y diferenciarse solo en que uno
+ * es individual y el otro por equipos. Eso no son dos torneos: es uno.
+ */
+function clavePruebaSinFormato(c: {
+  weapon: string;
+  gender: string;
+  category: string;
+}): string {
+  return `${c.weapon}-${c.gender}-${c.category}`;
+}
+
 function etiqueta(e: FilaEvento): string {
   return `${e.name} · ${e.city ?? 'sin sede'} · ${e.startDate}→${e.endDate} [${e.source}]`;
 }
@@ -168,6 +208,8 @@ export async function recalcularEnlaces(): Promise<ResumenEnlaces> {
   ]);
 
   const pruebasPorEvento = new Map<string, Set<string>>();
+  /** El mismo índice sin el formato. Ver `clavePruebaSinFormato`. */
+  const pruebasSinFormatoPorEvento = new Map<string, Set<string>>();
   for (const p of pruebas) {
     let set = pruebasPorEvento.get(p.eventId);
     if (!set) {
@@ -175,6 +217,13 @@ export async function recalcularEnlaces(): Promise<ResumenEnlaces> {
       pruebasPorEvento.set(p.eventId, set);
     }
     set.add(clavePrueba(p));
+
+    let sinFormato = pruebasSinFormatoPorEvento.get(p.eventId);
+    if (!sinFormato) {
+      sinFormato = new Set<string>();
+      pruebasSinFormatoPorEvento.set(p.eventId, sinFormato);
+    }
+    sinFormato.add(clavePruebaSinFormato(p));
   }
 
   /**
@@ -220,7 +269,8 @@ export async function recalcularEnlaces(): Promise<ResumenEnlaces> {
     if (!clave) continue;
 
     const pruebasF = pruebasPorEvento.get(f.id);
-    if (!pruebasF || pruebasF.size === 0) continue;
+    const pruebasFSinFormato = pruebasSinFormatoPorEvento.get(f.id);
+    if (!pruebasF || pruebasF.size === 0 || !pruebasFSinFormato) continue;
 
     const impuesto = impuestos.get(f.id);
     if (impuesto) {
@@ -249,15 +299,45 @@ export async function recalcularEnlaces(): Promise<ResumenEnlaces> {
        */
       if (p.country && f.country && p.country !== f.country) return false;
 
-      const pruebasP = pruebasPorEvento.get(p.id);
+      /**
+       * Las pruebas de la fila de la FIE tienen que estar CONTENIDAS en las de
+       * Skermo, comparando arma, género y categoría. El FORMATO no entra: ver
+       * `clavePruebaSinFormato`, donde están el motivo y los 42 casos que lo
+       * hicieron necesario.
+       */
+      const pruebasP = pruebasSinFormatoPorEvento.get(p.id);
       if (!pruebasP || pruebasP.size === 0) return false;
-      for (const prueba of pruebasF) if (!pruebasP.has(prueba)) return false;
+      for (const prueba of pruebasFSinFormato) if (!pruebasP.has(prueba)) return false;
       return true;
     });
 
     if (candidatos.length === 0) continue;
 
-    let regla = 'ciudad canónica + solape de fechas + pruebas contenidas';
+    let regla = 'ciudad canónica + solape de fechas + arma/género/categoría contenidos';
+
+    /**
+     * PRIMER DESEMPATE: el que también cuadra CON EL FORMATO.
+     *
+     * Al dejar de comparar el formato aparecen empates que antes no existían:
+     * en Orán, la prueba individual de la FIE encaja ahora tanto en la Copa del
+     * Mundo de Skermo (que publica la individual) como en cualquier otra fila
+     * española de ese fin de semana con el mismo arma y categoría. Cuando una
+     * de las candidatas casa también en formato, esa es la buena y las demás no
+     * se miran: es la lectura estricta de siempre, que sigue siendo la
+     * preferente.
+     */
+    if (candidatos.length > 1) {
+      const conFormato = candidatos.filter((p) => {
+        const exactas = pruebasPorEvento.get(p.id);
+        if (!exactas) return false;
+        for (const prueba of pruebasF) if (!exactas.has(prueba)) return false;
+        return true;
+      });
+      if (conFormato.length === 1) {
+        candidatos = conFormato;
+        regla += ' + formato exacto (desempate)';
+      }
+    }
 
     /**
      * Desempate: si varios encajan, gana el que además cuadra en fechas

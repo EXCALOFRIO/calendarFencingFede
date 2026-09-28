@@ -57,12 +57,37 @@ import { currentFieSeason } from './fie';
  * =========================================================================
  * LÍMITE LEGAL
  * =========================================================================
- * Enlazar sí, almacenar no. Se guarda el mínimo (ver `src/db/schema/fie.ts`),
- * la foto se ENLAZA a `static.fie.org` y no se copia a R2, y se enlaza
- * siempre a la ficha original. Del censo, que es transitorio y vive solo en
- * memoria durante la ejecución, se persisten únicamente las filas de los
- * tiradores que tienen ficha en esta aplicación o son candidatos de uno: hoy
- * 2 de 403. Un índice de referencias no es una copia de su base de datos.
+ * Se guarda el mínimo (ver `src/db/schema/fie.ts`), la foto se ENLAZA a
+ * `static.fie.org` y no se copia a R2, y se enlaza siempre a la ficha
+ * original.
+ *
+ * **Del censo español sí se guarda el puesto mundial, y antes no.** Aquí se
+ * persistían solo los tiradores con ficha en esta aplicación o candidatos de
+ * uno —2 de 403— con el argumento de que un índice de referencias no es una
+ * copia de su base de datos. Cambió con una autorización expresa del usuario:
+ * *«ok todo y pido los permisos… me han dado el ok para mostrarlo, o sea es
+ * interno y no público»*.
+ *
+ * PROCEDENCIA DEL PERMISO, para que esto sea auditable y no una decisión sin
+ * dueño: el usuario dice tenerlo por escrito en un hilo de correo con un cargo
+ * directivo de la FIE que además lo es de la federación española. El correo no
+ * está en este repositorio y aquí no se nombra a nadie; si alguna vez hay que
+ * justificarlo, lo aporta el usuario. **Es verbal para este código**, y por eso
+ * el alcance se deja estrecho a propósito y la vuelta atrás es de una línea.
+ *
+ * La aplicación entera está detrás de sesión, el permiso escrito del que hablan
+ * sus condiciones se está pidiendo, y el alcance sigue siendo estrecho:
+ *
+ *  - **solo España**, porque el censo se pide por país. El ranking mundial de
+ *    los otros 11.062 tiradores no se toca.
+ *  - **ni fecha de nacimiento, ni foto, ni mano, ni licencia** de quien no es
+ *    uno de los nuestros: hay menores en ese censo. Queda el nombre, el arma,
+ *    la categoría, el puesto, los puntos y el enlace a su ficha.
+ *  - **el enlace al original siempre**, que es lo que distingue citar de
+ *    copiar.
+ *
+ * Si el permiso se deniega, se vuelve atrás cambiando un conjunto por otro:
+ * ver `censoEspanol` frente a `fieIdsDeInteres`.
  *
  * =========================================================================
  * COSTE EN PETICIONES
@@ -682,22 +707,57 @@ export async function ingestFieTiradores(
   );
 
   /**
-   * Los fieId sobre los que se va a trabajar: los propuestos hoy y los que ya
-   * estaban en la base (para poder refrescarles el puesto). Nada más. El resto
-   * del censo se descarta aquí y no se guarda: es la diferencia entre un
-   * índice de referencias y una copia de su base de datos.
+   * ===========================================================================
+   * DOS CONJUNTOS, Y LA DIFERENCIA IMPORTA
+   * ===========================================================================
+   *
+   * `fieIdsDeInteres` son los tiradores de los que se pide la FICHA a la FIE:
+   * los propuestos hoy y los que ya estaban en la base. Es una petición HTTP
+   * por cabeza, así que esta lista sigue siendo corta a propósito.
+   *
+   * `censoEspanol` son **todos** los del censo del país, que llegan en una
+   * sola petición. De estos se guarda el puesto mundial y la identidad mínima
+   * para poder enseñar la clasificación.
+   *
+   * ---------------------------------------------------------------------------
+   * POR QUÉ AHORA SÍ SE GUARDA EL CENSO
+   * ---------------------------------------------------------------------------
+   * Aquí antes se tiraba todo lo que no fuera de interés, con este motivo
+   * escrito: «es la diferencia entre un índice de referencias y una copia de
+   * su base de datos», porque las condiciones de la FIE piden permiso escrito
+   * para almacenar su contenido.
+   *
+   * Cambia porque el usuario lo ha autorizado expresamente y ha dicho en qué
+   * condiciones: *«ok todo y pido los permisos… me han dado el ok para
+   * mostrarlo, o sea es interno y no público»*. La aplicación está entera
+   * detrás de sesión, no la indexa nadie, y el permiso se está pidiendo por
+   * escrito.
+   *
+   * Lo que se guarda sigue siendo lo mínimo, y esto NO es una concesión de
+   * estilo:
+   *
+   *  - **solo España.** El censo se pide por país (`country=ESP`), así que no
+   *    se toca el ranking mundial de nadie más.
+   *  - **ni fecha de nacimiento, ni foto, ni mano, ni licencia** de quien no
+   *    es uno de los nuestros. Es la regla que el usuario puso para las listas
+   *    de inscritos —*«solo los españoles, y de los demás se descarta la fecha
+   *    de nacimiento»*— y aquí hay menores. Se guarda nombre, arma, categoría,
+   *    puesto, puntos y el enlace a su ficha en fie.org, que es lo que hace
+   *    falta para una clasificación.
+   *  - **siempre con enlace al original**, que es lo que distingue citar de
+   *    copiar.
    */
   const fieIdsDeInteres = new Set<number>([
     ...propuestas.map((p) => p.fieId),
     ...yaEnBase.filter((f) => f.linkStatus !== 'RECHAZADO').map((f) => f.fieId),
   ]);
 
-  /** Mejor fila del censo por fieId de interés. */
+  /** Mejor fila del censo por fieId. */
   const filaPorFieId = new Map<number, FieCensoRow>();
   /** Todas las filas de ranking de la temporada en curso, por fieId. */
   const rankingsPorFieId = new Map<number, FieCensoRow[]>();
   for (const fila of censo) {
-    if (!fieIdsDeInteres.has(fila.id)) continue;
+    if (rechazados.has(fila.id)) continue;
     const previa = filaPorFieId.get(fila.id);
     if (!previa || (fila.rank ?? 9e9) < (previa.rank ?? 9e9)) {
       filaPorFieId.set(fila.id, fila);
@@ -706,6 +766,12 @@ export async function ingestFieTiradores(
     lista.push(fila);
     rankingsPorFieId.set(fila.id, lista);
   }
+
+  /** Todos los del censo más los que ya estaban en la base. */
+  const censoEspanol = new Set<number>([
+    ...filaPorFieId.keys(),
+    ...fieIdsDeInteres,
+  ]);
 
   // --- 5. Las fichas: una petición por tirador de interés, y topado ---
   const fichas = new Map<number, FieFicha>();
@@ -757,11 +823,16 @@ export async function ingestFieTiradores(
   // --- 7. Escritura de las fichas ---
   const filasFencer: (typeof fieFencer.$inferInsert)[] = [];
 
-  for (const fieId of fieIdsDeInteres) {
+  for (const fieId of censoEspanol) {
     const fila = filaPorFieId.get(fieId);
     const ficha = fichas.get(fieId);
     const previa = enBasePorFieId.get(fieId);
     const propuesta = propuestaPorFieId.get(fieId);
+    /**
+     * De quien no es uno de los nuestros se guarda la identidad mínima: ni
+     * fecha de nacimiento, ni foto, ni mano. Ver la cabecera de `censoEspanol`.
+     */
+    const esDeLosNuestros = fieIdsDeInteres.has(fieId);
 
     // Sin fila del censo ni ficha no hay nada nuevo que escribir de este
     // tirador: puede haberse quedado sin ranking esta temporada. Se deja como
@@ -809,9 +880,11 @@ export async function ingestFieTiradores(
     if (linkStatus === 'CONFIRMADO') stats.enlazados += 1;
     else if (linkStatus === 'PROPUESTO' && propuesta) stats.propuestos += 1;
 
-    const photoUrl = ficha?.image ?? fila?.image ?? null;
-    const sourceBirthDate = ficha?.date ?? fila?.date ?? null;
-    const hand = ficha?.hand ?? fila?.hand ?? null;
+    const photoUrl = esDeLosNuestros ? (ficha?.image ?? fila?.image ?? null) : null;
+    const sourceBirthDate = esDeLosNuestros
+      ? (ficha?.date ?? fila?.date ?? null)
+      : null;
+    const hand = esDeLosNuestros ? (ficha?.hand ?? fila?.hand ?? null) : null;
 
     const contentHash = await fieFencerContentHash({
       sourceName,
@@ -928,8 +1001,8 @@ export async function ingestFieTiradores(
 
   // --- 9. Ranking mundial: temporada en curso + histórico de la ficha ---
   const hashesRanking = new Map<string, string>();
-  if (fieIdsDeInteres.size > 0) {
-    for (const lote of trocear([...fieIdsDeInteres], 300)) {
+  if (censoEspanol.size > 0) {
+    for (const lote of trocear([...censoEspanol], 300)) {
       const existentes = await db
         .select({
           fieId: fieWorldRanking.fieId,
@@ -1024,7 +1097,7 @@ export async function ingestFieTiradores(
     });
   };
 
-  for (const fieId of fieIdsDeInteres) {
+  for (const fieId of censoEspanol) {
     // Temporada en curso, del censo.
     for (const fila of rankingsPorFieId.get(fieId) ?? []) {
       const combo = `${fila.weapon}|${fila.gender}|${fila.category}`;

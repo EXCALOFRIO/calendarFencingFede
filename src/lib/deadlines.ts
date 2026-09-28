@@ -1,4 +1,5 @@
 import type { CategoryCode } from './categories';
+import { parseFechaMadrid } from './callups/fechas';
 import { isoDateMinusDays } from './utils';
 
 export type DeadlineType = 'L1' | 'L2' | 'L3' | 'FIE_D7';
@@ -12,15 +13,24 @@ export const DEADLINE_TYPE_LABEL: Record<DeadlineType, string> = {
   FIE_D7: 'Cierre FIE (D-7)',
 };
 
+export type CompetitionFormat = 'INDIVIDUAL' | 'EQUIPOS';
+
 /** Fila de `deadline_rule`. Los importes no están en el código a propósito. */
 export type DeadlineRuleRow = {
   id: string;
   scope: Scope;
   circuit: string | null;
   category: CategoryCode | null;
+  format: CompetitionFormat | null;
   type: DeadlineType;
   label: string;
   daysBefore: number;
+  /** 1 = lunes … 7 = domingo (ISO). Null = contar `daysBefore`. */
+  weekday: number | null;
+  /** 0 = la semana de la competición, 1 = la anterior. */
+  weeksBefore: number;
+  /** Hora de cierre en hora de Madrid, "HH:MM". */
+  timeOfDay: string | null;
   surchargeEur: string | null;
   blocking: boolean;
   sourceDocument: string | null;
@@ -45,18 +55,29 @@ export type ComputedDeadline = {
  * INTERNACIONAL, y una escrita para M17 gana a la que no distingue categoría.
  */
 function specificity(rule: DeadlineRuleRow): number {
-  return (rule.circuit ? 2 : 0) + (rule.category ? 1 : 0);
+  return (rule.circuit ? 4 : 0) + (rule.category ? 2 : 0) + (rule.format ? 1 : 0);
 }
+
+export type DeadlineTarget = {
+  scope: Scope;
+  circuit: string | null;
+  category: CategoryCode | null;
+  format?: CompetitionFormat | null;
+};
 
 export function matchRules(
   rules: DeadlineRuleRow[],
-  target: { scope: Scope; circuit: string | null; category: CategoryCode | null },
+  target: DeadlineTarget,
 ): DeadlineRuleRow[] {
   const candidates = rules.filter(
     (r) =>
       r.scope === target.scope &&
       (r.circuit === null || r.circuit === target.circuit) &&
-      (r.category === null || r.category === target.category),
+      (r.category === null || r.category === target.category) &&
+      (r.format === null ||
+        target.format === undefined ||
+        target.format === null ||
+        r.format === target.format),
   );
 
   const bestByType = new Map<DeadlineType, DeadlineRuleRow>();
@@ -76,13 +97,13 @@ export function matchRules(
 export function computeDeadlines(
   eventStartDate: string,
   rules: DeadlineRuleRow[],
-  target: { scope: Scope; circuit: string | null; category: CategoryCode | null },
+  target: DeadlineTarget,
 ): ComputedDeadline[] {
   return matchRules(rules, target)
     .map((r) => ({
       type: r.type,
       label: r.label,
-      deadlineAt: isoDateMinusDays(eventStartDate, r.daysBefore),
+      deadlineAt: fechaDeRegla(eventStartDate, r),
       surchargeEur: r.surchargeEur,
       blocking: r.blocking,
       origin: 'CALCULADO' as const,
@@ -94,9 +115,78 @@ export function computeDeadlines(
 }
 
 /**
- * Une plazos publicados y calculados. El publicado SIEMPRE gana sobre el
- * calculado para el mismo tipo: el dato de la fuente tiene prioridad sobre la
- * estimación.
+ * Resuelve la fecha de un hito a partir de su regla.
+ *
+ * Dos formas de anclar, porque las dos federaciones cuentan distinto:
+ *
+ * - **La FIE cuenta días**: D-28, D-21, D-14, D-7. Eso es `daysBefore`.
+ * - **La RFEE ancla al calendario**: «el viernes de la semana anterior a la
+ *   competición a las 12:00 h». Eso es `weekday` + `weeksBefore` + `timeOfDay`,
+ *   y no se puede expresar con un contador de días: la misma regla cae a 8 días
+ *   de un sábado, a 9 de un domingo y a 11 de un martes.
+ *
+ * «La semana» es la semana ISO (de lunes a domingo) en la que empieza la
+ * competición, que es la que tiene en la cabeza quien escribió la circular:
+ * para un torneo del sábado 3 de octubre, «el lunes anterior» es el 28 de
+ * septiembre —lunes de su propia semana— y «el viernes de la semana anterior»
+ * es el 25 —viernes de la semana de antes—.
+ */
+export function fechaDeRegla(eventStartDate: string, regla: DeadlineRuleRow): Date {
+  if (regla.weekday === null) {
+    return isoDateMinusDays(eventStartDate, regla.daysBefore);
+  }
+  return anclaSemanal(
+    eventStartDate,
+    regla.weekday,
+    regla.weeksBefore,
+    regla.timeOfDay,
+  );
+}
+
+/**
+ * Día `weekday` (1 = lunes … 7 = domingo) de la semana ISO en la que empieza la
+ * competición, retrocediendo `weeksBefore` semanas, a la hora `timeOfDay` de
+ * Madrid.
+ *
+ * Se calcula sobre la fecha civil, no sobre un instante: restar milisegundos
+ * falla en las dos madrugadas del año en que cambia la hora, y es justo cuando
+ * caen los plazos de finales de marzo y de octubre.
+ */
+export function anclaSemanal(
+  eventStartDate: string,
+  weekday: number,
+  weeksBefore = 0,
+  timeOfDay: string | null = null,
+): Date {
+  const [y, m, d] = eventStartDate.slice(0, 10).split('-').map(Number);
+  // `getUTCDay()` da 0 para domingo; la norma ISO usa 7.
+  const inicio = new Date(Date.UTC(y, m - 1, d));
+  const diaIso = inicio.getUTCDay() === 0 ? 7 : inicio.getUTCDay();
+
+  const civil = new Date(inicio);
+  civil.setUTCDate(civil.getUTCDate() - (diaIso - weekday) - weeksBefore * 7);
+
+  const iso = civil.toISOString().slice(0, 10);
+  // Sin hora escrita, un plazo significa el final del día.
+  return parseFechaMadrid(`${iso}T${timeOfDay ?? '23:59'}`) ?? civil;
+}
+
+/**
+ * Une plazos publicados y calculados. Para el mismo tipo, **la FECHA del
+ * publicado gana**: el dato de la fuente tiene prioridad sobre la estimación.
+ *
+ * Pero solo la fecha. El IMPORTE y el cierre duro se heredan del calculado
+ * cuando el publicado no los trae, porque cada uno sabe una cosa distinta:
+ *
+ *   - El calendario oficial sabe **cuándo** cierra. Publica una fecha y nada
+ *     más: se comprobó enumerando las etiquetas del DOM de Skermo, no hay
+ *     ningún campo de recargo.
+ *   - La normativa sabe **cuánto** cuesta pasarse. Vive en un PDF.
+ *
+ * Sin esta herencia, en cuanto la fuente publicaba el plazo ordinario la
+ * aplicación se quedaba sin el importe: el tirador veía la fecha correcta y un
+ * guion donde tenía que decir «+5 €». Es decir, el dato bueno de una fuente
+ * borraba el dato bueno de la otra.
  */
 export function mergeDeadlines(
   published: ComputedDeadline[],
@@ -104,7 +194,27 @@ export function mergeDeadlines(
 ): ComputedDeadline[] {
   const byType = new Map<DeadlineType, ComputedDeadline>();
   for (const d of calculated) byType.set(d.type, d);
-  for (const d of published) byType.set(d.type, d);
+
+  for (const d of published) {
+    const estimado = byType.get(d.type);
+    byType.set(d.type, {
+      ...d,
+      surchargeEur: d.surchargeEur ?? estimado?.surchargeEur ?? null,
+      blocking: d.blocking || (estimado?.blocking ?? false),
+      /**
+       * La procedencia se acumula, porque cada mitad del dato viene de un
+       * sitio: la fecha del calendario y el importe de la circular. Se unen
+       * con un «+» y no con una frase porque esto es una nota al pie de letra
+       * pequeña: con «… · importe según …» se iba a dos líneas en el móvil.
+       */
+      sourceDocument:
+        estimado?.surchargeEur && !d.surchargeEur && estimado.sourceDocument
+          ? `${d.sourceDocument ?? 'Calendario oficial'} + ${estimado.sourceDocument}`
+          : d.sourceDocument,
+      sourceUrl: d.sourceUrl ?? estimado?.sourceUrl ?? null,
+    });
+  }
+
   return [...byType.values()].sort(
     (a, b) => a.deadlineAt.getTime() - b.deadlineAt.getTime(),
   );
