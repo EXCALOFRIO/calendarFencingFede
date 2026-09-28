@@ -1,10 +1,49 @@
 'use client';
 
-import { ChevronDown, ChevronLeft, ChevronRight, MapPin, Search, X } from 'lucide-react';
+import {
+  CalendarSearch,
+  ChevronLeft,
+  ChevronRight,
+  CircleCheck,
+  SlidersHorizontal,
+  X,
+} from 'lucide-react';
 import Link from 'next/link';
 import * as React from 'react';
-import { Badge } from '@/components/ui/badge';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from '@/components/ui/empty';
+import { FieldGroup, FieldLegend, FieldSeparator, FieldSet } from '@/components/ui/field';
+import { Item, ItemContent, ItemMedia } from '@/components/ui/item';
+import { Kbd } from '@/components/ui/kbd';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Sheet,
   SheetContent,
@@ -12,17 +51,24 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import type { EventView, Gender, Weapon } from '@/lib/queries/calendar';
+import { COLOR_ORGANISMO } from '@/lib/colores';
+import type { EventView, Weapon } from '@/lib/queries/calendar';
+import {
+  ARMAS,
+  GENEROS as CODIGOS_GENERO,
+  esArma,
+  arranqueDelCalendario,
+  ordenarCategorias,
+  type PerfilAmbito,
+} from '@/lib/ambito';
 import {
   CATEGORY_LABEL,
   CIRCUIT_LABEL,
+  CIRCUIT_SHORT,
+  GENDER_LABEL,
+  WEAPON_LABEL,
+  WEAPON_SHORT,
   capitalizar,
   cn,
   formatDateRangeEs,
@@ -31,10 +77,12 @@ import {
   titularTorneo,
 } from '@/lib/utils';
 import type { QuienVa } from '@/app/(app)/inscritos';
+import { AgendaMes } from './agenda-mes';
+import { CabeceraFicha } from './cabecera-ficha';
 import { FichaEvento } from './ficha-evento';
-import { IconoArma } from './iconos-arma';
-import { NOMBRE_ARMA } from './marca-arma';
-import { RejillaMes } from './rejilla-mes';
+import { LoQueViene, diasHasta, plazoDelEvento } from './lo-que-viene';
+import { RejillaMes, finDeLaRejilla, inicioDeLaRejilla } from './rejilla-mes';
+import { hoyMadrid } from '@/lib/callups/fechas';
 
 export type TiradorOpcion = {
   id: string;
@@ -46,49 +94,72 @@ export type TiradorOpcion = {
 
 type Vista = 'mes' | 'trimestre';
 
-const ARMAS: Weapon[] = ['FLORETE', 'ESPADA', 'SABLE'];
-const GENEROS: { v: 'M' | 'F'; t: string; largo: string }[] = [
-  { v: 'M', t: 'M', largo: 'Masculino' },
-  { v: 'F', t: 'F', largo: 'Femenino' },
-];
-
-function esArma(v: string): v is Weapon {
-  return ARMAS.includes(v as Weapon);
-}
-
 /**
- * Orden de las categorías, de la más pequeña a la más grande. Se usa para
- * presentarlas siempre igual, sin depender del orden en que lleguen.
+ * Lo que ocupa el relleno de «lo próximo», medido.
+ *
+ * El rótulo con su filete son 28 px y una fila legible —la cifra de los días
+ * con el nombre y la línea de datos al lado— 44. Con esto se traduce el hueco
+ * que sobra en pantalla a un número de filas, en vez de pintar una lista y
+ * ver si cabe.
+ *
+ * El tope está en ocho porque esto es «lo próximo», no el calendario entero:
+ * pasadas ocho competiciones lo que hace falta es cambiar de mes.
  */
-const ORDEN_CATEGORIAS = [
-  'M9',
-  'M11',
-  'M13',
-  'M14',
-  'M15',
-  'M17',
-  'M20',
-  'M23',
-  'ABS',
-  'VET',
-];
+const RELLENO = { rotulo: 28, fila: 44, tope: 8 };
 
-function ordenarCategorias(codigos: string[]): string[] {
-  return [...codigos].sort(
-    (a, b) => ORDEN_CATEGORIAS.indexOf(a) - ORDEN_CATEGORIAS.indexOf(b),
-  );
-}
+const GENEROS: { v: 'M' | 'F'; largo: string }[] = [
+  { v: 'M', largo: GENDER_LABEL.M },
+  { v: 'F', largo: GENDER_LABEL.F },
+];
 
 /**
  * El calendario, que es la aplicación.
  *
- * Dos vistas: **mes** para el detalle y **trimestre** para planificar la
- * temporada, que es cuando hay que decidir a qué se va y pedir días con
- * antelación. Al tocar un torneo se abre su ficha en una hoja lateral; no
- * hay navegación a otra página.
+ * -------------------------------------------------------------------------
+ * LA PANTALLA ES UNA BANDA Y UNA REJILLA. NADA MÁS.
+ * -------------------------------------------------------------------------
+ * Antes eran cuatro bloques: título, tres renglones de controles, rejilla y
+ * dos renglones de leyenda. Medido en un iPhone: 260 px de los 500
+ * disponibles se los llevaba lo que NO es el calendario, así que a la rejilla
+ * le quedaban 240 px, una semana con cuatro torneos no cabía y la última
+ * semana salía rebanada por el `overflow`.
+ *
+ * Ahora hay **una banda** con dos renglones —el mes con su navegación arriba,
+ * y debajo lo único que de verdad se quiere saber: **cuánto queda para la
+ * próxima competición**— y la rejilla se lleva el resto. Los filtros, que se
+ * tocan una vez y se dejan puestos, viven detrás de un botón que dice en su
+ * etiqueta qué está filtrando; el buscador es un icono que abre una paleta en
+ * vez de un campo siempre vacío que se comía media anchura.
+ *
+ * -------------------------------------------------------------------------
+ * UNA SOLA CONVENCIÓN DE ESTADO MARCADO
+ * -------------------------------------------------------------------------
+ * El usuario cazó el primer fallo de un vistazo: `Florete` salía relleno de
+ * rojo por estar activo y `M` y `F` salían **los dos** rellenos, así que la
+ * misma señal significaba dos cosas en la misma línea. Se quitó el acento y
+ * se marcó con fondo secundario, y entonces vino la segunda queja, que es la
+ * de ahora: *«es tan gris que ni se nota»*.
+ *
+ * La distinción no es «acento sí / acento no»: es **relleno frente a
+ * contorno**. En toda la pantalla, y en toda la aplicación:
+ *
+ *   acción principal    relleno sólido de acento + texto blanco. Una.
+ *   control marcado      contorno rojo + superficie `--marcado` + rótulo
+ *                        rojo y en negrita. Igual para arma, género,
+ *                        categoría, vista y tirador.
+ *   control sin marcar   borde `--input`, superficie de su nivel, apagado.
+ *
+ * Las medidas y el por qué del token están en `globals.css` («EL CONTROL
+ * MARCADO»). La selección múltiple sigue en `ToggleGroup`, elegir-uno en
+ * `Select` y la navegación en un `ButtonGroup` de botones fantasma.
+ *
+ * Y **una altura para toda la fila de herramientas: `h-8`** (32 px). Eran
+ * tres alturas distintas y el botón de filtros sobresalía 4 px por abajo del
+ * buscador con el que comparte grupo; medido en el navegador, no a ojo.
  */
 export function VistaCalendario({
   eventos,
+  perfil,
   tiradores,
   sinFicha = false,
   inscripciones,
@@ -98,6 +169,11 @@ export function VistaCalendario({
   cargarInscritos,
 }: {
   eventos: EventView[];
+  /**
+   * Quién está mirando. Solo el papel y las armas: es lo que decide con qué
+   * filtros se abre la pantalla (ver `src/lib/ambito.ts`).
+   */
+  perfil: PerfilAmbito;
   tiradores: TiradorOpcion[];
   /** La cuenta es de tirador o tutor y todavía no tiene ficha vinculada. */
   sinFicha?: boolean;
@@ -117,35 +193,13 @@ export function VistaCalendario({
    *
    * Una cuenta de tutor lleva a dos hijos, y cada uno tira de un arma y en
    * una categoría distinta. Antes se cogía siempre `tiradores[0]`: el
-   * calendario salía filtrado por el arma del mayor y, peor, el boton de
-   * inscribir mandaba SIEMPRE al mayor, así que al pequeño no había forma de
-   * apuntarlo desde aqui.
+   * calendario salía filtrado por el arma del mayor y, peor, el botón de
+   * inscribir mandaba SIEMPRE al mayor.
    */
   const [tiradorId, setTiradorId] = React.useState<string | null>(
     tiradores[0]?.id ?? null,
   );
   const tirador = tiradores.find((t) => t.id === tiradorId) ?? tiradores[0] ?? null;
-
-  /**
-   * Filtros de arranque: **lo tuyo**.
-   *
-   * Al entrar, un tirador ve su arma y su género, que es el 95 % de las
-   * veces lo que quiere. No se guardan entre visitas a propósito: recargar
-   * devuelve a lo suyo, y así nadie se queda mirando un calendario filtrado
-   * por algo que tocó hace tres semanas y ya no recuerda.
-   *
-   * Desde ahí se puede abrir a lo que sea: varias armas a la vez, los dos
-   * géneros, o todo.
-   */
-  const armasPropias = React.useMemo(() => {
-    const suyas = (tirador?.weapons ?? []).filter(esArma);
-    return suyas.length > 0 ? suyas : (['FLORETE'] as Weapon[]);
-  }, [tirador]);
-
-  const generosPropios = React.useMemo<('M' | 'F')[]>(
-    () => (tirador?.gender === 'M' || tirador?.gender === 'F' ? [tirador.gender] : ['M', 'F']),
-    [tirador],
-  );
 
   /**
    * Categorías que hay DE VERDAD en el calendario.
@@ -162,49 +216,44 @@ export function VistaCalendario({
   );
 
   /**
-   * Las categorías en las que PUEDE tirar.
+   * Filtros de arranque: **lo tuyo**.
    *
-   * Aquí estaba el fallo gordo: el calendario filtraba por arma y por género,
-   * pero no por categoría, así que a Carlos Llavador —absoluto, 34 años— le
-   * salían las Copas del Mundo cadete de florete masculino como si le
-   * tocaran. `deriveCategoriesFromBirthDate` ya calcula la escalera correcta
-   * (a un absoluto le corresponden absoluto y veteranos; a un M17, M17, M20 y
-   * absoluto) y solo hacía falta usarla.
+   * Al entrar, un tirador ve su arma, su género y las categorías en las que
+   * de verdad puede tirar; un seleccionador, su arma con los dos géneros y
+   * absoluto. Quién ve qué se decide en `src/lib/ambito.ts`, que es una
+   * función normal y está probada.
+   *
+   * No se guardan entre visitas a propósito: recargar devuelve a lo suyo.
    */
-  const categoriasPropias = React.useMemo(() => {
-    const suyas = (tirador?.eligibleCategories ?? []).filter((c) =>
-      categoriasDisponibles.includes(c),
-    );
-    return suyas.length > 0 ? ordenarCategorias(suyas) : categoriasDisponibles;
-  }, [tirador, categoriasDisponibles]);
+  const propio = React.useMemo(
+    () => arranqueDelCalendario(perfil, tirador, categoriasDisponibles),
+    [perfil, tirador, categoriasDisponibles],
+  );
 
   const [vista, setVista] = React.useState<Vista>('mes');
   const [ancla, setAncla] = React.useState(() => new Date());
-  const [armas, setArmas] = React.useState<Weapon[]>(armasPropias);
-  const [generos, setGeneros] = React.useState<('M' | 'F')[]>(generosPropios);
-  const [categorias, setCategorias] = React.useState<string[]>(categoriasPropias);
+  const [armas, setArmas] = React.useState<Weapon[]>(propio.armas);
+  const [generos, setGeneros] = React.useState<('M' | 'F')[]>(propio.generos);
+  const [categorias, setCategorias] = React.useState<string[]>(propio.categorias);
   const [busqueda, setBusqueda] = React.useState('');
+  const [buscando, setBuscando] = React.useState(false);
   /**
    * Hacia dónde se movió la última vez.
    *
    * El único movimiento no pedido de esta pantalla: al cambiar de mes, la
-   * rejilla entra por el lado del que viene. Sirve para algo —dice si vas
-   * hacia delante o hacia atrás en la temporada, que en un calendario es la
-   * orientación básica— y dura 200 ms. Cualquier otra cosa animada aquí
-   * sería decoración sobre una rejilla que la gente mira treinta veces al
-   * día.
+   * rejilla entra por el lado del que viene. Dice si vas hacia delante o hacia
+   * atrás en la temporada, que en un calendario es la orientación básica, y
+   * dura 200 ms.
    */
   const [direccion, setDireccion] = React.useState<-1 | 0 | 1>(0);
   const [abierto, setAbierto] = React.useState<EventView | null>(null);
-  const [aviso, setAviso] = React.useState<string | null>(null);
 
   /**
    * Quién va al torneo abierto.
    *
-   * Se pide al abrir la ficha y no con el calendario: son 249 torneos y
-   * traerse las inscripciones de todos para enseñar las de uno sería un
-   * viaje de red enorme a cambio de nada. `null` significa «todavía no ha
-   * llegado», que en pantalla es «Mirando quién va…».
+   * Se pide al abrir la ficha y no con el calendario: son cientos de torneos y
+   * traerse las inscripciones de todos para enseñar las de uno sería un viaje
+   * de red enorme a cambio de nada.
    */
   const [inscritos, setInscritos] = React.useState<QuienVa | null>(null);
 
@@ -233,13 +282,13 @@ export function VistaCalendario({
 
   const verTodo = () => {
     setArmas([...ARMAS]);
-    setGeneros(['M', 'F']);
+    setGeneros([...CODIGOS_GENERO]);
     setCategorias(categoriasDisponibles);
   };
   const verLoMio = () => {
-    setArmas(armasPropias);
-    setGeneros(generosPropios);
-    setCategorias(categoriasPropias);
+    setArmas(propio.armas);
+    setGeneros(propio.generos);
+    setCategorias(propio.categorias);
   };
 
   /**
@@ -253,23 +302,18 @@ export function VistaCalendario({
     const nuevo = tiradores.find((t) => t.id === id);
     if (!nuevo) return;
     setTiradorId(id);
-    const suyas = nuevo.weapons.filter(esArma);
-    setArmas(suyas.length > 0 ? suyas : [...ARMAS]);
-    setGeneros(
-      nuevo.gender === 'M' || nuevo.gender === 'F' ? [nuevo.gender] : ['M', 'F'],
-    );
-    const suyasCategorias = nuevo.eligibleCategories.filter((c) =>
-      categoriasDisponibles.includes(c),
-    );
-    setCategorias(
-      suyasCategorias.length > 0
-        ? ordenarCategorias(suyasCategorias)
-        : categoriasDisponibles,
-    );
+    const suyo = arranqueDelCalendario(perfil, nuevo, categoriasDisponibles);
+    setArmas(suyo.armas);
+    setGeneros(suyo.generos);
+    setCategorias(suyo.categorias);
   };
 
+  /**
+   * Los torneos que se pintan.
+   *
+   * Aquí ya NO entra la búsqueda: buscar no esconde nada. Ver más abajo.
+   */
   const filtrados = React.useMemo(() => {
-    const t = busqueda.trim().toLowerCase();
     return eventos
       .map((e) => ({
         ...e,
@@ -282,18 +326,93 @@ export function VistaCalendario({
             categorias.includes(c.category),
         ),
       }))
-      .filter((e) => {
-        if (e.competitions.length === 0) return false;
-        if (t && !`${e.name} ${e.city ?? ''}`.toLowerCase().includes(t)) return false;
-        return true;
-      });
-  }, [eventos, armas, generos, categorias, busqueda]);
+      .filter((e) => e.competitions.length > 0);
+  }, [eventos, armas, generos, categorias]);
+
+  /**
+   * BUSCAR TE LLEVA, NO TE ESCONDE.
+   *
+   * Antes el buscador era un filtro: al escribir «mundial» desaparecía todo lo
+   * demás y había que acordarse de vaciar la caja. Y no respondía a la
+   * pregunta que se estaba haciendo, que no es «qué torneos se llaman mundial»
+   * sino **cuándo es el mundial**.
+   *
+   * Sigue llevando al mes del torneo y resaltándolo. Lo único que cambia es el
+   * envoltorio: el campo de la cabecera, que estaba siempre vacío y se llevaba
+   * media anchura, es ahora un icono que abre una paleta (`Command`). Al
+   * elegir una coincidencia se salta a su mes; la banda de arriba pasa a
+   * enseñar ese torneo, con flechas para pasar de una coincidencia a otra y un
+   * aspa para volver a lo normal. Así el estado de búsqueda **se ve**, que era
+   * el riesgo de esconder la caja.
+   */
+  const coincidencias = React.useMemo(() => {
+    const t = busqueda.trim().toLowerCase();
+    if (!t) return [];
+    return filtrados
+      .filter((e) =>
+        `${e.name} ${e.city ?? ''} ${e.country ?? ''}`.toLowerCase().includes(t),
+      )
+      .sort((a, b) => a.startDate.localeCompare(b.startDate));
+  }, [filtrados, busqueda]);
+
+  const resaltados = React.useMemo(
+    () => new Set(coincidencias.map((e) => e.id)),
+    [coincidencias],
+  );
+
+  const [cual, setCual] = React.useState(0);
+
+  // Al cambiar lo escrito se vuelve a la primera coincidencia.
+  React.useEffect(() => setCual(0), [busqueda]);
+
+  const irA = React.useCallback((iso: string) => {
+    const d = new Date(`${iso}T12:00:00`);
+    setAncla((previa) => {
+      if (
+        previa.getFullYear() === d.getFullYear() &&
+        previa.getMonth() === d.getMonth()
+      ) {
+        return previa;
+      }
+      setDireccion(
+        d.getTime() > new Date(previa.getFullYear(), previa.getMonth(), 1).getTime()
+          ? 1
+          : -1,
+      );
+      return new Date(d.getFullYear(), d.getMonth(), 1);
+    });
+  }, []);
+
+  // El salto de mes va en un efecto y no en el `onSelect` para que también
+  // funcione al cambiar de coincidencia con las flechas.
+  const encontrado = coincidencias[cual] ?? null;
+  React.useEffect(() => {
+    if (encontrado) irA(encontrado.startDate);
+  }, [encontrado, irA]);
 
   /** Se cuentan pruebas, no torneos: es lo que de verdad se puede tirar. */
   const numPruebas = React.useMemo(
     () => filtrados.reduce((n, e) => n + e.competitions.length, 0),
     [filtrados],
   );
+
+  /**
+   * Lo próximo que hay, de lo que se está mirando.
+   *
+   * Es la respuesta a la única pregunta que trae a nadie a esta pantalla:
+   * «¿cuándo compito y cuánto me queda?». Antes no estaba en ninguna parte:
+   * había que contar días en la rejilla a ojo. Se calcula sobre lo filtrado,
+   * así que para una tiradora es su próxima competición y para la dirección
+   * técnica el próximo torneo del calendario que esté mirando.
+   */
+  const proximo = React.useMemo(() => {
+    const hoy = isoDeHoy();
+    return (
+      [...filtrados]
+        .filter((e) => e.endDate >= hoy)
+        .sort((a, b) => a.startDate.localeCompare(b.startDate))[0] ?? null
+    );
+  }, [filtrados]);
 
   const meses = React.useMemo(
     () =>
@@ -304,6 +423,70 @@ export function VistaCalendario({
     [ancla, vista],
   );
 
+  /**
+   * EL SITIO QUE EL MES NO USA, Y QUÉ SE HACE CON ÉL.
+   *
+   * Un mes de una tiradora filtrado por su arma tiene una competición: la
+   * rejilla acaba a los 190 px y debajo quedaban 121 px de nada en un iPhone y
+   * 463 en un escritorio, con la leyenda descolgada al fondo. La rejilla
+   * **mide** ese sobrante y lo dice (`onHueco`); aquí se decide qué poner, que
+   * es lo próximo que hay fuera de este mes.
+   *
+   * Las filas se cuentan a partir del hueco medido y no al revés: así nunca se
+   * pinta una fila a medias ni se empuja el calendario, que es lo que se viene
+   * a ver.
+   */
+  const [hueco, setHueco] = React.useState(0);
+
+  const cabenFilas = Math.min(
+    RELLENO.tope,
+    Math.max(0, Math.floor((hueco - RELLENO.rotulo) / RELLENO.fila)),
+  );
+
+  /**
+   * Lo próximo que hay **fuera** del tramo que se está pintando.
+   *
+   * Una sola lista para los dos sitios donde puede acabar, porque es la misma
+   * respuesta a la misma pregunta:
+   *
+   * - En el escritorio la recorta el hueco medido (`despues`) y la pinta
+   *   `LoQueViene` dentro de la capa absoluta de la rejilla.
+   * - En el móvil la recoge la agenda, que decide con su propia regla
+   *   —menos de cuatro tarjetas del mes— si hace falta o no.
+   *
+   * El tope de ocho es el de `RELLENO.tope`: pasadas ocho competiciones, lo
+   * que hace falta no es una lista más larga, es cambiar de mes.
+   */
+  const fuera = React.useMemo(() => {
+    const fin = finDeLaRejilla(ancla);
+    const hoy = isoDeHoy();
+    return filtrados
+      .filter(
+        (e) =>
+          // Nada que ya se esté viendo, que llega hasta el domingo siguiente
+          // al fin de mes, y nada que ya pasó.
+          e.startDate > fin &&
+          e.endDate >= hoy &&
+          // Ni el del marcador de arriba: sería la misma tarjeta dos veces en
+          // la misma pantalla.
+          e.id !== proximo?.id,
+      )
+      .sort((a, b) => a.startDate.localeCompare(b.startDate))
+      .slice(0, RELLENO.tope);
+  }, [filtrados, ancla, proximo]);
+
+  const despues = React.useMemo(
+    () => (cabenFilas < 1 ? [] : fuera.slice(0, cabenFilas)),
+    [fuera, cabenFilas],
+  );
+
+  /** Torneos que caen en el tramo que pinta la vista. El denominador. */
+  const enElTramo = React.useMemo(() => {
+    const desde = inicioDeLaRejilla(meses[0]);
+    const hasta = finDeLaRejilla(meses[meses.length - 1]);
+    return filtrados.filter((e) => e.startDate <= hasta && e.endDate >= desde).length;
+  }, [filtrados, meses]);
+
   const mover = (paso: number) => {
     setDireccion(paso > 0 ? 1 : -1);
     setAncla(
@@ -311,320 +494,250 @@ export function VistaCalendario({
     );
   };
 
-  const nombreMes = (d: Date, conAnio = true) =>
-    capitalizar(
-      new Intl.DateTimeFormat('es-ES', {
-        month: 'long',
-        ...(conAnio ? { year: 'numeric' } : {}),
-      })
-        .format(d)
-        .replace(' de ', ' '),
-    );
+  // El mes de hoy en hora española: el día 1 a la una de la mañana, el huso
+  // del servidor y el del navegador no coinciden ni en el mes.
+  const [anioHoy, mesHoy] = hoyMadrid().split('-').map(Number);
+  const enElMesActual =
+    ancla.getFullYear() === anioHoy && ancla.getMonth() === mesHoy - 1;
 
-  const rotulo =
-    vista === 'mes'
-      ? nombreMes(ancla)
-      : `${nombreMes(meses[0], false)} – ${nombreMes(meses[2])}`;
+  /** ⌘K / Ctrl+K abre la paleta, como en cualquier herramienta de hoy. */
+  React.useEffect(() => {
+    const alPulsar = (e: KeyboardEvent) => {
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setBuscando(true);
+      }
+    };
+    document.addEventListener('keydown', alPulsar);
+    return () => document.removeEventListener('keydown', alPulsar);
+  }, []);
+
+  /**
+   * Arma y género en las barras, solo cuando el filtro abarca más de uno.
+   *
+   * Con el calendario filtrado por florete femenino, «FLO F» en cada barra es
+   * el 100 % de lo que se está mirando: no informa y se come 45 px del nombre
+   * justo donde menos sitio hay.
+   */
+  const mostrarArma = armas.length > 1;
+  const mostrarGenero = generos.length > 1;
+  const mostrarCategoria = categorias.length > 1;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-2 sm:gap-3">
       {/*
-        Cabecera en UNA línea.
+        UNA FILA. NO CUATRO.
+        ---------------------------------------------------------------------
+        Esto es el encargo del usuario, marcado a mano sobre una captura: una
+        flecha que sube desde «Noviembre 2026» hasta la barra de herramientas
+        —o sea, «júntalo»—, una flecha de doble punta en el hueco entre la
+        cabecera y la rejilla —«esto sobra»— y un círculo alrededor de la
+        barra y del «Inscripción cerrada» que flotaba solo en la esquina.
 
-        En el móvil cada fila de cabecera son píxeles que le quita a la
-        rejilla, que es lo único que la gente ha venido a ver. Medido: con el
-        título, el recuento y la hora de actualización en tres renglones, al
-        calendario le quedaban 180 px de 659 y una semana con tres torneos
-        salía cortada. Lo accesorio (temporada y hora de actualización) solo
-        aparece cuando hay sitio.
+        Antes había cuatro pisos antes de ver un día del mes: el título en un
+        renglón, la navegación y los filtros en otro, el marcador en un
+        tercero y sus datos —fecha y sede— en un cuarto. Medido:
+
+          iPhone 14 Pro   144,9 px de cabecera de los 500 útiles (29 %)
+          1440×900        130,0 px
+          2560×1400       130,0 px
+
+        Ahora es **una fila**: mes, navegación, marcador y herramientas. El
+        marcador deja de ser una banda propia y pasa a ser la parte elástica
+        del medio, con el plazo pegado al nombre del torneo del que habla en
+        vez de en el otro extremo de la pantalla.
+
+        Por debajo de `lg` el marcador baja a un renglón propio porque no
+        cabe, y por debajo de `sm` **desaparece**: ahí manda la agenda
+        (`agenda-mes.tsx`) y su primera tarjeta ya es lo próximo, con su cifra
+        de días más grande y además tocable. Cuando se está buscando vuelve,
+        porque entonces lleva el contador de coincidencias y las flechas, y el
+        estado de búsqueda tiene que verse.
       */}
-      <div className="flex shrink-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <h1 className="text-xl sm:text-3xl">{rotulo}</h1>
-        <p className="text-sm text-muted-foreground">
-          <span className="cifra text-base text-foreground">{numPruebas}</span>{' '}
-          {numPruebas === 1 ? 'prueba' : 'pruebas'}
-          {filtrados.length !== numPruebas ? ` en ${filtrados.length} torneos` : ''}
-          <span className="hidden sm:inline">{temporada ? ` · ${temporada}` : ''}</span>
-        </p>
-        {/*
-          «Ver todo» vive en la cabecera y no entre los controles.
+      <div className="shrink-0">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+          {/*
+            El mes en dos pesos en la misma línea: el nombre golpea y el año
+            acompaña. Se lee «octubre» de un tirón y el año si te fijas. Es el
+            recurso de la ficha de tirador de la FIE, donde el apellido va
+            grueso y el nombre fino.
 
-          Medido en un iPhone: con la raíz a 18 px, la fila de controles
-          necesitaba cuatro renglones y el calendario se quedaba con media
-          pantalla y la última semana cortada. Este botón es el que menos se
-          toca de los cinco, así que es el que se va arriba, al hueco que en
-          el móvil deja la hora de actualización.
-        */}
-        <div className="ml-auto flex items-baseline gap-3">
-          {actualizado ? (
-            <p className="hidden text-xs text-muted-foreground sm:block">
-              Actualizado {actualizado}
-            </p>
-          ) : null}
-          {tirador ? (
+            Y el año se calla en el móvil cuando es el de hoy: son 57 px, y
+            eran justo los que hacían caer el botón de filtros a un renglón
+            propio en cuanto aparecía «Hoy». Si estás mirando otro año, el año
+            sale, que es cuando de verdad hace falta saberlo.
+          */}
+          <h1 className="order-1 shrink-0 text-xl leading-none sm:text-3xl">
+            {vista === 'mes' ? (
+              <>
+                {nombreMes(ancla, false)}{' '}
+                <span
+                  className={cn(
+                    'cifra font-normal text-muted-foreground',
+                    ancla.getFullYear() === anioHoy && 'hidden sm:inline',
+                  )}
+                >
+                  {ancla.getFullYear()}
+                </span>
+              </>
+            ) : (
+              <>
+                {nombreMes(meses[0], false)} – {nombreMes(meses[2], false)}{' '}
+                <span
+                  className={cn(
+                    'cifra font-normal text-muted-foreground',
+                    meses[2].getFullYear() === anioHoy && 'hidden sm:inline',
+                  )}
+                >
+                  {meses[2].getFullYear()}
+                </span>
+              </>
+            )}
+          </h1>
+
+          {/* Navegación: botones fantasma pegados, una altura, un radio. */}
+          <ButtonGroup className="order-2 shrink-0">
             <Button
               variant="ghost"
-              size="sm"
-              className="-my-1 h-8 px-2"
-              onClick={todoPuesto ? verLoMio : verTodo}
+              size="icon"
+              className="size-8"
+              onClick={() => mover(-1)}
+              aria-label="Anterior"
             >
-              {todoPuesto ? 'Solo lo mío' : 'Ver todo'}
+              <ChevronLeft />
             </Button>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Controles en una sola fila que envuelve. */}
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:gap-2">
-        <div className="relative order-1 min-w-0 flex-1 basis-28">
-          <Search
-            className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden
-          />
-          <input
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="Buscar torneo o ciudad"
-            type="search"
-            aria-label="Buscar torneo o ciudad"
-            className="h-9 w-full rounded-md border bg-card pl-8 pr-3 text-base outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring sm:text-sm"
-          />
-        </div>
-
-        <Tabs value={vista} onValueChange={(v) => setVista(v as Vista)} className="order-2">
-          <TabsList className="h-9">
-            <TabsTrigger value="mes">Mes</TabsTrigger>
-            <TabsTrigger value="trimestre">Trimestre</TabsTrigger>
-          </TabsList>
-        </Tabs>
-
-        <div className="order-4 flex items-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-9"
-            onClick={() => mover(-1)}
-            aria-label="Anterior"
-          >
-            <ChevronLeft />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-9"
-            onClick={() => {
-              setDireccion(0);
-              setAncla(new Date());
-            }}
-          >
-            Hoy
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-9"
-            onClick={() => mover(1)}
-            aria-label="Siguiente"
-          >
-            <ChevronRight />
-          </Button>
-        </div>
-
-        {/*
-          Armas y géneros: se pueden marcar varios a la vez. Nunca se queda
-          vacío —un calendario en blanco no es una respuesta útil—, así que
-          al intentar quitar el último se ignora el cambio.
-        */}
-        <ToggleGroup
-          type="multiple"
-          value={armas}
-          onValueChange={(v) => v.length > 0 && setArmas(v.filter(esArma))}
-          variant="outline"
-          aria-label="Armas"
-          className="order-5 h-9"
-        >
-          {ARMAS.map((a) => (
-            <ToggleGroupItem
-              key={a}
-              value={a}
-              aria-label={NOMBRE_ARMA[a]}
-              className="h-9 px-2.5 text-sm data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-            >
-              {/* En pantalla estrecha solo cabe el icono, que es la misma
-                  marca que llevan las barras del calendario. */}
-              <IconoArma arma={a} className="size-4 shrink-0" />
-              <span className="hidden sm:inline">{NOMBRE_ARMA[a]}</span>
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-
-        <ToggleGroup
-          type="multiple"
-          value={generos}
-          onValueChange={(v) =>
-            v.length > 0 && setGeneros(v.filter((g): g is 'M' | 'F' => g === 'M' || g === 'F'))
-          }
-          variant="outline"
-          aria-label="Género"
-          className="order-6 h-9"
-        >
-          {GENEROS.map((g) => (
-            <ToggleGroupItem
-              key={g.v}
-              value={g.v}
-              aria-label={g.largo}
-              className="h-9 w-8 px-0 text-sm data-[state=on]:bg-primary data-[state=on]:text-primary-foreground sm:w-9"
-            >
-              {g.t}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-
-        {/*
-          Categoría: aquí no valen pastillas.
-
-          Hay hasta diez —de M9 a veteranos— y diez pastillas se comen la fila
-          entera y media pantalla del móvil. Va en un desplegable que dice en
-          su propia etiqueta qué está filtrando, así que no hay que abrirlo
-          para saberlo: «Absoluto», «3 categorías» o «Todas».
-        */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="order-7 h-9 gap-1 px-2 sm:gap-1.5 sm:px-3"
-              aria-label="Categoría"
-            >
-              {/*
-                En el móvil va el código y en escritorio la palabra: «ABS»
-                ocupa tres caracteres y «Absoluto» ocho, y esos cinco de
-                diferencia son los que hacen que la fila de controles quepa
-                en dos renglones en vez de tres.
-              */}
-              {categorias.length === categoriasDisponibles.length ? (
-                'Todas'
-              ) : categorias.length === 1 ? (
-                <>
-                  <span className="sm:hidden">{categorias[0]}</span>
-                  <span className="hidden sm:inline">
-                    {CATEGORY_LABEL[categorias[0] as keyof typeof CATEGORY_LABEL] ??
-                      categorias[0]}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="sm:hidden">{categorias.length} cat.</span>
-                  <span className="hidden sm:inline">
-                    {categorias.length} categorías
-                  </span>
-                </>
-              )}
-              <ChevronDown className="size-3.5 opacity-60" aria-hidden />
-            </Button>
-          </PopoverTrigger>
-
-          <PopoverContent align="end" className="w-52 p-1.5">
-            <ul className="flex flex-col">
-              {categoriasDisponibles.map((c) => {
-                const puesta = categorias.includes(c);
-                return (
-                  <li key={c}>
-                    <button
-                      type="button"
-                      role="checkbox"
-                      aria-checked={puesta}
-                      onClick={() =>
-                        setCategorias((previas) => {
-                          const siguientes = puesta
-                            ? previas.filter((x) => x !== c)
-                            : ordenarCategorias([...previas, c]);
-                          // Nunca vacío: un calendario en blanco no responde
-                          // a ninguna pregunta.
-                          return siguientes.length > 0 ? siguientes : previas;
-                        })
-                      }
-                      className={cn(
-                        'flex w-full cursor-pointer items-center justify-between rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-accent',
-                        puesta ? 'text-foreground' : 'text-muted-foreground',
-                      )}
-                    >
-                      {CATEGORY_LABEL[c as keyof typeof CATEGORY_LABEL] ?? c}
-                      {puesta ? (
-                        <span className="text-primary-text" aria-hidden>
-                          ✓
-                        </span>
-                      ) : null}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-
-            <div className="mt-1 flex gap-1 border-t pt-1">
+            {/*
+              «Hoy» solo cuando lleva a otro sitio. Estando en el mes en curso
+              es un botón que no hace nada, y en un iPhone son 44 px que le
+              quita a la rejilla.
+            */}
+            {!enElMesActual ? (
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 flex-1 px-2 text-xs"
-                onClick={() => setCategorias(categoriasDisponibles)}
+                className="h-8 px-2"
+                onClick={() => {
+                  setDireccion(0);
+                  setAncla(new Date());
+                }}
               >
-                Todas
+                Hoy
               </Button>
-              {tirador ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 flex-1 px-2 text-xs"
-                  onClick={() => setCategorias(categoriasPropias)}
-                >
-                  Las mías
-                </Button>
-              ) : null}
-            </div>
-          </PopoverContent>
-        </Popover>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              onClick={() => mover(1)}
+              aria-label="Siguiente"
+            >
+              <ChevronRight />
+            </Button>
+          </ButtonGroup>
 
-        {/*
-          Selector de tirador: solo cuando la cuenta lleva a más de uno. Con
-          un solo tirador sería un control que nunca cambia nada.
-        */}
-        {tiradores.length > 1 ? (
-          <ToggleGroup
-            type="single"
-            value={tirador?.id ?? ''}
-            onValueChange={(v) => v && cambiarTirador(v)}
-            variant="outline"
-            aria-label="Tirador"
-            className="order-9 h-9"
-          >
-            {tiradores.map((t) => (
-              <ToggleGroupItem
-                key={t.id}
-                value={t.id}
-                className="h-9 px-2.5 text-sm data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-              >
-                {nombreCorto(t.fullName)}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        ) : null}
+          {/*
+            El buscador es un icono, no un campo. Y va pegado a los filtros:
+            las dos son herramientas de la pantalla, no contenido, así que
+            comparten grupo y se leen como un bloque en vez de como dos trastos
+            sueltos de formas distintas.
 
+            El campo medía media anchura de la cabecera y estaba vacío el 99 %
+            del tiempo. Ese sitio se lo queda la rejilla. En escritorio se
+            anuncia el atajo con su `Kbd`; en el móvil, solo el icono.
 
+            `ml-auto` hasta `lg` para que las herramientas se peguen al canto
+            derecho cuando el marcador está en su propio renglón; a partir de
+            `lg` sobra, porque el marcador lleva `flex-1` y es él quien empuja.
+          */}
+          <ButtonGroup className="order-3 ml-auto shrink-0 lg:order-4 lg:ml-0">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-2 px-2 text-muted-foreground"
+              onClick={() => setBuscando(true)}
+              aria-label="Buscar un torneo o una sede"
+            >
+              <CalendarSearch className="size-4" />
+              <span className="hidden sm:inline">Buscar</span>
+              <Kbd className="ml-1 hidden sm:inline-flex">⌘K</Kbd>
+            </Button>
+
+            <PanelFiltros
+            vista={vista}
+            setVista={setVista}
+            armas={armas}
+            setArmas={setArmas}
+            generos={generos}
+            setGeneros={setGeneros}
+            categorias={categorias}
+            setCategorias={setCategorias}
+            categoriasDisponibles={categoriasDisponibles}
+            tiradores={tiradores}
+            tiradorId={tirador?.id ?? null}
+            cambiarTirador={cambiarTirador}
+            propio={propio}
+            todoPuesto={todoPuesto}
+            verTodo={verTodo}
+            verLoMio={verLoMio}
+            numPruebas={numPruebas}
+            numTorneos={filtrados.length}
+              temporada={temporada}
+              actualizado={actualizado}
+            />
+          </ButtonGroup>
+
+          {/*
+            EL MARCADOR, DENTRO DE LA MISMA FILA.
+
+            Cuando no se está buscando enseña lo próximo; cuando se está
+            buscando, la coincidencia en la que se está. Es el mismo sitio con
+            dos contenidos en vez de dos secciones: buscar no añade una barra
+            de estado, se apropia de esta.
+
+            Y es la parte elástica: `flex-1` a partir de `lg`, renglón propio
+            por debajo, y callado del todo por debajo de `sm` salvo buscando.
+          */}
+          <FranjaDestacada
+            clase={cn(
+              'order-4 w-full min-w-0 lg:order-3 lg:w-auto lg:flex-1',
+              !busqueda.trim() && 'hidden sm:flex',
+            )}
+            evento={encontrado ?? proximo}
+            buscando={Boolean(busqueda.trim())}
+            cual={cual}
+            total={coincidencias.length}
+            hayTiradores={tiradores.length > 0}
+            onAnterior={() =>
+              setCual((p) => (p - 1 + coincidencias.length) % coincidencias.length)
+            }
+            onSiguiente={() => setCual((p) => (p + 1) % coincidencias.length)}
+            onLimpiar={() => setBusqueda('')}
+            onAbrir={setAbierto}
+          />
+        </div>
       </div>
 
       {/*
         Sin ficha, el calendario no sabe tu arma ni tu categoría, así que lo
-        que se ve es «todo» y no sirve para organizarse. El aviso va aquí y
-        no en un menú porque es justo aquí donde se nota el hueco, y
-        desaparece solo en cuanto la ficha existe.
+        que se ve es «todo» y no sirve para organizarse. El aviso va aquí y no
+        en un menú porque es justo aquí donde se nota el hueco, y desaparece
+        solo en cuanto la ficha existe.
       */}
       {sinFicha ? (
         <Link
           href="/alta"
-          className="flex shrink-0 items-center gap-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm transition-colors hover:bg-primary/15"
+          /*
+            Superficie sólida y el rojo donde se lee.
+            El aviso iba con `bg-primary/10`, que sobre el lienzo texturado
+            deja pasar la cuña y la retícula: un rojo sucio con dibujos
+            dentro. Ahora la superficie es `bg-card` y la señal de marca la
+            dan el borde y el título en `text-primary-text`, que es el rojo
+            medido para texto (5,60:1). Mismo aviso, sin velo.
+          */
+          className="flex shrink-0 items-center gap-3 rounded-md border border-primary/40 bg-card px-3 py-2 text-sm transition-colors hover:bg-accent"
         >
           <span className="min-w-0 flex-1">
-            <span className="font-medium">Vincula tu ficha</span>{' '}
+            <span className="font-medium text-primary-text">Vincula tu ficha</span>{' '}
             <span className="text-muted-foreground">
               y el calendario se filtrará por tu arma y tu categoría. Se busca
               en el ranking oficial de la RFEE.
@@ -634,68 +747,207 @@ export function VistaCalendario({
         </Link>
       ) : null}
 
-      {aviso ? (
-        <p className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm">
-          <span className="min-w-0 flex-1">{aviso}</span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7"
-            onClick={() => setAviso(null)}
-            aria-label="Cerrar aviso"
-          >
-            <X />
-          </Button>
-        </p>
-      ) : null}
+      {filtrados.length === 0 ? (
+        <Empty className="flex-1 border border-dashed">
+          <EmptyHeader>
+            <EmptyTitle>Ninguna prueba con estos filtros</EmptyTitle>
+            <EmptyDescription>
+              La combinación de arma, género y categoría que hay puesta no
+              existe en esta temporada. Abre los filtros o mira el calendario
+              entero.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button onClick={verTodo}>Ver el calendario entero</Button>
+          </EmptyContent>
+        </Empty>
+      ) : (
+        <>
+          {/*
+            Trimestre: tres columnas en escritorio, y en el móvil una debajo de
+            otra CON desplazamiento propio.
 
-      {/*
-        Trimestre: tres columnas en escritorio, y en el móvil una debajo de
-        otra CON desplazamiento propio.
-
-        Sin esto, los tres meses se repartían el alto de la pantalla y cada
-        uno se quedaba en 180 px: se veía una semana y media de cada mes y el
-        resto cortado. Un trimestre no cabe en la pantalla de un teléfono, y
-        fingir que sí es peor que desplazarse: cada mes conserva su alto
-        mínimo y se pasa el dedo. El desplazamiento es del bloque, no de la
-        página, así que la cabecera y la leyenda no se mueven.
-      */}
-      <div
-        className={cn(
-          'grid min-h-0 flex-1 gap-3',
-          vista === 'trimestre'
-            ? 'overflow-y-auto lg:grid-cols-3 lg:overflow-visible'
-            : 'grid-cols-1',
-        )}
-      >
-        {meses.map((m) => (
-          <section
-            key={`${m.getFullYear()}-${m.getMonth()}`}
+            Sin esto, los tres meses se repartían el alto de la pantalla y cada
+            uno se quedaba en 180 px: se veía una semana y media de cada mes.
+            Un trimestre no cabe en la pantalla de un teléfono, y fingir que sí
+            es peor que desplazarse.
+          */}
+          <div
+            /*
+              Cuántos torneos hay DE VERDAD en el tramo que se está pintando.
+              Es el denominador del único criterio que importa aquí: a cuántos
+              se puede llegar sin cambiar de mes. Se publica en el marcado
+              porque medirlo desde fuera es la forma de que no se vuelva a
+              colar un mes que enseña 7 de 39 y pasa el barrido.
+            */
+            data-torneos={enElTramo}
             className={cn(
-              'flex flex-col',
-              // En trimestre y móvil cada mes reserva su alto; en el resto
-              // de casos el mes se ajusta al hueco disponible.
-              vista === 'trimestre' ? 'min-h-[19rem] lg:min-h-0' : 'min-h-0',
-              'animate-in fade-in-0 duration-200',
-              direccion === 1 && 'slide-in-from-right-6',
-              direccion === -1 && 'slide-in-from-left-6',
+              'grid min-h-0 flex-1 gap-3',
+              vista === 'trimestre'
+                ? 'overflow-y-auto lg:grid-cols-3 lg:overflow-visible'
+                : 'grid-cols-1',
             )}
           >
-            {vista === 'trimestre' ? (
-              <h2 className="pb-1.5 text-lg">{nombreMes(m, false)}</h2>
-            ) : null}
-            <RejillaMes
-              ancla={m}
-              eventos={filtrados}
-              compacta={vista === 'trimestre'}
-              inscripciones={inscripciones}
-              onAbrirEvento={setAbierto}
-            />
-          </section>
-        ))}
-      </div>
+            {meses.map((m) => (
+              <section
+                key={`${m.getFullYear()}-${m.getMonth()}`}
+                className={cn(
+                  'flex min-w-0 flex-col',
+                  // En trimestre y móvil cada mes reserva su alto; en el resto
+                  // de casos el mes se ajusta al hueco disponible.
+                  vista === 'trimestre' ? 'min-h-[19rem] lg:min-h-0' : 'min-h-0',
+                  'animate-in fade-in-0 duration-200',
+                  direccion === 1 && 'slide-in-from-right-6',
+                  direccion === -1 && 'slide-in-from-left-6',
+                )}
+              >
+                {vista === 'trimestre' ? (
+                  <h2 className="pb-1 text-lg">{nombreMes(m, false)}</h2>
+                ) : null}
 
-      <Leyenda />
+                {/*
+                  EN EL MÓVIL, AGENDA; DE `sm` PARA ARRIBA, REJILLA.
+
+                  Los dos se pintan y la que sobra se apaga con CSS, no con
+                  `matchMedia`. Es a propósito: un interruptor en JavaScript no
+                  sabe el tamaño de la pantalla hasta después del primer
+                  pintado, así que la primera pasada saldría con la vista
+                  equivocada y luego cambiaría. Esta pantalla ya peleó ese
+                  salto una vez —570 px en una pantalla grande— y no se vuelve
+                  a abrir esa puerta por ahorrar unos nodos.
+
+                  Y la rejilla apagada mide 0, así que `onHueco` avisa de 0 y
+                  «lo próximo» no se pinta en el móvil: ahí ese sitio es de la
+                  agenda, que ya lo lleva dentro.
+                */}
+                {vista === 'mes' ? (
+                  <div className="flex min-h-0 flex-1 flex-col sm:hidden">
+                    <AgendaMes
+                      ancla={m}
+                      eventos={filtrados}
+                      desde={inicioDeLaRejilla(m)}
+                      hasta={finDeLaRejilla(m)}
+                      fuera={fuera}
+                      inscripciones={inscripciones}
+                      resaltados={resaltados}
+                      proximo={proximo?.id ?? null}
+                      mostrarArma={mostrarArma}
+                      mostrarGenero={mostrarGenero}
+                      mostrarCategoria={mostrarCategoria}
+                      onAbrirEvento={setAbierto}
+                    />
+                  </div>
+                ) : null}
+
+                <div
+                  className={cn(
+                    'flex min-h-0 min-w-0 flex-1 flex-col',
+                    vista === 'mes' && 'hidden sm:flex',
+                  )}
+                >
+                  <RejillaMes
+                    ancla={m}
+                    eventos={filtrados}
+                    compacta={vista === 'trimestre'}
+                    inscripciones={inscripciones}
+                    resaltados={resaltados}
+                    proximo={proximo?.id ?? null}
+                    mostrarArma={mostrarArma}
+                    mostrarGenero={mostrarGenero}
+                    mostrarCategoria={mostrarCategoria}
+                    /*
+                      El relleno del hueco solo en la vista de un mes. En
+                      trimestre hay tres rejillas y el sitio que sobra es de
+                      cada mes, no de la pantalla: poner tres listas de «lo
+                      próximo» sería repetir el mismo torneo tres veces.
+                    */
+                    onHueco={vista === 'mes' ? setHueco : undefined}
+                    relleno={
+                      vista === 'mes' ? (
+                        <LoQueViene
+                          eventos={despues}
+                          inscripciones={inscripciones}
+                          onAbrir={setAbierto}
+                        />
+                      ) : null
+                    }
+                    onAbrirEvento={setAbierto}
+                  />
+                </div>
+              </section>
+            ))}
+          </div>
+
+          <Leyenda />
+        </>
+      )}
+
+      {/*
+        La paleta de búsqueda.
+
+        No filtra el calendario: lleva a él. Cada resultado dice de qué es
+        —arma, género, categoría, circuito— y cuándo y dónde, que es justo lo
+        que hace falta para reconocer el que se buscaba entre cuatro «Copa del
+        Mundo Cadete» del mismo mes.
+      */}
+      <Dialog open={buscando} onOpenChange={setBuscando}>
+        <DialogContent className="overflow-hidden p-0 sm:max-w-lg" showCloseButton={false}>
+          <DialogTitle className="sr-only">Buscar un torneo o una sede</DialogTitle>
+          <Command shouldFilter={false}>
+            <CommandInput
+              value={busqueda}
+              onValueChange={setBusqueda}
+              placeholder="Buscar un torneo o una sede"
+            />
+            <CommandList>
+              {busqueda.trim() === '' ? (
+                <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                  Escribe el nombre de un torneo o de una ciudad. El calendario
+                  salta a su mes y lo resalta; no se esconde nada.
+                </div>
+              ) : coincidencias.length === 0 ? (
+                <CommandEmpty>
+                  Ningún torneo se llama así, ni se tira en esa ciudad.
+                </CommandEmpty>
+              ) : (
+                coincidencias.slice(0, 40).map((e, i) => (
+                  <CommandItem
+                    key={e.id}
+                    value={e.id}
+                    onSelect={() => {
+                      setCual(i);
+                      irA(e.startDate);
+                      setBuscando(false);
+                    }}
+                    className="flex-col items-start gap-0.5"
+                  >
+                    <span className="flex w-full items-baseline gap-2">
+                      <span className="min-w-0 flex-1 truncate font-medium">
+                        {titularTorneo(e.name)}
+                      </span>
+                      <span className="cifra shrink-0 text-xs text-muted-foreground">
+                        {formatDateRangeEs(e.startDate, e.endDate)}
+                      </span>
+                    </span>
+                    <span className="flex w-full items-baseline gap-2 text-xs text-muted-foreground">
+                      <span className="shrink-0">
+                        {organismoDe(e.source, e.scope, e.circuit)}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {CIRCUIT_SHORT[e.circuit] ?? CIRCUIT_LABEL[e.circuit] ?? e.circuit}
+                      </span>
+                      <span className="shrink-0 truncate">
+                        {e.city ? titular(e.city) : 'Sede sin publicar'}
+                        {e.country ? `, ${e.country}` : ''}
+                      </span>
+                    </span>
+                  </CommandItem>
+                ))
+              )}
+            </CommandList>
+          </Command>
+        </DialogContent>
+      </Dialog>
 
       <Sheet open={abierto !== null} onOpenChange={(o) => !o && setAbierto(null)}>
         <SheetContent className="w-full gap-0 overflow-y-auto p-0 sm:max-w-xl">
@@ -710,7 +962,15 @@ export function VistaCalendario({
                 if (!tirador) return;
                 const r = await solicitarInscripcion(competitionId, tirador.id);
                 setAbierto(null);
-                setAviso(r.ok ? r.message : r.error);
+                /*
+                  El resultado va a un aviso flotante y no a un renglón dentro
+                  de la pantalla. Antes aparecía una fila entre los controles y
+                  la rejilla: el calendario daba un salto de 40 px justo al
+                  volver de la ficha, que es el peor momento para moverle la
+                  pantalla a nadie.
+                */
+                if (r.ok) toast.success(r.message);
+                else toast.error(r.error);
               }}
             />
           ) : null}
@@ -721,166 +981,663 @@ export function VistaCalendario({
 }
 
 /**
- * Cabecera de la ficha.
+ * EL MARCADOR: la cifra grande con lo que queda, en UN renglón.
  *
- * Cuando la fuente publica cartel, el título va **encima de la imagen**, no
- * debajo: es lo que hace el calendario de la FIE y es lo que convierte una
- * lista de datos en la ficha de un torneo. La imagen se enlaza a su origen
- * (`static.fie.org`), nunca se copia.
+ * Es lo que arregla «se ve plano». Plano quiere decir que todo pesa igual; la
+ * cura no es una sombra, es que **una cosa pese mucho más que las demás**. La
+ * cifra de los días va en condensada a `text-3xl` y el rótulo de al lado a
+ * `0.6rem`: cinco veces, que es de sobra para que la jerarquía se lea, y viene
+ * del marcador de un asalto.
  *
- * Cuando no hay cartel no se pone un hueco gris ni un dibujo de relleno: se
- * pinta una franja con el color del organismo, que ya dice algo —de quién
- * es el torneo— en lugar de ocupar sitio por ocupar.
+ * Toda la franja es el botón que abre la ficha, así que hay **una** acción
+ * principal en la pantalla y está donde se mira primero.
+ *
+ * -------------------------------------------------------------------------
+ * DOS COSAS CAMBIADAS, Y LAS DOS LAS MARCÓ EL USUARIO
+ * -------------------------------------------------------------------------
+ * 1. **De banda a renglón.** Era una banda propia de dos líneas —nombre
+ *    arriba, fecha y sede abajo— debajo de la fila de controles: 52 px más
+ *    los 6 del filete y el aire. Ahora es la parte elástica de la fila de
+ *    controles y todo va en una línea; la cifra baja de `text-4xl/5xl` a
+ *    `text-3xl`, que es lo que cabe al lado de un control de 32 px sin
+ *    estirar la fila.
+ *
+ * 2. **El plazo pegado al nombre.** «Inscripción cerrada» iba en la línea del
+ *    título pero con el nombre en `flex-1`, así que el plazo se iba al canto
+ *    derecho de la fila: en un escritorio de 1440, **a 900 px del torneo del
+ *    que hablaba**. Eso es lo que el usuario rodeó con un círculo. Ahora va
+ *    justo detrás del nombre y se lee como una frase: «Copa del Mundo Cadete
+ *    — Inscripción cerrada». Lo que ahora se estira es la cola —fecha, sede y
+ *    organismo—, que sí puede irse al canto sin que nadie la eche de menos.
  */
-function CabeceraFicha({ evento }: { evento: EventView }) {
-  const [fallo, setFallo] = React.useState(false);
-  React.useEffect(() => setFallo(false), [evento.id]);
-
-  const hayFoto = Boolean(evento.imageUrl) && !fallo;
-  const organismo = organismoDe(evento.source, evento.scope, evento.circuit);
-  const tinte = {
-    RFEE: 'from-org-rfee/40',
-    FIE: 'from-org-fie/35',
-    EFC: 'from-org-efc/40',
-    AUT: 'from-muted-foreground/30',
-  }[organismo];
-
-  return (
-    <div className="relative">
-      {/*
-        Sin cartel no se reserva sitio para el cartel.
-
-        Antes, cuando la fuente no publicaba imagen se pintaba una franja
-        de 96 px con un degradado tan sutil que en pantalla era un hueco
-        negro: 140 px de nada antes del título. Solo 26 de los 249 torneos
-        traen cartel, así que el caso normal es este. Ahora sin foto queda
-        una banda fina del color de quien organiza, que además dice algo.
-      */}
-      {hayFoto ? (
-        /*
-          El hueco de la foto lleva el color de quien organiza DEBAJO.
-
-          Los carteles de la FIE son JPEG de 4000 px enlazados a
-          `static.fie.org`: tardan medio segundo largo en pintar y durante
-          ese rato la hoja abria con un rectángulo negro de 200 px. Con el
-          tinte detras, el hueco se lee como parte del diseño mientras la
-          foto llega, y si no llega nunca tampoco pasa nada.
-        */
-        <div className={cn('relative w-full bg-gradient-to-br to-card', tinte)}>
-          <img
-            src={evento.imageUrl ?? ''}
-            alt=""
-            className="h-44 w-full object-cover sm:h-52"
-            fetchPriority="high"
-            /* Nada de `lazy`: es lo primero que se ve de la hoja. Con carga
-               diferida el hueco se reservaba y la foto entraba medio segundo
-               despues, de modo que la ficha siempre abria con un boquete. */
-            loading="eager"
-            decoding="async"
-            /* Y si el cartel ha desaparecido de `static.fie.org`, se quita el
-               hueco en vez de dejar 200 px de nada con un icono roto. */
-            onError={() => setFallo(true)}
-          />
-          {/* Velo de abajo arriba para que el texto se lea sobre la foto. */}
-          <div
-            className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/10"
-            aria-hidden
-          />
-        </div>
-      ) : (
-        <div className={cn('h-1 w-full bg-gradient-to-r to-transparent', tinte)} aria-hidden />
-      )}
-
-      <SheetHeader
+function FranjaDestacada({
+  clase,
+  evento,
+  buscando,
+  cual,
+  total,
+  hayTiradores,
+  onAnterior,
+  onSiguiente,
+  onLimpiar,
+  onAbrir,
+}: {
+  clase?: string;
+  evento: EventView | null;
+  buscando: boolean;
+  cual: number;
+  total: number;
+  hayTiradores: boolean;
+  onAnterior: () => void;
+  onSiguiente: () => void;
+  onLimpiar: () => void;
+  onAbrir: (e: EventView) => void;
+}) {
+  if (buscando && total === 0) {
+    return (
+      <div
         className={cn(
-          'relative gap-2 px-4 pb-0',
-          hayFoto ? '-mt-16 sm:-mt-20' : 'pt-4',
+          'flex h-11 min-w-0 items-center gap-2 text-sm text-muted-foreground',
+          clase,
         )}
       >
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="secondary">{organismo}</Badge>
-          <Badge variant="outline">
-            {CIRCUIT_LABEL[evento.circuit] ?? evento.circuit}
-          </Badge>
-        </div>
-        <SheetTitle className="text-3xl leading-[0.95] sm:text-4xl">
-          {titularTorneo(evento.name)}
-        </SheetTitle>
         {/*
-          Dónde y cuándo, en dos columnas con su rótulo.
-
-          Antes era una cadena «Casablanca, MA · 15-18 oct 2026». Una línea
-          de datos pegados con puntos medios es rápida de escribir y lenta de
-          leer: hay que analizarla para saber qué es cada trozo. En columnas
-          se ve de un vistazo, que es justo lo que se pidió.
+          La segunda frase se calla en el móvil. Con las dos y el botón al
+          lado, en 393 px se leía «Ningún torneo coincide. …»: el `truncate`
+          se comía justo la parte tranquilizadora y dejaba unos puntos
+          suspensivos que parecen un fallo. Lo que hay que saber cabe en la
+          primera frase.
         */}
-        <SheetDescription asChild>
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-1 pt-1">
-            <div className="flex flex-col">
-              <dt className="text-xs text-muted-foreground">Dónde</dt>
-              <dd className="flex items-center gap-1.5 text-sm text-foreground">
-                <MapPin className="size-3.5 shrink-0" aria-hidden />
-                <span className="truncate">
-                  {evento.city ? titular(evento.city) : 'Sede sin publicar'}
-                  {evento.country ? `, ${evento.country}` : ''}
+        <span className="min-w-0 flex-1 truncate">
+          Ningún torneo coincide.
+          <span className="hidden sm:inline"> El calendario sigue como estaba.</span>
+        </span>
+        <Button variant="ghost" size="sm" className="h-8 shrink-0" onClick={onLimpiar}>
+          Quitar la búsqueda
+        </Button>
+      </div>
+    );
+  }
+
+  if (!evento) {
+    return (
+      /* El mismo `h-11` que el marcador: si el renglón midiera lo que mide su
+         texto, quedarse sin competiciones por delante movería la rejilla. */
+      <p
+        className={cn(
+          'flex h-11 min-w-0 items-center truncate text-sm text-muted-foreground',
+          clase,
+        )}
+      >
+        {hayTiradores
+          ? 'No te queda ninguna competición por delante con estos filtros.'
+          : 'No queda ningún torneo por delante con estos filtros.'}{' '}
+        Mira otro mes o abre los filtros.
+      </p>
+    );
+  }
+
+  const dias = diasHasta(evento.startDate);
+  const enMarcha = dias <= 0;
+  const organismo = organismoDe(evento.source, evento.scope, evento.circuit);
+  const plazo = plazoDelEvento(evento);
+  const circuito = CIRCUIT_SHORT[evento.circuit] ?? CIRCUIT_LABEL[evento.circuit] ?? null;
+
+  return (
+    /*
+      ALTO FIJO: LA FILA NO DEPENDE DE UNA FUENTE QUE LLEGA TARDE.
+      -----------------------------------------------------------------------
+      La cifra del marcador es `.cifra`, o sea Barlow Condensed, y entra con
+      `font-display: swap`. Siendo el elemento más alto de la fila, su métrica
+      decidía el alto de la cabecera, y el alto de la cabecera decide el hueco
+      que mide la rejilla: al llegar la fuente, `planificar()` volvía a
+      repartir el mes entero. Con `h-11` eso ya no puede pasar, y se comprobó
+      midiendo los nodos de cada `layout-shift`: el de la fila del marcador
+      pasó a mover **0,000** (cambia de ancho, 836→825 px, y no de alto).
+
+      Lo que sigue moviendo la rejilla es otra cosa, y está medido: la caja del
+      mes pasa de 572 a 1197 px a los 3,3 s, cuando empieza a aplicar el
+      estirado a `min-h-dvh`. En `next dev` la hoja de estilos llega como
+      recurso a los 2,64 s —Turbopack la inyecta después de hidratar— así que
+      **hay que volver a medirlo sobre una compilación de producción** antes de
+      tocar nada por esto: en producción el `<link>` es bloqueante y esta causa
+      no existe. Está en el informe.
+
+      Y 44 px no es un número redondo: es el objetivo táctil mínimo, y esta
+      fila entera es la acción principal de la pantalla.
+    */
+    <div className={cn('flex h-11 items-center gap-1 overflow-hidden', clase)}>
+      <Item
+        asChild
+        size="sm"
+        className="h-full min-w-0 flex-1 cursor-pointer gap-2.5 rounded-md px-1 py-0 hover:bg-accent"
+      >
+        <button
+          type="button"
+          /* `text-left`: un `<button>` centra su texto por defecto y arrastra a
+             todos sus hijos. Sin esto, el nombre del torneo salía centrado
+             sobre su propia línea de datos y la franja parecía un cartel. */
+          className="text-left"
+          onClick={() => onAbrir(evento)}
+          aria-label={
+            enMarcha
+              ? `${titularTorneo(evento.name)}, en marcha. Abrir la ficha.`
+              : `Faltan ${dias} ${dias === 1 ? 'día' : 'días'} para ${titularTorneo(
+                  evento.name,
+                )}. Abrir la ficha.`
+          }
+        >
+          <ItemMedia className="min-w-[2.4rem] flex-col items-start gap-0 self-center">
+            {enMarcha ? (
+              /*
+                «Ahora» y no «Hoy»: a dos dedos hay un botón que dice «Hoy» y
+                lleva al mes en curso. Dos «Hoy» en la misma fila significando
+                cosas distintas es el mismo fallo que el usuario cazó en la
+                fila de filtros, en pequeño.
+              */
+              <>
+                <span className="cifra text-2xl leading-none text-primary-text">
+                  Ahora
                 </span>
-              </dd>
-            </div>
-            <div className="flex flex-col">
-              <dt className="text-xs text-muted-foreground">Cuándo</dt>
-              <dd className="text-sm text-foreground">
-                {formatDateRangeEs(evento.startDate, evento.endDate)}
-              </dd>
-            </div>
-          </dl>
-        </SheetDescription>
-      </SheetHeader>
+                <span className="text-[0.6rem] leading-none text-muted-foreground">
+                  en marcha
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="cifra text-3xl leading-none text-foreground">
+                  {dias}
+                </span>
+                <span className="text-[0.6rem] leading-none text-muted-foreground">
+                  {dias === 1 ? 'día' : 'días'}
+                </span>
+              </>
+            )}
+          </ItemMedia>
+
+          {/*
+            Todo en una línea: `flex-row` y `flex-nowrap`, y lo que cede es la
+            cola. El nombre y su plazo van juntos y no se separan nunca; la
+            fecha, la sede y el organismo se apagan por orden según el ancho
+            que haya, que es el orden en que dejan de hacer falta.
+          */}
+          <ItemContent className="min-w-0 flex-row flex-nowrap items-baseline gap-x-2">
+            <span className="min-w-0 max-w-full truncate text-sm font-semibold sm:text-base">
+              {titularTorneo(evento.name)}
+            </span>
+            {plazo ? (
+              <span className={cn('shrink-0 text-xs font-medium', plazo.tono)}>
+                {plazo.texto}
+              </span>
+            ) : null}
+            {/* La fecha en pastilla, como la ficha de la FIE: se lee como un
+                dato con forma propia y no como una cadena más. Sólida
+                (`bg-secondary`): esta fila va sobre el lienzo con textura y un
+                blanco al 10 % dejaba la retícula de cruces dentro de la
+                pastilla. */}
+            <span className="cifra hidden shrink-0 rounded-full bg-secondary px-1.5 py-px text-xs text-foreground sm:inline">
+              {formatDateRangeEs(evento.startDate, evento.endDate)}
+            </span>
+            <span className="hidden min-w-0 shrink truncate text-xs text-muted-foreground sm:inline">
+              {evento.city ? titular(evento.city) : 'Sede sin publicar'}
+              {evento.country ? `, ${evento.country}` : ''}
+            </span>
+            <span className="hidden min-w-0 shrink truncate text-xs text-muted-foreground xl:inline">
+              {organismo}
+              {circuito ? ` · ${circuito}` : ''}
+            </span>
+          </ItemContent>
+        </button>
+      </Item>
+
+      {/*
+        Con búsqueda puesta, aquí van el contador y las flechas: se pasa de una
+        coincidencia a otra como en el buscar de un navegador, y el aspa
+        devuelve el calendario a lo normal.
+      */}
+      {buscando ? (
+        <div className="flex shrink-0 items-center gap-0.5">
+          <span className="cifra px-1 text-xs text-muted-foreground">
+            {cual + 1}/{total}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            aria-label="Coincidencia anterior"
+            onClick={onAnterior}
+          >
+            <ChevronLeft />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            aria-label="Coincidencia siguiente"
+            onClick={onSiguiente}
+          >
+            <ChevronRight />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            aria-label="Quitar la búsqueda"
+            onClick={onLimpiar}
+          >
+            <X />
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
 
 /**
- * Leyenda.
+ * Todos los filtros detrás de UN botón.
  *
- * Sin ella el código de color es decoración: nadie adivina que el oro es la
- * FIE. Va siempre visible, también en trimestre, que es donde más falta
- * hace. Enseña además qué significan las iniciales de las barras, que es
- * donde se aprende a leerlas.
+ * Por qué no van a la vista: se tocan una vez y se dejan puestos. Medido en un
+ * iPhone, la fila con el buscador, las pestañas, la navegación, tres armas,
+ * dos géneros, la categoría y el tirador necesitaba tres renglones y 140 px,
+ * que es media rejilla. El botón dice en su propia etiqueta qué está filtrando
+ * —«Florete», «2 armas», «Todo»— así que no hay que abrirlo para saberlo, y
+ * eso es lo que distingue esto de un submenú.
+ *
+ * Y una sola convención dentro: selección múltiple con `ToggleGroup` marcado
+ * en fondo secundario, elegir-uno con `Select`, y la lista larga de categorías
+ * con búsqueda, que es lo que pide `Combobox` cuando hay más de cuatro
+ * opciones.
+ */
+function PanelFiltros({
+  vista,
+  setVista,
+  armas,
+  setArmas,
+  generos,
+  setGeneros,
+  categorias,
+  setCategorias,
+  categoriasDisponibles,
+  tiradores,
+  tiradorId,
+  cambiarTirador,
+  propio,
+  todoPuesto,
+  verTodo,
+  verLoMio,
+  numPruebas,
+  numTorneos,
+  temporada,
+  actualizado,
+}: {
+  vista: Vista;
+  setVista: (v: Vista) => void;
+  armas: Weapon[];
+  setArmas: (a: Weapon[]) => void;
+  generos: ('M' | 'F')[];
+  setGeneros: (g: ('M' | 'F')[]) => void;
+  categorias: string[];
+  setCategorias: React.Dispatch<React.SetStateAction<string[]>>;
+  categoriasDisponibles: string[];
+  tiradores: TiradorOpcion[];
+  tiradorId: string | null;
+  cambiarTirador: (id: string) => void;
+  propio: { propio: boolean; armas: Weapon[]; generos: ('M' | 'F')[]; categorias: string[] };
+  todoPuesto: boolean;
+  verTodo: () => void;
+  verLoMio: () => void;
+  numPruebas: number;
+  numTorneos: number;
+  temporada: string | null;
+  actualizado: string | null;
+}) {
+  const todasLasCategorias = categorias.length === categoriasDisponibles.length;
+
+  /** Qué dice el botón sin abrirlo. */
+  const rotulo = todoPuesto
+    ? 'Todo'
+    : armas.length === 1
+      ? WEAPON_SHORT[armas[0]]
+      : `${armas.length} armas`;
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        {/*
+          UNA ALTURA PARA TODA LA FILA, y este botón era el que se salía.
+
+          Medido en el navegador a 1440 px, la fila tenía tres cantos de
+          arriba y tres de abajo distintos:
+
+            grupo de flechas   75 → 107   (32 px)
+            botón «Buscar»     73 → 105   (32 px)
+            botón de filtros   73 → 109   (36 px)   ← este
+
+          O sea que dentro del MISMO `ButtonGroup` la mitad derecha sobresalía
+          **4 px por abajo** de la izquierda, y el grupo de flechas quedaba
+          descolgado 2 px de las dos. Es lo que se ve en
+          `capturas/lupa/A-barra-antes.png`: un escalón en la costura.
+
+          La causa es tonta y no se arregla con `items-stretch`, que es lo que
+          ya lleva `ButtonGroup`: un elemento con alto explícito (`h-8`) no se
+          estira. Había que igualar el número. `h-8` en los tres, y el radio
+          ya era el mismo (4 px) en toda la fila.
+        */}
+        <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5 px-2.5">
+          <SlidersHorizontal className="size-4" aria-hidden />
+          <span className="cifra text-sm leading-none tracking-tight">{rotulo}</span>
+          {generos.length === 1 ? (
+            /*
+              LA PASTILLA DEL GÉNERO EXISTÍA Y NO SE VEÍA.
+
+              Iba con `bg-secondary` **dentro de un botón que también es
+              `bg-secondary`** (`variant="outline"`), así que la pastilla y el
+              botón eran exactamente el mismo color: la «M» quedaba como una
+              letra suelta flotando al lado de «FLO», sin caja y a otro
+              tamaño. Eso es la mitad del desalineado que se ve en la captura.
+
+              Ahora sube un nivel (`--accent`, el realce) para que la caja
+              exista, y lleva `py-0.5` y `leading-none`: sin aire vertical la
+              pastilla medía 9,6 px de alto dentro de un botón de 32 y no se
+              leía como pastilla ni con lupa.
+            */
+            <span className="cifra rounded-[3px] bg-accent px-1 py-0.5 text-[0.65rem] leading-none">
+              {generos[0]}
+            </span>
+          ) : null}
+          <span className="sr-only">Filtros del calendario</span>
+        </Button>
+      </PopoverTrigger>
+
+      {/*
+        EL PANEL NO PUEDE SER MÁS ALTO QUE LA PANTALLA.
+
+        Medido en un iPhone 14 Pro: el panel mide 716 px, se abre a 130 px del
+        borde de arriba y acaba en el 846 de una pantalla de 660. Con
+        `overflow: visible` y sin tope, «Vista» y «Ver todo» quedaban **fuera
+        de la pantalla y no se podían tocar**: el filtro de trimestre era
+        inalcanzable en el móvil, que es donde se usa esto.
+
+        El tope lo da Radix en `--radix-popover-content-available-height`, que
+        es el hueco real que queda hasta el borde, así que vale igual con el
+        panel abierto arriba o abajo. Y se le restan los 4,5 rem de la barra de
+        navegación del móvil —los mismos de `.hueco-barra`—, porque Radix mide
+        hasta el borde de la ventana y no sabe que ahí abajo hay una barra fija
+        tapando: sin restarlos, el último control quedaba **debajo** de la
+        barra y seguía sin poder tocarse aunque el panel ya se desplazara. A
+        partir de `lg` no hay barra y no hay que restar nada.
+      */}
+      <PopoverContent
+        align="end"
+        className="max-h-[calc(var(--radix-popover-content-available-height)-4.5rem)] w-[19rem] overflow-y-auto p-3 lg:max-h-[var(--radix-popover-content-available-height)]"
+      >
+        <FieldGroup className="gap-3.5">
+          {/*
+            Lo que se está mirando, en cifras. Va aquí y no en la cabecera:
+            «126 pruebas en 70 torneos» no cambia ninguna decisión, así que no
+            merece un renglón de la pantalla, pero sí saberlo al tocar los
+            filtros, que es cuando se está preguntando cuánto hay.
+          */}
+          <p className="text-xs text-muted-foreground">
+            <span className="cifra text-base text-foreground">{numPruebas}</span>{' '}
+            {numPruebas === 1 ? 'prueba' : 'pruebas'} en{' '}
+            <span className="cifra text-base text-foreground">{numTorneos}</span>{' '}
+            {numTorneos === 1 ? 'torneo' : 'torneos'}
+            {temporada ? ` · temporada ${temporada}` : ''}
+          </p>
+
+          <FieldSeparator />
+
+          <FieldSet>
+            <FieldLegend variant="label" className="mb-1.5">
+              Armas
+            </FieldLegend>
+            {/*
+              Nunca se queda vacío: un calendario en blanco no es una
+              respuesta útil, así que al intentar quitar la última se ignora.
+              Y aquí van los nombres enteros, no los iconos: a 14 px las tres
+              armas son la misma línea con un bulto, y en un panel hay sitio
+              para la palabra.
+            */}
+            <ToggleGroup
+              type="multiple"
+              value={armas}
+              onValueChange={(v) => v.length > 0 && setArmas(v.filter(esArma))}
+              variant="outline"
+              className="w-full"
+            >
+              {ARMAS.map((a) => (
+                <ToggleGroupItem key={a} value={a} className="h-9 flex-1 text-sm">
+                  {WEAPON_LABEL[a]}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </FieldSet>
+
+          <FieldSet>
+            <FieldLegend variant="label" className="mb-1.5">
+              Género
+            </FieldLegend>
+            <ToggleGroup
+              type="multiple"
+              value={generos}
+              onValueChange={(v) =>
+                v.length > 0 &&
+                setGeneros(v.filter((g): g is 'M' | 'F' => g === 'M' || g === 'F'))
+              }
+              variant="outline"
+              className="w-full"
+            >
+              {GENEROS.map((g) => (
+                <ToggleGroupItem key={g.v} value={g.v} className="h-9 flex-1 text-sm">
+                  {g.largo}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </FieldSet>
+
+          <FieldSet>
+            <FieldLegend variant="label" className="mb-1.5">
+              Categoría
+              <span className="ml-1.5 font-normal text-muted-foreground">
+                {todasLasCategorias ? 'todas' : `${categorias.length} de ${categoriasDisponibles.length}`}
+              </span>
+            </FieldLegend>
+            {/*
+              Hasta diez, de M9 a veteranos. Diez pastillas se comen la fila
+              entera, así que va en lista con búsqueda: es lo que pide un
+              `Combobox` cuando hay más de cuatro opciones. Sigue siendo
+              selección múltiple porque `ambito.ts` arranca a un tirador con
+              varias categorías elegibles a la vez.
+            */}
+            <Command className="rounded-md border bg-transparent">
+              <CommandInput placeholder="Filtrar categorías" className="h-9" />
+              <CommandList>
+                <ScrollArea className="h-32 sm:h-40">
+                  <CommandEmpty>Ninguna categoría se llama así.</CommandEmpty>
+                  {categoriasDisponibles.map((c) => {
+                    const puesta = categorias.includes(c);
+                    const nombre = CATEGORY_LABEL[c as keyof typeof CATEGORY_LABEL] ?? c;
+                    return (
+                      <CommandItem
+                        key={c}
+                        value={nombre}
+                        onSelect={() =>
+                          setCategorias((previas) => {
+                            const siguientes = puesta
+                              ? previas.filter((x) => x !== c)
+                              : ordenarCategorias([...previas, c]);
+                            // Nunca vacío: un calendario en blanco no responde
+                            // a ninguna pregunta.
+                            return siguientes.length > 0 ? siguientes : previas;
+                          })
+                        }
+                        /*
+                          `data-marcado`, no `aria-selected`.
+
+                          `aria-selected` es el atributo con el que cmdk
+                          anuncia **la fila bajo el cursor**, y lo pone y lo
+                          quita él al moverse con las flechas. Escribirlo a
+                          mano aquí hacía que un lector de pantalla oyera
+                          «seleccionado» en varias filas a la vez y ninguna
+                          fuese la del cursor. El marcado de la aplicación
+                          viaja ahora en su propio atributo y lo pinta
+                          `CommandItem` con la convención de siempre.
+                        */
+                        data-marcado={puesta}
+                      >
+                        <CircleCheck
+                          className={cn(
+                            'size-4',
+                            puesta ? 'text-primary-text opacity-100' : 'opacity-25',
+                          )}
+                          aria-hidden
+                        />
+                        {/* El rótulo hereda el rojo del `CommandItem` cuando
+                            está marcado; sin marcar se apaga a propósito, que
+                            es la otra mitad del par. */}
+                        <span className={puesta ? undefined : 'text-muted-foreground'}>
+                          {nombre}
+                        </span>
+                      </CommandItem>
+                    );
+                  })}
+                </ScrollArea>
+              </CommandList>
+            </Command>
+          </FieldSet>
+
+          <FieldSet>
+            <FieldLegend variant="label" className="mb-1.5">
+              Vista
+            </FieldLegend>
+            <Select value={vista} onValueChange={(v) => setVista(v as Vista)}>
+              <SelectTrigger className="h-9 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="mes">Un mes</SelectItem>
+                <SelectItem value="trimestre">Tres meses</SelectItem>
+              </SelectContent>
+            </Select>
+          </FieldSet>
+
+          {/*
+            Selector de tirador: solo cuando la cuenta lleva a más de uno. Con
+            un solo tirador sería un control que nunca cambia nada.
+          */}
+          {tiradores.length > 1 ? (
+            <FieldSet>
+              <FieldLegend variant="label" className="mb-1.5">
+                Tirador
+              </FieldLegend>
+              <ToggleGroup
+                type="single"
+                value={tiradorId ?? ''}
+                onValueChange={(v) => v && cambiarTirador(v)}
+                variant="outline"
+                className="w-full"
+              >
+                {tiradores.map((t) => (
+                  <ToggleGroupItem key={t.id} value={t.id} className="h-9 flex-1 text-sm">
+                    {nombreCorto(t.fullName)}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </FieldSet>
+          ) : null}
+
+          <FieldSeparator />
+
+          <div className="flex items-center gap-2">
+            {/*
+              «Solo lo mío» únicamente cuando «lo mío» y «todo» son cosas
+              distintas: para la dirección técnica lo suyo ES todo.
+            */}
+            {propio.propio ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-9 flex-1"
+                onClick={todoPuesto ? verLoMio : verTodo}
+              >
+                {todoPuesto ? 'Solo lo mío' : 'Ver todo'}
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-9 flex-1"
+                onClick={verTodo}
+                disabled={todoPuesto}
+              >
+                Ver todo
+              </Button>
+            )}
+          </div>
+
+          {actualizado ? (
+            <p className="text-[0.7rem] text-muted-foreground">
+              Datos actualizados el {actualizado}.
+            </p>
+          ) : null}
+        </FieldGroup>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+
+/**
+ * Leyenda, en un solo renglón.
+ *
+ * Antes eran dos renglones y ocho entradas: los tres organismos, las tres
+ * armas, los dos géneros y el «ya estás inscrito». Dos renglones de leyenda
+ * son dos renglones menos de calendario, y seis de esas ocho entradas
+ * explicaban letras que ahora van **escritas en la propia barra** —F/E/S para
+ * el arma, M/F para el género—, así que explicarlas aparte era gastar sitio
+ * en repetir.
+ *
+ * Queda lo único que el color no puede decir por sí mismo. En las tarjetas
+ * grandes el organismo va además escrito en su pastilla; esta línea es para
+ * las barras de una línea de un mes cargado, donde solo cabe el color.
  */
 function Leyenda() {
-  const E = [
-    { c: 'bg-org-rfee', t: 'Nacional (RFEE)' },
-    { c: 'bg-org-fie', t: 'Internacional (FIE)' },
-    { c: 'bg-org-efc', t: 'Europeo (EFC)' },
-  ];
   return (
-    <ul className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-      {E.map((e) => (
-        <li key={e.t} className="flex items-center gap-1.5">
-          <span className={cn('size-2 rounded-full', e.c)} aria-hidden />
-          {e.t}
-        </li>
-      ))}
-      {/* Las iniciales ya se enseñan en los botones de arma de arriba, así
-          que en el móvil se ahorran: cada renglón de leyenda es un renglón
-          menos de calendario. */}
-      {ARMAS.map((a) => (
-        <li key={a} className="hidden items-center gap-1.5 sm:flex">
-          <IconoArma arma={a} className="size-4" />
-          {NOMBRE_ARMA[a]}
-        </li>
-      ))}
+    <ul className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 text-[0.7rem] text-muted-foreground sm:gap-x-4">
+      {(['RFEE', 'FIE', 'EFC'] as const).map((o) => {
+        const c = COLOR_ORGANISMO[o];
+        return (
+          <li key={o} className="flex items-center gap-1.5">
+            <span className={cn('h-2.5 w-[3px] shrink-0 rounded-full', c.punto)} aria-hidden />
+            <span className="sm:hidden">{c.corto}</span>
+            <span className="hidden sm:inline">{c.largo}</span>
+          </li>
+        );
+      })}
       <li className="flex items-center gap-1.5">
-        <span
-          className="grid size-3.5 place-items-center rounded-full bg-foreground text-[8px] font-bold text-background"
-          aria-hidden
-        >
-          ✓
-        </span>
-        Ya estás inscrito
+        <CircleCheck className="size-3.5 shrink-0" aria-hidden />
+        <span className="sm:hidden">inscrito</span>
+        <span className="hidden sm:inline">Ya estás inscrito</span>
       </li>
     </ul>
   );
+}
+
+function nombreMes(d: Date, conAnio = true): string {
+  return capitalizar(
+    new Intl.DateTimeFormat('es-ES', {
+      month: 'long',
+      ...(conAnio ? { year: 'numeric' } : {}),
+    })
+      .format(d)
+      .replace(' de ', ' '),
+  );
+}
+
+function isoDeHoy(): string {
+  // En hora española, no en la del que ejecuta: ver `hoyMadrid`.
+  return hoyMadrid();
 }
 
 /** El nombre de pila basta para distinguir a dos hermanos en un botón. */

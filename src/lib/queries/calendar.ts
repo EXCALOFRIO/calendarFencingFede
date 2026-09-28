@@ -1,4 +1,18 @@
-import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNull,
+  like,
+  lte,
+  not,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { cache } from 'react';
 import { db } from '@/db';
@@ -17,7 +31,7 @@ import {
   season,
   seasonCategory,
 } from '@/db/schema';
-import { etiquetaDeCampo } from '@/lib/ai/campos';
+import { PATRONES_CAMPO_RETIRADO_SQL, etiquetaDeCampo } from '@/lib/ai/campos';
 import type { CategoryCode, SeasonCategoryRow } from '../categories';
 import {
   type ComputedDeadline,
@@ -67,6 +81,17 @@ export type DatoExtraidoView = {
   pisadoPorPublicado: boolean;
   /** La prueba tal como la nombra el PDF ('florete masculino'). Null = todo el evento. */
   prueba: string | null;
+  /**
+   * DÍA al que se refiere el dato, en ISO. Null = vale para todo el evento.
+   *
+   * Existe porque el horario de un dossier de la FIE es una TABLA de varias
+   * jornadas, no un valor suelto: la invitación de Lima 2026 publica «7:30
+   * Venue Open» cuatro días seguidos. Con esto la ficha puede agrupar por día
+   * y pintar una línea de tiempo por jornada —lo que pide `UI.md`— sin tener
+   * que partir `campo` por puntos y reconocer un ISO por su forma, que sería
+   * convertir un formato interno en contrato de pantalla.
+   */
+  fecha: string | null;
   /** Frase copiada del PDF de la que sale el valor. */
   cita: string;
   /** Trozo del PDF alrededor de la cita, en su forma original. */
@@ -259,9 +284,13 @@ export const getDeadlineRules = cache(async (): Promise<DeadlineRuleRow[]> => {
     scope: r.scope as Scope,
     circuit: r.circuit,
     category: r.category as CategoryCode | null,
+    format: r.format,
     type: r.type,
     label: r.label,
     daysBefore: r.daysBefore,
+    weekday: r.weekday,
+    weeksBefore: r.weeksBefore,
+    timeOfDay: r.timeOfDay,
     surchargeEur: r.surchargeEur,
     blocking: r.blocking,
     sourceDocument: r.sourceDocument,
@@ -323,7 +352,33 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
 
   const eventIds = eventRows.map((e) => e.id);
 
-  const competitionConditions = [inArray(eventCompetition.eventId, eventIds)];
+  /**
+   * ===========================================================================
+   * LAS PRUEBAS DEL PAR DE LA FIE TAMBIÉN, Y AQUÍ ESTÁN LAS POR EQUIPOS
+   * ===========================================================================
+   *
+   * `enlazar.ts` une la fila de Skermo y la de la FIE del mismo torneo sin
+   * mirar el formato, y con razón: comparándolo aparecían 42 tarjetas
+   * duplicadas, una por cada prueba por equipos que la FIE publica como evento
+   * suyo. El duplicado se arregló, pero la prueba se fue con él: la Copa del
+   * Mundo de Orán enseñaba el sable individual y no el de equipos, al que
+   * España va con cuatro tiradores.
+   *
+   * Medido sobre la base real: de las 131 pruebas que cuelgan de eventos
+   * absorbidos, **89 son individuales y ya están en la tarjeta** —la clave de
+   * prueba coincide, que es de paso la prueba de que el emparejado es bueno— y
+   * las **42 restantes son todas por equipos**. Ninguna individual se añade,
+   * así que esto no puede colar una prueba inventada en un torneo.
+   *
+   * La española gana siempre cuando las dos publican la misma prueba: trae los
+   * horarios, la cuota y el número de inscritos, y la de la FIE no.
+   */
+  const competitionConditions = [
+    or(
+      inArray(eventCompetition.eventId, eventIds),
+      inArray(event.canonicalEventId, eventIds),
+    ) ?? sql`true`,
+  ];
   if (filters.weapons?.length) {
     competitionConditions.push(inArray(eventCompetition.weapon, filters.weapons));
   }
@@ -347,12 +402,44 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
   const [competitionRows, deadlineRows, documentRows, liveRows, linkedRows, rules] =
     await Promise.all([
       db
-        .select()
+        .select({
+          prueba: eventCompetition,
+          canonico: event.canonicalEventId,
+          clave: clavePrueba(eventCompetition),
+        })
         .from(eventCompetition)
+        .innerJoin(event, eq(event.id, eventCompetition.eventId))
         .where(and(...competitionConditions))
         .orderBy(asc(eventCompetition.competitionDate)),
       db.select().from(eventDeadline).where(inArray(eventDeadline.eventId, eventIds)),
-      db.select().from(eventDocument).where(inArray(eventDocument.eventId, eventIds)),
+      /**
+       * LOS DOCUMENTOS DEL PAR DE LA FIE TAMBIÉN, y por eso hay un join.
+       *
+       * Skermo no publica el dossier de un torneo internacional: de los tres
+       * eventos de Orán de octubre de 2026, los tres tenían cero documentos, y
+       * la ficha decía «esta fuente no publica convocatoria ni dossier para
+       * este torneo». Era falso: la FIE lo publica, y desde que se ingiere el
+       * calendario futuro cuelga del registro de la FIE que está enlazado a esa
+       * misma tarjeta.
+       *
+       * Es la misma herencia que ya se hacía con el cartel unas líneas más
+       * abajo, y por el mismo motivo: si son el mismo torneo, lo que publica
+       * una fuente vale para la tarjeta única. Se hereda, no se copia: la fila
+       * sigue colgando del evento de la FIE y aquí solo se lee.
+       */
+      db
+        .select({
+          documento: eventDocument,
+          canonico: event.canonicalEventId,
+        })
+        .from(eventDocument)
+        .innerJoin(event, eq(event.id, eventDocument.eventId))
+        .where(
+          or(
+            inArray(eventDocument.eventId, eventIds),
+            inArray(event.canonicalEventId, eventIds),
+          ),
+        ),
       db.select().from(liveSource).where(inArray(liveSource.eventId, eventIds)),
       db
         .select({
@@ -380,11 +467,54 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
       getDeadlineRules(),
     ]);
 
-  const competitionsByEvent = new Map<string, typeof competitionRows>();
-  for (const c of competitionRows) {
-    const list = competitionsByEvent.get(c.eventId) ?? [];
-    list.push(c);
-    competitionsByEvent.set(c.eventId, list);
+  /**
+   * A qué tarjeta va una fila que puede venir del par absorbido.
+   *
+   * Sube a la canónica **solo si esa tarjeta se está pintando y la fila
+   * absorbida no**. Las dos condiciones hacen falta:
+   *
+   * - Si la madre no está en el listado, la fila se queda con lo suyo. Es lo
+   *   que hace que un enlace guardado a la fila de la FIE siga abriendo su
+   *   ficha: `getEvent` pide ese id suelto y sin sus pruebas el evento se
+   *   descartaría unas líneas más abajo por venir vacío.
+   * - Si la absorbida también se está pintando (`includeLinked`, que usa el
+   *   panel de enlaces para revisar el emparejado a mano), entonces se quieren
+   *   las dos por separado y no hay herencia que hacer.
+   */
+  const idsPedidos = new Set(eventIds);
+  const tarjetaDe = (eventoId: string, canonico: string | null) =>
+    canonico && idsPedidos.has(canonico) && !idsPedidos.has(eventoId)
+      ? canonico
+      : eventoId;
+
+  const competitionsByEvent = new Map<
+    string,
+    (typeof competitionRows)[number]['prueba'][]
+  >();
+  const clavesPorTarjeta = new Map<string, Set<string>>();
+  // Las propias primero: si las dos fuentes publican la misma prueba, la que
+  // se queda tiene que ser la española, que es la que trae horarios y cuota.
+  // `sort` es estable, así que dentro de cada grupo sigue el orden por fecha.
+  const conTarjeta = competitionRows
+    .map((f) => {
+      const tarjetaId = tarjetaDe(f.prueba.eventId, f.canonico);
+      return { ...f, tarjetaId, propia: tarjetaId === f.prueba.eventId };
+    })
+    .sort((a, b) => Number(b.propia) - Number(a.propia));
+  for (const fila of conTarjeta) {
+    const claves = clavesPorTarjeta.get(fila.tarjetaId) ?? new Set<string>();
+    if (claves.has(fila.clave)) continue;
+    claves.add(fila.clave);
+    clavesPorTarjeta.set(fila.tarjetaId, claves);
+    const list = competitionsByEvent.get(fila.tarjetaId) ?? [];
+    list.push(fila.prueba);
+    competitionsByEvent.set(fila.tarjetaId, list);
+  }
+  // Y se recompone el orden cronológico de la tarjeta: la prueba por equipos
+  // heredada suele ser el último día y tiene que salir al final, no detrás del
+  // reparto entre fuentes. Sin fecha, al final: no se inventa un día.
+  for (const list of competitionsByEvent.values()) {
+    list.sort((a, b) => (a.competitionDate ?? '9999').localeCompare(b.competitionDate ?? '9999'));
   }
 
   const deadlinesByCompetition = new Map<string, typeof deadlineRows>();
@@ -401,11 +531,35 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
     }
   }
 
-  const documentsByEvent = new Map<string, typeof documentRows>();
-  for (const d of documentRows) {
-    const list = documentsByEvent.get(d.eventId) ?? [];
-    list.push(d);
-    documentsByEvent.set(d.eventId, list);
+  /**
+   * Se deduplica por URL DENTRO de cada tarjeta, y hace falta: la FIE publica
+   * una fila por prueba y las cuatro de Orán apuntan al mismo `.docx`. Sin
+   * esto la ficha enseñaría cuatro botones idénticos.
+   *
+   * Gana la fila del evento propio cuando existe (se recorren primero las que
+   * ya son del evento pedido), para que el título que se lea sea el de la
+   * fuente española si la hay.
+   */
+  const documentsByEvent = new Map<string, (typeof documentRows)[number]['documento'][]>();
+  const urlsPorEvento = new Map<string, Set<string>>();
+  const ordenadas = documentRows
+    .map((f) => ({
+      ...f,
+      tarjetaId: tarjetaDe(f.documento.eventId, f.canonico),
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.documento.eventId === b.tarjetaId) -
+        Number(a.documento.eventId === a.tarjetaId),
+    );
+  for (const fila of ordenadas) {
+    const urls = urlsPorEvento.get(fila.tarjetaId) ?? new Set<string>();
+    if (urls.has(fila.documento.url)) continue;
+    urls.add(fila.documento.url);
+    urlsPorEvento.set(fila.tarjetaId, urls);
+    const list = documentsByEvent.get(fila.tarjetaId) ?? [];
+    list.push(fila.documento);
+    documentsByEvent.set(fila.tarjetaId, list);
   }
 
   const liveByEvent = new Map<string, typeof liveRows>();
@@ -430,10 +584,42 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
    */
   const extraidasPorEvento = new Map<string, FilaExtraida[]>();
   if (filters.datosExtraidos) {
-    for (const fila of await cargarDatosExtraidos(eventIds)) {
-      const lista = extraidasPorEvento.get(fila.eventoId) ?? [];
-      lista.push(fila);
-      extraidasPorEvento.set(fila.eventoId, lista);
+    /**
+     * TAMBIÉN LO EXTRAÍDO DEL PAR DE LA FIE.
+     *
+     * Tercera vez que aparece la misma herencia en esta consulta —el cartel,
+     * los documentos, las pruebas— y por el mismo motivo: el dossier de un
+     * torneo internacional lo publica la FIE, así que las propuestas cuelgan
+     * de su registro, que es el absorbido. Pidiendo solo `eventIds`, la
+     * tarjeta de la Copa del Mundo de Takamatsu tenía cero datos extraídos
+     * teniendo veinte leídos del PDF y con su cita verificada, y la ficha
+     * decía «los horarios no están publicados».
+     */
+    const canonicoDe = new Map(
+      linkedRows.map((l) => [l.id, l.canonicalEventId] as const),
+    );
+    const idsConPar = [...eventIds, ...linkedRows.map((l) => l.id)];
+    for (const fila of await cargarDatosExtraidos(idsConPar)) {
+      const tarjetaId = tarjetaDe(fila.eventoId, canonicoDe.get(fila.eventoId) ?? null);
+      const lista = extraidasPorEvento.get(tarjetaId) ?? [];
+      // El id pasa a ser el de la tarjeta, no el del registro del que colgaba:
+      // es lo que hace que el deduplicado de abajo funcione.
+      lista.push({ ...fila, eventoId: tarjetaId });
+      extraidasPorEvento.set(tarjetaId, lista);
+    }
+    /**
+     * Y SE DEDUPLICA OTRA VEZ, AHORA QUE TODO ESTÁ EN LA MISMA TARJETA.
+     *
+     * `unaVezPorDato` ya lo hizo dentro de la consulta, pero su clave lleva el
+     * id del evento —tiene que llevarlo, o el pabellón de un torneo se comería
+     * el del siguiente— y al heredar llegan filas de varios registros de la
+     * FIE. La FIE publica **un evento por prueba** y la misma invitación cuelga
+     * de todos, así que la apertura de Takamatsu aparecía cuatro veces: una por
+     * cada registro absorbido. Con el id ya reescrito al de la tarjeta, la
+     * misma clave las reúne y se queda una.
+     */
+    for (const [tarjetaId, lista] of extraidasPorEvento) {
+      extraidasPorEvento.set(tarjetaId, unaVezPorDato(lista));
     }
   }
 
@@ -557,6 +743,7 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
           scope: e.scope as Scope,
           circuit: e.circuit,
           category: c.category as CategoryCode,
+          format: c.format,
         });
 
         const merged = mergeDeadlines(published, calculated);
@@ -689,6 +876,7 @@ type FilaExtraida = {
   campo: string;
   valor: string;
   prueba: string | null;
+  fecha: string | null;
   cita: string;
   contexto: string | null;
   estado: 'pendiente' | 'aprobada' | 'rechazada';
@@ -744,6 +932,7 @@ async function cargarDatosExtraidos(eventIds: string[]): Promise<FilaExtraida[]>
       campo: extraccionPropuesta.campo,
       valor: extraccionPropuesta.valorPropuesto,
       prueba: extraccionPropuesta.prueba,
+      fecha: extraccionPropuesta.fecha,
       cita: extraccionPropuesta.cita,
       contexto: extraccionPropuesta.contexto,
       estado: extraccionPropuesta.estado,
@@ -772,6 +961,29 @@ async function cargarDatosExtraidos(eventIds: string[]): Promise<FilaExtraida[]>
         ),
         inArray(extraccionPropuesta.estado, ['pendiente', 'aprobada']),
         eq(extraccionPropuesta.citaVerificada, true),
+        /**
+         * NADA DE LAS VERSIONES RETIRADAS DEL EXTRACTOR.
+         *
+         * Esta es la condición que quita de la ficha los dos importes que el
+         * usuario señaló: el «109 € · alojamiento», que es el precio de una
+         * habitación doble, y el «0,99 € · otro», que es una tasa turística por
+         * noche. Los dos son fósiles de la versión 2 del esquema, y la lista
+         * está —con los números— en `esCampoExtraidoVigente`.
+         *
+         * Va aquí y no en la regla de «solo la última lectura» de abajo porque
+         * esa regla EXIME lo aprobado, y con razón: una firma humana no se
+         * deshace sola. Pero eso mismo la hace insuficiente aquí, porque el
+         * 109 € seguiría saliendo en cuanto alguien lo aprobara por error. Una
+         * clave que el extractor ya no sabe generar no es aprobable: no hay con
+         * qué compararla.
+         */
+        not(
+          or(
+            ...PATRONES_CAMPO_RETIRADO_SQL.map((patron) =>
+              like(extraccionPropuesta.campo, patron),
+            ),
+          )!,
+        ),
         /**
          * SOLO LA ÚLTIMA LECTURA DE CADA DOCUMENTO, salvo lo ya aprobado.
          *
@@ -851,10 +1063,29 @@ function unaVezPorDato(filas: FilaExtraida[]): FilaExtraida[] {
   return [...mejor.values()];
 }
 
-const ARMAS_EN_TEXTO: [string, Weapon][] = [
-  ['florete', 'FLORETE'],
-  ['espada', 'ESPADA'],
-  ['sable', 'SABLE'],
+/**
+ * El arma, escrita como la escriben los tres sitios de donde vienen los PDFs.
+ *
+ * ESPAÑOL, INGLÉS Y FRANCÉS, y no por pulcritud: los dossieres de la FIE están
+ * en inglés y en francés. Medido en la convocatoria de Takamatsu, los campos
+ * extraídos salen así:
+ *
+ *   installation_open.2026-10-15.men-s-foil   07:00
+ *   pools_start.2026-10-16.women-s-foil       09:00
+ *
+ * Buscando solo «florete» no casaba ninguno, el horario se quedaba a nivel de
+ * evento y la ficha decía «los horarios no están publicados» teniendo los
+ * datos leídos y con su cita verificada. Era exactamente la queja: *«en lo de
+ * la FIE salen menos datos y deberían rellenarse de los documentos»*.
+ *
+ * Van por palabra completa (`\b`) y no por inclusión: «sable» dentro de
+ * «sabler» o «men» dentro de «women» son errores que no se ven en la ficha, se
+ * ven llegando al pabellón el día que no toca.
+ */
+const ARMAS_EN_TEXTO: [RegExp, Weapon][] = [
+  [/\bflorete\b|\bfoil\b|\bfleuret\b/, 'FLORETE'],
+  [/\bespada\b|\bepee\b|\bepée\b/, 'ESPADA'],
+  [/\bsable\b|\bsabre\b|\bsaber\b/, 'SABLE'],
 ];
 
 /**
@@ -866,9 +1097,9 @@ const ARMAS_EN_TEXTO: [string, Weapon][] = [
 const CATEGORIAS_EN_TEXTO: [RegExp, CategoryCode][] = [
   [/\bm13\b/, 'M13'],
   [/\bm15\b/, 'M15'],
-  [/\bm17\b|\bcadete\b/, 'M17'],
-  [/\bm20\b|\bjunior\b|\bj[uú]nior\b/, 'M20'],
-  [/\babsolut[oa]\b|\bsenior\b|\bs[eé]nior\b|\babs\b/, 'ABS'],
+  [/\bm17\b|\bcadete\b|\bcadet\b|\bcadets\b/, 'M17'],
+  [/\bm20\b|\bjunior\b|\bj[uú]nior\b|\bjuniors\b/, 'M20'],
+  [/\babsolut[oa]\b|\bsenior\b|\bs[eé]nior\b|\bseniors\b|\babs\b/, 'ABS'],
   [/\bveteran|\bvet\b/, 'VET'],
 ];
 
@@ -881,6 +1112,22 @@ function aplanar(texto: string): string {
 }
 
 /**
+ * ¿El texto dice que la prueba es por equipos?
+ *
+ * En los tres idiomas, y con un caso propio: la Liga Nacional de Clubes es por
+ * equipos siempre y sus convocatorias no escriben «equipos» en ningún sitio
+ * —dicen «1ª FASE - Espada masculina»—, así que su nombre entra en la lista.
+ *
+ * Está fuera de `pruebaEncaja` porque el reparto también necesita preguntarlo:
+ * ver el desempate de `repartirDatosExtraidos`.
+ */
+function mencionaEquipos(prueba: string): boolean {
+  return /\bequipos?\b|\bliga\s+nacional\s+de\s+clubes\b|\bteam\b|\bteams\b|\bequipes\b/.test(
+    aplanar(prueba),
+  );
+}
+
+/**
  * ¿La prueba que nombra el PDF es ESTA prueba del evento?
  *
  * Se exige que coincida todo lo que el texto menciona y que MENCIONE al menos
@@ -888,22 +1135,34 @@ function aplanar(texto: string): string {
  * se queda a nivel de evento, que es lo honesto: un horario en la prueba
  * equivocada no se detecta mirando la ficha.
  */
-function pruebaEncaja(prueba: string, competicion: CompetitionView): boolean {
+export function pruebaEncaja(prueba: string, competicion: CompetitionView): boolean {
   const texto = aplanar(prueba);
 
-  const arma = ARMAS_EN_TEXTO.find(([palabra]) => texto.includes(palabra));
+  const arma = ARMAS_EN_TEXTO.find(([patron]) => patron.test(texto));
   if (arma && arma[1] !== competicion.weapon) return false;
 
   const categoria = CATEGORIAS_EN_TEXTO.find(([patron]) => patron.test(texto));
   if (categoria && categoria[1] !== competicion.category) return false;
 
-  const femenino = /\bfemenin[ao]\b|\bmujer/.test(texto);
-  const masculino = /\bmasculin[ao]\b|\bhombre/.test(texto);
+  /**
+   * El género, también en los tres idiomas.
+   *
+   * «women» lleva «men» dentro, y por eso se compara por palabra completa:
+   * con `includes` el florete femenino de la FIE se habría atribuido al
+   * masculino. El `\b` lo impide —en «women» la letra antes de «men» es una
+   * letra— y el guion de «men-s-foil» sí es frontera, así que el slug de la
+   * FIE casa igual.
+   */
+  const femenino = /\bfemenin[ao]\b|\bmujer|\bwomen\b|\bwomens\b|\bdames\b|\bladies\b/.test(
+    texto,
+  );
+  const masculino = /\bmasculin[ao]\b|\bhombre|\bmen\b|\bmens\b|\bhommes\b|\bmessieurs\b/.test(
+    texto,
+  );
   if (femenino && competicion.gender !== 'F') return false;
   if (masculino && competicion.gender !== 'M') return false;
 
-  const equipos = /\bequipos?\b|\bliga\s+nacional\s+de\s+clubes\b/.test(texto);
-  if (equipos && competicion.format !== 'EQUIPOS') return false;
+  if (mencionaEquipos(prueba) && competicion.format !== 'EQUIPOS') return false;
 
   // Hace falta al menos una señal fuerte: si el texto no dice ni el arma ni la
   // categoría, no se atribuye a ninguna prueba.
@@ -956,6 +1215,7 @@ function aDatoExtraido(
     estado: fila.estado === 'aprobada' ? 'aprobado' : 'sin_revisar',
     pisadoPorPublicado: pisado,
     prueba: fila.prueba,
+    fecha: fila.fecha,
     cita: fila.cita,
     contexto: fila.contexto,
     documento: { titulo: fila.documentoTitulo, url: fila.documentoUrl },
@@ -979,9 +1239,45 @@ function repartirDatosExtraidos(
   const delEvento: DatoExtraidoView[] = [];
 
   for (const fila of filas) {
-    const encajan = fila.prueba
+    let encajan = fila.prueba
       ? competiciones.filter((c) => pruebaEncaja(fila.prueba as string, c))
       : [];
+
+    /**
+     * `teams_start` ES DE EQUIPOS AUNQUE EL TEXTO NO LO DIGA.
+     *
+     * El nombre del campo lo dice y manda sobre el rótulo: la hora de
+     * comienzo del cuadro por equipos no puede colgarse de la individual. En
+     * Orán pasó —el dossier rotula la fila «Women's Sabre» y el desempate de
+     * abajo la mandó a la individual—, y una hora de equipos en la prueba
+     * individual no se detecta mirando la ficha.
+     */
+    if (fila.campo.startsWith('teams_start')) {
+      encajan = encajan.filter((c) => c.format === 'EQUIPOS');
+    }
+
+    /**
+     * DESEMPATE: SIN MARCA DE EQUIPOS, LA INDIVIDUAL.
+     *
+     * Desde que la tarjeta enseña también las pruebas por equipos del par de
+     * la FIE, «Men's Foil» encaja con dos —la individual y la de equipos son
+     * el mismo arma, género y categoría— y con dos candidatas no se atribuía a
+     * ninguna: los horarios de las Copas del Mundo se quedaban en la cabecera
+     * teniendo el dato leído y con su cita verificada.
+     *
+     * La convención de los dossieres es firme y va en los tres idiomas: la
+     * prueba por equipos **siempre** se dice («Team Event», «Men's Foil
+     * Team», «por equipos»). Si no lo dice, es la individual.
+     *
+     * Va como desempate y no como regla dentro de `pruebaEncaja` a propósito:
+     * la Liga Nacional de Clubes es por equipos y no lo escribe, y sus
+     * tarjetas no tienen ninguna prueba individual. Exigir «individual» allí
+     * le quitaría los horarios que hoy sí tiene.
+     */
+    if (encajan.length > 1 && fila.prueba && !mencionaEquipos(fila.prueba)) {
+      const individuales = encajan.filter((c) => c.format === 'INDIVIDUAL');
+      if (individuales.length === 1) encajan = individuales;
+    }
 
     if (encajan.length === 1) {
       const competicion = encajan[0];
@@ -1091,36 +1387,106 @@ export async function inscritosPublicados(
 ): Promise<InscritoPublicado[]> {
   const propios = new Set(opciones.athleteIdsPropios ?? []);
 
-  const filas = await db
-    .select({
-      competitionId: competitionRegistration.eventCompetitionId,
-      nombre: competitionRegistration.sourceAthleteName,
-      equipo: competitionRegistration.sourceTeam,
-      clubPublicado: competitionRegistration.sourceClub,
-      athleteId: competitionRegistration.athleteId,
-      retiradoEn: competitionRegistration.withdrawnAt,
-      fuente: competitionRegistration.source,
-      sourceUrl: competitionRegistration.sourceUrl,
-      clubNombre: club.name,
-    })
-    .from(competitionRegistration)
-    .innerJoin(
-      eventCompetition,
-      eq(competitionRegistration.eventCompetitionId, eventCompetition.id),
-    )
-    .leftJoin(athlete, eq(competitionRegistration.athleteId, athlete.id))
-    .leftJoin(club, eq(athlete.clubId, club.id))
-    .where(
-      opciones.incluirRetirados
-        ? eq(eventCompetition.eventId, eventId)
-        : and(
-            eq(eventCompetition.eventId, eventId),
-            isNull(competitionRegistration.withdrawnAt),
-          ),
-    )
-    .orderBy(asc(competitionRegistration.sourceAthleteName));
+  /**
+   * Los dos registros del mismo torneo, no solo el español.
+   *
+   * Un torneo internacional está dos veces en la base: la fila de Skermo, que
+   * es la que se enseña, y la de la FIE, que quedó absorbida
+   * (`canonical_event_id`). Las listas de inscritos de la FIE cuelgan de la
+   * absorbida, así que filtrar solo por `event_id = eventId` las dejaba
+   * fuera: **12 listas capturadas y 1 visible**.
+   *
+   * Es la misma herencia que ya se hacía unas líneas más arriba con el cartel
+   * y con los documentos, y por el mismo motivo: si son el mismo torneo, lo
+   * que publica una fuente vale para la tarjeta única.
+   *
+   * La subconsulta va en el `where` en lugar de pedir antes los ids porque
+   * con el driver HTTP de Neon cada consulta es un viaje de red: así son dos
+   * en paralelo y no tres en fila.
+   */
+  const delTorneoYSuPar = sql`${eventCompetition.eventId} in (
+    select ${event.id} from ${event}
+    where ${event.id} = ${eventId} or ${event.canonicalEventId} = ${eventId}
+  )`;
 
-  return filas.map((f) => ({
+  const [filasCrudas, pruebasDeLaTarjeta] = await Promise.all([
+    db
+      .select({
+        competitionId: competitionRegistration.eventCompetitionId,
+        prueba: clavePrueba(eventCompetition),
+        nombre: competitionRegistration.sourceAthleteName,
+        equipo: competitionRegistration.sourceTeam,
+        clubPublicado: competitionRegistration.sourceClub,
+        athleteId: competitionRegistration.athleteId,
+        retiradoEn: competitionRegistration.withdrawnAt,
+        fuente: competitionRegistration.source,
+        sourceUrl: competitionRegistration.sourceUrl,
+        clubNombre: club.name,
+      })
+      .from(competitionRegistration)
+      .innerJoin(
+        eventCompetition,
+        eq(competitionRegistration.eventCompetitionId, eventCompetition.id),
+      )
+      .leftJoin(athlete, eq(competitionRegistration.athleteId, athlete.id))
+      .leftJoin(club, eq(athlete.clubId, club.id))
+      .where(
+        opciones.incluirRetirados
+          ? delTorneoYSuPar
+          : and(delTorneoYSuPar, isNull(competitionRegistration.withdrawnAt)),
+      )
+      .orderBy(asc(competitionRegistration.sourceAthleteName)),
+    /**
+     * Las pruebas que de verdad se pintan en la ficha: destino del reencaje.
+     *
+     * Se piden con el mismo criterio que usa `listEvents` para armar la
+     * tarjeta —el torneo y su par absorbido, y de cada prueba la española si
+     * las dos la publican—, porque el destino tiene que ser exactamente el id
+     * que la ficha va a comparar. Si aquí se pidieran solo las del evento
+     * canónico, las listas de las pruebas por equipos, que son de la FIE y
+     * viven en el par, no tendrían dónde caer.
+     */
+    db
+      .select({
+        id: eventCompetition.id,
+        prueba: clavePrueba(eventCompetition),
+        propia: sql<boolean>`${event.canonicalEventId} is null`,
+      })
+      .from(eventCompetition)
+      .innerJoin(event, eq(event.id, eventCompetition.eventId))
+      .where(delTorneoYSuPar),
+  ]);
+
+  const destinoPorPrueba = new Map<string, string>();
+  for (const p of [...pruebasDeLaTarjeta].sort(
+    (a, b) => Number(b.propia) - Number(a.propia),
+  )) {
+    if (!destinoPorPrueba.has(p.prueba)) destinoPorPrueba.set(p.prueba, p.id);
+  }
+
+  /**
+   * REENCAJE: la lista de la FIE se cuelga de la prueba española equivalente.
+   *
+   * La ficha pinta las pruebas de Skermo y filtra los inscritos por el id de
+   * la prueba que está mirando. Una fila de la FIE trae el id de *su* prueba,
+   * que es otra fila de la tabla aunque sea el mismo sable masculino
+   * absoluto; sin reencajarla no la pintaría nadie.
+   *
+   * El emparejado es por arma + género + categoría + formato, exactamente el
+   * criterio con el que `enlazar.ts` decidió que los dos torneos son el mismo.
+   *
+   * Cuando la prueba solo la publica la FIE —las de equipos de las Copas del
+   * Mundo— el destino es su propia fila, que es la que la tarjeta hereda, y la
+   * lista se queda donde está. Cuando la publican las dos, la fila de la FIE
+   * cae en la prueba española y ahí decide `unaSolaFuentePorPrueba`.
+   */
+  const filas = filasCrudas.flatMap((f) => {
+    const destino = destinoPorPrueba.get(f.prueba);
+    if (!destino) return [];
+    return destino === f.competitionId ? [f] : [{ ...f, competitionId: destino }];
+  });
+
+  return unaSolaFuentePorPrueba(filas).map((f) => ({
     competitionId: f.competitionId,
     nombre: f.nombre,
     equipo: f.equipo === '' ? null : f.equipo,
@@ -1134,31 +1500,86 @@ export async function inscritosPublicados(
 }
 
 /**
+ * ===========================================================================
+ * UNA PRUEBA, UNA LISTA: NUNCA DOS FUENTES MEZCLADAS
+ * ===========================================================================
+ *
+ * Desde que se leen también las listas de la FIE, una prueba internacional
+ * puede tener **dos listas de las mismas personas**, escritas distinto:
+ *
+ *   Orán, sable masculino
+ *     Skermo   6 nombres    «JORGE CASAUS PIELAGO»
+ *     FIE      9 nombres    «CASAUS PIELAGO Jorge»
+ *
+ * Enseñarlas juntas daría **15 filas para 11 personas**, un contador de 15 y
+ * un pie que nombra una sola fuente para dos listas. Y no se pueden fundir:
+ * emparejar «JORGE CASAUS PIELAGO» con «CASAUS PIELAGO Jorge» es emparejar por
+ * nombre, que es lo que este proyecto no hace nunca.
+ *
+ * **La regla, decidida por el usuario: manda Skermo (la RFEE).** Es la fuente
+ * cuyos nombres están en el formato de la federación española y es la que ya se
+ * venía enseñando.
+ *
+ * Con un matiz que hace falta o la regla no sirve: **Skermo no publica pruebas
+ * por equipos**. Si «manda Skermo» se aplicara a secas, seis listas de equipos
+ * ya capturadas se quedarían invisibles para siempre. Así que:
+ *
+ *   si Skermo publica lista para ESA prueba  →  manda Skermo
+ *   si no publica ninguna                    →  se usa la de la FIE
+ *
+ * Nunca las dos. La decisión es **por prueba**, no por torneo: un mismo torneo
+ * puede tener las individuales de Skermo y las de equipos de la FIE, y eso es
+ * correcto porque cada prueba enseña una sola lista con su procedencia al pie.
+ */
+/**
+ * Qué prueba es, sin depender de su id: arma + género + categoría + formato.
+ *
+ * Es la clave con la que se reconoce «el mismo sable masculino absoluto» en la
+ * fila de Skermo y en la de la FIE, que son dos filas distintas de
+ * `event_competition`. Se calcula en Postgres para no traerse cuatro columnas
+ * más por cada inscrito.
+ */
+function clavePrueba(t: typeof eventCompetition) {
+  return sql<string>`concat_ws('|', ${t.weapon}::text, ${t.gender}::text, ${t.category}::text, ${t.format}::text)`;
+}
+
+const PRIORIDAD_DE_FUENTE: Record<string, number> = {
+  skermo_rfee: 3,
+  skermo_regional: 2,
+  fie: 1,
+};
+
+function unaSolaFuentePorPrueba<T extends { competitionId: string; fuente: string }>(
+  filas: T[],
+): T[] {
+  /** Para cada prueba, la fuente de mayor prioridad que de verdad publica. */
+  const manda = new Map<string, string>();
+  for (const f of filas) {
+    const actual = manda.get(f.competitionId);
+    const nueva = PRIORIDAD_DE_FUENTE[f.fuente] ?? 0;
+    if (!actual || nueva > (PRIORIDAD_DE_FUENTE[actual] ?? 0)) {
+      manda.set(f.competitionId, f.fuente);
+    }
+  }
+  return filas.filter((f) => manda.get(f.competitionId) === f.fuente);
+}
+
+/**
  * Cuántos inscritos publica la fuente en cada prueba de un torneo.
  *
- * Sirve para pintar el contador sin traerse los nombres, que es lo que
- * interesa en la rejilla del calendario.
+ * Cuenta **exactamente las filas que enseña `inscritosPublicados`**, y por eso
+ * la llama en lugar de hacer su propio `count(*)`. Contar aparte era más
+ * barato —no se traía los nombres— pero se llevaba por delante las dos reglas
+ * que decide la otra función: la herencia del par de la FIE y que entre dos
+ * fuentes manda Skermo. Un contador que dice 15 donde la lista enseña 6 es
+ * peor que no tener contador.
  */
 export async function contarInscritosPublicados(
   eventId: string,
 ): Promise<Record<string, number>> {
-  const filas = await db
-    .select({
-      competitionId: competitionRegistration.eventCompetitionId,
-      n: sql<number>`count(*)::int`,
-    })
-    .from(competitionRegistration)
-    .innerJoin(
-      eventCompetition,
-      eq(competitionRegistration.eventCompetitionId, eventCompetition.id),
-    )
-    .where(
-      and(
-        eq(eventCompetition.eventId, eventId),
-        isNull(competitionRegistration.withdrawnAt),
-      ),
-    )
-    .groupBy(competitionRegistration.eventCompetitionId);
-
-  return Object.fromEntries(filas.map((f) => [f.competitionId, f.n]));
+  const porPrueba: Record<string, number> = {};
+  for (const i of await inscritosPublicados(eventId)) {
+    porPrueba[i.competitionId] = (porPrueba[i.competitionId] ?? 0) + 1;
+  }
+  return porPrueba;
 }

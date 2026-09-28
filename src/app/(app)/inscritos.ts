@@ -10,17 +10,33 @@ import { inscritosPublicados, type InscritoPublicado } from '@/lib/queries/calen
 /**
  * Quién va a cada prueba de un torneo.
  *
- * Son DOS listas distintas y se enseñan por separado a propósito:
+ * **La lista oficial**, la que publica la organización, es la única que se
+ * enseña. Aquí aparece quien se haya apuntado por donde sea: por esta
+ * aplicación, por su club directamente en Skermo o porque le apuntó el
+ * seleccionador. Responde a la pregunta que pidió el usuario con estas
+ * palabras: *«que pueda recuperar si estás o no ya inscrito, porque igual le
+ * ha inscrito otra persona»*.
  *
- * 1. **La lista oficial**, la que publica la organización. Es la que manda.
- *    Aquí aparece quien se haya apuntado por donde sea: por esta aplicación,
- *    por su club directamente en Skermo o porque le apuntó el seleccionador.
- *    Responde a la pregunta que pidió el usuario con estas palabras: *«que
- *    pueda recuperar si estás o no ya inscrito, porque igual le ha inscrito
- *    otra persona»*.
- * 2. **Lo pedido desde aquí** y que todavía no ha llegado a esa lista: una
- *    solicitud esperando al club o a la RFEE no es una inscripción, y
- *    mezclarlas haría que alguien viajase creyendo que está dentro.
+ * ---------------------------------------------------------------------------
+ * `pendientes` SE QUEDÓ SOLO PARA LA DIRECCIÓN TÉCNICA
+ * ---------------------------------------------------------------------------
+ * Era la segunda lista: lo pedido desde aquí y que todavía no había llegado a
+ * la oficial. Tenía sentido cuando la aplicación tramitaba inscripciones, y ya
+ * no las tramita:
+ *
+ *   «quita todo lo de clubes, lo de códigos de licencia, lo de darse o no de
+ *    alta en los torneos, eso está oculto: solo ver calendario, si estoy o no»
+ *
+ * Una solicitud esperando a que la valide alguien **no es estar dentro**, así
+ * que enseñarla al lado de la lista oficial solo puede confundir. Se calcula
+ * únicamente para `admin`, que es quien tramita y para quien el dato sigue
+ * siendo trabajo pendiente; para todos los demás sale vacía y **la consulta no
+ * se hace**, que de paso ahorra una unión de cuatro tablas cada vez que alguien
+ * abre una ficha de torneo.
+ *
+ * El campo no desaparece del tipo a propósito: la ficha del calendario ya solo
+ * lee `oficiales`, y quitarlo obligaría a tocar dos ficheros de otro agente
+ * para no ganar nada.
  *
  * Tres decisiones más, con su porqué:
  *
@@ -52,7 +68,10 @@ export type Inscrito = {
 export type QuienVa = {
   /** Lo que publica la organización. Es la lista que manda. */
   oficiales: InscritoPublicado[];
-  /** Solicitudes hechas desde aquí que aún no figuran en la oficial. */
+  /**
+   * Solicitudes hechas desde aquí que aún no figuran en la oficial.
+   * **Solo para la dirección técnica**; vacía para todos los demás.
+   */
   pendientes: Inscrito[];
 };
 
@@ -69,23 +88,25 @@ export async function inscritosDelEvento(eventId: string): Promise<QuienVa> {
 
   const [oficiales, filas] = await Promise.all([
     inscritosPublicados(eventId, { athleteIdsPropios: idsPropios }),
-    db
-      .select({
-        competitionId: entry.eventCompetitionId,
-        athleteId: entry.athleteId,
-        firstName: athlete.firstName,
-        lastName: athlete.lastName,
-        clubName: club.name,
-        status: entry.status,
-      })
-      .from(entry)
-      .innerJoin(eventCompetition, eq(entry.eventCompetitionId, eventCompetition.id))
-      .innerJoin(athlete, eq(entry.athleteId, athlete.id))
-      .leftJoin(club, eq(athlete.clubId, club.id))
-      .where(
-        and(eq(eventCompetition.eventId, eventId), inArray(entry.status, EN_MARCHA)),
-      )
-      .orderBy(asc(athlete.lastName), asc(athlete.firstName)),
+    perfil.role === 'admin'
+      ? db
+          .select({
+            competitionId: entry.eventCompetitionId,
+            athleteId: entry.athleteId,
+            firstName: athlete.firstName,
+            lastName: athlete.lastName,
+            clubName: club.name,
+            status: entry.status,
+          })
+          .from(entry)
+          .innerJoin(eventCompetition, eq(entry.eventCompetitionId, eventCompetition.id))
+          .innerJoin(athlete, eq(entry.athleteId, athlete.id))
+          .leftJoin(club, eq(athlete.clubId, club.id))
+          .where(
+            and(eq(eventCompetition.eventId, eventId), inArray(entry.status, EN_MARCHA)),
+          )
+          .orderBy(asc(athlete.lastName), asc(athlete.firstName))
+      : Promise.resolve([]),
   ]);
 
   /**

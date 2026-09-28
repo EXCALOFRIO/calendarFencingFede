@@ -80,3 +80,26 @@ export function toCampoFechaHora(valor: Date | null | undefined): string {
 export function toCampoFecha(valor: Date | null | undefined): string {
   return toCampoFechaHora(valor).slice(0, 10);
 }
+
+/**
+ * Hoy en España, `YYYY-MM-DD`. **Nunca `new Date().getDate()`.**
+ *
+ * El calendario resalta el día de hoy, la agenda lo separa y «lo que viene»
+ * cuenta los días que faltan. Los tres lo calculaban con las partes locales de
+ * `new Date()`, y ahí el huso del que ejecuta decide: **el Worker de
+ * Cloudflare corre en UTC y el navegador en hora española**, así que entre las
+ * 00:00 y las 02:00 de Madrid el servidor pinta un día y el navegador otro.
+ *
+ * Eso se veía de dos maneras. Como error de hidratación de React en
+ * producción —el texto del servidor no coincide con el del cliente, y React
+ * rehace ese trozo del árbol ya pintado, que es de donde salen los saltos de
+ * maquetación tardíos— y como un fallo de bulto: a la una de la mañana el
+ * calendario resaltaba ayer y el plazo decía un día más de los que quedaban.
+ *
+ * Se ancla a España porque es la referencia de la federación: si alguien lo
+ * abre desde Tokio en una Copa del Mundo, las fechas que le importan siguen
+ * siendo las de la convocatoria española.
+ */
+export function hoyMadrid(): string {
+  return toCampoFecha(new Date());
+}

@@ -195,22 +195,33 @@ describe('un plazo calculado nunca se presenta igual que uno publicado', () => {
     expect(conCierreDuro.state).toBe('cerrado');
   });
 
-  it('la ficha de la prueba marca la estimación', async () => {
-    // Es JSX y aquí no hay DOM; lo que se comprueba es que el componente
-    // mira el ORIGEN del plazo, no solo los días que faltan. Si alguien
-    // rehace la ficha y se deja esto, un plazo deducido de la normativa se
-    // presentaría como si lo hubiese publicado la federación.
+  it('la barra de plazos marca la estimación', async () => {
+    /**
+     * Es JSX y aquí no hay DOM; lo que se comprueba es que el componente mira
+     * el ORIGEN de cada hito, no solo los días que faltan. Si alguien rehace
+     * la barra y se deja esto, un plazo deducido de la normativa se
+     * presentaría como si lo hubiese publicado la federación, y en lo nacional
+     * eso pasa siempre: el cierre ordinario lo publica el calendario y los dos
+     * límites de agregación salen de la circular.
+     *
+     * Antes esto vivía en `ficha-evento.tsx` con un «· estimado» escrito al
+     * lado de cada fecha. Ahora el plazo se dibuja, así que la distinción es
+     * visual —subrayado de puntos— y hay que comprobar las dos mitades: que se
+     * marca cada hito calculado Y que se explica qué significa la marca. Una
+     * marca visual sin leyenda no distingue nada para quien la ve por primera
+     * vez.
+     */
     const fuente = readFileSync(
-      join(RAIZ, 'src', 'components', 'calendario', 'ficha-evento.tsx'),
+      join(RAIZ, 'src', 'components', 'calendario', 'barra-plazos.tsx'),
       'utf8',
     );
-    // La cifra grande del cierre avisa de que es una estimación.
-    expect(fuente).toMatch(/status\.next\?\.origin === 'CALCULADO'/);
-    expect(fuente).toContain('(estimado)');
-    // Y cada hito de la lista dice de dónde sale.
-    expect(fuente).toMatch(/d\.origin === 'CALCULADO'/);
-    expect(fuente).toContain('· estimado');
-    expect(fuente).toContain('· publicado');
+    // Cada hito mira su propio origen.
+    expect(fuente).toMatch(/origin === 'CALCULADO'/);
+    // Y lo marca de una forma que se ve.
+    expect(fuente).toContain('decoration-dotted');
+    // Con su leyenda, o la marca no significa nada.
+    expect(fuente).toMatch(/estimadas seg[úu]n la normativa/);
+    expect(fuente).toContain('hasEstimates');
   });
 
   it('en el .ics el estimado lleva su aviso y el publicado no', async () => {

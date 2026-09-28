@@ -51,12 +51,21 @@ describe('un enlace solo existe si las tres condiciones se cumplen', () => {
     expect(malos).toEqual([]);
   }, 30_000);
 
-  it('las pruebas del registro absorbido están contenidas en las del principal', async () => {
+  it('el arma, el género y la categoría del absorbido están en el principal', async () => {
     /**
      * Esta es la condición que de verdad evita el falso positivo. En Samsun,
      * el 24/09/2026, Skermo publica a la vez la Copa del Mundo cadete y la
      * júnior en la misma ciudad y las mismas fechas: solo las pruebas las
-     * distinguen.
+     * distinguen, y es la CATEGORÍA la que lo hace.
+     *
+     * El FORMATO ya no entra en la comparación, y es un cambio a propósito:
+     * ver `clavePruebaSinFormato` en `src/lib/ingest/enlazar.ts`. Desde que se
+     * ingiere el calendario futuro de la FIE, ella publica la prueba por
+     * equipos de cada copa del mundo y Skermo no, así que exigir el formato
+     * dejaba 42 filas de la FIE sin enlazar y con ellas 42 tarjetas duplicadas
+     * al lado de la española. Lo que sigue exigiéndose —arma, género,
+     * categoría, ciudad canónica, solape de fechas y país— es lo que distingue
+     * dos torneos de verdad.
      */
     const huerfanas = await filas(sql`
       select s.name, cs.weapon, cs.gender, cs.category, cs.format
@@ -67,9 +76,45 @@ describe('un enlace solo existe si las tres condiciones se cumplen', () => {
         select 1 from event_competition cp
         where cp.event_id = p.id
           and cp.weapon = cs.weapon and cp.gender = cs.gender
-          and cp.category = cs.category and cp.format = cs.format
+          and cp.category = cs.category
       )`);
     expect(huerfanas).toEqual([]);
+  }, 30_000);
+
+  it('lo único que la relajación del formato deja pasar son pruebas por equipos', async () => {
+    /**
+     * El complemento del test anterior, y el que impide que «no comparar el
+     * formato» se convierta en «no comparar nada».
+     *
+     * Se buscan las pruebas del absorbido que NO casan con la comparación
+     * estricta —las que solo entran gracias a la relajación— y se comprueba que
+     * todas son por EQUIPOS y que el principal tiene la misma terna en
+     * individual. Es decir: la relajación solo añade la variante por equipos de
+     * una prueba que las dos fuentes ya reconocen, nunca una prueba nueva.
+     *
+     * Si alguna vez apareciera aquí una prueba INDIVIDUAL de la FIE casada con
+     * una fila española que solo publica equipos, el enlace sería sospechoso y
+     * este test lo diría.
+     */
+    const porRelajacion = await filas<{ format: string }>(sql`
+      select s.name, cs.weapon, cs.gender, cs.category, cs.format
+      from event s
+      join event p on p.id = s.canonical_event_id
+      join event_competition cs on cs.event_id = s.id
+      where not exists (
+          select 1 from event_competition cp
+          where cp.event_id = p.id
+            and cp.weapon = cs.weapon and cp.gender = cs.gender
+            and cp.category = cs.category and cp.format = cs.format
+        )
+        and not exists (
+          select 1 from event_competition cp
+          where cp.event_id = p.id
+            and cp.weapon = cs.weapon and cp.gender = cs.gender
+            and cp.category = cs.category and cp.format = 'INDIVIDUAL'
+            and cs.format = 'EQUIPOS'
+        )`);
+    expect(porRelajacion).toEqual([]);
   }, 30_000);
 
   it('el principal nunca es una fila de la FIE, y no hay cadenas', async () => {

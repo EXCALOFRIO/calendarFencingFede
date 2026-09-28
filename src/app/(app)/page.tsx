@@ -91,11 +91,17 @@ export default async function CalendarioPage() {
    * invitarles a vincularse sería un aviso que no les toca.
    */
   const sinFicha =
-    atletas.length === 0 && (perfil.role === 'athlete' || perfil.role === 'guardian');
+    atletas.length === 0 && perfil.role === 'athlete';
 
   return (
     <VistaCalendario
       eventos={eventos}
+      /**
+       * Papel y armas, que es lo que decide con qué filtros se abre la
+       * pantalla: un seleccionador de florete entra en florete con los dos
+       * géneros y en absoluto; la dirección técnica, en todo.
+       */
+      perfil={{ role: perfil.role, weapons: perfil.weapons }}
       sinFicha={sinFicha}
       tiradores={tiradores}
       inscripciones={inscripciones}

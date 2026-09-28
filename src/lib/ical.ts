@@ -775,7 +775,7 @@ export function buildIcalFeed(options: IcalFeedOptions): string {
   const lines: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    `PRODID:-//Calendario Esgrima//Feed iCal 1.0//ES`,
+    `PRODID:-//CalendarFencing//Feed iCal 1.0//ES`,
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     `X-WR-CALNAME:${escapeIcalText(meta.name)}`,

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { titularDocumento, titularTorneo } from '../src/lib/utils';
+import {
+  formatDateRangeEs,
+  titularDocumento,
+  titularTorneo,
+} from '../src/lib/utils';
 
 /**
  * La aplicación está en castellano y el calendario no puede tener la mitad
@@ -69,5 +73,36 @@ describe('los títulos de las circulares se leen como títulos', () => {
     expect(titularDocumento('Circular_07-26_clasificados_cto_españa_m17')).toBe(
       'Circular 07-26 Clasificados CTO España M17',
     );
+  });
+});
+
+/**
+ * El rango de fechas de un torneo.
+ *
+ * Existe porque **se perdía el día del final** cuando el rango cruzaba de mes:
+ * un torneo del 31 de octubre al 1 de noviembre se pintaba «31 oct – nov 2026»,
+ * que se lee como si durara un mes entero. Salía en cada tarjeta de la agenda y
+ * en el marcador de la cabecera, y sobrevivió porque solo afecta a los torneos
+ * que empiezan a final de mes.
+ */
+describe('el rango de fechas dice siempre los dos días', () => {
+  it('cruzando de mes, el día del final NO se pierde', () => {
+    expect(formatDateRangeEs('2026-10-31', '2026-11-01')).toBe('31 oct – 1 nov 2026');
+  });
+
+  it('dentro del mismo mes, se comparte el mes', () => {
+    expect(formatDateRangeEs('2026-10-15', '2026-10-18')).toBe('15–18 oct 2026');
+  });
+
+  it('cruzando de año, se dicen los dos años', () => {
+    const r = formatDateRangeEs('2026-12-28', '2027-01-03');
+    expect(r).toContain('2026');
+    expect(r).toContain('2027');
+    expect(r).toContain('28');
+    expect(r).toContain('3');
+  });
+
+  it('un solo día no se escribe como rango', () => {
+    expect(formatDateRangeEs('2026-10-15', '2026-10-15')).not.toContain('–');
   });
 });

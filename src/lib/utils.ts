@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { parseFechaMadrid } from './callups/fechas';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -91,7 +92,18 @@ export function formatDateRangeEs(start: string, end: string): string {
     }).format(new Date(`${iso.slice(0, 10)}T12:00:00Z`));
 
   if (ay === by && am === bm) return `${dia(start)}–${dia(end)} ${mesAnio(end)}`;
-  if (ay === by) return `${diaMes(start)} – ${mesAnio(end)}`;
+  /*
+    Mismo año, meses distintos. El día del final **va**, y antes se perdía:
+    la línea decía `${diaMes(start)} – ${mesAnio(end)}`, así que un torneo del
+    31 de octubre al 1 de noviembre se pintaba «31 oct – nov 2026». Se lee como
+    si durara un mes entero, y sale en cada tarjeta de la agenda y en el
+    marcador de la cabecera.
+
+    Es el tipo de fallo que sobrevive porque solo aparece en los rangos que
+    cruzan de mes, que son pocos: de los 306 torneos del calendario, los que
+    empiezan a final de mes.
+  */
+  if (ay === by) return `${diaMes(start)} – ${dia(end)} ${mesAnio(end)}`;
   return `${formatDateEs(start)} – ${formatDateEs(end)}`;
 }
 
@@ -99,10 +111,25 @@ export function daysBetween(from: Date, to: Date): number {
   return Math.ceil((to.getTime() - from.getTime()) / 86_400_000);
 }
 
-/** Resta días naturales a una fecha ISO y devuelve un `Date` en UTC. */
+/**
+ * Resta días naturales a una fecha ISO y devuelve el final de ese día **en hora
+ * de Madrid**.
+ *
+ * Antes cerraba a las 23:59:59 UTC, que en horario de verano español son **las
+ * 01:59 de la madrugada siguiente**: un plazo del viernes se mostraba como del
+ * sábado. Se vio al simular la escalera de plazos de un TNR y encontrar los
+ * tres hitos a las 01:59.
+ *
+ * La resta se hace sobre la fecha civil, no sobre milisegundos, para que las
+ * dos madrugadas del año en que cambia la hora no desplacen el resultado.
+ */
 export function isoDateMinusDays(iso: string, days: number): Date {
-  const base = new Date(`${iso.slice(0, 10)}T23:59:59Z`);
-  return new Date(base.getTime() - days * 86_400_000);
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+  const civil = new Date(Date.UTC(y, m - 1, d));
+  civil.setUTCDate(civil.getUTCDate() - days);
+  return (
+    parseFechaMadrid(`${civil.toISOString().slice(0, 10)}T23:59`) ?? civil
+  );
 }
 
 export const WEAPON_LABEL = {
@@ -138,6 +165,18 @@ export const CATEGORY_LABEL = {
   ABS: 'Absoluto',
   VET: 'Veteranos',
 } as const;
+
+/**
+ * La categoría abreviada, para las pastillas donde no cabe el nombre entero.
+ *
+ * Solo dos entradas porque solo dos categorías tienen nombre largo: el resto
+ * ya son códigos («M17»). Estaba escrita dentro de la rejilla del mes con el
+ * comentario «"Absoluto" no cabe en una pastilla», y la tira de pruebas de la
+ * ficha necesita lo mismo desde que enseña también las de equipos: «SAB M
+ * Absoluto · equipos» no cabe en ningún sitio. Vive aquí para que la
+ * abreviatura sea la misma en las dos pantallas.
+ */
+export const CATEGORY_SHORT: Record<string, string> = { ABS: 'Abs', VET: 'Vet' };
 
 export const CIRCUIT_LABEL: Record<string, string> = {
   TNR: 'Torneo Nacional de Ranking',
