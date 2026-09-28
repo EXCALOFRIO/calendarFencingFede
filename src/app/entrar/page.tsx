@@ -5,6 +5,8 @@ import { db } from '@/db';
 import { userProfile } from '@/db/schema';
 import { auth } from '@/lib/auth/server';
 import { getSessionProfile } from '@/lib/auth/session';
+import { FondoCompeticion } from '@/components/acceso/fondo-competicion';
+import { Marca } from '@/components/marca';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -309,35 +311,49 @@ export default async function EntrarPage({
       */}
       <section className="flex flex-col justify-between gap-8 border-b px-6 py-8 lg:border-b-0 lg:border-r lg:px-12 lg:py-12">
         <div className="flex items-center gap-2.5">
-          <span
-            className="grid size-7 shrink-0 place-items-center rounded-md bg-primary"
-            aria-hidden
-          >
-            <svg viewBox="0 0 24 24" className="size-4" fill="none">
-              <path
-                d="M5 19 19 5M19 19 5 5"
-                stroke="white"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-              />
-            </svg>
+          <Marca className="size-7" />
+          {/*
+            El rótulo a dos tonos: «Calendar» en el color del texto y
+            «Fencing» en el rojo de la aplicación. Una palabra compuesta de
+            quince letras en un solo tono se lee como una frase; partida por el
+            color se lee como una marca, y de paso el rojo aparece aquí arriba
+            sin meter un adorno que no dice nada.
+          */}
+          <span className="font-semibold tracking-tight">
+            Calendar<span className="text-primary">Fencing</span>
           </span>
-          <span className="font-semibold tracking-tight">Esgrima</span>
         </div>
 
-        <div className="flex flex-col gap-4">
+        {/*
+          El titular, sobre una superficie SÓLIDA. Y el por qué importa, porque
+          aquí se probó lo contrario y se descartó mirándolo.
+
+          Debajo hay fotos, así que lo primero que se hizo fue un panel de
+          acrílico —desenfoque del fondo, tinte y filete de luz—, que es lo que
+          hace la FIE sobre la foto de la sede. En la captura se ve que **no
+          aporta nada**: en este punto de la columna la fotografía de ambiente
+          ya está casi negra, así que no hay nada que desenfocar y el
+          `backdrop-blur` se paga sin que se note. Es el caso que la propia
+          regla de `REFERENCIAS.md` § 10 excluye: acrílico solo donde de verdad
+          hay imagen viva debajo.
+
+          El panel se queda, pero sólido, y por una razón de composición y no
+          de legibilidad: el titular ya daba 16,89:1 sobre la foto. Lo que hace
+          es **anclar el bloque** para que la columna no se lea como «fotos
+          arriba, texto abajo» con un hueco en medio.
+        */}
+        <div className="medida flex flex-col gap-4 rounded-md border-t border-t-filete bg-card p-5 sm:p-6">
           <h1 className="text-4xl leading-[0.95] sm:text-5xl lg:text-6xl">
             Todo el calendario
             <br />
             en un solo sitio
           </h1>
-          <p className="medida text-sm text-muted-foreground sm:text-base">
+          <p className="text-sm text-muted-foreground sm:text-base">
             La RFEE, la FIE y el circuito europeo, filtrados por tu arma, tu
-            género y tu categoría. Con los plazos marcados, las convocatorias y
-            el estado de cada inscripción.
+            género y tu categoría. Con los plazos marcados y las convocatorias
+            de la selección.
           </p>
         </div>
-
       </section>
 
       {/* Mitad del formulario. */}
@@ -439,12 +455,28 @@ export default async function EntrarPage({
             </div>
           ) : null}
 
+          {/*
+            Aquí NO va el aviso de los menores de 14 años.
+
+            La regla del RGPD sigue vigente y se aplica donde de verdad decide
+            algo: en el alta (`src/app/(app)/admin/usuarios/actions.ts`, con
+            `requiresGuardianAccount`), que es la pantalla del administrador.
+            En esta pantalla no le servía a nadie: quien llega aquí ya tiene
+            cuenta, así que la cuestión del tutor está resuelta desde antes.
+          */}
           <p className="medida mt-6 text-xs text-muted-foreground">
-            Las altas las hace el administrador. Si eres menor de 14 años, la
-            cuenta debe estar a nombre de tu padre, madre o tutor.
+            Las altas las hace el administrador.
           </p>
         </div>
       </section>
+
+      {/*
+        Las fotos del Campeonato del Mundo. Va **último** a propósito: la tira
+        del pie es un elemento del flujo y ocupa una fila de la rejilla, así
+        que puesta antes empujaría el campo del correo fuera de la primera
+        pantalla en un móvil.
+      */}
+      <FondoCompeticion />
     </main>
   );
 }

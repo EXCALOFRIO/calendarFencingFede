@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="32" height="32">
+  <title>Calendario de Esgrima</title>
+  <!--
+    El mismo dibujo que `src/components/marca.tsx`, trazo a trazo. Aquí van los
+    colores en hexadecimal porque a un `icon.svg` no le llegan las variables
+    CSS: #c60c1e es `--primary` (el rojo de la bandera) y #fcfcfc es
+    `--primary-foreground`. Si cambias uno, cambia el otro fichero.
+    Next 16 lo publica como <link rel="icon" sizes="any">; el por qué de la
+    forma y las 33 descartadas están en la cabecera del componente.
+  -->
+  <path d="M0 21.7 A21.7 21.7 0 0 1 21.7 0 H78.3 A21.7 21.7 0 0 1 100 21.7 V78.3 A21.7 21.7 0 0 1 78.3 100 H21.7 A21.7 21.7 0 0 1 0 78.3 Z" fill="#c60c1e"/>
+  <g transform="rotate(45 50 50) translate(-25 -15) scale(1.5)" fill="none" stroke="#fcfcfc" stroke-width="5.333" stroke-linejoin="round">
+    <g stroke-linecap="round">
+      <path d="M50 13 V65"/>
+      <path d="M39 66 C 39 63.5 61 63.5 61 66"/>
+      <path d="M38 66 H62"/>
+    </g>
+    <path d="M50 67 V84" stroke-linecap="butt"/>
+  </g>
+</svg>

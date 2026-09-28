@@ -32,7 +32,7 @@ export default function ErrorGlobal({
   return (
     <html lang="es" className="dark">
       <body className="antialiased">
-        <title>Algo se ha roto · Calendario de Esgrima</title>
+        <title>Algo se ha roto · CalendarFencing</title>
         <main className="mx-auto flex min-h-dvh w-full max-w-[1320px] flex-col items-start justify-center gap-3 px-4 py-16">
           <h1 className="text-2xl sm:text-3xl">La aplicación no ha arrancado</h1>
           <p className="medida text-sm text-muted-foreground">

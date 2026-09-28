@@ -2,12 +2,9 @@
 
 import {
   CalendarDays,
-  FileText,
-  Gauge,
-  Medal,
+  ClipboardCheck,
+  ListOrdered,
   Settings,
-  Trophy,
-  Users,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -37,17 +34,15 @@ type Destino = {
  * dos toques y uno de ellos era abrir una cosa que no dice qué hay dentro.
  * Petición literal: *«no me gusta lo de Más, mételo directo»*.
  *
- * Cuántos hay, por papel:
+ * Cuántos hay, por papel (sin «Normativa», ver más abajo):
  *
- *   tirador y tutor     Calendario · Mi estado · Selección · Ranking · Normativa
- *   club                Calendario · Selección · Ranking · Normativa
- *   seleccionador       Calendario · Selección · Tiradores · Ranking · Normativa
+ *   tirador             Calendario · Mi estado · Ranking
+ *   seleccionador       Calendario · Ranking
  *   dirección técnica   + Gestión
  *
- * Cinco caben en la barra del móvil a 393 px con la etiqueta entera. La
- * dirección técnica llega a seis y por eso tiene etiquetas cortas: es la
- * única que lo necesita, y prefiere ver «Gestión» a que se lo esconda un
- * menú.
+ * Cuatro o cinco caben en la barra del móvil a 393 px con la etiqueta
+ * entera, y desde que «Normativa» salió de la barra ya nadie llega a seis:
+ * las etiquetas cortas se quedan por si vuelve a crecer.
  *
  * Qué NO es esto: ni una hamburguesa con todo dentro —esconder el calendario
  * detrás de tres rayas en una aplicación cuya única pantalla importante es el
@@ -57,6 +52,27 @@ type Destino = {
  * inscripciones. Un seleccionador no se inscribe en nada; lo suyo es
  * «Tiradores». Las rutas siguen abiertas por URL para quien tenga sesión,
  * simplemente no ocupan un sitio en la barra de quien no las va a tocar.
+ *
+ * ---------------------------------------------------------------------------
+ * LOS ICONOS: POR QUÉ ESTOS Y NO LOS DE ANTES
+ * ---------------------------------------------------------------------------
+ *
+ * Dos cambiaron, y los dos por el mismo motivo: decían otra cosa.
+ *
+ *   «Mi estado»   era `Gauge`, un cuentakilómetros. Un cuentakilómetros no
+ *                 significa «mi estado» para nadie; sugiere un medidor, una
+ *                 velocidad, un porcentaje de algo. La pantalla enseña **tus
+ *                 inscripciones y en qué punto está cada una**, así que va
+ *                 `ClipboardCheck`: una lista de cosas tuyas, comprobada.
+ *
+ *   «Ranking»     era `Trophy`. Un ranking no es un trofeo: es una lista
+ *                 ordenada por puntos, así que va `ListOrdered`, que es
+ *                 literalmente eso. (Y mientras «Selección» estuvo en la
+ *                 barra con su medalla, eran dos metáforas de premio pegadas
+ *                 que el ojo agrupaba en vez de separar.)
+ *
+ * Los demás se quedan porque ya dicen lo que hay detrás: `CalendarDays` para
+ * el calendario y `Settings` para la gestión.
  */
 const DESTINOS: Destino[] = [
   {
@@ -69,34 +85,46 @@ const DESTINOS: Destino[] = [
     href: '/estado',
     etiqueta: 'Mi estado',
     corta: 'Estado',
-    icono: Gauge,
-    roles: ['athlete', 'guardian'],
+    icono: ClipboardCheck,
+    roles: ['athlete'],
   },
-  {
-    href: '/convocatorias',
-    etiqueta: 'Selección',
-    corta: 'Selección',
-    icono: Medal,
-  },
-  {
-    href: '/tiradores',
-    etiqueta: 'Tiradores',
-    corta: 'Tiradores',
-    icono: Users,
-    roles: ['coach', 'admin'],
-  },
+  /*
+    «SELECCIÓN» Y «TIRADORES» YA NO OCUPAN SITIO EN LA BARRA.
+
+    Petición literal: *«lo de selección habrá que quitarlo, no lo entiendo,
+    ok? y tiradores también, esas secciones fuera, no las entiendo. Tiene que
+    ser automático, tipo el seleccionador de florete ve a los de florete, el
+    de sable a los de sable»*.
+
+    Se hace lo mismo que con «Normativa» y por el mismo motivo: **las rutas
+    siguen abiertas por URL y no se borra nada**, simplemente dejan de gastar
+    uno de los huecos de la barra del móvil. Si alguna vuelve a hacer falta,
+    es una entrada en esta lista.
+
+    Y la segunda mitad de la petición, la del «automático», está hecha donde
+    de verdad se notaba: el ranking abre por el arma del seleccionador que
+    mira, no por la primera de la lista (ver `src/app/(app)/ranking/page.tsx`).
+    Era eso lo que obligaba a navegar a una sección para llegar a lo suyo.
+  */
   {
     href: '/ranking',
     etiqueta: 'Ranking',
     corta: 'Ranking',
-    icono: Trophy,
+    icono: ListOrdered,
   },
-  {
-    href: '/documentos',
-    etiqueta: 'Normativa',
-    corta: 'Normativa',
-    icono: FileText,
-  },
+  /*
+    «Normativa» YA NO OCUPA SITIO EN LA BARRA.
+
+    Petición literal: *«lo de normativa ocúltalo, es irrelevante para este
+    proyecto; solo se verán los documentos de cada competición, un enlace,
+    pero eso en la competición de cada una»*.
+
+    Y tiene razón: un listado de circulares suelto no resuelve nada. El
+    documento que importa es la convocatoria DE un torneo, y ese sitio es la
+    ficha del torneo, no una sección aparte. La ruta `/documentos` sigue
+    abierta por URL —no se borra nada— simplemente deja de gastar uno de los
+    cinco huecos de la barra del móvil.
+  */
   {
     href: '/admin',
     etiqueta: 'Gestión',
@@ -114,6 +142,45 @@ function visibles(role: Role): Destino[] {
   return DESTINOS.filter((d) => !d.roles || d.roles.includes(role));
 }
 
+/**
+ * «Estás aquí», con la misma señal en las dos barras.
+ *
+ * Antes no lo era: en escritorio el destino activo se marcaba con
+ * `bg-secondary` y en el móvil con `text-primary-text`. Dos señales para un
+ * solo significado, y en dos sitios que se ven seguidos si alguien gira el
+ * portátil. El usuario cazó el mismo fallo en los filtros del calendario
+ * —«malos los selectores»— y era exactamente esto: la misma idea contada de
+ * dos formas, o la misma forma contando dos ideas.
+ *
+ * Se unificó en `bg-secondary`, y eso resolvió la incoherencia y dejó otro
+ * problema, que es el que el usuario ve ahora: *«es tan gris que ni se
+ * nota»*. Medido, `--secondary` sobre la cabecera son 0,099 de distancia
+ * OKLab **de pura luminosidad**. Se ve si lo buscas; no se ve de un vistazo.
+ *
+ * La convención de la aplicación, rehecha (no deshecha), es **relleno frente
+ * a contorno**:
+ *
+ *  - **El relleno sólido de acento sigue reservado a la acción principal**
+ *    de una pantalla, y una barra de navegación no hace nada: lleva a un
+ *    sitio. Así que aquí no hay relleno rojo.
+ *  - Marcado = **contorno rojo + superficie teñida + rótulo rojo y en
+ *    negrita** (`--marcado`, ver `globals.css`). Sin marcar = texto apagado.
+ *    Un radio, una altura, y el mismo aspecto que cualquier otro control
+ *    marcado de la aplicación.
+ *  - El contorno va en `ring-inset`, no en `border`: un borde de 1 px le
+ *    sumaría 2 px al enlace y movería la barra entera al cambiar de sección.
+ *  - Y el color no va solo: además del contorno y del peso de la letra, el
+ *    activo lleva `aria-current="page"`, que es lo que oye quien no ve nada
+ *    de esto.
+ *
+ * Se exportan porque `admin/tira-secciones.tsx` las tenía copiadas letra por
+ * letra. Dos copias de una convención son dos convenciones en cuanto alguien
+ * toca una.
+ */
+export const ACTIVO =
+  'bg-marcado font-semibold text-primary-text ring-1 ring-primary-text ring-inset';
+export const INACTIVO = 'text-muted-foreground hover:bg-accent hover:text-foreground';
+
 /** Barra superior, a partir de 1024 px. Todos los destinos, sin desplegables. */
 export function NavEscritorio({ role }: { role: Role }) {
   const pathname = usePathname();
@@ -129,9 +196,7 @@ export function NavEscritorio({ role }: { role: Role }) {
             aria-current={es ? 'page' : undefined}
             className={cn(
               'rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
-              es
-                ? 'bg-secondary text-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+              es ? ACTIVO : INACTIVO,
             )}
           >
             {destino.etiqueta}
@@ -147,12 +212,17 @@ export function NavEscritorio({ role }: { role: Role }) {
  *
  * Fija abajo, que es donde llega el pulgar, y con el hueco del área segura
  * del iPhone. Cada celda es icono + palabra: el icono solo no se entiende
- * —«Gauge» no significa «mi estado» para nadie— y la palabra sola en una
- * barra de seis se lee mal.
+ * —un cuentakilómetros no significa «mi estado» para nadie, y por eso ya no
+ * está— y la palabra sola en una barra de seis se lee mal.
  *
  * El tamaño de la letra baja un punto cuando hay seis destinos, que solo le
  * pasa a la dirección técnica. Se mide, no se adivina: `npm run barrido`
  * falla si algo desborda.
+ *
+ * La celda mide 48 px de alto con 4 px de aire alrededor, en vez de 56 px a
+ * sangre. Dos motivos: sigue por encima del objetivo táctil de 44 px que
+ * exige `UI.md`, y deja que el marcado sea **la misma pastilla redondeada que
+ * en escritorio** en vez de un bloque gris de lado a lado.
  */
 export function NavMovil({ role }: { role: Role }) {
   const pathname = usePathname();
@@ -172,17 +242,19 @@ export function NavMovil({ role }: { role: Role }) {
           const es = activo(pathname, destino.href);
           const Icono = destino.icono;
           return (
-            <li key={destino.href} className="min-w-0">
+            <li key={destino.href} className="min-w-0 p-1">
               <Link
                 href={destino.href}
                 aria-current={es ? 'page' : undefined}
                 className={cn(
-                  'flex h-14 flex-col items-center justify-center gap-0.5 px-0.5 font-medium transition-colors',
+                  'flex h-12 flex-col items-center justify-center gap-0.5 rounded-md px-0.5 font-medium transition-colors',
                   apretada ? 'text-[0.6rem]' : 'text-[0.68rem]',
-                  es ? 'text-primary-text' : 'text-muted-foreground',
+                  /* El mismo par que en escritorio, incluido el `hover`: el
+                     móvil se quedaba sin él y perdía la respuesta al toque. */
+                  es ? ACTIVO : INACTIVO,
                 )}
               >
-                <Icono className={apretada ? 'size-4' : 'size-5'} />
+                <Icono className={apretada ? 'size-4' : 'size-5'} aria-hidden />
                 <span className="w-full truncate text-center">
                   {destino.corta ?? destino.etiqueta}
                 </span>

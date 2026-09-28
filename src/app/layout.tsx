@@ -31,8 +31,8 @@ const cuerpo = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: 'Calendario de Esgrima',
-    template: '%s · Calendario de Esgrima',
+    default: 'CalendarFencing',
+    template: '%s · CalendarFencing',
   },
   description:
     'Calendario, inscripciones y convocatorias de esgrima en un solo sitio: ' +
@@ -42,7 +42,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'Esgrima',
+    title: 'CalendarFencing',
   },
   formatDetection: { telephone: false },
 };

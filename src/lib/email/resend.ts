@@ -61,7 +61,7 @@ function componerTexto(body: string): string {
     body.trimEnd(),
     '',
     '—',
-    'Calendario de Esgrima',
+    'CalendarFencing',
     'Aviso automático: no respondas a este correo.',
   ];
   if (appUrl) lineas.push(appUrl);

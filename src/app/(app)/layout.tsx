@@ -1,6 +1,7 @@
 import { LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { Marca } from '@/components/marca';
 import { NavEscritorio, NavMovil } from '@/components/nav';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -81,24 +82,39 @@ export default async function AppLayout({
 
   return (
     <div className="hueco-barra flex min-h-dvh flex-col">
-      <header className="sticky top-0 z-30 border-b bg-background/85 backdrop-blur">
-        <div className="mx-auto flex h-14 w-full max-w-[1320px] items-center gap-4 px-4">
+      {/*
+        LA CABECERA ES UNA SUPERFICIE, NO UN CRISTAL SUCIO.
+
+        Era `bg-background/85 backdrop-blur`: el color del lienzo al 85 % y un
+        desenfoque de 8 px. Las dos cosas mal, y lo dice `REFERENCIAS.md` § 10
+        por escrito: por debajo de 12 px el desenfoque «no se lee como
+        material, se lee como una foto mal puesta», y el acrílico es para
+        paneles **sobre una imagen** —«si detrás no hay nada que desenfocar,
+        el acrílico no aporta nada y solo cuesta pintarlo»—. Detrás de esta
+        barra no hay una foto: hay el calendario, y desenfocar texto solo lo
+        convierte en puré.
+
+        Así que va sólida y de nivel 1, un paso por encima del lienzo. Se gana
+        que la barra existe como objeto, que el contenido ya no se transparenta
+        por debajo al desplazarse, y una plaza del presupuesto de seis
+        superficies con desenfoque por pantalla de `REFERENCIAS.md` § 10, que
+        en el calendario venía justo.
+      */}
+      <header className="sticky top-0 z-30 border-b bg-card">
+        <div className="ancho-app flex h-14 items-center gap-4 px-4">
           <Link href="/" className="flex shrink-0 items-center gap-2.5">
-            <span
-              className="grid size-7 shrink-0 place-items-center rounded-md bg-primary"
-              aria-hidden
-            >
-              <svg viewBox="0 0 24 24" className="size-4" fill="none">
-                <path
-                  d="M5 19 19 5M19 19 5 5"
-                  stroke="white"
-                  strokeWidth="1.75"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </span>
+            {/*
+              La marca va con `titulo` en el móvil y sin él en el escritorio:
+              a partir de `sm` al lado se lee «CalendarFencing», y entonces el
+              nombre accesible del enlace lo dice la palabra. Abajo de `sm` la
+              palabra se oculta y la marca es lo único que queda, así que
+              tiene que nombrarse ella.
+            */}
+            <Marca className="size-7 sm:hidden" titulo="CalendarFencing, al calendario" />
+            <Marca className="hidden size-7 sm:block" />
+            {/* A dos tonos, igual que en la pantalla de acceso. */}
             <span className="hidden font-semibold tracking-tight sm:inline">
-              Esgrima
+              Calendar<span className="text-primary">Fencing</span>
             </span>
           </Link>
 
@@ -111,8 +127,15 @@ export default async function AppLayout({
               href="/perfil"
               className="flex items-center gap-2 rounded-md p-1 pr-2 transition-colors hover:bg-accent"
             >
-              <Avatar className="size-7">
-                <AvatarFallback className="text-[11px]">
+              {/*
+                El disco pasa de 28 a 32 px y las iniciales de 11 a 12 px. A
+                11 px, dos letras en un círculo de 28 quedaban en cinco
+                píxeles de trazo y se leían como una mancha; medido en la
+                captura de producción, «AR» estaba más apagado que el nombre
+                que tiene al lado, que es lo contrario de lo que se quiere.
+              */}
+              <Avatar className="size-8">
+                <AvatarFallback className="text-xs">
                   {iniciales(perfil.fullName)}
                 </AvatarFallback>
               </Avatar>
@@ -150,9 +173,11 @@ export default async function AppLayout({
         ) : null}
       </header>
 
-      <main className="mx-auto flex w-full max-w-[1320px] flex-1 flex-col px-4 py-4">
-        {children}
-      </main>
+      {/*
+        El mismo ancho que la cabecera, y de la misma fuente: `.ancho-app` es
+        un token, no dos números escritos a mano que se desincronizan.
+      */}
+      <main className="ancho-app flex flex-1 flex-col px-4 py-4">{children}</main>
 
       <NavMovil role={perfil.role} />
     </div>
