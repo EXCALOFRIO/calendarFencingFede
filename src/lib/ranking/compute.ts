@@ -12,6 +12,13 @@ import {
   season as seasonTable,
 } from '@/db/schema';
 import { CIRCUIT_LABEL, formatDateEs } from '../utils';
+import {
+  type FormulaPuntos,
+  coeficienteDePrueba,
+  esquemaFormulaPuntos,
+  explicarPuntos,
+  puntosRfee,
+} from './formula';
 
 /**
  * CÁLCULO DEL RANKING INTERNO
@@ -85,6 +92,15 @@ export type RankingRuleRow = {
   countingEvents: number;
   coefficients: Record<string, number>;
   pointsTable: Record<string, number>;
+  /**
+   * Parámetros de la fórmula de la RFEE, si la regla los tiene. Cuando están,
+   * los puntos salen de la fórmula del punto 1.4.1 de la normativa (escalón del
+   * puesto + término logarítmico por número de participantes). Cuando no, se
+   * usa `pointsTable` a secas, que es el comportamiento que había antes.
+   */
+  pointsFormula: FormulaPuntos | null;
+  /** Arrastre de la temporada anterior en tanto por uno. Null = no lo dice. */
+  previousSeasonCarry: number | null;
   rankingPlaces: number;
   technicalPlaces: number;
   cutoffDate: Date | null;
@@ -147,6 +163,32 @@ export async function loadRankingRules(seasonId: string): Promise<{
       continue;
     }
 
+    /**
+     * La fórmula se valida con Zod igual que los otros dos JSON, y si viene
+     * rota la regla NO se aplica a medias: se cae al reparto por tabla, que es
+     * lo que había antes, en vez de calcular puntos con un techo o una escala
+     * inventados.
+     */
+    const formula = row.pointsFormula
+      ? esquemaFormulaPuntos.safeParse(row.pointsFormula)
+      : null;
+
+    if (formula && !formula.success) {
+      invalid.push({
+        id: row.id,
+        weapon: row.weapon,
+        category: row.category,
+        errors: formula.error.issues.map((i) => ({
+          path: `pointsFormula.${i.path.join('.')}`,
+          message: i.message,
+        })),
+      });
+      continue;
+    }
+
+    const arrastre =
+      row.previousSeasonCarry === null ? null : Number(row.previousSeasonCarry);
+
     rules.push({
       id: row.id,
       seasonId: row.seasonId,
@@ -155,6 +197,9 @@ export async function loadRankingRules(seasonId: string): Promise<{
       countingEvents: row.countingEvents,
       coefficients: coefficients.data,
       pointsTable: pointsTable.data,
+      pointsFormula: formula?.success ? formula.data : null,
+      previousSeasonCarry:
+        arrastre !== null && Number.isFinite(arrastre) ? arrastre : null,
       rankingPlaces: row.rankingPlaces,
       technicalPlaces: row.technicalPlaces,
       cutoffDate: row.cutoffDate,
@@ -387,6 +432,44 @@ export async function computeSeasonRanking(
       ),
     );
 
+  /**
+   * CUÁNTOS TIRADORES HUBO EN CADA PRUEBA.
+   *
+   * La fórmula de la RFEE divide por `log10(participantes)`, así que sin este
+   * número no hay puntos. Y NO se puede usar
+   * `event_competition.registration_count`: está medido y no cuadra. En el TNR
+   * M20 de espada femenina del 20/09/2026 los inscritos son 80 y la fórmula
+   * solo da los puntos oficiales con 84, que es el tamaño real del cuadro. Pasa
+   * porque la lista de inscritos se cierra antes y luego se agregan tiradores
+   * fuera de plazo, que el punto 3.3.2 de la normativa permite.
+   *
+   * Así que se cuenta sobre los resultados, con `GREATEST(max(puesto),
+   * count(*))`: el máximo puesto es el tamaño del cuadro salvo que los últimos
+   * empaten, y entonces manda el recuento de filas. Se coge el mayor de los
+   * dos porque los dos se quedan cortos por motivos distintos.
+   *
+   * UNA CONSULTA para todas las pruebas, no una por prueba: el driver de Neon
+   * habla por HTTP y el comentario de los 116 segundos de `upsert.ts` cuenta lo
+   * que pasa si esto se hace en un bucle.
+   */
+  const participantesPorPrueba = new Map<string, number>();
+  {
+    const filas = await db
+      .select({
+        eventCompetitionId: resultTable.eventCompetitionId,
+        participantes: sql<number>`greatest(max(${resultTable.position}), count(*))::int`,
+      })
+      .from(resultTable)
+      .where(isNotNull(resultTable.eventCompetitionId))
+      .groupBy(resultTable.eventCompetitionId);
+
+    for (const f of filas) {
+      if (f.eventCompetitionId) {
+        participantesPorPrueba.set(f.eventCompetitionId, f.participantes);
+      }
+    }
+  }
+
   const skips: SkipCounter = new Map();
 
   if (resultRows.length === 0) {
@@ -447,16 +530,95 @@ export async function computeSeasonRanking(
     }
 
     const circuitLabel = CIRCUIT_LABEL[row.circuit] ?? row.circuit;
-    const basePoints = basePointsForPosition(rule.pointsTable, row.position);
-    const coefficient = coefficientForCircuit(rule.coefficients, row.circuit);
+    /**
+     * El coeficiente depende del circuito Y de en qué categoría se celebra la
+     * prueba respecto a la del ranking: para el ranking cadete, un TNR cadete
+     * vale 1 y un TNR júnior vale 1,25 (punto 1.2 de la normativa), y los dos
+     * son circuito `TNR`. Ver `coeficienteDePrueba`.
+     */
+    const coefficient = coeficienteDePrueba(
+      rule.coefficients,
+      row.circuit,
+      row.category,
+    );
 
     const where = row.eventCity ? `${row.eventName} (${row.eventCity})` : row.eventName;
     const when = formatDateEs(eventDate);
 
+    /**
+     * LA FÓRMULA DE LA RFEE, cuando la regla la tiene configurada.
+     *
+     * Se intenta primero porque es lo que de verdad dice la normativa. Si no
+     * hay parámetros, o no se sabe cuánta gente compitió, se cae al reparto por
+     * tabla de siempre: es peor, pero es lo que había y no rompe nada.
+     */
+    const participantes = participantesPorPrueba.get(row.eventCompetitionId) ?? null;
+    /**
+     * El número de participantes viaja JUNTO al resultado y no en una variable
+     * aparte: la explicación lo necesita («puesto 3 de 84») y así no hace falta
+     * volver a comprobar que no es null para poder escribirlo.
+     */
+    const porFormula =
+      rule.pointsFormula && participantes !== null && coefficient !== null
+        ? (() => {
+            const d = puntosRfee({
+              puesto: row.position,
+              participantes,
+              coeficiente: coefficient,
+              escalones: rule.pointsTable,
+              formula: rule.pointsFormula,
+            });
+            return d ? { ...d, participantes } : null;
+          })()
+        : null;
+
+    if (porFormula) {
+      const contribucion: RankingContribution = {
+        athleteId: row.athleteId,
+        eventCompetitionId: row.eventCompetitionId,
+        resultId: row.resultId,
+        eventName: row.eventName,
+        eventCity: row.eventCity,
+        eventDate,
+        circuit: row.circuit,
+        position: row.position,
+        basePoints: porFormula.base,
+        coefficient: porFormula.coeficiente,
+        finalPoints: porFormula.puntos,
+        counted: false,
+        explanation:
+          `«${where}», ${when} — ${circuitLabel}. ` +
+          explicarPuntos(porFormula, {
+            puesto: row.position,
+            participantes: porFormula.participantes,
+          }),
+      };
+
+      const clave = `${weapon}|${gender}|${category}`;
+      const deTirador = groups.get(clave) ?? new Map<string, RankingContribution[]>();
+      const suyas = deTirador.get(row.athleteId) ?? [];
+      suyas.push(contribucion);
+      deTirador.set(row.athleteId, suyas);
+      groups.set(clave, deTirador);
+      athleteInfo.set(row.athleteId, {
+        name: `${row.firstName} ${row.lastName}`.trim(),
+        clubId: row.clubId,
+      });
+      continue;
+    }
+
+    const basePoints = basePointsForPosition(rule.pointsTable, row.position);
+
     let finalPoints = 0;
     let explanation: string;
 
-    if (basePoints === null) {
+    if (rule.pointsFormula && participantes === null) {
+      explanation =
+        `Puesto ${row.position} en «${where}», ${when} — ${circuitLabel}. ` +
+        'No se sabe cuántos tiradores compitieron en esa prueba, y la fórmula ' +
+        'de la normativa necesita ese número, así que esta prueba no suma. No ' +
+        'se estima un número de participantes.';
+    } else if (basePoints === null) {
       explanation =
         `Puesto ${row.position} en «${where}», ${when} — ${circuitLabel}. ` +
         'La tabla de puntos de la normativa no llega a ese puesto, así que ' +

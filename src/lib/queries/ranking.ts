@@ -1376,7 +1376,19 @@ export const contarFichasFie = cache(
     const [fila] = await db
       .select({
         confirmadas: sql<number>`count(*) filter (where ${fieFencerTable.linkStatus} = 'CONFIRMADO')::int`,
-        propuestas: sql<number>`count(*) filter (where ${fieFencerTable.linkStatus} = 'PROPUESTO')::int`,
+        /**
+         * Propuestas DE VERDAD: las que tienen un candidato que mirar.
+         *
+         * Desde que se guarda el censo español entero, hay cientos de fichas
+         * en `PROPUESTO` que no proponen nada —nadie nuestro encaja con
+         * ellas—, y contarlas decía «403 propuestas esperando» cuando la cola
+         * de revisión está vacía. La cola ya exige `proposed_athlete_id`, así
+         * que el contador tiene que exigir lo mismo o no cuenta lo que se ve.
+         */
+        propuestas: sql<number>`count(*) filter (
+          where ${fieFencerTable.linkStatus} = 'PROPUESTO'
+            and ${fieFencerTable.proposedAthleteId} is not null
+        )::int`,
         rechazadas: sql<number>`count(*) filter (where ${fieFencerTable.linkStatus} = 'RECHAZADO')::int`,
         conFoto: sql<number>`count(*) filter (where ${fieFencerTable.linkStatus} = 'CONFIRMADO' and ${fieFencerTable.photoUrl} is not null)::int`,
       })
@@ -1401,3 +1413,161 @@ function isoDate(value: string | Date | null): string | null {
     day: '2-digit',
   }).format(value);
 }
+
+// ---------------------------------------------------------------------------
+// El ranking MUNDIAL de la FIE, de los tiradores españoles
+// ---------------------------------------------------------------------------
+
+export type FilaFie = {
+  /** `fie_id`, que además es la clave de su ficha pública. */
+  fieId: number;
+  /** Puesto mundial. `null` si esa temporada aparece sin clasificar. */
+  position: number | null;
+  /** Tal y como lo publica la FIE: «LLAVADOR Carlos», al revés. */
+  nombre: string;
+  points: number | null;
+  /** Pruebas que le puntúan en la temporada, cuando la FIE lo publica. */
+  eventCount: number | null;
+  /** Su ficha en fie.org. Se enlaza siempre. */
+  fichaUrl: string;
+  /**
+   * Ficha en esta aplicación, si el enlace está confirmado por licencia.
+   *
+   * Es lo que se MARCA en la tabla: de los 343 españoles del censo, los que
+   * están en la aplicación son «los nuestros». Se conserva aunque no sean de
+   * quien mira, porque el seleccionador no gestiona fichas y con la marca
+   * limitada a «los míos» no vería ninguna.
+   */
+  athleteId: string | null;
+  /** Y además, si es uno de los tiradores de quien está mirando. */
+  esMio: boolean;
+};
+
+export type TablaFie = {
+  group: RankingGroupKey;
+  season: number;
+  rows: FilaFie[];
+  actualizadoEl: Date | null;
+  sourceUrl: string | null;
+};
+
+export type RankingFieScreenData = {
+  season: number | null;
+  groups: (RankingGroupKey & { tiradores: number })[];
+  tables: Record<string, TablaFie>;
+  total: number;
+};
+
+/**
+ * El ranking mundial de la FIE, solo España, de la temporada en curso.
+ *
+ * ---------------------------------------------------------------------------
+ * POR QUÉ ESTA PANTALLA EXISTE
+ * ---------------------------------------------------------------------------
+ * Petición literal: *«en lo del ranking no puedo cambiar entre FIE y RFEE»*.
+ * El conmutador con los dos escudos ya existía dentro del panel de cada
+ * tirador, pero solo se enciende cuando hay datos de la FIE, y solo dos
+ * tiradores tenían ficha enlazada. La tabla del mundial no existía.
+ *
+ * ---------------------------------------------------------------------------
+ * DE DÓNDE SALE Y HASTA DÓNDE LLEGA
+ * ---------------------------------------------------------------------------
+ * De `fie_world_ranking`, que se llena con el censo español de la FIE (una
+ * petición al día). Es **solo España** y **sin fecha de nacimiento ni foto**
+ * de quien no es de los nuestros: el porqué está en la cabecera de
+ * `src/lib/ingest/sources/fie-tiradores.ts`, con la autorización que lo
+ * permite y las condiciones en las que se dio.
+ *
+ * `position` es el puesto MUNDIAL, no el español: el primero de la tabla puede
+ * ser el número 5 del mundo, y eso es justo lo que se quiere leer.
+ *
+ * Se carga entero y se manda al cliente, igual que el oficial y por el mismo
+ * motivo: son 433 filas de seis campos cortos y cambiar de arma en un pabellón
+ * con mala cobertura no puede ser un viaje a la red.
+ */
+export const getRankingFieScreenData = cache(
+  async (athleteIdsPropios: string[] = []): Promise<RankingFieScreenData> => {
+    const propios = new Set(athleteIdsPropios);
+
+    const [ultima] = await db
+      .select({ season: sql<number>`max(${fieWorldRankingTable.season})::int` })
+      .from(fieWorldRankingTable);
+    const season = ultima?.season ?? null;
+    if (!season) return { season: null, groups: [], tables: {}, total: 0 };
+
+    const filas = await db
+      .select({
+        fieId: fieWorldRankingTable.fieId,
+        weapon: fieWorldRankingTable.weapon,
+        gender: fieWorldRankingTable.gender,
+        category: fieWorldRankingTable.category,
+        position: fieWorldRankingTable.position,
+        points: fieWorldRankingTable.points,
+        eventCount: fieWorldRankingTable.eventCount,
+        sourceUrl: fieWorldRankingTable.sourceUrl,
+        updatedAt: fieWorldRankingTable.updatedAt,
+        nombre: fieFencerTable.sourceName,
+        fichaUrl: fieFencerTable.profileUrl,
+        athleteId: fieFencerTable.athleteId,
+      })
+      .from(fieWorldRankingTable)
+      .innerJoin(
+        fieFencerTable,
+        eq(fieFencerTable.fieId, fieWorldRankingTable.fieId),
+      )
+      .where(eq(fieWorldRankingTable.season, season))
+      /**
+       * Sin clasificar al final, y no por estética: un `null` ordenado como
+       * cero pondría a quien no tiene puesto por delante del número 5 del
+       * mundo.
+       */
+      .orderBy(
+        asc(fieWorldRankingTable.weapon),
+        asc(fieWorldRankingTable.gender),
+        asc(fieWorldRankingTable.category),
+        sql`${fieWorldRankingTable.position} asc nulls last`,
+      );
+
+    const tables: Record<string, TablaFie> = {};
+    for (const f of filas) {
+      const group: RankingGroupKey = {
+        weapon: f.weapon as Weapon,
+        gender: f.gender as Gender,
+        category: f.category as RankingCategory,
+      };
+      const clave = groupKey(group);
+      const tabla = (tables[clave] ??= {
+        group,
+        season,
+        rows: [],
+        actualizadoEl: null,
+        sourceUrl: null,
+      });
+      tabla.rows.push({
+        fieId: f.fieId,
+        position: f.position,
+        nombre: f.nombre,
+        points: f.points === null ? null : Number(f.points),
+        eventCount: f.eventCount,
+        fichaUrl: f.fichaUrl,
+        athleteId: f.athleteId,
+        esMio: f.athleteId !== null && propios.has(f.athleteId),
+      });
+      if (!tabla.actualizadoEl || f.updatedAt > tabla.actualizadoEl) {
+        tabla.actualizadoEl = f.updatedAt;
+      }
+      tabla.sourceUrl ??= f.sourceUrl;
+    }
+
+    const groups = Object.values(tables)
+      .map((t) => ({ ...t.group, tiradores: t.rows.length }))
+      .sort(
+        (a, b) =>
+          a.weapon.localeCompare(b.weapon) ||
+          a.gender.localeCompare(b.gender) ||
+          a.category.localeCompare(b.category),
+      );
+
+    return { season, groups, tables, total: filas.length };
+  },
+);

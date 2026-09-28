@@ -1,17 +1,29 @@
 import { IdCard, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { ladoMundial, ladoNacional } from '@/components/ranking/armar-ficha';
+import { FichaRanking } from '@/components/ranking/ficha-ranking';
 import { SinRanking } from '@/components/ranking/sin-ranking';
 import { TablaRanking } from '@/components/ranking/tabla-ranking';
+import { ConmutadorFederacion } from '@/components/ranking/conmutador-federacion';
 import { TablaRankingOficial } from '@/components/ranking/tabla-oficial';
-import { getManagedAthletes, getSessionProfile } from '@/lib/auth/session';
+import {
+  type AthleteSummary,
+  getManagedAthletes,
+  getSessionProfile,
+} from '@/lib/auth/session';
 import {
   type RankingRowView,
+  getFichasFie,
+  getPuestosOficiales,
+  getRankingFieScreenData,
   getRankingOficialScreenData,
   getRankingScreenData,
   groupKey,
   listGroupsForAthlete,
 } from '@/lib/queries/ranking';
+import { yearFromIsoDate } from '@/lib/utils';
+import { paisesFie } from './consultas';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Ranking' };
@@ -50,8 +62,30 @@ export default async function Pagina() {
   ]);
 
   const mios = atletas.map((a) => a.id);
+
+  /**
+   * Las fichas de los tiradores de esta cuenta: foto y puesto mundial de la
+   * FIE, y puesto oficial de la RFEE. Es lo que el usuario echaba en falta:
+   *
+   *   «en lo del ranking no sale como ya fijado el suyo, que es lo
+   *    interesante»
+   *
+   * Las dos consultas van en paralelo y solo con los identificadores de esta
+   * cuenta: son una o dos personas, no la federación entera.
+   */
+  const [fichasFie, puestosOficiales, paises, mundial] = await Promise.all([
+    getFichasFie(mios),
+    getPuestosOficiales(mios),
+    paisesFie(mios),
+    /**
+     * El ranking mundial de la FIE, para el conmutador que faltaba:
+     * *«en lo del ranking no puedo cambiar entre FIE y RFEE»*. Va en el mismo
+     * `Promise.all` porque con Neon por HTTP lo caro es el viaje de red.
+     */
+    getRankingFieScreenData(mios),
+  ]);
   const esAdmin = perfil.role === 'admin';
-  const esPersonal = perfil.role === 'athlete' || perfil.role === 'guardian';
+  const esPersonal = perfil.role === 'athlete';
   const sinFicha = atletas.length === 0;
 
   if (oficial.groups.length > 0) {
@@ -63,7 +97,29 @@ export default async function Pagina() {
     const suyos = Object.values(oficial.tables)
       .filter((t) => t.rows.some((r) => r.athleteId && mios.includes(r.athleteId)))
       .map((t) => groupKey(t.group));
-    const grupoInicial = suyos[0] ?? groupKey(oficial.groups[0]);
+
+    /**
+     * Y SI NO HAY TIRADORES PROPIOS, POR EL ARMA DE QUIEN MIRA.
+     *
+     * Un seleccionador no gestiona fichas, así que `suyos` le sale vacío y
+     * caía en el primer grupo de la lista: espada masculina absoluta. Para el
+     * seleccionador de florete eso es ruido, y era justo la queja:
+     *
+     *   «tiene que ser automático, tipo el seleccionador de florete ve a los
+     *    de florete, el de sable a los de sable»
+     *
+     * El perfil ya sabe de qué armas se ocupa (`profile_weapon`), así que no
+     * hace falta que lo elija nadie: se abre por la primera que encuentre de
+     * las suyas. Sigue pudiendo mirar cualquier otra con un clic —esto decide
+     * con cuál abre, no lo que puede ver.
+     */
+    const deSuArma = perfil.weapons.length
+      ? oficial.groups
+          .filter((g) => perfil.weapons.includes(g.weapon))
+          .map((g) => groupKey(g))
+      : [];
+
+    const grupoInicial = suyos[0] ?? deSuArma[0] ?? groupKey(oficial.groups[0]);
 
     /** Fila del cálculo interno por `grupo|athleteId`, para el panel. */
     const internos: Record<string, RankingRowView> = {};
@@ -73,74 +129,84 @@ export default async function Pagina() {
 
     return (
       <>
-        <Cabecera
-          contexto={`Clasificación oficial de la RFEE, temporada ${oficial.seasonLabel}`}
+        {/*
+          El subtítulo dice la TEMPORADA y nada más.
+          Decía «Clasificación oficial de la RFEE, temporada 2026-2027», y
+          desde que se puede cambiar a la del mundial eso era una cabecera
+          afirmando una cosa encima de una tabla que enseña otra. Visto en la
+          captura del lado «Mundial». Cuál es cada clasificación lo dice el
+          conmutador con su escudo, y de dónde sale exactamente lo dice la
+          línea de procedencia de cada tabla.
+        */}
+        <Cabecera contexto={`Temporada ${oficial.seasonLabel}`} />
+
+        <MisFichas
+          atletas={atletas}
+          fichasFie={fichasFie}
+          puestosOficiales={puestosOficiales}
+          paises={paises}
         />
 
         {/*
-          Una línea, no un recuadro: la tabla es a lo que se viene y el aviso no
-          puede dejarla por debajo del pliegue. Y el aviso va unido a la acción
-          que lo arregla, que es lo que le faltaba: decir «1.233 sin emparejar»
-          sin decir qué hacer no cambia ninguna decisión.
+          AQUÍ HABÍA DOS AVISOS DE DIAGNÓSTICO Y SE HAN IDO.
+
+          Decían «1.235 de las 1.237 filas del ranking oficial no tienen ficha
+          en la aplicación» y «el cálculo propio está incompleto: 77 resultados
+          leídos siguen sin asignar a un tirador». Petición literal del
+          usuario, señalando este texto: *«hay mucho texto que no quiero, como
+          todo esto»*.
+
+          Y tiene razón: eso no es información del ranking, es el estado de
+          nuestra base de datos. A un tirador no le cambia ninguna decisión, y
+          a la dirección técnica ya se lo cuenta la pantalla que además lo
+          arregla (Gestión › Emparejar), con el número al lado del botón.
+
+          Lo que sí se queda es lo único que cambia algo para quien mira: si
+          tu cuenta no tiene ficha, el aviso de más abajo te lleva a
+          vincularla. Ese habla de ti, no de la base.
         */}
-        {oficial.sinFicha > 0 ? (
-          <p className="mb-4 flex items-start gap-2 text-xs text-warn">
-            <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
-            <span className="medida">
-              <span className="cifra text-sm">{oficial.sinFicha}</span> de las{' '}
-              <span className="cifra text-sm">{oficial.total}</span> filas del
-              ranking oficial no tienen ficha en la aplicación, así que de esos
-              tiradores no se siguen plazos ni inscripciones.
-              {sinFicha && esPersonal ? (
-                <>
-                  {' '}
-                  ¿Estás tú en la lista?{' '}
-                  <Link href="/alta" className="underline underline-offset-2">
-                    Vincula tu ficha
-                  </Link>{' '}
-                  y tu puesto aparecerá en «Mi estado».
-                </>
-              ) : null}
-              {esAdmin ? (
-                <>
-                  {' '}
-                  <Link
-                    href="/admin/emparejar"
-                    className="underline underline-offset-2"
-                  >
-                    Emparejar a mano
-                  </Link>
-                  , o que cada uno se vincule desde{' '}
-                  <Link href="/alta" className="underline underline-offset-2">
-                    /alta
-                  </Link>
-                  .
-                </>
-              ) : null}
-            </span>
-          </p>
-        ) : null}
 
-        {interno.status.resultsUnmatched > 0 ? (
-          <p className="mb-4 flex items-start gap-2 text-xs text-muted-foreground">
-            <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
-            <span className="medida">
-              El cálculo propio está incompleto:{' '}
-              <span className="cifra text-sm">{interno.status.resultsUnmatched}</span>{' '}
-              resultados leídos siguen sin asignar a un tirador. No afecta al
-              puesto oficial, que lo publica la federación.
-            </span>
-          </p>
-        ) : null}
-
-        <TablaRankingOficial
-          grupos={oficial.groups}
-          tablas={oficial.tables}
-          cortes={oficial.cutoffs}
-          desgloses={interno.breakdowns}
-          internos={internos}
-          mios={mios}
-          grupoInicial={grupoInicial}
+        <ConmutadorFederacion
+          rfee={
+            <TablaRankingOficial
+              grupos={oficial.groups}
+              tablas={oficial.tables}
+              cortes={oficial.cutoffs}
+              desgloses={interno.breakdowns}
+              internos={internos}
+              mios={mios}
+              grupoInicial={grupoInicial}
+              conMiFicha={puestosOficiales.length > 0 || fichasFie.size > 0}
+            />
+          }
+          fie={
+            mundial.groups.length > 0
+              ? {
+                  grupos: mundial.groups,
+                  tablas: mundial.tables,
+                  /**
+                   * El mundial abre por el mismo criterio que el nacional: el
+                   * grupo de un tirador propio, si no el del arma de quien
+                   * mira, y si no el primero.
+                   */
+                  grupoInicial:
+                    mundial.groups
+                      .filter((g) =>
+                        Object.values(mundial.tables).some(
+                          (t) =>
+                            groupKey(t.group) === groupKey(g) &&
+                            t.rows.some((r) => r.athleteId !== null),
+                        ),
+                      )
+                      .map((g) => groupKey(g))[0] ??
+                    mundial.groups
+                      .filter((g) => perfil.weapons.includes(g.weapon))
+                      .map((g) => groupKey(g))[0] ??
+                    groupKey(mundial.groups[0]),
+                  mios,
+                }
+              : null
+          }
         />
 
         {sinFicha && esPersonal ? (
@@ -214,6 +280,81 @@ export default async function Pagina() {
         grupoInicial={grupoInicial}
       />
     </>
+  );
+}
+
+/**
+ * La ficha de cada tirador de la cuenta, encima de la tabla.
+ *
+ * Una por tirador: un padre con dos hijas ve las dos, y un tirador la suya. Si
+ * la cuenta no gestiona a nadie con datos de ranking —el caso de un
+ * seleccionador, que mira el ranking de otros—, no se pinta nada: un bloque
+ * vacío diciendo «no tienes puesto» no le sirve a quien no está en la lista.
+ *
+ * Lo que NO se pinta aquí, y por qué:
+ *
+ * - **El club con nombre legible.** `source_club` trae el código de Skermo
+ *   (`FED-M-C`), y `club.name` hoy guarda ese mismo código. Un código donde la
+ *   gente espera un nombre de club se lee como un fallo, así que el campo no
+ *   sale hasta que otro agente lo tenga resuelto. No se inventa la
+ *   correspondencia.
+ * - **El ranking por equipos de España**, que el usuario pidió expresamente y
+ *   no está en la base: no hay ninguna tabla de clasificación por equipos, ni
+ *   nacional ni de la FIE. Es un encargo de ingestión, no de pantalla.
+ */
+function MisFichas({
+  atletas,
+  fichasFie,
+  puestosOficiales,
+  paises,
+}: {
+  atletas: AthleteSummary[];
+  fichasFie: Awaited<ReturnType<typeof getFichasFie>>;
+  puestosOficiales: Awaited<ReturnType<typeof getPuestosOficiales>>;
+  /** `athleteId` -> código de país de la FIE («ESP»). */
+  paises: Map<string, string>;
+}) {
+  const fichas = atletas
+    .map((atleta) => {
+      const ficha = fichasFie.get(atleta.id) ?? null;
+      const suyos = puestosOficiales.filter((p) => p.athleteId === atleta.id);
+
+      const nacional = ladoNacional(suyos, {
+        licencia: atleta.rfeeLicense,
+        anioNacimiento: atleta.birthDate ? yearFromIsoDate(atleta.birthDate) : null,
+      });
+      const mundial = ladoMundial(ficha);
+
+      return { atleta, ficha, nacional, mundial };
+    })
+    // Sin ningún puesto en ninguno de los dos lados no hay ficha que enseñar.
+    .filter(
+      (f) => f.nacional.variantes.length > 0 || f.mundial.variantes.length > 0,
+    );
+
+  if (fichas.length === 0) return null;
+
+  return (
+    <div className="mb-6 flex flex-col gap-4">
+      {fichas.map(({ atleta, ficha, nacional, mundial }) => (
+        <FichaRanking
+          key={atleta.id}
+          apellidos={atleta.lastName}
+          nombre={atleta.firstName}
+          pais={paises.get(atleta.id) ?? null}
+          foto={
+            ficha
+              ? {
+                  url: ficha.fotoUrlRetrato,
+                  fichaUrl: ficha.fichaUrl,
+                  nombrePublicado: ficha.nombrePublicado,
+                }
+              : null
+          }
+          lados={[mundial, nacional]}
+        />
+      ))}
+    </div>
   );
 }
 

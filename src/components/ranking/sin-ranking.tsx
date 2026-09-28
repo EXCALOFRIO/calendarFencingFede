@@ -1,4 +1,4 @@
-import { Calculator, FileText, ListChecks, Trophy } from 'lucide-react';
+import { Calculator, CalendarOff, FileText, ListChecks } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import type { getRankingStatus } from '@/lib/queries/ranking';
@@ -31,14 +31,14 @@ export function SinRanking({ estado, esAdmin }: { estado: Estado; esAdmin: boole
 }
 
 function motivo(estado: Estado): {
-  icono: typeof Trophy;
+  icono: typeof Calculator;
   titulo: string;
   texto: string;
   accion: { href: string; texto: string } | null;
 } {
   if (!estado.season) {
     return {
-      icono: Trophy,
+      icono: CalendarOff,
       titulo: 'No hay temporada en curso',
       texto:
         'El ranking se calcula por temporada, y ahora mismo no hay ninguna marcada como actual. En cuanto la dirección técnica abra la temporada, aquí saldrá la clasificación por arma, género y categoría.',
