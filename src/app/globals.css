@@ -452,6 +452,52 @@
 
   /**
    * ---------------------------------------------------------------------
+   * LA PASTILLA DE CIRCUITO TEÑIDA, Y POR QUÉ NO ES UN ALFA
+   * ---------------------------------------------------------------------
+   *
+   * El usuario, mirando el calendario: *«está todo demasiado gris sobre
+   * negro»*. Las pastillas de circuito («RFEE · Nacional», «FIE · Copa del
+   * Mundo») eran texto plano sobre la tarjeta, así que los tres organismos
+   * se leían igual y el color solo existía en un filete de 3 px.
+   *
+   * La forma obvia sería `bg-org-fie/12`. **No se puede**, y ya se pagó dos
+   * veces en este proyecto: la tarjeta del calendario va sobre el lienzo
+   * texturado (cuña + retícula de cruces + grano), y un alfa del 12 % deja
+   * pasar la retícula POR DENTRO de la pastilla. El resultado es una
+   * pastilla con dibujos, que es exactamente el «efecto muy transparente
+   * raro» que el usuario rechazó por escrito —dos veces— y lo que
+   * `REFERENCIAS.md` §10 llama transparencia frente a material.
+   *
+   * Así que el tinte se calcula y sale **opaco**: el color de identidad
+   * mezclado al 14 % dentro de `--card`, que es la superficie sobre la que
+   * va. Mismo aspecto, sin velo y sin `backdrop-filter`, que en una
+   * pantalla con cientos de pastillas en un móvil no se paga.
+   *
+   * El 14 % está medido: por debajo del 10 % la pastilla no se distingue de
+   * la tarjeta y volvemos al gris; por encima del 20 % compite con el
+   * relleno sólido (`--org-*-relleno`), que significa otra cosa.
+   *
+   * Y lo que dice la báscula (`npm run contraste`, sección «Pastilla de
+   * circuito teñida»), con el color de identidad encima:
+   *
+   *   RFEE  #322f32   9,08:1   AA      la pastilla frente a la tarjeta: 1,33
+   *   FIE   #212b39   5,62:1   AA                                       1,23
+   *   EFC   #243236   9,00:1   AA                                       1,33
+   *   AUT   #272a2f   5,36:1   AA                                       1,22
+   *
+   * Las cuatro pasan AA de sobra. La segunda columna es informativa: una
+   * pastilla no es un control ni un límite, así que no le aplica el 3:1 de
+   * 1.4.11; con 1,2:1 ya se lee como una caja y el circuito además va
+   * **escrito** dentro, que es la regla del proyecto (el color nunca es la
+   * única señal).
+   */
+  --org-rfee-tinte: color-mix(in oklab, var(--org-rfee) 14%, var(--card));
+  --org-fie-tinte: color-mix(in oklab, var(--org-fie) 14%, var(--card));
+  --org-efc-tinte: color-mix(in oklab, var(--org-efc) 14%, var(--card));
+  --org-aut-tinte: color-mix(in oklab, var(--org-aut) 14%, var(--card));
+
+  /**
+   * ---------------------------------------------------------------------
    * LA TEXTURA DEL FONDO: TRES CAPAS, NINGUNA PESA
    * ---------------------------------------------------------------------
    *
@@ -596,6 +642,10 @@
   --color-org-efc-relleno: var(--org-efc-relleno);
   --color-org-aut: var(--org-aut);
   --color-org-aut-relleno: var(--org-aut-relleno);
+  --color-org-rfee-tinte: var(--org-rfee-tinte);
+  --color-org-fie-tinte: var(--org-fie-tinte);
+  --color-org-efc-tinte: var(--org-efc-tinte);
+  --color-org-aut-tinte: var(--org-aut-tinte);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -1056,9 +1106,31 @@
     max-width: var(--ancho-app);
   }
 
-  /** Hueco de la barra inferior, que crece con el área segura del iPhone. */
+  /**
+   * Hueco de la barra inferior, que crece con el área segura del iPhone.
+   *
+   * 3,25 rem y no 4,5. Y en rem a propósito, porque en un teléfono la raíz
+   * son 18 px (ver «la letra grande» más arriba) y la barra también está
+   * medida en rem: las dos crecen juntas.
+   *
+   * Medido en el navegador, en un iPhone 14 Pro, después de quitarle a la
+   * barra el relleno de más —petición del usuario, *«la barra inferior es
+   * demasiado alta y come alto vertical, que es lo que más falta en el
+   * calendario»*—:
+   *
+   *   la barra          55,0 px
+   *   este hueco        58,5 px  (3,25 rem × 18)
+   *   holgura            3,5 px
+   *
+   * Antes eran 63 px de barra contra 81 de hueco: **18 px de nada** entre el
+   * final del contenido y la barra, que en el feed del calendario es un
+   * divisor de semanas libres entero.
+   *
+   * El `env(safe-area-inset-bottom)` se suma aparte, así que esto solo tiene
+   * que cubrir la barra.
+   */
   .hueco-barra {
-    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+    padding-bottom: calc(3.25rem + env(safe-area-inset-bottom));
   }
 
   @media (min-width: 1024px) {

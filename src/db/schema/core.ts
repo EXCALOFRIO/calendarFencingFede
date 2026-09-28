@@ -109,6 +109,34 @@ export const athlete = pgTable(
     consentSignedAt: timestamp('consent_signed_at', { withTimezone: true }),
     active: boolean('active').notNull().default(true),
     notes: text('notes'),
+    /**
+     * CÓMO QUEDÓ VINCULADA ESTA FICHA A UNA CUENTA, y quién lo decidió.
+     *
+     * Mismo vocabulario que `fie_fencer.linked_via`, para no tener dos jergas
+     * para lo mismo:
+     *   `licencia_rfee`     la licencia del carné coincidió con la de la fuente,
+     *   `persona`           la propia persona se reconoció por su nombre en
+     *                       `/alta` y pulsó «Sí, soy yo»,
+     *   `direccion_tecnica` la creó un administrador o el guion de altas.
+     *
+     * Existe porque desde que se puede vincular reconociéndose por el nombre
+     * hay que poder contestar «¿qué fichas se enlazaron sin comprobar la
+     * licencia?». En `notes` había una frase en castellano: vale para leerla,
+     * no para consultarla.
+     */
+    linkedVia: text('linked_via'),
+    linkedAt: timestamp('linked_at', { withTimezone: true }),
+    /** La cuenta que lo confirmó. En el autoservicio, la de la propia persona. */
+    linkedByProfileId: uuid('linked_by_profile_id').references(
+      () => userProfile.id,
+      { onDelete: 'set null' },
+    ),
+    /**
+     * Qué se escribió en el buscador y qué fila de qué fuente se reclamó. Sin
+     * esto, un enlace confirmado por la persona tiene fecha pero no evidencia:
+     * no se puede reconstruir qué vio antes de pulsar.
+     */
+    linkedEvidence: text('linked_evidence'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

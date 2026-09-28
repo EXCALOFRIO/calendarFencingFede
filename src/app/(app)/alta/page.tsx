@@ -1,6 +1,8 @@
 import { Buscador } from '@/components/alta/buscador';
+import { BuscadorNombre } from '@/components/alta/buscador-nombre';
 import { FichaVinculada } from '@/components/alta/ficha-vinculada';
 import { getManagedAthletes, requireProfile } from '@/lib/auth/session';
+import { MENSAJE_RECHAZO, buscarPorNombre } from '@/lib/altas/por-nombre';
 import { buscarEnRanking, vincularFicha } from './acciones';
 import { getResumenFicha } from './consultas';
 
@@ -22,6 +24,19 @@ export const metadata = { title: 'Vincula tu ficha' };
  * hace que una persona pueda reconocerse en esa lista.
  *
  * -------------------------------------------------------------------------
+ * SE ENTRA POR EL NOMBRE, NO POR LA LICENCIA
+ * -------------------------------------------------------------------------
+ * La primera versión pedía el número de licencia de la RFEE como prueba. El
+ * usuario lo dijo claro: *«¿no puedes pillarlo por su nombre? que le pregunten
+ * al entrar su nombre… y de ahí que pille de la lista aunque no lo haya
+ * escrito perfecto, le pregunte "¿eres tú?"»*. Y tenía razón en lo práctico: el
+ * nombre lo lleva uno en la cabeza y la licencia en un cajón, así que pedir la
+ * licencia para poder mirar el calendario era un muro puesto en la puerta.
+ *
+ * La vía de la licencia no se ha borrado —vive en `?con=licencia`— porque
+ * sigue siendo una prueba más fuerte. Lo que ha cambiado es cuál va primero.
+ *
+ * -------------------------------------------------------------------------
  * DOS ESTADOS, UNA URL
  * -------------------------------------------------------------------------
  * Si la cuenta NO tiene ficha, se enseña el buscador. Si la tiene —porque
@@ -37,7 +52,14 @@ export const metadata = { title: 'Vincula tu ficha' };
 export default async function Pagina({
   searchParams,
 }: {
-  searchParams: Promise<{ hecha?: string }>;
+  searchParams: Promise<{
+    hecha?: string;
+    con?: string;
+    /** Lo que se escribió en «¿Cómo te llamas?». La búsqueda es un GET. */
+    q?: string;
+    /** Código de `MotivoRechazo` si «Sí, soy yo» no pudo vincular. */
+    fallo?: string;
+  }>;
 }) {
   const perfil = await requireProfile();
   const [atletas, parametros] = await Promise.all([
@@ -59,10 +81,48 @@ export default async function Pagina({
     }
   }
 
+  /**
+   * La vía larga, con el número de licencia, sigue existiendo en `?con=licencia`.
+   *
+   * No se enseña de primeras porque pedirle a alguien el carné de la RFEE para
+   * poder mirar el calendario era exactamente el muro que había que quitar, y
+   * porque el nombre lo tiene en la cabeza y la licencia en un cajón. Pero no
+   * se borra: es una prueba de identidad más fuerte que reconocerse, y a quien
+   * la tenga a mano se le deja usarla.
+   */
+  if (parametros.con === 'licencia') {
+    return (
+      <Buscador
+        buscar={buscarEnRanking}
+        vincular={vincularFicha}
+        nombreCuenta={perfil.fullName}
+        esPersonal={perfil.role === 'athlete'}
+      />
+    );
+  }
+
+  /**
+   * La búsqueda se hace aquí, en el servidor, con lo que trae la URL.
+   *
+   * No hay acción de cliente para buscarse porque buscarse es LEER: así
+   * funciona sin JavaScript, se puede recargar sin perder la lista y el botón
+   * «atrás» del móvil hace lo que uno espera. Lo único que escribe es «Sí, soy
+   * yo». Y `requireProfile()` ya ha corrido arriba: esto no es un buscador
+   * público ni con `?q=` en la URL.
+   */
+  const escrito = parametros.q?.trim() ?? '';
+  const resultado = escrito ? await buscarPorNombre(escrito) : null;
+
+  const fallo =
+    parametros.fallo && parametros.fallo in MENSAJE_RECHAZO
+      ? MENSAJE_RECHAZO[parametros.fallo as keyof typeof MENSAJE_RECHAZO]
+      : null;
+
   return (
-    <Buscador
-      buscar={buscarEnRanking}
-      vincular={vincularFicha}
+    <BuscadorNombre
+      escrito={escrito}
+      resultado={resultado}
+      fallo={fallo}
       nombreCuenta={perfil.fullName}
       esPersonal={perfil.role === 'athlete'}
     />

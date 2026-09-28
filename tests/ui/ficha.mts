@@ -123,13 +123,18 @@ for (const [nombre, config] of [
    * DE DÓNDE SE ABRE LA FICHA: BARRA EN ESCRITORIO, TARJETA EN MÓVIL.
    *
    * Este guion buscaba solo `[data-barra="torneo"]` y desde el rediseño del
-   * calendario **no encontraba ninguna en el móvil**: por debajo de `sm` la
-   * rejilla de siete columnas va `hidden sm:flex` y lo que se pinta es la
-   * agenda (`agenda-mes.tsx`), donde cada competición es una tarjeta a ancho
-   * completo. El guion moría con «No hay ninguna barra en el calendario» y
-   * dejaba de capturar la mitad de los casos, que es justo la mitad que
-   * importa: esto es lo único que abre la hoja lateral y es lo que cazó un 500
-   * que ni el compilador ni el barrido veían.
+   * calendario **no encontraba ninguna en el móvil**. El guion moría con «No
+   * hay ninguna barra en el calendario» y dejaba de capturar la mitad de los
+   * casos, que es justo la mitad que importa: esto es lo único que abre la
+   * hoja lateral y es lo que cazó un 500 que ni el compilador ni el barrido
+   * veían.
+   *
+   * Con el calendario de bloques de competición (`tarjeta-bloque.tsx`) los dos
+   * selectores siguen valiendo y a propósito: la tarjeta del escritorio lleva
+   * `data-barra="torneo"` y la del móvil lleva los dos, `data-barra` y
+   * `data-agenda="tarjeta"`. Es deuda de nombres —ya no hay ni barras ni
+   * agenda— y se mantiene porque el guion es lo que comprueba que la ficha
+   * sigue abriéndose; renombrarlo es un cambio aparte.
    *
    * Se buscan las dos cosas a la vez y se filtra por lo que de verdad se ve:
    * los dos árboles existen siempre en el DOM y el apagado mide 0, así que sin

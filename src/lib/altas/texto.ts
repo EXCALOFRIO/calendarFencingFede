@@ -15,16 +15,14 @@
  * JIMÉNEZ». La fuente sí publica acentos, y quien teclea su propio apellido en
  * un móvil muchas veces no.
  *
+ * La implementación está en `src/lib/nombres.ts`, que es el módulo compartido
+ * de nombres, y se reexporta aquí porque es parte de las piezas de texto del
+ * alta: había dos copias idénticas y dos copias de una regla son dos reglas.
+ *
  * El equivalente en SQL son las dos listas de abajo, y tienen que decir lo
  * mismo que esto: si se toca una, se toca la otra.
  */
-export function sinAcentos(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-    .trim();
-}
+export { sinAcentos } from '@/lib/nombres';
 
 /** Lo que `translate()` de Postgres tiene que convertir, y en qué. */
 export const ACENTOS = 'áàäâãéèëêíìïîóòöôõúùüûñçÁÀÄÂÃÉÈËÊÍÌÏÎÓÒÖÔÕÚÙÜÛÑÇ';

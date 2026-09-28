@@ -77,11 +77,11 @@ import {
   titularTorneo,
 } from '@/lib/utils';
 import type { QuienVa } from '@/app/(app)/inscritos';
-import { AgendaMes } from './agenda-mes';
 import { CabeceraFicha } from './cabecera-ficha';
 import { FichaEvento } from './ficha-evento';
 import { LoQueViene, diasHasta, plazoDelEvento } from './lo-que-viene';
-import { RejillaMes, finDeLaRejilla, inicioDeLaRejilla } from './rejilla-mes';
+import { ColumnaMes, FeedMovil } from './timeline';
+import { agruparEnBloques, rangoRealDeEvento } from '@/lib/calendario/bloques';
 import { hoyMadrid } from '@/lib/callups/fechas';
 
 export type TiradorOpcion = {
@@ -95,17 +95,23 @@ export type TiradorOpcion = {
 type Vista = 'mes' | 'trimestre';
 
 /**
- * Lo que ocupa el relleno de «lo próximo», medido.
+ * Cuántas competiciones se enseñan en «lo próximo, fuera de este mes».
  *
- * El rótulo con su filete son 28 px y una fila legible —la cifra de los días
- * con el nombre y la línea de datos al lado— 44. Con esto se traduce el hueco
- * que sobra en pantalla a un número de filas, en vez de pintar una lista y
- * ver si cabe.
+ * Antes esto era un cálculo: la rejilla **medía** el hueco que le sobraba en
+ * pantalla (`onHueco`) y de ahí salía un número de filas, porque un mes de una
+ * sola tiradora dejaba 463 px de nada en un escritorio y había que decidir qué
+ * poner sin empujar el calendario.
  *
- * El tope está en ocho porque esto es «lo próximo», no el calendario entero:
- * pasadas ocho competiciones lo que hace falta es cambiar de mes.
+ * Con bloques de competición ese cálculo sobra, y se ha ido entero. La
+ * diferencia es estructural: la rejilla repartía un alto fijo entre sus filas,
+ * así que cualquier cosa que se pusiera debajo le quitaba sitio; un timeline
+ * mide lo que miden sus tarjetas y se desplaza. O sea que «lo próximo» ya no
+ * compite con el mes por los mismos píxeles y puede ser una constante.
+ *
+ * Seis, y no más: esto es «lo próximo», no el calendario entero. Pasadas seis
+ * competiciones lo que hace falta es cambiar de mes.
  */
-const RELLENO = { rotulo: 28, fila: 44, tope: 8 };
+const CUANTO_DESPUES = 6;
 
 const GENEROS: { v: 'M' | 'F'; largo: string }[] = [
   { v: 'M', largo: GENDER_LABEL.M },
@@ -424,68 +430,81 @@ export function VistaCalendario({
   );
 
   /**
-   * EL SITIO QUE EL MES NO USA, Y QUÉ SE HACE CON ÉL.
+   * LOS BLOQUES DE COMPETICIÓN, QUE SON LA UNIDAD DE LA PANTALLA.
    *
-   * Un mes de una tiradora filtrado por su arma tiene una competición: la
-   * rejilla acaba a los 190 px y debajo quedaban 121 px de nada en un iPhone y
-   * 463 en un escritorio, con la leyenda descolgada al fondo. La rejilla
-   * **mide** ese sobrante y lo dice (`onHueco`); aquí se decide qué poner, que
-   * es lo próximo que hay fuera de este mes.
+   * Se calculan una vez para todo lo que se está mirando y cada columna se
+   * queda con los de su mes (`itemsDelMes`). No se agrupa por mes primero: dos
+   * eventos que se solapan a caballo entre octubre y noviembre son el mismo
+   * bloque, y partirlo por el mes lo rompería en dos medias tarjetas.
    *
-   * Las filas se cuentan a partir del hueco medido y no al revés: así nunca se
-   * pinta una fila a medias ni se empuja el calendario, que es lo que se viene
-   * a ver.
+   * Toda la lógica es una función normal y está probada en
+   * `tests/bloques.test.ts`.
    */
-  const [hueco, setHueco] = React.useState(0);
+  const bloques = React.useMemo(() => agruparEnBloques(filtrados), [filtrados]);
 
-  const cabenFilas = Math.min(
-    RELLENO.tope,
-    Math.max(0, Math.floor((hueco - RELLENO.rotulo) / RELLENO.fila)),
-  );
+  /** El último día del tramo que se está pintando. */
+  const finDelTramo = React.useMemo(() => {
+    const ultimo = meses[meses.length - 1];
+    const d = new Date(ultimo.getFullYear(), ultimo.getMonth() + 1, 0);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+      d.getDate(),
+    ).padStart(2, '0')}`;
+  }, [meses]);
 
   /**
    * Lo próximo que hay **fuera** del tramo que se está pintando.
    *
-   * Una sola lista para los dos sitios donde puede acabar, porque es la misma
-   * respuesta a la misma pregunta:
+   * La misma respuesta a la misma pregunta en los dos sitios donde acaba: al
+   * final de la columna en escritorio y al final del feed en el móvil, detrás
+   * del calendario, que es lo que pidió el usuario.
    *
-   * - En el escritorio la recorta el hueco medido (`despues`) y la pinta
-   *   `LoQueViene` dentro de la capa absoluta de la rejilla.
-   * - En el móvil la recoge la agenda, que decide con su propia regla
-   *   —menos de cuatro tarjetas del mes— si hace falta o no.
-   *
-   * El tope de ocho es el de `RELLENO.tope`: pasadas ocho competiciones, lo
-   * que hace falta no es una lista más larga, es cambiar de mes.
+   * Se compara con el rango REAL (el de las pruebas), no con `startDate`: si
+   * el cartel de un torneo empieza el 30 de noviembre pero solo se tira el 1 y
+   * el 2 de diciembre, su bloque está en diciembre y aquí tiene que salir.
    */
   const fuera = React.useMemo(() => {
-    const fin = finDeLaRejilla(ancla);
     const hoy = isoDeHoy();
     return filtrados
-      .filter(
-        (e) =>
-          // Nada que ya se esté viendo, que llega hasta el domingo siguiente
-          // al fin de mes, y nada que ya pasó.
-          e.startDate > fin &&
-          e.endDate >= hoy &&
-          // Ni el del marcador de arriba: sería la misma tarjeta dos veces en
-          // la misma pantalla.
-          e.id !== proximo?.id,
-      )
+      .filter((e) => {
+        const r = rangoRealDeEvento(e);
+        return r.desde > finDelTramo && r.hasta >= hoy;
+      })
       .sort((a, b) => a.startDate.localeCompare(b.startDate))
-      .slice(0, RELLENO.tope);
-  }, [filtrados, ancla, proximo]);
+      .slice(0, CUANTO_DESPUES);
+    /*
+      AQUÍ SE QUITÓ UNA EXCLUSIÓN, Y ESTA ES LA RAZÓN.
 
-  const despues = React.useMemo(
-    () => (cabenFilas < 1 ? [] : fuera.slice(0, cabenFilas)),
-    [fuera, cabenFilas],
-  );
+      Esta lista descartaba el torneo del marcador de arriba, «para no enseñar
+      la misma tarjeta dos veces». Tenía sentido cuando las dos eran tarjetas
+      parecidas; ahora hace daño por dos sitios, y los dos se ven en la
+      captura de septiembre en un iPhone:
+
+      1. **En el móvil el marcador NO existe.** Va `hidden sm:flex` porque no
+         cabe. Así que descartar su torneo no evitaba una repetición: lo
+         escondía. La primera competición de la temporada desaparecía del
+         teléfono.
+      2. **Rompía la cuenta de un bloque múltiple.** El fin de semana del 3 de
+         octubre tiene cuatro torneos de florete y la tarjeta decía
+         «Competición múltiple · 3 torneos», porque el cuarto era el del
+         marcador. Un número que no cuadra al contar es peor que no ponerlo.
+
+      Y la repetición que se temía ya no lo es: el marcador es un renglón de
+      44 px con el nombre y los días, no una tarjeta. Que lo próximo salga
+      arriba en una línea y abajo con su fecha y su sede no es decir dos veces
+      lo mismo; es el titular y la ficha.
+    */
+  }, [filtrados, finDelTramo]);
 
   /** Torneos que caen en el tramo que pinta la vista. El denominador. */
   const enElTramo = React.useMemo(() => {
-    const desde = inicioDeLaRejilla(meses[0]);
-    const hasta = finDeLaRejilla(meses[meses.length - 1]);
-    return filtrados.filter((e) => e.startDate <= hasta && e.endDate >= desde).length;
-  }, [filtrados, meses]);
+    const primero = meses[0];
+    const desde = `${primero.getFullYear()}-${String(
+      primero.getMonth() + 1,
+    ).padStart(2, '0')}-01`;
+    return bloques
+      .filter((b) => b.rango.desde >= desde && b.rango.desde <= finDelTramo)
+      .reduce((n, b) => n + b.eventos.length, 0);
+  }, [bloques, meses, finDelTramo]);
 
   const mover = (paso: number) => {
     setDireccion(paso > 0 ? 1 : -1);
@@ -548,11 +567,11 @@ export function VistaCalendario({
         vez de en el otro extremo de la pantalla.
 
         Por debajo de `lg` el marcador baja a un renglón propio porque no
-        cabe, y por debajo de `sm` **desaparece**: ahí manda la agenda
-        (`agenda-mes.tsx`) y su primera tarjeta ya es lo próximo, con su cifra
-        de días más grande y además tocable. Cuando se está buscando vuelve,
-        porque entonces lleva el contador de coincidencias y las flechas, y el
-        estado de búsqueda tiene que verse.
+        cabe, y por debajo de `sm` **desaparece**: ahí manda el feed
+        (`timeline.tsx`) y su primera tarjeta ya es lo próximo, con su fecha
+        grande y además tocable. Cuando se está buscando vuelve, porque
+        entonces lleva el contador de coincidencias y las flechas, y el estado
+        de búsqueda tiene que verse.
       */}
       <div className="shrink-0">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
@@ -581,14 +600,41 @@ export function VistaCalendario({
                 </span>
               </>
             ) : (
+              /*
+                LA CABECERA TIENE QUE CABER EN UNA LÍNEA. MEDIDO Y ARREGLADO.
+
+                El usuario lo marcó con captura: en un iPhone el título
+                «Septiembre – Noviembre 2026» y los dos botones —buscar y
+                filtros— se partían en dos filas.
+
+                Medido en el navegador a 393 px, con las piezas de esta misma
+                fila:
+
+                  título entero    242 px      título abreviado   121 px
+                  flechas           72 px
+                  herramientas     132 px
+                  dos huecos        18 px
+                  ------------------------------------------------------
+                  con el entero    464 px      con el abreviado   343 px
+                  y caben          366 px (393 menos el margen de la página)
+
+                O sea que con el nombre entero **sobraban 98 px** y la fila se
+                partía; abreviado sobran 23 de sitio, que es lo que hace falta
+                para que quepa también «Hoy» cuando aparece. Comprobado: la
+                fila mide 44 px de alto, o sea un renglón.
+
+                De `sm` para arriba el nombre entero, que es lo que se prefiere
+                cuando hay sitio.
+              */
               <>
-                {nombreMes(meses[0], false)} – {nombreMes(meses[2], false)}{' '}
-                <span
-                  className={cn(
-                    'cifra font-normal text-muted-foreground',
-                    meses[2].getFullYear() === anioHoy && 'hidden sm:inline',
-                  )}
-                >
+                <span className="sm:hidden">
+                  {nombreMes(meses[0], false).slice(0, 3)} –{' '}
+                  {nombreMes(meses[2], false).slice(0, 3)}{' '}
+                </span>
+                <span className="hidden sm:inline">
+                  {nombreMes(meses[0], false)} – {nombreMes(meses[2], false)}{' '}
+                </span>
+                <span className="cifra font-normal text-muted-foreground">
                   {meses[2].getFullYear()}
                 </span>
               </>
@@ -764,13 +810,83 @@ export function VistaCalendario({
       ) : (
         <>
           {/*
-            Trimestre: tres columnas en escritorio, y en el móvil una debajo de
-            otra CON desplazamiento propio.
+            ===============================================================
+            EL MÓVIL: UNA SOLA COLUMNA, LAS DOS VISTAS IGUAL
+            ===============================================================
 
-            Sin esto, los tres meses se repartían el alto de la pantalla y cada
-            uno se quedaba en 180 px: se veía una semana y media de cada mes.
-            Un trimestre no cabe en la pantalla de un teléfono, y fingir que sí
-            es peor que desplazarse.
+            Y aquí se arregla el fallo que el usuario mandó con captura: en la
+            vista de «1 mes» salía una mini-rejilla comprimida de números sin
+            barras y debajo la lista de próximos días. *«la vista de 1 mes no
+            se ve nada… debería verse como lo de 3 meses, y si quieres haciendo
+            scroll luego lo de los próximos días»*.
+
+            Así que en el móvil **no hay dos vistas**: hay un feed de una
+            columna con uno o tres meses dentro, según el conmutador, y «lo
+            próximo» al final. La única diferencia entre «1 mes» y «3 meses» en
+            un teléfono es cuántos meses trae el feed, que es exactamente lo
+            que el conmutador debería significar.
+
+            El árbol del móvil y el del escritorio existen los dos y se apagan
+            con CSS, no con `matchMedia`: un interruptor en JavaScript no sabe
+            el tamaño de la pantalla hasta después del primer pintado. Esta
+            pantalla ya peleó ese salto una vez.
+          */}
+          <div className="flex min-h-0 flex-1 flex-col sm:hidden">
+            <FeedMovil
+              meses={meses.map((m) => ({ anio: m.getFullYear(), mes: m.getMonth() }))}
+              bloques={bloques}
+              inscripciones={inscripciones}
+              resaltados={resaltados}
+              proximo={proximo?.id ?? null}
+              mostrarArma={mostrarArma}
+              mostrarGenero={mostrarGenero}
+              mostrarCategoria={mostrarCategoria}
+              onAbrir={setAbierto}
+              pie={
+                <LoQueViene
+                  eventos={fuera}
+                  variante="apilada"
+                  inscripciones={inscripciones}
+                  onAbrir={setAbierto}
+                />
+              }
+            />
+          </div>
+
+          {/*
+            ===============================================================
+            EL ESCRITORIO: UNA COLUMNA POR MES
+            ===============================================================
+
+            Y ahora las tres columnas del trimestre salen **equilibradas**, que
+            es lo que no podía pasar con la rejilla: un mes tiene cinco semanas
+            y el siguiente seis, así que las cuadrículas nunca medían igual.
+            El alto de una columna de bloques es el de sus competiciones.
+            Medido en el navegador a 1440 px con el calendario de florete
+            absoluto —septiembre con 0 bloques, octubre con 2, noviembre con
+            2—: las tres columnas miden **273 px exactas** y 419 de ancho. Con
+            la rejilla, septiembre gastaba seis semanas de cuadrícula para
+            enseñar cero torneos y octubre cinco para enseñar dos, así que no
+            había forma de que coincidieran.
+
+            Y EL ANCHO: NI UNA TARJETA DE 1288 px, NI MEDIA PANTALLA EN NEGRO
+            ---------------------------------------------------------------
+            Estirar una tarjeta a los 1288 px de la página deja el plazo a 900
+            px del nombre del torneo del que habla, que es exactamente el fallo
+            que el usuario rodeó con un círculo en la banda del marcador. Pero
+            acotarla a 46 rem y dejar el resto vacío es la otra queja del mismo
+            usuario: *«no aprovechas nada bien los espacios»*.
+
+            Así que en la vista de un mes el escritorio son **dos columnas**: el
+            mes a la izquierda y «lo próximo, fuera de este mes» a la derecha, a
+            unos 640 px cada una. Son dos secciones distintas con su rótulo, no
+            un relleno: la segunda responde a la única pregunta que deja un mes
+            flojo, que es «y entonces cuándo compito».
+
+            En trimestre las tres columnas ya se llevan el ancho, y «lo
+            próximo» va debajo a lo ancho, en su propia rejilla de tres. Una
+            sola vez y no una por columna: tres listas idénticas serían el mismo
+            torneo repetido tres veces.
           */}
           <div
             /*
@@ -781,101 +897,67 @@ export function VistaCalendario({
               colar un mes que enseña 7 de 39 y pasa el barrido.
             */
             data-torneos={enElTramo}
-            className={cn(
-              'grid min-h-0 flex-1 gap-3',
-              vista === 'trimestre'
-                ? 'overflow-y-auto lg:grid-cols-3 lg:overflow-visible'
-                : 'grid-cols-1',
-            )}
+            className="hidden min-h-0 flex-1 flex-col gap-3 overflow-y-auto sm:flex"
           >
-            {meses.map((m) => (
-              <section
-                key={`${m.getFullYear()}-${m.getMonth()}`}
-                className={cn(
-                  'flex min-w-0 flex-col',
-                  // En trimestre y móvil cada mes reserva su alto; en el resto
-                  // de casos el mes se ajusta al hueco disponible.
-                  vista === 'trimestre' ? 'min-h-[19rem] lg:min-h-0' : 'min-h-0',
-                  'animate-in fade-in-0 duration-200',
-                  direccion === 1 && 'slide-in-from-right-6',
-                  direccion === -1 && 'slide-in-from-left-6',
-                )}
-              >
-                {vista === 'trimestre' ? (
-                  <h2 className="pb-1 text-lg">{nombreMes(m, false)}</h2>
-                ) : null}
-
-                {/*
-                  EN EL MÓVIL, AGENDA; DE `sm` PARA ARRIBA, REJILLA.
-
-                  Los dos se pintan y la que sobra se apaga con CSS, no con
-                  `matchMedia`. Es a propósito: un interruptor en JavaScript no
-                  sabe el tamaño de la pantalla hasta después del primer
-                  pintado, así que la primera pasada saldría con la vista
-                  equivocada y luego cambiaría. Esta pantalla ya peleó ese
-                  salto una vez —570 px en una pantalla grande— y no se vuelve
-                  a abrir esa puerta por ahorrar unos nodos.
-
-                  Y la rejilla apagada mide 0, así que `onHueco` avisa de 0 y
-                  «lo próximo» no se pinta en el móvil: ahí ese sitio es de la
-                  agenda, que ya lo lleva dentro.
-                */}
-                {vista === 'mes' ? (
-                  <div className="flex min-h-0 flex-1 flex-col sm:hidden">
-                    <AgendaMes
-                      ancla={m}
-                      eventos={filtrados}
-                      desde={inicioDeLaRejilla(m)}
-                      hasta={finDeLaRejilla(m)}
-                      fuera={fuera}
-                      inscripciones={inscripciones}
-                      resaltados={resaltados}
-                      proximo={proximo?.id ?? null}
-                      mostrarArma={mostrarArma}
-                      mostrarGenero={mostrarGenero}
-                      mostrarCategoria={mostrarCategoria}
-                      onAbrirEvento={setAbierto}
-                    />
-                  </div>
-                ) : null}
-
+            <div
+              className={cn(
+                'grid min-w-0 gap-x-4 gap-y-2',
+                vista === 'trimestre' ? 'lg:grid-cols-3' : 'lg:grid-cols-2',
+              )}
+            >
+              {meses.map((m) => (
                 <div
+                  key={`${m.getFullYear()}-${m.getMonth()}`}
                   className={cn(
-                    'flex min-h-0 min-w-0 flex-1 flex-col',
-                    vista === 'mes' && 'hidden sm:flex',
+                    'flex min-w-0 flex-col',
+                    'animate-in fade-in-0 duration-200',
+                    direccion === 1 && 'slide-in-from-right-6',
+                    direccion === -1 && 'slide-in-from-left-6',
                   )}
                 >
-                  <RejillaMes
-                    ancla={m}
-                    eventos={filtrados}
-                    compacta={vista === 'trimestre'}
+                  <ColumnaMes
+                    anio={m.getFullYear()}
+                    mes={m.getMonth()}
+                    bloques={bloques}
+                    /*
+                      El título del mes solo en trimestre. En la vista de un mes
+                      el nombre ya está en el `<h1>` de la cabecera, a 40 px de
+                      distancia: repetirlo es gastar un renglón en decir lo
+                      mismo.
+                    */
+                    conTitulo={vista === 'trimestre'}
                     inscripciones={inscripciones}
                     resaltados={resaltados}
                     proximo={proximo?.id ?? null}
                     mostrarArma={mostrarArma}
                     mostrarGenero={mostrarGenero}
                     mostrarCategoria={mostrarCategoria}
-                    /*
-                      El relleno del hueco solo en la vista de un mes. En
-                      trimestre hay tres rejillas y el sitio que sobra es de
-                      cada mes, no de la pantalla: poner tres listas de «lo
-                      próximo» sería repetir el mismo torneo tres veces.
-                    */
-                    onHueco={vista === 'mes' ? setHueco : undefined}
-                    relleno={
-                      vista === 'mes' ? (
-                        <LoQueViene
-                          eventos={despues}
-                          inscripciones={inscripciones}
-                          onAbrir={setAbierto}
-                        />
-                      ) : null
-                    }
-                    onAbrirEvento={setAbierto}
+                    onAbrir={setAbierto}
                   />
                 </div>
-              </section>
-            ))}
+              ))}
+
+              {/* En la vista de un mes, la segunda columna. */}
+              {vista === 'mes' ? (
+                <LoQueViene
+                  eventos={fuera}
+                  variante="zonas"
+                  inscripciones={inscripciones}
+                  onAbrir={setAbierto}
+                />
+              ) : null}
+            </div>
+
+            {/* En trimestre, debajo y a lo ancho. */}
+            {vista === 'trimestre' ? (
+              <LoQueViene
+                eventos={fuera}
+                variante="zonas"
+                enRejilla
+                inscripciones={inscripciones}
+                onAbrir={setAbierto}
+              />
+            ) : null}
           </div>
 
           <Leyenda />
@@ -1361,7 +1443,8 @@ function PanelFiltros({
         El tope lo da Radix en `--radix-popover-content-available-height`, que
         es el hueco real que queda hasta el borde, así que vale igual con el
         panel abierto arriba o abajo. Y se le restan los 4,5 rem de la barra de
-        navegación del móvil —los mismos de `.hueco-barra`—, porque Radix mide
+        navegación del móvil —los mismos de `.hueco-barra`, que bajó de 4,5 a
+        3,25 rem al adelgazar la barra—, porque Radix mide
         hasta el borde de la ventana y no sabe que ahí abajo hay una barra fija
         tapando: sin restarlos, el último control quedaba **debajo** de la
         barra y seguía sin poder tocarse aunque el panel ya se desplazara. A
@@ -1369,7 +1452,7 @@ function PanelFiltros({
       */}
       <PopoverContent
         align="end"
-        className="max-h-[calc(var(--radix-popover-content-available-height)-4.5rem)] w-[19rem] overflow-y-auto p-3 lg:max-h-[var(--radix-popover-content-available-height)]"
+        className="max-h-[calc(var(--radix-popover-content-available-height)-3.25rem)] w-[19rem] overflow-y-auto p-3 lg:max-h-[var(--radix-popover-content-available-height)]"
       >
         <FieldGroup className="gap-3.5">
           {/*
@@ -1615,10 +1698,28 @@ function Leyenda() {
           </li>
         );
       })}
-      <li className="flex items-center gap-1.5">
+      <li className="flex items-center gap-1.5 text-ok">
         <CircleCheck className="size-3.5 shrink-0" aria-hidden />
         <span className="sm:hidden">inscrito</span>
         <span className="hidden sm:inline">Ya estás inscrito</span>
+      </li>
+      {/*
+        Las dos señales nuevas de la tarjeta de bloque. Van aquí y no en un
+        globo porque las píldoras de día de la semana son siete cuadrados de 14
+        px y el «Entre semana» es un color: las dos se entienden de golpe, pero
+        solo si alguien ha dicho una vez qué significan.
+      */}
+      <li className="hidden items-center gap-1.5 sm:flex">
+        <span className="flex items-center gap-[2px]" aria-hidden>
+          <span className="size-2.5 rounded-[2px] bg-secondary" />
+          <span className="size-2.5 rounded-[2px] bg-org-rfee-relleno" />
+          <span className="size-2.5 rounded-[2px] bg-org-rfee-relleno" />
+        </span>
+        <span>Los días que se tira</span>
+      </li>
+      <li className="flex items-center gap-1.5 text-warn">
+        <span className="h-2.5 w-[3px] shrink-0 rounded-full bg-warn" aria-hidden />
+        <span>Entre semana</span>
       </li>
     </ul>
   );

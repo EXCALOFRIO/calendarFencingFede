@@ -219,10 +219,37 @@ export function NavEscritorio({ role }: { role: Role }) {
  * pasa a la dirección técnica. Se mide, no se adivina: `npm run barrido`
  * falla si algo desborda.
  *
- * La celda mide 48 px de alto con 4 px de aire alrededor, en vez de 56 px a
- * sangre. Dos motivos: sigue por encima del objetivo táctil de 44 px que
- * exige `UI.md`, y deja que el marcado sea **la misma pastilla redondeada que
- * en escritorio** en vez de un bloque gris de lado a lado.
+ * ---------------------------------------------------------------------------
+ * EL ALTO: 44 px CLAVADOS, Y NI UNO MÁS
+ * ---------------------------------------------------------------------------
+ *
+ * Petición del usuario, con captura: *«la barra inferior de navegación es
+ * demasiado alta y come alto vertical, que es lo que más falta en el
+ * calendario»*. Y tiene razón en el diagnóstico completo, no solo en la queja:
+ * lo que más escasea en esta aplicación es alto, porque la pantalla principal
+ * es un calendario y un calendario es una lista vertical.
+ *
+ * CUIDADO CON LOS NÚMEROS: por debajo de 640 px la raíz de la aplicación va a
+ * **18 px**, no a 16 (`globals.css`, «la letra grande»), así que `h-11` no son
+ * 44 px en un teléfono sino 49,5. Medido en el navegador, en un iPhone 14 Pro:
+ *
+ *   antes   h-12 (54 px) + 4 de aire arriba + 4 abajo + 1 de filete = 63 px
+ *   ahora   h-11 (49,5)  + 2 de aire arriba + 2 abajo + 1 de filete = 55 px
+ *
+ * Ocho píxeles. No parecen nada hasta que se traducen: son el 1,6 % de la
+ * pantalla útil, y en el feed del calendario son **la tarjeta entera de un mes
+ * vacío** (mide 63 px) o el divisor de semanas libres que antes quedaba
+ * cortado por abajo.
+ *
+ * El suelo son los 44 px del objetivo táctil que exige `UI.md`, y con 49,5 se
+ * cumple de sobra; en un escritorio, donde la raíz sí son 16, `h-11` da los 44
+ * exactos y tampoco se baja de ahí. Lo que se ha quitado es relleno, no área:
+ * el `gap` entre el icono y la palabra baja de 2 px a 0, que es gratis porque
+ * el icono y el rótulo suman 36 px y sobran trece.
+ *
+ * El marcado sigue siendo **la misma pastilla redondeada que en escritorio** y
+ * no un bloque gris de lado a lado, que es lo que justificaba el aire de antes;
+ * con 2 px sigue habiendo pastilla.
  */
 export function NavMovil({ role }: { role: Role }) {
   const pathname = usePathname();
@@ -242,12 +269,12 @@ export function NavMovil({ role }: { role: Role }) {
           const es = activo(pathname, destino.href);
           const Icono = destino.icono;
           return (
-            <li key={destino.href} className="min-w-0 p-1">
+            <li key={destino.href} className="min-w-0 p-0.5">
               <Link
                 href={destino.href}
                 aria-current={es ? 'page' : undefined}
                 className={cn(
-                  'flex h-12 flex-col items-center justify-center gap-0.5 rounded-md px-0.5 font-medium transition-colors',
+                  'flex h-11 flex-col items-center justify-center rounded-md px-0.5 font-medium leading-tight transition-colors',
                   apretada ? 'text-[0.6rem]' : 'text-[0.68rem]',
                   /* El mismo par que en escritorio, incluido el `hover`: el
                      móvil se quedaba sin él y perdía la respuesta al toque. */

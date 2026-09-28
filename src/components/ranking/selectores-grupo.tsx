@@ -128,22 +128,11 @@ export function SelectoresGrupo({
   );
 }
 
-/**
- * ¿El nombre casa con lo que se ha escrito?
- *
- * Sin acentos y sin importar el orden de las palabras, porque las dos fuentes
- * escriben los nombres distinto y al revés entre sí: Skermo publica «JORGE
- * CASAUS PIELAGO» y la FIE «CASAUS PIELAGO Jorge». Buscar «jorge casaus»
- * tiene que encontrarlo en las dos.
- */
-export function nombreCasa(nombre: string, busqueda: string): boolean {
-  const limpio = (t: string) =>
-    t
-      .normalize('NFD')
-      .replace(/\p{Diacritic}/gu, '')
-      .toLowerCase();
-  const aguja = limpio(busqueda).trim();
-  if (!aguja) return true;
-  const pajar = limpio(nombre);
-  return aguja.split(/\s+/).every((palabra) => pajar.includes(palabra));
-}
+/*
+  `nombreCasa` vivía aquí y se ha subido a `src/lib/nombres.ts`.
+
+  Motivo: este fichero lleva `'use client'`, y la búsqueda por nombre de
+  `/alta` —que corre en el servidor— necesitaba la misma idea. Importarla
+  desde aquí se habría llevado por delante media biblioteca de React al
+  servidor. Allí está, junto con la versión que además perdona erratas.
+*/

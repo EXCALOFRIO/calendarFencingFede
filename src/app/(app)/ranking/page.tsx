@@ -98,9 +98,10 @@ export default async function Pagina() {
      * Para un padre que entra a ver cómo va su hija, «florete femenino M17» es
      * la respuesta; «espada masculino absoluto» es ruido.
      */
-    const suyos = Object.values(oficial.tables)
+    const suyosOficial = Object.values(oficial.tables)
       .filter((t) => t.rows.some((r) => r.athleteId && mios.includes(r.athleteId)))
-      .map((t) => groupKey(t.group));
+      .map((t) => t.group);
+    const suyos = suyosOficial.map((g) => groupKey(g));
 
     /**
      * Y SI NO HAY TIRADORES PROPIOS, POR EL ARMA DE QUIEN MIRA.
@@ -159,9 +160,14 @@ export default async function Pagina() {
      * por defecto siempre el mío»*.
      *
      * Así que primero se busca el grupo donde la FIE lo publica de verdad
-     * (`gruposDeMisTiradoresFie`), que es el dato y no una deducción. Solo si
-     * no aparece en ninguno se cae a su arma y su género, y al final al arma
-     * del seleccionador.
+     * (`gruposDeMisTiradoresFie`), que es el dato y no una deducción.
+     *
+     * Y si no aparece en ninguno —la mayoría de tiradores españoles no están
+     * en el ranking mundial—, se usa **la categoría en la que compite en la
+     * clasificación de la RFEE**, que también es un dato. Sin este escalón se
+     * caía al primer grupo por orden del enum: una tiradora de florete M20
+     * abría en «florete femenino M17», visto en la captura. Solo al final se
+     * cae al arma y el género a secas, y luego al arma del seleccionador.
      */
     const suyoFie = misGruposFie.find((g) => g.format === 'INDIVIDUAL');
 
@@ -174,6 +180,14 @@ export default async function Pagina() {
               g.category === suyoFie.category,
           )
         : undefined) ??
+      individuales.find((g) =>
+        suyosOficial.some(
+          (s) =>
+            s.weapon === g.weapon &&
+            s.gender === g.gender &&
+            s.category === g.category,
+        ),
+      ) ??
       individuales.find((g) => miArma.has(g.weapon) && miGenero.has(g.gender)) ??
       individuales.find((g) => miArma.has(g.weapon)) ??
       individuales.find((g) => perfil.weapons.includes(g.weapon)) ??

@@ -13,7 +13,16 @@
       "Bash(ls src/app/\\\\\\(app\\\\\\)/)",
       "Bash(git add *)",
       "Bash(git -c core.autocrlf=false commit -q -F -)",
-      "Bash(git -c core.autocrlf=false commit -q -m 'El README explica los dos pasos que hay que dar cada vez que cambia la URL *)"
+      "Bash(git -c core.autocrlf=false commit -q -m 'El README explica los dos pasos que hay que dar cada vez que cambia la URL *)",
+      "Bash(ls capturas *)",
+      "Bash(npx tsx *)",
+      "Bash(rm -f scripts/tmp-x.ts)",
+      "Bash(npm run *)",
+      "Bash(npx vitest *)",
+      "Bash(python -)",
+      "Bash(npx tsc *)",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('licencia:', d.get\\('license'\\), '| version:', d.get\\('version'\\)\\)\")",
+      "Bash(tail -5 dev-agente.log)"
     ]
   }
 }

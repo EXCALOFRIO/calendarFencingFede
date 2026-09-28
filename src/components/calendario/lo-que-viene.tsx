@@ -1,20 +1,27 @@
 'use client';
 
-import { CircleCheck } from 'lucide-react';
 import * as React from 'react';
-import { colorDeOrganismo } from '@/lib/colores';
+import { agruparEnBloques } from '@/lib/calendario/bloques';
 import type { EventView } from '@/lib/queries/calendar';
-import {
-  cn,
-  formatDateRangeEs,
-  organismoDe,
-  titular,
-  titularTorneo,
-} from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { hoyMadrid } from '@/lib/callups/fechas';
+import { TarjetaBloque, type VarianteTarjeta } from './tarjeta-bloque';
 
 /**
  * LO PRÓXIMO, EN EL SITIO QUE EL MES NO USA.
+ *
+ * Y ES LA MISMA TARJETA QUE EL CALENDARIO, NO UNA TERCERA
+ * -------------------------------------------------------------------------
+ * Esto tenía su propio maquetado: una fila con la cifra de los días en grande,
+ * el nombre, la sede y el plazo. Era el **tercer** estilo de evento de la
+ * aplicación, detrás de la barra de la rejilla y de la tarjeta de la agenda, y
+ * eso es exactamente la mecánica de la queja del usuario: *«es como una
+ * interfaz muy poco cuidada»*. No es que ninguno estuviera mal; es que eran
+ * tres.
+ *
+ * Ahora pinta `TarjetaBloque`, la misma del calendario, con la misma variante
+ * que la vista que tiene encima. Lo único propio que queda es el rótulo, que
+ * es lo único que esta sección tiene que decir: que esto **no** es de este mes.
  *
  * -------------------------------------------------------------------------
  * POR QUÉ EXISTE ESTO
@@ -50,10 +57,25 @@ import { hoyMadrid } from '@/lib/callups/fechas';
  */
 export function LoQueViene({
   eventos,
+  variante,
+  enRejilla = false,
   inscripciones,
   onAbrir,
 }: {
   eventos: EventView[];
+  /** La misma que la del calendario que hay encima. */
+  variante: VarianteTarjeta;
+  /**
+   * En tres columnas en vez de en una.
+   *
+   * Es para la vista de trimestre, donde esta sección va **debajo** de los
+   * tres meses y a lo ancho de la página. En una sola columna, las tarjetas
+   * medirían los 1288 px de la página y el plazo acabaría a 900 px del nombre
+   * del torneo del que habla, que es el fallo que el usuario rodeó con un
+   * círculo. En tres, cada una mide lo mismo que una columna de mes y la
+   * sección se lee como la continuación del calendario que tiene encima.
+   */
+  enRejilla?: boolean;
   /** competitionId -> estado, para marcar en qué estás inscrito. */
   inscripciones: Record<string, string>;
   onAbrir: (e: EventView) => void;
@@ -61,16 +83,18 @@ export function LoQueViene({
   /* El rótulo nombra la sección para quien navega con lector de pantalla, en
      vez de repetir la frase en un `aria-label`. */
   const idRotulo = React.useId();
+  const bloques = React.useMemo(() => agruparEnBloques(eventos), [eventos]);
+  const vacio = React.useMemo(() => new Set<string>(), []);
 
   if (eventos.length === 0) return null;
 
   return (
-    <section aria-labelledby={idRotulo} className="flex h-full min-h-0 flex-col gap-1">
+    <section aria-labelledby={idRotulo} className="flex min-h-0 flex-col gap-1.5">
       {/*
         El rótulo va con el filete de luz arriba, como la banda del marcador:
         es otra banda de la misma pantalla, no una tarjeta nueva. Y dice lo
         único que hay que aclarar —que esto no es de este mes—, porque si no
-        parecería que la rejilla se ha dejado torneos sin pintar.
+        parecería que el calendario se ha dejado torneos sin pintar.
       */}
       <p
         id={idRotulo}
@@ -79,127 +103,41 @@ export function LoQueViene({
         Lo próximo, fuera de este mes
       </p>
 
-      {/*
-        `max-w` a la lista y no a la fila: en un escritorio de 1440 la fila
-        mide 1288 px y el plazo se iba al otro extremo de la pantalla, a 900
-        px del nombre al que se refiere. Acotada, las seis filas forman un
-        bloque con su columna de plazos alineada, que es lo que se puede
-        recorrer de un vistazo.
-
-        Y el alto de cada fila está acotado por arriba: sin tope, seis filas
-        repartiéndose 450 px salían a 75 px cada una y la lista parecía
-        estirada para tapar un hueco, que es justo de lo que se venía.
-      */}
-      <ul className="flex min-h-0 w-full max-w-[46rem] flex-1 flex-col gap-1">
-        {eventos.map((evento) => (
-          <li key={evento.id} className="flex min-h-11 min-w-0 max-h-14 flex-1">
-            <Fila
-              evento={evento}
-              inscrito={evento.competitions.some((c) => inscripciones[c.id])}
+      <ul
+        className={cn(
+          'min-w-0',
+          enRejilla ? 'grid gap-x-4 lg:grid-cols-3' : 'flex flex-col',
+        )}
+      >
+        {bloques.map((bloque) => (
+          <li key={bloque.clave} className="pb-2">
+            <TarjetaBloque
+              bloque={bloque}
+              variante={variante}
+              inscripciones={inscripciones}
+              /*
+                Aquí no se resalta nada ni se marca «lo próximo»: el resaltado
+                de la búsqueda salta al mes del torneo, y el marcador de arriba
+                excluye a propósito su propio evento de esta lista para no
+                enseñarlo dos veces en la misma pantalla.
+              */
+              resaltados={vacio}
+              proximo={null}
+              /*
+                Arma, género y categoría SIEMPRE en esta lista, aunque el filtro
+                sea de una sola. Esto no es el mes que se está mirando: son
+                torneos de dentro de dos meses, y el contexto que da la cabecera
+                («Florete M») queda muy arriba.
+              */
+              mostrarArma
+              mostrarGenero
+              mostrarCategoria
               onAbrir={onAbrir}
             />
           </li>
         ))}
       </ul>
     </section>
-  );
-}
-
-function Fila({
-  evento,
-  inscrito,
-  onAbrir,
-}: {
-  evento: EventView;
-  inscrito: boolean;
-  onAbrir: (e: EventView) => void;
-}) {
-  const dias = diasHasta(evento.startDate);
-  const color = colorDeOrganismo(
-    organismoDe(evento.source, evento.scope, evento.circuit),
-  );
-  const plazo = plazoDelEvento(evento);
-
-  return (
-    <button
-      type="button"
-      onClick={() => onAbrir(evento)}
-      /* `text-left`: un `<button>` centra su texto y arrastra a los hijos. */
-      /* Sin `objetivo-libre`: esto no es una barra del calendario con el alto
-         calculado al píxel, así que se queda con los 44 px de objetivo táctil
-         que fuerza `globals.css` para un puntero grueso. */
-      className="flex w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-md px-1 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      /*
-        El `aria-label` sustituye al contenido de la fila, así que tiene que
-        decirlo TODO: si se queda en el nombre y los días, el plazo y el «ya
-        estás inscrito» —que van dentro y se ven— desaparecen para quien usa un
-        lector de pantalla.
-      */
-      aria-label={[
-        `Faltan ${dias} ${dias === 1 ? 'día' : 'días'} para ${titularTorneo(evento.name)}`,
-        plazo ? plazo.texto : null,
-        inscrito ? 'ya estás inscrito' : null,
-        'Abrir la ficha.',
-      ]
-        .filter(Boolean)
-        .join('. ')}
-    >
-      {/* El canto de color del organismo, el mismo de las barras del mes. */}
-      <span
-        className={cn('h-[1.9rem] w-[3px] shrink-0 rounded-full', color.punto)}
-        aria-hidden
-      />
-
-      {/*
-        El marcador, en pequeño: la cifra grande con la palabra diminuta
-        debajo. Es el mismo recurso de jerarquía de la banda de arriba, y es lo
-        que hace que esta lista se lea de un vistazo en vez de leerse.
-      */}
-      <span className="flex min-w-[2.1rem] shrink-0 flex-col items-start leading-none">
-        <span className="cifra text-xl text-foreground sm:text-2xl">{dias}</span>
-        {/* El mismo `0.65rem` del rótulo de la banda de arriba: dos tamaños
-            distintos para la misma palabra se notan aunque no se sepa por qué. */}
-        <span className="text-[0.65rem] text-muted-foreground">
-          {dias === 1 ? 'día' : 'días'}
-        </span>
-      </span>
-
-      <span className="min-w-0 flex-1">
-        <span className="flex min-w-0 items-baseline gap-2">
-          {/*
-            El nombre y el «ya estás inscrito» van en su propia caja para que
-            el icono quede **pegado al nombre**. Con el nombre en `flex-1`, la
-            caja se estiraba y el icono aparecía flotando en medio de la fila,
-            lejos de aquello a lo que se refiere.
-          */}
-          <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-            <span className="min-w-0 truncate text-sm font-semibold">
-              {titularTorneo(evento.name)}
-            </span>
-            {inscrito ? (
-              <CircleCheck
-                className="size-3.5 shrink-0 self-center"
-                aria-label="Ya estás inscrito"
-              />
-            ) : null}
-          </span>
-          {plazo ? (
-            <span className={cn('shrink-0 text-xs', plazo.tono)}>{plazo.texto}</span>
-          ) : null}
-        </span>
-        <span className="mt-0.5 flex min-w-0 items-baseline gap-2 text-xs text-muted-foreground">
-          {/* Sólida, como la de la banda de arriba: esta lista va sobre el
-              lienzo con textura y el alfa la dejaba pasar por dentro. */}
-          <span className="cifra shrink-0 rounded-full bg-secondary px-1.5 py-px text-foreground">
-            {formatDateRangeEs(evento.startDate, evento.endDate)}
-          </span>
-          <span className="min-w-0 truncate">
-            {evento.city ? titular(evento.city) : 'Sede sin publicar'}
-            {evento.country ? `, ${evento.country}` : ''}
-          </span>
-        </span>
-      </span>
-    </button>
   );
 }
 

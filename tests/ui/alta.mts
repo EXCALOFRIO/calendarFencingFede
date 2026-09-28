@@ -16,6 +16,11 @@ import { newIcalToken } from '../../src/lib/auth/session';
  *
  *   npx tsx tests/ui/alta.mts
  *
+ * Esta prueba recorre la vía de LA LICENCIA, que vive en `/alta?con=licencia`
+ * desde que la puerta principal es «¿Cómo te llamas?». La vía del nombre tiene
+ * su propia prueba en `tests/ui/alta-nombre.mts`, y las dos hacen falta: son
+ * dos pruebas de identidad distintas y cada una rebota por motivos distintos.
+ *
  * No comprueba que la pantalla cargue: crea una cuenta sin ficha, se busca,
  * confirma con la licencia y **mira en la base** que la ficha se creó, que el
  * arma está y que TODAS las filas del ranking quedaron emparejadas. Y prueba
@@ -246,8 +251,26 @@ for (const [nombre, config] of [
   await p.getByRole('link', { name: /Vincular mi ficha/i }).click();
   await p.waitForURL('**/alta', { timeout: 30_000 });
   await p.waitForLoadState('networkidle');
-  await p.screenshot({ path: `capturas/${nombre}-alta-1-buscador.png`, fullPage: true });
   comprobar('el enlace lleva a /alta', new URL(p.url()).pathname === '/alta');
+  comprobar(
+    'y lo primero que se pide es el nombre, no la licencia',
+    await p.getByLabel('¿Cómo te llamas?').isVisible(),
+  );
+
+  /**
+   * Y desde ahí se llega a la vía de la licencia por su enlace, que es el
+   * camino que recorre alguien que tiene el carné delante. Si este enlace
+   * desapareciera, la vía de la licencia quedaría viva pero inalcanzable, que
+   * es la peor de las dos situaciones.
+   */
+  await p.getByRole('link', { name: /número de licencia de la RFEE/i }).click();
+  await p.waitForURL('**/alta?con=licencia', { timeout: 30_000 });
+  await p.waitForLoadState('networkidle');
+  await p.screenshot({ path: `capturas/${nombre}-alta-1-buscador.png`, fullPage: true });
+  comprobar(
+    'el enlace lleva al buscador por licencia',
+    await p.getByLabel('Tu nombre o tu licencia').isVisible(),
+  );
 
   // 2. Camino malo: un nombre que no existe.
   await p.getByLabel('Tu nombre o tu licencia').fill('zzqqxvbnm');
@@ -331,11 +354,34 @@ for (const [nombre, config] of [
     await p.getByText(/Clasificación oficial de la RFEE/i).first().isVisible(),
   );
 
+  /*
+    El ranking abre en el MUNDIAL de la FIE, por petición expresa. Y esta
+    tiradora de prueba no tiene ficha en la FIE —como la mayoría—, así que en
+    esa tabla no puede salir: lo que se comprueba allí es que abre en SU
+    prueba (florete femenino M20), no en la primera del enum, que era el fallo.
+
+    El distintivo «Tú» se busca donde sí está, en la clasificación nacional,
+    a un toque del conmutador. Antes se buscaba nada más cargar porque la
+    pantalla abría en la nacional; cambió la pantalla, no la intención.
+  */
   await p.goto(`${BASE}/ranking`, { waitUntil: 'networkidle', timeout: 60_000 });
   await p.waitForTimeout(500);
   await p.screenshot({ path: `capturas/${nombre}-alta-8-ranking.png`, fullPage: true });
   comprobar(
-    '«Ranking» abre por su grupo y la marca como suya',
+    'el mundial abre en su prueba, no en la primera de la lista',
+    await p.getByRole('combobox', { name: /Categoría/i }).textContent().then(
+      (t) => (t ?? '').includes('M20'),
+    ),
+  );
+
+  await p.getByRole('radio', { name: /Nacional/i }).click();
+  await p.waitForTimeout(1500);
+  await p.screenshot({
+    path: `capturas/${nombre}-alta-8b-ranking-nacional.png`,
+    fullPage: true,
+  });
+  comprobar(
+    '«Ranking» la marca como suya en la clasificación nacional',
     await p.getByText('Tú', { exact: true }).first().isVisible(),
   );
 
@@ -368,6 +414,8 @@ for (const [nombre, config] of [
       notas: athlete.notes,
       consentimiento: athlete.consentSignedAt,
       caducidad: athlete.rfeeLicenseValidUntil,
+      comoSeVinculo: athlete.linkedVia,
+      quienLoConfirmo: athlete.linkedByProfileId,
     })
     .from(athlete)
     .where(sql`upper(${athlete.rfeeLicense}) = ${LICENCIA}`)
@@ -391,6 +439,16 @@ for (const [nombre, config] of [
   comprobar(
     'se marca como alta de autoservicio',
     Boolean(ficha?.notas?.includes('autoservicio')),
+  );
+  /**
+   * El rastro de cómo se vinculó, que es lo que permite contestar «¿qué fichas
+   * se enlazaron sin comprobar la licencia?» con una consulta. Por esta vía
+   * tiene que decir `licencia_rfee`; por la del nombre, `persona`.
+   */
+  comprobar(
+    'queda escrito que se vinculó comprobando la licencia',
+    ficha?.comoSeVinculo === 'licencia_rfee' && ficha?.quienLoConfirmo === perfilId,
+    `${ficha?.comoSeVinculo ?? 'sin rastro'} / ${ficha?.quienLoConfirmo ?? 'sin cuenta'}`,
   );
   comprobar(
     'no se inventa el consentimiento ni la caducidad de la licencia',

@@ -288,6 +288,7 @@ export async function vincularFichaDesdeRanking({
   clave,
   licencia,
   origen,
+  evidencia,
 }: {
   profileId: string;
   /** La `clave` de un `Candidato` (el id del tirador en Skermo). */
@@ -301,10 +302,19 @@ export async function vincularFichaDesdeRanking({
   licencia?: string;
   /**
    * De dónde viene el alta. Cambia la nota que queda en la ficha —para que en
-   * `/admin/usuarios` se vea que no la creó la dirección técnica— y, solo en el
-   * guion de demostración, deja el consentimiento firmado.
+   * `/admin/usuarios` se vea que no la creó la dirección técnica—, lo que se
+   * escribe en `athlete.linked_via` y, solo en el guion de demostración, deja
+   * el consentimiento firmado.
+   *
+   * `nombre` es la vía que pidió el usuario: la persona se reconoció en la
+   * lista oficial y pulsó «Sí, soy yo». NO pide licencia, y es legítimo porque
+   * quien decide es ella sobre su propia identidad; el razonamiento completo
+   * está en la cabecera de `src/lib/altas/por-nombre.ts`. Lo que sí exige es
+   * que quede escrito quién lo confirmó: de ahí `evidencia`.
    */
-  origen: 'autoservicio' | 'guion';
+  origen: 'autoservicio' | 'guion' | 'nombre';
+  /** Qué escribió y qué fila reclamó. Obligatorio con `origen: 'nombre'`. */
+  evidencia?: string;
 }): Promise<ResultadoAlta> {
   /**
    * Una ficha por cuenta. No es una limitación técnica: si una cuenta ya
@@ -429,16 +439,18 @@ export async function vincularFichaDesdeRanking({
    * la dirección técnica y está libre (entonces se adopta, no se duplica: la
    * licencia es única en `athlete`), o ya tiene dueño (entonces rebota).
    */
-  const [existente] = await db
-    .select({
-      id: athlete.id,
-      userProfileId: athlete.userProfileId,
-      guardianProfileId: athlete.guardianProfileId,
-      notes: athlete.notes,
-    })
-    .from(athlete)
-    .where(sql`upper(${athlete.rfeeLicense}) = ${normalizarLicencia(licenciaOficial)}`)
-    .limit(1);
+  const licenciaLlana = licenciaOficial ? normalizarLicencia(licenciaOficial) : null;
+
+  /**
+   * Sin licencia no se puede preguntar por licencia. Y NO se pregunta por el
+   * nombre para salir del paso: eso es exactamente el emparejado automático
+   * que el proyecto prohíbe. Lo que sí hay es la fila del ranking que se
+   * reclamó, y a esa se le puede preguntar si ya apunta a una ficha, porque si
+   * apunta es un enlace que alguien decidió antes.
+   */
+  const existente = licenciaLlana
+    ? await fichaPorLicencia(licenciaLlana)
+    : await fichaDeLaFilaDelRanking(clave);
 
   if (
     existente &&
@@ -470,8 +482,33 @@ export async function vincularFichaDesdeRanking({
       ? 'Alta de autoservicio: la persona se identificó con su número de ' +
         'licencia en /alta y los datos salen del ranking oficial de la RFEE. ' +
         'No la creó la dirección técnica.'
-      : 'Alta creada a partir del ranking oficial de la RFEE con ' +
-        'scripts/alta-desde-ranking.ts.';
+      : origen === 'nombre'
+        ? 'Alta de autoservicio por nombre: la persona se reconoció en la ' +
+          'clasificación oficial de la RFEE y confirmó ella misma que era su ' +
+          'ficha. No la creó la dirección técnica.'
+        : 'Alta creada a partir del ranking oficial de la RFEE con ' +
+          'scripts/alta-desde-ranking.ts.';
+
+  /**
+   * Cómo quedó vinculada, para poder auditarla después. Mismo vocabulario que
+   * `fie_fencer.linked_via`, y la respuesta a «¿qué fichas se vincularon sin
+   * comprobar la licencia?» es una consulta y no leer frases en castellano.
+   */
+  const rastro = {
+    linkedVia:
+      origen === 'autoservicio'
+        ? 'licencia_rfee'
+        : origen === 'nombre'
+          ? 'persona'
+          : 'direccion_tecnica',
+    linkedAt: new Date(),
+    linkedByProfileId: profileId,
+    linkedEvidence:
+      evidencia ??
+      (origen === 'autoservicio'
+        ? `La licencia tecleada coincidió con la de la fila ${clave} del ranking oficial.`
+        : `Alta creada por la dirección técnica desde la fila ${clave} del ranking oficial.`),
+  };
 
   const atletaId =
     existente?.id ??
@@ -484,7 +521,7 @@ export async function vincularFichaDesdeRanking({
           birthDate: primera.nacimiento,
           gender: primera.genero === 'F' ? 'F' : 'M',
           clubId,
-          rfeeLicense: normalizarLicencia(licenciaOficial),
+          rfeeLicense: licenciaLlana,
           /**
            * Ni fecha de caducidad de licencia ni consentimiento: la fuente no
            * publica ninguno de los dos y ponerlos sería inventarlos. Salen en
@@ -493,6 +530,7 @@ export async function vincularFichaDesdeRanking({
           consentSignedAt: origen === 'guion' ? new Date() : null,
           userProfileId: profileId,
           notes: nota,
+          ...rastro,
         })
         .returning({ id: athlete.id })
     )[0].id;
@@ -504,6 +542,7 @@ export async function vincularFichaDesdeRanking({
         userProfileId: profileId,
         clubId,
         notes: existente.notes ? `${existente.notes} ${nota}` : nota,
+        ...rastro,
         updatedAt: new Date(),
       })
       .where(eq(athlete.id, atletaId));
@@ -522,15 +561,27 @@ export async function vincularFichaDesdeRanking({
 
   /**
    * Emparejar TODAS sus filas del ranking, no solo la que se buscó. Un tirador
-   * puede estar en absoluto y en sub-23, o en dos armas. Se empareja por
-   * licencia, nunca por nombre: hay homónimos y los acentos van a su aire.
+   * puede estar en absoluto y en sub-23, o en dos armas.
+   *
+   * Se empareja por LICENCIA y por ID DE SKERMO, **nunca por nombre**: hay
+   * homónimos y los acentos van a su aire. El id de Skermo se añadió con el
+   * alta por nombre y no es una concesión: es la clave de la fuente, la misma
+   * que forma `official_ranking_entry_key`, y es la fila exacta que la persona
+   * reclamó. Hace falta porque a 4 de los 809 tiradores del ranking todavía no
+   * se les ha resuelto la licencia, y sin esto sus filas se quedarían
+   * huérfanas aunque su ficha ya exista.
    */
   const emparejadas = await db
     .update(officialRankingEntry)
     .set({ athleteId: atletaId, updatedAt: new Date() })
     .where(
       and(
-        sql`upper(${officialRankingEntry.sourceLicense}) = ${normalizarLicencia(licenciaOficial)}`,
+        licenciaLlana
+          ? or(
+              sql`upper(${officialRankingEntry.sourceLicense}) = ${licenciaLlana}`,
+              eq(officialRankingEntry.skermoAthleteId, clave),
+            )
+          : eq(officialRankingEntry.skermoAthleteId, clave),
         isNull(officialRankingEntry.athleteId),
       ),
     )
@@ -561,7 +612,7 @@ export async function vincularFichaDesdeRanking({
     alta: {
       atletaId,
       nombre,
-      licencia: normalizarLicencia(licenciaOficial),
+      licencia: licenciaLlana ?? '',
       club: primera.clubFuente,
       fechaNacimiento: primera.nacimiento,
       armas,
@@ -569,6 +620,44 @@ export async function vincularFichaDesdeRanking({
       filasEmparejadas: emparejadas.length,
     },
   };
+}
+
+/** La ficha que ya tiene esa licencia, si la hay. */
+async function fichaPorLicencia(licenciaLlana: string) {
+  const [ficha] = await db
+    .select({
+      id: athlete.id,
+      userProfileId: athlete.userProfileId,
+      guardianProfileId: athlete.guardianProfileId,
+      notes: athlete.notes,
+    })
+    .from(athlete)
+    .where(sql`upper(${athlete.rfeeLicense}) = ${licenciaLlana}`)
+    .limit(1);
+  return ficha ?? null;
+}
+
+/**
+ * La ficha a la que ya apunta esa fila del ranking, si alguna.
+ *
+ * Es el sustituto de la búsqueda por licencia cuando la fuente todavía no la
+ * publica. No es emparejar por nombre: `official_ranking_entry.athlete_id` solo
+ * lo rellena una licencia o una persona, así que si hay algo ahí es un enlace
+ * que alguien ya decidió.
+ */
+async function fichaDeLaFilaDelRanking(clave: string) {
+  const [ficha] = await db
+    .select({
+      id: athlete.id,
+      userProfileId: athlete.userProfileId,
+      guardianProfileId: athlete.guardianProfileId,
+      notes: athlete.notes,
+    })
+    .from(officialRankingEntry)
+    .innerJoin(athlete, eq(athlete.id, officialRankingEntry.athleteId))
+    .where(eq(officialRankingEntry.skermoAthleteId, clave))
+    .limit(1);
+  return ficha ?? null;
 }
 
 /** Busca el club por el código de la fuente y lo crea si no existe. */

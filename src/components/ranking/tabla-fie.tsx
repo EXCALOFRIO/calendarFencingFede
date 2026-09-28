@@ -3,6 +3,7 @@
 import { ExternalLink, Loader2 } from 'lucide-react';
 import * as React from 'react';
 import { BanderaPais } from '@/components/bandera';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -21,9 +22,10 @@ import type {
   RankingGroupKey,
   TablaClasificacionFie,
 } from '@/lib/queries/ranking';
+import { nombreCasa } from '@/lib/nombres';
 import { cn, formatDateEs } from '@/lib/utils';
 import { clave, puntos } from './formato';
-import { SelectoresGrupo, nombreCasa } from './selectores-grupo';
+import { SelectoresGrupo } from './selectores-grupo';
 
 /** Filas por tanda. Igual que en la tabla oficial. */
 const PASO = 50;
@@ -323,8 +325,10 @@ export function TablaRankingFie({
  *    señal que se busca, así que va con el fondo rojo tenue.
  *  - **`nuestro`**: además está en esta aplicación, o sea que es alguien de
  *    quien se siguen plazos e inscripciones. El puesto en rojo.
- *  - **`mio`**: y además es de quien está mirando. En negrita, que no es
- *    color: en una lista de mil nombres el color solo no basta.
+ *  - **`mio`**: y además es de quien está mirando. En negrita y con el
+ *    distintivo «Tú» al lado, igual que en la tabla nacional: en una lista de
+ *    mil nombres ni el color ni la negrita solos bastan para encontrarse, y el
+ *    estado no puede comunicarse solo por color.
  */
 function marcaDe(
   fila: FilaFie,
@@ -396,8 +400,18 @@ function Fila({
             />
           </a>
         ) : (
-          <span>{fila.nombre ?? `FIE ${fila.fieId}`}</span>
+          <span className={cn(marca.mio && 'font-semibold')}>
+            {fila.nombre ?? `FIE ${fila.fieId}`}
+          </span>
         )}
+        {marca.mio ? (
+          <Badge
+            variant="outline"
+            className="ml-2 border-primary/50 align-middle text-primary-text"
+          >
+            Tú
+          </Badge>
+        ) : null}
         {/* Las pruebas, cuando la columna está escondida en el móvil. */}
         {conPruebas && fila.eventCount !== null ? (
           <span className="block text-xs text-muted-foreground sm:hidden">

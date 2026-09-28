@@ -56,6 +56,20 @@ export type ColorOrganismo = {
    * (RFEE) a 12,0:1 (autonómica).
    */
   textoSobreSuperficie: string;
+  /**
+   * Superficie **opaca** teñida con el color de identidad, para la pastilla
+   * de circuito de la tarjeta del calendario («FIE · Copa del Mundo»).
+   *
+   * Va con `texto` encima, no con `textoSobreSuperficie`: es un tinte suave
+   * sobre `--card`, no el relleno sólido, así que lo que se lee bien encima
+   * es el color de identidad y no el blanco.
+   *
+   * No es `bg-org-fie/14`. El por qué —y el fallo que costó— está escrito en
+   * `globals.css`, junto a los tokens: la tarjeta va sobre el lienzo con
+   * textura y un alfa deja pasar la retícula de cruces por dentro de la
+   * pastilla.
+   */
+  tintePastilla: string;
   /** El punto o el filete de la leyenda. */
   punto: string;
   /** Borde del mismo color, para el filete de 2 px de una barra. */
@@ -83,6 +97,7 @@ export const COLOR_ORGANISMO: Record<Organismo, ColorOrganismo> = {
   RFEE: {
     texto: 'text-org-rfee',
     superficie: 'bg-org-rfee-relleno',
+    tintePastilla: 'bg-org-rfee-tinte',
     textoSobreSuperficie: 'text-foreground',
     punto: 'bg-org-rfee',
     borde: 'border-org-rfee',
@@ -94,6 +109,7 @@ export const COLOR_ORGANISMO: Record<Organismo, ColorOrganismo> = {
   FIE: {
     texto: 'text-org-fie',
     superficie: 'bg-org-fie-relleno',
+    tintePastilla: 'bg-org-fie-tinte',
     textoSobreSuperficie: 'text-foreground',
     punto: 'bg-org-fie',
     borde: 'border-org-fie',
@@ -105,6 +121,7 @@ export const COLOR_ORGANISMO: Record<Organismo, ColorOrganismo> = {
   EFC: {
     texto: 'text-org-efc',
     superficie: 'bg-org-efc-relleno',
+    tintePastilla: 'bg-org-efc-tinte',
     textoSobreSuperficie: 'text-foreground',
     punto: 'bg-org-efc',
     borde: 'border-org-efc',
@@ -116,6 +133,7 @@ export const COLOR_ORGANISMO: Record<Organismo, ColorOrganismo> = {
   AUT: {
     texto: 'text-org-aut',
     superficie: 'bg-org-aut-relleno',
+    tintePastilla: 'bg-org-aut-tinte',
     textoSobreSuperficie: 'text-foreground',
     punto: 'bg-org-aut',
     borde: 'border-org-aut',

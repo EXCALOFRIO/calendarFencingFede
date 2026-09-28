@@ -27,9 +27,10 @@ import type {
   TablaOficial,
 } from '@/lib/queries/ranking';
 import type { CutoffStatus } from '@/lib/ranking/compute';
+import { nombreCasa } from '@/lib/nombres';
 import { cn, formatDateEs } from '@/lib/utils';
 import { Desglose } from './desglose';
-import { SelectoresGrupo, nombreCasa } from './selectores-grupo';
+import { SelectoresGrupo } from './selectores-grupo';
 import { clave, etiquetaGrupo, puntos } from './formato';
 
 type Grupo = RankingGroupKey & { tiradores: number };

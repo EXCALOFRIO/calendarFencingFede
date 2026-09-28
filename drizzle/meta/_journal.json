@@ -106,6 +106,13 @@
       "when": 1790560000000,
       "tag": "0015_clasificacion_mundial_fie",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790570000000,
+      "tag": "0016_ficha_confirmada_por_la_persona",
+      "breakpoints": true
     }
   ]
 }

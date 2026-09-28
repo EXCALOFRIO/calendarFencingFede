@@ -143,6 +143,17 @@ const GUION = `(() => {
       supVsCard: ratio(sup, fondos.card),
       idVsFondo: ratio(id, fondos.background),
       pastilla15: ratio(id, mezclar(id, fondos.card, 0.15)),
+      /*
+        La pastilla de circuito de la tarjeta del calendario, medida del token
+        de verdad y no de una mezcla simulada: --org-*-tinte es un color-mix
+        en OKLab y opaco, y mezclar en OKLab no da el mismo resultado que
+        mezclar los tres canales en sRGB. La diferencia es de décimas de
+        razón, pero el número que se escribe en el comentario de globals.css
+        tiene que ser el del navegador.
+      */
+      hexTinte: hex(tok('--org-' + n + '-tinte')),
+      idSobreTinte: ratio(id, tok('--org-' + n + '-tinte')),
+      tinteVsCard: ratio(tok('--org-' + n + '-tinte'), fondos.card),
     });
   }
   const distancias = [];
@@ -462,7 +473,24 @@ for (const o of r.organismos) {
       `${String(o.identidadSobreSup).padEnd(5)} ${suave(o.identidadSobreSup, 4.5)} (informativo: encima va blanco)`,
   );
 }
-console.log('  distancia perceptual entre rellenos (OKLab; por debajo de 0,10 no se separan):');
+/*
+  LA PASTILLA DE CIRCUITO TEÑIDA, que es la señal de color de la tarjeta del
+  calendario: «FIE · Copa del Mundo» con fondo del color al 14 % y texto en el
+  color de identidad. Se mide aparte porque el fondo es un token propio
+  (--org-*-tinte), opaco a propósito: con alfa, la retícula del lienzo se
+  colaba por dentro de la pastilla.
+*/
+console.log('\n— Pastilla de circuito teñida (tarjeta del calendario) —');
+console.log('org   tinte      identidad/tinte   tinte/card (se ve la pastilla, 1.2:1 basta)');
+for (const o of r.organismos) {
+  console.log(
+    `${o.org.padEnd(5)} ${o.hexTinte.padEnd(10)} ` +
+      `${String(o.idSobreTinte).padEnd(6)} ${ok(o.idSobreTinte, 4.5).padEnd(8)} ` +
+      `${String(o.tinteVsCard)}`,
+  );
+}
+
+console.log('\n  distancia perceptual entre rellenos (OKLab; por debajo de 0,10 no se separan):');
 const peorDistancia = Math.min(...r.distancias.map((d: { d: number }) => d.d));
 console.log(
   '  ' + r.distancias.map((d: { par: string; d: number }) => `${d.par} ${d.d}`).join('   ') +
