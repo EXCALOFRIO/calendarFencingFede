@@ -15,14 +15,15 @@ import {
   type RankingRowView,
   getFichasFie,
   getPuestosOficiales,
-  getRankingFieScreenData,
+  getClasificacionFie,
+  listGruposClasificacionFie,
   getRankingOficialScreenData,
   getRankingScreenData,
   groupKey,
   listGroupsForAthlete,
 } from '@/lib/queries/ranking';
 import { yearFromIsoDate } from '@/lib/utils';
-import { paisesFie } from './consultas';
+import { cargarClasificacionFie, paisesFie } from './consultas';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Ranking' };
@@ -77,11 +78,12 @@ export default async function Pagina() {
     getPuestosOficiales(mios),
     paisesFie(mios),
     /**
-     * El ranking mundial de la FIE, para el conmutador que faltaba:
-     * *«en lo del ranking no puedo cambiar entre FIE y RFEE»*. Va en el mismo
-     * `Promise.all` porque con Neon por HTTP lo caro es el viaje de red.
+     * Solo la LISTA de combinaciones del mundial, que son 44 filas de cinco
+     * campos. La tabla del grupo se pide abajo, una sola, y las demás cuando
+     * se tocan: la clasificación completa son 11.561 filas y no tiene por qué
+     * viajar al navegador para enseñar cincuenta.
      */
-    getRankingFieScreenData(mios),
+    listGruposClasificacionFie(),
   ]);
   const esAdmin = perfil.role === 'admin';
   const esPersonal = perfil.role === 'athlete';
@@ -138,22 +140,38 @@ export default async function Pagina() {
     const miArma = new Set(atletas.flatMap((a) => a.weapons));
     const miGenero = new Set(atletas.map((a) => a.gender));
 
-    const clavesMundial = (
-      filtro: (g: (typeof mundial.groups)[number]) => boolean,
-    ): string[] => mundial.groups.filter(filtro).map((g) => groupKey(g));
+    /**
+     * De entrada, el INDIVIDUAL: es la clasificación que la gente reconoce.
+     * Las selecciones están a un toque y tienen su propio conmutador.
+     */
+    const individuales = mundial.grupos.filter((g) => g.format === 'INDIVIDUAL');
 
-    const grupoInicialMundial =
-      // 1. Un grupo donde esté uno de tus tiradores.
-      clavesMundial((g) =>
-        (mundial.tables[groupKey(g)]?.rows ?? []).some((r) => r.esMio),
-      )[0] ??
-      // 2. Tu arma y tu género.
-      clavesMundial((g) => miArma.has(g.weapon) && miGenero.has(g.gender))[0] ??
-      // 3. Tu arma.
-      clavesMundial((g) => miArma.has(g.weapon))[0] ??
-      // 4. El arma de la que se ocupa el seleccionador.
-      clavesMundial((g) => perfil.weapons.includes(g.weapon))[0] ??
-      groupKey(mundial.groups[0]);
+    /**
+     * Y dentro, tu arma y tu género. Ya no se puede mirar «en qué grupo está
+     * mi tirador» sin traerse las tablas, así que se decide con lo que se sabe
+     * de él, que además es más directo: su arma y su género. Petición literal:
+     * *«por defecto en su categoría siempre y en su género»*.
+     */
+    const grupoMundial =
+      individuales.find((g) => miArma.has(g.weapon) && miGenero.has(g.gender)) ??
+      individuales.find((g) => miArma.has(g.weapon)) ??
+      individuales.find((g) => perfil.weapons.includes(g.weapon)) ??
+      individuales[0] ??
+      null;
+
+    /**
+     * La primera tabla se resuelve AQUÍ, en el servidor, para que la pantalla
+     * llegue pintada. Cambiar de arma después ya es una acción de servidor.
+     */
+    const primeraTablaMundial = grupoMundial
+      ? await getClasificacionFie({
+          format: 'INDIVIDUAL',
+          weapon: grupoMundial.weapon,
+          gender: grupoMundial.gender,
+          category: grupoMundial.category,
+          athleteIdsPropios: mios,
+        })
+      : null;
 
     /** Fila del cálculo interno por `grupo|athleteId`, para el panel. */
     const internos: Record<string, RankingRowView> = {};
@@ -208,12 +226,18 @@ export default async function Pagina() {
             />
           }
           fie={
-            mundial.groups.length > 0
+            grupoMundial
               ? {
-                  grupos: mundial.groups,
-                  tablas: mundial.tables,
-                  grupoInicial: grupoInicialMundial,
+                  grupos: mundial.grupos,
+                  inicial: {
+                    weapon: grupoMundial.weapon,
+                    gender: grupoMundial.gender,
+                    category: grupoMundial.category,
+                    format: 'INDIVIDUAL' as const,
+                  },
+                  primeraTabla: primeraTablaMundial,
                   mios,
+                  cargar: cargarClasificacionFie,
                 }
               : null
           }

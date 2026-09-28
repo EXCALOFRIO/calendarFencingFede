@@ -236,6 +236,34 @@ export type CalendarFilters = {
    * paga en cada carga para enseñar algo que solo se ve al abrir la ficha.
    */
   datosExtraidos?: boolean;
+  /**
+   * ===========================================================================
+   * LA ESCALERA DE PLAZOS ENTERA: SOLO CUANDO SE VA A PINTAR
+   * ===========================================================================
+   *
+   * Apagada por defecto, y esto es LA optimización de la pantalla principal.
+   * Medido sobre la base real: el calendario manda al navegador **1.200 kB de
+   * JSON para 258 eventos**, y de esos:
+   *
+   *   competitions       932 kB   78 %
+   *     · deadlines      433 kB   36 %  del total
+   *     · status         259 kB   22 %  del total (casi todo `status.next`)
+   *
+   * O sea que **el 58 % del peso de la pantalla principal son dos campos que
+   * la rejilla no lee**. Comprobado a mano: de `status` solo se usan `state`,
+   * `closed` y `daysLeft`, y `deadlines` se lee en un único sitio, la barra de
+   * plazos de la ficha del torneo. Y la ficha ya vuelve a pedir el detalle al
+   * abrirse (`detalleDelEvento`), así que el dato llega justo cuando se va a
+   * enseñar en vez de viajar 258 veces por si acaso.
+   *
+   * Lo enciende `getEvent` —la ficha— y el feed iCal, que escribe cada hito en
+   * el `VEVENT` y sin ellos publicaría un calendario sin plazos.
+   *
+   * El cálculo NO se salta: `deadlineStatus` sigue corriendo para que la
+   * rejilla tenga sus colores y su «cierra en 141 días». Lo que se evita es
+   * SERIALIZAR lo que nadie va a leer.
+   */
+  conPlazos?: boolean;
 };
 
 /** Temporada marcada como actual, con sus categorías. */
@@ -747,6 +775,7 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
         });
 
         const merged = mergeDeadlines(published, calculated);
+        const estado = deadlineStatus(merged, now);
 
         return {
           id: c.id,
@@ -763,8 +792,15 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
           registrationCount: c.registrationCount,
           feeEur: c.feeEur,
           sourceUrl: c.sourceUrl,
-          deadlines: merged,
-          status: deadlineStatus(merged, now),
+          deadlines: filters.conPlazos ? merged : [],
+          status: filters.conPlazos
+            ? estado
+            : /*
+                `next` es un `ComputedDeadline` entero por prueba y es el que
+                engorda `status` hasta los 259 kB. Los escalares se quedan
+                —la rejilla los usa— y el objeto se va.
+              */
+              { ...estado, next: null },
           // Se rellena justo debajo, cuando ya están todas las pruebas
           // construidas: para saber a cuál va un horario hay que poder
           // compararlo con TODAS.
@@ -856,6 +892,8 @@ export async function getEvent(eventId: string): Promise<EventView | null> {
     ids: [eventId],
     includePast: true,
     limit: 1,
+    /** La ficha es la única pantalla que pinta la barra de plazos. */
+    conPlazos: true,
     /**
      * Aquí SÍ: la ficha es la única pantalla que enseña lo extraído de los
      * PDFs, y es un evento, no doscientos cincuenta.

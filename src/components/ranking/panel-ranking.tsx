@@ -3,7 +3,12 @@
 import * as React from 'react';
 import { Escudo } from '@/components/escudo';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import type { RankingGroupKey, TablaFie } from '@/lib/queries/ranking';
+import type {
+  FormatoClasificacion,
+  GrupoClasificacion,
+  RankingGroupKey,
+  TablaClasificacionFie,
+} from '@/lib/queries/ranking';
 import { FichaRanking, type LadoRanking } from './ficha-ranking';
 import type { FotoTirador } from '@/components/tirador/cabecera';
 import { TablaRankingFie } from './tabla-fie';
@@ -51,10 +56,17 @@ export function PanelRanking({
   rfee: React.ReactNode;
   /** Los datos del mundial, o `null` si no hay ninguno. */
   fie: {
-    grupos: (RankingGroupKey & { tiradores: number })[];
-    tablas: Record<string, TablaFie>;
-    grupoInicial: string;
+    grupos: GrupoClasificacion[];
+    /** El grupo con el que abre, resuelto en el servidor. */
+    inicial: { format: FormatoClasificacion } & RankingGroupKey;
+    primeraTabla: TablaClasificacionFie | null;
     mios: string[];
+    cargar: (p: {
+      format: FormatoClasificacion;
+      weapon: RankingGroupKey['weapon'];
+      gender: RankingGroupKey['gender'];
+      category: RankingGroupKey['category'];
+    }) => Promise<TablaClasificacionFie | null>;
   } | null;
 }) {
   /**
@@ -113,9 +125,10 @@ export function PanelRanking({
       ) : (
         <TablaRankingFie
           grupos={fie.grupos}
-          tablas={fie.tablas}
-          grupoInicial={fie.grupoInicial}
+          inicial={fie.inicial}
+          primeraTabla={fie.primeraTabla}
           mios={fie.mios}
+          cargar={fie.cargar}
         />
       )}
     </>

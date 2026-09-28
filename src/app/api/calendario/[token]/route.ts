@@ -111,6 +111,12 @@ export async function GET(
   if (genders.size > 0) genders.add('MIXTO');
 
   const events = await listEvents({
+    /*
+      El feed escribe cada hito de plazo en el `VEVENT` y pone un recordatorio
+      3 días antes del cierre, así que aquí los plazos SÍ se piden: sin ellos
+      el calendario suscrito saldría sin fechas límite. Ver `conPlazos`.
+    */
+    conPlazos: true,
     scope: (meta.scopes as Scope[] | null) ?? undefined,
     weapons: weapons.size > 0 ? [...weapons] : undefined,
     genders: genders.size > 0 ? [...genders] : undefined,
@@ -175,6 +181,12 @@ async function feedConvocatorias(
    * Pedido por id se devuelve igual, colapsado o no.
    */
   const events = await listEvents({
+    /*
+      El feed escribe cada hito de plazo en el `VEVENT` y pone un recordatorio
+      3 días antes del cierre, así que aquí los plazos SÍ se piden: sin ellos
+      el calendario suscrito saldría sin fechas límite. Ver `conPlazos`.
+    */
+    conPlazos: true,
     ids: [...eventIds],
     to: hasta,
     limit: eventIds.size,

@@ -1,6 +1,13 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '@/db';
 import { fieFencer } from '@/db/schema';
+import { getManagedAthletes, requireProfile } from '@/lib/auth/session';
+import {
+  type FormatoClasificacion,
+  type TablaClasificacionFie,
+  getClasificacionFie,
+} from '@/lib/queries/ranking';
+import type { Gender, RankingCategory, Weapon } from '@/lib/ranking/compute';
 
 /**
  * Lo que le falta a `src/lib/queries/ranking.ts` para esta pantalla.
@@ -57,4 +64,34 @@ export async function paisesFie(
     out.set(f.athleteId, f.countryCode.trim().toUpperCase());
   }
   return out;
+}
+
+/**
+ * La clasificación mundial de UN grupo, pedida desde el navegador.
+ *
+ * Es una acción de servidor y no una ruta de API: la comprueba la sesión con
+ * `requireProfile`, devuelve el objeto ya tipado y no añade una URL pública
+ * más. La pantalla pide un grupo cuando se toca el selector, y así el
+ * navegador no se traga las 11.561 filas de la clasificación completa para
+ * enseñar cincuenta.
+ *
+ * Los tiradores propios se resuelven AQUÍ, en el servidor, con la sesión: si
+ * llegaran por parámetro, cualquiera podría pedir que le marcasen los de otra
+ * cuenta.
+ */
+export async function cargarClasificacionFie(params: {
+  format: FormatoClasificacion;
+  weapon: Weapon;
+  gender: Gender;
+  category: RankingCategory;
+}): Promise<TablaClasificacionFie | null> {
+  'use server';
+
+  const perfil = await requireProfile();
+  const mios = await getManagedAthletes(perfil.profileId);
+
+  return getClasificacionFie({
+    ...params,
+    athleteIdsPropios: mios.map((a) => a.id),
+  });
 }

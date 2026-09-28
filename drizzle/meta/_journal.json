@@ -99,6 +99,13 @@
       "when": 1790550000000,
       "tag": "0014_categoria_m7",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1790560000000,
+      "tag": "0015_clasificacion_mundial_fie",
+      "breakpoints": true
     }
   ]
 }

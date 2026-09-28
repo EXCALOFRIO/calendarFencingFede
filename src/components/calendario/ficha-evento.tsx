@@ -164,13 +164,30 @@ function useConDatosDeLosPdfs(base: EventView): EventView {
     const porPrueba = new Map(
       leidos.competitions.map((c) => [c.id, c.datosExtraidos]),
     );
+    /**
+     * Y de aquí salen también LOS PLAZOS.
+     *
+     * El calendario ya no los manda: son 433 kB de los 1.200 que pesaba la
+     * pantalla principal, para una barra que solo se ve al abrir una ficha
+     * (ver `conPlazos` en `src/lib/queries/calendar.ts`). Así que llegan con
+     * el detalle, que es esta misma petición, y hasta entonces la barra se
+     * pinta con lo que hay. No se bloquea la ficha por ellos.
+     */
+    const detalle = new Map(
+      leidos.competitions.map((c) => [c.id, { plazos: c.deadlines, estado: c.status }]),
+    );
     return {
       ...base,
       datosExtraidos: leidos.datosExtraidos,
-      competitions: base.competitions.map((c) => ({
-        ...c,
-        datosExtraidos: porPrueba.get(c.id) ?? [],
-      })),
+      competitions: base.competitions.map((c) => {
+        const d = detalle.get(c.id);
+        return {
+          ...c,
+          datosExtraidos: porPrueba.get(c.id) ?? [],
+          deadlines: d?.plazos ?? c.deadlines,
+          status: d?.estado ?? c.status,
+        };
+      }),
     };
   }, [base, leidos]);
 }

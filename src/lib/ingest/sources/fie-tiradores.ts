@@ -93,9 +93,18 @@ import { currentFieSeason } from './fie';
  * COSTE EN PETICIONES
  * =========================================================================
  * 1 (censo español) + 1 por candidato (hoy 2) + 1 por combinación con alguien
- * enlazado (hoy 2) = **4 peticiones al día**, y no crece con la FIE: crece
- * con nuestros tiradores. El presupuesto está topado por `maxFichas` y
- * `maxCombosPruebas` para que una carga inicial no se convierta en un
+ * enlazado (hoy 2) = 4, más **48 de la clasificación mundial** (24 individuales
+ * y 24 de selecciones) = **~52 peticiones al día y 2,8 MB**, medido el
+ * 28/09/2026.
+ *
+ * Las 4 primeras no crecen con la FIE, crecen con nuestros tiradores. Las 48
+ * son fijas: son todas las combinaciones de arma × género × categoría que
+ * existen, y la clasificación entera no sirve a medias —una tabla con cuatro
+ * armas de seis es peor que no tenerla—. Van de una en una, con espera entre
+ * medias, contra un servidor que no nos debe nada.
+ *
+ * El presupuesto está topado por `maxFichas`, `maxCombosPruebas` y
+ * `maxCombosClasificacion` para que una carga inicial no se convierta en un
  * martilleo.
  */
 
@@ -161,14 +170,96 @@ export function fotoFieAncho(
   return `https://fie.org/cdn-cgi/image/width=${ancho},quality=80,format=auto/${fotoUrl}`;
 }
 
+/**
+ * `type` de la FIE: individual o por equipos (selecciones).
+ *
+ * Los dos valores válidos los dijo su propia API al rechazar `type=T`:
+ * «Invalid option: expected one of "I"|"E" at type». `E` es de «équipes».
+ */
+export type TipoRankingFie = 'I' | 'E';
+
 export function fieDetailedRankingUrl(params: {
   season: number;
   weapon: string;
   gender: string;
   category: string;
+  tipo?: TipoRankingFie;
 }): string {
-  const { season, weapon, gender, category } = params;
-  return `${FIE_API}/fencers/detailed-ranking?season=${season}&weapon=${weapon}&gender=${gender}&category=${category}&type=I`;
+  const { season, weapon, gender, category, tipo = 'I' } = params;
+  return `${FIE_API}/fencers/detailed-ranking?season=${season}&weapon=${weapon}&gender=${gender}&category=${category}&type=${tipo}`;
+}
+
+/**
+ * Las 24 combinaciones de la clasificación mundial, medidas en vivo.
+ *
+ * Armas × géneros × las cuatro categorías que publica la FIE. No todas
+ * existen: comprobado el 28/09/2026, **la FIE no publica ranking de equipos
+ * cadete** (las seis combinaciones `C` de `type=E` vienen vacías) y tampoco
+ * espada femenina veterana. Se piden igual y se registra que vinieron vacías,
+ * que es distinto de no haberlas pedido.
+ */
+export const COMBINACIONES_FIE: { weapon: string; gender: string; category: string }[] =
+  ['F', 'E', 'S'].flatMap((weapon) =>
+    ['M', 'F'].flatMap((gender) =>
+      ['S', 'J', 'C', 'V'].map((category) => ({ weapon, gender, category })),
+    ),
+  );
+
+/** Una fila de la clasificación, como la publica la FIE. */
+export type FilaClasificacionFie = {
+  rank: number | null;
+  addrId: number;
+  name: string | null;
+  country: string | null;
+  countryCode: string | null;
+  points: string | null;
+  eventCount: number | null;
+};
+
+/**
+ * La clasificación de UNA combinación, individual o por selecciones.
+ *
+ * Pesa entre 2 kB (veteranos por equipos) y 324 kB (espada masculina absoluta
+ * individual), así que se pide de una en una y con espera entre medias: son 48
+ * peticiones al día contra un servidor que no nos debe nada.
+ */
+export async function fetchClasificacionFie(params: {
+  season: number;
+  weapon: string;
+  gender: string;
+  category: string;
+  tipo: TipoRankingFie;
+}): Promise<FilaClasificacionFie[]> {
+  const data = await fetchJson<{
+    fencers?: {
+      rank?: number | null;
+      addrId?: number;
+      name?: string | null;
+      country?: string | null;
+      countryCode?: string | null;
+      points?: string | null;
+      competitionPoints?: Record<string, string> | null;
+    }[];
+  }>(fieDetailedRankingUrl(params), { timeoutMs: 90_000, retries: 0 });
+
+  const out: FilaClasificacionFie[] = [];
+  for (const f of data.fencers ?? []) {
+    if (typeof f.addrId !== 'number') continue;
+    const nombre = (f.name ?? '').trim();
+    out.push({
+      rank: typeof f.rank === 'number' ? f.rank : null,
+      addrId: f.addrId,
+      // En selecciones la FIE manda `" "`: un nombre en blanco no es un nombre.
+      name: nombre === '' ? null : nombre,
+      country: f.country?.trim() || null,
+      countryCode: f.countryCode?.trim() || null,
+      points: f.points ?? null,
+      eventCount: f.competitionPoints
+        ? Object.keys(f.competitionPoints).length
+        : null,
+    });
+  }
+  return out;
 }
 
 // ------------------------------------------------------------ Validación ---
@@ -592,6 +683,16 @@ export type FieTiradoresOptions = {
   maxFichas?: number;
   /** Tope de combinaciones de `detailed-ranking` (pesan ~250 KB). */
   maxCombosPruebas?: number;
+  /**
+   * Tope de combinaciones de la clasificación mundial por pasada.
+   *
+   * Son 24 individuales + 24 de selecciones = 48 peticiones y 2,8 MB, medido.
+   * El tope está en 48 —o sea, todas— porque la clasificación entera no sirve
+   * a medias: una tabla con cuatro armas de seis es peor que no tenerla. Se
+   * deja como opción para poder bajarlo si algún día la FIE se queja del
+   * ritmo.
+   */
+  maxCombosClasificacion?: number;
   delayMs?: number;
 };
 
@@ -633,6 +734,7 @@ export async function ingestFieTiradores(
     season = currentFieSeason(),
     maxFichas = 40,
     maxCombosPruebas = 8,
+    maxCombosClasificacion = 48,
     delayMs = 300,
   } = options;
 
@@ -1173,6 +1275,22 @@ export async function ingestFieTiradores(
       });
   }
 
+  /**
+   * --- 9 bis. LA CLASIFICACIÓN MUNDIAL COMPLETA ---
+   *
+   * Individual (todos los países) y por selecciones. Va aquí, dentro de esta
+   * fuente, y no como fuente nueva: comparte el endpoint, el `user-agent` y la
+   * temporada, y una fuente nueva significaría un valor más en el enum de
+   * `event_source`, otra franja de cron y otro sitio donde mirar cuando algo
+   * falle. Lo que sí tiene es su propio tope y su propio informe.
+   */
+  const clasificacion = await guardarClasificacionMundial({
+    season,
+    maxCombos: maxCombosClasificacion,
+    delayMs,
+  });
+  stats.peticiones += clasificacion.peticiones;
+
   // --- 10. Cuarentena ---
   for (const lote of trocear(cuarentena, 100)) {
     if (lote.length === 0) continue;
@@ -1208,6 +1326,12 @@ export async function ingestFieTiradores(
       `${combos.size - maxCombosPruebas} combinaciones sin nº de pruebas (tope por pasada)`,
     );
   }
+  partes.push(
+    `clasificación mundial: ${clasificacion.filas} filas ` +
+      `(${clasificacion.individuales} individuales, ${clasificacion.selecciones} selecciones) ` +
+      `en ${clasificacion.combos} combinaciones` +
+      (clasificacion.vacias > 0 ? `, ${clasificacion.vacias} vacías en la FIE` : ''),
+  );
   stats.note = partes.join(' | ');
 
   return stats;
@@ -1217,4 +1341,186 @@ function trocear<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
   return out;
+}
+
+/**
+ * ===========================================================================
+ * LA CLASIFICACIÓN MUNDIAL, GUARDADA
+ * ===========================================================================
+ *
+ * Recorre las 24 combinaciones de arma × género × categoría pidiendo las dos
+ * clasificaciones —individual y por selecciones— y las escribe en
+ * `fie_clasificacion`.
+ *
+ * POR QUÉ SE GUARDA EL MUNDO ENTERO Y NO SOLO ESPAÑA
+ * --------------------------------------------------
+ * Porque el usuario lo pidió con el caso delante: *«no veo botón en el ranking
+ * para poner el ranking con tiradores también no españoles»* y *«tampoco veo
+ * para ver el ranking de países»*. Un conmutador «solo España / todos» que por
+ * debajo solo tiene españoles no es un conmutador, es un adorno.
+ *
+ * El alcance y el permiso están en la cabecera de este fichero. Lo que importa
+ * repetir aquí es qué se guarda: **nombre, país, puesto y puntos**. No hay
+ * fecha de nacimiento ni foto, y no es una decisión nuestra: la FIE no las
+ * publica en este endpoint. Comprobado en florete femenino cadete, que es la
+ * categoría con más menores.
+ *
+ * IDEMPOTENCIA
+ * ------------
+ * Por hash de (puesto, puntos, nº de pruebas, nombre, país). Una segunda
+ * pasada el mismo día no reescribe ni una fila: solo se tocan las que de
+ * verdad han cambiado de puesto. Eso importa con 11.500 filas y una base con
+ * presupuesto de cómputo.
+ */
+async function guardarClasificacionMundial(opciones: {
+  season: number;
+  maxCombos: number;
+  delayMs: number;
+}): Promise<{
+  peticiones: number;
+  combos: number;
+  filas: number;
+  individuales: number;
+  selecciones: number;
+  vacias: number;
+}> {
+  const { fieClasificacion } = await import('@/db/schema');
+  const { db } = await import('@/db');
+  const { and, eq, inArray, sql } = await import('drizzle-orm');
+  const { sha256 } = await import('@/lib/utils');
+
+  const resumen = {
+    peticiones: 0,
+    combos: 0,
+    filas: 0,
+    individuales: 0,
+    selecciones: 0,
+    vacias: 0,
+  };
+
+  /** Las dos clasificaciones de cada combinación, individual primero. */
+  const tareas = (['I', 'E'] as const).flatMap((tipo) =>
+    COMBINACIONES_FIE.map((c) => ({ ...c, tipo })),
+  );
+
+  for (const tarea of tareas.slice(0, opciones.maxCombos)) {
+    const weapon = mapWeapon(tarea.weapon);
+    const gender = mapGender(tarea.gender);
+    const category = mapCategory(tarea.category);
+    /*
+      Si no se sabe traducir, la combinación NO se pide. Guardarla con un
+      valor por defecto pondría el ranking de veteranos dentro del absoluto y
+      nadie lo notaría hasta que alguien mirase su puesto y viese un número
+      que no es el suyo.
+    */
+    if (!weapon || !gender || !category) continue;
+
+    let filas: FilaClasificacionFie[];
+    try {
+      filas = await fetchClasificacionFie({ season: opciones.season, ...tarea });
+      resumen.peticiones += 1;
+      resumen.combos += 1;
+    } catch {
+      // Una combinación que no responde no tumba la ingestión: se queda con
+      // lo que ya había guardado, que es mejor que una tabla a medias.
+      continue;
+    }
+    await espera(opciones.delayMs);
+
+    if (filas.length === 0) {
+      resumen.vacias += 1;
+      continue;
+    }
+
+    const format = tarea.tipo === 'E' ? ('EQUIPOS' as const) : ('INDIVIDUAL' as const);
+
+    /** Los hashes que ya hay, para no reescribir lo que no ha cambiado. */
+    const previos = new Map<number, string>();
+    for (const lote of trocear(
+      filas.map((f) => f.addrId),
+      500,
+    )) {
+      const existentes = await db
+        .select({
+          fieId: fieClasificacion.fieId,
+          contentHash: fieClasificacion.contentHash,
+        })
+        .from(fieClasificacion)
+        .where(
+          and(
+            eq(fieClasificacion.season, opciones.season),
+            eq(fieClasificacion.format, format),
+            eq(fieClasificacion.weapon, weapon),
+            eq(fieClasificacion.gender, gender),
+            eq(fieClasificacion.categoryRaw, tarea.category),
+            inArray(fieClasificacion.fieId, lote),
+          ),
+        );
+      for (const e of existentes) previos.set(e.fieId, e.contentHash);
+    }
+
+    const sourceUrl = fieDetailedRankingUrl({
+      season: opciones.season,
+      ...tarea,
+    });
+
+    const porEscribir: (typeof fieClasificacion.$inferInsert)[] = [];
+    for (const f of filas) {
+      const contentHash = await sha256(
+        [f.rank, f.points, f.eventCount, f.name, f.countryCode].join('|'),
+      );
+      if (previos.get(f.addrId) === contentHash) continue;
+      porEscribir.push({
+        season: opciones.season,
+        weapon,
+        gender,
+        category,
+        categoryRaw: tarea.category,
+        format,
+        fieId: f.addrId,
+        position: f.rank,
+        points: f.points,
+        sourceName: f.name,
+        countryCode: f.countryCode,
+        countryName: f.country,
+        eventCount: f.eventCount,
+        sourceUrl,
+        contentHash,
+        updatedAt: new Date(),
+      });
+    }
+
+    resumen.filas += filas.length;
+    if (format === 'INDIVIDUAL') resumen.individuales += filas.length;
+    else resumen.selecciones += filas.length;
+
+    for (const lote of trocear(porEscribir, 300)) {
+      await db
+        .insert(fieClasificacion)
+        .values(lote)
+        .onConflictDoUpdate({
+          target: [
+            fieClasificacion.season,
+            fieClasificacion.weapon,
+            fieClasificacion.gender,
+            fieClasificacion.categoryRaw,
+            fieClasificacion.format,
+            fieClasificacion.fieId,
+          ],
+          set: {
+            position: sql`excluded."position"`,
+            points: sql`excluded."points"`,
+            sourceName: sql`excluded."source_name"`,
+            countryCode: sql`excluded."country_code"`,
+            countryName: sql`excluded."country_name"`,
+            eventCount: sql`excluded."event_count"`,
+            sourceUrl: sql`excluded."source_url"`,
+            contentHash: sql`excluded."content_hash"`,
+            updatedAt: sql`now()`,
+          },
+        });
+    }
+  }
+
+  return resumen;
 }
