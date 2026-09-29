@@ -75,6 +75,42 @@ for (const [nombre, opciones] of pantallas) {
         e.clientHeight > 0 &&
         !e.closest('.sr-only'),
     );
+    /*
+      SOLAPES, que es lo que se me escapó.
+
+      Medía el alto y daba verde mientras «Masculino / Femenino» se pintaba
+      **encima** del selector de vista en el escritorio. Un panel que cabe y
+      está ilegible es un panel roto igual, así que ahora se comprueba también
+      que ningún control se monte sobre otro.
+
+      Se comparan solo los controles —botones, selectores, entradas— y solo
+      los que no son parientes entre sí: un icono dentro de su botón se
+      «solapa» con él por definición y eso no es un fallo.
+    */
+    const controles = [
+      ...panel.querySelectorAll<HTMLElement>('button, [role="radio"], input, [data-slot="select-trigger"]'),
+    ].filter((e) => e.offsetParent !== null);
+
+    const solapes: string[] = [];
+    for (let i = 0; i < controles.length; i += 1) {
+      for (let j = i + 1; j < controles.length; j += 1) {
+        const a = controles[i]!;
+        const b = controles[j]!;
+        if (a.contains(b) || b.contains(a)) continue;
+        const ra = a.getBoundingClientRect();
+        const rb = b.getBoundingClientRect();
+        const x = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
+        const y = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
+        if (x > 1 && y > 1) {
+          solapes.push(
+            `«${(a.textContent || a.getAttribute('aria-label') || a.tagName).trim().slice(0, 24)}» ` +
+              `sobre «${(b.textContent || b.getAttribute('aria-label') || b.tagName).trim().slice(0, 24)}» ` +
+              `(${Math.round(x)}×${Math.round(y)} px)`,
+          );
+        }
+      }
+    }
+
     const r = panel.getBoundingClientRect();
     return {
       alto: Math.round(panel.scrollHeight),
@@ -82,6 +118,7 @@ for (const [nombre, opciones] of pantallas) {
       abajo: Math.round(r.bottom),
       ventana: window.innerHeight,
       anidados: dentro.length,
+      solapes,
       quienes: dentro.map(
         (e) =>
           `${e.tagName.toLowerCase()}.${(e.className || '').toString().slice(0, 40)} ` +
@@ -96,13 +133,15 @@ for (const [nombre, opciones] of pantallas) {
   } else {
     const seDesplaza = medida.alto > medida.visible + 1;
     const seSale = medida.abajo > medida.ventana;
-    const mal = seDesplaza || seSale || medida.anidados > 0;
+    const mal =
+      seDesplaza || seSale || medida.anidados > 0 || medida.solapes.length > 0;
     console.log(
       `${nombre.padEnd(11)} ${mal ? '✗' : '✓'} contenido ${medida.alto}px · ` +
         `visible ${medida.visible}px · acaba en ${medida.abajo} de ${medida.ventana} · ` +
         `cajas que se desplazan dentro: ${medida.anidados}`,
     );
     for (const q of medida.quienes) console.log(`              ${q}`);
+    for (const q of medida.solapes) console.log(`              SOLAPE ${q}`);
     if (mal) problemas += 1;
   }
 

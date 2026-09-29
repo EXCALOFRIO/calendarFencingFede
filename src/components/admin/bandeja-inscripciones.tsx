@@ -201,12 +201,21 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
   }, [filas, estadosVisibles, busqueda]);
 
   const grupos = React.useMemo(() => {
-    const mapa = new Map<string, { titulo: string; fecha: string; filas: FilaInscripcion[] }>();
+    const mapa = new Map<
+      string,
+      { id: string; titulo: string; fecha: string; filas: FilaInscripcion[] }
+    >();
     for (const f of visibles) {
       const actual = mapa.get(f.eventId);
       if (actual) actual.filas.push(f);
       else
         mapa.set(f.eventId, {
+          /*
+            El id del torneo viaja DENTRO del grupo porque es lo que después
+            identifica la sección en React. Ver el comentario de la clave,
+            abajo.
+          */
+          id: f.eventId,
           titulo: titular(f.eventoNombre),
           fecha: f.eventoInicio,
           filas: [f],
@@ -438,7 +447,26 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
             const algunas = !todas && ids.some((id) => elegidas.has(id));
 
             return (
-              <section key={grupo.titulo + grupo.fecha} className="flex flex-col gap-2">
+              /*
+                LA CLAVE ES EL ID DEL TORNEO, NO SU NOMBRE Y SU FECHA.
+
+                Era `titulo + fecha`, y eso se repite de verdad en este
+                calendario: el 4 de octubre hay **dos** «TNR M17», uno en
+                Alcobendas y otro en Sabadell. Dos torneos distintos con el
+                mismo nombre el mismo día, que es lo normal en una jornada de
+                liga repartida por sedes.
+
+                React avisaba de ello en cada carga de `/admin/inscripciones`
+                —«Encountered two children with the same key»— y el riesgo no
+                es el aviso: con claves repetidas React puede reutilizar el
+                estado de una sección en otra, o sea marcar las inscripciones
+                de un torneo y que la marca aparezca en el de al lado. En una
+                pantalla desde la que se aprueban inscripciones, eso no es
+                cosmético.
+
+                El grupo ya se agrupaba por `eventId`; solo faltaba usarlo.
+              */
+              <section key={grupo.id} className="flex flex-col gap-2">
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <Checkbox
                     checked={todas}

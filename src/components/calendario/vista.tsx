@@ -28,7 +28,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from '@/components/ui/empty';
-import { FieldGroup, FieldLegend, FieldSeparator, FieldSet } from '@/components/ui/field';
+import { FieldGroup, FieldLegend, FieldSet } from '@/components/ui/field';
 import { Item, ItemContent, ItemMedia } from '@/components/ui/item';
 import { Kbd } from '@/components/ui/kbd';
 import {
@@ -36,13 +36,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   Sheet,
   SheetContent,
@@ -1200,7 +1193,7 @@ function FranjaDestacada({
           Ningún torneo coincide.
           <span className="hidden sm:inline"> El calendario sigue como estaba.</span>
         </span>
-        <Button variant="ghost" size="sm" className="h-8 shrink-0" onClick={onLimpiar}>
+        <Button variant="ghost" size="sm" className="h-8 shrink-0 px-2 text-xs" onClick={onLimpiar}>
           Quitar la búsqueda
         </Button>
       </div>
@@ -1479,7 +1472,7 @@ function PanelFiltros({
     ni existe para un lector de pantalla.
   */
   const cuerpo = (
-<FieldGroup className="gap-3">
+<FieldGroup className="gap-2.5">
           {/*
             Lo que se está mirando, en cifras. Va aquí y no en la cabecera:
             «126 pruebas en 70 torneos» no cambia ninguna decisión, así que no
@@ -1497,12 +1490,55 @@ function PanelFiltros({
 
             Y fuera el filete: el hueco ya separa, y eran 25 px con el suyo.
           */}
-          <p className="text-xs text-muted-foreground">
-            <span className="cifra text-base text-foreground">{numPruebas}</span>{' '}
-            {numPruebas === 1 ? 'prueba' : 'pruebas'} ·{' '}
-            <span className="cifra text-base text-foreground">{numTorneos}</span>{' '}
-            {numTorneos === 1 ? 'torneo' : 'torneos'}
-          </p>
+          {/*
+            LAS CIFRAS Y «VER TODO», EN LA MISMA FILA.
+
+            «Ver todo» estaba abajo del todo, detrás de un filete y en un
+            renglón propio: 73 px para un botón. Y aquí encaja mejor de lo que
+            encajaba allí, porque las dos cosas responden a la misma pregunta
+            —cuánto estoy viendo, y cómo vuelvo a verlo todo—. El renglón que
+            se ahorra es el que necesitan Género y Vista para no pisarse.
+          */}
+          {/*
+            Pegado a las cifras y NO al borde derecho: ahí, en la hoja del
+            móvil, está la ✕ de cerrar, y «Ver todo» se le montaba encima
+            (45×37 px de solape, medido). En el menú del escritorio no hay ✕,
+            pero un solo sitio para las dos formas es una regla menos que
+            recordar.
+          */}
+          <div className="flex items-center gap-3 pr-10">
+            <p className="min-w-0 text-xs text-muted-foreground">
+              <span className="cifra text-base text-foreground">{numPruebas}</span>{' '}
+              {numPruebas === 1 ? 'prueba' : 'pruebas'} ·{' '}
+              <span className="cifra text-base text-foreground">{numTorneos}</span>{' '}
+              {numTorneos === 1 ? 'torneo' : 'torneos'}
+            </p>
+
+            {/*
+              «Solo lo mío» únicamente cuando «lo mío» y «todo» son cosas
+              distintas: para la dirección técnica lo suyo ES todo.
+            */}
+            {propio.propio ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-8 shrink-0 px-2 text-xs"
+                onClick={todoPuesto ? verLoMio : verTodo}
+              >
+                {todoPuesto ? 'Solo lo mío' : 'Ver todo'}
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-8 shrink-0 px-2 text-xs"
+                onClick={verTodo}
+                disabled={todoPuesto}
+              >
+                Ver todo
+              </Button>
+            )}
+          </div>
 
           {/*
             EL ÁMBITO VA EL PRIMERO porque es la decisión más gruesa: parte
@@ -1511,7 +1547,7 @@ function PanelFiltros({
             que se piensa; al revés hay que volver a subir.
           */}
           <FieldSet>
-            <FieldLegend variant="label" className="mb-1.5 text-xs">
+            <FieldLegend variant="label" className="mb-1 text-xs">
               Calendario
             </FieldLegend>
             <ToggleGroup
@@ -1530,7 +1566,7 @@ function PanelFiltros({
           </FieldSet>
 
           <FieldSet>
-            <FieldLegend variant="label" className="mb-1.5 text-xs">
+            <FieldLegend variant="label" className="mb-1 text-xs">
               Armas
             </FieldLegend>
             {/*
@@ -1556,55 +1592,76 @@ function PanelFiltros({
           </FieldSet>
 
           {/*
-            GÉNERO Y VISTA, EN EL MISMO RENGLÓN.
+            GÉNERO Y VISTA, CADA UNO A LO ANCHO.
 
-            Dos controles de dos opciones cada uno. En columnas separadas
-            gastaban dos renglones enteros de 60 px para enseñar cuatro
-            botones; en media columna cada uno caben igual de bien y el panel
-            se ahorra uno de esos renglones, que es parte de lo que hace que
-            ya no haga falta desplazarlo.
+            Estuvieron media columna cada uno, para ahorrar un renglón. No
+            cabían: «Masculino / Femenino» necesita más de la mitad del panel
+            a cualquier anchura, y el grupo se pintaba **encima** del selector
+            de vista. Medido: 33 px de solape en el escritorio (panel de 304)
+            y 10 px en un iPhone 14 Pro. Los 10 px casi no se ven en una
+            captura, que es justo por lo que se me pasó y por lo que el guion
+            de medida ahora compara los rectángulos de todos los controles en
+            vez de fiarse del alto.
+
+            El renglón que se ahorraba se recupera arriba: «Ver todo» se ha
+            ido a la fila de las cifras, donde además está mejor.
           */}
-          <div className="grid grid-cols-2 gap-3">
-            <FieldSet>
-              <FieldLegend variant="label" className="mb-1.5 text-xs">
-                Género
-              </FieldLegend>
-              <ToggleGroup
-                type="multiple"
-                value={generos}
-                onValueChange={(v) =>
-                  v.length > 0 &&
-                  setGeneros(v.filter((g): g is 'M' | 'F' => g === 'M' || g === 'F'))
-                }
-                variant="outline"
-                className="w-full"
-              >
-                {GENEROS.map((g) => (
-                  <ToggleGroupItem key={g.v} value={g.v} className="h-9 flex-1 text-sm">
-                    {g.largo}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-            </FieldSet>
-
-            <FieldSet>
-              <FieldLegend variant="label" className="mb-1.5 text-xs">
-                Vista
-              </FieldLegend>
-              <Select value={vista} onValueChange={(v) => setVista(v as Vista)}>
-                <SelectTrigger className="h-9 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="mes">Un mes</SelectItem>
-                  <SelectItem value="trimestre">Tres meses</SelectItem>
-                </SelectContent>
-              </Select>
-            </FieldSet>
-          </div>
+          <FieldSet>
+            <FieldLegend variant="label" className="mb-1 text-xs">
+              Género
+            </FieldLegend>
+            <ToggleGroup
+              type="multiple"
+              value={generos}
+              onValueChange={(v) =>
+                v.length > 0 &&
+                setGeneros(v.filter((g): g is 'M' | 'F' => g === 'M' || g === 'F'))
+              }
+              variant="outline"
+              className="w-full"
+            >
+              {GENEROS.map((g) => (
+                <ToggleGroupItem key={g.v} value={g.v} className="h-9 flex-1 text-sm">
+                  {g.largo}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </FieldSet>
 
           <FieldSet>
-            <FieldLegend variant="label" className="mb-1.5 text-xs">
+            {/*
+              El rótulo, solo para quien no ve la pantalla.
+
+              «Un mes / Tres meses» dice lo que es sin que nadie se lo
+              explique, y ese renglón de rótulo son 22 px que en un iPhone SE
+              deciden si el panel cabe o hay que desplazarlo. Los de Armas y
+              Género se quedan visibles: ahí «Florete» o «Masculino» sí
+              podrían leerse como otra cosa en una lista de pastillas.
+
+              `sr-only` y no borrarlo: el grupo sigue teniendo nombre para un
+              lector de pantalla, que es lo que no se puede perder.
+            */}
+            <FieldLegend variant="label" className="sr-only">
+              Vista
+            </FieldLegend>
+            <ToggleGroup
+              type="single"
+              value={vista}
+              onValueChange={(v) => v && setVista(v as Vista)}
+              variant="outline"
+              className="w-full"
+            >
+              <ToggleGroupItem value="mes" className="h-9 flex-1 text-sm">
+                Un mes
+              </ToggleGroupItem>
+              <ToggleGroupItem value="trimestre" className="h-9 flex-1 text-sm">
+                Tres meses
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </FieldSet>
+
+          <FieldSet>
+            <FieldLegend variant="label" className="mb-1 text-xs">
               Categoría
               <span className="ml-1.5 font-normal text-muted-foreground">
                 {todasLasCategorias
@@ -1694,35 +1751,6 @@ function PanelFiltros({
               </ToggleGroup>
             </FieldSet>
           ) : null}
-
-          <FieldSeparator />
-
-          <div className="flex items-center gap-2">
-            {/*
-              «Solo lo mío» únicamente cuando «lo mío» y «todo» son cosas
-              distintas: para la dirección técnica lo suyo ES todo.
-            */}
-            {propio.propio ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-9 flex-1"
-                onClick={todoPuesto ? verLoMio : verTodo}
-              >
-                {todoPuesto ? 'Solo lo mío' : 'Ver todo'}
-              </Button>
-            ) : (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-9 flex-1"
-                onClick={verTodo}
-                disabled={todoPuesto}
-              >
-                Ver todo
-              </Button>
-            )}
-          </div>
 
           {temporada || actualizado ? (
             <p className="text-[0.7rem] text-muted-foreground">
