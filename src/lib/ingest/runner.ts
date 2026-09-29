@@ -314,6 +314,7 @@ async function ingestSkermo(
 
       const validated = validateEvents(candidates);
       quarantined += await saveQuarantine(runId, source, validated.quarantined);
+      await resolverCuarentena(source, validated.events);
 
       for (const e of validated.events) seenSourceIds.push(e.sourceId);
 
@@ -370,6 +371,7 @@ async function ingestFie(runId: string): Promise<Dispatched> {
 
   const validated = validateEvents(candidates);
   const quarantined = await saveQuarantine(runId, 'fie', validated.quarantined);
+  await resolverCuarentena('fie', validated.events);
   const stats = await upsertEvents(validated.events);
 
   /**
@@ -1081,6 +1083,55 @@ async function saveQuarantine(
     );
   }
   return nuevos.length;
+}
+
+/**
+ * ===========================================================================
+ * LO QUE YA ENTRA BIEN SE CAE DE LA CUARENTENA
+ * ===========================================================================
+ *
+ * Esto faltaba, y era la otra mitad de `saveQuarantine`. Aquella evita meter
+ * dos veces lo mismo; esta saca lo que ya está arreglado.
+ *
+ * El caso que lo destapó es real y es propio: la «1a Lliga Catalana Master»
+ * se encuarentenó porque su categoría venía como `+30` y el mapeo no
+ * entendía ese formato. Se arregló el mapeo, y desde entonces el torneo
+ * **entra bien todas las noches**… con su ficha vieja de cuarentena todavía
+ * sin resolver al lado. O sea: la bandeja de «esto no se ha podido leer»
+ * enseñaba un torneo que sí está en el calendario, y la prueba que vigila
+ * justo eso —que nada pendiente esté publicado— se puso roja.
+ *
+ * Y el daño no es la prueba: es que el contador de pendientes deja de
+ * significar nada. Si la bandeja acumula problemas ya resueltos, nadie la
+ * mira, y el día que entre uno de verdad se pierde entre los viejos. Es el
+ * mismo motivo por el que se quitaron los duplicados.
+ *
+ * Se marca `resolvedAt`, no se borra la fila: queda el rastro de que aquello
+ * falló, cuándo y por qué, que es lo que permite entender después por qué un
+ * torneo apareció tarde.
+ */
+async function resolverCuarentena(
+  source: IngestSource,
+  eventos: { sourceId: string }[],
+): Promise<void> {
+  if (eventos.length === 0) return;
+
+  const ids = [...new Set(eventos.map((e) => e.sourceId))];
+
+  // En lotes, por el mismo motivo que el guardado: una fuente puede traer
+  // cientos y no se gasta un viaje a Neon por cada una.
+  for (const lote of chunk(ids, 200)) {
+    await db
+      .update(ingestQuarantine)
+      .set({ resolvedAt: new Date() })
+      .where(
+        and(
+          eq(ingestQuarantine.source, source),
+          isNull(ingestQuarantine.resolvedAt),
+          inArray(ingestQuarantine.sourceId, lote),
+        ),
+      );
+  }
 }
 
 /**

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Barlow_Condensed, Inter } from 'next/font/google';
+import { Instalable } from '@/components/instalable';
 import { Toaster } from '@/components/ui/sonner';
 import './globals.css';
 
@@ -75,6 +76,9 @@ export default function RootLayout({
           los del semáforo de plazos.
         */}
         <Toaster position="bottom-center" closeButton />
+        {/* No pinta nada: registra el trabajador de servicio para que la
+            aplicación se pueda instalar en el móvil. */}
+        <Instalable />
       </body>
     </html>
   );

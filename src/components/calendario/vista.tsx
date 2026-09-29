@@ -36,7 +36,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
@@ -49,6 +48,7 @@ import {
   SheetContent,
   SheetDescription,
   SheetHeader,
+  SheetTrigger,
   SheetTitle,
 } from '@/components/ui/sheet';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -117,6 +117,45 @@ const GENEROS: { v: 'M' | 'F'; largo: string }[] = [
   { v: 'M', largo: GENDER_LABEL.M },
   { v: 'F', largo: GENDER_LABEL.F },
 ];
+
+/**
+ * ===========================================================================
+ * EL ÁMBITO: TODO, NACIONAL O INTERNACIONAL
+ * ===========================================================================
+ *
+ * Tres valores y no un interruptor de dos, porque «todo» **no es** un estado
+ * intermedio entre nacional e internacional: es lo que se quiere ver la
+ * mayoría de las veces, y tiene que poder elegirse a la vuelta. Con un
+ * interruptor de dos posiciones no hay forma de volver al calendario
+ * completo sin recordar cuál era el estado de antes.
+ *
+ * Y arranca en `TODO` a propósito: el calendario de esta aplicación es «todo
+ * lo tuyo en un sitio», que es de lo que se quejaba el usuario al principio
+ * —mirar en tres webs distintas—. Arrancar ya partido sería volver a eso.
+ */
+type Ambito = 'TODO' | 'NACIONAL' | 'INTERNACIONAL';
+
+const AMBITOS: { v: Ambito; largo: string }[] = [
+  { v: 'TODO', largo: 'Todo' },
+  { v: 'NACIONAL', largo: 'Nacional' },
+  { v: 'INTERNACIONAL', largo: 'Internacional' },
+];
+
+/**
+ * Si un torneo entra o no en el ámbito elegido.
+ *
+ * Se apoya en `organismoDe()` y no en `event.scope`. El motivo está escrito
+ * en esa función y es un caso real: el calendario de la RFEE en Skermo
+ * republica las Copas del Mundo, así que por `scope` salen como NACIONAL. Un
+ * filtro «solo nacional» que enseñe la Copa del Mundo de Takamatsu no es un
+ * filtro, es una trampa.
+ */
+function encajaEnElAmbito(evento: EventView, ambito: Ambito): boolean {
+  if (ambito === 'TODO') return true;
+  const organismo = organismoDe(evento.source, evento.scope, evento.circuit);
+  const internacional = organismo === 'FIE' || organismo === 'EFC';
+  return ambito === 'INTERNACIONAL' ? internacional : !internacional;
+}
 
 /**
  * El calendario, que es la aplicación.
@@ -244,6 +283,24 @@ export function VistaCalendario({
   */
   const [vista, setVista] = React.useState<Vista>('trimestre');
   const [ancla, setAncla] = React.useState(() => new Date());
+  /*
+    EL ÁMBITO: NACIONAL O INTERNACIONAL.
+
+    Es la pregunta que más se hace y la que peor se respondía. Un floretista
+    absoluto ve en el mismo mes las Copas del Mundo, el circuito europeo, los
+    TNR y las ligas, y la decisión que está tomando casi siempre es de un
+    lado o del otro: o mira a qué internacionales va —que son las que llevan
+    billete, visado y convocatoria— o mira el calendario de casa.
+
+    NO sale de `event.scope`, y esto importa. El calendario de la RFEE en
+    Skermo **republica las Copas del Mundo**, así que por `scope` medio
+    calendario internacional está marcado como nacional. Sale de
+    `organismoDe()`, que es la función que ya resuelve ese enredo para pintar
+    los colores: FIE y EFC son internacional; RFEE y autonómico, nacional.
+    Si se separasen las dos reglas, un día dirían cosas distintas y la
+    tarjeta tendría un color y el filtro otro.
+  */
+  const [ambito, setAmbito] = React.useState<Ambito>('TODO');
   const [armas, setArmas] = React.useState<Weapon[]>(propio.armas);
   const [generos, setGeneros] = React.useState<('M' | 'F')[]>(propio.generos);
   const [categorias, setCategorias] = React.useState<string[]>(propio.categorias);
@@ -327,6 +384,7 @@ export function VistaCalendario({
    */
   const filtrados = React.useMemo(() => {
     return eventos
+      .filter((e) => encajaEnElAmbito(e, ambito))
       .map((e) => ({
         ...e,
         competitions: e.competitions.filter(
@@ -339,7 +397,7 @@ export function VistaCalendario({
         ),
       }))
       .filter((e) => e.competitions.length > 0);
-  }, [eventos, armas, generos, categorias]);
+  }, [eventos, ambito, armas, generos, categorias]);
 
   /**
    * BUSCAR TE LLEVA, NO TE ESCONDE.
@@ -715,6 +773,8 @@ export function VistaCalendario({
             </Button>
 
             <PanelFiltros
+            ambito={ambito}
+            setAmbito={setAmbito}
             vista={vista}
             setVista={setVista}
             armas={armas}
@@ -1337,6 +1397,8 @@ function FranjaDestacada({
  * opciones.
  */
 function PanelFiltros({
+  ambito,
+  setAmbito,
   vista,
   setVista,
   armas,
@@ -1358,6 +1420,8 @@ function PanelFiltros({
   temporada,
   actualizado,
 }: {
+  ambito: Ambito;
+  setAmbito: (a: Ambito) => void;
   vista: Vista;
   setVista: (v: Vista) => void;
   armas: Weapon[];
@@ -1388,97 +1452,85 @@ function PanelFiltros({
       ? WEAPON_SHORT[armas[0]]
       : `${armas.length} armas`;
 
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        {/*
-          UNA ALTURA PARA TODA LA FILA, y este botón era el que se salía.
+  /*
+    ========================================================================
+    EN EL MÓVIL ES UNA HOJA DE ABAJO, NO UN MENÚ COLGADO DEL BOTÓN
+    ========================================================================
 
-          Medido en el navegador a 1440 px, la fila tenía tres cantos de
-          arriba y tres de abajo distintos:
+    Medido, que es de donde sale esto. Con las seis secciones el contenido
+    mide 571 px. Como menú anclado al botón, el hueco que queda por debajo
+    es de 470 px en un iPhone 14 Pro y de **327 px en un iPhone SE**, porque
+    el botón está a media pantalla y Radix solo puede usar lo que hay
+    debajo. O sea que por mucho que se recorte, un panel de seis filtros
+    colgado de ese botón no cabe: el problema no es el contenido, es el
+    anclaje.
 
-            grupo de flechas   75 → 107   (32 px)
-            botón «Buscar»     73 → 105   (32 px)
-            botón de filtros   73 → 109   (36 px)   ← este
+    Una hoja que sube desde abajo no está anclada a nada y dispone de la
+    pantalla entera menos un margen. Además cae donde está el pulgar, que es
+    lo que hace cualquier aplicación con los filtros en el móvil.
 
-          O sea que dentro del MISMO `ButtonGroup` la mitad derecha sobresalía
-          **4 px por abajo** de la izquierda, y el grupo de flechas quedaba
-          descolgado 2 px de las dos. Es lo que se ve en
-          `capturas/lupa/A-barra-antes.png`: un escalón en la costura.
+    En escritorio se queda el menú: ahí sobra sitio (el contenido mide 495 px
+    en una ventana de 900) y una hoja a pantalla completa para cambiar un
+    arma sería aparatosa.
 
-          La causa es tonta y no se arregla con `items-stretch`, que es lo que
-          ya lleva `ButtonGroup`: un elemento con alto explícito (`h-8`) no se
-          estira. Había que igualar el número. `h-8` en los tres, y el radio
-          ya era el mismo (4 px) en toda la fila.
-        */}
-        <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5 px-2.5">
-          <SlidersHorizontal className="size-4" aria-hidden />
-          <span className="cifra text-sm leading-none tracking-tight">{rotulo}</span>
-          {generos.length === 1 ? (
-            /*
-              LA PASTILLA DEL GÉNERO EXISTÍA Y NO SE VEÍA.
-
-              Iba con `bg-secondary` **dentro de un botón que también es
-              `bg-secondary`** (`variant="outline"`), así que la pastilla y el
-              botón eran exactamente el mismo color: la «M» quedaba como una
-              letra suelta flotando al lado de «FLO», sin caja y a otro
-              tamaño. Eso es la mitad del desalineado que se ve en la captura.
-
-              Ahora sube un nivel (`--accent`, el realce) para que la caja
-              exista, y lleva `py-0.5` y `leading-none`: sin aire vertical la
-              pastilla medía 9,6 px de alto dentro de un botón de 32 y no se
-              leía como pastilla ni con lupa.
-            */
-            <span className="cifra rounded-[3px] bg-accent px-1 py-0.5 text-[0.65rem] leading-none">
-              {generos[0]}
-            </span>
-          ) : null}
-          <span className="sr-only">Filtros del calendario</span>
-        </Button>
-      </PopoverTrigger>
-
-      {/*
-        EL PANEL NO PUEDE SER MÁS ALTO QUE LA PANTALLA.
-
-        Medido en un iPhone 14 Pro: el panel mide 716 px, se abre a 130 px del
-        borde de arriba y acaba en el 846 de una pantalla de 660. Con
-        `overflow: visible` y sin tope, «Vista» y «Ver todo» quedaban **fuera
-        de la pantalla y no se podían tocar**: el filtro de trimestre era
-        inalcanzable en el móvil, que es donde se usa esto.
-
-        El tope lo da Radix en `--radix-popover-content-available-height`, que
-        es el hueco real que queda hasta el borde, así que vale igual con el
-        panel abierto arriba o abajo. Y se le restan los 4,5 rem de la barra de
-        navegación del móvil —los mismos de `.hueco-barra`, que bajó de 4,5 a
-        3,25 rem al adelgazar la barra—, porque Radix mide
-        hasta el borde de la ventana y no sabe que ahí abajo hay una barra fija
-        tapando: sin restarlos, el último control quedaba **debajo** de la
-        barra y seguía sin poder tocarse aunque el panel ya se desplazara. A
-        partir de `lg` no hay barra y no hay que restar nada.
-      */}
-      <PopoverContent
-        align="end"
-        className="max-h-[calc(var(--radix-popover-content-available-height)-3.25rem)] w-[19rem] overflow-y-auto p-3 lg:max-h-[var(--radix-popover-content-available-height)]"
-      >
-        <FieldGroup className="gap-3.5">
+    Son dos disparadores y no uno con una consulta de medios en JavaScript:
+    `useMediaQuery` devuelve algo distinto en el servidor y en el navegador y
+    eso es un desajuste de hidratación garantizado. Con CSS, el que no toca
+    ni existe para un lector de pantalla.
+  */
+  const cuerpo = (
+<FieldGroup className="gap-3">
           {/*
             Lo que se está mirando, en cifras. Va aquí y no en la cabecera:
             «126 pruebas en 70 torneos» no cambia ninguna decisión, así que no
             merece un renglón de la pantalla, pero sí saberlo al tocar los
             filtros, que es cuando se está preguntando cuánto hay.
           */}
+          {/*
+            En un renglón, y la temporada abajo con la fecha de los datos.
+
+            Decía «410 pruebas en 178 torneos · temporada 2026-2027» y en un
+            móvil estrecho eso son dos renglones: 28 px de cabecera para un
+            dato que no cambia ninguna decisión. Las cifras responden «cuánto
+            estoy viendo» y se quedan arriba; la temporada y la fecha son
+            procedencia y van al pie, que es donde se mira cuando se duda.
+
+            Y fuera el filete: el hueco ya separa, y eran 25 px con el suyo.
+          */}
           <p className="text-xs text-muted-foreground">
             <span className="cifra text-base text-foreground">{numPruebas}</span>{' '}
-            {numPruebas === 1 ? 'prueba' : 'pruebas'} en{' '}
+            {numPruebas === 1 ? 'prueba' : 'pruebas'} ·{' '}
             <span className="cifra text-base text-foreground">{numTorneos}</span>{' '}
             {numTorneos === 1 ? 'torneo' : 'torneos'}
-            {temporada ? ` · temporada ${temporada}` : ''}
           </p>
 
-          <FieldSeparator />
+          {/*
+            EL ÁMBITO VA EL PRIMERO porque es la decisión más gruesa: parte
+            el calendario en dos mitades y cambia el sentido de todo lo de
+            abajo. Elegir «internacional» y después el arma es el orden en
+            que se piensa; al revés hay que volver a subir.
+          */}
+          <FieldSet>
+            <FieldLegend variant="label" className="mb-1.5 text-xs">
+              Calendario
+            </FieldLegend>
+            <ToggleGroup
+              type="single"
+              value={ambito}
+              onValueChange={(v) => v && setAmbito(v as Ambito)}
+              variant="outline"
+              className="w-full"
+            >
+              {AMBITOS.map((a) => (
+                <ToggleGroupItem key={a.v} value={a.v} className="h-9 flex-1 text-sm">
+                  {a.largo}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </FieldSet>
 
           <FieldSet>
-            <FieldLegend variant="label" className="mb-1.5">
+            <FieldLegend variant="label" className="mb-1.5 text-xs">
               Armas
             </FieldLegend>
             {/*
@@ -1503,112 +1555,119 @@ function PanelFiltros({
             </ToggleGroup>
           </FieldSet>
 
-          <FieldSet>
-            <FieldLegend variant="label" className="mb-1.5">
-              Género
-            </FieldLegend>
-            <ToggleGroup
-              type="multiple"
-              value={generos}
-              onValueChange={(v) =>
-                v.length > 0 &&
-                setGeneros(v.filter((g): g is 'M' | 'F' => g === 'M' || g === 'F'))
-              }
-              variant="outline"
-              className="w-full"
-            >
-              {GENEROS.map((g) => (
-                <ToggleGroupItem key={g.v} value={g.v} className="h-9 flex-1 text-sm">
-                  {g.largo}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </FieldSet>
+          {/*
+            GÉNERO Y VISTA, EN EL MISMO RENGLÓN.
+
+            Dos controles de dos opciones cada uno. En columnas separadas
+            gastaban dos renglones enteros de 60 px para enseñar cuatro
+            botones; en media columna cada uno caben igual de bien y el panel
+            se ahorra uno de esos renglones, que es parte de lo que hace que
+            ya no haga falta desplazarlo.
+          */}
+          <div className="grid grid-cols-2 gap-3">
+            <FieldSet>
+              <FieldLegend variant="label" className="mb-1.5 text-xs">
+                Género
+              </FieldLegend>
+              <ToggleGroup
+                type="multiple"
+                value={generos}
+                onValueChange={(v) =>
+                  v.length > 0 &&
+                  setGeneros(v.filter((g): g is 'M' | 'F' => g === 'M' || g === 'F'))
+                }
+                variant="outline"
+                className="w-full"
+              >
+                {GENEROS.map((g) => (
+                  <ToggleGroupItem key={g.v} value={g.v} className="h-9 flex-1 text-sm">
+                    {g.largo}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </FieldSet>
+
+            <FieldSet>
+              <FieldLegend variant="label" className="mb-1.5 text-xs">
+                Vista
+              </FieldLegend>
+              <Select value={vista} onValueChange={(v) => setVista(v as Vista)}>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mes">Un mes</SelectItem>
+                  <SelectItem value="trimestre">Tres meses</SelectItem>
+                </SelectContent>
+              </Select>
+            </FieldSet>
+          </div>
 
           <FieldSet>
-            <FieldLegend variant="label" className="mb-1.5">
+            <FieldLegend variant="label" className="mb-1.5 text-xs">
               Categoría
               <span className="ml-1.5 font-normal text-muted-foreground">
-                {todasLasCategorias ? 'todas' : `${categorias.length} de ${categoriasDisponibles.length}`}
+                {todasLasCategorias
+                  ? 'todas'
+                  : `${categorias.length} de ${categoriasDisponibles.length}`}
               </span>
             </FieldLegend>
             {/*
-              Hasta diez, de M9 a veteranos. Diez pastillas se comen la fila
-              entera, así que va en lista con búsqueda: es lo que pide un
-              `Combobox` cuando hay más de cuatro opciones. Sigue siendo
-              selección múltiple porque `ambito.ts` arranca a un tirador con
-              varias categorías elegibles a la vez.
+              PASTILLAS, NO UNA LISTA CON BUSCADOR DENTRO DE UNA CAJA QUE SE
+              DESPLAZA.
+
+              Eran diez opciones dentro de un `Command` con su `CommandInput`
+              y un `ScrollArea` de 128 px. O sea: una barra de desplazamiento
+              **dentro** de un panel que ya se desplazaba, en 304 px de
+              ancho. Arrastrando con el pulgar encima de las categorías se
+              movía una; un dedo más allá, la otra.
+
+              Y el buscador no ganaba nada: filtrar diez etiquetas de cuatro
+              caracteres escribiendo es más trabajo que mirarlas. Son
+              `M9 M11 M13 M15 M17 M20 ABS VET` — en pastillas que envuelven
+              caben en tres renglones y se ven todas a la vez, que es lo que
+              hace falta para elegir varias.
+
+              Se marcan con fondo y con el icono, no solo con color: la regla
+              de que el estado nunca se comunique únicamente por color vale
+              también aquí.
             */}
-            <Command className="rounded-md border bg-transparent">
-              <CommandInput placeholder="Filtrar categorías" className="h-9" />
-              <CommandList>
-                <ScrollArea className="h-32 sm:h-40">
-                  <CommandEmpty>Ninguna categoría se llama así.</CommandEmpty>
-                  {categoriasDisponibles.map((c) => {
-                    const puesta = categorias.includes(c);
-                    const nombre = CATEGORY_LABEL[c as keyof typeof CATEGORY_LABEL] ?? c;
-                    return (
-                      <CommandItem
-                        key={c}
-                        value={nombre}
-                        onSelect={() =>
-                          setCategorias((previas) => {
-                            const siguientes = puesta
-                              ? previas.filter((x) => x !== c)
-                              : ordenarCategorias([...previas, c]);
-                            // Nunca vacío: un calendario en blanco no responde
-                            // a ninguna pregunta.
-                            return siguientes.length > 0 ? siguientes : previas;
-                          })
-                        }
-                        /*
-                          `data-marcado`, no `aria-selected`.
-
-                          `aria-selected` es el atributo con el que cmdk
-                          anuncia **la fila bajo el cursor**, y lo pone y lo
-                          quita él al moverse con las flechas. Escribirlo a
-                          mano aquí hacía que un lector de pantalla oyera
-                          «seleccionado» en varias filas a la vez y ninguna
-                          fuese la del cursor. El marcado de la aplicación
-                          viaja ahora en su propio atributo y lo pinta
-                          `CommandItem` con la convención de siempre.
-                        */
-                        data-marcado={puesta}
-                      >
-                        <CircleCheck
-                          className={cn(
-                            'size-4',
-                            puesta ? 'text-primary-text opacity-100' : 'opacity-25',
-                          )}
-                          aria-hidden
-                        />
-                        {/* El rótulo hereda el rojo del `CommandItem` cuando
-                            está marcado; sin marcar se apaga a propósito, que
-                            es la otra mitad del par. */}
-                        <span className={puesta ? undefined : 'text-muted-foreground'}>
-                          {nombre}
-                        </span>
-                      </CommandItem>
-                    );
-                  })}
-                </ScrollArea>
-              </CommandList>
-            </Command>
-          </FieldSet>
-
-          <FieldSet>
-            <FieldLegend variant="label" className="mb-1.5">
-              Vista
-            </FieldLegend>
-            <Select value={vista} onValueChange={(v) => setVista(v as Vista)}>
-              <SelectTrigger className="h-9 w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="mes">Un mes</SelectItem>
-                <SelectItem value="trimestre">Tres meses</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex flex-wrap gap-1.5">
+              {categoriasDisponibles.map((c) => {
+                const puesta = categorias.includes(c);
+                const nombre = CATEGORY_LABEL[c as keyof typeof CATEGORY_LABEL] ?? c;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    aria-pressed={puesta}
+                    onClick={() =>
+                      setCategorias((previas) => {
+                        const siguientes = puesta
+                          ? previas.filter((x) => x !== c)
+                          : ordenarCategorias([...previas, c]);
+                        // Nunca vacío: un calendario en blanco no responde a
+                        // ninguna pregunta.
+                        return siguientes.length > 0 ? siguientes : previas;
+                      })
+                    }
+                    className={cn(
+                      'objetivo-libre inline-flex h-8 items-center gap-1 rounded-md border px-2 text-sm transition-colors',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      puesta
+                        ? 'border-primary/50 bg-primary/15 text-primary-text'
+                        : 'border-border text-muted-foreground hover:bg-accent',
+                    )}
+                  >
+                    <CircleCheck
+                      className={cn('size-3.5', puesta ? 'opacity-100' : 'opacity-25')}
+                      aria-hidden
+                    />
+                    {nombre}
+                  </button>
+                );
+              })}
+            </div>
           </FieldSet>
 
           {/*
@@ -1665,14 +1724,94 @@ function PanelFiltros({
             )}
           </div>
 
-          {actualizado ? (
+          {temporada || actualizado ? (
             <p className="text-[0.7rem] text-muted-foreground">
-              Datos actualizados el {actualizado}.
+              {temporada ? `Temporada ${temporada}` : ''}
+              {temporada && actualizado ? ' · ' : ''}
+              {actualizado ? `datos del ${actualizado}` : ''}
             </p>
           ) : null}
         </FieldGroup>
+  );
+
+  /*          UNA ALTURA PARA TODA LA FILA, y este botón era el que se salía.
+
+          Medido en el navegador a 1440 px, la fila tenía tres cantos de
+          arriba y tres de abajo distintos:
+
+            grupo de flechas   75 → 107   (32 px)
+            botón «Buscar»     73 → 105   (32 px)
+            botón de filtros   73 → 109   (36 px)   ← este
+
+          O sea que dentro del MISMO `ButtonGroup` la mitad derecha sobresalía
+          **4 px por abajo** de la izquierda, y el grupo de flechas quedaba
+          descolgado 2 px de las dos. Es lo que se ve en
+          `capturas/lupa/A-barra-antes.png`: un escalón en la costura.
+
+          La causa es tonta y no se arregla con `items-stretch`, que es lo que
+          ya lleva `ButtonGroup`: un elemento con alto explícito (`h-8`) no se
+          estira. Había que igualar el número. `h-8` en los tres, y el radio
+          ya era el mismo (4 px) en toda la fila.
+        */
+  const disparador = (
+    <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5 px-2.5">
+          <SlidersHorizontal className="size-4" aria-hidden />
+          <span className="cifra text-sm leading-none tracking-tight">{rotulo}</span>
+          {generos.length === 1 ? (
+            /*
+              LA PASTILLA DEL GÉNERO EXISTÍA Y NO SE VEÍA.
+
+              Iba con `bg-secondary` **dentro de un botón que también es
+              `bg-secondary`** (`variant="outline"`), así que la pastilla y el
+              botón eran exactamente el mismo color: la «M» quedaba como una
+              letra suelta flotando al lado de «FLO», sin caja y a otro
+              tamaño. Eso es la mitad del desalineado que se ve en la captura.
+
+              Ahora sube un nivel (`--accent`, el realce) para que la caja
+              exista, y lleva `py-0.5` y `leading-none`: sin aire vertical la
+              pastilla medía 9,6 px de alto dentro de un botón de 32 y no se
+              leía como pastilla ni con lupa.
+            */
+            <span className="cifra rounded-[3px] bg-accent px-1 py-0.5 text-[0.65rem] leading-none">
+              {generos[0]}
+            </span>
+          ) : null}
+          <span className="sr-only">Filtros del calendario</span>
+        </Button>
+  );
+
+  return (
+    <>
+      <Sheet>
+        <SheetTrigger asChild className="sm:hidden">
+          {disparador}
+        </SheetTrigger>
+        <SheetContent
+          side="bottom"
+          className="max-h-[94dvh] overflow-y-auto rounded-t-xl px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]"
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>Filtros del calendario</SheetTitle>
+            <SheetDescription>
+              Qué competiciones se enseñan y cómo.
+            </SheetDescription>
+          </SheetHeader>
+          {cuerpo}
+        </SheetContent>
+      </Sheet>
+
+      <Popover>
+        <PopoverTrigger asChild className="hidden sm:inline-flex">
+          {disparador}
+        </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="max-h-[var(--radix-popover-content-available-height)] w-[19rem] overflow-y-auto p-3"
+      >
+        {cuerpo}
       </PopoverContent>
-    </Popover>
+      </Popover>
+    </>
   );
 }
 

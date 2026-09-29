@@ -24,7 +24,8 @@
       "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('licencia:', d.get\\('license'\\), '| version:', d.get\\('version'\\)\\)\")",
       "Bash(tail -5 dev-agente.log)",
       "Bash(NEXT_PUBLIC_APP_URL=\"https://calendario-fie-fede.excalofrio.workers.dev\" npm run cf:build)",
-      "Bash(BASE=\"https://calendario-fie-fede.excalofrio.workers.dev\" npm run ficha)"
+      "Bash(BASE=\"https://calendario-fie-fede.excalofrio.workers.dev\" npm run ficha)",
+      "Bash(git commit -q -m ' *)"
     ]
   }
 }
