@@ -8,3 +8,4 @@ export * from './results';
 export * from './extraccion';
 export * from './vigencia';
 export * from './fie';
+export * from './sport';

@@ -225,3 +225,27 @@ export const fieLinkStatusEnum = pgEnum('fie_link_status', [
   'CONFIRMADO',
   'RECHAZADO',
 ]);
+
+/**
+ * Estado de un vínculo entre una observación de una fuente y una persona
+ * deportiva (ID externo o candidato). Mismo vocabulario que `fie_link_status`,
+ * sin automatismo por nombre: sólo un ID con ámbito o una revisión confirman.
+ */
+export const sportLinkStatusEnum = pgEnum('sport_link_status', [
+  'PROPUESTO',
+  'CONFIRMADO',
+  'RECHAZADO',
+]);
+
+/**
+ * Cobertura de una importación. «completo» se refiere al total publicado por
+ * una fuente para un tipo de hecho, no a todo el histórico posible.
+ */
+export const sportCoverageStatusEnum = pgEnum('sport_coverage_status', [
+  'pendiente',
+  'completo',
+  'parcial',
+  'sin_resultados',
+  'error',
+  'conflicto',
+]);
