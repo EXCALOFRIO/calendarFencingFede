@@ -17,9 +17,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import { cache } from 'react';
 import { db } from '@/db';
 import {
-  athlete,
   club,
-  competitionRegistration,
   deadlineRule,
   event,
   eventCompetition,
@@ -33,6 +31,7 @@ import {
 } from '@/db/schema';
 import { PATRONES_CAMPO_RETIRADO_SQL, etiquetaDeCampo } from '@/lib/ai/campos';
 import type { CategoryCode, SeasonCategoryRow } from '../categories';
+import { clavePrueba } from './inscritos-union';
 import {
   type ComputedDeadline,
   type DeadlineRuleRow,
@@ -1391,248 +1390,11 @@ export const contarPruebas = cache(async (): Promise<number> => {
   return fila?.n ?? 0;
 });
 
-/**
- * Una fila de la lista de inscritos que PUBLICA la fuente oficial.
- *
- * Es información distinta de `inscritosDelEvento`, que son las inscripciones
- * tramitadas por esta aplicación. Las dos tienen que verse por separado y
- * etiquetadas, porque responden a preguntas distintas: «lo he pedido yo aquí»
- * frente a «ya figuro en la lista oficial de Skermo, me haya apuntado quien
- * me haya apuntado». Justo el caso que pide el usuario: al tirador lo apunta
- * su club y él no se entera.
- */
-export type InscritoPublicado = {
-  competitionId: string;
-  /** El nombre tal cual lo publica la fuente. No se retoca ni se acentúa. */
-  nombre: string;
-  /** Código de equipo en pruebas por equipos ("CCC-M 1"); null si individual. */
-  equipo: string | null;
-  club: string | null;
-  /**
-   * Id de nuestro tirador cuando la fila está emparejada. Hoy Skermo no
-   * publica la licencia en esta pantalla, así que casi siempre es `null` y lo
-   * resuelve el admin. Nunca se empareja por nombre.
-   */
-  athleteId: string | null;
-  /** `true` si es uno de los tiradores que gestiona quien está mirando. */
-  esMio: boolean;
-  /** Fecha en la que dejó de figurar en la lista oficial, si ha dejado. */
-  retiradoEn: Date | null;
-  /** Fuente que lo publica, para poder decirlo en pantalla. */
-  fuente: string;
-  sourceUrl: string | null;
-};
-
-/**
- * Lista de inscritos publicada por la fuente oficial, para todas las pruebas
- * de un torneo.
- *
- * Una sola consulta para el torneo entero: el driver de Neon habla por HTTP y
- * una consulta por prueba serían ocho viajes de red para abrir una ficha.
- *
- * `athleteIdsPropios` es opcional y sirve solo para marcar cuáles son tuyos
- * sin tener que cruzar nada en el cliente. Va como parámetro y no se deduce de
- * la sesión aquí para que esta función siga siendo una consulta pura.
- */
-export async function inscritosPublicados(
-  eventId: string,
-  opciones: { athleteIdsPropios?: string[]; incluirRetirados?: boolean } = {},
-): Promise<InscritoPublicado[]> {
-  const propios = new Set(opciones.athleteIdsPropios ?? []);
-
-  /**
-   * Los dos registros del mismo torneo, no solo el español.
-   *
-   * Un torneo internacional está dos veces en la base: la fila de Skermo, que
-   * es la que se enseña, y la de la FIE, que quedó absorbida
-   * (`canonical_event_id`). Las listas de inscritos de la FIE cuelgan de la
-   * absorbida, así que filtrar solo por `event_id = eventId` las dejaba
-   * fuera: **12 listas capturadas y 1 visible**.
-   *
-   * Es la misma herencia que ya se hacía unas líneas más arriba con el cartel
-   * y con los documentos, y por el mismo motivo: si son el mismo torneo, lo
-   * que publica una fuente vale para la tarjeta única.
-   *
-   * La subconsulta va en el `where` en lugar de pedir antes los ids porque
-   * con el driver HTTP de Neon cada consulta es un viaje de red: así son dos
-   * en paralelo y no tres en fila.
-   */
-  const delTorneoYSuPar = sql`${eventCompetition.eventId} in (
-    select ${event.id} from ${event}
-    where ${event.id} = ${eventId} or ${event.canonicalEventId} = ${eventId}
-  )`;
-
-  const [filasCrudas, pruebasDeLaTarjeta] = await Promise.all([
-    db
-      .select({
-        competitionId: competitionRegistration.eventCompetitionId,
-        prueba: clavePrueba(eventCompetition),
-        nombre: competitionRegistration.sourceAthleteName,
-        equipo: competitionRegistration.sourceTeam,
-        clubPublicado: competitionRegistration.sourceClub,
-        athleteId: competitionRegistration.athleteId,
-        retiradoEn: competitionRegistration.withdrawnAt,
-        fuente: competitionRegistration.source,
-        sourceUrl: competitionRegistration.sourceUrl,
-        clubNombre: club.name,
-      })
-      .from(competitionRegistration)
-      .innerJoin(
-        eventCompetition,
-        eq(competitionRegistration.eventCompetitionId, eventCompetition.id),
-      )
-      .leftJoin(athlete, eq(competitionRegistration.athleteId, athlete.id))
-      .leftJoin(club, eq(athlete.clubId, club.id))
-      .where(
-        opciones.incluirRetirados
-          ? delTorneoYSuPar
-          : and(delTorneoYSuPar, isNull(competitionRegistration.withdrawnAt)),
-      )
-      .orderBy(asc(competitionRegistration.sourceAthleteName)),
-    /**
-     * Las pruebas que de verdad se pintan en la ficha: destino del reencaje.
-     *
-     * Se piden con el mismo criterio que usa `listEvents` para armar la
-     * tarjeta —el torneo y su par absorbido, y de cada prueba la española si
-     * las dos la publican—, porque el destino tiene que ser exactamente el id
-     * que la ficha va a comparar. Si aquí se pidieran solo las del evento
-     * canónico, las listas de las pruebas por equipos, que son de la FIE y
-     * viven en el par, no tendrían dónde caer.
-     */
-    db
-      .select({
-        id: eventCompetition.id,
-        prueba: clavePrueba(eventCompetition),
-        propia: sql<boolean>`${event.canonicalEventId} is null`,
-      })
-      .from(eventCompetition)
-      .innerJoin(event, eq(event.id, eventCompetition.eventId))
-      .where(delTorneoYSuPar),
-  ]);
-
-  const destinoPorPrueba = new Map<string, string>();
-  for (const p of [...pruebasDeLaTarjeta].sort(
-    (a, b) => Number(b.propia) - Number(a.propia),
-  )) {
-    if (!destinoPorPrueba.has(p.prueba)) destinoPorPrueba.set(p.prueba, p.id);
-  }
-
-  /**
-   * REENCAJE: la lista de la FIE se cuelga de la prueba española equivalente.
-   *
-   * La ficha pinta las pruebas de Skermo y filtra los inscritos por el id de
-   * la prueba que está mirando. Una fila de la FIE trae el id de *su* prueba,
-   * que es otra fila de la tabla aunque sea el mismo sable masculino
-   * absoluto; sin reencajarla no la pintaría nadie.
-   *
-   * El emparejado es por arma + género + categoría + formato, exactamente el
-   * criterio con el que `enlazar.ts` decidió que los dos torneos son el mismo.
-   *
-   * Cuando la prueba solo la publica la FIE —las de equipos de las Copas del
-   * Mundo— el destino es su propia fila, que es la que la tarjeta hereda, y la
-   * lista se queda donde está. Cuando la publican las dos, la fila de la FIE
-   * cae en la prueba española y ahí decide `unaSolaFuentePorPrueba`.
-   */
-  const filas = filasCrudas.flatMap((f) => {
-    const destino = destinoPorPrueba.get(f.prueba);
-    if (!destino) return [];
-    return destino === f.competitionId ? [f] : [{ ...f, competitionId: destino }];
-  });
-
-  return unaSolaFuentePorPrueba(filas).map((f) => ({
-    competitionId: f.competitionId,
-    nombre: f.nombre,
-    equipo: f.equipo === '' ? null : f.equipo,
-    club: f.clubPublicado ?? f.clubNombre ?? null,
-    athleteId: f.athleteId,
-    esMio: f.athleteId !== null && propios.has(f.athleteId),
-    retiradoEn: f.retiradoEn,
-    fuente: f.fuente,
-    sourceUrl: f.sourceUrl,
-  }));
-}
-
-/**
- * ===========================================================================
- * UNA PRUEBA, UNA LISTA: NUNCA DOS FUENTES MEZCLADAS
- * ===========================================================================
- *
- * Desde que se leen también las listas de la FIE, una prueba internacional
- * puede tener **dos listas de las mismas personas**, escritas distinto:
- *
- *   Orán, sable masculino
- *     Skermo   6 nombres    «JORGE CASAUS PIELAGO»
- *     FIE      9 nombres    «CASAUS PIELAGO Jorge»
- *
- * Enseñarlas juntas daría **15 filas para 11 personas**, un contador de 15 y
- * un pie que nombra una sola fuente para dos listas. Y no se pueden fundir:
- * emparejar «JORGE CASAUS PIELAGO» con «CASAUS PIELAGO Jorge» es emparejar por
- * nombre, que es lo que este proyecto no hace nunca.
- *
- * **La regla, decidida por el usuario: manda Skermo (la RFEE).** Es la fuente
- * cuyos nombres están en el formato de la federación española y es la que ya se
- * venía enseñando.
- *
- * Con un matiz que hace falta o la regla no sirve: **Skermo no publica pruebas
- * por equipos**. Si «manda Skermo» se aplicara a secas, seis listas de equipos
- * ya capturadas se quedarían invisibles para siempre. Así que:
- *
- *   si Skermo publica lista para ESA prueba  →  manda Skermo
- *   si no publica ninguna                    →  se usa la de la FIE
- *
- * Nunca las dos. La decisión es **por prueba**, no por torneo: un mismo torneo
- * puede tener las individuales de Skermo y las de equipos de la FIE, y eso es
- * correcto porque cada prueba enseña una sola lista con su procedencia al pie.
- */
-/**
- * Qué prueba es, sin depender de su id: arma + género + categoría + formato.
- *
- * Es la clave con la que se reconoce «el mismo sable masculino absoluto» en la
- * fila de Skermo y en la de la FIE, que son dos filas distintas de
- * `event_competition`. Se calcula en Postgres para no traerse cuatro columnas
- * más por cada inscrito.
- */
-function clavePrueba(t: typeof eventCompetition) {
-  return sql<string>`concat_ws('|', ${t.weapon}::text, ${t.gender}::text, ${t.category}::text, ${t.format}::text)`;
-}
-
-const PRIORIDAD_DE_FUENTE: Record<string, number> = {
-  skermo_rfee: 3,
-  skermo_regional: 2,
-  fie: 1,
-};
-
-function unaSolaFuentePorPrueba<T extends { competitionId: string; fuente: string }>(
-  filas: T[],
-): T[] {
-  /** Para cada prueba, la fuente de mayor prioridad que de verdad publica. */
-  const manda = new Map<string, string>();
-  for (const f of filas) {
-    const actual = manda.get(f.competitionId);
-    const nueva = PRIORIDAD_DE_FUENTE[f.fuente] ?? 0;
-    if (!actual || nueva > (PRIORIDAD_DE_FUENTE[actual] ?? 0)) {
-      manda.set(f.competitionId, f.fuente);
-    }
-  }
-  return filas.filter((f) => manda.get(f.competitionId) === f.fuente);
-}
-
-/**
- * Cuántos inscritos publica la fuente en cada prueba de un torneo.
- *
- * Cuenta **exactamente las filas que enseña `inscritosPublicados`**, y por eso
- * la llama en lugar de hacer su propio `count(*)`. Contar aparte era más
- * barato —no se traía los nombres— pero se llevaba por delante las dos reglas
- * que decide la otra función: la herencia del par de la FIE y que entre dos
- * fuentes manda Skermo. Un contador que dice 15 donde la lista enseña 6 es
- * peor que no tener contador.
- */
-export async function contarInscritosPublicados(
-  eventId: string,
-): Promise<Record<string, number>> {
-  const porPrueba: Record<string, number> = {};
-  for (const i of await inscritosPublicados(eventId)) {
-    porPrueba[i.competitionId] = (porPrueba[i.competitionId] ?? 0) + 1;
-  }
-  return porPrueba;
-}
+export {
+  clavePrueba,
+  contarInscritosPublicados,
+  inscritosPublicados,
+  inscritosUnidosDeTorneos,
+  type InscritoPublicado,
+  type ListaUnida,
+} from './inscritos-union';

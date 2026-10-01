@@ -20,6 +20,7 @@ import {
   mergeDeadlines,
 } from '@/lib/deadlines';
 import { getDeadlineRules } from '@/lib/queries/calendar';
+import { inscritosUnidosDeTorneos } from '@/lib/queries/inscritos-union';
 import { getRankingSeason } from '@/lib/queries/ranking';
 import {
   type CutoffStatus,
@@ -28,6 +29,13 @@ import {
   pickRule,
 } from '@/lib/ranking/compute';
 import { type EstadoOficial, estadoDeListaOficial } from './oficial';
+
+function maxFecha(fechas: (Date | null)[]): Date | null {
+  return fechas.reduce<Date | null>(
+    (max, f) => (f && (!max || f > max) ? f : max),
+    null,
+  );
+}
 
 /**
  * ===========================================================================
@@ -233,7 +241,6 @@ export type ListaOficial = {
   publicados: number;
   /** Código de equipo cuando la prueba es por equipos. */
   equipo: string | null;
-  fuente: string | null;
   sourceUrl: string | null;
   leidoEl: Date | null;
 };
@@ -331,14 +338,14 @@ export async function getPruebasPropias(
    * traer: una prueba en la que figuro entra en la pantalla aunque no cumpla
    * ninguna regla de elegibilidad.
    */
-  const mias = await db
-    .select({
-      competitionId: competitionRegistration.eventCompetitionId,
-      athleteId: competitionRegistration.athleteId,
-      equipo: competitionRegistration.sourceTeam,
-      fuente: competitionRegistration.source,
-      sourceUrl: competitionRegistration.sourceUrl,
-      leidoEl: competitionRegistration.lastSeenAt,
+  /**
+   * Primero, en qué torneos figura alguno de mis tiradores en cualquiera de las
+   * listas; luego se unen las listas de esos torneos. Así una inscripción que
+   * sólo publica la FIE, colgada del par absorbido del torneo, también cuenta.
+   */
+  const tarjetasConMia = await db
+    .selectDistinct({
+      tarjeta: sql<string>`coalesce(${event.canonicalEventId}, ${event.id})`,
     })
     .from(competitionRegistration)
     .innerJoin(
@@ -353,6 +360,22 @@ export async function getPruebasPropias(
         gte(event.endDate, hoy),
       ),
     );
+
+  const propios = new Set(ids);
+  const { filas: unidasMias } = await inscritosUnidosDeTorneos(
+    tarjetasConMia.map((t) => t.tarjeta),
+  );
+  const mias = unidasMias.flatMap((f) =>
+    f.athleteIds
+      .filter((id) => propios.has(id))
+      .map((athleteId) => ({
+        competitionId: f.competitionId,
+        athleteId,
+        equipo: f.equipo,
+        sourceUrl: f.observaciones.find((o) => o.sourceUrl)?.sourceUrl ?? null,
+        leidoEl: maxFecha(f.observaciones.map((o) => o.leidoEl)),
+      })),
+  );
 
   const idsConMia = [...new Set(mias.map((m) => m.competitionId))];
 
@@ -439,22 +462,7 @@ export async function getPruebasPropias(
      * «la ha publicado y no sabemos emparejarte». Sin el número, las dos frases
      * se leerían igual y una de las dos sería mentira.
      */
-    db
-      .select({
-        competitionId: competitionRegistration.eventCompetitionId,
-        n: sql<number>`count(*)::int`,
-        fuente: sql<string | null>`min(${competitionRegistration.source})`,
-        sourceUrl: sql<string | null>`min(${competitionRegistration.sourceUrl})`,
-        leidoEl: sql<Date | null>`max(${competitionRegistration.lastSeenAt})`,
-      })
-      .from(competitionRegistration)
-      .where(
-        and(
-          inArray(competitionRegistration.eventCompetitionId, idsCandidatas),
-          isNull(competitionRegistration.withdrawnAt),
-        ),
-      )
-      .groupBy(competitionRegistration.eventCompetitionId),
+    inscritosUnidosDeTorneos([...new Set(candidatas.map((c) => c.eventId))]),
   ]);
 
   const plazosPorPrueba = new Map<string, ComputedDeadline[]>();
@@ -474,7 +482,23 @@ export async function getPruebasPropias(
     plazosPorPrueba.set(d.eventCompetitionId, lista);
   }
 
-  const recuentoPorPrueba = new Map(recuentos.map((r) => [r.competitionId, r]));
+  /** Filas visibles tras la unión, no filas crudas de cada fuente. */
+  const recuentoPorPrueba = new Map<
+    string,
+    { n: number; sourceUrl: string | null; leidoEl: Date | null }
+  >();
+  for (const f of recuentos.filas) {
+    const actual = recuentoPorPrueba.get(f.competitionId);
+    recuentoPorPrueba.set(f.competitionId, {
+      n: (actual?.n ?? 0) + 1,
+      sourceUrl:
+        actual?.sourceUrl ?? f.observaciones.find((o) => o.sourceUrl)?.sourceUrl ?? null,
+      leidoEl: maxFecha([
+        actual?.leidoEl ?? null,
+        ...f.observaciones.map((o) => o.leidoEl),
+      ]),
+    });
+  }
   const miaPorClave = new Map(
     mias.map((m) => [`${m.athleteId}|${m.competitionId}`, m]),
   );
@@ -539,7 +563,6 @@ export async function getPruebasPropias(
           }),
           publicados: recuento?.n ?? 0,
           equipo: mia?.equipo && mia.equipo !== '' ? mia.equipo : null,
-          fuente: mia?.fuente ?? recuento?.fuente ?? null,
           sourceUrl: mia?.sourceUrl ?? recuento?.sourceUrl ?? null,
           leidoEl: mia?.leidoEl ?? recuento?.leidoEl ?? null,
         },

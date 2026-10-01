@@ -70,6 +70,7 @@ import {
   titularTorneo,
 } from '@/lib/utils';
 import type { QuienVa } from '@/app/(app)/inscritos';
+import { aplicarLectura, datosVigentes, type Lectura } from '@/lib/entries/lectura';
 import { CabeceraFicha } from './cabecera-ficha';
 import { FichaEvento } from './ficha-evento';
 import { LoQueViene, diasHasta, plazoDelEvento } from './lo-que-viene';
@@ -317,20 +318,25 @@ export function VistaCalendario({
    * traerse las inscripciones de todos para enseñar las de uno sería un viaje
    * de red enorme a cambio de nada.
    */
-  const [inscritos, setInscritos] = React.useState<QuienVa | null>(null);
+  const [lecturaInscritos, setLecturaInscritos] = React.useState<
+    Lectura<QuienVa>
+  >({ tipo: 'sin_consultar' });
+  const inscritos = datosVigentes(lecturaInscritos);
+  const falloInscritos = lecturaInscritos.tipo === 'error';
 
   React.useEffect(() => {
     if (!abierto) return;
     let vigente = true;
-    setInscritos(null);
+    setLecturaInscritos({ tipo: 'sin_consultar' });
     cargarInscritos(abierto.id)
-      .then((r) => {
-        if (vigente) setInscritos(r);
+      .then((datos) => {
+        if (vigente)
+          setLecturaInscritos((a) => aplicarLectura(a, { ok: true, datos }));
       })
-      // Que no se sepa quién va no puede tumbar la ficha: se deja la lista
-      // vacía y el resto de la información sigue estando.
+      // Un fallo no tumba la ficha ni se disfraza de lista vacía: se señala
+      // aparte y se conserva lo último que se leyó bien.
       .catch(() => {
-        if (vigente) setInscritos({ oficiales: [], pendientes: [] });
+        if (vigente) setLecturaInscritos((a) => aplicarLectura(a, { ok: false }));
       });
     return () => {
       vigente = false;
@@ -1099,6 +1105,7 @@ export function VistaCalendario({
               tirador={tirador}
               inscripciones={inscripciones}
               inscritos={inscritos}
+              falloInscritos={falloInscritos}
               onSolicitar={async (competitionId) => {
                 if (!tirador) return;
                 const r = await solicitarInscripcion(competitionId, tirador.id);

@@ -299,6 +299,7 @@ export function FichaEvento({
   evento: delCalendario,
   tirador,
   inscritos,
+  falloInscritos = false,
 }: {
   evento: EventView;
   tirador: TiradorOpcion | null;
@@ -311,6 +312,8 @@ export function FichaEvento({
   onSolicitar?: (competitionId: string) => Promise<void>;
   /** Quién va, por prueba. `null` mientras se está pidiendo. */
   inscritos: QuienVaDatos | null;
+  /** La última lectura falló: no es lo mismo que una lista vacía. */
+  falloInscritos?: boolean;
 }) {
   const evento = useConDatosDeLosPdfs(delCalendario);
 
@@ -444,6 +447,7 @@ export function FichaEvento({
             evento={evento}
             prueba={prueba}
             inscritos={inscritos}
+            fallo={falloInscritos}
           />
         </>
       ) : null}
@@ -831,10 +835,12 @@ function BandaEstasDentro({
   evento,
   prueba,
   inscritos,
+  fallo = false,
 }: {
   evento: EventView;
   prueba: CompetitionView;
   inscritos: QuienVaDatos | null;
+  fallo?: boolean;
 }) {
   /**
    * La lista completa va plegada. Un TNR absoluto tiene 107 inscritos, y
@@ -879,7 +885,12 @@ function BandaEstasDentro({
       cifra={conteo?.n}
       rotulo={conteo?.rotulo}
     >
-      {inscritos === null ? (
+      {inscritos === null && fallo ? (
+        <p role="alert" className="text-base text-muted-foreground sm:text-sm">
+          No se ha podido leer la lista de inscritos. Que no se vea nadie aquí
+          no significa que no haya inscritos: vuelve a abrir la ficha.
+        </p>
+      ) : inscritos === null ? (
         <div className="flex flex-col gap-2" aria-busy>
           <Skeleton className="h-9 w-full" />
           <Skeleton className="h-9 w-4/5" />
@@ -902,12 +913,24 @@ function BandaEstasDentro({
         */
         <Empty className="items-start border p-4 text-left text-pretty md:p-4">
           <EmptyHeader className="max-w-none items-start gap-1 text-left">
-            <EmptyTitle className="text-base">Todavía no hay lista</EmptyTitle>
-            <EmptyDescription>
-              {SOURCE_LABEL[evento.source] ?? evento.source} publica los
-              inscritos cuando se cierra el plazo. En cuanto la publique, aquí
-              sale tu nombre aunque te haya apuntado otra persona.
-            </EmptyDescription>
+            {inscritos?.estados[prueba.id] === 'vacia' ? (
+              <>
+                <EmptyTitle className="text-base">Lista vacía</EmptyTitle>
+                <EmptyDescription>
+                  La organización ya publica la lista y todavía no hay nadie
+                  inscrito en esta prueba.
+                </EmptyDescription>
+              </>
+            ) : (
+              <>
+                <EmptyTitle className="text-base">Todavía no hay lista</EmptyTitle>
+                <EmptyDescription>
+                  {SOURCE_LABEL[evento.source] ?? evento.source} publica los
+                  inscritos cuando se cierra el plazo. En cuanto la publique,
+                  aquí sale tu nombre aunque te haya apuntado otra persona.
+                </EmptyDescription>
+              </>
+            )}
           </EmptyHeader>
         </Empty>
       ) : (
@@ -920,9 +943,9 @@ function BandaEstasDentro({
           ) : null}
 
           <ItemGroup className="divide-y overflow-hidden rounded-md border">
-            {visibles.map((i) => (
+            {visibles.map((i, n) => (
               <Item
-                key={`${i.competitionId}-${i.nombre}`}
+                key={`${i.competitionId}-${i.equipo ?? ''}-${i.nombre}-${n}`}
                 size="sm"
                 className={cn(
                   'rounded-none px-3 py-1.5',
@@ -959,9 +982,16 @@ function BandaEstasDentro({
             </Button>
           ) : null}
 
+          {fallo ? (
+            <p role="alert" className="text-sm text-muted-foreground sm:text-xs">
+              La última lectura falló: se enseña la anterior, que puede estar
+              desactualizada.
+            </p>
+          ) : null}
+
           <p className="text-sm text-muted-foreground sm:text-xs">
-            Lista publicada por{' '}
-            {SOURCE_LABEL[oficiales[0].fuente] ?? oficiales[0].fuente}.
+            Inscritos publicados por las organizaciones. Estar inscrito no
+            significa estar convocado ni haber competido.
           </p>
         </>
       )}

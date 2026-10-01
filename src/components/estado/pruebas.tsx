@@ -9,7 +9,6 @@ import { etiquetaGrupo } from '@/components/ranking/formato';
 import { colorDeCircuito } from '@/lib/colores';
 import { etiquetaRecargo } from '@/lib/deadlines';
 import {
-  SOURCE_LABEL,
   cn,
   formatDateEs,
   formatDateRangeEs,
@@ -386,16 +385,12 @@ function PastillaOficial({ prueba: p }: { prueba: PruebaPropia }) {
  * pie. Aquí solo el dato, que es el número de inscritos y de quién es la lista.
  */
 function Procedencia({ oficial }: { oficial: PruebaPropia['oficial'] }) {
-  const fuente = oficial.fuente
-    ? (SOURCE_LABEL[oficial.fuente] ?? oficial.fuente)
-    : 'la organización';
-
   return (
     <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-muted-foreground">
       <span>
         {oficial.estado === 'dentro' ? (
           <>
-            Figuras en la lista de {fuente}
+            Figuras en la lista de inscritos
             {oficial.leidoEl ? `, leída el ${formatDateEs(oficial.leidoEl)}` : ''}
           </>
         ) : oficial.estado === 'sin_emparejar' ? (

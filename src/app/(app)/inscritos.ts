@@ -5,7 +5,9 @@ import { db } from '@/db';
 import { athlete, club, entry, eventCompetition } from '@/db/schema';
 import { getManagedAthletes, requireProfile } from '@/lib/auth/session';
 import type { EntryStatus } from '@/lib/entries/state-machine';
-import { inscritosPublicados, type InscritoPublicado } from '@/lib/queries/calendar';
+import { aListaVisible } from '@/lib/entries/union';
+import type { EstadoLista } from '@/lib/entries/lectura';
+import { inscritosUnidosDeTorneos, type InscritoPublicado } from '@/lib/queries/inscritos-union';
 
 /**
  * Quién va a cada prueba de un torneo.
@@ -66,8 +68,13 @@ export type Inscrito = {
 };
 
 export type QuienVa = {
-  /** Lo que publica la organización. Es la lista que manda. */
+  /**
+   * Lo que publican las organizaciones, unido en una sola lista sin marca de
+   * origen por persona. Es la lista que manda.
+   */
   oficiales: InscritoPublicado[];
+  /** Por prueba: sin consultar, vacía o con datos. Un fallo lo señala quien llama. */
+  estados: Record<string, EstadoLista>;
   /**
    * Solicitudes hechas desde aquí que aún no figuran en la oficial.
    * **Solo para la dirección técnica**; vacía para todos los demás.
@@ -86,8 +93,8 @@ export async function inscritosDelEvento(eventId: string): Promise<QuienVa> {
   const mios = await getManagedAthletes(perfil.profileId);
   const idsPropios = mios.map((a) => a.id);
 
-  const [oficiales, filas] = await Promise.all([
-    inscritosPublicados(eventId, { athleteIdsPropios: idsPropios }),
+  const [unidas, filas] = await Promise.all([
+    inscritosUnidosDeTorneos([eventId]),
     perfil.role === 'admin'
       ? db
           .select({
@@ -114,7 +121,9 @@ export async function inscritosDelEvento(eventId: string): Promise<QuienVa> {
    * cumplió su función y lo importante es que está dentro.
    */
   const yaOficiales = new Set(
-    oficiales.map((o) => `${o.competitionId}|${o.athleteId ?? ''}`),
+    unidas.filas.flatMap((o) =>
+      o.athleteIds.map((id) => `${o.competitionId}|${id}`),
+    ),
   );
 
   const pendientes = filas
@@ -127,5 +136,9 @@ export async function inscritosDelEvento(eventId: string): Promise<QuienVa> {
       esMio: idsPropios.includes(f.athleteId),
     }));
 
-  return { oficiales, pendientes };
+  return {
+    oficiales: aListaVisible(unidas.filas, new Set(idsPropios)),
+    estados: unidas.estados,
+    pendientes,
+  };
 }

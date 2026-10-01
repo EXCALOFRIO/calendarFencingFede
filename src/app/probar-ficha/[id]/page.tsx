@@ -64,7 +64,7 @@ export default async function BancoDePruebasFicha({
         <FichaEvento
           evento={evento}
           tirador={null}
-          inscritos={{ oficiales, pendientes: [] }}
+          inscritos={{ oficiales, estados: {}, pendientes: [] }}
         />
       </SheetContent>
     </Sheet>

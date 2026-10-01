@@ -1,0 +1,55 @@
+{
+  "consultadoEl": "2026-10-01",
+  "nota": "Minimizado: solo IDs públicos de la FIE de deportistas ESP y recuentos observados ese día. Sin nombres, licencias ni fechas de nacimiento. Los recuentos son procedencia, no valores a congelar: cambian hasta el torneo.",
+  "torneo": {
+    "nombre": "Copa del Mundo de florete, Takamatsu (JPN)",
+    "fechas": "2026-10-15/2026-10-18",
+    "temporadaFie": 2027
+  },
+  "fie": [
+    {
+      "competitionId": 135,
+      "arma": "FLORETE",
+      "genero": "M",
+      "formato": "INDIVIDUAL",
+      "url": "https://fie.org/competition/2027/135/entries",
+      "totalPublicado": 144,
+      "espanolesFieId": [32606, 46064, 21966, 49385]
+    },
+    {
+      "competitionId": 129,
+      "arma": "FLORETE",
+      "genero": "F",
+      "formato": "INDIVIDUAL",
+      "url": "https://fie.org/competition/2027/129/entries",
+      "totalPublicado": 108,
+      "espanolesFieId": [32393, 34259, 48747, 24463, 51147]
+    },
+    {
+      "competitionId": 205,
+      "arma": "FLORETE",
+      "genero": "M",
+      "formato": "EQUIPOS",
+      "url": "https://fie.org/competition/2027/205/entries",
+      "totalPublicado": 63,
+      "espanolesFieId": [32606, 46064, 21966, 49385]
+    },
+    {
+      "competitionId": 563,
+      "arma": "FLORETE",
+      "genero": "F",
+      "formato": "EQUIPOS",
+      "url": "https://fie.org/competition/2027/563/entries",
+      "totalPublicado": 42,
+      "espanolesFieId": [32393, 34259, 24463, 51147]
+    }
+  ],
+  "skermo": {
+    "indice": "https://app.skermo.org/calendar/public/RFEE?setLang=es&owa=1&showExt=1",
+    "pruebas": [
+      { "skermoId": 10069, "genero": "M", "formato": "INDIVIDUAL", "publicados": 0, "estadoPublicado": "vacia" },
+      { "skermoId": 10068, "genero": "F", "formato": "INDIVIDUAL", "publicados": 1, "estadoPublicado": "con_datos" }
+    ],
+    "pruebasPorEquipos": "No publicadas en el índice de Skermo el día de la consulta."
+  }
+}
