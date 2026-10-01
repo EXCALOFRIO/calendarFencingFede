@@ -4,6 +4,7 @@ import { conciliarTorneoEngarde, type CanonicaConPrimarios } from '../conciliar-
 import {
   persistirAsaltosComplemento,
   persistirComplemento,
+  persistirEstadoCandidato,
   type DepsAsaltosComplemento,
   type DepsComplemento,
 } from '../complementarios-persist';
@@ -11,6 +12,7 @@ import { clasificarSerie } from '../series-complementarias';
 import { leerTorneoEngarde, type DepsEngarde, type LecturaTorneoEngarde } from '../sources/engarde';
 import { leerResultadosFww, parsearUrlFww, puestosDeFww } from '../sources/fww';
 import { clasificarFalloTecnico, type ResultadoTarea } from './orquestador';
+import { motivoDePresupuesto } from './presupuesto-http';
 
 /**
  * Pasos acotados de las fuentes complementarias (Engarde y Fencing Worldwide)
@@ -45,10 +47,55 @@ function fallo(mensaje: string | null, peticiones: number): ResultadoTarea {
   return { estado: 'error', peticiones, mensaje: texto, ...(tecnico ? { tecnico } : {}) };
 }
 
+type PlanCierre = { accion: string; cobertura?: string; estado?: string };
+
+/**
+ * Un hecho está «cerrado» si quedó escrito completo, ya era canónico o la fuente
+ * publica explícitamente cero. Revisión, conflicto, aplazamiento, rechazo, lectura
+ * parcial o fallida NO cierran: la unidad no puede salir completa por contar cero
+ * pendientes.
+ */
+function cerrado(plan: PlanCierre): boolean {
+  if (plan.accion === 'escribir') return plan.cobertura === 'completo';
+  if (plan.accion === 'sin_cambios') return true;
+  if (plan.accion === 'sin_hechos') return plan.estado === 'sin_resultados';
+  return false;
+}
+
+/**
+ * Acumula, para toda la unidad, cada lectura que falló o quedó a medias. Una
+ * señal técnica (429, 5xx, red) en un hecho PARCIAL conserva lo válido ya
+ * escrito y permite reintentar; un fallo no técnico (403...) deja la unidad en
+ * error, nunca completa.
+ */
+class Fallos {
+  private readonly lista: ResultadoTarea[] = [];
+
+  anotar(mensaje: string | null, peticiones: number) {
+    this.lista.push(fallo(mensaje, peticiones));
+  }
+
+  /** Un parcial sólo cuenta si su motivo trae una señal técnica. */
+  anotarParcial(mensaje: string | null | undefined, peticiones: number) {
+    if (mensaje && clasificarFalloTecnico(new Error(mensaje))) this.lista.push(fallo(mensaje, peticiones));
+  }
+
+  resultado(peticiones: number, hechos: { puestos: number; asaltos: number }): ResultadoTarea | null {
+    const presupuesto = this.lista.find((f) => motivoDePresupuesto(f.mensaje));
+    if (presupuesto) return { estado: 'pendiente', peticiones, mensaje: presupuesto.mensaje, hechos };
+    const tecnico = this.lista.find((f) => f.tecnico);
+    if (tecnico) return { ...tecnico, peticiones, hechos };
+    if (this.lista.length > 0) return { ...this.lista[0], peticiones, hechos };
+    return null;
+  }
+}
+
 export async function ejecutarEngardeTorneo(
   deps: DepsComplementosJob,
   org: string,
   evt: string,
+  /** Temporada de la unidad: sólo se usa para anotar candidatos sin canónica aceptada (en revisión). */
+  season: string | null = null,
 ): Promise<ResultadoTarea> {
   const leer = deps.leerTorneo ?? leerTorneoEngarde;
   const conciliar = deps.conciliar ?? conciliarTorneoEngarde;
@@ -73,13 +120,27 @@ export async function ejecutarEngardeTorneo(
   const serie = clasificarSerie({ nombre: torneo.nombre });
   let puestos = 0;
   let asaltos = 0;
-  let completas = 0;
   let sinCerrar = 0;
-  let tecnico: ResultadoTarea | null = null;
+  const fallos = new Fallos();
+  // El índice del torneo pudo quedar parcial por una página 429/5xx: lo válido se conserva y la señal sube.
+  if (torneo.estado === 'parcial') {
+    fallos.anotarParcial(torneo.error, peticiones);
+    sinCerrar += 1;
+  }
 
   for (const r of resultados) {
     if (!r.canonica) {
       sinCerrar += 1;
+      if (r.plan.accion === 'revision' && season) {
+        const p = await persistirEstadoCandidato(deps.persistencia, {
+          season,
+          competitionId: null,
+          candidato: r.candidato,
+          factKind: 'results',
+          plan: r.plan,
+        });
+        if (p.estado === 'esquema_no_aplicado') return { estado: 'esquema_no_aplicado', peticiones };
+      }
       continue;
     }
     peticiones += 1 + (r.cuadro?.lectura ? 1 : 0);
@@ -95,8 +156,10 @@ export async function ejecutarEngardeTorneo(
       if (c.estado === 'esquema_no_aplicado') return { estado: 'esquema_no_aplicado', peticiones };
       asaltos += c.asaltos.nuevos + c.asaltos.revisados;
       if (r.cuadro.plan.accion === 'sin_hechos' && r.cuadro.plan.estado === 'error') {
-        tecnico ??= fallo(r.cuadro.plan.motivo, peticiones);
+        fallos.anotar(r.cuadro.plan.motivo, peticiones);
       }
+      fallos.anotarParcial(r.cuadro.lectura?.estado === 'parcial' ? r.cuadro.lectura.motivo : null, peticiones);
+      if (!cerrado(r.cuadro.plan)) sinCerrar += 1;
     }
 
     const p = await persistirComplemento(deps.persistencia, {
@@ -108,16 +171,15 @@ export async function ejecutarEngardeTorneo(
     });
     if (p.estado === 'esquema_no_aplicado') return { estado: 'esquema_no_aplicado', peticiones };
     puestos += p.puestos.nuevos + p.puestos.revisados;
-    if (r.plan.accion === 'sin_hechos' && r.plan.estado === 'error') tecnico ??= fallo(r.plan.motivo, peticiones);
-    if (r.plan.accion === 'escribir' && r.plan.cobertura === 'completo') completas += 1;
-    else if (r.plan.accion !== 'sin_cambios') sinCerrar += 1;
-    else completas += 1;
+    if (r.plan.accion === 'sin_hechos' && r.plan.estado === 'error') fallos.anotar(r.plan.motivo, peticiones);
+    if (!cerrado(r.plan)) sinCerrar += 1;
   }
 
-  const nota = `${resultados.length} pruebas, serie ${serie ?? 'sin determinar'}, ${sinCerrar} sin cerrar (sin canónica, diferidas, en revisión o parciales)`;
-  if (tecnico?.tecnico) return { ...tecnico, peticiones, hechos: { puestos, asaltos } };
+  const nota = `${resultados.length} pruebas, serie ${serie ?? 'sin determinar'}, ${sinCerrar} sin cerrar (sin canónica, diferidas, en revisión, parciales o con error)`;
+  const fallido = fallos.resultado(peticiones, { puestos, asaltos });
+  if (fallido) return fallido;
   return {
-    estado: sinCerrar === 0 && completas === resultados.length ? 'completo' : 'parcial',
+    estado: sinCerrar === 0 ? 'completo' : 'parcial',
     peticiones,
     mensaje: nota,
     hechos: { puestos, asaltos },
@@ -140,13 +202,15 @@ export async function ejecutarFwwPrueba(deps: DepsComplementosJob, entrada: Entr
   let puestos = 0;
   let asaltos = 0;
   let sinCerrar = 0;
-  let tecnico: ResultadoTarea | null = null;
+  const fallos = new Fallos();
 
   if (entrada.resultadosUrl) {
     peticiones += 1;
     const lectura = await leerFinales(entrada.resultadosUrl, deps.engarde);
     if (lectura.estado === 'error') {
-      tecnico ??= fallo(lectura.motivo, peticiones);
+      // Sin finales leídos nada queda cerrado, sea cual sea el motivo del fallo (429, 5xx o 403).
+      fallos.anotar(lectura.motivo, peticiones);
+      sinCerrar += 1;
     } else if (lectura.pagina) {
       const ref = parsearUrlFww(lectura.url);
       const candidato = candidatoDeFww(lectura.url, ref ? `${ref.id}-${ref.temporada}` : lectura.url, lectura.pagina);
@@ -165,7 +229,7 @@ export async function ejecutarFwwPrueba(deps: DepsComplementosJob, entrada: Entr
       });
       if (r.estado === 'esquema_no_aplicado') return { estado: 'esquema_no_aplicado', peticiones };
       puestos += r.puestos.nuevos + r.puestos.revisados;
-      if (plan.accion !== 'escribir' || plan.cobertura !== 'completo') sinCerrar += 1;
+      if (!cerrado(plan)) sinCerrar += 1;
     } else {
       // Sin página no hay contexto que cotejar: queda diferido, no se fabrica sin_resultados.
       sinCerrar += 1;
@@ -180,8 +244,9 @@ export async function ejecutarFwwPrueba(deps: DepsComplementosJob, entrada: Entr
       [fases.cuadro, 'TABLEAU'],
     ] as const) {
       if (fase.plan.accion === 'sin_hechos' && fase.plan.estado === 'error') {
-        tecnico ??= fallo(fase.plan.motivo, peticiones);
+        fallos.anotar(fase.plan.motivo, peticiones);
       }
+      fallos.anotarParcial(fase.lectura.estado === 'parcial' ? fase.lectura.motivo : null, peticiones);
       // Sin documento leído no hay candidato con el que registrar cobertura.
       if (!fase.candidato) {
         sinCerrar += 1;
@@ -196,10 +261,11 @@ export async function ejecutarFwwPrueba(deps: DepsComplementosJob, entrada: Entr
       });
       if (r.estado === 'esquema_no_aplicado') return { estado: 'esquema_no_aplicado', peticiones };
       asaltos += r.asaltos.nuevos + r.asaltos.revisados;
-      if (fase.plan.accion !== 'escribir' || fase.plan.cobertura !== 'completo') sinCerrar += 1;
+      if (!cerrado(fase.plan)) sinCerrar += 1;
     }
   }
 
-  if (tecnico?.tecnico) return { ...tecnico, peticiones, hechos: { puestos, asaltos } };
+  const fallido = fallos.resultado(peticiones, { puestos, asaltos });
+  if (fallido) return fallido;
   return { estado: sinCerrar === 0 ? 'completo' : 'parcial', peticiones, hechos: { puestos, asaltos } };
 }

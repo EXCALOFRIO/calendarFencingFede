@@ -43,8 +43,8 @@ describe('las lecturas no disparan red (VAL-BACKFILL-007)', () => {
 
   it('el comando de simulación nunca construye el ejecutor de red', () => {
     const script = fs.readFileSync(path.resolve(__dirname, '..', 'scripts', 'backfill.ts'), 'utf8');
-    // Los clientes de red sólo se importan dentro de crearEjecutor, que el CLI invoca únicamente con --aplicar.
-    const fuera = script.slice(0, script.indexOf('async function crearEjecutor'));
+    // Los clientes de red sólo se importan dentro de redBase, que alcanzan descubrir y crearEjecutor: el CLI los invoca únicamente con --aplicar.
+    const fuera = script.slice(0, script.indexOf('async function redBase'));
     expect(fuera).not.toMatch(/fetcher|historico-red|sources\//);
   });
 });

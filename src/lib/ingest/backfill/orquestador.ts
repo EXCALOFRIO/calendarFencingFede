@@ -1,3 +1,5 @@
+import { ErrorHttp, retryAfterDeTexto } from '../http-retry';
+import { esPresupuestoAgotado, motivoDePresupuesto, type PresupuestoHttp } from './presupuesto-http';
 import {
   TASAS_CONSERVADORAS,
   diferenciaOcupacion,
@@ -95,6 +97,8 @@ export type ResultadoTarea = {
   /** Presente cuando el fallo es técnico y reintentable (429, 5xx, red). */
   tecnico?: { status: number | null; retryAfterMs: number | null };
   hechos?: { puestos?: number; asaltos?: number; documentos?: number };
+  /** La guarda de capacidad denegó escribir el lote ya leído: nada se escribió y el lote se detiene. */
+  capacidad?: DecisionCapacidad;
 };
 
 export class ErrorTecnico extends Error {
@@ -113,13 +117,16 @@ const PATRON_RED = /fetch failed|econnreset|etimedout|enotfound|econnrefused|tim
 /** `null` si el error NO es técnico: no se reintenta y se anota en la tarea. */
 export function clasificarFalloTecnico(e: unknown): { status: number | null; retryAfterMs: number | null } | null {
   if (e instanceof ErrorTecnico) return { status: e.status, retryAfterMs: e.retryAfterMs };
+  if (e instanceof ErrorHttp && (e.status === 429 || (e.status !== null && e.status >= 500))) {
+    return { status: e.status, retryAfterMs: e.retryAfterMs };
+  }
   const texto = e instanceof Error ? e.message : String(e);
   const http = texto.match(/\bHTTP[ :]*(\d{3})\b/i);
   if (http) {
     const status = Number(http[1]);
-    return status === 429 || status >= 500 ? { status, retryAfterMs: null } : null;
+    return status === 429 || status >= 500 ? { status, retryAfterMs: retryAfterDeTexto(texto) } : null;
   }
-  return PATRON_RED.test(texto) ? { status: null, retryAfterMs: null } : null;
+  return PATRON_RED.test(texto) ? { status: null, retryAfterMs: retryAfterDeTexto(texto) } : null;
 }
 
 export function esperaDeReintento(
@@ -180,6 +187,11 @@ export type EntradaLote = {
   dormir: (ms: number) => Promise<void>;
   capacidad?: { plan: PlanNeon; medir: () => Promise<Ocupacion>; tasas?: TasasCrecimiento };
   alTerminarTarea?: (tarea: Tarea, resultado: ResultadoTarea) => Promise<void>;
+  /**
+   * Presupuesto HTTP compartido con los lectores: si se da, `peticiones` del informe
+   * son las reservadas de verdad y ningún reintento ni espera lo supera.
+   */
+  presupuesto?: PresupuestoHttp;
 };
 
 export type ParadaLote =
@@ -281,12 +293,36 @@ export async function ejecutarLote(entrada: EntradaLote): Promise<InformeLote> {
 
   let fallosSeguidos = 0;
   let primera = true;
+  let detenidaPor: ParadaLote | null = null;
+  const usadas = () => entrada.presupuesto?.usadas ?? informe.peticiones;
+  const sincronizar = () => {
+    if (entrada.presupuesto) informe.peticiones = entrada.presupuesto.usadas;
+  };
+  sincronizar();
+
+  // Ningún reintento ni espera puede salirse del lote: se decide antes de dormir, no al volver.
+  const puedeReintentar = (espera: number, propias: number): boolean => {
+    const reservadas = entrada.presupuesto ? entrada.presupuesto.usadas : informe.peticiones + propias;
+    if (reservadas >= limites.maxPeticiones) {
+      detenidaPor = 'limite_peticiones';
+      return false;
+    }
+    const tiempoOk = entrada.presupuesto
+      ? entrada.presupuesto.puedeEsperar(espera)
+      : entrada.ahora() - inicio + espera < limites.maxMs;
+    if (!tiempoOk) {
+      detenidaPor = 'limite_tiempo';
+      return false;
+    }
+    return true;
+  };
+
   while (informe.pendientes.length > 0) {
     if (informe.ejecutadas.length >= limites.maxTareas) {
       informe.parada = 'limite_tareas';
       break;
     }
-    if (informe.peticiones >= limites.maxPeticiones) {
+    if (usadas() >= limites.maxPeticiones) {
       informe.parada = 'limite_peticiones';
       break;
     }
@@ -317,15 +353,28 @@ export async function ejecutarLote(entrada: EntradaLote): Promise<InformeLote> {
     primera = false;
 
     informe.pendientes.shift();
-    const ejecutada = await ejecutarConReintentos(entrada, tarea);
+    detenidaPor = null;
+    const ejecutada = await ejecutarConReintentos(entrada, tarea, puedeReintentar);
     informe.ejecutadas.push(ejecutada);
-    informe.peticiones += ejecutada.resultado.peticiones;
+    if (entrada.presupuesto) sincronizar();
+    else informe.peticiones += ejecutada.resultado.peticiones;
     informe.porEstado[ejecutada.resultado.estado] = (informe.porEstado[ejecutada.resultado.estado] ?? 0) + 1;
     if (entrada.alTerminarTarea) await entrada.alTerminarTarea(tarea, ejecutada.resultado);
 
     const { resultado } = ejecutada;
     if (resultado.estado === 'esquema_no_aplicado') {
       informe.parada = 'esquema_no_aplicado';
+      break;
+    }
+    if (resultado.capacidad && !resultado.capacidad.continuar) {
+      informe.parada = 'capacidad';
+      informarCapacidad(resultado.capacidad, antes, null);
+      break;
+    }
+    // Una tarea cortada por el presupuesto queda como trabajo por hacer: su cursor y su cobertura siguen donde estaban.
+    const agotado = entrada.presupuesto?.negado ?? detenidaPor ?? motivoDePresupuesto(resultado.mensaje);
+    if (agotado) {
+      informe.parada = agotado;
       break;
     }
     if (resultado.estado === 'error' && resultado.tecnico) {
@@ -342,7 +391,6 @@ export async function ejecutarLote(entrada: EntradaLote): Promise<InformeLote> {
       fallosSeguidos = 0;
     }
   }
-
   if (capacidad) {
     const despues = informe.ejecutadas.length > 0 ? await medirSeguro(capacidad.medir) : null;
     if (informe.capacidad) {
@@ -363,14 +411,33 @@ export async function ejecutarLote(entrada: EntradaLote): Promise<InformeLote> {
   return informe;
 }
 
-async function ejecutarConReintentos(entrada: EntradaLote, tarea: Tarea): Promise<TareaEjecutada> {
+async function ejecutarConReintentos(
+  entrada: EntradaLote,
+  tarea: Tarea,
+  puedeReintentar: (espera: number, peticionesPropias: number) => boolean,
+): Promise<TareaEjecutada> {
   const { limites } = entrada;
   let peticiones = 0;
   let ultimo: { status: number | null; retryAfterMs: number | null } | null = null;
   let mensaje = '';
 
   for (let intento = 0; intento <= limites.maxReintentos; intento += 1) {
-    if (intento > 0) await entrada.dormir(esperaDeReintento(intento - 1, ultimo?.retryAfterMs ?? null, limites));
+    if (intento > 0) {
+      const espera = esperaDeReintento(intento - 1, ultimo?.retryAfterMs ?? null, limites);
+      if (!puedeReintentar(espera, peticiones)) {
+        return {
+          tarea,
+          resultado: {
+            estado: 'error',
+            peticiones,
+            mensaje: `${mensaje} · reintento omitido: no cabe en el presupuesto del lote`,
+            tecnico: ultimo ?? { status: null, retryAfterMs: null },
+          },
+          reintentos: intento - 1,
+        };
+      }
+      await entrada.dormir(espera);
+    }
     try {
       const r = await entrada.ejecutar(tarea);
       peticiones += r.peticiones;
@@ -381,8 +448,11 @@ async function ejecutarConReintentos(entrada: EntradaLote, tarea: Tarea): Promis
       mensaje = r.mensaje ?? 'Fallo técnico de la fuente';
     } catch (e) {
       peticiones += 1;
-      const tecnico = clasificarFalloTecnico(e);
       const texto = e instanceof Error ? e.message : String(e);
+      if (esPresupuestoAgotado(e)) {
+        return { tarea, resultado: { estado: 'pendiente', peticiones, mensaje: texto }, reintentos: intento };
+      }
+      const tecnico = clasificarFalloTecnico(e);
       if (!tecnico) {
         return { tarea, resultado: { estado: 'error', peticiones, mensaje: texto }, reintentos: intento };
       }

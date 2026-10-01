@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio';
 import { z } from 'zod';
 import { normalizeSportName } from '@/lib/identity/resolver';
 import { fixDoubleEncodedUtf8 } from '../fetcher';
+import { motivoHttp, parsearRetryAfter, sufijoRetryAfter } from '../http-retry';
 import { mapCategory, mapGender, mapWeapon } from '../mappers';
 
 /**
@@ -413,7 +414,8 @@ export function puestosDeEngarde(pagina: PaginaEngarde): PuestoComplementario[] 
 // Lectura de red
 // ---------------------------------------------------------------------------
 
-export type RespuestaHttp = { status: number; body: string };
+/** etryAfterMs: valor real del encabezado Retry-After de la respuesta, si lo trajo. */
+export type RespuestaHttp = { status: number; body: string; retryAfterMs?: number | null };
 
 export type DepsEngarde = {
   /** No lanza por un estado HTTP: devuelve el código. Lanza sólo por red/timeout. */
@@ -431,7 +433,11 @@ export const depsEngardeReales: DepsEngarde = {
       signal: AbortSignal.timeout(45_000),
       cache: 'no-store',
     });
-    return { status: res.status, body: await res.text() };
+    return {
+      status: res.status,
+      body: await res.text(),
+      retryAfterMs: parsearRetryAfter(res.headers.get('retry-after')),
+    };
   },
   async post(url, formulario) {
     const res = await fetch(url, {
@@ -445,7 +451,11 @@ export const depsEngardeReales: DepsEngarde = {
       signal: AbortSignal.timeout(45_000),
       cache: 'no-store',
     });
-    return { status: res.status, body: await res.text() };
+    return {
+      status: res.status,
+      body: await res.text(),
+      retryAfterMs: parsearRetryAfter(res.headers.get('retry-after')),
+    };
   },
 };
 
@@ -523,7 +533,7 @@ export async function leerTorneoEngarde(
     } catch (e) {
       return fallo(mensaje(e), pruebas, publicado);
     }
-    if (r.status !== 200) return fallo(`HTTP ${r.status} al pedir el índice`, pruebas, publicado);
+    if (r.status !== 200) return fallo(`HTTP ${r.status} al pedir el índice${sufijoRetryAfter(r.retryAfterMs)}`, pruebas, publicado);
     const indice = parsearIndiceEngarde(r.body);
     if (!indice.ok) return fallo(indice.error, pruebas, publicado);
     publicado = indice.publicado;
@@ -622,7 +632,7 @@ export async function leerClasificacionEngarde(
       pagina: null,
       publicado: null,
       importado: 0,
-      motivo: `HTTP ${r.status}`,
+      motivo: motivoHttp(r.status, r.retryAfterMs),
     });
   }
   const pagina = parsearPaginaEngarde(r.body);

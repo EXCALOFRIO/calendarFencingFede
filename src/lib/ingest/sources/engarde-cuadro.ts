@@ -1,6 +1,7 @@
 import * as cheerio from 'cheerio';
 import { normalizeSportName } from '@/lib/identity/resolver';
 import { fixDoubleEncodedUtf8 } from '../fetcher';
+import { motivoHttp } from '../http-retry';
 import {
   AcumuladorAsaltos,
   FusionAsaltos,
@@ -269,7 +270,7 @@ export async function leerCuadroEngarde(
     }
     if (r.status !== 200) {
       fallos += 1;
-      ultimoError = `HTTP ${r.status}`;
+      ultimoError = motivoHttp(r.status, r.retryAfterMs);
       continue;
     }
     const cuadro = parsearCuadroEngarde(r.body, { individual: true });
@@ -304,7 +305,7 @@ export async function leerCuadroEngarde(
     parte,
     motivo: parte.completo
       ? null
-      : [`Se importaron ${parte.importado} de ${parte.publicado} cruces publicados`, motivoConflictos(parte.conflictos)]
+      : [`Se importaron ${parte.importado} de ${parte.publicado} cruces publicados`, motivoConflictos(parte.conflictos), fallos > 0 ? ultimoError : null]
           .filter(Boolean)
           .join('; '),
   };

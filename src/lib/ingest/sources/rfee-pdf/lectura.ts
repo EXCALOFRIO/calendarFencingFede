@@ -1,3 +1,4 @@
+import { motivoHttp, parsearRetryAfter } from '../../http-retry';
 import { leerResultadosPdf } from './resultados';
 import type { ItemTexto, LecturaPdf, PaginaTexto, PerfilLectura } from './tipos';
 
@@ -120,7 +121,7 @@ export async function descargarPdf(
     cache: 'no-store',
     redirect: 'error',
   });
-  if (!res.ok || !res.body) throw new PdfNoLeible(`HTTP ${res.status} al pedir el PDF`);
+  if (!res.ok || !res.body) throw new PdfNoLeible(motivoHttp(res.status, parsearRetryAfter(res.headers.get('retry-after')), ' al pedir el PDF'));
   const declarado = Number(res.headers.get('content-length'));
   if (Number.isFinite(declarado) && declarado > maxBytes) throw new PdfNoLeible(`El PDF declara ${declarado} bytes y el límite es ${maxBytes}`);
 

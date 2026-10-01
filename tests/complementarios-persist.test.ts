@@ -104,20 +104,39 @@ describe('persistirComplemento', () => {
     }
   });
 
-  it('rechazar, revisión, diferir, sin cambios y conflicto no escriben nada', async () => {
-    const planes: PlanComplementario[] = [
+  it('rechazar y sin cambios no escriben nada; revisión, diferir y conflicto no escriben hechos pero dejan constancia', async () => {
+    const sinConstancia: PlanComplementario[] = [
       { accion: 'rechazar', motivos: ['otra_edicion'] },
-      { accion: 'revision', motivos: ['fecha_difiere'] },
-      { accion: 'diferir', motivo: 'primaria_pendiente' },
       { accion: 'sin_cambios', motivo: 'ya_canonico' },
-      { accion: 'conflicto', motivo: 'x' },
     ];
-    for (const plan of planes) {
+    for (const plan of sinConstancia) {
       const { deps, escritos, coberturas } = falsas();
       const r = await persistirComplemento(deps, { competitionId: 'c-1', prueba, candidato, plan, publicado: null });
       expect(r.estado).toBe('aplicado');
       expect(escritos).toEqual([]);
       expect(coberturas).toEqual([]);
+    }
+    const conConstancia: [PlanComplementario, string, string, string][] = [
+      [{ accion: 'revision', motivos: ['fecha_difiere'] }, 'conflicto', 'revision', 'revision: fecha_difiere'],
+      [{ accion: 'diferir', motivo: 'primaria_pendiente' }, 'pendiente', 'diferido', 'diferido: primaria_pendiente'],
+      [{ accion: 'conflicto', motivo: 'x' }, 'conflicto', 'conflicto', 'x'],
+    ];
+    for (const [plan, status, cursor, lastError] of conConstancia) {
+      const { deps, escritos, coberturas } = falsas();
+      const r = await persistirComplemento(deps, { competitionId: 'c-1', prueba, candidato, plan, publicado: null });
+      expect(r.estado).toBe('aplicado');
+      expect(escritos).toEqual([]);
+      expect(coberturas).toHaveLength(1);
+      expect(coberturas[0].fila).toMatchObject({
+        factKind: 'results',
+        competitionKey: candidato.clave,
+        sourceUrl: candidato.url,
+        status,
+        cursor,
+        lastError,
+      });
+      // Las cifras anteriores no se tocan: es una marca de estado, no una lectura.
+      expect(coberturas[0].fila.publishedTotal).toBeUndefined();
     }
   });
 
@@ -291,11 +310,9 @@ describe('persistirAsaltosComplemento', () => {
     }
   });
 
-  it('rechazar, revisión, diferir y sin cambios no escriben nada, ni un plan de otra fase', async () => {
+  it('rechazar y sin cambios no escriben nada, ni un plan de otra fase; revisión y diferir sólo dejan constancia', async () => {
     const planes: PlanAsaltos[] = [
       { accion: 'rechazar', motivos: ['sin_asaltos_equipos'] },
-      { accion: 'revision', motivos: ['edicion_no_verificable'] },
-      { accion: 'diferir', motivo: 'primaria_pendiente' },
       { accion: 'sin_cambios', motivo: 'primaria_publica' },
       escribirAsaltos([asalto()], { fase: 'POULE' }),
     ];
@@ -305,6 +322,16 @@ describe('persistirAsaltosComplemento', () => {
       expect(r.estado).toBe('aplicado');
       expect(escritos).toEqual([]);
       expect(coberturas).toEqual([]);
+    }
+    for (const [plan, status, cursor] of [
+      [{ accion: 'revision', motivos: ['edicion_no_verificable'] }, 'conflicto', 'revision'],
+      [{ accion: 'diferir', motivo: 'primaria_pendiente' }, 'pendiente', 'diferido'],
+    ] as [PlanAsaltos, string, string][]) {
+      const { deps, escritos, coberturas } = falsasAsaltos();
+      await persistirAsaltosComplemento(deps, entrada(plan));
+      expect(escritos).toEqual([]);
+      expect(coberturas).toHaveLength(1);
+      expect(coberturas[0].fila).toMatchObject({ factKind: 'tableau', status, cursor });
     }
   });
 

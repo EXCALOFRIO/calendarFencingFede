@@ -43,6 +43,62 @@ export type ResumenComplemento = {
 
 const SIN_ESCRITURA: ResumenEscritura = { nuevos: 0, revisados: 0, sinCambios: 0 };
 
+type PlanSinHechosEscritos =
+  | { accion: 'revision'; motivos: readonly string[] }
+  | { accion: 'conflicto'; motivo: string }
+  | { accion: 'diferir'; motivo: string };
+
+/**
+ * Revisión, conflicto y aplazamiento no escriben hechos, pero SÍ dejan constancia
+ * de qué candidato (URL, clave), con qué motivo y en qué estado: sin ella, una
+ * cobertura «completo» anterior seguiría intacta y la revisión humana no sabría
+ * qué mirar. `rechazar` y `sin_cambios` no registran nada.
+ */
+export function estadoDeAccionSinHechos(plan: { accion: string }): {
+  status: FilaCoberturaGenerica['status'];
+  lastError: string;
+  cursor: string;
+} | null {
+  const p = plan as PlanSinHechosEscritos;
+  switch (p.accion) {
+    case 'revision':
+      return { status: 'conflicto', lastError: `revision: ${p.motivos.join(',')}`.slice(0, 300), cursor: 'revision' };
+    case 'conflicto':
+      return { status: 'conflicto', lastError: p.motivo.slice(0, 300), cursor: 'conflicto' };
+    case 'diferir':
+      return { status: 'pendiente', lastError: `diferido: ${p.motivo}`, cursor: 'diferido' };
+    default:
+      return null;
+  }
+}
+
+/** Constancia de un candidato revisado, en conflicto o diferido. `competitionId` es `null` si no hubo canónica aceptada. */
+export async function persistirEstadoCandidato(
+  deps: Pick<DepsComplemento, 'esquema' | 'upsertCobertura'>,
+  entrada: {
+    season: string;
+    competitionId: string | null;
+    candidato: Pick<CandidatoComplementario, 'proveedor' | 'clave' | 'url'>;
+    factKind: 'results' | 'pools' | 'tableau';
+    plan: { accion: string };
+  },
+): Promise<{ estado: 'aplicado' | 'esquema_no_aplicado' | 'omitido'; cobertura: FilaCoberturaGenerica['status'] | null }> {
+  const estado = estadoDeAccionSinHechos(entrada.plan);
+  if (!estado) return { estado: 'omitido', cobertura: null };
+  if (!(await deps.esquema()).identidad) return { estado: 'esquema_no_aplicado', cobertura: null };
+  await deps.upsertCobertura(entrada.candidato.proveedor, {
+    season: entrada.season,
+    factKind: entrada.factKind,
+    competitionKey: entrada.candidato.clave,
+    competitionId: entrada.competitionId,
+    status: estado.status,
+    sourceUrl: entrada.candidato.url,
+    lastError: estado.lastError,
+    cursor: estado.cursor,
+  });
+  return { estado: 'aplicado', cobertura: estado.status };
+}
+
 async function filasDe(
   puestos: readonly PuestoComplementario[],
   fecha: string | null,
@@ -87,7 +143,16 @@ export async function persistirComplemento(
     puestos: SIN_ESCRITURA,
     cobertura: null,
   };
-  if (plan.accion !== 'escribir' && plan.accion !== 'sin_hechos') return base;
+  if (plan.accion !== 'escribir' && plan.accion !== 'sin_hechos') {
+    const r = await persistirEstadoCandidato(deps, {
+      season: prueba.season,
+      competitionId,
+      candidato,
+      factKind: 'results',
+      plan,
+    });
+    return r.estado === 'esquema_no_aplicado' ? { ...base, estado: 'esquema_no_aplicado' } : { ...base, cobertura: r.cobertura };
+  }
 
   const esquema = await deps.esquema();
   if (!esquema.identidad) return { ...base, estado: 'esquema_no_aplicado' };
@@ -205,7 +270,16 @@ export async function persistirAsaltosComplemento(
     asaltos: SIN_ESCRITURA,
     cobertura: null,
   };
-  if (plan.accion !== 'escribir' && plan.accion !== 'sin_hechos') return base;
+  if (plan.accion !== 'escribir' && plan.accion !== 'sin_hechos') {
+    const r = await persistirEstadoCandidato(deps, {
+      season: prueba.season,
+      competitionId,
+      candidato,
+      factKind: fase === 'POULE' ? 'pools' : 'tableau',
+      plan,
+    });
+    return r.estado === 'esquema_no_aplicado' ? { ...base, estado: 'esquema_no_aplicado' } : { ...base, cobertura: r.cobertura };
+  }
   if (plan.accion === 'escribir' && plan.fase !== fase) return base;
 
   const esquema = await deps.esquema();

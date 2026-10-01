@@ -14,25 +14,36 @@ import {
  * aquí. El fetcher compartido ya identifica el cliente y reintenta una vez.
  */
 
-export const depsInventarioSkermoRed: DepsInventarioSkermo = {
+/**
+ * `retries` se pasa al fetcher compartido: el backfill acotado usa 0 porque el
+ * reintento (y su espera) lo decide el orquestador contra el presupuesto del
+ * lote, no un bucle interno que se salte los límites.
+ */
+export type OpcionesRed = { retries?: number };
+
+export const crearDepsInventarioSkermoRed = (o: OpcionesRed = {}): DepsInventarioSkermo => ({
   indice: async (federacion, temporadaId) =>
     (
       await fetchText(skermoResultsUrl(federacion, temporadaId ? { season: temporadaId } : {}), {
         timeoutMs: 120_000,
+        ...o,
       })
     ).body,
   temporadas: parseSkermoSeasons,
   parsear: (html, federacion) => parseSkermoResultsIndex(html, { federationCode: federacion }),
-};
+});
 
-export const depsInventarioFieRed: DepsInventarioFie = {
-  json: (url) => fetchJson<unknown>(url, { timeoutMs: 60_000 }),
-};
+export const crearDepsInventarioFieRed = (o: OpcionesRed = {}): DepsInventarioFie => ({
+  json: (url) => fetchJson<unknown>(url, { timeoutMs: 60_000, ...o }),
+});
 
-export const depsLecturaSkermoRed: DepsLecturaSkermo = {
-  html: async (url) => (await fetchText(url, { timeoutMs: 60_000 })).body,
-};
+export const crearDepsLecturaSkermoRed = (o: OpcionesRed = {}): DepsLecturaSkermo => ({
+  html: async (url) => (await fetchText(url, { timeoutMs: 60_000, ...o })).body,
+});
 
+export const depsInventarioSkermoRed: DepsInventarioSkermo = crearDepsInventarioSkermoRed();
+export const depsInventarioFieRed: DepsInventarioFie = crearDepsInventarioFieRed();
+export const depsLecturaSkermoRed: DepsLecturaSkermo = crearDepsLecturaSkermoRed();
 /**
  * Índices autonómicos de Skermo. `SKERMO_FEDERATIONS` son los códigos que el
  * proyecto ya verificó (los inválidos devuelven HTTP 500); un código extra

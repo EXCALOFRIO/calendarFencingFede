@@ -10,6 +10,9 @@
  * sin referencias hasta que alguien las relea de forma explícita.
  */
 
+import type { DecisionCapacidad } from './capacidad';
+import type { GuardaCapacidad } from './guarda-capacidad';
+
 /** Tope por ejecución de reescrituras forzadas; las demás quedan para la siguiente lectura elegible. */
 export const MAX_REESCRITURAS_POR_REFERENCIAS = 60;
 
@@ -50,4 +53,35 @@ export function repartirReescrituras<T extends { clase: ClaseHuella }>(
     }
   }
   return { escribir, diferidas, reescritas };
+}
+
+/**
+ * Igual que `repartirReescrituras`, pero la reescritura forzada sólo se
+ * escribe si la guarda de capacidad autoriza el tamaño REAL de las listas ya
+ * leídas. Si no autoriza (o no puede medir), ninguna se escribe: pasan a
+ * diferidas, sin tocar su huella ni su marca de lectura, así que no parecen
+ * hidratadas y vuelven a ser elegibles. Las listas con contenido nuevo no se
+ * retienen: no son una reescritura opcional.
+ */
+export async function repartirReescriturasConGuarda<T extends { clase: ClaseHuella; inscritos: readonly unknown[] }>(
+  leidas: readonly T[],
+  limite: number,
+  guarda?: GuardaCapacidad,
+): Promise<{ escribir: T[]; diferidas: T[]; reescritas: number; capacidad: DecisionCapacidad | null }> {
+  const base = repartirReescrituras(leidas, limite);
+  if (!guarda || base.reescritas === 0) return { ...base, capacidad: null };
+  const forzadas = base.escribir.filter((l) => l.clase === 'reescritura_por_referencias');
+  const decision = await guarda({
+    puestos: forzadas.reduce((s, l) => s + l.inscritos.length, 0),
+    asaltos: 0,
+    documentos: 0,
+    unidades: forzadas.length,
+  });
+  if (decision.continuar) return { ...base, capacidad: decision };
+  return {
+    escribir: base.escribir.filter((l) => l.clase !== 'reescritura_por_referencias'),
+    diferidas: [...base.diferidas, ...forzadas],
+    reescritas: 0,
+    capacidad: decision,
+  };
 }

@@ -112,6 +112,7 @@ function deps(over: Partial<DepsPersistenciaPdf> = {}, estado?: Partial<Estado>)
     upsertCobertura: async (f) => {
       e.coberturas.push(f);
     },
+    reconciliar: async () => ({ puestosRetirados: 0, asaltosRetirados: 0, pruebasRetiradas: [] }),
     ...over,
   };
   return { d, e };
@@ -156,7 +157,7 @@ describe('persistirLecturaPdf', () => {
     await persistirLecturaPdf(d, lectura(), ctx);
     const filas = [...e.resultados.values()][0];
     expect(filas[0].sourceUrl).toBe('https://app.skermo.org/client/1/abc123.pdf#page=1');
-    expect([...e.asaltos.values()][0][0].sourceUrl).toBe('https://app.skermo.org/client/1/abc123.pdf#page=2');
+    expect([...e.asaltos.values()][0][0].sourceUrl).toBe('https://app.skermo.org/client/1/abc123.pdf#page=2&y=290-310&marcador=explicito');
   });
 
   it('cobertura por hecho y documento; poules/cuadro ausentes en el documento quedan como no publicados', async () => {

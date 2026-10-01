@@ -1,5 +1,9 @@
+import { claveImportacion, type FilaCatalogo, type FuenteHistorica } from '../sources/historico-indice';
 import { formatoBytes, type Ocupacion, type PlanNeon } from './capacidad';
-import type { FiltroFilasPlan, ReferenciasHistoricas } from './cobertura-db';
+import type { FilaIndicePersistida, FiltroFilasPlan, ReferenciasHistoricas } from './cobertura-db';
+import { crearGuardaCapacidad, type GuardaCapacidad } from './guarda-capacidad';
+import { unidadesDesdeCatalogo } from './inventario-unidades';
+import { PresupuestoHttp } from './presupuesto-http';
 import { ETIQUETA_ESTADO, ESTADOS_HECHO, HECHOS, lecturaDeHecho, resumirCoberturaPorHecho, type FilaCoberturaAgregada } from './estado';
 import {
   ejecutarLote,
@@ -8,7 +12,7 @@ import {
   type ResultadoTarea,
   type Tarea,
 } from './orquestador';
-import { planificarDesdeCobertura, type FilaPlan, type PlanBackfill, type UnidadDescubierta } from './plan';
+import { planificarDesdeCobertura, resumenPorSerie, type FilaPlan, type PlanBackfill, type UnidadDescubierta } from './plan';
 
 /**
  * Núcleo del comando `npm run backfill`: lectura de argumentos, plan, ejecución
@@ -41,6 +45,8 @@ export type OpcionesCli = {
   releer: { claves: string[]; temporadas: string[] };
   maxReleer: number;
   unidades: UnidadDescubierta[];
+  /** false = no descubrir el inventario por red (--sin-descubrir): sólo se retoma lo ya conocido. */
+  descubrir: boolean;
   planNeon: PlanNeon;
 };
 
@@ -55,6 +61,7 @@ export const USO_BACKFILL = [
   '  --releer clave,...              relee unidades concretas ya completas (p. ej. fie|2027|1478)',
   '  --releer-temporadas 2022-2023   relee unidades completas de esas temporadas, hasta --max-releer',
   `  --max-releer N                  tope de relecturas (por defecto 5, tope ${TOPE_RELEER})`,
+  '  --sin-descubrir                 con --aplicar no recorre los índices FIE/Skermo (hasta la mitad de --max-peticiones); sólo retoma lo ya conocido',
   '  --unidad fuente:temporada:clave añade una unidad aún no inventariada (fie, skermo_*, engarde, enlaces_fie)',
   '  --plan-neon desconocido|free    plan de Neon (por defecto desconocido: umbral conservador 0,4 GiB)',
   '  --neon-umbral-gib N --neon-verificado-en AAAA-MM-DD   umbral de un plan verificado por el propietario',
@@ -78,10 +85,15 @@ const lista = (valor: string | undefined): string[] =>
 export function parsearArgsBackfill(argv: readonly string[]): ResultadoArgs {
   const con = new Map<string, string>();
   let aplicar = false;
+  let descubrir = true;
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--aplicar') {
       aplicar = true;
+      continue;
+    }
+    if (a === '--sin-descubrir') {
+      descubrir = false;
       continue;
     }
     if (!a.startsWith('--')) return { ok: false, error: `Argumento no reconocido: ${a}` };
@@ -184,6 +196,7 @@ export function parsearArgsBackfill(argv: readonly string[]): ResultadoArgs {
       releer: { claves, temporadas: temporadasReleer },
       maxReleer: numeros.maxReleer as number,
       unidades,
+      descubrir,
       planNeon,
     },
   };
@@ -197,8 +210,22 @@ export type DepsBackfillCli = {
   categoriasAmpliadas: () => Promise<boolean>;
   medir: () => Promise<Ocupacion>;
   /** Sólo se invoca con `--aplicar`: aquí es donde se construyen los clientes de red y de escritura. */
-  crearEjecutor: () => Promise<(t: Tarea) => Promise<ResultadoTarea>>;
+  crearEjecutor: (presupuesto: PresupuestoHttp, guarda?: GuardaCapacidad) => Promise<(t: Tarea) => Promise<ResultadoTarea>>;
+  /** Cobertura index: ya guardada por el inventario (sólo SELECT). Sirve para informar en la simulación. */
+  leerIndices?: () => Promise<FilaIndicePersistida[]>;
+  /**
+   * Recorre los índices públicos con peticiones reservadas del presupuesto compartido. Sólo se
+   * invoca con --aplicar: una simulación no descubre nada por red.
+   */
+  descubrir?: (e: {
+    fuentes: string[];
+    temporadas: string[];
+    maxPeticiones: number;
+    presupuesto: PresupuestoHttp;
+  }) => Promise<{ catalogo: FilaCatalogo[]; peticiones: number; pendientes: number; errores: string[] }>;
   ahora: () => Date;
+  /** Reloj en ms del lote; por defecto Date.now. */
+  reloj?: () => number;
   dormir: (ms: number) => Promise<void>;
 };
 
@@ -246,7 +273,57 @@ export async function ejecutarBackfillCli(deps: DepsBackfillCli, o: OpcionesCli)
     limite: o.limiteFilas,
   });
   const ahora = deps.ahora();
-  const plan = planificarDesdeCobertura(filas, o.unidades, {
+
+  // El reloj y el presupuesto son los mismos para el descubrimiento, las lecturas y los reintentos.
+  const reloj = deps.reloj ?? Date.now;
+  const inicio = reloj();
+  const presupuesto = new PresupuestoHttp({
+    maxPeticiones: o.maxPeticiones,
+    maxMs: o.maxMinutos * 60_000,
+    ahora: () => reloj() - inicio,
+  });
+
+  const indices = (await deps.leerIndices?.()) ?? [];
+  if (indices.length > 0) {
+    const porEstado = new Map<string, number>();
+    for (const i of indices) porEstado.set(i.status, (porEstado.get(i.status) ?? 0) + 1);
+    lineas.push(
+      `Inventario guardado: ${indices.length} unidades de índice [${[...porEstado].map(([k, n]) => `${k}=${n}`).join(' ')}] ` +
+        '(sólo cuentan temporadas inventariadas; el catálogo de pruebas se vuelve a derivar del índice)',
+    );
+  }
+
+  let catalogo: FilaCatalogo[] = [];
+  let descubiertas: UnidadDescubierta[] = [];
+  if (!o.aplicar) {
+    lineas.push('Descubrimiento del inventario: sólo con --aplicar (la simulación no hace ninguna petición de red).');
+  } else if (!o.descubrir || !deps.descubrir) {
+    lineas.push('Descubrimiento del inventario omitido (--sin-descubrir): sólo se retoma lo ya conocido.');
+  } else {
+    try {
+      const d = await deps.descubrir({
+        fuentes: o.fuentes,
+        temporadas: o.temporadas,
+        // Descubrir no puede gastar todo el lote: la otra mitad queda para leer las unidades.
+        maxPeticiones: Math.max(1, Math.floor(o.maxPeticiones / 2)),
+        presupuesto,
+      });
+      catalogo = d.catalogo;
+      descubiertas = unidadesDesdeCatalogo(catalogo, {
+        fuentes: o.fuentes.length ? o.fuentes : undefined,
+        temporadas: o.temporadas.length ? o.temporadas : undefined,
+      });
+      lineas.push(
+        `Descubrimiento: peticiones=${d.peticiones} pruebas=${catalogo.length} unidades_candidatas=${descubiertas.length} ` +
+          `índices_sin_leer=${d.pendientes} (lo no leído sigue pendiente, no se da por vacío)`,
+      );
+      for (const e of d.errores.slice(0, 5)) lineas.push(`  índice con error: ${e.slice(0, 160)}`);
+    } catch (e) {
+      lineas.push(`Descubrimiento fallido: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`);
+    }
+  }
+
+  const plan = planificarDesdeCobertura(filas, [...o.unidades, ...descubiertas], {
     ahora,
     categoriasAmpliadas: await deps.categoriasAmpliadas(),
     releer: o.releer.claves.length || o.releer.temporadas.length ? { claves: o.releer.claves, temporadas: o.releer.temporadas } : undefined,
@@ -268,6 +345,22 @@ export async function ejecutarBackfillCli(deps: DepsBackfillCli, o: OpcionesCli)
   }
   if (plan.omitidas.agotadas.length > 0) {
     lineas.push(`Con reintentos agotados (requieren revisión): ${plan.omitidas.agotadas.slice(0, 10).join(', ')}`);
+  }
+
+  if (catalogo.length > 0) {
+    // «Descubierta» sólo dice que el índice nombra la prueba; «importada» exige puestos guardados.
+    const importadas = new Set(
+      filas
+        .filter((f) => (f.factKind === 'ranking' || f.factKind === 'results') && f.importedTotal > 0)
+        .map((f) => claveImportacion(f.source as FuenteHistorica, f.season, f.competitionKey)),
+    );
+    const series = resumenPorSerie(
+      catalogo.map((c) => ({ nombre: c.nombre, clave: c.claveCatalogo, categoriaCompeticion: c.categoriaOriginal })),
+      importadas,
+    );
+    for (const [serie, r] of Object.entries(series)) {
+      if (r.descubiertas > 0) lineas.push(`Serie ${serie}: descubiertas=${r.descubiertas} importadas=${r.importadas}`);
+    }
   }
 
   const agregada = await deps.leerAgregada();
@@ -292,11 +385,11 @@ export async function ejecutarBackfillCli(deps: DepsBackfillCli, o: OpcionesCli)
       : 'Referencias de inscripción FIE: la migración 0018 no está aplicada; no hay nada que contar',
   );
 
-  const inicio = Date.now();
   const informe = await ejecutarLote({
     tareas: plan.tareas,
+    presupuesto: o.aplicar ? presupuesto : undefined,
     ejecutar: o.aplicar
-      ? await deps.crearEjecutor()
+      ? await deps.crearEjecutor(presupuesto, crearGuardaCapacidad({ plan: o.planNeon, medir: deps.medir }))
       : async () => {
           throw new Error('Una simulación no ejecuta tareas');
         },
@@ -307,7 +400,7 @@ export async function ejecutarBackfillCli(deps: DepsBackfillCli, o: OpcionesCli)
       maxMs: o.maxMinutos * 60_000,
     },
     aplicar: o.aplicar,
-    ahora: () => Date.now() - inicio,
+    ahora: () => reloj() - inicio,
     dormir: deps.dormir,
     capacidad: { plan: o.planNeon, medir: deps.medir },
   });

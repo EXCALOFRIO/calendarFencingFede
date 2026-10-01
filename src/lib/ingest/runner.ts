@@ -16,9 +16,10 @@ import { sha256 } from '../utils';
 import {
   MAX_REESCRITURAS_POR_REFERENCIAS,
   clasificarHuellaInscritos,
-  repartirReescrituras,
+  repartirReescriturasConGuarda,
   type ClaseHuella,
 } from './backfill/referencias';
+import { crearGuardaCapacidad } from './backfill/guarda-capacidad';
 import { recalcularEnlaces } from './enlazar';
 import { fetchText } from './fetcher';
 import { fetchEfcCalendar } from './sources/efc';
@@ -409,6 +410,9 @@ async function ingestFie(runId: string): Promise<Dispatched> {
       (listas.reescrituraReferencias > 0
         ? `, ${listas.reescrituraReferencias} reescritas una vez por la migración 0018`
         : '') +
+      (listas.reescrituraCapacidad
+        ? `, reescritura por 0018 retenida por capacidad (${listas.reescrituraCapacidad})`
+        : '') +
       (listas.reescrituraDiferida > 0
         ? `, ${listas.reescrituraDiferida} reescrituras por 0018 diferidas a otra lectura`
         : '') +
@@ -462,6 +466,8 @@ export type ResumenInscritosFie = {
   reescrituraReferencias: number;
   /** Listas que esperan a otra lectura elegible por el tope de reescrituras por ejecución. */
   reescrituraDiferida: number;
+  /** Motivo por el que la guarda de capacidad retuvo la reescritura forzada por 0018 (null = no se retuvo). */
+  reescrituraCapacidad: string | null;
   /** Listas cuyo contenido cambió de verdad (no cuenta la reescritura forzada por 0018). */
   contenidoCambiado: number;
 };
@@ -539,6 +545,7 @@ export async function ingestInscritosFie(
     sinEquivalente: 0,
     reescrituraReferencias: 0,
     reescrituraDiferida: 0,
+    reescrituraCapacidad: null,
     contenidoCambiado: 0,
   };
 
@@ -744,7 +751,16 @@ export async function ingestInscritosFie(
    * cambios reales; la que no cabe no se escribe ni refresca su marca de
    * lectura, así que vuelve a ser elegible en la siguiente pasada.
    */
-  const reparto = repartirReescrituras(leidas, MAX_REESCRITURAS_POR_REFERENCIAS);
+  // La reescritura forzada se autoriza con el tamaño de las listas ya leídas, no con un supuesto por lista.
+  const guarda = crearGuardaCapacidad({
+    plan: { tipo: 'desconocido' },
+    medir: async () => {
+      const { consultaSqlDb, medirOcupacion } = await import('./backfill/capacidad-db');
+      return medirOcupacion(consultaSqlDb(db));
+    },
+  });
+  const reparto = await repartirReescriturasConGuarda(leidas, MAX_REESCRITURAS_POR_REFERENCIAS, guarda);
+  if (reparto.capacidad && !reparto.capacidad.continuar) resumen.reescrituraCapacidad = reparto.capacidad.motivo;
   resumen.reescrituraReferencias = reparto.reescritas;
   resumen.reescrituraDiferida = reparto.diferidas.length;
   resumen.contenidoCambiado = reparto.escribir.filter((l) => l.clase === 'contenido_cambiado').length;

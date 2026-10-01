@@ -1,3 +1,5 @@
+import { ErrorHttp, parsearRetryAfter, sufijoRetryAfter } from './http-retry';
+
 const DEFAULT_UA = 'CalendarioEsgrima/1.0 (+contacto)';
 
 export type FetchTextResult = {
@@ -45,7 +47,8 @@ export async function fetchText(
       });
 
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status} al pedir ${url}`);
+        const retryAfterMs = parsearRetryAfter(res.headers.get('retry-after'));
+        throw new ErrorHttp(`HTTP ${res.status} al pedir ${url}${sufijoRetryAfter(retryAfterMs)}`, res.status, retryAfterMs);
       }
 
       const body = await res.text();

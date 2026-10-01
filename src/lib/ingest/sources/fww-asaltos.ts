@@ -1,5 +1,6 @@
 import * as cheerio from 'cheerio';
 import { fixDoubleEncodedUtf8 } from '../fetcher';
+import { motivoHttp } from '../http-retry';
 import {
   AcumuladorAsaltos,
   FusionAsaltos,
@@ -242,7 +243,7 @@ export async function leerDestinoFww(
     return falla('error', null, (e instanceof Error ? e.message : String(e)).slice(0, 300));
   }
   if (r.status === 404) return falla('no_publicado', 404, 'El destino no tiene página publicada (HTTP 404)');
-  if (r.status !== 200) return falla('error', r.status, `HTTP ${r.status}`);
+  if (r.status !== 200) return falla('error', r.status, motivoHttp(r.status, r.retryAfterMs));
 
   const pagina = parsearResultadosFww(r.body);
   let parte: ParteAsaltosComplementarios | null = null;
@@ -301,7 +302,7 @@ export function agregarLecturasFww(
     parte,
     motivo: parte.completo
       ? null
-      : [`Se importaron ${parte.importado} de ${parte.publicado} cruces publicados`, motivoConflictos(parte.conflictos)]
+      : [`Se importaron ${parte.importado} de ${parte.publicado} cruces publicados`, motivoConflictos(parte.conflictos), fallos[0]?.motivo ?? null]
           .filter(Boolean)
           .join('; '),
   };

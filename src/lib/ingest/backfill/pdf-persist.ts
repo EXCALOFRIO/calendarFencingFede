@@ -2,7 +2,7 @@ import type { EstadoEsquema } from '@/lib/sport/esquema';
 import { sha256 } from '@/lib/utils';
 import type { FilaAsalto, FilaResultado, ResumenEscritura } from '../fie-resultados-persist';
 import type { EstadoCobertura } from '../sources/fie-resultados';
-import type { LecturaPdf, PruebaPdf, Rechazo, Region } from '../sources/rfee-pdf/tipos';
+import type { AsaltoPdf, LecturaPdf, PruebaPdf, Rechazo, Region } from '../sources/rfee-pdf/tipos';
 
 /**
  * Persistencia de la lectura de un PDF de resultados de la RFEE.
@@ -17,7 +17,16 @@ import type { LecturaPdf, PruebaPdf, Rechazo, Region } from '../sources/rfee-pdf
  *    paso posterior con evidencia.
  *  - Relectura. Con la misma huella el contenido es el mismo, así que no se
  *    reescribe nada (salvo `releer`); con otra huella se vuelve a escribir y
- *    las claves naturales evitan duplicados.
+ *    se concilia: los hechos del documento que la nueva lectura ya no publica
+ *    (fila movida, asalto ahora en conflicto, prueba desaparecida) se retiran,
+ *    porque el modelo no tiene un estado «vigente» por hecho. Sólo se retira
+ *    cuando la lectura es fiable (sin regiones rechazadas, OCR ni pruebas en
+ *    revisión): si no lo es, nada cambia, el documento queda en `conflicto`
+ *    con `correccion` en el checkpoint y SIN huella aceptada, de modo que la
+ *    siguiente ejecución lo vuelve a intentar.
+ *  - Edición. Se decide una vez por documento (nombre y rango de fechas de
+ *    todas sus pruebas); la cabecera y la fecha de cada prueba se conservan en
+ *    el checkpoint y en la propia prueba, no en la edición.
  *  - Un documento que no se pudo leer (error técnico, tamaño o páginas por
  *    encima del límite, host no admitido) se registra como error o pendiente
  *    reanudable con su motivo; no se descarta ni se trunca.
@@ -47,9 +56,19 @@ export type FilaCoberturaPdf = {
   cursor?: string | null;
 };
 
+/** Edición del documento: la misma para todas sus pruebas. */
+export type EdicionPdf = {
+  nombre: string;
+  inicio: string | null;
+  fin: string | null;
+  url: string;
+};
+
 export type PruebaPdfPersistible = {
   competitionKey: string;
   edicionKey: string;
+  edicion: EdicionPdf;
+  /** Título propio de la prueba (su cabecera), no el de la edición. */
   nombre: string;
   season: string;
   fecha: string | null;
@@ -73,6 +92,41 @@ export type DepsPersistenciaPdf = {
   upsertResultados: (competitionId: string, filas: FilaResultado[]) => Promise<ResumenEscritura>;
   upsertAsaltos: (competitionId: string, filas: FilaAsalto[]) => Promise<ResumenEscritura>;
   upsertCobertura: (fila: FilaCoberturaPdf) => Promise<void>;
+  /**
+   * Deja los hechos `rfee_pdf` del documento (competiciones `pdf:<docId>:*` de
+   * la temporada) exactamente como `vigentes`: retira puestos y asaltos que ya
+   * no están y los de las pruebas que ya no aparecen. Sólo se llama con una
+   * lectura fiable, después de escribir la nueva.
+   */
+  reconciliar: (peticion: PeticionReconciliacion) => Promise<ResultadoReconciliacion>;
+};
+
+export type ClaveAsalto = Pick<FilaAsalto, 'phase' | 'roundKey' | 'fencerARef' | 'fencerBRef'>;
+
+export type PruebaVigente = {
+  competitionId: string;
+  competitionKey: string;
+  /** `sourceFactKey` de los puestos que la lectura vigente publica. */
+  resultados: string[];
+  asaltos: ClaveAsalto[];
+};
+
+export type PeticionReconciliacion = { season: string; docId: string; vigentes: PruebaVigente[] };
+
+export type ResultadoReconciliacion = {
+  puestosRetirados: number;
+  asaltosRetirados: number;
+  pruebasRetiradas: { competitionKey: string; competitionId: string }[];
+};
+
+/** Fila del inventario de la que sale la URL, para no perder la referencia original. */
+export type ContextoPdf = {
+  season: string;
+  indice?: number | null;
+  refOriginal?: string | null;
+  sourceUrl?: string | null;
+  /** Título de la fila: sólo sustituye a una cabecera ausente en un documento de una prueba, o nombra la edición. */
+  titulo?: string | null;
 };
 
 export type RevisionPdf = {
@@ -83,8 +137,17 @@ export type RevisionPdf = {
 
 type MotivoRechazo = { seccion: Rechazo['seccion']; motivo: string; region: Region | null };
 
+export type PruebaCheckpoint = {
+  clave: string;
+  /** Cabecera de la prueba tal como se leyó (primeras líneas). */
+  cabecera: string[];
+  fecha: string | null;
+  paginas: number[];
+};
+
 export type CheckpointPdf = {
   v: 1;
+  /** Huella ACEPTADA; `null` mientras la corrección de un documento está en revisión. */
   sha256: string | null;
   paginas: number | null;
   ocr: { necesario: boolean; paginas: number[] };
@@ -92,6 +155,13 @@ export type CheckpointPdf = {
   revisionTotal: number;
   rechazos: MotivoRechazo[];
   rechazosTotal: number;
+  /** Fila del inventario de la que salió la URL. */
+  origen?: { indice: number | null; refOriginal: string | null; sourceUrl: string | null };
+  edicion?: { nombre: string; inicio: string | null; fin: string | null };
+  pruebas?: PruebaCheckpoint[];
+  pruebasTotal?: number;
+  correccion?: { shaPrevio: string | null; shaNuevo: string; motivos: string[] };
+  retirados?: { puestos: number; asaltos: number; pruebas: number };
 };
 
 export function decodificarCheckpointPdf(texto: string | null | undefined): CheckpointPdf | null {
@@ -106,11 +176,13 @@ export function decodificarCheckpointPdf(texto: string | null | undefined): Chec
 }
 
 export type ResumenPdf = {
-  estado: 'aplicado' | 'sin_cambios' | 'documento_no_leido' | 'esquema_no_aplicado';
+  estado: 'aplicado' | 'sin_cambios' | 'documento_no_leido' | 'esquema_no_aplicado' | 'correccion_en_revision';
   motivo: 'tecnico' | 'limite' | 'host_no_admitido' | null;
   competiciones: string[];
   puestos: ResumenEscritura;
   asaltos: ResumenEscritura;
+  /** Hechos retirados por la conciliación de una relectura con otra huella. */
+  retirados: { puestos: number; asaltos: number; pruebas: number };
   revision: RevisionPdf[];
   /** Puestos guardados sin persona: observaciones revisables, no identidad. */
   sinIdentidad: number;
@@ -139,6 +211,34 @@ async function hashDe(...partes: unknown[]): Promise<string> {
 }
 
 const urlPagina = (url: string, region: Region): string => `${url}#page=${region.pagina}`;
+
+/** Página, franja vertical y origen del marcador del asalto: lo que hace falta para revisarlo en el PDF. */
+const urlAsalto = (url: string, region: Region, marcador: AsaltoPdf['marcador']): string =>
+  `${url}#page=${region.pagina}&y=${Math.round(region.yMin)}-${Math.round(region.yMax)}&marcador=${marcador}`;
+
+const tituloDe = (p: PruebaPdf): string | null => p.cabecera.map((l) => l.trim()).find((l) => l !== '') ?? null;
+
+/**
+ * Nombre y fechas de la edición del documento, una sola vez. El rango cubre
+ * todas las pruebas con fecha (también las que quedan en revisión). El nombre
+ * es la cabecera común; si las cabeceras difieren manda el título de la fila
+ * verificada y, sin él, la cabecera más repetida (desempate alfabético), de
+ * modo que no depende del orden de las pruebas en el documento.
+ */
+function decidirEdicion(lectura: LecturaPdf, contexto: ContextoPdf): EdicionPdf {
+  const fechas = lectura.pruebas.map((p) => p.fecha).filter((f): f is string => f !== null).sort();
+  const cuentas = new Map<string, number>();
+  for (const t of lectura.pruebas.map(tituloDe)) if (t) cuentas.set(t, (cuentas.get(t) ?? 0) + 1);
+  const titulos = [...cuentas.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t]) => t);
+  const delContexto = contexto.titulo?.trim() || null;
+  const nombre =
+    titulos.length === 1
+      ? titulos[0]
+      : titulos.length > 1
+        ? (delContexto ?? titulos[0])
+        : (delContexto ?? `RFEE ${lectura.docId}`);
+  return { nombre, inicio: fechas[0] ?? null, fin: fechas.at(-1) ?? null, url: lectura.url };
+}
 
 function cabeceraFaltante(p: PruebaPdf): string | null {
   const faltan = (
@@ -179,10 +279,21 @@ function filaDeCobertura(
   };
 }
 
+type PruebaAceptada = {
+  p: PruebaPdf;
+  arma: NonNullable<PruebaPdf['arma']>;
+  genero: NonNullable<PruebaPdf['genero']>;
+  formato: NonNullable<PruebaPdf['formato']>;
+  categoria: string;
+};
+
+/** Cuántas líneas de la cabecera de cada prueba se guardan en el checkpoint. */
+const LINEAS_CABECERA_CHECKPOINT = 4;
+
 export async function persistirLecturaPdf(
   deps: DepsPersistenciaPdf,
   lectura: LecturaPdf,
-  contexto: { season: string },
+  contexto: ContextoPdf,
   opciones: { releer?: boolean } = {},
 ): Promise<ResumenPdf> {
   const resumen: ResumenPdf = {
@@ -191,6 +302,7 @@ export async function persistirLecturaPdf(
     competiciones: [],
     puestos: SIN_ESCRITURA,
     asaltos: SIN_ESCRITURA,
+    retirados: { puestos: 0, asaltos: 0, pruebas: 0 },
     revision: [],
     sinIdentidad: 0,
     documento: null,
@@ -206,17 +318,19 @@ export async function persistirLecturaPdf(
     const error = lectura.error ?? 'El documento no se pudo leer';
     const motivo = motivoDeErrorPdf(error);
     // Un límite o un host no admitido es una decisión pendiente, no un fallo técnico.
+    // Sin cursor ni cifras: la última lectura válida y sus hechos siguen siendo los vigentes.
     const status: EstadoCobertura = motivo === 'tecnico' ? 'error' : 'pendiente';
     await deps.upsertCobertura({ ...docBase, factKind: 'pdf', status, lastError: `[${motivo}] ${error}` });
     return { ...resumen, estado: 'documento_no_leido', motivo, documento: status };
   }
+  const sha = lectura.sha256;
 
   const previo = await deps.leerCheckpoint(season, docKey);
   const previoCp = decodificarCheckpointPdf(previo?.cursor);
   if (
     !opciones.releer &&
     previo &&
-    previoCp?.sha256 === lectura.sha256 &&
+    previoCp?.sha256 === sha &&
     ['completo', 'parcial', 'sin_resultados', 'conflicto'].includes(previo.status)
   ) {
     await deps.upsertCobertura({
@@ -229,18 +343,14 @@ export async function persistirLecturaPdf(
   }
 
   const revision: RevisionPdf[] = [];
-  let importados = 0;
+  const aceptadas: PruebaAceptada[] = [];
   let pendienteCategorias = false;
-
   for (const p of lectura.pruebas) {
     const faltante = cabeceraFaltante(p);
     if (faltante) {
       revision.push({ clave: p.clave, motivo: faltante, paginas: p.paginas });
       continue;
     }
-    const arma = p.arma as NonNullable<PruebaPdf['arma']>;
-    const genero = p.genero as NonNullable<PruebaPdf['genero']>;
-    const formato = p.formato as NonNullable<PruebaPdf['formato']>;
     const categoria = p.categoria as string;
     if (
       (categoria === 'M10' || categoria === 'M12') &&
@@ -250,12 +360,91 @@ export async function persistirLecturaPdf(
       pendienteCategorias = true;
       continue;
     }
+    aceptadas.push({
+      p,
+      arma: p.arma as NonNullable<PruebaPdf['arma']>,
+      genero: p.genero as NonNullable<PruebaPdf['genero']>,
+      formato: p.formato as NonNullable<PruebaPdf['formato']>,
+      categoria,
+    });
+  }
+  resumen.revision = revision;
 
+  const rechazos: MotivoRechazo[] = [
+    ...lectura.rechazos,
+    ...lectura.pruebas.flatMap((p) => p.rechazos),
+  ].map((r) => ({ seccion: r.seccion, motivo: r.motivo, region: r.region }));
+  const pruebasNoCompletas = lectura.pruebas.some((p) => p.estado !== 'completo');
+
+  const edicion = decidirEdicion(lectura, contexto);
+  const construirCheckpoint = (extra: Partial<CheckpointPdf>): CheckpointPdf => ({
+    v: 1,
+    sha256: sha,
+    paginas: lectura.perfil?.paginas ?? null,
+    ocr: { necesario: lectura.ocr.necesario, paginas: lectura.ocr.paginas },
+    revision: recortar(revision),
+    revisionTotal: revision.length,
+    rechazos: recortar(rechazos),
+    rechazosTotal: rechazos.length,
+    origen: {
+      indice: contexto.indice ?? null,
+      refOriginal: contexto.refOriginal ?? null,
+      sourceUrl: contexto.sourceUrl ?? null,
+    },
+    edicion: { nombre: edicion.nombre, inicio: edicion.inicio, fin: edicion.fin },
+    pruebas: recortar(lectura.pruebas).map((p) => ({
+      clave: p.clave,
+      cabecera: p.cabecera.map((l) => l.trim()).filter((l) => l !== '').slice(0, LINEAS_CABECERA_CHECKPOINT),
+      fecha: p.fecha,
+      paginas: p.paginas,
+    })),
+    pruebasTotal: lectura.pruebas.length,
+    ...extra,
+  });
+
+  // Que falte un hecho en la nueva lectura sólo prueba que se corrigió si la lectura es fiable:
+  // una región sin leer, un OCR pendiente o un total que no cuadra pueden ocultar filas vigentes.
+  const motivosNoFiable: string[] = [];
+  if (lectura.pruebas.length === 0) motivosNoFiable.push('ninguna prueba leída');
+  if (rechazos.length > 0) motivosNoFiable.push(`${rechazos.length} regiones o páginas rechazadas`);
+  if (lectura.ocr.necesario) motivosNoFiable.push('OCR necesario (no ejecutado)');
+  if (revision.length > 0) motivosNoFiable.push(`${revision.length} pruebas en revisión`);
+  if (lectura.pruebas.some((p) => p.cobertura.puestos.estado !== 'completo' && p.cobertura.puestos.estado !== 'sin_resultados')) {
+    motivosNoFiable.push('clasificación incompleta o contradictoria');
+  }
+  const lecturaFiable = motivosNoFiable.length === 0;
+  const esCorreccion = previoCp !== null && previoCp.sha256 !== sha;
+
+  if (esCorreccion && !lecturaFiable) {
+    const correccion = {
+      shaPrevio: previoCp.sha256 ?? previoCp.correccion?.shaPrevio ?? null,
+      shaNuevo: sha,
+      motivos: motivosNoFiable,
+    };
+    // Sin huella aceptada ni cifras: los hechos anteriores siguen y la siguiente ejecución reintenta.
+    await deps.upsertCobertura({
+      ...docBase,
+      factKind: 'pdf',
+      status: 'conflicto',
+      lastError: `correccion_pendiente_revision: ${motivosNoFiable.join('; ')}`,
+      cursor: JSON.stringify(construirCheckpoint({ sha256: null, correccion })),
+    });
+    resumen.documento = 'conflicto';
+    return { ...resumen, estado: 'correccion_en_revision' };
+  }
+
+  const soloUna = lectura.pruebas.length === 1;
+  const vigentes: PruebaVigente[] = [];
+  let importados = 0;
+
+  for (const { p, arma, genero, formato, categoria } of aceptadas) {
     const key = clavePrueba(lectura.docId, p.clave);
+    const primeraPagina = p.paginas.length > 0 ? Math.min(...p.paginas) : null;
     const competitionId = await deps.upsertPrueba({
       competitionKey: key,
       edicionKey: `pdf:${lectura.docId}`,
-      nombre: p.cabecera[0] ?? `RFEE ${lectura.docId}`,
+      edicion,
+      nombre: tituloDe(p) ?? (soloUna ? contexto.titulo?.trim() || null : null) ?? `RFEE ${lectura.docId}`,
       season,
       fecha: p.fecha,
       arma,
@@ -263,7 +452,7 @@ export async function persistirLecturaPdf(
       categoria,
       categoriaOriginal: p.categoriaOriginal,
       formato,
-      url: lectura.url,
+      url: primeraPagina === null ? lectura.url : `${lectura.url}#page=${primeraPagina}`,
     });
     resumen.competiciones.push(key);
 
@@ -290,39 +479,63 @@ export async function persistirLecturaPdf(
       importados += filas.length;
     }
 
-    if (p.asaltos.length > 0 && formato === 'INDIVIDUAL') {
-      const asaltos: FilaAsalto[] = await Promise.all(
-        p.asaltos.map(async (a) => ({
-          phase: a.fase,
-          roundKey: a.ronda,
-          fencerARef: `${prefijo}${a.refA}`,
-          fencerBRef: `${prefijo}${a.refB}`,
-          fencerAPersonId: null,
-          fencerBPersonId: null,
-          fencerAName: a.nombreA,
-          fencerBName: a.nombreB,
-          scoreA: a.puntosA,
-          scoreB: a.puntosB,
-          occurredOn: p.fecha,
-          sourceUrl: urlPagina(lectura.url, a.region),
-          contentHash: await hashDe(a.fase, a.ronda, a.puntosA, a.puntosB, a.nombreA, a.nombreB, a.region),
-        })),
-      );
+    const asaltos: FilaAsalto[] =
+      p.asaltos.length > 0 && formato === 'INDIVIDUAL'
+        ? await Promise.all(
+            p.asaltos.map(async (a) => ({
+              phase: a.fase,
+              roundKey: a.ronda,
+              fencerARef: `${prefijo}${a.refA}`,
+              fencerBRef: `${prefijo}${a.refB}`,
+              fencerAPersonId: null,
+              fencerBPersonId: null,
+              fencerAName: a.nombreA,
+              fencerBName: a.nombreB,
+              scoreA: a.puntosA,
+              scoreB: a.puntosB,
+              occurredOn: p.fecha,
+              sourceUrl: urlAsalto(lectura.url, a.region, a.marcador),
+              // La fecha publicada y el origen del marcador son parte del hecho: una corrección que sólo
+              // cambie uno de ellos tiene que revisar la fila, no quedar como idéntica.
+              contentHash: await hashDe(a.fase, a.ronda, a.puntosA, a.puntosB, a.nombreA, a.nombreB, p.fecha, a.marcador, a.region),
+            })),
+          )
+        : [];
+    if (asaltos.length > 0) {
       resumen.asaltos = sumar(resumen.asaltos, await deps.upsertAsaltos(competitionId, asaltos));
     }
+    vigentes.push({
+      competitionId,
+      competitionKey: key,
+      resultados: filas.map((f) => f.sourceFactKey),
+      asaltos: asaltos.map(({ phase, roundKey, fencerARef, fencerBRef }) => ({ phase, roundKey, fencerARef, fencerBRef })),
+    });
 
     const base = { season, competitionKey: key, competitionId, sourceUrl: lectura.url };
     await deps.upsertCobertura(filaDeCobertura(base, 'results', p.cobertura.puestos, p.rechazos));
     await deps.upsertCobertura(filaDeCobertura(base, 'pools', p.cobertura.poules, p.rechazos));
     await deps.upsertCobertura(filaDeCobertura(base, 'tableau', p.cobertura.cuadro, p.rechazos));
   }
-  resumen.revision = revision;
 
-  const rechazos: MotivoRechazo[] = [
-    ...lectura.rechazos,
-    ...lectura.pruebas.flatMap((p) => p.rechazos),
-  ].map((r) => ({ seccion: r.seccion, motivo: r.motivo, region: r.region }));
-  const pruebasNoCompletas = lectura.pruebas.some((p) => p.estado !== 'completo');
+  if (previoCp !== null && lecturaFiable) {
+    const r = await deps.reconciliar({ season, docId: lectura.docId, vigentes });
+    resumen.retirados = { puestos: r.puestosRetirados, asaltos: r.asaltosRetirados, pruebas: r.pruebasRetiradas.length };
+    for (const t of r.pruebasRetiradas) {
+      const base = { season, competitionKey: t.competitionKey, competitionId: t.competitionId, sourceUrl: lectura.url };
+      for (const factKind of ['results', 'pools', 'tableau'] as const) {
+        await deps.upsertCobertura({
+          ...base,
+          factKind,
+          status: 'sin_resultados',
+          publishedTotal: null,
+          importedTotal: 0,
+          lastError: 'La prueba ya no aparece en la lectura vigente del documento',
+          cursor: 'retirada_por_correccion',
+        });
+      }
+    }
+  }
+
   const hayConflicto = lectura.pruebas.some((p) => p.estado === 'conflicto') || lectura.estado === 'conflicto';
 
   let status: EstadoCobertura = lectura.estado;
@@ -338,16 +551,6 @@ export async function persistirLecturaPdf(
   if (lectura.ocr.necesario) motivos.push(`OCR necesario en páginas ${lectura.ocr.paginas.join(',')} (no ejecutado)`);
   if (pruebasNoCompletas && motivos.length === 0) motivos.push('Alguna prueba quedó incompleta');
 
-  const checkpoint: CheckpointPdf = {
-    v: 1,
-    sha256: lectura.sha256,
-    paginas: lectura.perfil?.paginas ?? null,
-    ocr: { necesario: lectura.ocr.necesario, paginas: lectura.ocr.paginas },
-    revision: recortar(revision),
-    revisionTotal: revision.length,
-    rechazos: recortar(rechazos),
-    rechazosTotal: rechazos.length,
-  };
   await deps.upsertCobertura({
     ...docBase,
     factKind: 'pdf',
@@ -355,7 +558,7 @@ export async function persistirLecturaPdf(
     publishedTotal: null,
     importedTotal: importados,
     lastError: motivos.length > 0 ? motivos.join('; ') : null,
-    cursor: JSON.stringify(checkpoint),
+    cursor: JSON.stringify(construirCheckpoint({ retirados: resumen.retirados })),
   });
   resumen.documento = status;
   return resumen;

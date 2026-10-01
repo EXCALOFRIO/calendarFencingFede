@@ -7,7 +7,9 @@ import { ejecutarBackfillCli, parsearArgsBackfill, USO_BACKFILL, type DepsBackfi
  *   npm run backfill                        -> SIMULACIÓN: lee la base (sólo SELECT), planifica y mide capacidad
  *   npm run backfill -- --aplicar           -> ejecuta un lote acotado y escribe en la base
  *
- * La simulación no hace ninguna petición a proveedores. No hay cron ni trigger
+ * La simulación no hace ninguna petición a proveedores ni descubre el inventario por red; con
+ * --aplicar el descubrimiento, las lecturas y los reintentos comparten un único
+ * presupuesto de peticiones y de tiempo. No hay cron ni trigger
  * que lo lance: lo ejecuta una persona, de una instancia cada vez (un único
  * importador por clave de ranking es el límite operativo). Ver
  * docs/backfill-historico.md.
@@ -22,46 +24,82 @@ const opciones = parseado.opciones;
 
 const { db } = await import('../src/db');
 const { consultaSqlDb, medirOcupacion } = await import('../src/lib/ingest/backfill/capacidad-db');
-const { contarReferenciasHistoricas, leerCoberturaAgregada, leerFilasPlan } = await import(
+const { contarReferenciasHistoricas, leerCoberturaAgregada, leerFilasPlan, leerIndicesPersistidos } = await import(
   '../src/lib/ingest/backfill/cobertura-db'
 );
 const { categoriasHistoricasAplicadas, esquemaDeportivo } = await import('../src/lib/sport/esquema-db');
 
 const consultar = consultaSqlDb(db);
+const dormir = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-async function crearEjecutor() {
+/**
+ * Red base: una petición por llamada y sin reintentos internos (`retries: 0`).
+ * El presupuesto del lote se aplica por encima, en `crearRedPresupuestada`, y el
+ * reintento con su espera lo decide el orquestador.
+ */
+async function redBase() {
   const { fetchJson } = await import('../src/lib/ingest/fetcher');
+  const { crearDepsInventarioSkermoRed, crearDepsLecturaSkermoRed } = await import('../src/lib/ingest/historico-red');
+  const { depsEngardeReales } = await import('../src/lib/ingest/sources/engarde');
+  const { descargarPdf } = await import('../src/lib/ingest/sources/rfee-pdf/lectura');
+  const inventarioSkermo = crearDepsInventarioSkermoRed({ retries: 0 });
+  return {
+    fetchJson: (url: string) => fetchJson<unknown>(url, { timeoutMs: 60_000, retries: 0 }),
+    skermoIndice: inventarioSkermo.indice,
+    skermoTemporadas: inventarioSkermo.temporadas,
+    skermoParsear: inventarioSkermo.parsear,
+    skermoHtml: crearDepsLecturaSkermoRed({ retries: 0 }).html,
+    engarde: depsEngardeReales,
+    bytesPdf: (url: string) => descargarPdf(url),
+  };
+}
+
+async function descubrir(e: Parameters<NonNullable<DepsBackfillCli['descubrir']>>[0]) {
+  const { crearRedPresupuestada } = await import('../src/lib/ingest/backfill/red-presupuestada');
+  const { descubrirCatalogo } = await import('../src/lib/ingest/backfill/descubrimiento');
+  const { federacionesSkermo } = await import('../src/lib/ingest/historico-red');
+  const red = crearRedPresupuestada(e.presupuesto, dormir, await redBase());
+  return descubrirCatalogo(
+    { fie: red.inventarioFie, skermo: red.inventarioSkermo, federaciones: () => federacionesSkermo() },
+    { fuentes: e.fuentes, temporadas: e.temporadas },
+    e.maxPeticiones,
+  );
+}
+
+async function crearEjecutor(presupuesto: Parameters<DepsBackfillCli['crearEjecutor']>[0], guarda: Parameters<DepsBackfillCli['crearEjecutor']>[1]) {
   const { crearEjecutor } = await import('../src/lib/ingest/backfill/ejecutores');
+  const { crearRedPresupuestada } = await import('../src/lib/ingest/backfill/red-presupuestada');
   const { crearDepsPersistenciaFieDb } = await import('../src/lib/ingest/fie-resultados-db');
   const { crearDepsPersistenciaSkermoDb } = await import('../src/lib/ingest/skermo-finales-db');
   const { crearDepsPersistenciaPdfDb } = await import('../src/lib/ingest/backfill/pdf-db');
   const { crearDepsComplementoDb, cargarCanonicasDb, cargarCanonicaPorIdDb } = await import(
     '../src/lib/ingest/complementarios-db'
   );
-  const { depsInventarioSkermoRed, depsLecturaSkermoRed } = await import('../src/lib/ingest/historico-red');
   const { leerFinalSkermo } = await import('../src/lib/ingest/sources/skermo-finales');
   const { leerPdfRfee } = await import('../src/lib/ingest/sources/rfee-pdf/lectura');
-  const { depsEngardeReales } = await import('../src/lib/ingest/sources/engarde');
   const { descubrirEnlacesFie } = await import('../src/lib/ingest/enlaces-resultados');
 
-  const indicesSkermo = new Map<string, Awaited<ReturnType<typeof depsInventarioSkermoRed.parsear>>>();
+  const red = crearRedPresupuestada(presupuesto, dormir, await redBase());
+
+  const indicesSkermo = new Map<string, Awaited<ReturnType<typeof red.inventarioSkermo.parsear>>>();
   async function indiceSkermo(federacion: string, temporada: string) {
     const clave = `${federacion}|${temporada}`;
     const guardado = indicesSkermo.get(clave);
     if (guardado) return guardado;
-    const base = await depsInventarioSkermoRed.indice(federacion);
-    const opcion = depsInventarioSkermoRed.temporadas(base).find((o) => o.label === temporada);
+    const base = await red.inventarioSkermo.indice(federacion);
+    const opcion = red.inventarioSkermo.temporadas(base).find((o) => o.label === temporada);
     if (!opcion) throw new Error(`Skermo/${federacion} no publica la temporada ${temporada}`);
-    const html = opcion.selected ? base : await depsInventarioSkermoRed.indice(federacion, opcion.value);
-    const indice = depsInventarioSkermoRed.parsear(html, federacion);
+    const html = opcion.selected ? base : await red.inventarioSkermo.indice(federacion, opcion.value);
+    const indice = red.inventarioSkermo.parsear(html, federacion);
     indicesSkermo.set(clave, indice);
     return indice;
   }
 
   const persistenciaComplemento = crearDepsComplementoDb(db);
   return crearEjecutor({
+    capacidad: guarda,
     fie: {
-      lectura: { fetchJson: (url) => fetchJson<unknown>(url, { timeoutMs: 60_000 }) },
+      lectura: red.fie,
       persistencia: crearDepsPersistenciaFieDb(db),
       cursorActual: async (season, competitionId) => {
         const filas = await consultar(
@@ -78,19 +116,19 @@ async function crearEjecutor() {
         const indice = await indiceSkermo(federacion, season);
         const fila = indice.rows.find((r) => r.competitionId === competitionId);
         if (!fila) throw new Error(`La fila ${competitionId} ya no está en el índice de Skermo/${federacion} ${season}`);
-        return leerFinalSkermo(fila, { federacion, season }, depsLecturaSkermoRed);
+        return leerFinalSkermo(fila, { federacion, season }, red.lecturaSkermo);
       },
       persistencia: crearDepsPersistenciaSkermoDb(db),
     },
-    pdf: { leer: (url) => leerPdfRfee(url), persistencia: crearDepsPersistenciaPdfDb(db) },
+    pdf: { leer: (url) => leerPdfRfee(url, red.pdf), persistencia: crearDepsPersistenciaPdfDb(db) },
     complementarios: {
-      engarde: depsEngardeReales,
+      engarde: red.engarde,
       persistencia: persistenciaComplemento,
       cargarCanonicas: (rango) => cargarCanonicasDb(db, rango),
       cargarCanonicaPorId: (id) => cargarCanonicaPorIdDb(db, id),
     },
     enlaces: {
-      descubrir: (season, competitionId) => descubrirEnlacesFie(depsEngardeReales, season, competitionId),
+      descubrir: (season, competitionId) => descubrirEnlacesFie(red.engarde, season, competitionId),
       persistencia: persistenciaComplemento,
     },
   });
@@ -100,12 +138,14 @@ const deps: DepsBackfillCli = {
   leerFilas: (filtro) => leerFilasPlan(consultar, filtro),
   leerAgregada: () => leerCoberturaAgregada(consultar),
   leerReferencias: () => contarReferenciasHistoricas(consultar),
+  leerIndices: () => leerIndicesPersistidos(consultar),
   esquema: esquemaDeportivo,
   categoriasAmpliadas: () => categoriasHistoricasAplicadas(),
   medir: () => medirOcupacion(consultar),
+  descubrir,
   crearEjecutor,
   ahora: () => new Date(),
-  dormir: (ms) => new Promise((r) => setTimeout(r, ms)),
+  dormir,
 };
 
 const resultado = await ejecutarBackfillCli(deps, opciones);

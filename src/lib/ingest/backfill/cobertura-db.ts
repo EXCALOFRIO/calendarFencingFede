@@ -45,7 +45,7 @@ export async function leerFilasPlan(
   filtro: FiltroFilasPlan,
 ): Promise<{ filas: FilaPlan[]; truncado: boolean }> {
   const limite = Math.max(1, Math.floor(filtro.limite));
-  const condiciones = [`c.fact_kind in ('ranking','results','pools','tableau','pdf')`];
+  const condiciones = [`c.fact_kind in ('competitions','ranking','results','pools','tableau','pdf')`];
   if (filtro.fuentes?.length) condiciones.push(`c.source in (${lista(filtro.fuentes, FUENTE_VALIDA, 'fuente')})`);
   if (filtro.temporadas?.length) condiciones.push(`c.season in (${lista(filtro.temporadas, TEMPORADA_VALIDA, 'temporada')})`);
   const filas = await consultar(`
@@ -79,6 +79,35 @@ export async function leerFilasPlan(
   };
 }
 
+export type FilaIndicePersistida = {
+  source: string;
+  season: string;
+  competitionKey: string;
+  status: FilaPlan['status'];
+  publishedTotal: number | null;
+  importedTotal: number;
+};
+
+/**
+ * Cobertura `index:` que guarda el inventario (una fila por fuente, temporada y
+ * federación). Sólo cuenta temporadas inventariadas: no enumera pruebas.
+ */
+export async function leerIndicesPersistidos(consultar: ConsultaSql, limite = 2000): Promise<FilaIndicePersistida[]> {
+  const filas = await consultar(`
+    select source, season, competition_key, status, published_total, imported_total
+    from sport_import_coverage
+    where fact_kind = 'index'
+    order by season desc, source, competition_key
+    limit ${Math.max(1, Math.floor(limite))}`);
+  return filas.map((f) => ({
+    source: String(f.source),
+    season: String(f.season),
+    competitionKey: String(f.competition_key),
+    status: String(f.status) as FilaPlan['status'],
+    publishedTotal: f.published_total === null || f.published_total === undefined ? null : numero(f.published_total),
+    importedTotal: numero(f.imported_total),
+  }));
+}
 /** Cobertura agrupada por fuente, tipo de hecho, estado y clase de cursor (denominadores incluidos). */
 export async function leerCoberturaAgregada(consultar: ConsultaSql): Promise<FilaCoberturaAgregada[]> {
   const filas = await consultar(`

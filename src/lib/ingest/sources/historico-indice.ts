@@ -303,7 +303,7 @@ function mensaje(e: unknown): string {
 export async function inventariarSkermo(
   deps: DepsInventarioSkermo,
   federaciones: readonly FederacionSkermo[],
-  opciones: OpcionesInventario & { desde?: string } = {},
+  opciones: OpcionesInventario & { desde?: string; temporadas?: readonly string[] } = {},
 ): Promise<ResultadoInventario> {
   const { maxPeticiones = Number.POSITIVE_INFINITY, delayMs = 0, releer = false } = opciones;
   const previas = new Map((opciones.previas ?? []).map((u) => [claveUnidad(u), u]));
@@ -349,6 +349,8 @@ export async function inventariarSkermo(
     }
 
     for (const t of temporadasSkermoDesde(opcionesSelector, opciones.desde)) {
+      // Una temporada pedida de forma explícita no gasta peticiones en las demás.
+      if (opciones.temporadas?.length && !opciones.temporadas.includes(t.label)) continue;
       const url = `skermo:${fed.codigo}:${t.label}`;
       const previa = previas.get(claveUnidad({ fuente, federacion: fed.codigo, temporada: t.label }));
       if (!releer && previa && LEIDA.has(previa.estado)) {

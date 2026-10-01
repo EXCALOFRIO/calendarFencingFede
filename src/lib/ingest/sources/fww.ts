@@ -1,6 +1,7 @@
 import * as cheerio from 'cheerio';
 import { normalizeSportName } from '@/lib/identity/resolver';
 import { fixDoubleEncodedUtf8 } from '../fetcher';
+import { motivoHttp } from '../http-retry';
 import { mapCategory } from '../mappers';
 import {
   depsEngardeReales,
@@ -283,7 +284,7 @@ export async function leerResultadosFww(
     return vacia('error', null, (e instanceof Error ? e.message : String(e)).slice(0, 300));
   }
   if (r.status === 404) return vacia('no_publicado', 404, 'La prueba no tiene página publicada (HTTP 404)');
-  if (r.status !== 200) return vacia('error', r.status, `HTTP ${r.status}`);
+  if (r.status !== 200) return vacia('error', r.status, motivoHttp(r.status, r.retryAfterMs));
   const pagina = parsearResultadosFww(r.body);
   if (!pagina.hayTabla) {
     return { ...vacia('no_publicado', 200, 'La página no publica una clasificación'), pagina };

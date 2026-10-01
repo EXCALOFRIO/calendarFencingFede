@@ -14,6 +14,8 @@ import {
 import type { CanonicaConPrimarios } from '../conciliar-torneo-engarde';
 import { persistirLecturaPdf, type DepsPersistenciaPdf } from './pdf-persist';
 import { clasificarFalloTecnico, type EstadoResultadoTarea, type ResultadoTarea, type Tarea } from './orquestador';
+import type { GuardaCapacidad } from './guarda-capacidad';
+import { motivoDePresupuesto } from './presupuesto-http';
 
 /**
  * Despacho de una tarea del backfill al adaptador de su fuente. Cada paso hace
@@ -24,6 +26,11 @@ import { clasificarFalloTecnico, type EstadoResultadoTarea, type ResultadoTarea,
  */
 
 export type DepsEjecutores = {
+  /**
+   * Se consulta con el tamaño de lo ya LEÍDO, justo antes de escribir. Si deniega, no se escribe
+   * nada de esa unidad y el lote se detiene por capacidad.
+   */
+  capacidad?: GuardaCapacidad;
   fie: {
     lectura: DepsLecturaFie;
     persistencia: DepsPersistenciaFie;
@@ -49,6 +56,17 @@ export type DepsEjecutores = {
 
 const error = (mensaje: string, peticiones = 0): ResultadoTarea => ({ estado: 'error', peticiones, mensaje });
 
+/**
+ * Una lectura cortada por el presupuesto del lote no es un fallo de la fuente:
+ * no se persiste como error (no gasta un intento) y la unidad sigue pendiente.
+ */
+const cortadaPorPresupuesto = (mensajes: readonly (string | null | undefined)[], peticiones: number): ResultadoTarea | null => {
+  for (const m of mensajes) {
+    if (motivoDePresupuesto(m)) return { estado: 'pendiente', peticiones, mensaje: m ?? undefined };
+  }
+  return null;
+};
+
 function falloTecnico(mensajes: readonly (string | null | undefined)[], peticiones: number): ResultadoTarea | null {
   for (const m of mensajes) {
     if (!m) continue;
@@ -58,7 +76,7 @@ function falloTecnico(mensajes: readonly (string | null | undefined)[], peticion
   return null;
 }
 
-async function ejecutarFie(deps: DepsEjecutores['fie'], t: Tarea): Promise<ResultadoTarea> {
+async function ejecutarFie(deps: DepsEjecutores['fie'], t: Tarea, guarda?: GuardaCapacidad): Promise<ResultadoTarea> {
   const season = Number(t.season);
   const competitionId = Number(t.competitionKey);
   if (!Number.isInteger(season) || !Number.isInteger(competitionId)) {
@@ -73,6 +91,25 @@ async function ejecutarFie(deps: DepsEjecutores['fie'], t: Tarea): Promise<Resul
     desdePagina,
     omitirAsaltos: desdePagina > 1,
   });
+  const peticionesLeidas = 1 + (lectura.ranking?.paginasLeidas ?? 0) + (lectura.poules ? 1 : 0) + (lectura.cuadro ? 1 : 0);
+  if (!lectura.prueba) {
+    const cortada = cortadaPorPresupuesto([lectura.errorPrueba], peticionesLeidas);
+    if (cortada) return cortada;
+  }
+  // Sin datos del ranking por culpa del presupuesto no hay nada que anotar: la unidad sigue como estaba y no gasta un intento.
+  const ranking = lectura.ranking;
+  const rankingCortadoSinDatos =
+    ranking !== null && motivoDePresupuesto(ranking.cobertura.error) !== null && ranking.puestos.length === 0 && ranking.paginasLeidas === 0;
+  if (rankingCortadoSinDatos) return cortadaPorPresupuesto([ranking.cobertura.error], peticionesLeidas) as ResultadoTarea;
+  if (guarda) {
+    const decision = await guarda({
+      puestos: lectura.ranking?.puestos.length ?? 0,
+      asaltos: (lectura.poules?.asaltos.length ?? 0) + (lectura.cuadro?.asaltos.length ?? 0),
+      documentos: 0,
+      unidades: 3,
+    });
+    if (!decision.continuar) return { estado: 'pendiente', peticiones: peticionesLeidas, mensaje: decision.mensaje, capacidad: decision };
+  }
   const resumen = await persistirLecturaFie(deps.persistencia, lectura);
   if (resumen.estado === 'esquema_no_aplicado') return { estado: 'esquema_no_aplicado', peticiones: 0 };
 
@@ -86,6 +123,12 @@ async function ejecutarFie(deps: DepsEjecutores['fie'], t: Tarea): Promise<Resul
   if (!lectura.prueba) {
     return falloTecnico([lectura.errorPrueba], peticiones) ?? error(lectura.errorPrueba ?? 'La prueba no se pudo leer', peticiones);
   }
+  // Una fase cortada por el presupuesto no es un fallo de la fuente: lo leído ya está persistido y la unidad sigue pendiente, no completa.
+  const cortadaDespues = cortadaPorPresupuesto(
+    [lectura.ranking?.cobertura.error, lectura.poules?.cobertura.error, lectura.cuadro?.cobertura.error],
+    peticiones,
+  );
+  if (cortadaDespues) return { ...cortadaDespues, hechos };
   // El progreso ya está persistido (cursor y cobertura): un fallo técnico se reintenta desde ahí.
   const tecnico = falloTecnico(
     [lectura.ranking?.cobertura.error, lectura.poules?.cobertura.error, lectura.cuadro?.cobertura.error],
@@ -105,12 +148,20 @@ async function ejecutarFie(deps: DepsEjecutores['fie'], t: Tarea): Promise<Resul
   return { estado: mapa[estado] ?? 'pendiente', peticiones, hechos };
 }
 
-async function ejecutarSkermo(deps: NonNullable<DepsEjecutores['skermo']>, t: Tarea): Promise<ResultadoTarea> {
+async function ejecutarSkermo(deps: NonNullable<DepsEjecutores['skermo']>, t: Tarea, guarda?: GuardaCapacidad): Promise<ResultadoTarea> {
   const separador = t.competitionKey.indexOf(':');
   if (separador <= 0) return error(`Clave Skermo no válida: ${t.clave}`);
   const federacion = t.competitionKey.slice(0, separador);
   const competitionId = t.competitionKey.slice(separador + 1);
   const lectura = await deps.leer({ federacion, season: t.season, competitionId, releer: t.releer });
+  if (lectura.cobertura.estado === 'error') {
+    const cortada = cortadaPorPresupuesto([lectura.cobertura.error], 1);
+    if (cortada) return cortada;
+  }
+  if (guarda) {
+    const decision = await guarda({ puestos: lectura.puestos.length, asaltos: 0, documentos: 0, unidades: 1 });
+    if (!decision.continuar) return { estado: 'pendiente', peticiones: 1, mensaje: decision.mensaje, capacidad: decision };
+  }
   const resumen = await persistirLecturaSkermo(deps.persistencia, lectura);
   if (resumen.estado === 'esquema_no_aplicado' && resumen.cobertura !== 'pendiente') {
     return { estado: 'esquema_no_aplicado', peticiones: 1 };
@@ -127,11 +178,37 @@ async function ejecutarSkermo(deps: NonNullable<DepsEjecutores['skermo']>, t: Ta
   return { estado: (estado as EstadoResultadoTarea) ?? 'pendiente', peticiones: 1, hechos };
 }
 
-async function ejecutarPdf(deps: NonNullable<DepsEjecutores['pdf']>, t: Tarea): Promise<ResultadoTarea> {
+async function ejecutarPdf(deps: NonNullable<DepsEjecutores['pdf']>, t: Tarea, guarda?: GuardaCapacidad): Promise<ResultadoTarea> {
   const url = typeof t.datos?.sourceUrl === 'string' ? t.datos.sourceUrl : null;
   if (!url) return error(`El documento ${t.clave} no tiene URL registrada`);
   const lectura = await deps.leer(url);
-  const resumen = await persistirLecturaPdf(deps.persistencia, lectura, { season: t.season }, { releer: t.releer });
+  if (lectura.estado === 'error') {
+    const cortada = cortadaPorPresupuesto([lectura.error], 1);
+    if (cortada) return cortada;
+  }
+  if (guarda && lectura.sha256) {
+    const decision = await guarda({
+      puestos: lectura.pruebas.reduce((s, p) => s + p.puestos.length, 0),
+      asaltos: lectura.pruebas.reduce((s, p) => s + p.asaltos.length, 0),
+      documentos: 1,
+      unidades: Math.max(1, lectura.pruebas.length),
+    });
+    if (!decision.continuar) return { estado: 'pendiente', peticiones: 1, mensaje: decision.mensaje, capacidad: decision };
+  }
+  // La fila del índice que enlazó el documento viaja con la URL; su título sólo sirve si el documento trae una única prueba.
+  const origen = t.datos ?? {};
+  const resumen = await persistirLecturaPdf(
+    deps.persistencia,
+    lectura,
+    {
+      season: t.season,
+      sourceUrl: url,
+      indice: typeof origen.indice === 'number' ? origen.indice : null,
+      refOriginal: typeof origen.refOriginal === 'string' ? origen.refOriginal : null,
+      titulo: typeof origen.titulo === 'string' ? origen.titulo : null,
+    },
+    { releer: t.releer },
+  );
   if (resumen.estado === 'esquema_no_aplicado') return { estado: 'esquema_no_aplicado', peticiones: 1 };
   if (resumen.estado === 'documento_no_leido') {
     if (resumen.motivo === 'tecnico') {
@@ -179,16 +256,16 @@ export function crearEjecutor(deps: DepsEjecutores): (t: Tarea) => Promise<Resul
   return async (t) => {
     switch (t.tipo) {
       case 'fie_prueba':
-        return ejecutarFie(deps.fie, t);
+        return ejecutarFie(deps.fie, t, deps.capacidad);
       case 'skermo_prueba':
-        return deps.skermo ? ejecutarSkermo(deps.skermo, t) : error('Skermo no está configurado en este modo');
+        return deps.skermo ? ejecutarSkermo(deps.skermo, t, deps.capacidad) : error('Skermo no está configurado en este modo');
       case 'pdf_documento':
-        return deps.pdf ? ejecutarPdf(deps.pdf, t) : error('La lectura de PDF no está configurada en este modo');
+        return deps.pdf ? ejecutarPdf(deps.pdf, t, deps.capacidad) : error('La lectura de PDF no está configurada en este modo');
       case 'engarde_torneo': {
         if (!deps.complementarios) return error('Engarde no está configurado en este modo');
         const [org, evt] = t.competitionKey.split('/');
         if (!org || !evt) return error(`Clave Engarde no válida: ${t.clave}`);
-        return ejecutarEngardeTorneo(deps.complementarios, org, evt);
+        return ejecutarEngardeTorneo(deps.complementarios, org, evt, t.season);
       }
       case 'fww_prueba': {
         if (!deps.complementarios) return error('FWW no está configurado en este modo');

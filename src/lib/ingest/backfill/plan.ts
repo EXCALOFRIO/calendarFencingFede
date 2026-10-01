@@ -44,6 +44,8 @@ export type UnidadDescubierta = {
   season: string;
   competitionKey: string;
   sourceUrl: string | null;
+  /** Entrada propia del adaptador que acompaña a la unidad (referencia de la fila del índice, título...). */
+  datos?: Record<string, unknown>;
 };
 
 export type OpcionesPlan = {
@@ -152,6 +154,8 @@ function evaluarFila(f: FilaPlan, clave: string, o: OpcionesPlan): Evaluacion {
   if (f.lastError && PATRON_CATEGORIAS.test(f.lastError)) {
     return o.categoriasAmpliadas ? { motivo: 'categorias_ampliadas' } : { omitir: 'categorias' };
   }
+  // Un error con cursor agotado también respeta max-intentos: el cursor queda para reintentar de forma explícita.
+  if (f.status === 'error' && f.attempts >= o.maxIntentos) return { omitir: 'agotada' };
   if (continuacion) return { motivo: 'continuar' };
   if (f.status === 'pendiente' && !f.lastCheckedAt && f.attempts === 0) return { motivo: 'nunca_leido' };
   return f.attempts >= o.maxIntentos ? { omitir: 'agotada' } : { motivo: 'reintento_error' };
@@ -168,15 +172,26 @@ export function planificarDesdeCobertura(
   };
 
   const grupos = new Map<string, FilaPlan[]>();
+  const metadataFie: FilaPlan[] = [];
   for (const f of filas) {
     const tipo = TIPO_POR_FUENTE[f.source];
     if (!tipo) continue;
     const esDocumento = f.source === 'rfee_pdf';
+    // Un fallo de metadata FIE no deja filas de lectura: es lo único que dice que la unidad hay que retomarla.
+    if (f.source === 'fie' && f.factKind === 'competitions') {
+      metadataFie.push(f);
+      continue;
+    }
     if (esDocumento ? f.factKind !== 'pdf' : !HECHOS_DE_LECTURA.has(f.factKind)) continue;
     const clave = claveDeUnidad({ fuente: f.source, season: f.season, competitionKey: f.competitionKey });
     const g = grupos.get(clave);
     if (g) g.push(f);
     else grupos.set(clave, [f]);
+  }
+  // Un error de metadata antiguo no reabre una unidad que después sí se leyó.
+  for (const f of metadataFie) {
+    const clave = claveDeUnidad({ fuente: f.source, season: f.season, competitionKey: f.competitionKey });
+    if (!grupos.has(clave)) grupos.set(clave, [f]);
   }
 
   for (const [clave, grupo] of grupos) {
@@ -239,7 +254,7 @@ export function planificarDesdeCobertura(
       releer: false,
       fase: FUENTES_COMPLEMENTARIAS_PLAN.includes(u.fuente) ? 'complementaria' : 'primaria',
       estimacion: estimarTarea(tipo, null),
-      datos: { cursor: null, sourceUrl: u.sourceUrl, competitionId: null },
+      datos: { cursor: null, sourceUrl: u.sourceUrl, competitionId: null, ...(u.datos ?? {}) },
     });
   }
 
