@@ -145,6 +145,65 @@ describe('conciliarAsaltosFww', () => {
   });
 });
 
+describe('conciliarAsaltosFww con el mismo duelo en dos páginas', () => {
+  const DIRECT3 = `${BASE}/direct/3`;
+  const dependencias = (): { deps: DepsAsaltosComplemento; escritos: FilaAsalto[][]; coberturas: FilaCoberturaGenerica[] } => {
+    const escritos: FilaAsalto[][] = [];
+    const coberturas: FilaCoberturaGenerica[] = [];
+    return {
+      escritos,
+      coberturas,
+      deps: {
+        esquema: async () => ({ identidad: true, referencias: true }),
+        upsertAsaltos: async (_id, _source, filas) => {
+          escritos.push(filas);
+          return { nuevos: filas.length, revisados: 0, sinCambios: 0 };
+        },
+        upsertCobertura: async (_s, fila) => {
+          coberturas.push(fila);
+        },
+      },
+    };
+  };
+  const original = fixture('fww-basel-u17-direct2.html');
+  const contradictoria = original.replace(/(\s)14(\s*<\/div>)/, '$113$2');
+
+  it('no persiste el tanteo conflictivo ni se queda con el último, y la cobertura queda parcial', async () => {
+    expect(contradictoria).not.toBe(original);
+    const c = canonica({}, escribe);
+    const solo = await conciliarAsaltosFww({ canonica: c, urls: { poules: [], cuadro: [DIRECT2] } }, depsCon(respuestas));
+    const r = await conciliarAsaltosFww(
+      { canonica: c, urls: { poules: [], cuadro: [DIRECT2, DIRECT3] } },
+      depsCon({ ...respuestas, [DIRECT3]: { status: 200, body: contradictoria } }),
+    );
+    expect(r.cuadro.plan).toMatchObject({ accion: 'escribir', fase: 'TABLEAU', cobertura: 'parcial' });
+    const { deps, escritos, coberturas } = dependencias();
+    await persistirAsaltosComplemento(deps, { competitionId: c.competitionId, prueba: c.prueba, candidato: r.cuadro.candidato!, fase: 'TABLEAU', plan: r.cuadro.plan });
+    const dudoso = r.cuadro.lectura.parte!.conflictos[0];
+    const claves = escritos.flat().map((f) => `${f.phase}|${f.roundKey}|${f.fencerARef}|${f.fencerBRef}`);
+    expect(dudoso.urls).toEqual([DIRECT2, DIRECT3]);
+    expect(claves).not.toContain(dudoso.clave);
+    expect(claves).toHaveLength((solo.cuadro.lectura.parte?.importado ?? 0) - 1);
+    expect(coberturas).toHaveLength(1);
+    expect(coberturas[0]).toMatchObject({ factKind: 'tableau', status: 'parcial' });
+  });
+
+  it('una tercera página con la versión original no resucita el duelo dudoso', async () => {
+    const c = canonica({}, escribe);
+    const DIRECT4 = `${BASE}/direct/4`;
+    const r = await conciliarAsaltosFww(
+      { canonica: c, urls: { poules: [], cuadro: [DIRECT2, DIRECT3, DIRECT4] } },
+      depsCon({ ...respuestas, [DIRECT3]: { status: 200, body: contradictoria }, [DIRECT4]: { status: 200, body: original } }),
+    );
+    const dudoso = r.cuadro.lectura.parte!.conflictos[0];
+    expect(dudoso.urls).toEqual([DIRECT2, DIRECT3, DIRECT4]);
+    expect(r.cuadro.plan).toMatchObject({ accion: 'escribir', cobertura: 'parcial' });
+    if (r.cuadro.plan.accion === 'escribir') {
+      expect(r.cuadro.plan.asaltos.some((a) => `${a.fase}|${a.ronda}|${a.refA}|${a.refB}` === dudoso.clave)).toBe(false);
+    }
+  });
+});
+
 describe('estadoAsaltosPrimarios', () => {
   const cob = (status: 'pendiente' | 'completo' | 'parcial' | 'sin_resultados' | 'error' | 'conflicto', extra: { publishedTotal?: number | null; cursor?: string | null } = {}) => ({
     status,

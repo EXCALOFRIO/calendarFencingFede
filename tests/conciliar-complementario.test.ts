@@ -516,6 +516,27 @@ describe('conciliarTorneoEngarde con cuadro individual', () => {
     expect(p500.find((e) => e.prueba.compe === 'emabsind')!.cuadro?.plan).toMatchObject({ accion: 'sin_hechos', estado: 'error' });
   });
 
+  it('el mismo cruce con 15/1 y 15/2 en dos páginas ofrecidas no se escribe y la cobertura queda parcial', async () => {
+    const otraUrl = `${prueba}/tableau128-32.htm`;
+    const dosCuadros = clasificacion.replace('<div id="reloadable">', `<div id="reloadable"><a href="/competition/fme/ctomadabs19/emabsind/tableau128-32.htm">Tableau</a>`);
+    const deps: DepsEngarde = {
+      get: async (u) => {
+        if (u === prueba) return { status: 200, body: dosCuadros };
+        if (u === cuadroUrl) return { status: 200, body: CUADRO };
+        if (u === otraUrl) return { status: 200, body: CUADRO.replace('15/1<', '15/2<') };
+        return { status: 404, body: '' };
+      },
+      post: async () => ({ status: 500, body: '' }),
+    };
+    const r = await conciliarTorneoEngarde(torneo, [madrid(sinFinales, { poules: 'pendiente', cuadro: 'no_publicado' })], deps);
+    const plan = r.find((e) => e.prueba.compe === 'emabsind')!.cuadro?.plan;
+    expect(plan).toMatchObject({ accion: 'escribir', fase: 'TABLEAU', cobertura: 'parcial', publicado: 15 });
+    if (plan?.accion === 'escribir') {
+      expect(plan.asaltos).toHaveLength(14);
+      expect(plan.asaltos.some((a) => a.ronda === 'T16' && [a.nombreA, a.nombreB].includes('APELLIDO2 Nombre2'))).toBe(false);
+    }
+  });
+
   it('una prueba por equipos de ese torneo nunca pide su cuadro', async () => {
     const deps = depsMadrid({ status: 200, body: CUADRO });
     await conciliarTorneoEngarde(

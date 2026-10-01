@@ -3,7 +3,8 @@ import { normalizeSportName } from '@/lib/identity/resolver';
 import { fixDoubleEncodedUtf8 } from '../fetcher';
 import {
   AcumuladorAsaltos,
-  sumarExclusiones,
+  FusionAsaltos,
+  motivoConflictos,
   type ParteAsaltosComplementarios,
 } from '../asaltos-complementarios';
 import {
@@ -73,6 +74,7 @@ const vacio = (estado: CuadroEngarde['estado']): CuadroEngarde => ({
   importado: 0,
   completo: false,
   excluidos: new AcumuladorAsaltos().excluidos,
+  conflictos: [],
 });
 
 export function parsearCuadroEngarde(html: string, opciones: { individual: boolean | null }): CuadroEngarde {
@@ -245,15 +247,12 @@ export async function leerCuadroEngarde(
     return { ...base, estado: 'no_publicado', motivo: 'La prueba no ofrece página de cuadro' };
   }
 
-  const acumulado = new Map<string, ParteAsaltosComplementarios['asaltos'][number]>();
-  let publicado = 0;
+  const fusion = new FusionAsaltos();
   let pagina: PaginaEngarde | null = null;
   let fallos = 0;
   let noPublicados = 0;
   let ilegibles = 0;
-  let completo = true;
   let ultimoError: string | null = null;
-  const excluidos = new AcumuladorAsaltos().excluidos;
 
   for (const url of urls) {
     let r;
@@ -279,18 +278,9 @@ export async function leerCuadroEngarde(
       continue;
     }
     pagina ??= parsearPaginaEngarde(r.body);
-    completo &&= cuadro.completo;
-    publicado += cuadro.publicado;
-    sumarExclusiones(excluidos, cuadro.excluidos);
-    for (const a of cuadro.asaltos) {
-      const clave = `${a.ronda}|${a.refA}|${a.refB}`;
-      // El mismo cruce en dos páginas (rondas solapadas) es un único hecho publicado.
-      if (acumulado.has(clave)) publicado -= 1;
-      acumulado.set(clave, { ...a, url });
-    }
+    fusion.anadir(cuadro, url);
   }
 
-  const asaltos = [...acumulado.values()];
   const leidas = urls.length - fallos - noPublicados - ilegibles;
   if (leidas === 0) {
     const estado: EstadoLecturaComplementaria = fallos > 0 || ilegibles > 0 ? 'error' : 'no_publicado';
@@ -305,19 +295,17 @@ export async function leerCuadroEngarde(
             : 'El cuadro no tiene página publicada (HTTP 404)',
     };
   }
-  const parte: ParteAsaltosComplementarios = {
-    asaltos,
-    publicado,
-    importado: asaltos.length,
-    excluidos,
-    completo: completo && fallos === 0 && noPublicados === 0 && ilegibles === 0 && asaltos.length === publicado,
-  };
+  const parte = fusion.resumen(fallos === 0 && noPublicados === 0 && ilegibles === 0);
   const estado: EstadoLecturaComplementaria = parte.completo ? 'completo' : 'parcial';
   return {
     ...base,
     estado,
     pagina,
     parte,
-    motivo: parte.completo ? null : `Se importaron ${asaltos.length} de ${publicado} cruces publicados`,
+    motivo: parte.completo
+      ? null
+      : [`Se importaron ${parte.importado} de ${parte.publicado} cruces publicados`, motivoConflictos(parte.conflictos)]
+          .filter(Boolean)
+          .join('; '),
   };
 }

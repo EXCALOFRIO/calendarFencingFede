@@ -2,6 +2,8 @@ import * as cheerio from 'cheerio';
 import { fixDoubleEncodedUtf8 } from '../fetcher';
 import {
   AcumuladorAsaltos,
+  FusionAsaltos,
+  motivoConflictos,
   type ParteAsaltosComplementarios,
 } from '../asaltos-complementarios';
 import { claveRondaCuadro } from './engarde-cuadro';
@@ -290,28 +292,17 @@ export function agregarLecturasFww(
       ? { ...base, estado: 'error', parte: null, motivo: fallos[0].motivo }
       : { ...base, estado: 'no_publicado', parte: null, motivo: lecturas[0].motivo };
   }
-  const asaltos = new Map<string, ParteAsaltosComplementarios['asaltos'][number]>();
-  let publicado = 0;
-  let completo = fallos.length === 0 && buenas.length === lecturas.length;
-  const excluidos = { ...buenas[0].parte!.excluidos };
-  buenas.forEach((l, i) => {
-    const p = l.parte!;
-    publicado += p.publicado;
-    completo &&= p.completo;
-    if (i > 0) for (const k of Object.keys(excluidos) as (keyof typeof excluidos)[]) excluidos[k] += p.excluidos[k];
-    for (const a of p.asaltos) asaltos.set(`${a.ronda}|${a.refA}|${a.refB}`, { ...a, url: l.url });
-  });
-  const parte: ParteAsaltosComplementarios = {
-    asaltos: [...asaltos.values()],
-    publicado,
-    importado: asaltos.size,
-    excluidos,
-    completo: completo && asaltos.size === publicado,
-  };
+  const fusion = new FusionAsaltos();
+  for (const l of buenas) fusion.anadir(l.parte!, l.url);
+  const parte = fusion.resumen(fallos.length === 0 && buenas.length === lecturas.length);
   return {
     ...base,
     estado: parte.completo ? 'completo' : 'parcial',
     parte,
-    motivo: parte.completo ? null : `Se importaron ${parte.importado} de ${parte.publicado} cruces publicados`,
+    motivo: parte.completo
+      ? null
+      : [`Se importaron ${parte.importado} de ${parte.publicado} cruces publicados`, motivoConflictos(parte.conflictos)]
+          .filter(Boolean)
+          .join('; '),
   };
 }

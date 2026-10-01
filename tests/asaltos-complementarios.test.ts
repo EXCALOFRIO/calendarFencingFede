@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { AcumuladorAsaltos } from '@/lib/ingest/asaltos-complementarios';
+import { AcumuladorAsaltos, claveAsalto } from '@/lib/ingest/asaltos-complementarios';
 import type { DepsEngarde, PruebaEngarde } from '@/lib/ingest/sources/engarde';
 import { parsearPaginaEngarde } from '@/lib/ingest/sources/engarde';
 import {
@@ -196,6 +196,62 @@ describe('lectura del cuadro Engarde por red', () => {
     expect(r.parte?.importado).toBe(15);
   });
 
+  describe('varias páginas del mismo cuadro', () => {
+    const otra = 'https://engarde-service.com/competition/fme/ctomadabs19/emabsind/tableau128-32.htm';
+    const tercera = 'https://engarde-service.com/competition/fme/ctomadabs19/emabsind/tableau8.htm';
+    const CONTRADICTORIA = CUADRO.replace('15/1<', '15/2<');
+    const unCruce = (r: Awaited<ReturnType<typeof leerCuadroEngarde>>) =>
+      r.parte!.asaltos.filter((a) => a.ronda === 'T16' && [a.nombreA, a.nombreB].includes('APELLIDO2 Nombre2'));
+
+    it('el mismo cruce de la misma ronda con 15/1 en una página y 15/2 en otra no se publica y deja la lectura parcial', async () => {
+      const r = await leerCuadroEngarde(
+        prueba(),
+        [url, otra],
+        depsCon({ [url]: { status: 200, body: CUADRO }, [otra]: { status: 200, body: CONTRADICTORIA } }),
+      );
+      expect(unCruce(r)).toEqual([]);
+      expect(r.estado).toBe('parcial');
+      expect(r.parte).toMatchObject({ importado: 14, publicado: 15, completo: false });
+      expect(r.parte!.excluidos.incoherente).toBeGreaterThanOrEqual(1);
+      expect(r.motivo).toMatch(/contradictorios/);
+      expect(r.motivo).not.toMatch(/APELLIDO/);
+      expect(r.parte!.conflictos).toEqual([expect.objectContaining({ fase: 'TABLEAU', ronda: 'T16', urls: [url, otra] })]);
+    });
+
+    it('el orden de las páginas no cambia el resultado', async () => {
+      const r = await leerCuadroEngarde(
+        prueba(),
+        [otra, url],
+        depsCon({ [url]: { status: 200, body: CUADRO }, [otra]: { status: 200, body: CONTRADICTORIA } }),
+      );
+      expect(unCruce(r)).toEqual([]);
+      expect(r.parte).toMatchObject({ importado: 14, publicado: 15, completo: false });
+    });
+
+    it('una tercera página igual a una de las versiones no resucita el cruce dudoso', async () => {
+      for (const orden of [[url, otra, tercera], [otra, url, tercera], [url, tercera, otra]]) {
+        const r = await leerCuadroEngarde(
+          prueba(),
+          orden,
+          depsCon({ [url]: { status: 200, body: CUADRO }, [otra]: { status: 200, body: CONTRADICTORIA }, [tercera]: { status: 200, body: CUADRO } }),
+        );
+        expect(unCruce(r)).toEqual([]);
+        expect(r.parte).toMatchObject({ importado: 14, publicado: 15, completo: false });
+        expect(r.estado).toBe('parcial');
+      }
+    });
+
+    it('un cruce idéntico en dos páginas cuenta una vez y la lectura sigue completa', async () => {
+      const r = await leerCuadroEngarde(
+        prueba(),
+        [url, otra],
+        depsCon({ [url]: { status: 200, body: CUADRO }, [otra]: { status: 200, body: CUADRO } }),
+      );
+      expect(r).toMatchObject({ estado: 'completo', parte: { importado: 15, publicado: 15, completo: true } });
+      expect(r.parte!.conflictos).toEqual([]);
+    });
+  });
+
   it('una prueba por equipos o sin modalidad verificada no se pide', async () => {
     const deps = depsCon({});
     for (const individual of [false, null]) {
@@ -325,6 +381,79 @@ describe('lectura exacta del destino FWW', () => {
     expect(agregarLecturasFww('POULE', [ok, caida])).toMatchObject({ estado: 'parcial' });
     expect(agregarLecturasFww('POULE', [caida]).estado).toBe('error');
     expect(agregarLecturasFww('POULE', []).estado).toBe('no_publicado');
+  });
+
+  describe('varias páginas con el mismo duelo', () => {
+    const leer = (n: number, body: string) => leerDestinoFww(`${base}/direct/${n}`, depsCon({ [`${base}/direct/${n}`]: { status: 200, body } }));
+    const DIRECTA_CONTRADICTORIA = DIRECTA.replace(/(\s)14(\s*<\/div>)/, '$113$2');
+    const POOLS_CONTRADICTORIA = POOLS.replace('D3', 'D2');
+
+    it('un duelo con 15/14 en una página y 15/13 en otra no se publica y la lectura queda parcial', async () => {
+      expect(DIRECTA_CONTRADICTORIA).not.toBe(DIRECTA);
+      const [a, b] = [await leer(2, DIRECTA), await leer(3, DIRECTA_CONTRADICTORIA)];
+      const conflicto = agregarLecturasFww('TABLEAU', [a, b]);
+      const solo = agregarLecturasFww('TABLEAU', [a]);
+      expect(conflicto.estado).toBe('parcial');
+      expect(conflicto.parte).toMatchObject({ publicado: solo.parte!.publicado, importado: solo.parte!.importado - 1, completo: false });
+      expect(conflicto.parte!.conflictos).toHaveLength(1);
+      expect(conflicto.parte!.conflictos[0].urls).toEqual([a.url, b.url]);
+      const dudoso = conflicto.parte!.conflictos[0];
+      expect(conflicto.parte!.asaltos.some((x) => claveAsalto(x) === dudoso.clave)).toBe(false);
+      expect(conflicto.motivo).toMatch(/contradictorios/);
+      expect(conflicto.motivo).not.toMatch(/APELLIDO/);
+    });
+
+    it('una tercera página igual a una versión no resucita el duelo dudoso, en cualquier orden', async () => {
+      const [a, b, c] = [await leer(2, DIRECTA), await leer(3, DIRECTA_CONTRADICTORIA), await leer(4, DIRECTA)];
+      const solo = agregarLecturasFww('TABLEAU', [a]).parte!;
+      for (const orden of [[a, b, c], [b, a, c], [a, c, b]]) {
+        const r = agregarLecturasFww('TABLEAU', orden);
+        expect(r.parte).toMatchObject({ publicado: solo.publicado, importado: solo.importado - 1, completo: false });
+        expect(r.estado).toBe('parcial');
+      }
+    });
+
+    it('un duelo idéntico en dos páginas cuenta una vez; rondas distintas de poule siguen siendo hechos distintos', async () => {
+      const [a, b] = [await leer(2, DIRECTA), await leer(3, DIRECTA)];
+      const solo = agregarLecturasFww('TABLEAU', [a]).parte!;
+      expect(agregarLecturasFww('TABLEAU', [a, b])).toMatchObject({
+        estado: 'completo',
+        parte: { publicado: solo.publicado, importado: solo.importado, completo: true },
+      });
+
+      const p1 = await leerDestinoFww(`${base}/pools/1`, depsCon({ [`${base}/pools/1`]: { status: 200, body: POOLS } }));
+      const p2 = await leerDestinoFww(`${base}/pools/2`, depsCon({ [`${base}/pools/2`]: { status: 200, body: POOLS } }));
+      const dos = agregarLecturasFww('POULE', [p1, p2]);
+      expect(dos).toMatchObject({ estado: 'completo', parte: { importado: p1.parte!.importado * 2, publicado: p1.parte!.publicado * 2 } });
+    });
+
+    it('poules: dos páginas de la misma ronda con tanteos distintos excluyen el duelo en vez de quedarse con el último', async () => {
+      const p1 = await leerDestinoFww(`${base}/pools/1`, depsCon({ [`${base}/pools/1`]: { status: 200, body: POOLS } }));
+      const otra = { ...p1, url: `${base}/pools/1#otra`, parte: parsearPoulesFww(POOLS_CONTRADICTORIA, 1) };
+      expect(otra.parte.importado).toBe(p1.parte!.importado);
+      const r = agregarLecturasFww('POULE', [p1, otra]);
+      expect(r.estado).toBe('parcial');
+      expect(r.parte).toMatchObject({ importado: p1.parte!.importado - 1, publicado: p1.parte!.publicado, completo: false });
+    });
+
+    it('un conflicto ya retirado dentro de una página no lo resucita otra página con una versión', async () => {
+      const acc = new AcumuladorAsaltos();
+      const e = (a: number, b: number) => ({
+        fase: 'TABLEAU' as const,
+        ronda: 'T16',
+        a: { ref: 'x:2', nombre: 'Dos', puntos: a },
+        b: { ref: 'x:1', nombre: 'Uno', puntos: b },
+      });
+      acc.anadir(e(15, 1));
+      acc.anadir(e(15, 2));
+      const retirada = { ...(await leer(2, DIRECTA)), parte: acc.resumen(true) };
+      const limpia = new AcumuladorAsaltos();
+      limpia.anadir(e(15, 1));
+      const otra = { ...retirada, url: `${base}/direct/9`, parte: limpia.resumen(true) };
+      const r = agregarLecturasFww('TABLEAU', [retirada, otra]);
+      expect(r.parte).toMatchObject({ asaltos: [], publicado: 1, importado: 0, completo: false });
+      expect(agregarLecturasFww('TABLEAU', [otra, retirada]).parte).toMatchObject({ asaltos: [], publicado: 1, completo: false });
+    });
   });
 });
 
