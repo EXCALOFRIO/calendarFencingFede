@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import {
   sportBout,
@@ -260,5 +260,16 @@ export function crearDepsPersistenciaFieDb(db: Db): DepsPersistenciaFie {
       escribirAsaltos(db, FUENTE_FIE, competitionId, filas),
 
     upsertCobertura: (f) => escribirCobertura(db, FUENTE_FIE, f),
+
+    async contarResultados(competitionId) {
+      const [fila] = await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          sinPersona: sql<number>`count(*) filter (where ${sportResult.personId} is null)::int`,
+        })
+        .from(sportResult)
+        .where(and(eq(sportResult.competitionId, competitionId), eq(sportResult.source, FUENTE_FIE)));
+      return { total: fila?.total ?? 0, sinPersona: fila?.sinPersona ?? 0 };
+    },
   };
 }

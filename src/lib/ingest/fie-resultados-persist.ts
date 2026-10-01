@@ -12,6 +12,7 @@ import {
   type IdExternoCandidato,
 } from '@/lib/sport/id-guard';
 import { sha256 } from '@/lib/utils';
+import { codificarCursorFie } from './backfill/cursor-fie';
 import type {
   AsaltoFie,
   EstadoCobertura,
@@ -83,6 +84,8 @@ export type FilaCobertura = {
   importedTotal?: number;
   sourceUrl: string;
   lastError: string | null;
+  /** Checkpoint de continuación; `null` lo limpia y `undefined` no lo toca. */
+  cursor?: string | null;
 };
 
 export type DepsPersistenciaFie = {
@@ -93,6 +96,12 @@ export type DepsPersistenciaFie = {
   upsertResultados: (competitionId: string, filas: FilaResultado[]) => Promise<ResumenEscritura>;
   upsertAsaltos: (competitionId: string, filas: FilaAsalto[]) => Promise<ResumenEscritura>;
   upsertCobertura: (fila: FilaCobertura) => Promise<void>;
+  /**
+   * Puestos ya guardados de la prueba (claves naturales distintas) y cuántos
+   * siguen sin persona. Sólo hace falta al continuar un ranking paginado: el
+   * total acumulado y deduplicado sale de aquí, no de sumar lecturas.
+   */
+  contarResultados?: (competitionId: string) => Promise<{ total: number; sinPersona: number }>;
   /** Sólo para pruebas deterministas; por defecto `crypto.randomUUID`. */
   nuevoId?: () => string;
 };
@@ -303,7 +312,6 @@ export async function persistirLecturaFie(
   }
 
   const { ranking, poules, cuadro } = lectura;
-  const conConflicto = resumen.personas.conflictos + resumen.personas.enRevision > 0;
 
   if (ranking) {
     const ok = ranking.cobertura.estado !== 'error';
@@ -313,21 +321,53 @@ export async function persistirLecturaFie(
         await filasDeResultados(ranking.puestos, prueba, ranking.url, personas),
       );
     }
-    const estado =
-      ranking.cobertura.estado === 'completo' && conConflicto ? 'conflicto' : ranking.cobertura.estado;
+
+    let estadoLectura: EstadoCobertura = ranking.cobertura.estado;
+    let importado = ranking.cobertura.importado;
+    let sinIdentidad = resumen.personas.conflictos + resumen.personas.enRevision;
+    const continuada = ranking.paginaDesde > 1 || ranking.siguientePagina !== null;
+    if (ok && continuada && deps.contarResultados) {
+      // Totales acumulados y deduplicados por clave natural, no la suma de lecturas.
+      const guardados = await deps.contarResultados(competitionId);
+      importado = guardados.total;
+      sinIdentidad = prueba.formato === 'INDIVIDUAL' ? guardados.sinPersona : 0;
+      const total = ranking.cobertura.publicado;
+      const cerrada =
+        ranking.siguientePagina === null &&
+        ranking.cobertura.error === null &&
+        total !== null &&
+        importado >= total;
+      estadoLectura = cerrada ? 'completo' : 'parcial';
+    }
+
+    const estado = estadoLectura === 'completo' && sinIdentidad > 0 ? 'conflicto' : estadoLectura;
     await deps.upsertCobertura({
       season,
       factKind: 'ranking',
       competitionKey,
       competitionId,
       status: estado,
-      ...(ok ? { publishedTotal: ranking.cobertura.publicado, importedTotal: ranking.cobertura.importado } : {}),
+      ...(ok ? { publishedTotal: ranking.cobertura.publicado, importedTotal: importado } : {}),
+      // Sólo una lectura válida mueve el checkpoint; un fallo inicial conserva el anterior.
+      ...(ok
+        ? {
+            cursor:
+              ranking.siguientePagina === null
+                ? null
+                : codificarCursorFie({
+                    fuente: 'fie',
+                    season: lectura.season,
+                    competitionId: lectura.competitionId,
+                    pageSize: ranking.tamanoPagina,
+                    siguientePagina: ranking.siguientePagina,
+                    total: ranking.cobertura.publicado,
+                  }),
+          }
+        : {}),
       sourceUrl: ranking.url,
       lastError:
         ranking.cobertura.error ??
-        (estado === 'conflicto'
-          ? `${resumen.personas.conflictos + resumen.personas.enRevision} participantes sin identidad confirmada`
-          : null),
+        (estado === 'conflicto' ? `${sinIdentidad} participantes sin identidad confirmada` : null),
     });
     resumen.cobertura.ranking = estado;
   }

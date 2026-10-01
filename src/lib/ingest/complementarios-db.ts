@@ -31,6 +31,18 @@ export type CanonicaCargada = {
   primariosAsaltos: { poules: EstadoAsaltosPrimarios; cuadro: EstadoAsaltosPrimarios };
 };
 
+/** Una prueba canónica concreta y lo que sus fuentes primarias ya guardaron; `null` si no existe o es complementaria. */
+export async function cargarCanonicaPorIdDb(db: Db, competitionId: string): Promise<CanonicaCargada | null> {
+  const [p] = await db
+    .select({ fecha: sportCompetition.competitionDate, source: sportCompetition.source })
+    .from(sportCompetition)
+    .where(eq(sportCompetition.id, competitionId))
+    .limit(1);
+  if (!p?.fecha || (FUENTES_COMPLEMENTARIAS as readonly string[]).includes(p.source)) return null;
+  const candidatas = await cargarCanonicasDb(db, { desde: p.fecha, hasta: p.fecha });
+  return candidatas.find((c) => c.competitionId === competitionId) ?? null;
+}
+
 /**
  * Pruebas ya guardadas por fuentes primarias entre dos fechas, con lo que esas
  * fuentes publican. Sólo lectura. Sin cobertura ni filas, la primaria queda

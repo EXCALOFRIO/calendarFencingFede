@@ -13,6 +13,12 @@ import { recalcularVigencia } from '../documentos/recalcular';
 import { tocaLeerRanking } from './cadencia-ranking';
 import { esquemaDeportivo } from '@/lib/sport/esquema-db';
 import { sha256 } from '../utils';
+import {
+  MAX_REESCRITURAS_POR_REFERENCIAS,
+  clasificarHuellaInscritos,
+  repartirReescrituras,
+  type ClaseHuella,
+} from './backfill/referencias';
 import { recalcularEnlaces } from './enlazar';
 import { fetchText } from './fetcher';
 import { fetchEfcCalendar } from './sources/efc';
@@ -400,6 +406,12 @@ async function ingestFie(runId: string): Promise<Dispatched> {
       (listas.sinEquivalente > 0
         ? `, ${listas.sinEquivalente} de equipos sin prueba equivalente en el torneo español`
         : '') +
+      (listas.reescrituraReferencias > 0
+        ? `, ${listas.reescrituraReferencias} reescritas una vez por la migración 0018`
+        : '') +
+      (listas.reescrituraDiferida > 0
+        ? `, ${listas.reescrituraDiferida} reescrituras por 0018 diferidas a otra lectura`
+        : '') +
       (listas.fallos > 0 ? `, ${listas.fallos} listas no respondieron` : '');
   } catch (error) {
     notaInscritos = ` | inscritos: no se pudieron leer (${
@@ -446,6 +458,12 @@ export type ResumenInscritosFie = {
   bajas: number;
   colisiones: number;
   sinEquivalente: number;
+  /** Listas reescritas una vez porque la migración 0018 cambió su huella, con el mismo contenido. */
+  reescrituraReferencias: number;
+  /** Listas que esperan a otra lectura elegible por el tope de reescrituras por ejecución. */
+  reescrituraDiferida: number;
+  /** Listas cuyo contenido cambió de verdad (no cuenta la reescritura forzada por 0018). */
+  contenidoCambiado: number;
 };
 
 /**
@@ -519,6 +537,9 @@ export async function ingestInscritosFie(
     bajas: 0,
     colisiones: 0,
     sinEquivalente: 0,
+    reescrituraReferencias: 0,
+    reescrituraDiferida: 0,
+    contenidoCambiado: 0,
   };
 
   const hoy = ahora.toISOString().slice(0, 10);
@@ -671,6 +692,7 @@ export async function ingestInscritosFie(
     destino: Destino;
     inscritos: Awaited<ReturnType<typeof fetchInscritosFie>>['inscritos'];
     huella: string;
+    clase: ClaseHuella;
     publicados: number;
   }[] = [];
 
@@ -693,10 +715,17 @@ export async function ingestInscritosFie(
       resumen.listasLeidas += 1;
       resumen.publicados += r.totalPublicados;
       resumen.espanoles += r.inscritos.length;
+      const huella = await huellaDeInscritos(r.inscritos, r.destino.destinoId, conReferencias);
       leidas.push({
         destino: r.destino,
         inscritos: r.inscritos,
-        huella: await huellaDeInscritos(r.inscritos, r.destino.destinoId, conReferencias),
+        huella,
+        clase: clasificarHuellaInscritos({
+          guardada: r.destino.hashGuardado,
+          sinRef: await huellaDeInscritos(r.inscritos, r.destino.destinoId, false),
+          conRef: huella,
+          conReferencias,
+        }),
         publicados: r.totalPublicados,
       });
     }
@@ -709,8 +738,19 @@ export async function ingestInscritosFie(
    * `upsertEvents` con los eventos sin cambios, y así la pantalla puede seguir
    * diciendo con verdad cuándo se leyó.
    */
-  const cambiadas = leidas.filter((l) => l.huella !== l.destino.hashGuardado);
-  const iguales = leidas.filter((l) => l.huella === l.destino.hashGuardado);
+  /**
+   * Tras la migración 0018 la huella de cada lista cambia aunque sus inscritos
+   * no. Esa reescritura única se acota por ejecución y se cuenta aparte de los
+   * cambios reales; la que no cabe no se escribe ni refresca su marca de
+   * lectura, así que vuelve a ser elegible en la siguiente pasada.
+   */
+  const reparto = repartirReescrituras(leidas, MAX_REESCRITURAS_POR_REFERENCIAS);
+  resumen.reescrituraReferencias = reparto.reescritas;
+  resumen.reescrituraDiferida = reparto.diferidas.length;
+  resumen.contenidoCambiado = reparto.escribir.filter((l) => l.clase === 'contenido_cambiado').length;
+  const aEscribir = reparto.escribir;
+  const cambiadas = aEscribir.filter((l) => l.huella !== l.destino.hashGuardado);
+  const iguales = aEscribir.filter((l) => l.huella === l.destino.hashGuardado);
   resumen.sinCambios = iguales.length;
 
   /**
@@ -726,10 +766,12 @@ export async function ingestInscritosFie(
    * sigue inscrito. Lo que ha cambiado es DÓNDE se guarda la fila, y una baja
    * falsa se le contaría a alguien como «te han quitado de la lista».
    */
+  // Una lista diferida no se reescribe en esta pasada: retirar sus filas ahora las dejaría sin destino.
+  const diferidas = new Set(reparto.diferidas.map((l) => l.destino.destinoId));
   const aRetirar = [
     ...new Set(
       aLeer
-        .filter((d) => d.retenida === 'colision' && d.equivalenteId)
+        .filter((d) => d.retenida === 'colision' && d.equivalenteId && !diferidas.has(d.destinoId))
         .map((d) => d.equivalenteId as string),
     ),
   ];
@@ -792,7 +834,7 @@ export async function ingestInscritosFie(
    * que publica la FIE de SU prueba, y así sigue valiendo el día que la
    * decisión de dónde escribir cambie.
    */
-  for (const lote of chunk(leidas, 100)) {
+  for (const lote of chunk(aEscribir, 100)) {
     const valores = sql.join(
       lote.map((l) => sql`(${l.destino.pruebaFieId}::uuid, ${l.huella}::text)`),
       sql`, `,

@@ -34,8 +34,12 @@ import { mapCategory, mapFormat, mapGender, mapWeapon } from '../mappers';
 
 const FIE_API = 'https://fie.org/api/fie';
 export const TAMANO_PAGINA_RANKING = 24;
-/** Tope de seguridad: 100 páginas son 2.400 participantes, más que ninguna prueba. */
-const MAX_PAGINAS = 100;
+/**
+ * Páginas que una lectura pide como máximo. No es el final de la prueba: al
+ * agotarlo la lectura queda parcial con `siguientePagina` y la siguiente
+ * ejecución continúa ahí con otro tanto, sin volver a la 1.
+ */
+export const MAX_PAGINAS = 100;
 
 export function urlPrueba(season: number, competitionId: number): string {
   return `${FIE_API}/competition/${season}/${competitionId}`;
@@ -221,6 +225,15 @@ export type ParteRanking = {
   url: string;
   puestos: PuestoFie[];
   paginasLeidas: number;
+  /** Primera página pedida en esta lectura (>1 al continuar un checkpoint). */
+  paginaDesde: number;
+  /**
+   * Página por la que seguir: la siguiente al tope por lectura, o la que
+   * falló para reintentarla. `null` si la lectura terminó o no se puede
+   * continuar (total cambiado, página sin puestos nuevos).
+   */
+  siguientePagina: number | null;
+  tamanoPagina: number;
   cobertura: CoberturaParte;
 };
 
@@ -591,36 +604,55 @@ function mensajeDeError(e: unknown): string {
   return msg.slice(0, 300);
 }
 
+export type OpcionesRanking = {
+  /** Página por la que seguir (checkpoint). Por defecto, la primera. */
+  desdePagina?: number;
+  /** Tope de páginas de ESTA lectura; agotarlo deja la lectura parcial, no cerrada. */
+  maxPaginas?: number;
+};
+
 /**
  * Pagina hasta el total publicado. Si una página posterior falla, o el total
  * no se alcanza, se conserva lo leído como cobertura PARCIAL: nunca se pasa por
  * completo ni se descartan los puestos ya publicados.
+ *
+ * `siguientePagina` es el checkpoint: la que falló (se reintenta ella, no se
+ * vuelve a la 1) o la siguiente al tope de la lectura (100 → 101). Una lectura
+ * con `desdePagina > 1` sólo trae sus páginas: los totales acumulados y
+ * deduplicados los calcula quien persiste, contando lo ya guardado.
  */
 export async function leerRanking(
   season: number,
   competitionId: number,
   deps: DepsLecturaFie = depsReales,
+  opciones: OpcionesRanking = {},
 ): Promise<ParteRanking> {
   const url = urlRanking(season, competitionId);
+  const desde = Math.max(1, Math.trunc(opciones.desdePagina ?? 1));
+  const maxPaginas = Math.max(1, Math.trunc(opciones.maxPaginas ?? MAX_PAGINAS));
   const porId = new Map<number, PuestoFie>();
   let total: number | null = null;
   let paginas = 0;
   let errorTardio: string | null = null;
+  let siguiente: number | null = null;
 
-  for (let pagina = 1; pagina <= MAX_PAGINAS; pagina += 1) {
+  for (let pagina = desde; pagina < desde + maxPaginas; pagina += 1) {
     let cuerpo: unknown;
     try {
       cuerpo = await deps.fetchJson(urlRanking(season, competitionId, pagina));
     } catch (e) {
       errorTardio = mensajeDeError(e);
+      siguiente = pagina;
       break;
     }
     const n = normalizarPaginaRanking(cuerpo);
     if (!n.ok) {
       errorTardio = `La página ${pagina} del ranking no tiene la forma esperada`;
+      siguiente = pagina;
       break;
     }
     if (total !== null && n.total !== total) {
+      // Si el listado se movió, lo ya leído no es de la misma versión: no se continúa.
       errorTardio = `El total publicado cambió durante la lectura (${total} → ${n.total})`;
       total = n.total;
     } else {
@@ -630,8 +662,16 @@ export async function leerRanking(
     const antes = porId.size;
     for (const p of n.puestos) if (!porId.has(p.fieId)) porId.set(p.fieId, p);
     if (errorTardio !== null) break;
-    if (porId.size >= n.total || n.puestos.length === 0 || porId.size === antes) break;
-    if (pagina === MAX_PAGINAS) errorTardio = `Se alcanzó el tope de ${MAX_PAGINAS} páginas`;
+    if (n.puestos.length === 0 || pagina * TAMANO_PAGINA_RANKING >= n.total) break;
+    if (porId.size >= n.total && desde === 1) break;
+    if (porId.size === antes) {
+      errorTardio = `La página ${pagina} no aporta puestos nuevos: no se puede continuar`;
+      break;
+    }
+    if (pagina === desde + maxPaginas - 1) {
+      siguiente = pagina + 1;
+      errorTardio = `Se alcanzó el tope de ${maxPaginas} páginas por lectura; continúa en la ${siguiente}`;
+    }
   }
 
   const puestos = [...porId.values()];
@@ -639,6 +679,9 @@ export async function leerRanking(
     url,
     puestos,
     paginasLeidas: paginas,
+    paginaDesde: desde,
+    siguientePagina: siguiente,
+    tamanoPagina: TAMANO_PAGINA_RANKING,
     cobertura: coberturaDeRanking(total, puestos.length, errorTardio),
   };
 }
@@ -667,10 +710,19 @@ async function leerAsaltos(
   return { url, ...n.parte };
 }
 
+export type OpcionesLecturaPrueba = OpcionesRanking & {
+  /**
+   * Al continuar un ranking paginado, poules y cuadro (documentos únicos, no
+   * paginados) ya se leyeron en la primera lectura: no se piden otra vez.
+   */
+  omitirAsaltos?: boolean;
+};
+
 export async function leerPruebaFie(
   season: number,
   competitionId: number,
   deps: DepsLecturaFie = depsReales,
+  opciones: OpcionesLecturaPrueba = {},
 ): Promise<LecturaPruebaFie> {
   const vacia = (errorPrueba: string): LecturaPruebaFie => ({
     season,
@@ -692,8 +744,8 @@ export async function leerPruebaFie(
   if ('error' in n) return vacia(n.error);
   const individual = n.prueba.formato === 'INDIVIDUAL';
 
-  const ranking = await leerRanking(season, competitionId, deps);
-  if (!individual) {
+  const ranking = await leerRanking(season, competitionId, deps, opciones);
+  if (!individual || opciones.omitirAsaltos) {
     return {
       season,
       competitionId,

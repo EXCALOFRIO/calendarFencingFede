@@ -24,6 +24,7 @@
     "rfee-pdf": "tsx scripts/rfee-pdf.ts",
     "inventario-historico": "tsx scripts/inventario-historico.ts",
     "skermo-finales": "tsx scripts/skermo-finales.ts",
+    "backfill": "tsx scripts/backfill.ts",
     "ranking-oficial": "tsx scripts/ranking-oficial.ts",
     "test": "vitest run",
     "test:watch": "vitest",
