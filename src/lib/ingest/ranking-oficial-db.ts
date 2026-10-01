@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { and, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
+import type { BatchItem } from 'drizzle-orm/batch';
 import type { Db } from '@/db';
 import {
   officialRankingEntry,
@@ -20,10 +22,13 @@ import type { PublicacionRanking } from './sources/ranking-oficial-historico';
 /**
  * Implementación Neon de la persistencia de rankings oficiales por temporada.
  *
- * El driver HTTP no ofrece transacciones interactivas, así que una publicación
- * nueva se escribe en dos pasos (cabecera, entradas) y, si el segundo falla,
- * se borra la cabecera recién creada (las entradas caen en cascada) antes de
- * propagar el error: nunca queda una lista a medias como «la última».
+ * El driver HTTP no ofrece transacciones interactivas, pero `db.batch` envía
+ * todas las sentencias en una única transacción no interactiva. Una publicación
+ * nueva (cabecera + todas las entradas) o la corrección de la de un mismo día
+ * (cabecera + entradas + retirada de las que ya no están) se confirma o se
+ * revierte entera: un fallo no deja una cabecera vacía ni una lista mezclada.
+ * El identificador de la publicación se decide antes de construir el lote, así
+ * que ninguna sentencia depende del resultado de otra.
  */
 
 const LOTE = 500;
@@ -33,6 +38,8 @@ function lotes<T>(items: readonly T[]): T[][] {
   for (let i = 0; i < items.length; i += LOTE) salida.push(items.slice(i, i + LOTE));
   return salida;
 }
+
+type Lote = [BatchItem<'pg'>, ...BatchItem<'pg'>[]];
 
 const claveLista = (p: PublicacionRanking) =>
   and(
@@ -44,10 +51,92 @@ const claveLista = (p: PublicacionRanking) =>
     eq(sportRankingPublication.format, p.formato),
   );
 
+function valoresEntradas(publicationId: string, filas: readonly FilaEntradaRanking[]) {
+  return lotes(filas).map((lote) =>
+    lote.map((f) => ({
+      publicationId,
+      sourceRef: f.sourceRef,
+      personId: f.personId,
+      sourceName: f.sourceName,
+      countryCode: f.countryCode,
+      position: f.position,
+      points: f.points,
+    })),
+  );
+}
+
+/** Publicación nueva: cabecera y todas las entradas, en este orden, en una transacción. */
+function lotePublicacionNueva(
+  db: Db,
+  id: string,
+  p: PublicacionRanking,
+  filas: readonly FilaEntradaRanking[],
+): Lote {
+  return [
+    db.insert(sportRankingPublication).values({
+      id,
+      source: p.fuente,
+      season: p.season,
+      weapon: p.arma,
+      gender: p.genero,
+      category: p.categoria,
+      categoryRaw: p.categoriaOriginal,
+      format: p.formato,
+      publishedOn: p.publicadoEl,
+      sourceUrl: p.url,
+      publishedTotal: p.total,
+    }),
+    ...valoresEntradas(id, filas).map((valores) => db.insert(sportRankingEntry).values(valores)),
+  ];
+}
+
+/**
+ * Corrección del mismo día: cabecera, entradas de la nueva lista y retirada de
+ * las que ya no figuran, sólo de esta publicación, en una transacción.
+ */
+function loteCorreccion(
+  db: Db,
+  id: string,
+  p: PublicacionRanking,
+  filas: readonly FilaEntradaRanking[],
+): Lote {
+  return [
+    db
+      .update(sportRankingPublication)
+      .set({ publishedTotal: p.total, sourceUrl: p.url, fetchedAt: sql`now()` })
+      .where(eq(sportRankingPublication.id, id)),
+    ...valoresEntradas(id, filas).map((valores) =>
+      db
+        .insert(sportRankingEntry)
+        .values(valores)
+        .onConflictDoUpdate({
+          target: [sportRankingEntry.publicationId, sportRankingEntry.sourceRef],
+          set: {
+            personId: sql`coalesce(excluded.person_id, ${sportRankingEntry.personId})`,
+            sourceName: sql`excluded.source_name`,
+            countryCode: sql`excluded.country_code`,
+            position: sql`excluded.position`,
+            points: sql`excluded.points`,
+          },
+        }),
+    ),
+    db.delete(sportRankingEntry).where(
+      and(
+        eq(sportRankingEntry.publicationId, id),
+        notInArray(
+          sportRankingEntry.sourceRef,
+          filas.map((f) => f.sourceRef),
+        ),
+      ),
+    ),
+  ];
+}
+
 export async function escribirPublicacion(
   db: Db,
   p: PublicacionRanking,
   filas: FilaEntradaRanking[],
+  nuevoId: string = randomUUID(),
 ): Promise<ResultadoEscrituraRanking> {
   const [ultima] = await db
     .select({ id: sportRankingPublication.id, publishedOn: sportRankingPublication.publishedOn })
@@ -72,99 +161,38 @@ export async function escribirPublicacion(
     if (mismaLista(guardadas, filas)) {
       // Misma lista que la última de esta temporada: no hay publicación nueva.
       // Sólo se incorpora una persona que antes no estaba confirmada.
-      const conPersona = filas.filter((f) => f.personId !== null);
+      const incorporaciones = filas
+        .filter((f) => f.personId !== null)
+        .map((f) =>
+          db
+            .update(sportRankingEntry)
+            .set({ personId: f.personId })
+            .where(
+              and(
+                eq(sportRankingEntry.publicationId, ultima.id),
+                eq(sportRankingEntry.sourceRef, f.sourceRef),
+                isNull(sportRankingEntry.personId),
+              ),
+            )
+            .returning({ id: sportRankingEntry.id }),
+        );
       let incorporadas = 0;
-      for (const f of conPersona) {
-        const r = await db
-          .update(sportRankingEntry)
-          .set({ personId: f.personId })
-          .where(
-            and(
-              eq(sportRankingEntry.publicationId, ultima.id),
-              eq(sportRankingEntry.sourceRef, f.sourceRef),
-              isNull(sportRankingEntry.personId),
-            ),
-          )
-          .returning({ id: sportRankingEntry.id });
-        incorporadas += r.length;
+      if (incorporaciones.length > 0) {
+        const [primera, ...resto] = incorporaciones;
+        const resultados = await db.batch([primera, ...resto]);
+        incorporadas = resultados.reduce((suma, r) => suma + r.length, 0);
       }
       return { estado: 'sin_cambios', publicationId: ultima.id, personasIncorporadas: incorporadas };
     }
 
     if (ultima.publishedOn === p.publicadoEl) {
-      // Corrección el mismo día: la lista de ese día se sustituye, sin tocar
-      // las de otros días.
-      await db
-        .update(sportRankingPublication)
-        .set({ publishedTotal: p.total, sourceUrl: p.url, fetchedAt: sql`now()` })
-        .where(eq(sportRankingPublication.id, ultima.id));
-      await escribirEntradas(db, ultima.id, filas);
-      await db
-        .delete(sportRankingEntry)
-        .where(
-          and(
-            eq(sportRankingEntry.publicationId, ultima.id),
-            notInArray(
-              sportRankingEntry.sourceRef,
-              filas.map((f) => f.sourceRef),
-            ),
-          ),
-        );
+      await db.batch(loteCorreccion(db, ultima.id, p, filas));
       return { estado: 'creada', publicationId: ultima.id, personasIncorporadas: 0 };
     }
   }
 
-  const [nueva] = await db
-    .insert(sportRankingPublication)
-    .values({
-      source: p.fuente,
-      season: p.season,
-      weapon: p.arma,
-      gender: p.genero,
-      category: p.categoria,
-      categoryRaw: p.categoriaOriginal,
-      format: p.formato,
-      publishedOn: p.publicadoEl,
-      sourceUrl: p.url,
-      publishedTotal: p.total,
-    })
-    .returning({ id: sportRankingPublication.id });
-
-  try {
-    await escribirEntradas(db, nueva.id, filas);
-  } catch (error) {
-    await db.delete(sportRankingPublication).where(eq(sportRankingPublication.id, nueva.id));
-    throw error;
-  }
-  return { estado: 'creada', publicationId: nueva.id, personasIncorporadas: 0 };
-}
-
-async function escribirEntradas(db: Db, publicationId: string, filas: FilaEntradaRanking[]) {
-  for (const lote of lotes(filas)) {
-    await db
-      .insert(sportRankingEntry)
-      .values(
-        lote.map((f) => ({
-          publicationId,
-          sourceRef: f.sourceRef,
-          personId: f.personId,
-          sourceName: f.sourceName,
-          countryCode: f.countryCode,
-          position: f.position,
-          points: f.points,
-        })),
-      )
-      .onConflictDoUpdate({
-        target: [sportRankingEntry.publicationId, sportRankingEntry.sourceRef],
-        set: {
-          personId: sql`coalesce(excluded.person_id, ${sportRankingEntry.personId})`,
-          sourceName: sql`excluded.source_name`,
-          countryCode: sql`excluded.country_code`,
-          position: sql`excluded.position`,
-          points: sql`excluded.points`,
-        },
-      });
-  }
+  await db.batch(lotePublicacionNueva(db, nuevoId, p, filas));
+  return { estado: 'creada', publicationId: nuevoId, personasIncorporadas: 0 };
 }
 
 /**
