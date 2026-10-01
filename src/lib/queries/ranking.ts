@@ -24,6 +24,7 @@ import {
   loadRankingRules,
   pickRule,
 } from '../ranking/compute';
+import { puedeVerInterno } from '../ranking/acceso-interno';
 import { fieFichaPublicaUrl, fotoFieAncho } from '../ingest/sources/fie-tiradores';
 import { titular, yearFromIsoDate } from '../utils';
 
@@ -157,53 +158,61 @@ async function lastTwoComputedAt(seasonId: string): Promise<(Date | null)[]> {
  * completa de armas y categorías: ofrecer "Sable M9 femenino" para que al
  * tocarlo salga vacío es una promesa incumplida en cada toque.
  */
-export const listRankingGroups = cache(
-  async (): Promise<(RankingGroupKey & { athletes: number })[]> => {
-    const season = await getRankingSeason();
-    if (!season) return [];
+export async function listRankingGroups(
+  armas: readonly Weapon[],
+): Promise<(RankingGroupKey & { athletes: number })[]> {
+  if (armas.length === 0) return [];
 
-    const [computedAt] = await lastTwoComputedAt(season.id);
-    if (!computedAt) return [];
+  const season = await getRankingSeason();
+  if (!season) return [];
 
-    const rows = await db
-      .select({
-        weapon: rankingSnapshotTable.weapon,
-        gender: rankingSnapshotTable.gender,
-        category: rankingSnapshotTable.category,
-        athletes: sql<number>`count(*)::int`,
-      })
-      .from(rankingSnapshotTable)
-      .where(
-        and(
-          eq(rankingSnapshotTable.seasonId, season.id),
-          eq(rankingSnapshotTable.computedAt, computedAt),
-        ),
-      )
-      .groupBy(
-        rankingSnapshotTable.weapon,
-        rankingSnapshotTable.gender,
-        rankingSnapshotTable.category,
-      )
-      .orderBy(
-        asc(rankingSnapshotTable.weapon),
-        asc(rankingSnapshotTable.category),
-        asc(rankingSnapshotTable.gender),
-      );
+  const [computedAt] = await lastTwoComputedAt(season.id);
+  if (!computedAt) return [];
 
-    return rows.map((r) => ({
-      weapon: r.weapon as Weapon,
-      gender: r.gender as Gender,
-      category: r.category as RankingCategory,
-      athletes: r.athletes,
-    }));
-  },
-);
+  const rows = await db
+    .select({
+      weapon: rankingSnapshotTable.weapon,
+      gender: rankingSnapshotTable.gender,
+      category: rankingSnapshotTable.category,
+      athletes: sql<number>`count(*)::int`,
+    })
+    .from(rankingSnapshotTable)
+    .where(
+      and(
+        eq(rankingSnapshotTable.seasonId, season.id),
+        eq(rankingSnapshotTable.computedAt, computedAt),
+        inArray(rankingSnapshotTable.weapon, [...armas]),
+      ),
+    )
+    .groupBy(
+      rankingSnapshotTable.weapon,
+      rankingSnapshotTable.gender,
+      rankingSnapshotTable.category,
+    )
+    .orderBy(
+      asc(rankingSnapshotTable.weapon),
+      asc(rankingSnapshotTable.category),
+      asc(rankingSnapshotTable.gender),
+    );
 
-/** La tabla de un arma/género/categoría, con el movimiento desde el cálculo anterior. */
+  return rows.map((r) => ({
+    weapon: r.weapon as Weapon,
+    gender: r.gender as Gender,
+    category: r.category as RankingCategory,
+    athletes: r.athletes,
+  }));
+}
+
+/**
+ * La tabla de un arma/género/categoría, con el movimiento desde el cálculo anterior.
+ *
+ * Como todas las consultas del ranking interno, recibe las armas autorizadas
+ * (`armasInternas`) y no lee nada si el arma pedida no está entre ellas.
+ */
 export async function getRankingTable(
+  armas: readonly Weapon[],
   group: RankingGroupKey,
 ): Promise<RankingTableView> {
-  const season = await getRankingSeason();
   const empty: RankingTableView = {
     group,
     rows: [],
@@ -211,6 +220,9 @@ export async function getRankingTable(
     previousComputedAt: null,
     rule: null,
   };
+  if (!puedeVerInterno(armas, group.weapon)) return empty;
+
+  const season = await getRankingSeason();
   if (!season) return empty;
 
   const [computedAt, previousComputedAt] = await lastTwoComputedAt(season.id);
@@ -326,9 +338,12 @@ export type AthleteBreakdown = {
  * dónde salen mis puntos?", sino "¿por qué no me cuenta aquella prueba?".
  */
 export async function getAthleteBreakdown(
+  armas: readonly Weapon[],
   athleteId: string,
   group: RankingGroupKey,
 ): Promise<AthleteBreakdown | null> {
+  if (!puedeVerInterno(armas, group.weapon)) return null;
+
   const season = await getRankingSeason();
   if (!season) return null;
 
@@ -392,7 +407,7 @@ export async function getAthleteBreakdown(
         ),
       )
       .orderBy(desc(rankingPointTable.finalPoints)),
-    getRankingTable(group),
+    getRankingTable(armas, group),
   ]);
 
   const entries = points
@@ -460,9 +475,12 @@ export type RankingHistoryPoint = {
  * dato y no con una impresión.
  */
 export async function getAthleteRankingHistory(
+  armas: readonly Weapon[],
   athleteId: string,
   group: RankingGroupKey,
 ): Promise<RankingHistoryPoint[]> {
+  if (!puedeVerInterno(armas, group.weapon)) return [];
+
   const season = await getRankingSeason();
   if (!season) return [];
 
@@ -524,8 +542,11 @@ export async function listUnmatchedResults(limit = 100) {
 
 /** Rankings en los que aparece un tirador concreto (puede estar en varios). */
 export async function listGroupsForAthlete(
+  armas: readonly Weapon[],
   athleteId: string,
 ): Promise<RankingGroupKey[]> {
+  if (armas.length === 0) return [];
+
   const season = await getRankingSeason();
   if (!season) return [];
 
@@ -544,6 +565,7 @@ export async function listGroupsForAthlete(
         eq(rankingSnapshotTable.seasonId, season.id),
         eq(rankingSnapshotTable.computedAt, computedAt),
         eq(rankingSnapshotTable.athleteId, athleteId),
+        inArray(rankingSnapshotTable.weapon, [...armas]),
       ),
     );
 
@@ -574,7 +596,6 @@ export function groupKey(group: RankingGroupKey): string {
 }
 
 export type RankingScreenData = {
-  status: Awaited<ReturnType<typeof getRankingStatus>>;
   groups: (RankingGroupKey & { athletes: number })[];
   /** Tabla por grupo, indexada por `groupKey`. */
   tables: Record<string, RankingTableView>;
@@ -593,19 +614,24 @@ export type RankingScreenData = {
  * la red. El volumen lo permite de sobra: un club son decenas de tiradores y
  * unos cientos de filas de puntos, no millones.
  */
-export async function getRankingScreenData(): Promise<RankingScreenData> {
-  const status = await getRankingStatus();
+export async function getRankingScreenData(
+  armas: readonly Weapon[],
+): Promise<RankingScreenData> {
   const empty: RankingScreenData = {
-    status,
     groups: [],
     tables: {},
     cutoffs: {},
     breakdowns: {},
   };
 
+  // Sin armas autorizadas no se consulta ni el estado: contar resultados y
+  // cálculos ya es metadato del ranking interno.
+  if (armas.length === 0) return empty;
+
+  const status = await getRankingStatus();
   if (!status.season || status.snapshotCount === 0) return empty;
 
-  const groups = await listRankingGroups();
+  const groups = await listRankingGroups(armas);
   if (groups.length === 0) return empty;
 
   const tables: Record<string, RankingTableView> = {};
@@ -613,7 +639,7 @@ export async function getRankingScreenData(): Promise<RankingScreenData> {
 
   for (const group of groups) {
     const key = groupKey(group);
-    const table = await getRankingTable(group);
+    const table = await getRankingTable(armas, group);
     tables[key] = table;
 
     cutoffs[key] = {};
@@ -661,7 +687,12 @@ export async function getRankingScreenData(): Promise<RankingScreenData> {
       eq(eventCompetitionTable.id, rankingPointTable.eventCompetitionId),
     )
     .innerJoin(eventTable, eq(eventTable.id, eventCompetitionTable.eventId))
-    .where(eq(rankingPointTable.seasonId, status.season.id))
+    .where(
+      and(
+        eq(rankingPointTable.seasonId, status.season.id),
+        inArray(eventCompetitionTable.weapon, [...armas]),
+      ),
+    )
     .orderBy(desc(rankingPointTable.finalPoints));
 
   const breakdowns: Record<string, BreakdownEntry[]> = {};
@@ -684,7 +715,7 @@ export async function getRankingScreenData(): Promise<RankingScreenData> {
     breakdowns[key] = list;
   }
 
-  return { status, groups, tables, cutoffs, breakdowns };
+  return { groups, tables, cutoffs, breakdowns };
 }
 
 // ------------------------------------ Ranking OFICIAL de la RFEE (Skermo) ---

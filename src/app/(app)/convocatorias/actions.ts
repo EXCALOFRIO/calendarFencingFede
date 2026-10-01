@@ -1,6 +1,7 @@
 'use server';
 
 import { requireRole } from '@/lib/auth/session';
+import { armasInternas } from '@/lib/ranking/acceso-interno';
 import {
   type AthletePicker,
   type RankingPrueba,
@@ -41,8 +42,11 @@ export async function cargarRankingDelEvento(
   eventId: string,
 ): Promise<Cargado<{ pruebas: RankingPrueba[]; seasonLabel: string | null }>> {
   try {
-    await requireRole('admin');
-    return { ok: true, datos: await getRankingParaEvento(eventId) };
+    const perfil = await requireRole('admin');
+    return {
+      ok: true,
+      datos: await getRankingParaEvento(armasInternas(perfil), eventId),
+    };
   } catch (e) {
     return fallo(e);
   }

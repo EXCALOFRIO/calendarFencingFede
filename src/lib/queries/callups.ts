@@ -11,6 +11,7 @@ import {
   rankingSnapshot,
   userProfile,
 } from '@/db/schema';
+import type { Weapon } from '@/lib/auth/session';
 import { getCurrentSeason } from './calendar';
 import {
   competitionLabel,
@@ -360,7 +361,10 @@ export async function listEventosConvocables(): Promise<EventoConvocable[]> {
  * `null` en vez de una lista inventada: la pantalla lo dice con todas las
  * letras ("falta calcular el ranking") y el seleccionador elige a mano.
  */
-export async function getRankingParaEvento(eventId: string): Promise<{
+export async function getRankingParaEvento(
+  armas: readonly Weapon[],
+  eventId: string,
+): Promise<{
   pruebas: RankingPrueba[];
   seasonLabel: string | null;
 }> {
@@ -378,7 +382,8 @@ export async function getRankingParaEvento(eventId: string): Promise<{
     .where(eq(eventCompetition.eventId, eventId))
     .orderBy(asc(eventCompetition.weapon), asc(eventCompetition.category));
 
-  if (!temporada || pruebas.length === 0) {
+  // Sin armas autorizadas ni se leen candidatos ni reglas: solo la lista de pruebas.
+  if (!temporada || pruebas.length === 0 || armas.length === 0) {
     return {
       seasonLabel: temporada?.label ?? null,
       pruebas: pruebas.map((p) => ({
@@ -411,7 +416,12 @@ export async function getRankingParaEvento(eventId: string): Promise<{
       .from(rankingSnapshot)
       .innerJoin(athlete, eq(rankingSnapshot.athleteId, athlete.id))
       .leftJoin(club, eq(athlete.clubId, club.id))
-      .where(eq(rankingSnapshot.seasonId, temporada.id))
+      .where(
+        and(
+          eq(rankingSnapshot.seasonId, temporada.id),
+          inArray(rankingSnapshot.weapon, [...armas]),
+        ),
+      )
       .orderBy(asc(rankingSnapshot.position)),
     db
       .select()

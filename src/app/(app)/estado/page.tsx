@@ -6,6 +6,7 @@ import { requireProfile } from '@/lib/auth/session';
 import { responderConvocatoria } from '@/lib/callups/actions';
 import { getCurrentSeason } from '@/lib/queries/calendar';
 import { getMyStatus } from '@/lib/queries/my-status';
+import { armasInternas } from '@/lib/ranking/acceso-interno';
 import { contarRankingOficial, getPuestosOficiales } from '@/lib/queries/ranking';
 import {
   getCortesOficiales,
@@ -42,9 +43,12 @@ export default async function Pagina() {
   }
 
   const ids = estado.athletes.map((a) => a.id);
+  // El cálculo interno solo lo ve admin o el coach del arma; un tirador ve
+  // únicamente lo oficial, también de sus propias fichas.
+  const armas = armasInternas(perfil);
   const [internos, oficiales, cortes, puntosPorPrueba, pruebas] =
     await Promise.all([
-      getPuestosDeTemporada(ids),
+      getPuestosDeTemporada(armas, ids),
       /*
         El ranking OFICIAL de la RFEE, que es distinto del cálculo interno y es
         el que la gente reconoce. Faltaba: un 3.º de España con 1.387,77 puntos
@@ -59,7 +63,7 @@ export default async function Pagina() {
         y la misma normativa que la pantalla de ranking.
       */
       getCortesOficiales(ids),
-      getPuntosPorPrueba(ids),
+      getPuntosPorPrueba(armas, ids),
       /*
         Las dos primeras preguntas en una sola consulta: en qué pruebas figura
         en la LISTA OFICIAL —incluso si le inscribió otro— y cuánto queda de

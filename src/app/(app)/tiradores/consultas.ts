@@ -40,7 +40,11 @@ export type PuestoRanking = {
  * Solo la foto más reciente: enseñar a la vez el puesto de hoy y el de hace
  * dos meses en la misma columna no aclara nada.
  */
-export async function puestosDeRanking(): Promise<Map<string, PuestoRanking[]>> {
+export async function puestosDeRanking(
+  armas: readonly Weapon[],
+): Promise<Map<string, PuestoRanking[]>> {
+  if (armas.length === 0) return new Map();
+
   const [ultimo] = await db
     .select({ computedAt: rankingSnapshot.computedAt })
     .from(rankingSnapshot)
@@ -59,7 +63,12 @@ export async function puestosDeRanking(): Promise<Map<string, PuestoRanking[]>> 
       totalPoints: rankingSnapshot.totalPoints,
     })
     .from(rankingSnapshot)
-    .where(eq(rankingSnapshot.computedAt, ultimo.computedAt));
+    .where(
+      and(
+        eq(rankingSnapshot.computedAt, ultimo.computedAt),
+        inArray(rankingSnapshot.weapon, [...armas]),
+      ),
+    );
 
   const mapa = new Map<string, PuestoRanking[]>();
   for (const f of filas) {

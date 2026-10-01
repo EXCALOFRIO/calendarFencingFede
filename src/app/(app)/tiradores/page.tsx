@@ -4,6 +4,7 @@ import { PanelTiradores } from '@/components/tiradores/panel-tiradores';
 import type { TiradorVista } from '@/components/tiradores/tipos';
 import { getCurrentSeason } from '@/lib/queries/calendar';
 import { getAthleteOverview } from '@/lib/queries/coach';
+import { armasInternas } from '@/lib/ranking/acceso-interno';
 import { WEAPON_LABEL } from '@/lib/utils';
 import { puestosDeRanking, solicitudesEnClub } from './consultas';
 
@@ -39,7 +40,7 @@ export default async function Pagina() {
   const temporada = await getCurrentSeason();
   const [tiradores, ranking] = await Promise.all([
     getAthleteOverview([], temporada?.categories ?? []),
-    puestosDeRanking(),
+    puestosDeRanking(armasInternas(acceso.perfil)),
   ]);
 
   const enClub = await solicitudesEnClub(tiradores.map((t) => t.id));

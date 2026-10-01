@@ -1,9 +1,7 @@
-import { IdCard, TriangleAlert } from 'lucide-react';
+import { IdCard } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ladoMundial, ladoNacional } from '@/components/ranking/armar-ficha';
-import { SinRanking } from '@/components/ranking/sin-ranking';
-import { TablaRanking } from '@/components/ranking/tabla-ranking';
 import { PanelRanking } from '@/components/ranking/panel-ranking';
 import { TablaRankingOficial } from '@/components/ranking/tabla-oficial';
 import {
@@ -21,8 +19,8 @@ import {
   getRankingOficialScreenData,
   getRankingScreenData,
   groupKey,
-  listGroupsForAthlete,
 } from '@/lib/queries/ranking';
+import { armasInternas } from '@/lib/ranking/acceso-interno';
 import { yearFromIsoDate } from '@/lib/utils';
 import { cargarClasificacionFie, paisesFie } from './consultas';
 
@@ -56,9 +54,17 @@ export default async function Pagina() {
   const perfil = await getSessionProfile();
   if (!perfil) redirect('/entrar');
 
+  /**
+   * El cálculo interno se autoriza ANTES de leerlo: sin permiso no se consulta
+   * ni se serializa nada de `ranking_snapshot` / `ranking_point`, ni cifras,
+   * ni desgloses, ni cortes, ni contadores de estado. Que la pantalla oculte
+   * un botón no cuenta: lo que viaja en el HTML y en el RSC es lo que se filtra.
+   */
+  const armas = armasInternas(perfil);
+
   const [oficial, interno, atletas] = await Promise.all([
     getRankingOficialScreenData(),
-    getRankingScreenData(),
+    getRankingScreenData(armas),
     getManagedAthletes(perfil.profileId),
   ]);
 
@@ -88,7 +94,6 @@ export default async function Pagina() {
     /** En qué prueba del mundial está cada tirador de esta cuenta. */
     gruposDeMisTiradoresFie(mios),
   ]);
-  const esAdmin = perfil.role === 'admin';
   const esPersonal = perfil.role === 'athlete';
   const sinFicha = atletas.length === 0;
 
@@ -295,63 +300,24 @@ export default async function Pagina() {
     );
   }
 
-  const contexto = interno.status.season
-    ? `Temporada ${interno.status.season.label}`
-    : 'Sin temporada en curso';
-
-  if (interno.groups.length === 0) {
-    return (
-      <>
-        <Cabecera contexto={contexto} />
-        <SinRanking estado={interno.status} esAdmin={esAdmin} />
-      </>
-    );
-  }
-
-  const suyos = mios.length > 0 ? await listGroupsForAthlete(mios[0]) : [];
-  const grupoInicial =
-    suyos.map(groupKey).find((k) => interno.tables[k]) ??
-    groupKey(interno.groups[0]);
-
+  /**
+   * Sin clasificación oficial publicada NO se cae al cálculo interno: sería
+   * enseñar a cualquier cuenta un ranking privado como si fuera el de la
+   * federación. Se dice que no hay clasificación y nada más.
+   */
   return (
     <>
-      <Cabecera contexto={`${contexto}, cálculo de la aplicación`} />
-
-      {interno.status.resultsUnmatched > 0 ? (
-        <p className="mb-4 flex items-start gap-2 text-xs text-warn">
-          <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
-          <span className="medida">
-            Tabla incompleta:{' '}
-            <span className="cifra text-sm">{interno.status.resultsUnmatched}</span>{' '}
-            resultados sin asignar a un tirador.
-            {esAdmin ? (
-              <>
-                {' '}
-                <Link
-                  href="/admin/emparejar"
-                  className="underline underline-offset-2"
-                >
-                  Emparejarlos
-                </Link>
-                .
-              </>
-            ) : null}
-          </span>
+      <Cabecera contexto="Sin clasificación oficial publicada" />
+      <div className="flex max-w-2xl flex-col items-start gap-3 rounded-lg border border-dashed px-4 py-10">
+        <h2 className="text-xl">Todavía no hay clasificación oficial</h2>
+        <p className="medida text-sm text-muted-foreground">
+          La clasificación de la RFEE de esta temporada aún no se ha leído de la
+          fuente oficial. En cuanto se publique y se lea, aparecerá aquí.
         </p>
-      ) : null}
-
-      <TablaRanking
-        grupos={interno.groups}
-        tablas={interno.tables}
-        cortes={interno.cutoffs}
-        desgloses={interno.breakdowns}
-        mios={mios}
-        grupoInicial={grupoInicial}
-      />
+      </div>
     </>
   );
 }
-
 /**
  * La ficha de cada tirador de la cuenta, encima de la tabla.
  *

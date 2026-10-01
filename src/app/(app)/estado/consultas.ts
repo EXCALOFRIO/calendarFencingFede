@@ -10,6 +10,7 @@ import {
   rankingSnapshot,
   season,
 } from '@/db/schema';
+import type { Weapon } from '@/lib/auth/session';
 import type { CategoryCode } from '@/lib/categories';
 import {
   type ComputedDeadline,
@@ -90,9 +91,10 @@ async function ultimosCalculos(seasonId: string): Promise<(Date | null)[]> {
  * aparezca (un M17 puede estar en el suyo y en el absoluto).
  */
 export async function getPuestosDeTemporada(
+  armas: readonly Weapon[],
   athleteIds: string[],
 ): Promise<PuestoTemporada[]> {
-  if (athleteIds.length === 0) return [];
+  if (athleteIds.length === 0 || armas.length === 0) return [];
 
   const [temporada] = await db
     .select({ id: season.id })
@@ -121,6 +123,7 @@ export async function getPuestosDeTemporada(
           eq(rankingSnapshot.seasonId, temporada.id),
           eq(rankingSnapshot.computedAt, ultimo),
           inArray(rankingSnapshot.athleteId, athleteIds),
+          inArray(rankingSnapshot.weapon, [...armas]),
         ),
       ),
     anterior
@@ -138,6 +141,7 @@ export async function getPuestosDeTemporada(
               eq(rankingSnapshot.seasonId, temporada.id),
               eq(rankingSnapshot.computedAt, anterior),
               inArray(rankingSnapshot.athleteId, athleteIds),
+              inArray(rankingSnapshot.weapon, [...armas]),
             ),
           )
       : Promise.resolve([]),
@@ -180,9 +184,10 @@ export async function getPuestosDeTemporada(
  * competición ya celebrada: qué puesto hizo y qué le dejó en el ranking.
  */
 export async function getPuntosPorPrueba(
+  armas: readonly Weapon[],
   athleteIds: string[],
 ): Promise<Record<string, PuntosDePrueba>> {
-  if (athleteIds.length === 0) return {};
+  if (athleteIds.length === 0 || armas.length === 0) return {};
 
   const filas = await db
     .select({
@@ -194,7 +199,16 @@ export async function getPuntosPorPrueba(
       explanation: rankingPoint.explanation,
     })
     .from(rankingPoint)
-    .where(inArray(rankingPoint.athleteId, athleteIds));
+    .innerJoin(
+      eventCompetition,
+      eq(eventCompetition.id, rankingPoint.eventCompetitionId),
+    )
+    .where(
+      and(
+        inArray(rankingPoint.athleteId, athleteIds),
+        inArray(eventCompetition.weapon, [...armas]),
+      ),
+    );
 
   const salida: Record<string, PuntosDePrueba> = {};
   for (const f of filas) {
