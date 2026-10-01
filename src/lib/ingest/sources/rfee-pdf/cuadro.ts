@@ -100,6 +100,15 @@ export function leerCuadro(paginas: readonly PaginaAnalizada[], registro: readon
     }
     const marcadores = cuerpo.filter((i) => RE_SCORE.test(i.s));
 
+    // Cada encabezado rotula una columna; la última de un cuadro partido en páginas no avanza en ésta.
+    if (columnas.length === 1) {
+      rechazarPagina('Cuadro sin ninguna columna de ganadores: no hay cruce que resolver');
+      continue;
+    }
+    if (columnas.length < encabezados.length) {
+      rechazarPagina(`Cuadro con ${encabezados.length} rondas rotuladas y sólo ${columnas.length} columnas leídas`);
+    }
+
     for (let k = 0; k + 1 < columnas.length; k += 1) {
       const encabezado = encabezados[k];
       const ronda = encabezado ? claveRonda(encabezado.s) : null;
@@ -108,6 +117,7 @@ export function leerCuadro(paginas: readonly PaginaAnalizada[], registro: readon
         continue;
       }
       const entradas = columnas[k];
+      const cubiertas = new Set<Entrada>();
 
       for (const w of columnas[k + 1]) {
         const dist = entradas.map((e) => ({ e, d: Math.abs(e.y - w.y) }));
@@ -125,6 +135,7 @@ export function leerCuadro(paginas: readonly PaginaAnalizada[], registro: readon
           rechazarCruce('Ganador sin participantes en la columna anterior');
           continue;
         }
+        for (const x of cerca) cubiertas.add(x.e);
 
         // Sin pareja: avanza sin asalto, y no puede traer marcador.
         if (arriba.length + abajo.length === 1) {
@@ -182,6 +193,7 @@ export function leerCuadro(paginas: readonly PaginaAnalizada[], registro: readon
 
         if (!marcador) {
           excluidos.sinMarcador += 1;
+          rechazarCruce('Cruce con ganador pero sin marcador publicado');
           continue;
         }
         const m = marcador.s.match(RE_SCORE);
@@ -205,6 +217,18 @@ export function leerCuadro(paginas: readonly PaginaAnalizada[], registro: readon
           region: reg,
           ganador: { ref: ganador.atrib.ref, nombre: ganador.atrib.nombre, puntos: pg1 },
           perdedor: { ref: perdedor.atrib.ref, nombre: perdedor.atrib.nombre, puntos: pg2 },
+        });
+      }
+
+      // Una pareja cuyo ganador no figura en la columna siguiente no se puede resolver; los guiones de relleno no cuentan.
+      const huerfanas = entradas.filter((e) => !cubiertas.has(e) && !/^-+$/.test(e.texto.trim()));
+      if (huerfanas.length > 0) {
+        excluidos.sinGanador += Math.ceil(huerfanas.length / 2);
+        const ys = huerfanas.map((e) => e.y);
+        rechazos.push({
+          seccion: 'cuadro',
+          region: regionPar(pg.numero, Math.max(...ys), Math.min(...ys)),
+          motivo: `${huerfanas.length} participantes de ${ronda} sin ganador resoluble en la columna siguiente`,
         });
       }
     }

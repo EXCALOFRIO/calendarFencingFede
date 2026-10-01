@@ -365,25 +365,35 @@ describe('AcumuladorAsaltos', () => {
 });
 
 describe('fixtures reales minimizados (PDF públicos RFEE 2018-19, nombres cifrados)', () => {
-  it('espada masculina absoluta: 28 puestos, 84 asaltos de poule y 15 del cuadro, todo atribuido', () => {
+  it('espada masculina absoluta: 28 puestos y cuadro completo; las V sin número que los totales no determinan quedan en parcial', () => {
     const f = fixture('abs-individual-espada-2019.json');
     expect(f.fuente.url).toMatch(/^https:\/\/app\.skermo\.org\/client\/1\/[0-9a-f]{32}\.pdf$/);
     const l = leerResultadosPdf(f.paginas, { url: f.fuente.url, docId: 'abs' });
-    expect(l.estado).toBe('completo');
     const p = l.pruebas[0];
     expect(p).toMatchObject({ arma: 'ESPADA', genero: 'M', formato: 'INDIVIDUAL', categoria: 'ABS', fecha: '2019-06-08' });
     expect(p.puestos).toHaveLength(28);
     expect(p.cobertura.puestos).toMatchObject({ estado: 'completo', publicado: 28, importado: 28 });
-    expect(p.asaltos.filter((a) => a.fase === 'POULE')).toHaveLength(84);
+    expect(p.cobertura.cuadro).toMatchObject({ estado: 'completo', publicado: 15, importado: 15 });
+
+    // La página 3 publica cuatro poules cuyas V sin número no se determinan por los totales: no se completan con un valor común.
+    const poules = p.asaltos.filter((a) => a.fase === 'POULE');
+    expect(p.cobertura.poules).toMatchObject({ estado: 'parcial', publicado: 84, importado: poules.length });
+    expect(poules).toHaveLength(16);
+    expect(poules.filter((a) => a.marcador === 'derivado_de_totales')).toHaveLength(9);
+    expect(p.excluidos).toMatchObject({ sinMarcador: 68, identidadNoConfirmada: 0, incoherente: 0, conflicto: 0, sinGanador: 0 });
+    const sinTanteo = p.rechazos.filter((r) => r.seccion === 'poules');
+    expect(sinTanteo).toHaveLength(4);
+    expect(sinTanteo.every((r) => r.region?.pagina === 3 && /no determinan/.test(r.motivo))).toBe(true);
+    expect(p.rechazos).toHaveLength(4);
+    expect(p.estado).toBe('parcial');
+    expect(l.estado).toBe('parcial');
+
     expect(p.asaltos.filter((a) => a.fase === 'TABLEAU')).toHaveLength(15);
-    expect(p.excluidos).toMatchObject({ identidadNoConfirmada: 0, incoherente: 0, conflicto: 0, sinMarcador: 0 });
-    // Cada cruce publicado una sola vez y con un ganador que tiene más tocados.
     const claves = new Set(p.asaltos.map((a) => `${a.fase}|${a.ronda}|${a.refA}|${a.refB}`));
     expect(claves.size).toBe(p.asaltos.length);
     expect(p.asaltos.every((a) => a.puntosA !== a.puntosB && a.refA < a.refB)).toBe(true);
     expect(new Set(p.asaltos.filter((a) => a.fase === 'TABLEAU').map((a) => a.ronda))).toEqual(new Set(['A16', 'A8', 'A4', 'A2']));
   });
-
   it('florete por equipos: cuatro puestos y cero asaltos individuales aunque haya cuadro', () => {
     const f = fixture('abs-equipos-florete-2019.json');
     const l = leerResultadosPdf(f.paginas, { url: f.fuente.url, docId: 'eq' });

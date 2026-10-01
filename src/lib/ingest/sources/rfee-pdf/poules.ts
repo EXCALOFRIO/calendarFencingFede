@@ -16,8 +16,13 @@ import type { AsaltoPdf, ExclusionesPdf, Rechazo, Region } from './tipos';
  * Un asalto sólo sale si la matriz entera se sostiene sola: cada fila tiene
  * tantas celdas como rivales, `V/M` cuadra con las victorias leídas, los
  * tocados de cada fila suman su `TD` y `ind.` es `TD` menos los tocados
- * recibidos. Una `V` sin número vale lo que resuelvan esos totales (el mismo
- * valor en toda la poule); si no resuelven, la poule queda sin asaltos.
+ * recibidos.
+ *
+ * Una `V` sin número es una incógnita por celda, no un valor común a la
+ * poule: unos totales compatibles con un valor no demuestran que sea el
+ * único. Sólo se fija cuando la fila (`TD` menos lo conocido) o la columna
+ * (`TD − ind.` menos lo conocido) deja exactamente una incógnita; lo que
+ * queda sin determinar no recibe tanteo y se rechaza como parcial.
  */
 
 export type LecturaPoules = {
@@ -30,7 +35,7 @@ export type LecturaPoules = {
   publicado: number;
 };
 
-type Celda = { gana: boolean; puntos: number | null };
+type Celda = { gana: boolean; puntos: number | null; derivada: boolean };
 type FilaMatriz = {
   y: number;
   nombre: string;
@@ -84,13 +89,13 @@ function leerFila(f: Fila): FilaMatriz | string {
 }
 
 function aCelda(t: string): Celda {
-  if (t.startsWith('V')) return { gana: true, puntos: t.length > 1 ? Number(t.slice(1)) : null };
-  return { gana: false, puntos: Number(t) };
+  if (t.startsWith('V')) return { gana: true, puntos: t.length > 1 ? Number(t.slice(1)) : null, derivada: false };
+  return { gana: false, puntos: Number(t), derivada: false };
 }
 
-type Matriz = { celdas: Celda[][]; k: number | null };
+type Matriz = { celdas: Celda[][]; sinResolver: number };
 
-/** Valida la matriz y resuelve el valor de la `V` sin número. Devuelve el motivo si no se sostiene. */
+/** Valida la matriz y fija cada `V` sin número que los totales publicados determinan. Devuelve el motivo si no se sostiene. */
 function validarMatriz(filas: FilaMatriz[]): Matriz | string {
   const n = filas.length;
   const crudas: string[][] = [];
@@ -103,9 +108,10 @@ function validarMatriz(filas: FilaMatriz[]): Matriz | string {
   const celdas: Celda[][] = crudas.map((t, i) => {
     const fila: Celda[] = [];
     let c = 0;
-    for (let j = 0; j < n; j += 1) fila.push(j === i ? { gana: false, puntos: null } : aCelda(t[c++]));
+    for (let j = 0; j < n; j += 1) fila.push(j === i ? { gana: false, puntos: null, derivada: false } : aCelda(t[c++]));
     return fila;
   });
+  if (celdas.some((fila) => fila.some((c) => c.puntos !== null && !Number.isFinite(c.puntos)))) return 'Celda de matriz ilegible';
 
   for (let i = 0; i < n; i += 1) {
     const victorias = celdas[i].filter((c, j) => j !== i && c.gana).length;
@@ -115,38 +121,67 @@ function validarMatriz(filas: FilaMatriz[]): Matriz | string {
     }
   }
 
-  let k: number | null = null;
-  for (let i = 0; i < n; i += 1) {
-    const fila = celdas[i].filter((_, j) => j !== i);
-    const simples = fila.filter((c) => c.gana && c.puntos === null).length;
-    if (simples === 0) continue;
-    const conocidos = fila.reduce((s, c) => s + (c.puntos ?? 0), 0);
-    const ki = (filas[i].td - conocidos) / simples;
-    if (!Number.isInteger(ki) || ki < 1) return 'Los tocados de la fila no resuelven el valor de la victoria';
-    if (k !== null && ki !== k) return 'El valor de la victoria difiere entre filas de la poule';
-    k = ki;
+  const indices = Array.from({ length: n }, (_, i) => i);
+  const incognita = (i: number, j: number): boolean => i !== j && celdas[i][j].gana && celdas[i][j].puntos === null;
+  // El ganador necesita más tocados que el perdedor, cuya celda es siempre un número.
+  const minimo = (i: number, j: number): number => (celdas[j][i].puntos ?? 0) + 1;
+  const conocido = (celda: Celda): number => celda.puntos ?? 0;
+
+  const fijar = (i: number, j: number, valor: number): string | null => {
+    if (!Number.isInteger(valor) || valor < minimo(i, j)) return 'Los totales publicados dan a una victoria un tanteo imposible';
+    celdas[i][j] = { gana: true, puntos: valor, derivada: true };
+    return null;
+  };
+
+  // Eliminación conservadora: una fila o columna con una única incógnita la determina; nada más.
+  let avanza = true;
+  while (avanza) {
+    avanza = false;
+    for (const i of indices) {
+      const libres = indices.filter((j) => incognita(i, j));
+      if (libres.length !== 1) continue;
+      const dados = indices.reduce((s, j) => (j === i ? s : s + conocido(celdas[i][j])), 0);
+      const error = fijar(i, libres[0], filas[i].td - dados);
+      if (error) return error;
+      avanza = true;
+    }
+    for (const j of indices) {
+      const libres = indices.filter((i) => incognita(i, j));
+      if (libres.length !== 1) continue;
+      const recibidos = indices.reduce((s, i) => (i === j ? s : s + conocido(celdas[i][j])), 0);
+      const error = fijar(libres[0], j, filas[j].td - filas[j].ind - recibidos);
+      if (error) return error;
+      avanza = true;
+    }
   }
 
-  const valor = (c: Celda): number => c.puntos ?? k ?? 0;
-  for (let i = 0; i < n; i += 1) {
-    let dados = 0;
-    let recibidos = 0;
-    for (let j = 0; j < n; j += 1) {
-      if (j === i) continue;
-      dados += valor(celdas[i][j]);
-      recibidos += valor(celdas[j][i]);
+  let sinResolver = 0;
+  for (const i of indices) {
+    const enFila = indices.filter((j) => incognita(i, j));
+    const enColumna = indices.filter((j) => incognita(j, i));
+    sinResolver += enFila.length;
+    const dados = indices.reduce((s, j) => (j === i ? s : s + conocido(celdas[i][j])), 0);
+    const recibidos = indices.reduce((s, j) => (j === i ? s : s + conocido(celdas[j][i])), 0);
+    const restoDados = filas[i].td - dados;
+    const restoRecibidos = filas[i].td - filas[i].ind - recibidos;
+    if (enFila.length === 0 ? restoDados !== 0 : restoDados < enFila.reduce((s, j) => s + minimo(i, j), 0)) {
+      return 'Los tocados dados no suman el total TD de la fila';
     }
-    if (dados !== filas[i].td) return 'Los tocados dados no suman el total TD de la fila';
-    if (dados - recibidos !== filas[i].ind) return 'El índice no coincide con los tocados dados y recibidos';
+    if (enColumna.length === 0 ? restoRecibidos !== 0 : restoRecibidos < enColumna.reduce((s, j) => s + minimo(j, i), 0)) {
+      return 'El índice no coincide con los tocados dados y recibidos';
+    }
   }
   for (let i = 0; i < n; i += 1) {
     for (let j = i + 1; j < n; j += 1) {
       const a = celdas[i][j];
       const b = celdas[j][i];
-      if (a.gana !== b.gana && valor(a.gana ? a : b) <= valor(a.gana ? b : a)) return 'El ganador no tiene más tocados que el perdedor';
+      if (a.gana === b.gana) continue;
+      const ganadora = a.gana ? a : b;
+      const perdedora = a.gana ? b : a;
+      if (ganadora.puntos !== null && ganadora.puntos <= (perdedora.puntos ?? 0)) return 'El ganador no tiene más tocados que el perdedor';
     }
   }
-  return { celdas, k };
+  return { celdas, sinResolver };
 }
 
 export function leerPoules(paginas: readonly PaginaAnalizada[], registro: readonly Participante[]): LecturaPoules {
@@ -170,6 +205,14 @@ export function leerPoules(paginas: readonly PaginaAnalizada[], registro: readon
         vuelta = v ? Number(v[1]) : null;
         tituloVuelta = textoFila(f);
       }
+    }
+
+    if (indices.length === 0) {
+      rechazos.push({
+        seccion: 'poules',
+        region: { pagina: pg.numero, yMax: pg.alto, yMin: 0 },
+        motivo: 'Sección de poules sin ninguna poule reconocible: la página no se lee',
+      });
     }
 
     for (let b = 0; b < indices.length; b += 1) {
@@ -216,12 +259,20 @@ export function leerPoules(paginas: readonly PaginaAnalizada[], registro: readon
       const ronda = vuelta === 1 ? `P${numero}` : `V${vuelta}P${numero}`;
       const rondaOriginal = `${tituloVuelta} / ${textoFila(cabeza)}`;
       const n = filas.length;
+      let sinGanador = 0;
       for (let i = 0; i < n; i += 1) {
         for (let j = i + 1; j < n; j += 1) {
           const a = matriz.celdas[i][j];
           const c = matriz.celdas[j][i];
           if (a.gana === c.gana) {
             excluidos.sinGanador += 1;
+            sinGanador += 1;
+            continue;
+          }
+          const ganadora = a.gana ? a : c;
+          const perdedora = a.gana ? c : a;
+          if (ganadora.puntos === null || perdedora.puntos === null) {
+            excluidos.sinMarcador += 1;
             continue;
           }
           const vi = validas[i];
@@ -230,20 +281,22 @@ export function leerPoules(paginas: readonly PaginaAnalizada[], registro: readon
             excluidos.identidadNoConfirmada += 1;
             continue;
           }
-          const valor = (x: Celda): number => x.puntos ?? matriz.k ?? 0;
           const ganaI = a.gana;
-          const origen = (ganaI ? a : c).puntos === null ? 'derivado_de_totales' : 'explicito';
           acumulador.agregar({
             fase: 'POULE',
             ronda,
             rondaOriginal,
-            marcador: origen,
+            marcador: ganadora.derivada ? 'derivado_de_totales' : 'explicito',
             region: reg,
-            ganador: { ref: ganaI ? vi.ref : vj.ref, nombre: ganaI ? vi.nombre : vj.nombre, puntos: valor(ganaI ? a : c) },
-            perdedor: { ref: ganaI ? vj.ref : vi.ref, nombre: ganaI ? vj.nombre : vi.nombre, puntos: valor(ganaI ? c : a) },
+            ganador: { ref: ganaI ? vi.ref : vj.ref, nombre: ganaI ? vi.nombre : vj.nombre, puntos: ganadora.puntos },
+            perdedor: { ref: ganaI ? vj.ref : vi.ref, nombre: ganaI ? vj.nombre : vi.nombre, puntos: perdedora.puntos },
           });
         }
       }
+      if (matriz.sinResolver > 0) {
+        rechazar(`${matriz.sinResolver} victorias sin tanteo que los totales publicados no determinan: no se les atribuye ninguno`);
+      }
+      if (sinGanador > 0) rechazar(`${sinGanador} cruces sin ningún ganador marcado: no son un duelo con resultado`);
     }
   }
 

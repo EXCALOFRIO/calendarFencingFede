@@ -50,10 +50,14 @@ function coberturaAsaltos(
   hayPaginas: boolean,
 ): CoberturaPdf {
   if (!hayPaginas) return { estado: 'sin_resultados', publicado: null, importado: 0, motivo: 'El documento no publica estas páginas para la prueba' };
-  const dudosos = ex.incoherente + ex.identidadNoConfirmada + ex.conflicto + ex.sinMarcador;
+  const dudosos = ex.incoherente + ex.identidadNoConfirmada + ex.conflicto + ex.sinMarcador + ex.sinGanador;
   if (ex.conflicto > 0) return { estado: 'conflicto', publicado, importado, motivo: 'Un mismo asalto con marcadores distintos' };
   if (rechazos.length > 0 || dudosos > 0) {
     return { estado: 'parcial', publicado, importado, motivo: `${rechazos.length} regiones y ${dudosos} cruces sin atribuir con seguridad` };
+  }
+  // Una sección reconocida que no aporta ni un cruce, ni un BYE ni un duplicado no se da por leída.
+  if (importado === 0 && ex.bye === 0 && ex.duplicado === 0) {
+    return { estado: 'parcial', publicado, importado, motivo: 'Sección reconocida sin ningún cruce legible' };
   }
   return { estado: 'completo', publicado, importado, motivo: null };
 }

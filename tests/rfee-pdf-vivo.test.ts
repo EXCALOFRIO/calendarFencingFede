@@ -19,13 +19,15 @@ const URLS = {
 };
 
 describe.skipIf(!process.env.RFEE_PDF_VIVO)('lectura real de PDF públicos de la RFEE', () => {
-  it('espada absoluta: 28 puestos, 84 asaltos de poule y 15 de cuadro', async () => {
+  it('espada absoluta: 28 puestos y 15 de cuadro; sólo 16 de 84 duelos de poule tienen tanteo determinado', async () => {
     const l = await leerPdfRfee(URLS.espadaAbsoluta);
-    expect(l.estado).toBe('completo');
+    expect(l.estado).toBe('parcial');
     const p = l.pruebas[0];
     expect(p.puestos).toHaveLength(28);
-    expect(p.asaltos.filter((a) => a.fase === 'POULE')).toHaveLength(84);
+    expect(p.asaltos.filter((a) => a.fase === 'POULE')).toHaveLength(16);
     expect(p.asaltos.filter((a) => a.fase === 'TABLEAU')).toHaveLength(15);
+    expect(p.cobertura.poules).toMatchObject({ estado: 'parcial', publicado: 84, importado: 16 });
+    expect(p.cobertura.cuadro.estado).toBe('completo');
     expect(l.perfil?.paginas).toBe(8);
   }, 60_000);
 
@@ -43,13 +45,15 @@ describe.skipIf(!process.env.RFEE_PDF_VIVO)('lectura real de PDF públicos de la
     expect(new Set(l.pruebas.map((p) => p.categoria))).toEqual(new Set(['M10', 'M12', null]));
   }, 60_000);
 
-  it('torneo de 127 tiradoras: puestos, poules y cuadro completos con perfil acotado', async () => {
+  it('torneo de 127 tiradoras: puestos y cuadro completos, poules parciales por V sin tanteo determinable', async () => {
     const l = await leerPdfRfee(URLS.torneoGrande);
     const p = l.pruebas[0];
     expect(p.puestos).toHaveLength(127);
-    expect(p.asaltos.filter((a) => a.fase === 'POULE')).toHaveLength(363);
+    expect(p.cobertura.poules.estado).toBe('parcial');
+    expect(p.cobertura.poules.publicado).toBe(363);
+    expect(p.asaltos.filter((a) => a.fase === 'POULE').length).toBeLessThan(363);
     expect(p.asaltos.filter((a) => a.fase === 'TABLEAU')).toHaveLength(81);
+    expect(p.cobertura.cuadro.estado).toBe('completo');
     expect(l.perfil?.bytes).toBeLessThan(1_000_000);
     expect(l.perfil?.ms).toBeLessThan(20_000);
-  }, 60_000);
-});
+  }, 60_000);});
