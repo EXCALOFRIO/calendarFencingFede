@@ -40,6 +40,103 @@ function resumir(total: number, devueltas: { insertado: boolean }[]): ResumenEsc
   return { nuevos, revisados: devueltas.length - nuevos, sinCambios: total - devueltas.length };
 }
 
+/** Puestos por clave natural; compartido por todos los adaptadores de resultados. */
+export async function escribirResultados(
+  db: Db,
+  source: string,
+  competitionId: string,
+  filas: FilaResultado[],
+): Promise<ResumenEscritura> {
+  const devueltas: { insertado: boolean }[] = [];
+  for (const lote of lotes(filas)) {
+    const r = await db
+      .insert(sportResult)
+      .values(lote.map((f) => ({ ...f, competitionId, source })))
+      .onConflictDoUpdate({
+        target: [sportResult.competitionId, sportResult.source, sportResult.sourceFactKey],
+        set: {
+          personId: sql`coalesce(excluded.person_id, ${sportResult.personId})`,
+          sourceName: sql`excluded.source_name`,
+          sourceCountryCode: sql`excluded.source_country_code`,
+          sourceClub: sql`excluded.source_club`,
+          position: sql`excluded.position`,
+          positionRaw: sql`excluded.position_raw`,
+          officialPoints: sql`excluded.official_points`,
+          occurredOn: sql`excluded.occurred_on`,
+          sourceUrl: sql`excluded.source_url`,
+          revision: sql`CASE WHEN ${sportResult.contentHash} <> excluded.content_hash THEN ${sportResult.revision} + 1 ELSE ${sportResult.revision} END`,
+          revisedAt: sql`CASE WHEN ${sportResult.contentHash} <> excluded.content_hash THEN now() ELSE ${sportResult.revisedAt} END`,
+          contentHash: sql`excluded.content_hash`,
+        },
+        setWhere: sql`${sportResult.contentHash} <> excluded.content_hash OR (${sportResult.personId} IS NULL AND excluded.person_id IS NOT NULL)`,
+      })
+      .returning({ insertado: sql<boolean>`(xmax = 0)` });
+    devueltas.push(...r);
+  }
+  return resumir(filas.length, devueltas);
+}
+
+export type FilaCoberturaGenerica = {
+  season: string;
+  factKind: string;
+  competitionKey: string;
+  competitionId: string | null;
+  status: 'pendiente' | 'completo' | 'parcial' | 'sin_resultados' | 'error' | 'conflicto';
+  /** `undefined` = no tocar la cifra anterior (lectura fallida). */
+  publishedTotal?: number | null;
+  importedTotal?: number;
+  sourceUrl: string;
+  lastError: string | null;
+};
+
+/** Cobertura por fuente/temporada/tipo/prueba; una lectura fallida no pisa las cifras. */
+export async function escribirCobertura(
+  db: Db,
+  source: string,
+  f: FilaCoberturaGenerica,
+): Promise<void> {
+  const conservarCifras = f.publishedTotal === undefined;
+  await db
+    .insert(sportImportCoverage)
+    .values({
+      source,
+      season: f.season,
+      factKind: f.factKind,
+      competitionKey: f.competitionKey,
+      competitionId: f.competitionId,
+      status: f.status,
+      publishedTotal: f.publishedTotal ?? null,
+      importedTotal: f.importedTotal ?? 0,
+      attempts: 1,
+      sourceUrl: f.sourceUrl,
+      lastCheckedAt: sql`now()`,
+      lastError: f.lastError,
+    })
+    .onConflictDoUpdate({
+      target: [
+        sportImportCoverage.source,
+        sportImportCoverage.season,
+        sportImportCoverage.factKind,
+        sportImportCoverage.competitionKey,
+      ],
+      set: {
+        competitionId: sql`coalesce(excluded.competition_id, ${sportImportCoverage.competitionId})`,
+        status: sql`excluded.status`,
+        ...(conservarCifras
+          ? {}
+          : {
+              publishedTotal: sql`excluded.published_total`,
+              importedTotal: sql`excluded.imported_total`,
+            }),
+        attempts: sql`${sportImportCoverage.attempts} + 1`,
+        sourceUrl: sql`excluded.source_url`,
+        lastCheckedAt: sql`now()`,
+        lastError: sql`excluded.last_error`,
+        updatedAt: sql`now()`,
+      },
+    });
+}
+
 export function crearDepsPersistenciaFieDb(db: Db): DepsPersistenciaFie {
   return {
     esquema: esquemaDeportivo,
@@ -110,34 +207,8 @@ export function crearDepsPersistenciaFieDb(db: Db): DepsPersistenciaFie {
       return prueba.id;
     },
 
-    async upsertResultados(competitionId, filas: FilaResultado[]) {
-      const devueltas: { insertado: boolean }[] = [];
-      for (const lote of lotes(filas)) {
-        const r = await db
-          .insert(sportResult)
-          .values(lote.map((f) => ({ ...f, competitionId, source: FUENTE_FIE })))
-          .onConflictDoUpdate({
-            target: [sportResult.competitionId, sportResult.source, sportResult.sourceFactKey],
-            set: {
-              personId: sql`coalesce(excluded.person_id, ${sportResult.personId})`,
-              sourceName: sql`excluded.source_name`,
-              sourceCountryCode: sql`excluded.source_country_code`,
-              position: sql`excluded.position`,
-              positionRaw: sql`excluded.position_raw`,
-              officialPoints: sql`excluded.official_points`,
-              occurredOn: sql`excluded.occurred_on`,
-              sourceUrl: sql`excluded.source_url`,
-              revision: sql`CASE WHEN ${sportResult.contentHash} <> excluded.content_hash THEN ${sportResult.revision} + 1 ELSE ${sportResult.revision} END`,
-              revisedAt: sql`CASE WHEN ${sportResult.contentHash} <> excluded.content_hash THEN now() ELSE ${sportResult.revisedAt} END`,
-              contentHash: sql`excluded.content_hash`,
-            },
-            setWhere: sql`${sportResult.contentHash} <> excluded.content_hash OR (${sportResult.personId} IS NULL AND excluded.person_id IS NOT NULL)`,
-          })
-          .returning({ insertado: sql<boolean>`(xmax = 0)` });
-        devueltas.push(...r);
-      }
-      return resumir(filas.length, devueltas);
-    },
+    upsertResultados: (competitionId, filas: FilaResultado[]) =>
+      escribirResultados(db, FUENTE_FIE, competitionId, filas),
 
     async upsertAsaltos(competitionId, filas: FilaAsalto[]) {
       const devueltas: { insertado: boolean }[] = [];
@@ -175,47 +246,6 @@ export function crearDepsPersistenciaFieDb(db: Db): DepsPersistenciaFie {
       return resumir(filas.length, devueltas);
     },
 
-    async upsertCobertura(f) {
-      const conservarCifras = f.publishedTotal === undefined;
-      await db
-        .insert(sportImportCoverage)
-        .values({
-          source: FUENTE_FIE,
-          season: f.season,
-          factKind: f.factKind,
-          competitionKey: f.competitionKey,
-          competitionId: f.competitionId,
-          status: f.status,
-          publishedTotal: f.publishedTotal ?? null,
-          importedTotal: f.importedTotal ?? 0,
-          attempts: 1,
-          sourceUrl: f.sourceUrl,
-          lastCheckedAt: sql`now()`,
-          lastError: f.lastError,
-        })
-        .onConflictDoUpdate({
-          target: [
-            sportImportCoverage.source,
-            sportImportCoverage.season,
-            sportImportCoverage.factKind,
-            sportImportCoverage.competitionKey,
-          ],
-          set: {
-            competitionId: sql`coalesce(excluded.competition_id, ${sportImportCoverage.competitionId})`,
-            status: sql`excluded.status`,
-            ...(conservarCifras
-              ? {}
-              : {
-                  publishedTotal: sql`excluded.published_total`,
-                  importedTotal: sql`excluded.imported_total`,
-                }),
-            attempts: sql`${sportImportCoverage.attempts} + 1`,
-            sourceUrl: sql`excluded.source_url`,
-            lastCheckedAt: sql`now()`,
-            lastError: sql`excluded.last_error`,
-            updatedAt: sql`now()`,
-          },
-        });
-    },
+    upsertCobertura: (f) => escribirCobertura(db, FUENTE_FIE, f),
   };
 }

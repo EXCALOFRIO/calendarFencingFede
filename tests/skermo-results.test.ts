@@ -213,6 +213,7 @@ describe('clasificación de una prueba', () => {
         ...rows.slice(0, 2),
         {
           position: null,
+          positionRaw: null,
           sourceLicense: null,
           sourceAthleteName: '',
           sourceFirstName: null,

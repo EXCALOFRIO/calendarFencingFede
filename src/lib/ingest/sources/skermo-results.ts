@@ -315,6 +315,12 @@ export type SkermoResultsIndexRow = {
    * `live_source` se había pensado para que los pegara el admin a mano.
    */
   liveLinks: { platform: string; kind: string; url: string; label: string }[];
+  /**
+   * Todo enlace absoluto a otro dominio que la fila publica, sea o no directo
+   * de Engarde/FTL: webs de la federación, ficheros de Engarde, etc. No se
+   * interpreta; el inventario lo cuenta como documento externo.
+   */
+  externalUrls: string[];
 };
 
 /**
@@ -391,6 +397,22 @@ export function parseSkermoResultsIndex(
         }
       });
 
+    const externalUrls: string[] = [];
+    $(row.row)
+      .find('a[href]')
+      .each((_, a) => {
+        const href = ($(a).attr('href') ?? '').trim();
+        if (!/^https?:\/\//i.test(href)) return;
+        let host: string;
+        try {
+          host = new URL(href).hostname;
+        } catch {
+          return;
+        }
+        if (host === new URL(SKERMO_BASE_URL).hostname) return;
+        if (!externalUrls.includes(href)) externalUrls.push(href);
+      });
+
     const { city, country } = parseLocation(pickCell($, row, 'Población'), {
       // Misma convención que el calendario: lo extranjero viene marcado con el
       // código de país entre paréntesis, así que lo no marcado es español.
@@ -413,6 +435,7 @@ export function parseSkermoResultsIndex(
       country,
       documents,
       liveLinks,
+      externalUrls,
     };
   });
 
@@ -440,6 +463,8 @@ export type SkermoCompetitionMeta = {
 
 export type SkermoResultRow = {
   position: number | null;
+  /** Texto del puesto tal cual lo publica la fuente (empates, «-», «NC»). */
+  positionRaw: string | null;
   /** Número de licencia RFEE. La ÚNICA clave de emparejado admitida. */
   sourceLicense: string | null;
   sourceAthleteName: string;
@@ -508,6 +533,7 @@ export function parseSkermoCompetitionResults(
 
     return {
       position: position !== null && Number.isFinite(position) ? position : null,
+      positionRaw: positionText,
       sourceLicense: pickCell($, row, 'Licencia', 'Código Licencia'),
       sourceAthleteName: [firstName, lastName].filter(Boolean).join(' ').trim(),
       sourceFirstName: firstName,

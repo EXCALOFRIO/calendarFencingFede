@@ -20,6 +20,8 @@
     "db:seed": "tsx scripts/seed.ts",
     "ingest": "tsx scripts/ingest.ts",
     "fie-resultados": "tsx scripts/fie-resultados.ts",
+    "inventario-historico": "tsx scripts/inventario-historico.ts",
+    "skermo-finales": "tsx scripts/skermo-finales.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "tsx tests/e2e/flujos.spec.mts",

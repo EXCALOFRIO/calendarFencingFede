@@ -46,6 +46,8 @@ export type FilaResultado = {
   personId: string | null;
   sourceName: string;
   sourceCountryCode: string | null;
+  /** Fuentes que publican club (Skermo); la FIE no lo da en el ranking. */
+  sourceClub?: string | null;
   position: number | null;
   positionRaw: string | null;
   officialPoints: string | null;
