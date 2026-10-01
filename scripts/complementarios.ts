@@ -47,16 +47,36 @@ async function engarde(org: string, evt: string) {
   const cuenta = new Map<string, number>();
   for (const r of resultados) cuenta.set(r.plan.accion, (cuenta.get(r.plan.accion) ?? 0) + 1);
   console.log(`  planes: ${[...cuenta].map(([k, n]) => `${k}=${n}`).join(' ') || '-'}`);
+  const cuentaCuadro = new Map<string, number>();
+  for (const r of resultados) if (r.cuadro) cuentaCuadro.set(r.cuadro.plan.accion, (cuentaCuadro.get(r.cuadro.plan.accion) ?? 0) + 1);
+  console.log(`  planes de cuadro: ${[...cuentaCuadro].map(([k, n]) => `${k}=${n}`).join(' ') || '-'}`);
 
   if (!aplicar) {
     console.log('Modo lectura: no se ha escrito nada. Añade --aplicar para guardar.');
     return;
   }
   const { crearDepsComplementoDb } = await import('../src/lib/ingest/complementarios-db');
-  const { persistirComplemento } = await import('../src/lib/ingest/complementarios-persist');
+  const { persistirAsaltosComplemento, persistirComplemento } = await import('../src/lib/ingest/complementarios-persist');
   const deps = crearDepsComplementoDb(dbModulo!.db);
   for (const r of resultados) {
     if (!r.canonica) continue;
+    if (r.cuadro) {
+      const cuadro = await persistirAsaltosComplemento(deps, {
+        competitionId: r.canonica.competitionId,
+        prueba: r.canonica.prueba,
+        candidato: r.candidato,
+        fase: 'TABLEAU',
+        plan: r.cuadro.plan,
+      });
+      if (cuadro.estado === 'esquema_no_aplicado') {
+        console.log('El esquema deportivo (migración 0017) no está aplicado: no se escribió nada.');
+        process.exitCode = 2;
+        return;
+      }
+      console.log(
+        `  ${r.prueba.compe}: cuadro ${cuadro.accion} asaltos ${JSON.stringify(cuadro.asaltos)} cobertura=${cuadro.cobertura ?? '-'}`,
+      );
+    }
     const resumen = await persistirComplemento(deps, {
       competitionId: r.canonica.competitionId,
       prueba: r.canonica.prueba,

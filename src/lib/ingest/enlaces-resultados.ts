@@ -12,11 +12,13 @@ import { clasificarSerie } from './series-complementarias';
 import {
   depsEngardeReales,
   esSegmentoEngarde,
+  leerClasificacionEngarde,
   leerTorneoEngarde,
   urlPruebaEngarde,
   type DepsEngarde,
 } from './sources/engarde';
-import { leerResultadosFww, parsearUrlFww, type UrlFww } from './sources/fww';
+import { parsearUrlFww, type UrlFww } from './sources/fww';
+import { leerDestinoFww } from './sources/fww-asaltos';
 
 /**
  * Enlaces de resultados publicados por FIE, Skermo u organizadores.
@@ -98,10 +100,12 @@ export function clasificarEnlace(entrada: string): EnlaceClasificado | null {
     if (!f) return { proveedor: 'fww', alcance: 'generico', url: limpia(u.pathname) };
     const alcance: AlcanceEnlace =
       f.seccion === 'tournament' || f.seccion === 'all-medaillists' ? 'torneo' : 'prueba';
+    // La ruta completa (`pools/1`, `direct/2`) es lo que se ofrece y lo que se comprueba: no se recorta a su sección.
+    const cola = f.ruta === '' ? '' : `${f.ruta}${u.pathname.endsWith('/') ? '/' : ''}`;
     return {
       proveedor: 'fww',
       alcance,
-      url: limpia(`/${f.idioma}/${f.id}-${f.temporada}${f.seccion ? `/${f.seccion}/` : '/'}`),
+      url: limpia(`/${f.idioma}/${f.id}-${f.temporada}/${cola}`),
       fww: f,
     };
   }
@@ -278,14 +282,18 @@ async function verificarEngarde(
 
   const aceptados = candidatos.filter((x) => x.cotejo.decision === 'aceptado');
   if (aceptados.length === 1) {
+    // El índice sólo dice que la prueba existe: el destino que se ofrece ha de responder y repetir su contexto.
     const p = aceptados[0].prueba;
-    return {
-      proveedor: 'engarde',
-      estado: 'verificado',
-      url: urlPruebaEngarde(p.org, p.evt, p.compe),
-      motivos: [],
-      resultadosImportados: false,
-    };
+    const destino = await leerClasificacionEngarde(p, { ...depsEngardeReales, ...deps });
+    if (destino.estado === 'error') return fallo('error', ['no_comprobable']);
+    if (!destino.pagina || destino.pagina.tipo === 'desconocida') {
+      return fallo('no_publicado', ['pagina_no_publicada']);
+    }
+    const cotejo = cotejar(
+      prueba,
+      candidatoDeEngarde(p, { nombreTorneo: lectura.nombre, pagina: destino.pagina }),
+    );
+    return desdeCotejo('engarde', urlPruebaEngarde(p.org, p.evt, p.compe), cotejo);
   }
   if (aceptados.length > 1) return fallo('revision', ['ambiguo']);
   // Un enlace de prueba se juzga por su prueba; uno de torneo, por la mejor de sus pruebas.
@@ -300,10 +308,13 @@ async function verificarFww(
   prueba: PruebaCanonica,
   deps: DepsVerificacionEnlaces,
 ): Promise<ResultadoEnlace> {
-  const lectura = await leerResultadosFww(c.url, deps);
+  // Se lee EXACTAMENTE el destino ofrecido: otra sección de la misma prueba no acredita esta URL.
+  const lectura = await leerDestinoFww(c.url, deps);
   const base = { proveedor: 'fww' as const, url: null, resultadosImportados: false as const };
   if (lectura.estado === 'error') return { ...base, estado: 'error', motivos: ['no_comprobable'] };
-  if (!lectura.pagina) return { ...base, estado: 'no_publicado', motivos: ['pagina_no_publicada'] };
+  if (lectura.estado === 'no_publicado' || !lectura.pagina) {
+    return { ...base, estado: 'no_publicado', motivos: ['pagina_no_publicada'] };
+  }
   const cotejo = cotejar(prueba, candidatoDeFww(c.url, `${c.fww!.id}-${c.fww!.temporada}`, lectura.pagina));
   return desdeCotejo('fww', c.url, cotejo);
 }
@@ -331,9 +342,9 @@ export async function evaluarEnlacesOficiales(
     solo_referencia: 0,
   };
   const guardar = (r: ResultadoEnlace) => {
-    if (rango[r.estado] > rango[salida[r.proveedor].estado] || (salida[r.proveedor].estado === 'no_publicado' && r.estado !== 'no_publicado')) {
-      salida[r.proveedor] = r;
-    }
+    const actual = salida[r.proveedor];
+    const sustituyeVacio = actual.estado === 'no_publicado' && actual.url === null && actual.motivos.includes('sin_enlace_especifico');
+    if (rango[r.estado] > rango[actual.estado] || sustituyeVacio) salida[r.proveedor] = r;
   };
 
   const vistos = new Set<string>();

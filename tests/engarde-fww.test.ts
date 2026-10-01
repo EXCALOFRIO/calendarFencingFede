@@ -278,7 +278,12 @@ describe('Fencing Worldwide', () => {
       id: '926885',
       temporada: '2025',
       seccion: 'results',
+      ruta: 'results',
     });
+    expect(parsearUrlFww('https://www.fencingworldwide.com/en/926885-2025/pools/1')).toMatchObject({ seccion: 'pools', ruta: 'pools/1' });
+    expect(parsearUrlFww('https://www.fencingworldwide.com/en/926885-2025/direct/2/?x=1#y')).toMatchObject({ seccion: 'direct', ruta: 'direct/2' });
+    expect(parsearUrlFww('https://www.fencingworldwide.com/en/926885-2025/')).toMatchObject({ seccion: null, ruta: '' });
+    expect(parsearUrlFww('https://www.fencingworldwide.com/en/926885-2025/pools/1/../../x.php')).toBeNull();
     expect(parsearUrlFww('https://evil.example/en/926885-2025/results/')).toBeNull();
     expect(parsearUrlFww('ftp://www.fencingworldwide.com/en/1-2025/')).toBeNull();
     expect(parsearUrlFww('https://www.fencingworldwide.com/en/')).toBeNull();

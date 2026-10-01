@@ -76,6 +76,48 @@ export async function escribirResultados(
   return resumir(filas.length, devueltas);
 }
 
+/** Asaltos por clave natural; compartido por FIE y las fuentes complementarias. */
+export async function escribirAsaltos(
+  db: Db,
+  source: string,
+  competitionId: string,
+  filas: FilaAsalto[],
+): Promise<ResumenEscritura> {
+  const devueltas: { insertado: boolean }[] = [];
+  for (const lote of lotes(filas)) {
+    const r = await db
+      .insert(sportBout)
+      .values(lote.map((f) => ({ ...f, competitionId, source })))
+      .onConflictDoUpdate({
+        target: [
+          sportBout.competitionId,
+          sportBout.source,
+          sportBout.phase,
+          sportBout.roundKey,
+          sportBout.fencerARef,
+          sportBout.fencerBRef,
+        ],
+        set: {
+          fencerAPersonId: sql`coalesce(excluded.fencer_a_person_id, ${sportBout.fencerAPersonId})`,
+          fencerBPersonId: sql`coalesce(excluded.fencer_b_person_id, ${sportBout.fencerBPersonId})`,
+          fencerAName: sql`excluded.fencer_a_name`,
+          fencerBName: sql`excluded.fencer_b_name`,
+          scoreA: sql`excluded.score_a`,
+          scoreB: sql`excluded.score_b`,
+          occurredOn: sql`excluded.occurred_on`,
+          sourceUrl: sql`excluded.source_url`,
+          revision: sql`CASE WHEN ${sportBout.contentHash} <> excluded.content_hash THEN ${sportBout.revision} + 1 ELSE ${sportBout.revision} END`,
+          revisedAt: sql`CASE WHEN ${sportBout.contentHash} <> excluded.content_hash THEN now() ELSE ${sportBout.revisedAt} END`,
+          contentHash: sql`excluded.content_hash`,
+        },
+        setWhere: sql`${sportBout.contentHash} <> excluded.content_hash OR (${sportBout.fencerAPersonId} IS NULL AND excluded.fencer_a_person_id IS NOT NULL) OR (${sportBout.fencerBPersonId} IS NULL AND excluded.fencer_b_person_id IS NOT NULL)`,
+      })
+      .returning({ insertado: sql<boolean>`(xmax = 0)` });
+    devueltas.push(...r);
+  }
+  return resumir(filas.length, devueltas);
+}
+
 export type FilaCoberturaGenerica = {
   season: string;
   factKind: string;
@@ -214,41 +256,8 @@ export function crearDepsPersistenciaFieDb(db: Db): DepsPersistenciaFie {
     upsertResultados: (competitionId, filas: FilaResultado[]) =>
       escribirResultados(db, FUENTE_FIE, competitionId, filas),
 
-    async upsertAsaltos(competitionId, filas: FilaAsalto[]) {
-      const devueltas: { insertado: boolean }[] = [];
-      for (const lote of lotes(filas)) {
-        const r = await db
-          .insert(sportBout)
-          .values(lote.map((f) => ({ ...f, competitionId, source: FUENTE_FIE })))
-          .onConflictDoUpdate({
-            target: [
-              sportBout.competitionId,
-              sportBout.source,
-              sportBout.phase,
-              sportBout.roundKey,
-              sportBout.fencerARef,
-              sportBout.fencerBRef,
-            ],
-            set: {
-              fencerAPersonId: sql`coalesce(excluded.fencer_a_person_id, ${sportBout.fencerAPersonId})`,
-              fencerBPersonId: sql`coalesce(excluded.fencer_b_person_id, ${sportBout.fencerBPersonId})`,
-              fencerAName: sql`excluded.fencer_a_name`,
-              fencerBName: sql`excluded.fencer_b_name`,
-              scoreA: sql`excluded.score_a`,
-              scoreB: sql`excluded.score_b`,
-              occurredOn: sql`excluded.occurred_on`,
-              sourceUrl: sql`excluded.source_url`,
-              revision: sql`CASE WHEN ${sportBout.contentHash} <> excluded.content_hash THEN ${sportBout.revision} + 1 ELSE ${sportBout.revision} END`,
-              revisedAt: sql`CASE WHEN ${sportBout.contentHash} <> excluded.content_hash THEN now() ELSE ${sportBout.revisedAt} END`,
-              contentHash: sql`excluded.content_hash`,
-            },
-            setWhere: sql`${sportBout.contentHash} <> excluded.content_hash OR (${sportBout.fencerAPersonId} IS NULL AND excluded.fencer_a_person_id IS NOT NULL) OR (${sportBout.fencerBPersonId} IS NULL AND excluded.fencer_b_person_id IS NOT NULL)`,
-          })
-          .returning({ insertado: sql<boolean>`(xmax = 0)` });
-        devueltas.push(...r);
-      }
-      return resumir(filas.length, devueltas);
-    },
+    upsertAsaltos: (competitionId, filas: FilaAsalto[]) =>
+      escribirAsaltos(db, FUENTE_FIE, competitionId, filas),
 
     upsertCobertura: (f) => escribirCobertura(db, FUENTE_FIE, f),
   };

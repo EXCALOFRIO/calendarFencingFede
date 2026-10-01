@@ -141,18 +141,61 @@ describe('evaluarEnlacesOficiales', () => {
     }
   });
 
-  it('Engarde se verifica contra el índice público: edición, sede, arma, categoría y modalidad', async () => {
-    const deps = depsCon({ [POST]: { status: 200, body: fixture('engarde-indice-med2024.xml') }, 'https://engarde-service.com/tournament/rfee/med2024': { status: 200, body: '<div class="tounament-title">MEDITERRANEAN CHAMPIONSHIP 2024</div>' } });
-    const r = await evaluarEnlacesOficiales(
-      med2024,
-      [{ url: 'https://engarde-service.com/competition/rfee/med2024/em17', origen: 'organizador' }],
-      deps,
-    );
-    expect(r.engarde).toMatchObject({
-      estado: 'verificado',
-      url: 'https://engarde-service.com/competition/rfee/med2024/em17',
-      resultadosImportados: false,
+  const EM17 = 'https://engarde-service.com/competition/rfee/med2024/em17';
+  const TORNEO_MED = { status: 200, body: '<div class="tounament-title">MEDITERRANEAN CHAMPIONSHIP 2024</div>' };
+
+  it('Engarde se verifica contra el índice y contra el destino ofrecido: edición, sede, arma, categoría y modalidad', async () => {
+    const deps = depsCon({
+      [POST]: { status: 200, body: fixture('engarde-indice-med2024.xml') },
+      'https://engarde-service.com/tournament/rfee/med2024': TORNEO_MED,
+      [EM17]: { status: 200, body: fixture('engarde-med2024-em17-clasificacion.html') },
     });
+    const r = await evaluarEnlacesOficiales(med2024, [{ url: EM17, origen: 'organizador' }], deps);
+    expect(r.engarde).toMatchObject({ estado: 'verificado', url: EM17, resultadosImportados: false });
+    expect(deps.pedidas).toContain(EM17);
+  });
+
+  it('índice compatible con destino 404 no es verificado: queda no publicado y sin URL', async () => {
+    const deps = depsCon({
+      [POST]: { status: 200, body: fixture('engarde-indice-med2024.xml') },
+      'https://engarde-service.com/tournament/rfee/med2024': TORNEO_MED,
+      [EM17]: { status: 404, body: '' },
+    });
+    const r = await evaluarEnlacesOficiales(med2024, [{ url: EM17, origen: 'organizador' }], deps);
+    expect(r.engarde).toMatchObject({ estado: 'no_publicado', url: null, motivos: ['pagina_no_publicada'] });
+    expect(vistaEnlace(r.engarde).href).toBeNull();
+  });
+
+  it('índice compatible con destino 500 queda en error, no verificado', async () => {
+    const deps = depsCon({
+      [POST]: { status: 200, body: fixture('engarde-indice-med2024.xml') },
+      'https://engarde-service.com/tournament/rfee/med2024': TORNEO_MED,
+      [EM17]: { status: 500, body: '' },
+    });
+    const r = await evaluarEnlacesOficiales(med2024, [{ url: EM17, origen: 'organizador' }], deps);
+    expect(r.engarde).toMatchObject({ estado: 'error', url: null, motivos: ['no_comprobable'] });
+  });
+
+  it('destino 200 sin clasificación ni cuadro reconocible tampoco acredita el enlace', async () => {
+    const deps = depsCon({
+      [POST]: { status: 200, body: fixture('engarde-indice-med2024.xml') },
+      'https://engarde-service.com/tournament/rfee/med2024': TORNEO_MED,
+      [EM17]: { status: 200, body: '<html><body>En construcción</body></html>' },
+    });
+    const r = await evaluarEnlacesOficiales(med2024, [{ url: EM17, origen: 'organizador' }], deps);
+    expect(r.engarde).toMatchObject({ estado: 'no_publicado', url: null });
+  });
+
+  it('el contexto del destino se coteja: una página con otra fecha no verifica aunque el índice cuadre', async () => {
+    const otroDia = fixture('engarde-med2024-em17-clasificacion.html').replace(/3 FEB(?:RERO)?\.? 2024/i, '3 FEB 2023');
+    const deps = depsCon({
+      [POST]: { status: 200, body: fixture('engarde-indice-med2024.xml') },
+      'https://engarde-service.com/tournament/rfee/med2024': TORNEO_MED,
+      [EM17]: { status: 200, body: otroDia },
+    });
+    const r = await evaluarEnlacesOficiales(med2024, [{ url: EM17, origen: 'organizador' }], deps);
+    expect(r.engarde.estado).not.toBe('verificado');
+    expect(r.engarde.url).toBeNull();
   });
 
   it('un enlace Engarde de otra prueba o categoría no se verifica (homónimo)', async () => {
@@ -186,13 +229,66 @@ describe('evaluarEnlacesOficiales', () => {
     expect(r.engarde).toMatchObject({ estado: 'error', motivos: ['no_comprobable'] });
   });
 
+  const fww = 'https://www.fencingworldwide.com/en/926885-2025/results/';
+  const basel: PruebaCanonica = {
+    ...bari,
+    fuente: 'fie',
+    season: '2026',
+    clave: 'b',
+    nombreEdicion: 'World Cup of Switzerland',
+    ciudad: 'Basel',
+    fecha: '2026-01-02',
+    categoria: 'M17',
+  };
+  const FWW_POOLS = 'https://www.fencingworldwide.com/en/926885-2025/pools/1';
+  const FWW_DIRECT = 'https://www.fencingworldwide.com/en/926885-2025/direct/2';
+
   it('FWW se verifica contra la miga de pan de la propia prueba', async () => {
-    const fww = 'https://www.fencingworldwide.com/en/926885-2025/results/';
-    const basel: PruebaCanonica = { ...bari, fuente: 'fie', season: '2026', clave: 'b', ciudad: 'Basel', fecha: '2026-01-02', categoria: 'M17' };
     const ok = await evaluarEnlacesOficiales(basel, [{ url: fww, origen: 'fie' }], depsCon({ [fww]: { status: 200, body: fixture('fww-basel-u17-resultados.html') } }));
     expect(ok.fww).toMatchObject({ estado: 'verificado', url: fww });
     const otra = await evaluarEnlacesOficiales({ ...basel, arma: 'SABLE' }, [{ url: fww, origen: 'fie' }], depsCon({ [fww]: { status: 200, body: fixture('fww-basel-u17-resultados.html') } }));
     expect(otra.fww.estado).toBe('rechazado');
+  });
+
+  it('copiar la tupla deportiva de Basel con otra edición (Bari Grand Prix) no verifica el enlace', async () => {
+    const deps = depsCon({ [fww]: { status: 200, body: fixture('fww-basel-u17-resultados.html') } });
+    const r = await evaluarEnlacesOficiales({ ...basel, nombreEdicion: 'Bari Grand Prix' }, [{ url: fww, origen: 'fie' }], deps);
+    expect(r.fww).toMatchObject({ estado: 'revision', url: null, motivos: ['edicion_no_verificable'] });
+    expect(vistaEnlace(r.fww).href).toBeNull();
+  });
+
+  it('FWW conserva pools/1 y direct/2 y sólo los verifica leyendo ese destino', async () => {
+    expect(clasificarEnlace(`${FWW_POOLS}#x`)).toMatchObject({ proveedor: 'fww', alcance: 'prueba', url: FWW_POOLS });
+    expect(clasificarEnlace(FWW_DIRECT)).toMatchObject({ url: FWW_DIRECT, fww: { ruta: 'direct/2' } });
+    const deps = depsCon({
+      [FWW_POOLS]: { status: 200, body: fixture('fww-basel-u17-pools1.html') },
+      [FWW_DIRECT]: { status: 200, body: fixture('fww-basel-u17-direct2.html') },
+    });
+    const a = await evaluarEnlacesOficiales(basel, [{ url: FWW_POOLS, origen: 'fie' }], deps);
+    expect(a.fww).toMatchObject({ estado: 'verificado', url: FWW_POOLS });
+    const b = await evaluarEnlacesOficiales(basel, [{ url: FWW_DIRECT, origen: 'fie' }], deps);
+    expect(b.fww).toMatchObject({ estado: 'verificado', url: FWW_DIRECT });
+    expect(deps.pedidas).toEqual([FWW_POOLS, FWW_DIRECT]);
+  });
+
+  it('un results/ válido de la misma prueba no acredita un pools/1 o direct/2 que no responde', async () => {
+    const deps = depsCon({
+      [fww]: { status: 200, body: fixture('fww-basel-u17-resultados.html') },
+      [FWW_POOLS]: { status: 404, body: '' },
+      [FWW_DIRECT]: { status: 500, body: '' },
+    });
+    const pools = await evaluarEnlacesOficiales(basel, [{ url: FWW_POOLS, origen: 'fie' }], deps);
+    expect(pools.fww).toMatchObject({ estado: 'no_publicado', url: null });
+    const directa = await evaluarEnlacesOficiales(basel, [{ url: FWW_DIRECT, origen: 'fie' }], deps);
+    expect(directa.fww).toMatchObject({ estado: 'error', url: null });
+    expect(deps.pedidas).not.toContain(fww);
+  });
+
+  it('una ronda de poules con HTTP 200 pero sin contenido (pools/2) es no publicada', async () => {
+    const vacia = fixture('fww-basel-u17-pools1.html').replace(/<table[^>]*\bpool\b[\s\S]*<\/table>/, '');
+    const url = 'https://www.fencingworldwide.com/en/926885-2025/pools/2';
+    const r = await evaluarEnlacesOficiales(basel, [{ url, origen: 'fie' }], depsCon({ [url]: { status: 200, body: vacia } }));
+    expect(r.fww).toMatchObject({ estado: 'no_publicado', url: null });
   });
 });
 

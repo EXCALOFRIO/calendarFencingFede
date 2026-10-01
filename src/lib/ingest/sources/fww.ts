@@ -33,7 +33,11 @@ export type UrlFww = {
   temporada: string;
   /** Primer tramo tras el identificador: `results`, `pools`, `tournament`… o `null`. */
   seccion: string | null;
+  /** Ruta completa tras el identificador sin barras sobrantes: `pools/1`, `direct/2`, `results` o `''`. */
+  ruta: string;
 };
+
+const RUTA_FWW = /^[a-z0-9-]{1,30}$/i;
 
 /** Sólo hosts de FWW y rutas `/{idioma}/{id}-{temporada}/…`; el resto es `null`. */
 export function parsearUrlFww(entrada: string): UrlFww | null {
@@ -45,13 +49,37 @@ export function parsearUrlFww(entrada: string): UrlFww | null {
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
   if (!/^(www\.)?fencingworldwide\.com$/i.test(url.hostname)) return null;
-  const m = url.pathname.match(/^\/([a-z]{2})\/(\d{1,9})-(\d{4})(?:\/([a-z-]+))?/i);
+  const m = url.pathname.match(/^\/([a-z]{2})\/(\d{1,9})-(\d{4})(\/.*)?$/i);
   if (!m) return null;
-  return { idioma: m[1].toLowerCase(), id: m[2], temporada: m[3], seccion: m[4]?.toLowerCase() ?? null };
+  const tramos = (m[4] ?? '').split('/').filter(Boolean);
+  // Un tramo extraño (cifras, rutas de ficheros) no se conserva a medias: la URL no es de una prueba.
+  if (tramos.length > 4 || tramos.some((t) => !RUTA_FWW.test(t))) return null;
+  return {
+    idioma: m[1].toLowerCase(),
+    id: m[2],
+    temporada: m[3],
+    seccion: tramos[0]?.toLowerCase() ?? null,
+    ruta: tramos.join('/').toLowerCase(),
+  };
 }
 
 export function urlResultadosFww(u: Pick<UrlFww, 'id' | 'temporada'>): string {
   return `${FWW_BASE}/en/${u.id}-${u.temporada}/results/`;
+}
+
+export type DestinoFww = {
+  tipo: 'prueba' | 'results' | 'pools' | 'direct' | 'otro';
+  /** Número tras `pools/` o `direct/`. */
+  numero: number | null;
+};
+
+/** Qué es lo que ofrece una URL FWW: la prueba, su clasificación, una ronda de poules o un cuadro. */
+export function destinoFww(u: Pick<UrlFww, 'ruta'>): DestinoFww {
+  if (u.ruta === '') return { tipo: 'prueba', numero: null };
+  if (u.ruta === 'results') return { tipo: 'results', numero: null };
+  const m = u.ruta.match(/^(pools|direct)\/(\d{1,2})$/);
+  if (m) return { tipo: m[1] as 'pools' | 'direct', numero: Number(m[2]) };
+  return { tipo: 'otro', numero: null };
 }
 
 function plano(t: string): string {

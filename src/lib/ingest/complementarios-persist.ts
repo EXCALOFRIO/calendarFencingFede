@@ -1,9 +1,15 @@
 import type { EstadoEsquema } from '@/lib/sport/esquema';
 import { sha256 } from '@/lib/utils';
-import type { PlanComplementario, PruebaCanonica, CandidatoComplementario } from './conciliar-complementario';
+import type { AsaltoComplementario } from './asaltos-complementarios';
+import type {
+  PlanAsaltos,
+  PlanComplementario,
+  PruebaCanonica,
+  CandidatoComplementario,
+} from './conciliar-complementario';
 import type { ResultadoEnlace } from './enlaces-resultados';
 import type { FilaCoberturaGenerica } from './fie-resultados-db';
-import type { FilaResultado, ResumenEscritura } from './fie-resultados-persist';
+import type { FilaAsalto, FilaResultado, ResumenEscritura } from './fie-resultados-persist';
 import type { PuestoComplementario } from './sources/engarde';
 
 /**
@@ -120,6 +126,122 @@ export async function persistirComplemento(
     cursor: plan.cobertura,
   });
   return { ...base, puestos, cobertura: plan.cobertura };
+}
+
+export type DepsAsaltosComplemento = Pick<DepsComplemento, 'esquema' | 'upsertCobertura'> & {
+  upsertAsaltos: (competitionId: string, source: string, filas: FilaAsalto[]) => Promise<ResumenEscritura>;
+};
+
+export type ResumenAsaltosComplemento = {
+  estado: 'aplicado' | 'esquema_no_aplicado';
+  accion: PlanAsaltos['accion'];
+  asaltos: ResumenEscritura;
+  cobertura: FilaCoberturaGenerica['status'] | null;
+};
+
+/**
+ * Las referencias de Engarde llevan el nombre publicado: su orden en Postgres
+ * (`sport_bout_canonical_order`) dependería de la collation de la base. Se
+ * guardan como hash hexadecimal de longitud fija, cuyo orden es el mismo con
+ * cualquier collation; el nombre sigue en `fencer_*_name` y nunca identifica
+ * a una persona.
+ */
+async function refAlmacenada(ref: string): Promise<string> {
+  return ref.startsWith('engarde:') ? `engarde:${(await sha256(ref)).slice(0, 32)}` : ref;
+}
+
+async function filasDeAsaltos(
+  asaltos: readonly AsaltoComplementario[],
+  fecha: string | null,
+  urlPorDefecto: string,
+): Promise<FilaAsalto[]> {
+  const filas = new Map<string, FilaAsalto>();
+  for (const a of asaltos) {
+    const [ra, rb] = await Promise.all([refAlmacenada(a.refA), refAlmacenada(a.refB)]);
+    if (ra === rb) continue;
+    const invertir = ra > rb;
+    const [x, y] = invertir ? [rb, ra] : [ra, rb];
+    const fila: FilaAsalto = {
+      phase: a.fase,
+      roundKey: a.ronda,
+      fencerARef: x,
+      fencerBRef: y,
+      // Sin ID publicado no hay unión a una persona: el nombre no confirma identidad.
+      fencerAPersonId: null,
+      fencerBPersonId: null,
+      fencerAName: invertir ? a.nombreB : a.nombreA,
+      fencerBName: invertir ? a.nombreA : a.nombreB,
+      scoreA: invertir ? a.puntosB : a.puntosA,
+      scoreB: invertir ? a.puntosA : a.puntosB,
+      occurredOn: fecha,
+      sourceUrl: a.url ?? urlPorDefecto,
+      contentHash: await sha256(JSON.stringify([a.fase, a.ronda, x, y, invertir ? a.puntosB : a.puntosA, invertir ? a.puntosA : a.puntosB])),
+    };
+    // Un duelo publicado desde las dos perspectivas es uno solo.
+    filas.set(`${fila.phase}|${fila.roundKey}|${x}|${y}`, fila);
+  }
+  return [...filas.values()];
+}
+
+/**
+ * Escribe los asaltos individuales de UNA fase (poules o cuadro) de una fuente
+ * complementaria. Cada fase tiene su cobertura (`pools`/`tableau`), distinta de
+ * la de los finales. `sin_hechos` sólo registra cobertura; el resto no escribe.
+ */
+export async function persistirAsaltosComplemento(
+  deps: DepsAsaltosComplemento,
+  entrada: {
+    competitionId: string;
+    prueba: PruebaCanonica;
+    candidato: CandidatoComplementario;
+    fase: AsaltoComplementario['fase'];
+    plan: PlanAsaltos;
+  },
+): Promise<ResumenAsaltosComplemento> {
+  const { competitionId, prueba, candidato, fase, plan } = entrada;
+  const base: ResumenAsaltosComplemento = {
+    estado: 'aplicado',
+    accion: plan.accion,
+    asaltos: SIN_ESCRITURA,
+    cobertura: null,
+  };
+  if (plan.accion !== 'escribir' && plan.accion !== 'sin_hechos') return base;
+  if (plan.accion === 'escribir' && plan.fase !== fase) return base;
+
+  const esquema = await deps.esquema();
+  if (!esquema.identidad) return { ...base, estado: 'esquema_no_aplicado' };
+
+  const fila = {
+    season: prueba.season,
+    factKind: fase === 'POULE' ? 'pools' : 'tableau',
+    competitionKey: candidato.clave,
+    competitionId,
+    sourceUrl: candidato.url,
+  };
+
+  if (plan.accion === 'sin_hechos') {
+    const status = plan.estado === 'sin_resultados' ? 'sin_resultados' : plan.estado === 'error' ? 'error' : 'pendiente';
+    await deps.upsertCobertura(candidato.proveedor, {
+      ...fila,
+      status,
+      ...(plan.estado === 'sin_resultados' ? { publishedTotal: 0, importedTotal: 0 } : {}),
+      lastError: plan.estado === 'sin_resultados' ? null : plan.motivo,
+      cursor: plan.estado,
+    });
+    return { ...base, cobertura: status };
+  }
+
+  const filas = await filasDeAsaltos(plan.asaltos, prueba.fecha, candidato.url);
+  const asaltos = await deps.upsertAsaltos(competitionId, candidato.proveedor, filas);
+  await deps.upsertCobertura(candidato.proveedor, {
+    ...fila,
+    status: plan.cobertura,
+    publishedTotal: plan.publicado,
+    importedTotal: filas.length,
+    lastError: null,
+    cursor: plan.cobertura,
+  });
+  return { ...base, asaltos, cobertura: plan.cobertura };
 }
 
 export const FUENTE_ENLACE = 'enlace';

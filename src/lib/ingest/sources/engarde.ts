@@ -19,8 +19,9 @@ import { mapCategory, mapGender, mapWeapon } from '../mappers';
  *    Trae `<h1>` con la edición, la prueba, la sede y la fecha, y una tabla
  *    `table.liste` bajo «Clasificación general final». Los equipos ponen a sus
  *    integrantes en la misma celda separados por `<br>`.
- *  - Cuadros (`tableau16.htm`) son `table.tableau`: aquí sólo se reconocen, no
- *    se leen asaltos de ellos.
+ *  - Cuadros (`tableau16.htm`) son `table.tableau`: aquí sólo se reconocen y se
+ *    anotan los enlaces que la prueba ofrece (`cuadros`); los asaltos se leen en
+ *    `engarde-cuadro.ts`.
  *
  * Engarde NO publica un ID de tirador: las filas conservan nombre y nación/club
  * publicados y jamás se asignan a una persona por parecerse el nombre.
@@ -251,6 +252,8 @@ export type PaginaEngarde = {
   filas: FilaEngarde[];
   /** Filas de la tabla que no se pudieron leer. */
   anomalias: number;
+  /** Rutas `/competition/{org}/{evt}/{compe}/tableau….htm` que la propia página ofrece. */
+  cuadros: string[];
 };
 
 const FINAL = /\bfinal(e|es)?\b/;
@@ -281,7 +284,17 @@ export function parsearPaginaEngarde(html: string): PaginaEngarde {
   }
   const encabezado = texto(raiz.find('h3').first()) || null;
   const declarado = encabezado?.match(/\((\d+)\s+[^)]+\)/);
+  const cuadros = [
+    ...new Set(
+      // El menú de la prueba queda fuera de `#reloadable`.
+      $('a[href]')
+        .map((_, a) => $(a).attr('href')?.match(/(\/competition\/[\w-]{1,60}\/[\w-]{1,60}\/[\w-]{1,60}\/tableau[\d-]{1,12}\.htm)(?:[?#]|$)/i)?.[1])
+        .get()
+        .filter((r): r is string => typeof r === 'string'),
+    ),
+  ];
   const base = {
+    cuadros,
     torneo: texto($('.tounament-title').first()) || null,
     edicion: texto(h1Clon) || null,
     titulo: lineas[0] ?? null,

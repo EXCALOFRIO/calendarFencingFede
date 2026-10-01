@@ -1,19 +1,25 @@
-import { and, eq, gte, inArray, lte, notInArray } from 'drizzle-orm';
+import { and, eq, gte, inArray, lte, notInArray, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
-import { sportCompetition, sportEdition, sportImportCoverage, sportResult } from '@/db/schema';
+import { sportBout, sportCompetition, sportEdition, sportImportCoverage, sportResult } from '@/db/schema';
 import { esquemaDeportivo } from '@/lib/sport/esquema-db';
-import type { DepsComplemento } from './complementarios-persist';
-import type { PruebaCanonica, ResultadosPrimarios } from './conciliar-complementario';
-import { escribirCobertura, escribirResultados } from './fie-resultados-db';
+import type { DepsAsaltosComplemento, DepsComplemento } from './complementarios-persist';
+import {
+  estadoAsaltosPrimarios,
+  type EstadoAsaltosPrimarios,
+  type PruebaCanonica,
+  type ResultadosPrimarios,
+} from './conciliar-complementario';
+import { escribirAsaltos, escribirCobertura, escribirResultados } from './fie-resultados-db';
 import { clasificarSerie } from './series-complementarias';
 
 /** Fuentes complementarias: nunca cuentan como «primarias» de una prueba. */
 export const FUENTES_COMPLEMENTARIAS = ['engarde', 'fww'] as const;
 
-export function crearDepsComplementoDb(db: Db): DepsComplemento {
+export function crearDepsComplementoDb(db: Db): DepsComplemento & DepsAsaltosComplemento {
   return {
     esquema: esquemaDeportivo,
     upsertResultados: (competitionId, source, filas) => escribirResultados(db, source, competitionId, filas),
+    upsertAsaltos: (competitionId, source, filas) => escribirAsaltos(db, source, competitionId, filas),
     upsertCobertura: (source, fila) => escribirCobertura(db, source, fila),
   };
 }
@@ -22,6 +28,7 @@ export type CanonicaCargada = {
   competitionId: string;
   prueba: PruebaCanonica;
   primarios: ResultadosPrimarios;
+  primariosAsaltos: { poules: EstadoAsaltosPrimarios; cuadro: EstadoAsaltosPrimarios };
 };
 
 /**
@@ -59,13 +66,14 @@ export async function cargarCanonicasDb(
   if (pruebas.length === 0) return [];
   const ids = pruebas.map((p) => p.id);
 
-  const [filas, coberturas] = await Promise.all([
+  const [filas, coberturas, asaltos] = await Promise.all([
     db
       .select({
         competitionId: sportResult.competitionId,
         source: sportResult.source,
         posicion: sportResult.position,
         pais: sportResult.sourceCountryCode,
+        nombre: sportResult.sourceName,
       })
       .from(sportResult)
       .where(
@@ -79,26 +87,43 @@ export async function cargarCanonicasDb(
         competitionId: sportImportCoverage.competitionId,
         status: sportImportCoverage.status,
         factKind: sportImportCoverage.factKind,
+        publishedTotal: sportImportCoverage.publishedTotal,
+        cursor: sportImportCoverage.cursor,
       })
       .from(sportImportCoverage)
       .where(
         and(
           inArray(sportImportCoverage.competitionId, ids),
-          inArray(sportImportCoverage.factKind, ['ranking', 'results']),
+          inArray(sportImportCoverage.factKind, ['ranking', 'results', 'pools', 'tableau']),
           notInArray(sportImportCoverage.source, [...FUENTES_COMPLEMENTARIAS]),
         ),
       ),
+    db
+      .select({
+        competitionId: sportBout.competitionId,
+        fase: sportBout.phase,
+        n: sql<number>`count(*)::int`,
+      })
+      .from(sportBout)
+      .where(and(inArray(sportBout.competitionId, ids), notInArray(sportBout.source, [...FUENTES_COMPLEMENTARIAS])))
+      .groupBy(sportBout.competitionId, sportBout.phase),
   ]);
 
   return pruebas.map((p) => {
     const suyas = filas.filter((f) => f.competitionId === p.id);
-    const estados = coberturas.filter((c) => c.competitionId === p.id).map((c) => c.status);
+    const suyasCob = coberturas.filter((c) => c.competitionId === p.id);
+    const estados = suyasCob.filter((c) => c.factKind === 'ranking' || c.factKind === 'results').map((c) => c.status);
+    const asaltosDe = (fase: string, factKind: string) =>
+      estadoAsaltosPrimarios(
+        asaltos.filter((a) => a.competitionId === p.id && a.fase === fase).reduce((s, a) => s + a.n, 0),
+        suyasCob.filter((c) => c.factKind === factKind),
+      );
     let primarios: ResultadosPrimarios;
     if (suyas.length > 0) {
       primarios = {
         estado: 'publicados',
         completo: estados.includes('completo') && !estados.includes('parcial'),
-        puestos: suyas.map((f) => ({ posicion: f.posicion, pais: f.pais })),
+        puestos: suyas.map((f) => ({ posicion: f.posicion, pais: f.pais, nombre: f.nombre })),
       };
     } else if (estados.includes('sin_resultados')) primarios = { estado: 'sin_resultados' };
     else if (estados.includes('error')) primarios = { estado: 'error' };
@@ -107,6 +132,7 @@ export async function cargarCanonicasDb(
     return {
       competitionId: p.id,
       primarios,
+      primariosAsaltos: { poules: asaltosDe('POULE', 'pools'), cuadro: asaltosDe('TABLEAU', 'tableau') },
       prueba: {
         fuente: p.source,
         season: p.season,

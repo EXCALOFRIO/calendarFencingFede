@@ -1,3 +1,4 @@
+import type { AsaltoComplementario } from './asaltos-complementarios';
 import { fixDoubleEncodedUtf8 } from './fetcher';
 import type { mapCategory, mapGender, mapWeapon } from './mappers';
 import type { SerieComplementaria } from './series-complementarias';
@@ -105,6 +106,9 @@ export function candidatoDeFww(url: string, clave: string, pagina: PaginaFww): C
 }
 
 export type MotivoCotejo =
+  | 'edicion_no_verificable'
+  | 'participantes_no_verificables'
+  | 'sin_asaltos_equipos'
   | 'formato_distinto'
   | 'arma_distinta'
   | 'genero_distinto'
@@ -151,6 +155,46 @@ export function ciudadesCompatibles(a: string, b: string): boolean {
   return corta.length >= 4 && larga.startsWith(corta);
 }
 
+/** Palabras que nombran el tipo de torneo, la categoría o el año, no la edición concreta. */
+const PALABRAS_GENERICAS = new Set([
+  'de', 'del', 'la', 'las', 'el', 'los', 'of', 'the', 'and', 'y', 'e', 'et', 'di', 'du', 'des', 'in', 'a', 'en',
+  'copa', 'campeonato', 'campeonatos', 'trofeo', 'torneo', 'gran', 'premio', 'grand', 'prix', 'world', 'cup',
+  'championship', 'championships', 'open', 'international', 'internacional', 'nacional', 'national',
+  'absoluta', 'absoluto', 'abs', 'senior', 'seniors', 'junior', 'juniors', 'cadet', 'cadets', 'cadete', 'cadetes',
+  'juvenil', 'infantil', 'veteranos', 'masters', 'epee', 'espada', 'foil', 'florete', 'sabre', 'sable',
+  'men', 'women', 'hombres', 'mujeres', 'masculino', 'femenino',
+]);
+
+function palabrasEdicion(nombre: string): string[] {
+  return fixDoubleEncodedUtf8(nombre)
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((p) => p.length > 0 && !/^\d{4}$/.test(p) && !/^[um]\d{1,2}$/.test(p));
+}
+
+/**
+ * Dos nombres de edición son compatibles si comparten TODAS las palabras
+ * significativas de la más corta (sin términos genéricos, años ni categorías).
+ * Sin palabras significativas en ninguno sólo vale el nombre genérico idéntico;
+ * con significativas en un solo lado no hay evidencia.
+ */
+export function nombresEdicionCompatibles(a: string, b: string): boolean {
+  const pa = palabrasEdicion(a);
+  const pb = palabrasEdicion(b);
+  const sa = new Set(pa.filter((p) => !PALABRAS_GENERICAS.has(p)));
+  const sb = new Set(pb.filter((p) => !PALABRAS_GENERICAS.has(p)));
+  if (sa.size === 0 && sb.size === 0) {
+    const ta = [...new Set(pa)].filter((p) => !['de', 'del', 'of', 'the'].includes(p)).sort().join(' ');
+    const tb = [...new Set(pb)].filter((p) => !['de', 'del', 'of', 'the'].includes(p)).sort().join(' ');
+    return ta.length > 0 && ta === tb;
+  }
+  if (sa.size === 0 || sb.size === 0) return false;
+  const [corta, larga] = sa.size <= sb.size ? [sa, sb] : [sb, sa];
+  return [...corta].every((p) => larga.has(p));
+}
+
 export function cotejar(prueba: PruebaCanonica, candidato: CandidatoComplementario): Cotejo {
   const rechazos: MotivoCotejo[] = [];
   const dudas: MotivoCotejo[] = [];
@@ -176,6 +220,17 @@ export function cotejar(prueba: PruebaCanonica, candidato: CandidatoComplementar
   if (prueba.serie !== null) {
     if (candidato.serie === null) dudas.push('serie_no_verificable');
     else if (candidato.serie !== prueba.serie) rechazos.push('serie_distinta');
+  }
+
+  // Misma sede, fecha, arma, género, categoría y formato no prueban la misma edición:
+  // hace falta una serie común o nombres de edición compatibles.
+  const mismaSerie = prueba.serie !== null && prueba.serie === candidato.serie;
+  if (!mismaSerie && (prueba.serie === null || candidato.serie === null)) {
+    const nombresOk =
+      prueba.nombreEdicion !== null &&
+      candidato.nombreTorneo !== null &&
+      nombresEdicionCompatibles(prueba.nombreEdicion, candidato.nombreTorneo);
+    if (!nombresOk) dudas.push('edicion_no_verificable');
   }
 
   if (prueba.fecha === null || candidato.fecha === null) {
@@ -216,8 +271,11 @@ export type ResultadosPrimarios =
       estado: 'publicados';
       /** `false` si la lectura prioritaria quedó parcial. */
       completo: boolean;
-      puestos: { posicion: number | null; pais: string | null }[];
+      puestos: PuestoPrimario[];
     };
+
+/** `nombre` es el que publica la primaria: sin él no hay correspondencia de participantes. */
+export type PuestoPrimario = { posicion: number | null; pais: string | null; nombre?: string | null };
 
 export type LecturaComplementaria = {
   estado: 'completo' | 'parcial' | 'sin_resultados' | 'no_publicado' | 'error';
@@ -236,28 +294,45 @@ export type PlanComplementario =
       accion: 'escribir';
       cobertura: 'completo' | 'parcial';
       puestos: PuestoComplementario[];
-      /** Las poules y cuadros de una fuente complementaria no se leen: no son «cero». */
-      asaltos: 'no_importados';
     };
 
 function firma(p: { posicion: number | null; pais: string | null }): string {
   return `${p.posicion ?? '-'}|${(p.pais ?? '').toUpperCase()}`;
 }
 
-/** Misma lista de (puesto, país), sin comparar nombres entre fuentes. */
-function mismosPuestos(
-  primarios: readonly { posicion: number | null; pais: string | null }[],
-  candidatos: readonly { posicion: number | null; pais: string | null }[],
-): boolean {
-  if (primarios.length !== candidatos.length) return false;
+/** Palabras del nombre sin tildes, signos ni orden: «GARCIA, Ana» y «Ana GARCIA» coinciden. */
+function claveNombre(nombre: string): string {
+  return palabrasEdicion(nombre).sort().join(' ');
+}
+
+function igualMultiset(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
   const cuenta = new Map<string, number>();
-  for (const p of primarios) cuenta.set(firma(p), (cuenta.get(firma(p)) ?? 0) + 1);
-  for (const c of candidatos) {
-    const n = cuenta.get(firma(c));
+  for (const x of a) cuenta.set(x, (cuenta.get(x) ?? 0) + 1);
+  for (const y of b) {
+    const n = cuenta.get(y);
     if (!n) return false;
-    cuenta.set(firma(c), n - 1);
+    cuenta.set(y, n - 1);
   }
   return true;
+}
+
+type ComparacionPuestos = 'iguales' | 'distintos' | 'participantes_no_verificables';
+
+/**
+ * Misma lista de (puesto, país) NO basta: dos españoles que intercambian el 1
+ * y el 2 la cumplen. La equivalencia exige además que cada participante ocupe
+ * el mismo puesto en las dos fuentes, comparado por nombre publicado.
+ */
+function compararPuestos(
+  primarios: readonly PuestoPrimario[],
+  candidatos: readonly { posicion: number | null; pais: string | null; nombre: string }[],
+): ComparacionPuestos {
+  if (!igualMultiset(primarios.map(firma), candidatos.map(firma))) return 'distintos';
+  if (primarios.some((p) => !p.nombre || claveNombre(p.nombre) === '')) return 'participantes_no_verificables';
+  const porParticipante = (p: { posicion: number | null; pais: string | null; nombre?: string | null }) =>
+    `${firma(p)}|${claveNombre(p.nombre ?? '')}`;
+  return igualMultiset(primarios.map(porParticipante), candidatos.map(porParticipante)) ? 'iguales' : 'distintos';
 }
 
 /**
@@ -290,16 +365,113 @@ export function planificarComplemento(entrada: {
   if (primarios.estado === 'error') return { accion: 'diferir', motivo: 'primaria_con_error' };
   if (primarios.estado === 'publicados') {
     if (!primarios.completo) return { accion: 'diferir', motivo: 'primaria_parcial' };
-    const candidatos = puestos.map((p) => ({ posicion: p.posicion, pais: p.pais }));
-    return mismosPuestos(primarios.puestos, candidatos)
+    const comparacion = compararPuestos(primarios.puestos, puestos);
+    if (comparacion === 'participantes_no_verificables') {
+      return { accion: 'revision', motivos: ['participantes_no_verificables'] };
+    }
+    return comparacion === 'iguales'
       ? { accion: 'sin_cambios', motivo: 'ya_canonico' }
-      : { accion: 'conflicto', motivo: 'La fuente prioritaria y la complementaria publican puestos distintos' };
+      : { accion: 'conflicto', motivo: 'La fuente prioritaria y la complementaria publican puestos o participantes distintos' };
   }
 
-  return {
-    accion: 'escribir',
-    cobertura: lectura.estado,
-    puestos,
-    asaltos: 'no_importados',
-  };
+  return { accion: 'escribir', cobertura: lectura.estado, puestos };
+}
+
+// ---------------------------------------------------------------------------
+// Asaltos (poules / cuadro): cobertura propia, independiente de los finales
+// ---------------------------------------------------------------------------
+
+/**
+ * Lo que la fuente prioritaria sabe de UN tipo de hecho (poules o cuadro) de la
+ * prueba. `desconocido` (nunca consultado) no es ausencia: se difiere.
+ */
+export type EstadoAsaltosPrimarios =
+  | 'desconocido'
+  | 'pendiente'
+  | 'error'
+  | 'publicado_parcial'
+  | 'publicado_completo'
+  | 'no_publicado'
+  | 'sin_resultados';
+
+export type CoberturaPrimaria = {
+  status: 'pendiente' | 'completo' | 'parcial' | 'sin_resultados' | 'error' | 'conflicto';
+  publishedTotal: number | null;
+  cursor: string | null;
+};
+
+/**
+ * Estado primario de poules o cuadro a partir de lo guardado: asaltos de la
+ * primaria y su cobertura de ESE hecho. Sin ninguno es `desconocido` (nunca se
+ * deduce «no publica»); `no_publicado` sólo si la primaria lo registró.
+ */
+export function estadoAsaltosPrimarios(
+  asaltos: number,
+  coberturas: readonly CoberturaPrimaria[],
+): EstadoAsaltosPrimarios {
+  const estados = coberturas.map((c) => c.status);
+  if (asaltos > 0) {
+    return estados.includes('completo') && !estados.includes('parcial') ? 'publicado_completo' : 'publicado_parcial';
+  }
+  if (coberturas.some((c) => c.cursor === 'no_publicado')) return 'no_publicado';
+  if (estados.includes('sin_resultados') || coberturas.some((c) => c.status === 'completo' && c.publishedTotal === 0)) {
+    return 'sin_resultados';
+  }
+  if (estados.includes('error')) return 'error';
+  if (estados.includes('parcial')) return 'publicado_parcial';
+  return coberturas.length > 0 ? 'pendiente' : 'desconocido';
+}
+
+export type LecturaAsaltosComplementaria = {
+  estado: 'completo' | 'parcial' | 'sin_resultados' | 'no_publicado' | 'error';
+  asaltos: AsaltoComplementario[];
+  /** Cruces publicados con resultado (denominador de la cobertura). */
+  publicado: number;
+  motivo: string | null;
+};
+
+export type PlanAsaltos =
+  | { accion: 'rechazar'; motivos: MotivoCotejo[] }
+  | { accion: 'revision'; motivos: MotivoCotejo[] }
+  | { accion: 'sin_hechos'; estado: 'sin_resultados' | 'no_publicado' | 'error'; motivo: string | null }
+  | { accion: 'diferir'; motivo: 'primaria_pendiente' | 'primaria_con_error' | 'primaria_parcial' }
+  | { accion: 'sin_cambios'; motivo: 'primaria_publica' }
+  | {
+      accion: 'escribir';
+      fase: AsaltoComplementario['fase'];
+      cobertura: 'completo' | 'parcial';
+      publicado: number;
+      asaltos: AsaltoComplementario[];
+    };
+
+/**
+ * Decide si se escriben los asaltos de una fase. Los finales de la primaria no
+ * dicen nada del cuadro ni de las poules: cada fase se compara con su propio
+ * estado primario, y sólo `no_publicado`/`sin_resultados` permiten rellenar.
+ */
+export function planificarAsaltos(entrada: {
+  prueba: PruebaCanonica;
+  candidato: CandidatoComplementario;
+  fase: AsaltoComplementario['fase'];
+  lectura: LecturaAsaltosComplementaria;
+  primario: EstadoAsaltosPrimarios;
+}): PlanAsaltos {
+  const { prueba, candidato, fase, lectura, primario } = entrada;
+  const cotejo = cotejar(prueba, candidato);
+  if (cotejo.decision === 'rechazado') return { accion: 'rechazar', motivos: cotejo.motivos };
+  if (cotejo.decision === 'revision') return { accion: 'revision', motivos: cotejo.motivos };
+  if (prueba.formato !== 'INDIVIDUAL' || candidato.formato !== 'INDIVIDUAL') {
+    return { accion: 'rechazar', motivos: ['sin_asaltos_equipos'] };
+  }
+
+  if (lectura.estado === 'sin_resultados' || lectura.estado === 'no_publicado' || lectura.estado === 'error') {
+    return { accion: 'sin_hechos', estado: lectura.estado, motivo: lectura.motivo };
+  }
+
+  if (primario === 'desconocido' || primario === 'pendiente') return { accion: 'diferir', motivo: 'primaria_pendiente' };
+  if (primario === 'error') return { accion: 'diferir', motivo: 'primaria_con_error' };
+  if (primario === 'publicado_parcial') return { accion: 'diferir', motivo: 'primaria_parcial' };
+  if (primario === 'publicado_completo') return { accion: 'sin_cambios', motivo: 'primaria_publica' };
+
+  return { accion: 'escribir', fase, cobertura: lectura.estado, publicado: lectura.publicado, asaltos: lectura.asaltos };
 }
