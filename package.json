@@ -22,6 +22,7 @@
     "fie-resultados": "tsx scripts/fie-resultados.ts",
     "inventario-historico": "tsx scripts/inventario-historico.ts",
     "skermo-finales": "tsx scripts/skermo-finales.ts",
+    "ranking-oficial": "tsx scripts/ranking-oficial.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "tsx tests/e2e/flujos.spec.mts",

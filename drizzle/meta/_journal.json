@@ -127,6 +127,13 @@
       "when": 1790590000000,
       "tag": "0018_referencias_de_inscripcion",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790600000000,
+      "tag": "0019_categorias_m10_m12",
+      "breakpoints": true
     }
   ]
 }

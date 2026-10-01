@@ -109,12 +109,13 @@ describe('inventario Skermo sobre índices reales', () => {
     expect(base.enlaces.pdf).toBe(217);
   });
 
-  it('la categoría que no se reconoce se conserva literal y se marca, sin inventar una', async () => {
+  it('M10 y M12 publicadas se representan tal cual, sin acercarlas a otra categoría', async () => {
     const { deps } = depsSkermo(PAGINAS_RFEE);
     const r = await inventariarSkermo(deps, [{ codigo: 'RFEE', verificada: true }], { maxPeticiones: 3 });
-    const sinMapa = r.catalogo.filter((f) => f.huecos.includes('categoria_no_reconocida'));
-    expect(sinMapa.map((f) => f.categoriaOriginal).sort()).toEqual(['M10', 'M12']);
-    expect(sinMapa.every((f) => f.categoria === null)).toBe(true);
+    expect(r.catalogo.filter((f) => f.huecos.includes('categoria_no_reconocida'))).toEqual([]);
+    const publicadas = r.catalogo.filter((f) => f.categoriaOriginal === 'M10' || f.categoriaOriginal === 'M12');
+    expect(publicadas.map((f) => f.categoria).sort()).toEqual(['M10', 'M12']);
+    expect(publicadas.every((f) => f.categoria === f.categoriaOriginal)).toBe(true);
     const veterano = r.catalogo.find((f) => f.categoriaOriginal === 'VET40');
     expect(veterano?.categoria).toBe('VET');
   });

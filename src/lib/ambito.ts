@@ -68,7 +68,9 @@ export const CATEGORIA_DEL_SELECCIONADOR = 'ABS';
  */
 const ORDEN_CATEGORIAS = [
   'M9',
+  'M10',
   'M11',
+  'M12',
   'M13',
   'M14',
   'M15',

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { mapCategory, mapFormat, mapGender, mapWeapon } from '../mappers';
+import { mapCategory, mapCategoryPublicada, mapFormat, mapGender, mapWeapon } from '../mappers';
 import type {
   SkermoResultsIndexRow,
   SkermoSeasonOption,
@@ -225,7 +225,8 @@ export function filaCatalogoSkermo(
   if (!fila.weapon) huecos.push('arma_no_reconocida');
   if (!fila.gender) huecos.push('genero_no_reconocido');
   if (!fila.format) huecos.push('formato_no_reconocido');
-  if (!fila.category) huecos.push('categoria_no_reconocida');
+  const categoria = mapCategoryPublicada(fila.categoryRaw) ?? fila.category;
+  if (!categoria) huecos.push('categoria_no_reconocida');
 
   const clavePrueba = fila.competitionId
     ? clavePruebaSkermo(contexto.federacion, fila.competitionId)
@@ -245,7 +246,7 @@ export function filaCatalogoSkermo(
     fecha: fila.date,
     arma: fila.weapon,
     genero: fila.gender,
-    categoria: fila.category,
+    categoria,
     categoriaOriginal: fila.categoryRaw,
     formato: fila.format,
     enlaces,

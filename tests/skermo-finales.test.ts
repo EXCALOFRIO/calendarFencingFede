@@ -96,17 +96,76 @@ describe('puestos finales de Skermo en una temporada que no es la vigente', () =
     expect(l.cobertura.error).toMatch(/2021-2022.*2022-2023/);
   });
 
-  it('una categoría sin equivalencia no se aproxima: error con el literal de la fuente', async () => {
-    const sinMapa = CLASIFICACION.replace('<h3>ABS</h3>', '<h3>M10</h3>');
+  it.each(['M10', 'M12'])('%s se representa exactamente como la publica la fuente, sin acercarla a M9/M11/M13', async (etiqueta) => {
     const l = await leerFinalSkermo(
-      filaIndice({ category: null, categoryRaw: 'M10' }),
+      filaIndice({ category: null, categoryRaw: etiqueta }),
+      { federacion: 'RFEE', season: '2021-2022' },
+      deps(CLASIFICACION.replace('<h3>ABS</h3>', `<h3>${etiqueta}</h3>`)),
+    );
+    expect(l.cobertura.estado).toBe('completo');
+    expect(l.prueba).toMatchObject({ categoria: etiqueta, categoriaOriginal: etiqueta, season: '2021-2022', formato: 'INDIVIDUAL' });
+    expect(l.categoriaOriginal).toBe(etiqueta);
+    expect(l.puestos).toHaveLength(12);
+  });
+
+  it('una categoría genuinamente desconocida no se aproxima: error con el literal de la fuente', async () => {
+    const sinMapa = CLASIFICACION.replace('<h3>ABS</h3>', '<h3>M25</h3>');
+    const l = await leerFinalSkermo(
+      filaIndice({ category: null, categoryRaw: 'M25' }),
       { federacion: 'RFEE', season: '2021-2022' },
       deps(sinMapa),
     );
     expect(l.cobertura.estado).toBe('error');
-    expect(l.cobertura.error).toContain('M10');
+    expect(l.cobertura.error).toContain('M25');
+    expect(l.categoriaOriginal).toBe('M25');
     expect(l.prueba).toBeNull();
     expect(l.puestos).toEqual([]);
+  });
+
+  it('una cabecera desconocida no se sustituye por la categoría del índice', async () => {
+    const l = await leerFinalSkermo(
+      filaIndice({ category: 'ABS', categoryRaw: 'ABS' }),
+      { federacion: 'RFEE', season: '2021-2022' },
+      deps(CLASIFICACION.replace('<h3>ABS</h3>', '<h3>Prebenjamín</h3>')),
+    );
+    expect(l.cobertura.estado).toBe('error');
+    expect(l.cobertura.error).toContain('Prebenjamín');
+    expect(l.categoriaOriginal).toBe('Prebenjamín');
+    expect(l.prueba).toBeNull();
+    expect(l.puestos).toEqual([]);
+  });
+
+  it('una cabecera que contradice al índice es conflicto con los dos literales y no importa nada', async () => {
+    const l = await leerFinalSkermo(
+      filaIndice({ category: 'M17', categoryRaw: 'M17' }),
+      { federacion: 'RFEE', season: '2021-2022' },
+      deps(),
+    );
+    expect(l.cobertura.estado).toBe('conflicto');
+    expect(l.cobertura.error).toContain('ABS');
+    expect(l.cobertura.error).toContain('M17');
+    expect(l.prueba).toBeNull();
+    expect(l.puestos).toEqual([]);
+  });
+
+  it('el índice contradictorio M12 frente a una cabecera M10 tampoco se resuelve a favor de ninguno', async () => {
+    const l = await leerFinalSkermo(
+      filaIndice({ category: null, categoryRaw: 'M12' }),
+      { federacion: 'RFEE', season: '2021-2022' },
+      deps(CLASIFICACION.replace('<h3>ABS</h3>', '<h3>M10</h3>')),
+    );
+    expect(l.cobertura.estado).toBe('conflicto');
+    expect(l.prueba).toBeNull();
+  });
+
+  it('sin categoría en la cabecera se usa la del índice', async () => {
+    const l = await leerFinalSkermo(
+      filaIndice({ category: 'ABS', categoryRaw: 'ABS' }),
+      { federacion: 'RFEE', season: '2021-2022' },
+      deps(CLASIFICACION.replace(/<h3>ABS<\/h3>/, '').replace(/<h5>ABS<\/h5>/, '')),
+    );
+    expect(l.cobertura.estado).toBe('completo');
+    expect(l.prueba?.categoria).toBe('ABS');
   });
 
   it('M7 existe como categoría y llega a la prueba, que el esquema Zod antiguo omitía', async () => {

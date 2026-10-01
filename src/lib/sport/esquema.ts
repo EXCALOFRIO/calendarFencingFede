@@ -39,3 +39,25 @@ export function crearDetectorEsquema(
     return estado;
   };
 }
+
+/**
+ * Detector de una única condición de esquema (p. ej. valores añadidos a un
+ * enum por una migración manual). Mismas reglas que `crearDetectorEsquema`:
+ * verdadero se recuerda, falso se reintenta pasado un minuto y un error de la
+ * base se propaga sin recordarse como «ausente».
+ */
+export function crearDetectorCondicion(
+  consultar: () => Promise<boolean>,
+  ahora: () => number = Date.now,
+): () => Promise<boolean> {
+  let aplicada = false;
+  let ausenteHasta = 0;
+
+  return async () => {
+    if (aplicada) return true;
+    if (ahora() < ausenteHasta) return false;
+    aplicada = await consultar();
+    if (!aplicada) ausenteHasta = ahora() + AUSENTE_MS;
+    return aplicada;
+  };
+}

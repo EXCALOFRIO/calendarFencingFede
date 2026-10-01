@@ -97,6 +97,26 @@ export function mapCategory(raw: string | null | undefined): Category | null {
   return null;
 }
 
+/**
+ * Etiquetas que las clasificaciones históricas de Skermo publican y que
+ * `mapCategory` no reconoce a propósito. Sólo sirven para conservar la
+ * categoría de la fuente: no hay edades, reglas ni cortes asociados.
+ */
+export const CATEGORIAS_SOLO_HISTORICAS = ['M10', 'M12'] as const;
+export type CategoriaPublicada = Category | (typeof CATEGORIAS_SOLO_HISTORICAS)[number];
+
+/**
+ * Categoría tal como la publica una fuente histórica. Es `mapCategory` más
+ * M10 y M12. Es un mapper aparte para que el calendario y el cálculo interno,
+ * cuyo validador sigue sin admitirlas, no las reciban sin querer.
+ */
+export function mapCategoryPublicada(raw: string | null | undefined): CategoriaPublicada | null {
+  if (!raw) return null;
+  const v = normalizeLabel(raw).replace(/[\s.]/g, '');
+  if (v === 'M10' || v === 'M12') return v;
+  return mapCategory(raw);
+}
+
 export function mapFormat(raw: string | null | undefined): 'INDIVIDUAL' | 'EQUIPOS' | null {
   if (!raw) return null;
   const v = normalizeLabel(raw);

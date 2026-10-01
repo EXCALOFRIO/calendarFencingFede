@@ -161,6 +161,21 @@ describe('clasificación de una prueba', () => {
     expect(meta.city).toBe('BARCELONA');
   });
 
+  it('conserva el literal de la categoría de la cabecera: M12 publicada exacta, M25 desconocida sin sustituir', () => {
+    const conCategoria = (nueva: string) =>
+      parseSkermoCompetitionResults(CLASIFICACION.replace(/>\s*M20\s*</, `>${nueva}<`), {
+        federationCode: 'RFEE',
+        competitionId: '10158',
+      }).meta;
+    const m12 = conCategoria('M12');
+    expect(m12.categoryRaw).toBe('M12');
+    expect(m12.category).toBeNull();
+    const m25 = conCategoria('M25');
+    expect(m25.categoryRaw).toBe('M25');
+    expect(m25.category).toBeNull();
+    expect(meta.categoryRaw).toBe('M20');
+  });
+
   it('limpia el título y saca la temporada', () => {
     expect(meta.rawTitle).toBe('Resultado Competición TNR M20 2026-2027');
     expect(meta.name).toBe('TNR M20');

@@ -156,7 +156,9 @@ export const GENDER_SHORT = { M: 'M', F: 'F', MIXTO: 'Mx' } as const;
 export const CATEGORY_LABEL = {
   M7: 'M7',
   M9: 'M9',
+  M10: 'M10',
   M11: 'M11',
+  M12: 'M12',
   M13: 'M13',
   M14: 'M14',
   M15: 'M15',
@@ -301,7 +303,7 @@ export function capitalizar(texto: string): string {
  */
 const SIGLAS = new Set([
   'TNR','FIE','EFC','RFEE','CTO','GP','WC','PFCAR','ABS','VET','SUB23','U14',
-  'M9','M11','M13','M14','M15','M17','M20','M23','I','II','III','IV','V','VI',
+  'M9','M10','M11','M12','M13','M14','M15','M17','M20','M23','I','II','III','IV','V','VI',
   'VII','VIII','IX','X','XI','XII','XIII','XIV','XV','XVI','XVII','XVIII','XIX',
   'XX','XXI','XXII','XXIII','XXIV','XXV','A','B','C','D',
 ]);

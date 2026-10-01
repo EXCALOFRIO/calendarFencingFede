@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { sportCompetition, sportEdition } from '@/db/schema';
 import { depsEvidenciaDb } from '@/lib/entries/evidencia-db';
-import { esquemaDeportivo } from '@/lib/sport/esquema-db';
+import { categoriasHistoricasAplicadas, esquemaDeportivo } from '@/lib/sport/esquema-db';
 import { crearGuardDb } from '@/lib/sport/id-guard-db';
 import { escribirCobertura, escribirResultados } from './fie-resultados-db';
 import type { DepsPersistenciaSkermo } from './skermo-finales-persist';
@@ -15,6 +15,7 @@ import type { DepsPersistenciaSkermo } from './skermo-finales-persist';
 export function crearDepsPersistenciaSkermoDb(db: Db): DepsPersistenciaSkermo {
   return {
     esquema: esquemaDeportivo,
+    categoriasHistoricas: categoriasHistoricasAplicadas,
     evidencia: depsEvidenciaDb,
     guard: crearGuardDb(db),
 

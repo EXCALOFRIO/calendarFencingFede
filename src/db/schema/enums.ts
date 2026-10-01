@@ -31,7 +31,14 @@ export const categoryEnum = pgEnum('category_code', [
    */
   'M7',
   'M9',
+  /**
+   * M10 y M12 son etiquetas que publican clasificaciones históricas de Skermo.
+   * Existen sólo para conservar la categoría de la fuente tal cual; no definen
+   * edades ni elegibilidad (`categories.ts` y las normativas no las conocen).
+   */
+  'M10',
   'M11',
+  'M12',
   'M13',
   'M14',
   'M15',

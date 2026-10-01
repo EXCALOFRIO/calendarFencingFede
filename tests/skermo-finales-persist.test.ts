@@ -292,4 +292,43 @@ describe('persistencia de puestos finales de Skermo', () => {
     expect(a.cobertura.size).toBe(0);
     expect(a.pruebas).toEqual([]);
   });
-});
+
+  describe('categorías M10/M12 publicadas', () => {
+    const filaM10 = { ...filaIndice, category: null, categoryRaw: 'M10' } as SkermoResultsIndexRow;
+    const cuerpoM10 = CLASIFICACION.replace('<h3>ABS</h3>', '<h3>M10</h3>');
+
+    it('sin la migración 0019 no escribe la prueba ni la guarda como otra categoría', async () => {
+      const a = almacen();
+      const r = await persistirLecturaSkermo(a.deps, await leer('2021-2022', cuerpoM10, filaM10));
+      expect(r.estado).toBe('esquema_no_aplicado');
+      expect([a.pruebas.length, a.resultados.size, a.externos.length]).toEqual([0, 0, 0]);
+      expect(a.cobertura.get('skermo_rfee|2021-2022|results|RFEE:4612')).toMatchObject({
+        status: 'pendiente',
+        competitionId: null,
+      });
+      expect(a.cobertura.get('skermo_rfee|2021-2022|results|RFEE:4612')?.lastError).toContain('M10');
+    });
+
+    it('con la migración aplicada guarda la prueba con la categoría literal', async () => {
+      const a = almacen();
+      const pruebas: string[] = [];
+      const deps: DepsPersistenciaSkermo = {
+        ...a.deps,
+        categoriasHistoricas: async () => true,
+        upsertPrueba: async (p) => {
+          pruebas.push(`${p.categoria}|${p.categoriaOriginal}|${p.season}`);
+          return 'comp-1';
+        },
+      };
+      const r = await persistirLecturaSkermo(deps, await leer('2021-2022', cuerpoM10, filaM10));
+      expect(r.estado).toBe('aplicado');
+      expect(pruebas).toEqual(['M10|M10|2021-2022']);
+      expect(a.resultados.size).toBe(12);
+    });
+
+    it('una categoría ya existente no necesita la migración', async () => {
+      const a = almacen();
+      const r = await persistirLecturaSkermo(a.deps, await leer());
+      expect(r.estado).toBe('aplicado');
+    });
+  });});

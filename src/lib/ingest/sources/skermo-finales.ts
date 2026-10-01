@@ -1,5 +1,5 @@
 import { normalizarLicencia } from '@/lib/entries/identidad';
-import { normalizeLabel } from '../mappers';
+import { mapCategoryPublicada, normalizeLabel } from '../mappers';
 import type { EstadoCobertura } from './fie-resultados';
 import { fuenteDeFederacionSkermo, clavePruebaSkermo, type FuenteHistorica } from './historico-indice';
 import {
@@ -17,8 +17,10 @@ import {
  *  - la temporada es la del selector del índice del que sale la fila; si el
  *    título de la clasificación declara otra, la prueba queda en `conflicto` y
  *    no se importa;
- *  - la categoría es la de la fuente. Si no se reconoce («M10», «M12»…) la
- *    prueba no se importa ni se aproxima: queda en `error` con el literal;
+ *  - la categoría es la de la fuente, tal como la publica (M10 y M12 incluidas).
+ *    Si la cabecera declara una que no se reconoce, o contradice a la del
+ *    índice, la prueba no se importa ni se completa con la del índice: queda
+ *    en `error` o `conflicto` con los literales;
  *  - los puestos son los publicados: empates repetidos, huecos y filas sin
  *    número se conservan tal cual, sin renumerar;
  *  - una clasificación por equipos se guarda como tal (clave `team:`), nunca
@@ -31,7 +33,9 @@ import {
 export const CATEGORIAS_SKERMO = [
   'M7',
   'M9',
+  'M10',
   'M11',
+  'M12',
   'M13',
   'M14',
   'M15',
@@ -79,6 +83,8 @@ export type LecturaSkermo = {
   federacion: string;
   competitionKey: string;
   prueba: PruebaSkermo | null;
+  /** Categoría literal de la fuente, también cuando la prueba no se importa. */
+  categoriaOriginal: string | null;
   puestos: PuestoSkermo[];
   cobertura: {
     estado: EstadoCobertura;
@@ -102,13 +108,14 @@ function resultado(
   base: Pick<LecturaSkermo, 'season' | 'federacion' | 'competitionKey' | 'url'>,
   estado: EstadoCobertura,
   error: string | null,
-  extra: Partial<Pick<LecturaSkermo, 'prueba' | 'puestos' | 'excluidas'>> & {
+  extra: Partial<Pick<LecturaSkermo, 'prueba' | 'puestos' | 'excluidas' | 'categoriaOriginal'>> & {
     publicado?: number | null;
   } = {},
 ): LecturaSkermo {
   return {
     ...base,
     prueba: extra.prueba ?? null,
+    categoriaOriginal: extra.categoriaOriginal ?? null,
     puestos: extra.puestos ?? [],
     cobertura: {
       estado,
@@ -165,14 +172,27 @@ export async function leerFinalSkermo(
   const arma = meta.weapon ?? fila.weapon;
   const genero = meta.gender ?? fila.gender;
   const formato = meta.format ?? fila.format;
+  const deIndice = (mapCategoryPublicada(fila.categoryRaw) ?? fila.category) as CategoriaSkermo | null;
+  // La cabecera manda sobre el índice pero no lo completa: si declara una
+  // categoría, ésa es la de la prueba o hay un error. Sólo sin cabecera
+  // de categoría se usa la del índice.
   const categoriaOriginal = meta.categoryRaw ?? fila.categoryRaw;
-  const categoria = (meta.category ?? fila.category) as CategoriaSkermo | null;
+  const categoria = (meta.categoryRaw ? mapCategoryPublicada(meta.categoryRaw) : deIndice) as CategoriaSkermo | null;
 
   if (!categoria || !CATEGORIAS_SKERMO.includes(categoria)) {
     return resultado(
       base,
       'error',
       `Categoría sin equivalencia${categoriaOriginal ? ` («${categoriaOriginal}»)` : ''}: no se importa ni se aproxima`,
+      { categoriaOriginal },
+    );
+  }
+  if (meta.categoryRaw && deIndice && deIndice !== categoria) {
+    return resultado(
+      base,
+      'conflicto',
+      `La cabecera declara la categoría «${meta.categoryRaw}» y el índice «${fila.categoryRaw ?? deIndice}»: no se importa`,
+      { categoriaOriginal },
     );
   }
   const faltan = [
@@ -249,5 +269,5 @@ export async function leerFinalSkermo(
       ? null
       : `descuadradas=${excluidas.descuadradas} sinNombre=${excluidas.sinNombre} licenciaRepetida=${excluidas.licenciaRepetida}`;
 
-  return resultado(base, estado, error, { prueba, puestos, excluidas, publicado });
+  return resultado(base, estado, error, { prueba, puestos, excluidas, publicado, categoriaOriginal });
 }

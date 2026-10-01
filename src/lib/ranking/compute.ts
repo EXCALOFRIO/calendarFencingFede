@@ -59,7 +59,9 @@ export type Gender = 'M' | 'F' | 'MIXTO';
 export const RANKING_CATEGORIES = [
   'M7',
   'M9',
+  'M10',
   'M11',
+  'M12',
   'M13',
   'M14',
   'M15',

@@ -14,6 +14,7 @@ import { sha256 } from '../../utils';
 import { fetchText } from '../fetcher';
 import {
   mapCategory,
+  mapCategoryPublicada,
   mapFormat,
   mapGender,
   mapWeapon,
@@ -477,6 +478,9 @@ export type SkermoResultRow = {
   officialPoints: string | null;
 };
 
+/** Forma de una etiqueta de categoría de edad: «M25», «U12», «+45». */
+const FORMA_CATEGORIA = /^(?:[A-Za-z]{1,3}\s?-?\d{1,2}|\+\d{2})$/;
+
 /**
  * Lee la clasificación de una prueba.
  *
@@ -498,18 +502,31 @@ export function parseSkermoCompetitionResults(
   let categoryRaw: string | null = null;
   let format: SkermoCompetitionMeta['format'] = null;
   let date: string | null = null;
+  const sinReconocer: string[] = [];
 
   $('div.row.hidden-xs h3, div.row.hidden-xs h5').each((_, el) => {
     const text = $(el).text().replace(/\s+/g, ' ').trim();
     if (!text) return;
     if (!weapon && mapWeapon(text)) weapon = mapWeapon(text);
     else if (!gender && mapSkermoGender(text)) gender = mapSkermoGender(text);
-    else if (!category && mapCategory(text)) {
+    else if (categoryRaw === null && mapCategoryPublicada(text)) {
       category = mapCategory(text);
       categoryRaw = text;
     } else if (!format && mapFormat(text)) format = mapFormat(text);
     else if (!date && parseSpanishDate(text)) date = parseSpanishDate(text);
+    else sinReconocer.push(text);
   });
+
+  // Un encabezado que no encaja en nada se conserva como categoría literal en
+  // vez de dejarla vacía: así quien lee la prueba no la completa con la del
+  // índice. Se admite por su forma («M25», «U12») o, si el resto del
+  // encabezado está completo, por eliminación.
+  if (categoryRaw === null) {
+    const literal =
+      sinReconocer.find((t) => FORMA_CATEGORIA.test(t)) ??
+      (weapon && gender && format && date && sinReconocer.length === 1 ? sinReconocer[0] : null);
+    if (literal) categoryRaw = literal;
+  }
 
   const rawTitle = $('.panel-heading h3').first().text().replace(/\s+/g, ' ').trim();
   const city =
@@ -1084,7 +1101,9 @@ export async function ingestSkermoResults(
       date: parsed.meta.date ?? row.date,
       weapon: parsed.meta.weapon ?? row.weapon,
       gender: parsed.meta.gender ?? row.gender,
-      category: parsed.meta.category ?? row.category,
+      // Una categoría que declara la cabecera y no se reconoce no se sustituye
+      // por la del índice: la prueba queda en cuarentena con su literal.
+      category: parsed.meta.categoryRaw ? parsed.meta.category : (row.category ?? null),
       format: parsed.meta.format ?? row.format,
     };
 

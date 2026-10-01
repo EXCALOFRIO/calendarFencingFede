@@ -52,6 +52,11 @@ export type FilaCoberturaSkermo = {
 
 export type DepsPersistenciaSkermo = {
   esquema: () => Promise<EstadoEsquema>;
+  /**
+   * ¿Admite `category_code` M10 y M12 (migración 0019)? Sin esta dependencia
+   * se supone que no: esas pruebas no se guardan ni como otra categoría.
+   */
+  categoriasHistoricas?: () => Promise<boolean>;
   evidencia: DepsEvidencia;
   guard: DepsGuardConfirmacion;
   upsertPrueba: (prueba: PruebaSkermo) => Promise<string>;
@@ -223,6 +228,20 @@ export async function persistirLecturaSkermo(
     });
     resumen.cobertura = cobertura.estado;
     return resumen;
+  }
+
+  if (
+    (prueba.categoria === 'M10' || prueba.categoria === 'M12') &&
+    !(deps.categoriasHistoricas && (await deps.categoriasHistoricas()))
+  ) {
+    await deps.upsertCobertura({
+      ...base,
+      competitionId: null,
+      status: 'pendiente',
+      lastError: `La categoría «${prueba.categoriaOriginal ?? prueba.categoria}» necesita la migración 0019 (M10/M12), sin aplicar`,
+    });
+    resumen.cobertura = 'pendiente';
+    return { ...resumen, estado: 'esquema_no_aplicado' };
   }
 
   const competitionId = await deps.upsertPrueba(prueba);
