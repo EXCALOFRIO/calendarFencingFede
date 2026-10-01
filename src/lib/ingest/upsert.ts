@@ -1,19 +1,25 @@
-import { and, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import {
-  athlete,
   competitionRegistration,
   entry,
   event,
   eventCompetition,
   eventDeadline,
   eventDocument,
-  fieFencer,
   liveSource,
-  officialRankingEntry,
   notification,
+  sportRegistrationRef,
   userProfile,
 } from '@/db/schema';
+import { cargarEvidencia } from '@/lib/entries/evidencia';
+import { depsEvidenciaDb } from '@/lib/entries/evidencia-db';
+import {
+  identificarObservacion,
+  refsPublicadas,
+  type RefPublicada,
+} from '@/lib/entries/identidad';
+import { esquemaDeportivo } from '@/lib/sport/esquema-db';
 import { parseFechaMadrid } from '../callups/fechas';
 import { sha256 } from '../utils';
 import type { NormalizedEvent } from './types';
@@ -640,19 +646,13 @@ function competitionKey(
   return `${eventId}|${c.weapon}|${c.gender}|${c.category}|${c.format}`;
 }
 
-/** Una licencia comparable: sin espacios, sin guiones y en mayúsculas. */
-function normalizeLicense(value: string): string {
-  return value.replace(/[\s-]/g, '').toUpperCase();
-}
-
 /**
  * Una fila de lista oficial, tal y como la entrega un adaptador.
  *
- * `sourceFieId` es el único campo que NO se guarda: es el `fencer.id` de la
- * FIE y sirve para emparejar contra `fie_fencer.fie_id`, que es un enlace que
- * ha confirmado una persona. Vive aquí y muere en la consulta de emparejado;
- * el objeto que se inserta se construye campo a campo unas líneas más abajo y
- * no lo incluye.
+ * `sourceFieId` es el `fencer.id` de la FIE. No va en `competition_registration`
+ * (esa tabla no cambia), pero sí se retiene en `sport_registration_ref` cuando
+ * esa tabla existe, junto con la licencia, su ámbito y el día: sirve para
+ * emparejar contra `fie_fencer.fie_id` y contra los IDs externos confirmados.
  */
 export type FilaDeListaOficial = {
   sourceAthleteName: string;
@@ -661,7 +661,7 @@ export type FilaDeListaOficial = {
   sourceClub?: string | null;
   /** Día de inscripción publicado por la fuente, si lo publica. */
   sourceRegisteredAt?: string | null;
-  /** Identificador de la FIE. Solo para emparejar; no se persiste. */
+  /** Identificador de la FIE; se retiene como referencia con ámbito, no como nombre. */
   sourceFieId?: number | null;
 };
 
@@ -706,6 +706,8 @@ export type ListaDeInscritos = {
   source: NormalizedEvent['source'];
   sourceUrl: string | null;
   rows: FilaDeListaOficial[];
+  /** Día (YYYY-MM-DD) de la prueba: es el día del hecho para ámbitos y vigencias. */
+  dia?: string | null;
 };
 
 /**
@@ -725,8 +727,6 @@ export async function upsertListasDeInscritos(
   now: Date,
 ): Promise<{ seen: number; matched: number; withdrawn: number }> {
   const inserts: (typeof competitionRegistration.$inferInsert)[] = [];
-  /** Paralela a `inserts`: lo que sirve para emparejar y no se guarda. */
-  const fieIds: (number | null)[] = [];
   /**
    * Pruebas cuya lista hemos leído de verdad, con la fuente que la publica:
    * solo ahí, y solo de esa fuente, se dan bajas.
@@ -749,7 +749,6 @@ export async function upsertListasDeInscritos(
         lastSeenAt: now,
         withdrawnAt: null,
       });
-      fieIds.push(row.sourceFieId ?? null);
     }
   }
 
@@ -761,206 +760,53 @@ export async function upsertListasDeInscritos(
 
   /**
    * =========================================================================
-   * PRIMER CAMINO: POR IDENTIFICADOR DE LA FIE. Es el mejor que hay.
+   * EMPAREJADO: sólo por lo que la propia fila publicada demuestra
    * =========================================================================
    *
-   * `fie_fencer` guarda el `fie_id` de la FIE junto al `athlete_id` de nuestro
-   * tirador, y ese enlace **lo ha confirmado una persona** (`link_status`
-   * CONFIRMADO, `linked_via` = 'persona' o 'licencia_fie'). O sea que aquí no
-   * se está deduciendo una identidad: se está leyendo una que ya está decidida
-   * y escrita, y la lista de la FIE trae el mismo identificador.
+   * Se identifica con las mismas reglas que usa el lector (`identificarObservacion`):
    *
-   * Por eso va PRIMERO, antes que cualquier licencia: un identificador propio
-   * del publicador es mejor prueba que un número que hay que normalizar.
+   *  · el ID de la FIE publicado, si coincide con una ficha FIE que una persona
+   *    confirmó contra un tirador (`fie_fencer`, CONFIRMADO);
+   *  · la licencia publicada (RFEE o FIE: no son el mismo número), si
+   *    pertenece a UN solo tirador y estaba vigente el día de la prueba;
+   *  · una persona deportiva confirmada, si el esquema está aplicado.
    *
-   * `athlete_id is not null` basta como filtro —la columna solo se rellena
-   * cuando el enlace está confirmado, y así lo dice el esquema— pero se pide
-   * también `link_status` para que esto siga siendo correcto si algún día
-   * alguien relaja esa regla.
+   * Dos candidatos distintos para una misma licencia no se resuelven con «el
+   * último que llegó»: la fila se queda sin emparejar. Y **no hay puente por
+   * nombre**: antes una cadena de nombre igual en el ranking asignaba ficha, y
+   * eso unía homónimos sin prueba. Las filas ya escritas con un `athlete_id`
+   * antiguo se conservan tal cual (ver el `coalesce` de abajo); el lector las
+   * trata como candidato sin probar, no como identidad.
    */
-  const idsFie = [...new Set(fieIds.filter((v): v is number => v !== null))];
-  if (idsFie.length > 0) {
-    const porFieId = new Map<number, string>();
-    for (const lote of chunk(idsFie, 300)) {
-      const filas = await db
-        .select({ fieId: fieFencer.fieId, athleteId: fieFencer.athleteId })
-        .from(fieFencer)
-        .where(
-          and(
-            inArray(fieFencer.fieId, lote),
-            isNotNull(fieFencer.athleteId),
-            eq(fieFencer.linkStatus, 'CONFIRMADO'),
-          ),
-        );
-      for (const f of filas) if (f.athleteId) porFieId.set(f.fieId, f.athleteId);
-    }
-    for (const [i, row] of inserts.entries()) {
-      const fieId = fieIds[i];
-      const id = fieId === null ? undefined : porFieId.get(fieId);
-      if (id && !row.athleteId) {
-        row.athleteId = id;
-        matched += 1;
-      }
+  const hoy = now.toISOString().slice(0, 10);
+  const refsPorFila: RefPublicada[][] = [];
+  const diasPorFila: (string | null)[] = [];
+  for (const lista of listas) {
+    for (const row of lista.rows) {
+      refsPorFila.push(
+        refsPublicadas({
+          fuente: lista.source,
+          fieId: row.sourceFieId ?? null,
+          licencia: row.sourceLicense ?? null,
+          observadoEl: lista.dia ?? hoy,
+        }),
+      );
+      diasPorFila.push(lista.dia ?? hoy);
     }
   }
 
-  /**
-   * =========================================================================
-   * SEGUNDO CAMINO: POR LICENCIA, en UNA consulta para toda la tanda
-   * =========================================================================
-   *
-   * Se compara contra las DOS licencias que guardamos, y hace falta que sean
-   * las dos porque **no son el mismo número**: la de la RFEE es "CLF01835" y
-   * la de la FIE es "26041992000" (DDMMAAAA + 3 dígitos). Una lista de Skermo
-   * traería la primera; una de la FIE, la segunda. Comparar solo contra
-   * `rfee_license` —que es lo que se hacía— dejaba el emparejado de la FIE a
-   * cero sin que nada lo dijera.
-   *
-   * Se mira además `fie_fencer.fie_license`, porque hay fichas de la FIE
-   * enlazadas a un tirador que todavía no tiene la licencia FIE copiada en su
-   * propia fila.
-   *
-   * Si ninguna fila trae licencia —el caso de Skermo hoy— no se consulta nada.
-   */
-  const licencias = [
-    ...new Set(
-      inserts
-        .map((r) => r.sourceLicense)
-        .filter((l): l is string => Boolean(l))
-        .map(normalizeLicense),
-    ),
-  ];
-  if (licencias.length > 0) {
-    const porLicencia = new Map<string, string>();
-    for (const lote of chunk(licencias, 300)) {
-      const filas = await db
-        .select({
-          id: athlete.id,
-          rfeeLicense: athlete.rfeeLicense,
-          fieLicense: athlete.fieLicense,
-        })
-        .from(athlete)
-        .where(
-          or(
-            inArray(
-              sql`upper(replace(replace(${athlete.rfeeLicense}, ' ', ''), '-', ''))`,
-              lote,
-            ),
-            inArray(
-              sql`upper(replace(replace(${athlete.fieLicense}, ' ', ''), '-', ''))`,
-              lote,
-            ),
-          ),
-        );
-      for (const f of filas) {
-        if (f.rfeeLicense) porLicencia.set(normalizeLicense(f.rfeeLicense), f.id);
-        if (f.fieLicense) porLicencia.set(normalizeLicense(f.fieLicense), f.id);
-      }
-
-      const fichas = await db
-        .select({ licencia: fieFencer.fieLicense, athleteId: fieFencer.athleteId })
-        .from(fieFencer)
-        .where(
-          and(
-            inArray(
-              sql`upper(replace(replace(${fieFencer.fieLicense}, ' ', ''), '-', ''))`,
-              lote,
-            ),
-            isNotNull(fieFencer.athleteId),
-            eq(fieFencer.linkStatus, 'CONFIRMADO'),
-          ),
-        );
-      for (const f of fichas) {
-        if (f.licencia && f.athleteId) {
-          porLicencia.set(normalizeLicense(f.licencia), f.athleteId);
-        }
-      }
-    }
-    for (const row of inserts) {
-      if (row.athleteId) continue;
-      const id = row.sourceLicense
-        ? porLicencia.get(normalizeLicense(row.sourceLicense))
-        : undefined;
-      if (id) {
-        row.athleteId = id;
-        matched += 1;
-      }
-    }
-  }
-
-  /**
-   * ===========================================================================
-   * EL PUENTE POR EL RANKING, para las listas que no traen licencia
-   * ===========================================================================
-   *
-   * QUÉ PROBLEMA RESUELVE, con los números de hoy: hay **2.046 filas de listas
-   * oficiales y NINGUNA trae licencia**, así que el emparejado de arriba casa
-   * cero y **nadie llega a ver «Dentro»** — que es media aplicación, porque lo
-   * que se viene a saber es si estás inscrito, incluso si te inscribió otro.
-   *
-   * POR QUÉ ESTO NO ES «EMPAREJAR POR NOMBRE», QUE ESTÁ PROHIBIDO
-   * ------------------------------------------------------------
-   * La regla del proyecto es firme: nunca se decide quién es alguien por su
-   * nombre, porque hay homónimos y las tildes vienen como vienen. Y se
-   * respeta, porque **aquí el nombre no decide nada**.
-   *
-   * Quien decide es la licencia, en otra tabla: `official_ranking_entry` sí
-   * trae licencia (1.231 de 1.237 filas) y su `athlete_id` está puesto por
-   * licencia. Lo que hace este puente es unir dos filas **del mismo
-   * publicador**: Skermo escribe el nombre igual en el ranking y en la lista
-   * de inscritos —comprobado: `CARLOS LLAVADOR FERNANDEZ` carácter por
-   * carácter en las dos—, así que la cadena sirve de costura entre dos filas,
-   * no de prueba de identidad.
-   *
-   *   licencia  →  fila del ranking  →  misma cadena de nombre  →  inscrito
-   *   (decide)     (ancla verificada)   (costura)                  (destino)
-   *
-   * EL GUARDARRAÍL, que es lo que lo hace seguro
-   * --------------------------------------------
-   * Si una cadena de nombre lleva a **más de un tirador**, no se empareja
-   * ninguno. Ahí es donde viven los homónimos, y ante la duda la pantalla ya
-   * sabe decir «sin confirmar» con el enlace a la lista de la fuente, que es
-   * infinitamente mejor que afirmar que alguien está donde no está.
-   *
-   * Y no se pisa nunca un `athlete_id` que ya venga puesto: el de la licencia
-   * directa manda, y el que haya puesto una persona a mano, más.
-   */
-  const sinEmparejar = inserts.filter((r) => !r.athleteId);
-  if (sinEmparejar.length > 0) {
-    const nombres = [...new Set(sinEmparejar.map((r) => r.sourceAthleteName))];
-    /** nombre -> id, y `null` cuando hay más de un candidato. */
-    const porNombre = new Map<string, string | null>();
-
-    for (const lote of chunk(nombres, 300)) {
-      const filas = await db
-        .selectDistinct({
-          nombre: officialRankingEntry.sourceAthleteName,
-          athleteId: officialRankingEntry.athleteId,
-        })
-        .from(officialRankingEntry)
-        .where(
-          and(
-            inArray(officialRankingEntry.sourceAthleteName, lote),
-            isNotNull(officialRankingEntry.athleteId),
-          ),
-        );
-      for (const f of filas) {
-        if (!f.athleteId) continue;
-        const previo = porNombre.get(f.nombre);
-        // Segundo candidato distinto para el mismo nombre: se anula.
-        porNombre.set(
-          f.nombre,
-          previo === undefined || previo === f.athleteId ? f.athleteId : null,
-        );
-      }
-    }
-
-    for (const row of sinEmparejar) {
-      const id = porNombre.get(row.sourceAthleteName);
-      if (id) {
-        row.athleteId = id;
-        matched += 1;
-      }
+  const evidencia = await cargarEvidencia(depsEvidenciaDb, refsPorFila.flat());
+  for (const [i, row] of inserts.entries()) {
+    if (row.athleteId) continue;
+    const refs = refsPorFila[i];
+    if (refs.length === 0) continue;
+    const { athleteId } = identificarObservacion(
+      { fuente: row.source, refs, arma: '', dia: diasPorFila[i] },
+      evidencia,
+    );
+    if (athleteId) {
+      row.athleteId = athleteId;
+      matched += 1;
     }
   }
 
@@ -969,8 +815,22 @@ export async function upsertListasDeInscritos(
     (r) => `${r.eventCompetitionId}|${r.sourceAthleteName}|${r.sourceTeam}`,
   );
 
+  /** Referencias publicadas, agrupadas por la clave natural de la inscripción. */
+  const claveDe = (r: { eventCompetitionId: string; sourceAthleteName: string; sourceTeam?: string }) =>
+    `${r.eventCompetitionId}|${r.sourceAthleteName}|${r.sourceTeam ?? ''}`;
+  const refsPorClave = new Map<string, Map<string, RefPublicada>>();
+  for (const [i, row] of inserts.entries()) {
+    const clave = claveDe(row);
+    const mapa = refsPorClave.get(clave) ?? new Map<string, RefPublicada>();
+    for (const ref of refsPorFila[i]) {
+      mapa.set([ref.scheme, ref.value, ref.scopeSource, ref.scopeFederation].join('|'), ref);
+    }
+    refsPorClave.set(clave, mapa);
+  }
+  const guardarReferencias = (await esquemaDeportivo()).referencias;
+
   for (const lote of chunk(deduped, 300)) {
-    await db
+    const guardadas = await db
       .insert(competitionRegistration)
       .values(lote)
       .onConflictDoUpdate({
@@ -1014,7 +874,55 @@ export async function upsertListasDeInscritos(
            */
           sourceRegisteredAt: sql`coalesce(excluded."source_registered_at", "competition_registration"."source_registered_at")`,
         },
+      })
+      .returning({
+        id: competitionRegistration.id,
+        eventCompetitionId: competitionRegistration.eventCompetitionId,
+        sourceAthleteName: competitionRegistration.sourceAthleteName,
+        sourceTeam: competitionRegistration.sourceTeam,
       });
+
+    /**
+     * El ID y la licencia que publicó la fuente se guardan aparte, con su
+     * ámbito y día, para poder conciliar y corregir después. Sólo si la tabla
+     * existe (migración 0018): sin ella la pasada sigue igual que antes.
+     */
+    if (guardarReferencias) {
+      const refs = guardadas.flatMap((g) =>
+        [...(refsPorClave.get(claveDe(g))?.values() ?? [])].map((ref) => ({
+          registrationId: g.id,
+          scheme: ref.scheme,
+          value: ref.value,
+          scopeSource: ref.scopeSource,
+          scopeFederation: ref.scopeFederation,
+          scopeSeason: ref.scopeSeason,
+          scopeWeapon: ref.scopeWeapon,
+          observedOn: ref.observadoEl,
+          lastSeenAt: now,
+        })),
+      );
+      for (const parte of chunk(refs, 300)) {
+        if (parte.length === 0) continue;
+        await db
+          .insert(sportRegistrationRef)
+          .values(parte)
+          .onConflictDoUpdate({
+            target: [
+              sportRegistrationRef.registrationId,
+              sportRegistrationRef.scheme,
+              sportRegistrationRef.value,
+              sportRegistrationRef.scopeSource,
+              sportRegistrationRef.scopeFederation,
+              sportRegistrationRef.scopeSeason,
+              sportRegistrationRef.scopeWeapon,
+            ],
+            set: {
+              observedOn: sql`excluded."observed_on"`,
+              lastSeenAt: now,
+            },
+          });
+      }
+    }
   }
 
   /**

@@ -26,8 +26,13 @@ export type Observacion = {
   /** Código de equipo ("CCC-M 1"); cadena vacía en individuales. */
   equipo: string;
   club: string | null;
-  /** Ficha local emparejada por licencia/ID o a mano. Nunca por nombre. */
+  /**
+   * Ficha local que la propia observación demuestra (ID/licencia confirmados).
+   * Nunca por nombre, y nunca el `athlete_id` antiguo de la fila sin prueba.
+   */
   athleteId: string | null;
+  /** `athlete_id` guardado en la fila pero sin prueba: sólo para revisión. */
+  candidatoAthleteId?: string | null;
   /**
    * Resultado del resolvedor de identidad si se conoce. `conflict` (varios IDs
    * confirmados pertinentes) impide fundir; `review`/`none` no cuentan.
@@ -44,7 +49,11 @@ export type FilaUnida = {
   nombre: string;
   equipo: string | null;
   club: string | null;
-  /** Fichas locales de las que hay prueba; sólo para uso interno. */
+  /**
+   * Fichas locales de las que hay prueba; sólo para uso interno. Vacío si
+   * alguna evidencia es `conflict` o si la fila reúne fichas distintas: una
+   * atribución contradictoria no marca «es mío» ni suprime solicitudes.
+   */
   athleteIds: string[];
   /** `null` si alguna observación sigue vigente. */
   retiradoEn: Date | null;
@@ -110,12 +119,14 @@ export function unirObservaciones(
       (a, b) => ordenFuente(a.fuente) - ordenFuente(b.fuente),
     );
     const base = ordenadas[0];
+    const conConflicto = obs.some((o) => o.resolucion?.kind === 'conflict');
+    const fichas = new Set(obs.flatMap((o) => (o.athleteId ? [o.athleteId] : [])));
     filas.push({
       competitionId: base.competitionId,
       nombre: base.nombre,
       equipo: base.equipo === '' ? null : base.equipo,
       club: ordenadas.find((o) => o.club)?.club ?? null,
-      athleteIds: [...new Set(obs.flatMap((o) => (o.athleteId ? [o.athleteId] : [])))],
+      athleteIds: conConflicto || fichas.size > 1 ? [] : [...fichas],
       retiradoEn: vigentes
         ? null
         : obs.reduce<Date | null>(

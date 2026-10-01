@@ -70,7 +70,13 @@ import {
   titularTorneo,
 } from '@/lib/utils';
 import type { QuienVa } from '@/app/(app)/inscritos';
-import { aplicarLectura, datosVigentes, type Lectura } from '@/lib/entries/lectura';
+import {
+  SIN_EVENTO,
+  datosVigentes,
+  iniciarLectura,
+  lecturaDelEvento,
+  type LecturaDeEvento,
+} from '@/lib/entries/lectura';
 import { CabeceraFicha } from './cabecera-ficha';
 import { FichaEvento } from './ficha-evento';
 import { LoQueViene, diasHasta, plazoDelEvento } from './lo-que-viene';
@@ -319,29 +325,23 @@ export function VistaCalendario({
    * de red enorme a cambio de nada.
    */
   const [lecturaInscritos, setLecturaInscritos] = React.useState<
-    Lectura<QuienVa>
-  >({ tipo: 'sin_consultar' });
-  const inscritos = datosVigentes(lecturaInscritos);
-  const falloInscritos = lecturaInscritos.tipo === 'error';
+    LecturaDeEvento<QuienVa>
+  >(SIN_EVENTO);
+  const abiertoId = abierto?.id ?? null;
+  const lecturaAbierta = lecturaDelEvento(lecturaInscritos, abiertoId);
+  const inscritos = datosVigentes(lecturaAbierta);
+  const falloInscritos = lecturaAbierta.tipo === 'error';
 
+  // Depende del id y no del objeto del evento: reabrir el mismo torneo no
+  // borra lo leído, y un fallo se señala aparte sin disfrazarse de lista vacía.
   React.useEffect(() => {
-    if (!abierto) return;
-    let vigente = true;
-    setLecturaInscritos({ tipo: 'sin_consultar' });
-    cargarInscritos(abierto.id)
-      .then((datos) => {
-        if (vigente)
-          setLecturaInscritos((a) => aplicarLectura(a, { ok: true, datos }));
-      })
-      // Un fallo no tumba la ficha ni se disfraza de lista vacía: se señala
-      // aparte y se conserva lo último que se leyó bien.
-      .catch(() => {
-        if (vigente) setLecturaInscritos((a) => aplicarLectura(a, { ok: false }));
-      });
-    return () => {
-      vigente = false;
-    };
-  }, [abierto, cargarInscritos]);
+    if (!abiertoId) return;
+    return iniciarLectura({
+      eventoId: abiertoId,
+      cargar: cargarInscritos,
+      actualizar: setLecturaInscritos,
+    });
+  }, [abiertoId, cargarInscritos]);
 
   const todoPuesto =
     armas.length === ARMAS.length &&

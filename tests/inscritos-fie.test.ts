@@ -89,8 +89,8 @@ describe('el filtro de la lista de inscritos de la FIE', () => {
     /**
      * Y lo que NO está. `fieId` es el único campo que sobra de los tres
      * acordados, y está a propósito: sirve para emparejar contra `fie_fencer`
-     * y **no se persiste** (ver `upsertListasDeInscritos`). Todo lo demás no
-     * llega ni a existir.
+     * y se retiene como referencia con ámbito (ver `upsertListasDeInscritos`).
+     * Todo lo demás no llega ni a existir.
      */
     for (const i of salida) {
       expect(Object.keys(i).sort()).toEqual([
@@ -289,9 +289,18 @@ describe('la huella de la lista', () => {
     );
   });
 
-  it('NO cambia por el identificador, que no se guarda', async () => {
-    expect(await huellaDeInscritos([uno], 'p1')).toBe(
+  it('cambia por el identificador, que se retiene como referencia', async () => {
+    expect(await huellaDeInscritos([uno], 'p1')).not.toBe(
       await huellaDeInscritos([{ ...uno, fieId: 99999 }], 'p1'),
+    );
+  });
+
+  it('cambia el día que la tabla de referencias existe, aunque la lista sea idéntica', async () => {
+    expect(await huellaDeInscritos([uno], 'p1', false)).not.toBe(
+      await huellaDeInscritos([uno], 'p1', true),
+    );
+    expect(await huellaDeInscritos([uno], 'p1', true)).toBe(
+      await huellaDeInscritos([uno], 'p1', true),
     );
   });
 

@@ -936,9 +936,11 @@ export type InscritoFie = {
   /** `registeredAt`: el día en que la FIE registró la inscripción. */
   inscritoEl: string | null;
   /**
-   * `fencer.id` de la FIE. **NO SE GUARDA.** Vive solo en memoria para
-   * emparejar contra `fie_fencer.fie_id`, que es un enlace confirmado por una
-   * persona y por tanto mejor prueba de identidad que cualquier licencia.
+   * `fencer.id` de la FIE. No se guarda en la inscripción, sino como
+   * referencia con ámbito (`sport_registration_ref`) si la migración 0018
+   * está aplicada. Sirve para emparejar contra `fie_fencer.fie_id`, que es un
+   * enlace confirmado por una persona y por tanto mejor prueba de identidad
+   * que cualquier licencia.
    */
   fieId: number | null;
 };
@@ -1166,9 +1168,14 @@ export function tocaLeerInscritos(
 /**
  * Huella de una lista de inscritos, para no reescribir lo que no ha cambiado.
  *
- * Entra lo que se guarda y nada más: nombre, equipo, licencia y día de
- * inscripción, ordenados para que el orden en que la FIE los devuelva no
- * cuente como un cambio.
+ * Entra lo que se guarda: nombre, equipo, licencia, día de inscripción y el ID
+ * de la FIE, ordenados para que el orden en que la FIE los devuelva no cuente
+ * como un cambio. El ID entra porque una lista con los mismos nombres pero un
+ * ID nuevo hay que reescribirla para retener la referencia.
+ *
+ * `conReferencias` dice si la tabla de referencias existe. Entra para que el
+ * día que se aplique la migración la huella cambie y cada lista se reescriba
+ * una vez con sus IDs, en vez de quedarse «sin cambios» para siempre sin ellos.
  *
  * Y entra también `destino`, que es la prueba en la que la lista se escribe.
  * Parece de más y no lo es: si esa prueba cambia —pasa cuando el torneo
@@ -1180,9 +1187,12 @@ export function tocaLeerInscritos(
 export async function huellaDeInscritos(
   inscritos: InscritoFie[],
   destino: string,
+  conReferencias = false,
 ): Promise<string> {
   const filas = inscritos
-    .map((i) => [i.nombre, i.equipo, i.licencia ?? '', i.inscritoEl ?? ''].join('|'))
+    .map((i) =>
+      [i.nombre, i.equipo, i.licencia ?? '', i.inscritoEl ?? '', i.fieId ?? ''].join('|'),
+    )
     .sort();
-  return sha256(JSON.stringify([destino, filas]));
+  return sha256(JSON.stringify([destino, conReferencias, filas]));
 }

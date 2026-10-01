@@ -164,9 +164,13 @@ describe('esquema y migración 0017', () => {
     const j = JSON.parse(readFileSync('drizzle/meta/_journal.json', 'utf8')) as {
       entries: { tag: string; when: number }[];
     };
-    const last = j.entries.at(-1)!;
-    expect(last.tag).toBe('0017_identidad_deportiva');
-    expect(last.when).toBeGreaterThan(j.entries.at(-2)!.when);
+    const i = j.entries.findIndex((e) => e.tag === '0017_identidad_deportiva');
+    expect(i).toBeGreaterThan(0);
+    expect(j.entries[i]!.when).toBeGreaterThan(j.entries[i - 1]!.when);
+    // Las migraciones posteriores siguen el orden del journal.
+    for (let k = i + 1; k < j.entries.length; k++) {
+      expect(j.entries[k]!.when).toBeGreaterThan(j.entries[k - 1]!.when);
+    }
   });
 
   it('la posición no forma parte de la identidad del hecho ni la prueba FIE se confunde con el torneo', () => {

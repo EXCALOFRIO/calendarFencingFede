@@ -1,4 +1,4 @@
-import { asc, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import {
   athlete,
@@ -6,39 +6,212 @@ import {
   competitionRegistration,
   event,
   eventCompetition,
+  sportExternalId,
+  sportPerson,
+  sportRegistrationRef,
 } from '@/db/schema';
+import { requireProfile } from '@/lib/auth/session';
+import { depsEvidenciaDb } from '@/lib/entries/evidencia-db';
+import { normalizarLicencia, type RefPublicada } from '@/lib/entries/identidad';
+import { aListaVisible, contarPorPrueba, type InscritoPublicado } from '@/lib/entries/union';
+import { esquemaDeportivo } from '@/lib/sport/esquema-db';
 import {
-  aListaVisible,
-  contarPorPrueba,
-  reencajar,
-  unirObservaciones,
-  type FilaUnida,
-  type InscritoPublicado,
-  type ObservacionCruda,
-} from '@/lib/entries/union';
-import { estadoDeLista, type EstadoLista } from '@/lib/entries/lectura';
+  descubrirTarjetas,
+  leerListaUnida,
+  type DepsDescubrimiento,
+  type DepsLector,
+  type ListaUnida,
+} from './inscritos-lector';
+import { clavePrueba } from './clave-prueba';
 
 export type { InscritoPublicado } from '@/lib/entries/union';
-
-/**
- * Qué prueba es, sin depender de su id: arma + género + categoría + formato.
- *
- * Es la clave con la que se reconoce «el mismo florete femenino individual»
- * en la fila de Skermo y en la de la FIE, que son dos filas de
- * `event_competition`. Se calcula en Postgres para no traer cuatro columnas
- * más por cada inscrito.
- */
-export function clavePrueba(t: typeof eventCompetition) {
-  return sql<string>`concat_ws('|', ${t.weapon}::text, ${t.gender}::text, ${t.category}::text, ${t.format}::text)`;
-}
+export type { ListaUnida } from './inscritos-lector';
 
 /** Tarjeta a la que pertenece una prueba: el torneo canónico o él mismo. */
 const tarjetaSql = sql<string>`coalesce(${event.canonicalEventId}, ${event.id})`;
 
-export type ListaUnida = {
-  filas: FilaUnida[];
-  /** Por prueba de la tarjeta: sin consultar, vacía o con datos. */
-  estados: Record<string, EstadoLista>;
+const LOTE = 300;
+
+function lotes<T>(items: readonly T[]): T[][] {
+  const salida: T[][] = [];
+  for (let i = 0; i < items.length; i += LOTE) salida.push(items.slice(i, i + LOTE));
+  return salida;
+}
+
+const depsDb: DepsLector = {
+  async observaciones(eventIds) {
+    const delTorneoYSuPar = or(
+      inArray(event.id, eventIds),
+      inArray(event.canonicalEventId, eventIds),
+    );
+
+    const [crudas, pruebas] = await Promise.all([
+      db
+        .select({
+          registrationId: competitionRegistration.id,
+          competitionId: competitionRegistration.eventCompetitionId,
+          prueba: clavePrueba(eventCompetition),
+          tarjeta: tarjetaSql,
+          arma: eventCompetition.weapon,
+          dia: sql<string | null>`coalesce(${eventCompetition.competitionDate}, ${event.startDate})::text`,
+          nombre: competitionRegistration.sourceAthleteName,
+          equipo: competitionRegistration.sourceTeam,
+          clubPublicado: competitionRegistration.sourceClub,
+          licencia: competitionRegistration.sourceLicense,
+          athleteIdGuardado: competitionRegistration.athleteId,
+          retiradoEn: competitionRegistration.withdrawnAt,
+          fuente: competitionRegistration.source,
+          sourceUrl: competitionRegistration.sourceUrl,
+          leidoEl: competitionRegistration.lastSeenAt,
+        })
+        .from(competitionRegistration)
+        .innerJoin(
+          eventCompetition,
+          eq(competitionRegistration.eventCompetitionId, eventCompetition.id),
+        )
+        .innerJoin(event, eq(event.id, eventCompetition.eventId))
+        .where(delTorneoYSuPar)
+        .orderBy(asc(competitionRegistration.sourceAthleteName)),
+      db
+        .select({
+          id: eventCompetition.id,
+          prueba: clavePrueba(eventCompetition),
+          tarjeta: tarjetaSql,
+          propia: sql<boolean>`${event.canonicalEventId} is null`,
+          consultada: sql<boolean>`(${eventCompetition.registrationsCheckedAt} is not null or ${eventCompetition.registrationCount} is not null)`,
+        })
+        .from(eventCompetition)
+        .innerJoin(event, eq(event.id, eventCompetition.eventId))
+        .where(delTorneoYSuPar),
+    ]);
+
+    return { crudas, pruebas };
+  },
+
+  async referencias(registrationIds) {
+    const salida = new Map<string, RefPublicada[]>();
+    for (const lote of lotes(registrationIds)) {
+      const filas = await db
+        .select()
+        .from(sportRegistrationRef)
+        .where(inArray(sportRegistrationRef.registrationId, lote));
+      for (const f of filas) {
+        const lista = salida.get(f.registrationId) ?? [];
+        lista.push({
+          scheme: f.scheme,
+          value: f.value,
+          scopeSource: f.scopeSource,
+          scopeFederation: f.scopeFederation,
+          scopeSeason: f.scopeSeason,
+          scopeWeapon: f.scopeWeapon,
+          observadoEl: f.observedOn,
+        });
+        salida.set(f.registrationId, lista);
+      }
+    }
+    return salida;
+  },
+
+  async clubesDe(athleteIds) {
+    const salida = new Map<string, string | null>();
+    for (const lote of lotes(athleteIds)) {
+      const filas = await db
+        .select({ id: athlete.id, club: club.name })
+        .from(athlete)
+        .leftJoin(club, eq(athlete.clubId, club.id))
+        .where(inArray(athlete.id, lote));
+      for (const f of filas) salida.set(f.id, f.club);
+    }
+    return salida;
+  },
+
+  evidencia: depsEvidenciaDb,
+};
+
+const depsDescubrimientoDb: DepsDescubrimiento = {
+  esquema: esquemaDeportivo,
+
+  async pistas(athleteIds) {
+    const licencias = new Set<string>();
+    const fieIds = new Set<number>();
+    const valores = new Set<string>();
+
+    const [atletas, fichas] = await Promise.all([
+      db
+        .select({ rfee: athlete.rfeeLicense, fie: athlete.fieLicense })
+        .from(athlete)
+        .where(inArray(athlete.id, athleteIds)),
+      depsEvidenciaDb.fichasFiePorAtleta(athleteIds),
+    ]);
+    for (const a of atletas) {
+      if (a.rfee) licencias.add(normalizarLicencia(a.rfee));
+      if (a.fie) licencias.add(normalizarLicencia(a.fie));
+    }
+    for (const f of fichas) {
+      fieIds.add(f.fieId);
+      if (f.fieLicense) licencias.add(normalizarLicencia(f.fieLicense));
+    }
+
+    if ((await esquemaDeportivo()).identidad) {
+      const personas = await db
+        .select({ id: sportPerson.id })
+        .from(sportPerson)
+        .where(and(inArray(sportPerson.athleteId, athleteIds), isNull(sportPerson.mergedIntoPersonId)));
+      const ids = personas.map((p) => p.id);
+      for (const lote of lotes(ids)) {
+        const externos = await db
+          .select({ value: sportExternalId.value })
+          .from(sportExternalId)
+          .where(
+            and(
+              inArray(sportExternalId.personId, lote),
+              eq(sportExternalId.linkStatus, 'CONFIRMADO'),
+            ),
+          );
+        for (const e of externos) valores.add(e.value);
+      }
+    }
+
+    for (const id of fieIds) valores.add(String(id));
+    for (const l of licencias) valores.add(l);
+    return { licencias: [...licencias], fieIds: [...fieIds], valores: [...valores] };
+  },
+
+  async tarjetas({ athleteIds, pistas, conReferencias, hoy }) {
+    const licenciaNormalizada = sql`upper(replace(replace(${competitionRegistration.sourceLicense}, ' ', ''), '-', ''))`;
+    const condiciones = [inArray(competitionRegistration.athleteId, athleteIds)];
+    if (pistas.licencias.length > 0) {
+      condiciones.push(inArray(licenciaNormalizada, pistas.licencias));
+    }
+    if (conReferencias && pistas.valores.length > 0) {
+      condiciones.push(
+        inArray(
+          competitionRegistration.id,
+          db
+            .select({ id: sportRegistrationRef.registrationId })
+            .from(sportRegistrationRef)
+            .where(inArray(sportRegistrationRef.value, pistas.valores)),
+        ),
+      );
+    }
+
+    const filas = await db
+      .selectDistinct({ tarjeta: tarjetaSql })
+      .from(competitionRegistration)
+      .innerJoin(
+        eventCompetition,
+        eq(competitionRegistration.eventCompetitionId, eventCompetition.id),
+      )
+      .innerJoin(event, eq(eventCompetition.eventId, event.id))
+      .where(
+        and(
+          or(...condiciones),
+          isNull(competitionRegistration.withdrawnAt),
+          gte(event.endDate, hoy),
+        ),
+      );
+    return filas.map((f) => f.tarjeta);
+  },
 };
 
 /**
@@ -50,95 +223,22 @@ export type ListaUnida = {
  * tenga su misma arma/género/categoría/formato. Si sólo la publica la FIE (las
  * pruebas por equipos de las Copas del Mundo), se queda en su propia fila.
  *
- * Una sola consulta para todos los torneos: el driver de Neon habla por HTTP y
- * cada viaje cuenta.
+ * **Límite privado de lectura:** exige sesión antes de consultar nada, porque
+ * este lector devuelve procedencia, URL y fichas internas y no debe quedar al
+ * alcance de ninguna entrada que olvide autenticar.
  */
 export async function inscritosUnidosDeTorneos(
   eventIds: string[],
   opciones: { incluirRetirados?: boolean } = {},
 ): Promise<ListaUnida> {
-  if (eventIds.length === 0) return { filas: [], estados: {} };
+  await requireProfile();
+  return leerListaUnida(depsDb, eventIds, opciones);
+}
 
-  const delTorneoYSuPar = or(
-    inArray(event.id, eventIds),
-    inArray(event.canonicalEventId, eventIds),
-  );
-
-  const [crudas, pruebas] = await Promise.all([
-    db
-      .select({
-        competitionId: competitionRegistration.eventCompetitionId,
-        prueba: clavePrueba(eventCompetition),
-        tarjeta: tarjetaSql,
-        nombre: competitionRegistration.sourceAthleteName,
-        equipo: competitionRegistration.sourceTeam,
-        clubPublicado: competitionRegistration.sourceClub,
-        athleteId: competitionRegistration.athleteId,
-        retiradoEn: competitionRegistration.withdrawnAt,
-        fuente: competitionRegistration.source,
-        sourceUrl: competitionRegistration.sourceUrl,
-        leidoEl: competitionRegistration.lastSeenAt,
-        clubNombre: club.name,
-      })
-      .from(competitionRegistration)
-      .innerJoin(
-        eventCompetition,
-        eq(competitionRegistration.eventCompetitionId, eventCompetition.id),
-      )
-      .innerJoin(event, eq(event.id, eventCompetition.eventId))
-      .leftJoin(athlete, eq(competitionRegistration.athleteId, athlete.id))
-      .leftJoin(club, eq(athlete.clubId, club.id))
-      .where(delTorneoYSuPar)
-      .orderBy(asc(competitionRegistration.sourceAthleteName)),
-    db
-      .select({
-        id: eventCompetition.id,
-        prueba: clavePrueba(eventCompetition),
-        tarjeta: tarjetaSql,
-        propia: sql<boolean>`${event.canonicalEventId} is null`,
-        consultada: sql<boolean>`(${eventCompetition.registrationsCheckedAt} is not null or ${eventCompetition.registrationCount} is not null)`,
-      })
-      .from(eventCompetition)
-      .innerJoin(event, eq(event.id, eventCompetition.eventId))
-      .where(delTorneoYSuPar),
-  ]);
-
-  /** La prueba española es el destino cuando existe; si no, la de la FIE. */
-  const destinoPorPrueba = new Map<string, string>();
-  for (const p of [...pruebas].sort((a, b) => Number(b.propia) - Number(a.propia))) {
-    const clave = `${p.tarjeta}|${p.prueba}`;
-    if (!destinoPorPrueba.has(clave)) destinoPorPrueba.set(clave, p.id);
-  }
-
-  const observaciones = reencajar(
-    crudas.map<ObservacionCruda>((f) => ({
-      competitionId: f.competitionId,
-      prueba: f.prueba,
-      tarjeta: f.tarjeta,
-      nombre: f.nombre,
-      equipo: f.equipo,
-      club: f.clubPublicado ?? f.clubNombre ?? null,
-      athleteId: f.athleteId,
-      retiradoEn: f.retiradoEn,
-      fuente: f.fuente,
-      sourceUrl: f.sourceUrl,
-      leidoEl: f.leidoEl,
-    })),
-    destinoPorPrueba,
-  );
-
-  const filas = unirObservaciones(observaciones, opciones);
-  const visibles = contarPorPrueba(filas);
-
-  const estados: Record<string, EstadoLista> = {};
-  for (const [clave, destino] of destinoPorPrueba) {
-    const consultada = pruebas.some(
-      (p) => `${p.tarjeta}|${p.prueba}` === clave && p.consultada,
-    );
-    estados[destino] = estadoDeLista({ consultada, filas: visibles[destino] ?? 0 });
-  }
-
-  return { filas, estados };
+/** Torneos con una inscripción vigente de alguno de estos tiradores (filtro previo). */
+export async function tarjetasConAtletas(athleteIds: string[], hoy: string): Promise<string[]> {
+  await requireProfile();
+  return descubrirTarjetas(depsDescubrimientoDb, athleteIds, hoy);
 }
 
 /**

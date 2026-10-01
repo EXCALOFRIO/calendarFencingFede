@@ -31,7 +31,7 @@ import {
 } from '@/db/schema';
 import { PATRONES_CAMPO_RETIRADO_SQL, etiquetaDeCampo } from '@/lib/ai/campos';
 import type { CategoryCode, SeasonCategoryRow } from '../categories';
-import { clavePrueba } from './inscritos-union';
+import { clavePrueba } from './clave-prueba';
 import {
   type ComputedDeadline,
   type DeadlineRuleRow,
@@ -1389,12 +1389,3 @@ export const contarPruebas = cache(async (): Promise<number> => {
     );
   return fila?.n ?? 0;
 });
-
-export {
-  clavePrueba,
-  contarInscritosPublicados,
-  inscritosPublicados,
-  inscritosUnidosDeTorneos,
-  type InscritoPublicado,
-  type ListaUnida,
-} from './inscritos-union';

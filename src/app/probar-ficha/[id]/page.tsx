@@ -1,4 +1,5 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
+import { getSessionProfile } from '@/lib/auth/session';
 import { FichaEvento } from '@/components/calendario/ficha-evento';
 import {
   Sheet,
@@ -7,7 +8,8 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
-import { inscritosPublicados, listEvents } from '@/lib/queries/calendar';
+import { listEvents } from '@/lib/queries/calendar';
+import { inscritosPublicados } from '@/lib/queries/inscritos-union';
 import { CIRCUIT_LABEL, organismoDe, titularTorneo } from '@/lib/utils';
 
 /**
@@ -28,7 +30,8 @@ import { CIRCUIT_LABEL, organismoDe, titularTorneo } from '@/lib/utils';
  * la ficha tenga que ir a buscar los datos de los PDFs por su cuenta, que es
  * lo que hace en producción.
  *
- * En producción devuelve 404. No es una pantalla de la aplicación.
+ * En producción devuelve 404. No es una pantalla de la aplicación. En
+ * desarrollo exige sesión: no hay atajo para los registros deportivos privados.
  */
 export const dynamic = 'force-dynamic';
 
@@ -38,6 +41,10 @@ export default async function BancoDePruebasFicha({
   params: Promise<{ id: string }>;
 }) {
   if (process.env.NODE_ENV === 'production') notFound();
+
+  // La lista de inscritos es un registro deportivo privado: ni siquiera el
+  // banco de pruebas la lee sin sesión, y la guarda va antes de cualquier consulta.
+  if (!(await getSessionProfile())) redirect('/entrar');
 
   const { id } = await params;
   const [evento] = await listEvents({ ids: [id], includePast: true, limit: 1 });

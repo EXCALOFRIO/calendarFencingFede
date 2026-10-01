@@ -15,7 +15,7 @@ import {
   uuid,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
-import { event, eventCompetition } from './calendar';
+import { competitionRegistration, event, eventCompetition } from './calendar';
 import { athlete, userProfile } from './core';
 import {
   categoryEnum,
@@ -180,6 +180,52 @@ export const sportExternalId = pgTable(
     ),
     check(
       'sport_external_id_scheme',
+      sql`${t.scheme} IN ('fie_addr_id','fie_license','rfee_license','skermo_athlete_id','pdf_ref')`,
+    ),
+  ],
+);
+
+/**
+ * Referencia que la fuente publicó para el participante de una inscripción
+ * (ID FIE, licencia), con su ámbito y el día del dato. Es la prueba que deja
+ * enlazar la observación con una persona confirmada sin fiarse del nombre ni
+ * del `athlete_id` antiguo de la fila. No sale nunca en una respuesta visible.
+ *
+ * Vive aparte de `competition_registration` a propósito: añadir una columna a
+ * esa tabla rompería sus inserciones y lecturas completas mientras la
+ * migración no esté aplicada; esta tabla sólo se toca si existe.
+ */
+export const sportRegistrationRef = pgTable(
+  'sport_registration_ref',
+  {
+    registrationId: uuid('registration_id')
+      .notNull()
+      .references(() => competitionRegistration.id, { onDelete: 'cascade' }),
+    scheme: text('scheme').notNull(),
+    value: text('value').notNull(),
+    scopeSource: text('scope_source').notNull(),
+    scopeFederation: text('scope_federation').notNull().default(''),
+    scopeSeason: text('scope_season').notNull().default(''),
+    scopeWeapon: text('scope_weapon').notNull().default(''),
+    observedOn: date('observed_on'),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({
+      name: 'sport_registration_ref_pk',
+      columns: [
+        t.registrationId,
+        t.scheme,
+        t.value,
+        t.scopeSource,
+        t.scopeFederation,
+        t.scopeSeason,
+        t.scopeWeapon,
+      ],
+    }),
+    index('sport_registration_ref_value_idx').on(t.scheme, t.value),
+    check(
+      'sport_registration_ref_scheme',
       sql`${t.scheme} IN ('fie_addr_id','fie_license','rfee_license','skermo_athlete_id','pdf_ref')`,
     ),
   ],

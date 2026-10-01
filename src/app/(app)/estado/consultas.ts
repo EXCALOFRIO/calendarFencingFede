@@ -1,7 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import {
-  competitionRegistration,
   event,
   eventCompetition,
   eventDeadline,
@@ -20,7 +19,7 @@ import {
   mergeDeadlines,
 } from '@/lib/deadlines';
 import { getDeadlineRules } from '@/lib/queries/calendar';
-import { inscritosUnidosDeTorneos } from '@/lib/queries/inscritos-union';
+import { inscritosUnidosDeTorneos, tarjetasConAtletas } from '@/lib/queries/inscritos-union';
 import { getRankingSeason } from '@/lib/queries/ranking';
 import {
   type CutoffStatus,
@@ -343,28 +342,10 @@ export async function getPruebasPropias(
    * listas; luego se unen las listas de esos torneos. Así una inscripción que
    * sólo publica la FIE, colgada del par absorbido del torneo, también cuenta.
    */
-  const tarjetasConMia = await db
-    .selectDistinct({
-      tarjeta: sql<string>`coalesce(${event.canonicalEventId}, ${event.id})`,
-    })
-    .from(competitionRegistration)
-    .innerJoin(
-      eventCompetition,
-      eq(competitionRegistration.eventCompetitionId, eventCompetition.id),
-    )
-    .innerJoin(event, eq(eventCompetition.eventId, event.id))
-    .where(
-      and(
-        inArray(competitionRegistration.athleteId, ids),
-        isNull(competitionRegistration.withdrawnAt),
-        gte(event.endDate, hoy),
-      ),
-    );
+  const tarjetasConMia = await tarjetasConAtletas(ids, hoy);
 
   const propios = new Set(ids);
-  const { filas: unidasMias } = await inscritosUnidosDeTorneos(
-    tarjetasConMia.map((t) => t.tarjeta),
-  );
+  const { filas: unidasMias } = await inscritosUnidosDeTorneos(tarjetasConMia);
   const mias = unidasMias.flatMap((f) =>
     f.athleteIds
       .filter((id) => propios.has(id))

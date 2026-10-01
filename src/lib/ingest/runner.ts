@@ -11,6 +11,7 @@ import {
 } from '@/db/schema';
 import { recalcularVigencia } from '../documentos/recalcular';
 import { tocaLeerRanking } from './cadencia-ranking';
+import { esquemaDeportivo } from '@/lib/sport/esquema-db';
 import { sha256 } from '../utils';
 import { recalcularEnlaces } from './enlazar';
 import { fetchText } from './fetcher';
@@ -616,6 +617,8 @@ export async function ingestInscritosFie(
     season: number;
     competitionId: number;
     hashGuardado: string | null;
+    /** Día de la prueba (YYYY-MM-DD), para ámbitos y vigencias de los IDs. */
+    dia: string | null;
   };
 
   const aLeer: Destino[] = [];
@@ -655,10 +658,13 @@ export async function ingestInscritosFie(
       season: ref.season,
       competitionId: ref.competitionId,
       hashGuardado: c.registrationsHash,
+      dia: c.competitionDate ? c.competitionDate.slice(0, 10) : null,
     });
   }
 
   if (aLeer.length === 0) return resumen;
+
+  const conReferencias = (await esquemaDeportivo()).referencias;
 
   /** De seis en seis, igual que el resto del adaptador de la FIE. */
   const leidas: {
@@ -690,7 +696,7 @@ export async function ingestInscritosFie(
       leidas.push({
         destino: r.destino,
         inscritos: r.inscritos,
-        huella: await huellaDeInscritos(r.inscritos, r.destino.destinoId),
+        huella: await huellaDeInscritos(r.inscritos, r.destino.destinoId, conReferencias),
         publicados: r.totalPublicados,
       });
     }
@@ -745,6 +751,7 @@ export async function ingestInscritosFie(
         eventCompetitionId: l.destino.destinoId,
         source: 'fie' as const,
         sourceUrl: fieEntriesUrl(l.destino.season, l.destino.competitionId),
+        dia: l.destino.dia,
         rows: l.inscritos.map((i) => ({
           sourceAthleteName: i.nombre,
           sourceTeam: i.equipo,

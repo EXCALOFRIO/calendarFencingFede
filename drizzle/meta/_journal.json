@@ -120,6 +120,13 @@
       "when": 1790580000000,
       "tag": "0017_identidad_deportiva",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790590000000,
+      "tag": "0018_referencias_de_inscripcion",
+      "breakpoints": true
     }
   ]
 }
