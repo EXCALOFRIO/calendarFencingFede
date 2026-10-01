@@ -161,6 +161,71 @@ describe('secciones reconocidas que no se pueden leer no quedan completas como v
     expect(p.estado).toBe('parcial');
   });
 
+  describe('final reconocida sin ganador', () => {
+    const semillas = NOMBRES.map((t, i) => ({ semilla: i + 1, nombre: t.nombre, club: t.club }));
+    const SEMIS = [
+      { x: 297, y: 690, nombre: 'ALFA UN', marcador: '15/10' },
+      { x: 297, y: 650, nombre: 'CHARLIE', marcador: '15/12' },
+    ];
+    const FINAL_ALFA_CHARLIE = { x: 469, y: 670, nombre: 'ALFA UNO', marcador: '15/9' };
+    const sinFinal = (n: number) => paginaCuadro(n, ESPADA, ['Semi-finales', 'Final'], semillas, SEMIS);
+    const leerPaginas = (...paginas: ReturnType<typeof paginaCuadro>[]) =>
+      leerResultadosPdf([...paginas, paginaClasificacion(9, ESPADA, NOMBRES)], CTX).pruebas[0];
+
+    it('dos semifinales resueltas y ninguna final: rechazo localizado, tres parejas publicadas y dos importadas', () => {
+      const p = leerPaginas(sinFinal(1));
+      expect(p.asaltos.filter((a) => a.fase === 'TABLEAU')).toHaveLength(2);
+      expect(p.excluidos.sinGanador).toBe(1);
+      const r = p.rechazos.filter((x) => x.seccion === 'cuadro');
+      expect(r).toHaveLength(1);
+      expect(r[0].region).toMatchObject({ pagina: 1 });
+      expect(r[0].motivo).toMatch(/A2/);
+      expect(p.cobertura.cuadro).toMatchObject({ estado: 'parcial', publicado: 3, importado: 2 });
+      expect(p.estado).toBe('parcial');
+    });
+
+    it('la final con ganador en otra página de la misma prueba no deja falta ni duplica el duelo', () => {
+      const completa = paginaCuadro(2, ESPADA, ['Semi-finales', 'Final'], semillas, [...SEMIS, FINAL_ALFA_CHARLIE]);
+      const p = leerPaginas(sinFinal(1), completa);
+      const tableau = p.asaltos.filter((a) => a.fase === 'TABLEAU');
+      expect(tableau).toHaveLength(3);
+      expect(tableau.filter((a) => a.ronda === 'A2')).toHaveLength(1);
+      expect(p.rechazos.filter((x) => x.seccion === 'cuadro')).toHaveLength(0);
+      expect(p.cobertura.cuadro).toMatchObject({ estado: 'completo', publicado: 3, importado: 3 });
+      expect(p.estado).toBe('completo');
+    });
+
+    it('la continuación en otra página funciona también si precede a la página incompleta', () => {
+      const completa = paginaCuadro(1, ESPADA, ['Semi-finales', 'Final'], semillas, [...SEMIS, FINAL_ALFA_CHARLIE]);
+      const p = leerPaginas(completa, sinFinal(2));
+      expect(p.rechazos.filter((x) => x.seccion === 'cuadro')).toHaveLength(0);
+      expect(p.asaltos.filter((a) => a.fase === 'TABLEAU')).toHaveLength(3);
+      expect(p.cobertura.cuadro.estado).toBe('completo');
+    });
+
+    it('otra ronda con los mismos participantes o una final ajena no resuelve la final pendiente', () => {
+      const soloSemis = paginaCuadro(2, ESPADA, ['Semi-finales'], semillas, SEMIS);
+      expect(leerPaginas(sinFinal(1), soloSemis).cobertura.cuadro).toMatchObject({ estado: 'parcial', publicado: 3, importado: 2 });
+
+      const otroOrden = [semillas[0], semillas[2], semillas[1], semillas[3]];
+      const ajena = paginaCuadro(2, ESPADA, ['Semi-finales', 'Final'], otroOrden, [
+        { x: 297, y: 690, nombre: 'ALFA UN', marcador: '15/10' },
+        { x: 297, y: 650, nombre: 'DELTA C', marcador: '15/8' },
+        { x: 469, y: 670, nombre: 'DELTA CUATRO', marcador: '15/7' },
+      ]);
+      const p = leerPaginas(sinFinal(1), ajena);
+      expect(p.rechazos.filter((x) => x.seccion === 'cuadro' && x.region?.pagina === 1)).toHaveLength(1);
+      expect(p.cobertura.cuadro.estado).toBe('parcial');
+      expect(p.estado).toBe('parcial');
+    });
+
+    it('un cuadro completo no recibe rechazo por la última columna', () => {
+      const p = leerPaginas(paginaCuadro(1, ESPADA, ['Semi-finales', 'Final'], semillas, [...SEMIS, FINAL_ALFA_CHARLIE]));
+      expect(p.rechazos.filter((x) => x.seccion === 'cuadro')).toHaveLength(0);
+      expect(p.cobertura.cuadro).toMatchObject({ estado: 'completo', publicado: 3, importado: 3 });
+    });
+  });
+
   it('el BYE demostrado y la clasificación sola siguen completos, sin rechazos inventados', () => {
     const semillas = [
       { semilla: 1, nombre: 'ALFA UNO', club: 'AAA-1' },

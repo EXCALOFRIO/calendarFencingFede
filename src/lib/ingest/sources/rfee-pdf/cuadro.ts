@@ -58,6 +58,9 @@ export function leerCuadro(paginas: readonly PaginaAnalizada[], registro: readon
   const rechazos: Rechazo[] = [];
   const acumulador = new AcumuladorAsaltos(excluidos);
   const cruces = new Set<string>();
+  // Cruces con ganador identificado, para reconocer una pareja terminal resuelta en otra página.
+  const resueltos: { ronda: string; a: string; b: string }[] = [];
+  const terminales: { ronda: string; a: Entrada; b: Entrada; region: Region; pagina: number; motivo: string }[] = [];
 
   for (const pg of paginas) {
     const regionPagina: Region = { pagina: pg.numero, yMax: redondear(pg.filas[0].y + 8), yMin: 55 };
@@ -107,6 +110,27 @@ export function leerCuadro(paginas: readonly PaginaAnalizada[], registro: readon
     }
     if (columnas.length < encabezados.length) {
       rechazarPagina(`Cuadro con ${encabezados.length} rondas rotuladas y sólo ${columnas.length} columnas leídas`);
+    } else if (columnas.length === encabezados.length) {
+      // El último encabezado rotula un cruce cuyo ganador no está en esta página: sólo vale si otra página de la prueba lo resuelve.
+      const ultima = [...columnas[columnas.length - 1]].sort((x, y) => y.y - x.y);
+      const encabezado = encabezados[columnas.length - 1];
+      const ronda = claveRonda(encabezado.s) ?? `?${normalizar(encabezado.s)}`;
+      for (let i = 0; i < ultima.length; i += 2) {
+        const [a, b] = [ultima[i], ultima[i + 1]];
+        if (!b) {
+          rechazarPagina(`Participante de ${ronda} sin pareja ni ganador en la última columna`);
+          excluidos.sinGanador += 1;
+          continue;
+        }
+        terminales.push({
+          ronda,
+          a,
+          b,
+          pagina: pg.numero,
+          region: regionPar(pg.numero, a.y, b.y),
+          motivo: `Pareja de ${ronda} sin ganador en esta página ni en otra de la prueba`,
+        });
+      }
     }
 
     for (let k = 0; k + 1 < columnas.length; k += 1) {
@@ -187,6 +211,7 @@ export function leerCuadro(paginas: readonly PaginaAnalizada[], registro: readon
           rechazarCruce(esA ? 'Los dos participantes encajan con el texto del ganador' : 'El ganador no coincide con ninguno de los dos participantes');
           continue;
         }
+        resueltos.push({ ronda, a: a.texto, b: b.texto });
         const ganador = esA ? a : b;
         const perdedor = esA ? b : a;
         w.atrib = ganador.atrib;
@@ -232,6 +257,20 @@ export function leerCuadro(paginas: readonly PaginaAnalizada[], registro: readon
         });
       }
     }
+  }
+
+  const contadas: typeof terminales = [];
+  for (const t of terminales) {
+    const mismoPar = (r: { ronda: string; a: string; b: string }) =>
+      r.ronda === t.ronda &&
+      ((compatibles(r.a, t.a.texto) && compatibles(r.b, t.b.texto)) || (compatibles(r.a, t.b.texto) && compatibles(r.b, t.a.texto)));
+    if (resueltos.some(mismoPar)) continue;
+    rechazos.push({ seccion: 'cuadro', region: t.region, motivo: t.motivo });
+    // Un cuadro repetido en dos páginas cuenta la misma pareja pendiente una sola vez.
+    if (contadas.some((c) => mismoPar({ ronda: c.ronda, a: c.a.texto, b: c.b.texto }))) continue;
+    contadas.push(t);
+    cruces.add(`${t.ronda}|${[normalizar(t.a.texto), normalizar(t.b.texto)].sort().join('|')}`);
+    excluidos.sinGanador += 1;
   }
 
   return { asaltos: acumulador.asaltos, excluidos, rechazos, publicado: cruces.size };
