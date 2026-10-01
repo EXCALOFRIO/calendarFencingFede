@@ -831,7 +831,7 @@ function BandaDondeYCuando({
  * nations, 477 athletes» de la ficha de torneo de la FIE: un número real que
  * le da peso a la pantalla sin inventar nada.
  */
-function BandaEstasDentro({
+export function BandaEstasDentro({
   evento,
   prueba,
   inscritos,
@@ -879,6 +879,19 @@ function BandaEstasDentro({
           ? { n: prueba.registrationCount, rotulo: 'según la organización' }
           : null;
 
+  /**
+   * Depende de «hay lectura retenida y la última falló», no de las filas de
+   * esta prueba: una lista válida pero vacía que no se pudo refrescar tampoco
+   * debe pasar por «vacía» sin matiz.
+   */
+  const avisoDeFallo =
+    inscritos !== null && fallo ? (
+      <p role="alert" className="text-sm text-muted-foreground sm:text-xs">
+        La última lectura falló: se enseña la anterior, que puede estar
+        desactualizada.
+      </p>
+    ) : null;
+
   return (
     <Banda
       titulo="¿Estás dentro?"
@@ -899,18 +912,18 @@ function BandaEstasDentro({
           </span>
         </div>
       ) : oficiales.length === 0 ? (
-        /*
+        <>
+        {/*
           El estado vacío, a la izquierda y compacto. Centrado medía 190 px en
           un iPhone para decir dos frases, y además era el único bloque
           centrado de una ficha entera alineada a la izquierda: se leía como
           pegado de otra pantalla.
-        */
-        /*
+
           `text-pretty` a mano: `Empty` trae `text-balance`, que iguala el
           largo de las líneas y en un panel estrecho parte la frase en cuatro
           renglones cortos con la caja medio vacía. Balancear sirve para un
           titular de tres palabras, no para dos frases.
-        */
+        */}
         <Empty className="items-start border p-4 text-left text-pretty md:p-4">
           <EmptyHeader className="max-w-none items-start gap-1 text-left">
             {inscritos?.estados[prueba.id] === 'vacia' ? (
@@ -933,6 +946,8 @@ function BandaEstasDentro({
             )}
           </EmptyHeader>
         </Empty>
+        {avisoDeFallo}
+        </>
       ) : (
         <>
           {estasDentro ? (
@@ -982,12 +997,7 @@ function BandaEstasDentro({
             </Button>
           ) : null}
 
-          {fallo ? (
-            <p role="alert" className="text-sm text-muted-foreground sm:text-xs">
-              La última lectura falló: se enseña la anterior, que puede estar
-              desactualizada.
-            </p>
-          ) : null}
+          {avisoDeFallo}
 
           <p className="text-sm text-muted-foreground sm:text-xs">
             Inscritos publicados por las organizaciones. Estar inscrito no
