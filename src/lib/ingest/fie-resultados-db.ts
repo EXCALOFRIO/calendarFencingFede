@@ -85,8 +85,10 @@ export type FilaCoberturaGenerica = {
   /** `undefined` = no tocar la cifra anterior (lectura fallida). */
   publishedTotal?: number | null;
   importedTotal?: number;
-  sourceUrl: string;
+  sourceUrl: string | null;
   lastError: string | null;
+  /** Estado fino que el enum no distingue (p. ej. «solo_enlace»). `undefined` = no tocar. */
+  cursor?: string | null;
 };
 
 /** Cobertura por fuente/temporada/tipo/prueba; una lectura fallida no pisa las cifras. */
@@ -109,6 +111,7 @@ export async function escribirCobertura(
       importedTotal: f.importedTotal ?? 0,
       attempts: 1,
       sourceUrl: f.sourceUrl,
+      cursor: f.cursor ?? null,
       lastCheckedAt: sql`now()`,
       lastError: f.lastError,
     })
@@ -130,6 +133,7 @@ export async function escribirCobertura(
             }),
         attempts: sql`${sportImportCoverage.attempts} + 1`,
         sourceUrl: sql`excluded.source_url`,
+        ...(f.cursor === undefined ? {} : { cursor: sql`excluded.cursor` }),
         lastCheckedAt: sql`now()`,
         lastError: sql`excluded.last_error`,
         updatedAt: sql`now()`,

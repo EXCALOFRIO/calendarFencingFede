@@ -20,6 +20,7 @@
     "db:seed": "tsx scripts/seed.ts",
     "ingest": "tsx scripts/ingest.ts",
     "fie-resultados": "tsx scripts/fie-resultados.ts",
+    "complementarios": "tsx scripts/complementarios.ts",
     "rfee-pdf": "tsx scripts/rfee-pdf.ts",
     "inventario-historico": "tsx scripts/inventario-historico.ts",
     "skermo-finales": "tsx scripts/skermo-finales.ts",
