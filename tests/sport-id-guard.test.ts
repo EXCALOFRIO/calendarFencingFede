@@ -7,6 +7,7 @@ import {
   ambitoCompatible,
   confirmarIdExterno,
   conflictosDeConfirmacion,
+  filaConfirmadaPropia,
   validarCandidato,
   vigenciasSolapan,
   type DepsGuardConfirmacion,
@@ -111,16 +112,35 @@ describe('reglas puras del guard de IDs externos', () => {
 });
 
 /** Almacén en memoria con la semántica del contrato; simulación, no Neon. */
-function almacenSimulado() {
+function almacenSimulado(fusiones: Record<string, string> = {}) {
   const filas: ExternalIdRow[] = [];
   const personas: string[] = [];
+  const canonica = (id: string) => fusiones[id] ?? id;
   let cola: Promise<unknown> = Promise.resolve();
   const deps: DepsGuardConfirmacion = {
     confirmar(c, persona?: PersonaNuevaConId) {
       // El contrato exige comprobar+escribir como una unidad: se serializa.
       const turno = cola.then(async () => {
         await Promise.resolve();
-        if (conflictosDeConfirmacion(filas, c).length > 0) return false;
+        if (conflictosDeConfirmacion(filas, c, canonica).length > 0) return false;
+        const propia = filaConfirmadaPropia(filas, c, canonica);
+        if (propia) {
+          Object.assign(propia, { validTo: c.validTo });
+          return true;
+        }
+        // Como `sport_external_id_confirmed_key`: la clave exacta no mira person_id.
+        const duplicada = filas.some(
+          (f) =>
+            f.linkStatus === 'CONFIRMADO' &&
+            f.scheme === c.scheme &&
+            f.value === c.value.trim() &&
+            f.scopeSource === c.scopeSource &&
+            f.scopeFederation === c.scopeFederation &&
+            f.scopeSeason === c.scopeSeason &&
+            f.scopeWeapon === c.scopeWeapon &&
+            f.validFrom === c.validFrom,
+        );
+        if (duplicada) throw new Error('23505 sport_external_id_confirmed_key');
         if (persona) personas.push(persona.id);
         filas.push({ ...c, linkStatus: 'CONFIRMADO' });
         return true;
@@ -129,7 +149,7 @@ function almacenSimulado() {
       return turno;
     },
     async conflictos(c) {
-      return conflictosDeConfirmacion(filas, c);
+      return conflictosDeConfirmacion(filas, c, canonica);
     },
   };
   return { deps, filas, personas };
@@ -153,6 +173,44 @@ describe('confirmarIdExterno', () => {
     ]);
     expect(resultados.filter((r) => r.ok)).toHaveLength(1);
     expect(filas).toHaveLength(1);
+  });
+
+  it('reconfirmar el ID exacto de A fusionada en B es idempotente pidiendo A o B', async () => {
+    const { deps, filas } = almacenSimulado({ a: 'b' });
+    // Fila confirmada cuando A todavía era independiente.
+    filas.push({ ...candidato({ personId: 'a', validFrom: '2020-01-01' }), linkStatus: 'CONFIRMADO' });
+    expect(
+      await confirmarIdExterno(deps, candidato({ personId: 'b', validFrom: '2020-01-01', validTo: '2021-06-30' })),
+    ).toEqual({ ok: true });
+    expect(
+      await confirmarIdExterno(deps, candidato({ personId: 'a', validFrom: '2020-01-01', validTo: '2021-06-30' })),
+    ).toEqual({ ok: true });
+    expect(filas).toHaveLength(1);
+    expect(filas[0]).toMatchObject({ personId: 'a', validTo: '2021-06-30' });
+  });
+
+  it('con A fusionada en B sigue rechazando a una tercera persona y no oculta duplicados ajenos', async () => {
+    const { deps, filas } = almacenSimulado({ a: 'b' });
+    filas.push({ ...candidato({ personId: 'a', validFrom: '2020-01-01' }), linkStatus: 'CONFIRMADO' });
+    expect(await confirmarIdExterno(deps, candidato({ personId: 'c', validFrom: '2020-01-01' }))).toEqual({
+      ok: false,
+      motivo: 'conflicto',
+      personIds: ['a'],
+    });
+    // Otro inicio de vigencia para B (misma persona canónica) con solape: se permite insertar una fila nueva.
+    expect(await confirmarIdExterno(deps, candidato({ personId: 'b', validFrom: '2022-01-01' }))).toEqual({ ok: true });
+    expect(filas).toHaveLength(2);
+  });
+
+  it('encuentra la fila exacta propia sólo si coincide toda la clave y la persona canónica', () => {
+    const canonica = (id: string) => (id === 'a' ? 'b' : id);
+    const existentes = [fila({ personId: 'a', validFrom: '2020-01-01', scopeFederation: 'RFEE' })];
+    const c = candidato({ personId: 'b', validFrom: '2020-01-01', scopeFederation: 'RFEE' });
+    expect(filaConfirmadaPropia(existentes, c, canonica)).toBe(existentes[0]);
+    expect(filaConfirmadaPropia(existentes, c)).toBeNull();
+    expect(filaConfirmadaPropia(existentes, { ...c, validFrom: '2020-01-02' }, canonica)).toBeNull();
+    expect(filaConfirmadaPropia(existentes, { ...c, scopeFederation: '' }, canonica)).toBeNull();
+    expect(filaConfirmadaPropia([fila({ personId: 'a', linkStatus: 'PROPUESTO' })], c, canonica)).toBeNull();
   });
 
   it('un rechazo no deja una persona nueva huérfana', async () => {
@@ -227,7 +285,29 @@ describe('guard sobre Postgres: forma de la unidad atómica (SQL generado, sin b
     expect(sql).toMatch(/e\.valid_from <= coalesce\(\$\d+::date, 'infinity'::date\)/);
     expect(sql).toMatch(/\$\d+::date <= coalesce\(e\.valid_to, 'infinity'::date\)/);
     expect(sql).toMatch(/e\.link_status = 'CONFIRMADO'/);
-    expect(sql).toMatch(/coalesce\(ep\.merged_into_person_id, e\.person_id\) <> \$\d+::uuid/);
+    expect(sql).toMatch(/coalesce\(ep\.merged_into_person_id, e\.person_id\) <> coalesce\(/);
+  });
+
+  it('canoniza candidato y existente, y reutiliza la fila exacta propia antes de insertar', async () => {
+    const { db, lote } = dbFalsa([{ id: 'x' }]);
+    const id = '00000000-0000-4000-8000-000000000002';
+    await crearGuardDb(db).confirmar(candidato({ personId: id, validFrom: '2020-01-01' }));
+    const { sql, params } = texto(lote()[1]);
+    // El candidato se sustituye por su persona canónica en el choque y en la fila propia.
+    expect(sql).toMatch(/coalesce\(ep\.merged_into_person_id, e\.person_id\) <> coalesce\(\(SELECT cp\.merged_into_person_id FROM sport_person cp WHERE cp\.id = \$\d+::uuid\), \$\d+::uuid\)/);
+    expect(sql).toMatch(/WITH propia AS \(\s+UPDATE sport_external_id e/);
+    expect(sql).toMatch(/e\.valid_from = \$\d+::date/);
+    expect(sql).toMatch(/e\.scope_federation = \$\d+\s+AND e\.scope_season = \$\d+\s+AND e\.scope_weapon = \$\d+/);
+    expect(sql).toMatch(/coalesce\(\(SELECT ep\.merged_into_person_id FROM sport_person ep WHERE ep\.id = e\.person_id\), e\.person_id\) = coalesce\(/);
+    expect(sql).toMatch(/WHERE NOT EXISTS \(SELECT 1 FROM propia\)\s+AND NOT\s+EXISTS/);
+    expect(sql).toMatch(/ON CONFLICT ON CONSTRAINT sport_external_id_person_key/);
+    expect(sql).toMatch(/SELECT id FROM propia\s+UNION ALL\s+SELECT id FROM nueva/);
+    expect(params).toContain(id);
+  });
+
+  it('con una fila propia actualizada devuelve true aunque no haya insert', async () => {
+    const { db } = dbFalsa({ rows: [{ id: 'fila-existente' }] });
+    expect(await crearGuardDb(db).confirmar(candidato({ personId: '00000000-0000-4000-8000-000000000002' }))).toBe(true);
   });
 
   it('devuelve false cuando la escritura condicionada no insertó nada', async () => {

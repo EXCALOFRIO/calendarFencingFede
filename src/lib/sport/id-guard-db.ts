@@ -51,8 +51,16 @@ export function sqlHayChoque(c: IdExternoCandidato): SQL {
       AND (e.scope_weapon = '' OR ${c.scopeWeapon} = '' OR e.scope_weapon = ${c.scopeWeapon})
       AND e.valid_from <= coalesce(${c.validTo}::date, 'infinity'::date)
       AND ${c.validFrom}::date <= coalesce(e.valid_to, 'infinity'::date)
-      AND coalesce(ep.merged_into_person_id, e.person_id) <> ${c.personId}::uuid
+      AND coalesce(ep.merged_into_person_id, e.person_id) <> ${personaCanonica(c)}
   )`;
+}
+
+/**
+ * Persona que prevalece para el candidato (sigue una fusión A→B de un nivel).
+ * Si la persona aún no existe (alta en la misma unidad) es ella misma.
+ */
+function personaCanonica(c: IdExternoCandidato): SQL {
+  return sql`coalesce((SELECT cp.merged_into_person_id FROM sport_person cp WHERE cp.id = ${c.personId}::uuid), ${c.personId}::uuid)`;
 }
 
 function columnasId(c: IdExternoCandidato): SQL {
@@ -64,17 +72,46 @@ const NOMBRES_ID = sql.raw(
 );
 
 export function sqlConfirmarPersonaExistente(c: IdExternoCandidato): SQL {
-  return sql`INSERT INTO sport_external_id (person_id, ${NOMBRES_ID})
-    SELECT ${c.personId}::uuid, ${columnasId(c)}
-    WHERE NOT ${sqlHayChoque(c)}
-    ON CONFLICT ON CONSTRAINT sport_external_id_person_key DO UPDATE
-      SET link_status = 'CONFIRMADO',
-          valid_to = excluded.valid_to,
-          linked_via = excluded.linked_via,
-          linked_at = excluded.linked_at,
-          evidence = excluded.evidence,
+  // `sport_external_id_confirmed_key` no incluye person_id: si la fila exacta ya
+  // está confirmada para A y se reconfirma como B (A→B) o como A, insertar de
+  // nuevo chocaría con ella (23505). Se actualiza la fila propia y no se inserta.
+  // `ON CONFLICT` sólo cubre la fila de la misma persona que aún no está confirmada.
+  return sql`WITH propia AS (
+      UPDATE sport_external_id e
+      SET valid_to = ${c.validTo}::date,
+          linked_via = ${c.linkedVia},
+          linked_at = now(),
+          evidence = ${c.evidence},
           updated_at = now()
-    RETURNING id`;
+      WHERE e.link_status = 'CONFIRMADO'
+        AND e.scheme = ${c.scheme}
+        AND e.value = ${c.value.trim()}
+        AND e.scope_source = ${c.scopeSource}
+        AND e.scope_federation = ${c.scopeFederation}
+        AND e.scope_season = ${c.scopeSeason}
+        AND e.scope_weapon = ${c.scopeWeapon}
+        AND e.valid_from = ${c.validFrom}::date
+        AND coalesce((SELECT ep.merged_into_person_id FROM sport_person ep WHERE ep.id = e.person_id), e.person_id) = ${personaCanonica(c)}
+        AND NOT ${sqlHayChoque(c)}
+      RETURNING e.id
+    ),
+    nueva AS (
+      INSERT INTO sport_external_id (person_id, ${NOMBRES_ID})
+      SELECT ${c.personId}::uuid, ${columnasId(c)}
+      WHERE NOT EXISTS (SELECT 1 FROM propia)
+        AND NOT ${sqlHayChoque(c)}
+      ON CONFLICT ON CONSTRAINT sport_external_id_person_key DO UPDATE
+        SET link_status = 'CONFIRMADO',
+            valid_to = excluded.valid_to,
+            linked_via = excluded.linked_via,
+            linked_at = excluded.linked_at,
+            evidence = excluded.evidence,
+            updated_at = now()
+      RETURNING id
+    )
+    SELECT id FROM propia
+    UNION ALL
+    SELECT id FROM nueva`;
 }
 
 export function sqlConfirmarPersonaNueva(c: IdExternoCandidato, p: PersonaNuevaConId): SQL {
@@ -124,7 +161,7 @@ export function crearGuardDb(db: Pick<Db, 'batch' | 'execute'>): DepsGuardConfir
           AND (e.scope_weapon = '' OR ${candidato.scopeWeapon} = '' OR e.scope_weapon = ${candidato.scopeWeapon})
           AND e.valid_from <= coalesce(${candidato.validTo}::date, 'infinity'::date)
           AND ${candidato.validFrom}::date <= coalesce(e.valid_to, 'infinity'::date)
-          AND coalesce(ep.merged_into_person_id, e.person_id) <> ${candidato.personId}::uuid`);
+          AND coalesce(ep.merged_into_person_id, e.person_id) <> ${personaCanonica(candidato)}`);
       return filasDe(resultado) as unknown as ExternalIdRow[];
     },
   };

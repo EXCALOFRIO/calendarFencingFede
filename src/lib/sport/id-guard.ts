@@ -129,6 +129,34 @@ export function conflictosDeConfirmacion(
   );
 }
 
+/**
+ * Fila confirmada con la clave EXACTA del candidato (incluido `valid_from`) cuya
+ * persona canónica es la del candidato. Es la que hay que reutilizar: el índice
+ * `confirmed_key` no mira `person_id`, así que insertar otra fila sería un 23505.
+ */
+export function filaConfirmadaPropia(
+  existentes: readonly ExternalIdRow[],
+  candidato: IdExternoCandidato,
+  canonica: (personId: string) => string = (id) => id,
+): ExternalIdRow | null {
+  const propia = canonica(candidato.personId);
+  return (
+    existentes.find(
+      (e) =>
+        e.linkStatus === 'CONFIRMADO' &&
+        e.personId !== null &&
+        canonica(e.personId) === propia &&
+        e.scheme === candidato.scheme &&
+        e.value.trim() === candidato.value.trim() &&
+        e.scopeSource === candidato.scopeSource &&
+        e.scopeFederation === candidato.scopeFederation &&
+        e.scopeSeason === candidato.scopeSeason &&
+        e.scopeWeapon === candidato.scopeWeapon &&
+        e.validFrom === candidato.validFrom,
+    ) ?? null
+  );
+}
+
 export async function confirmarIdExterno(
   deps: DepsGuardConfirmacion,
   candidato: IdExternoCandidato,
