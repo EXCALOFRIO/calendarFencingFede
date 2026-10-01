@@ -395,7 +395,7 @@ export const sportBout = pgTable(
     source: text('source').notNull(),
     /** POULE | TABLEAU */
     phase: text('phase').notNull(),
-    /** Poule nº o ronda del cuadro (p. ej. 'P2', 'T32', 'T8'). */
+    /** Poule nº (`P2`) o `tableId` del cuadro FIE (`A32`, `A2` final, `C2` bronce). */
     roundKey: text('round_key').notNull(),
     fencerARef: text('fencer_a_ref').notNull(),
     fencerBRef: text('fencer_b_ref').notNull(),
