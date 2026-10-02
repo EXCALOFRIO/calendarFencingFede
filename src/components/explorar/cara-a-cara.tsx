@@ -427,14 +427,11 @@ function OtrosCoincidentes({
   otros,
   persona,
   excluidos,
-  listaConfirmadaLeida,
   criterios,
 }: {
   otros: OtrosVista;
   persona: PersonaCaraACara;
   excluidos: ReadonlySet<string>;
-  /** Sin la lista confirmada leída, `excluidos` está vacío por desconocimiento, no por ausencia. */
-  listaConfirmadaLeida: boolean;
   criterios: CriteriosCaraACara;
 }) {
   if (otros.tipo === 'error') {
@@ -442,8 +439,8 @@ function OtrosCoincidentes({
       <p role="alert" className="flex items-start gap-2 text-sm">
         <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden />
         <span className="medida">
-          No se ha podido buscar a otras personas por ese nombre. Ha fallado la consulta; no es que
-          no haya coincidencias.
+          No se ha podido buscar a otras personas indexadas por ese nombre. Ha fallado la consulta; no es
+          que no haya coincidencias.
         </span>
       </p>
     );
@@ -453,20 +450,15 @@ function OtrosCoincidentes({
   return (
     <div className="flex flex-col gap-2">
       <h3 id="h2h-otros" className="text-lg">
-        Otras personas con ese nombre
+        Otras personas indexadas que coinciden
       </h3>
-      {listaConfirmadaLeida ? (
-        <Nota>
-          Aún no tienen asaltos confirmados con {titular(persona.nombre)} en lo importado. Abrir el cara a
-          cara muestra qué cubre la lectura, no un balance.
-        </Nota>
-      ) : (
-        <Nota>
-          Son personas indexadas con ese nombre. No se ha podido comprobar la lista de rivales con asaltos
-          confirmados, así que no se sabe si alguna tiene asaltos con {titular(persona.nombre)}: su
-          cobertura se determina al abrirlo, y ahí se muestra qué cubre la lectura, no un balance.
-        </Nota>
-      )}
+      {/* La lista confirmada filtra por nombre canónico y esta búsqueda también casa alias: que una persona
+          no figure arriba no prueba que no tenga asaltos con la consultada, ni siquiera con la lista leída. */}
+      <Nota>
+        Son personas indexadas que coinciden con el nombre o un alias. No se afirma que tengan o no asaltos
+        con {titular(persona.nombre)}: su cobertura se determina al abrirlo, y ahí se muestra qué cubre la
+        lectura, no un balance.
+      </Nota>
       <ul aria-labelledby="h2h-otros" className="divide-y rounded-md border bg-card">
         {items.map((d) => (
           <FilaPersona
@@ -607,7 +599,6 @@ export function ElegirRival({
           otros={otros}
           persona={persona}
           excluidos={idsRivales}
-          listaConfirmadaLeida={rivales.tipo === 'ok'}
           criterios={criterios}
         />
       ) : null}

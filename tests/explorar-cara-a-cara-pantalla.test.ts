@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   cargarCaraACaraPantalla,
   type DatosCaraACara,
+  type RivalesVista,
   type VistaCaraACara,
 } from '@/lib/sport/explorar/cara-a-cara-pantalla';
 import {
@@ -447,7 +448,8 @@ describe('cargarCaraACaraPantalla: elegir rival', () => {
     // La propia persona no se ofrece como su rival.
     expect(marcado).not.toContain(`rival=${UUID_A}`);
     expect(marcado).toContain('cursor=sig');
-    expect(marcado).toContain('Aún no tienen asaltos confirmados');
+    expect(marcado).toContain('al abrirlo');
+    expect(marcado).not.toContain('Aún no tienen asaltos confirmados');
   });
 
   it('sin rivales no afirma que nunca compitiera y propone buscar por nombre', () => {
@@ -582,17 +584,83 @@ describe('elegir rival conserva temporada, arma y fase', () => {
     }
   });
 
-  it('con la lista leída, el texto de personas sin asaltos confirmados se mantiene', () => {
+  it('con la lista leída tampoco promete ausencia de asaltos: la búsqueda suplementaria usa siempre el texto neutro', () => {
+    const listas: RivalesVista[] = [
+      { tipo: 'ok', items: [], siguiente: null, sinResultados: true },
+      { tipo: 'ok', items: [{ id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3 }], siguiente: 'sig', sinResultados: false },
+    ];
+    for (const rivales of listas) {
+      const marcado = html(
+        React.createElement(ElegirRival, {
+          persona,
+          rivales,
+          otros: { tipo: 'ok', items: [coincidente] },
+          criterios: CRITERIOS_CARA_A_CARA_VACIOS,
+        }),
+      );
+      expect(marcado).toContain('al abrirlo');
+      expect(marcado).toContain('personas indexadas');
+      expect(marcado).not.toMatch(/Aún no tienen|no tienen asaltos|sin asaltos/i);
+    }
+  });
+
+  it('un rival con duelos hallado sólo por alias no se presenta como persona sin asaltos', async () => {
+    // listarRivales (por nombre canónico) lo omite; buscarDeportistas lo encuentra por un alias.
+    const { ctx } = crearContexto({
+      respuestas: [
+        ...sinFusiones,
+        cabeceras,
+        { cuando: /FROM sport_bout b/, filas: [] },
+        {
+          cuando: /FROM sport_person p\s+WHERE/,
+          filas: [
+            {
+              id: UUID_C,
+              nombre: 'Nora Diaz',
+              claveNombre: 'nora diaz',
+              alias: 'N. Diaz-Pons',
+              pais: 'ITA',
+              genero: 'F',
+              anioNacimiento: 2006,
+            },
+          ],
+        },
+      ],
+    });
+    const entrada = { ...CRITERIOS_CARA_A_CARA_VACIOS, ...todos, q: 'pons' };
+    const v = await cargarCaraACaraPantalla(ctx, UUID_A, entrada);
+    if (v.tipo !== 'elegir') throw new Error(v.tipo);
+    expect(v.rivales).toMatchObject({ tipo: 'ok', sinResultados: true });
+    if (v.otros?.tipo !== 'ok') throw new Error('la búsqueda debía ir bien');
+    expect(v.otros.items.map((d) => d.id)).toEqual([UUID_C]);
+
+    const marcado = html(
+      React.createElement(ElegirRival, { persona: v.persona, rivales: v.rivales, otros: v.otros, criterios: entrada }),
+    );
+    expect(marcado).toContain('Coincide con el alias «N. Diaz-Pons»');
+    expect(marcado).toContain('al abrirlo');
+    expect(marcado).not.toMatch(/Aún no tienen|no tienen asaltos|sin asaltos/i);
+    expect(marcado).toContain(`rival=${UUID_C}&amp;temporada=2027&amp;arma=ESPADA&amp;fase=POULE`);
+  });
+
+  it('el error de la búsqueda suplementaria es un aviso propio y neutro, con la lista confirmada intacta', () => {
     const marcado = html(
       React.createElement(ElegirRival, {
         persona,
-        rivales: { tipo: 'ok', items: [], siguiente: null, sinResultados: true },
-        otros: { tipo: 'ok', items: [coincidente] },
-        criterios: CRITERIOS_CARA_A_CARA_VACIOS,
+        rivales: {
+          tipo: 'ok',
+          items: [{ id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3 }],
+          siguiente: null,
+          sinResultados: false,
+        },
+        otros: { tipo: 'error' },
+        criterios: { ...CRITERIOS_CARA_A_CARA_VACIOS, q: 'ruiz' },
       }),
     );
-    expect(marcado).toContain('Aún no tienen asaltos confirmados');
-    expect(marcado).not.toContain('al abrirlo');
+    expect(marcado).toContain('Marta Ruiz');
+    expect(marcado).toContain('otras personas indexadas');
+    expect(marcado).toContain('no es que no haya coincidencias');
+    expect(marcado).toContain('role="alert"');
   });
 });
 
