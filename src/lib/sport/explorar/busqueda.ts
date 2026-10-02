@@ -14,6 +14,7 @@ import {
   unionesPrueba,
   y,
 } from './filtros-sql';
+import { SALTOS, sqlGrupoDe } from './personas';
 import type { Arma, DeportistaResumen, FiltrosBusqueda, Genero } from './tipos';
 
 const CLASE = 'busqueda';
@@ -33,6 +34,13 @@ export type ResultadoBusqueda =
   | { estado: 'cursor_invalido' }
   /** El esquema deportivo (migración 0017) no está aplicado: no es «sin resultados». */
   | { estado: 'no_disponible' };
+
+/**
+ * Alias y hechos pueden seguir colgando de una persona fundida: se buscan en
+ * todo el grupo de la persona `p` (la que prevalece), igual que ficha e
+ * histórico, y la fila devuelta sigue siendo la de `p`.
+ */
+const grupoP = sqlGrupoDe(sql`p.id`);
 
 function palabrasCoinciden(columna: SQL, palabras: readonly string[]): SQL {
   return y(
@@ -61,12 +69,12 @@ function condicionNacionalidad(codigo: string): SQL {
     codigo === 'ESP'
       ? sql`OR EXISTS (
           SELECT 1 FROM sport_external_id x
-          WHERE x.person_id = p.id AND x.scheme = 'rfee_license' AND x.link_status = 'CONFIRMADO')`
+          WHERE x.person_id IN ${grupoP} AND x.scheme = 'rfee_license' AND x.link_status = 'CONFIRMADO')`
       : sql``;
   return sql`(
     p.country_code = ${codigo}
-    OR EXISTS (SELECT 1 FROM sport_result rn WHERE rn.person_id = p.id AND rn.source_country_code = ${codigo})
-    OR EXISTS (SELECT 1 FROM sport_ranking_entry en WHERE en.person_id = p.id AND en.country_code = ${codigo})
+    OR EXISTS (SELECT 1 FROM sport_result rn WHERE rn.person_id IN ${grupoP} AND rn.source_country_code = ${codigo})
+    OR EXISTS (SELECT 1 FROM sport_ranking_entry en WHERE en.person_id IN ${grupoP} AND en.country_code = ${codigo})
     ${licenciaRfee}
   )`;
 }
@@ -84,7 +92,7 @@ function condicionPrueba(f: FiltrosBusqueda): SQL | null {
   const porResultado = sql`EXISTS (
     SELECT 1 FROM sport_result r
     ${unionesPrueba('r')}
-    WHERE r.person_id = p.id AND ${y(condiciones)}
+    WHERE r.person_id IN ${grupoP} AND ${y(condiciones)}
   )`;
 
   const soloTorneo = f.torneo || f.edicionId || f.desde || f.hasta || f.ambito;
@@ -101,7 +109,7 @@ function condicionPrueba(f: FiltrosBusqueda): SQL | null {
   return sql`(${porResultado} OR EXISTS (
     SELECT 1 FROM sport_ranking_entry en2
     JOIN sport_ranking_publication pub ON pub.id = en2.publication_id
-    WHERE en2.person_id = p.id AND ${y(rankingCond)}
+    WHERE en2.person_id IN ${grupoP} AND ${y(rankingCond)}
   ))`;
 }
 
@@ -125,11 +133,11 @@ export function sqlBusqueda(
 
   if (f.q) {
     const { nombre, alias } = condicionNombre(f.q);
-    const porAlias = sql`EXISTS (SELECT 1 FROM sport_person_alias a WHERE a.person_id = p.id AND ${alias})`;
+    const porAlias = sql`EXISTS (SELECT 1 FROM sport_person_alias a WHERE a.person_id IN ${grupoP} AND ${alias})`;
     condiciones.push(sql`(${nombre} OR ${porAlias})`);
     aliasSql = sql`CASE WHEN ${nombre} THEN NULL ELSE (
       SELECT a.name_original FROM sport_person_alias a
-      WHERE a.person_id = p.id AND ${alias}
+      WHERE a.person_id IN ${grupoP} AND ${alias}
       ORDER BY a.name_normalized, a.id LIMIT 1) END`;
   }
   if (f.nacionalidad) condiciones.push(condicionNacionalidad(f.nacionalidad));
@@ -158,11 +166,19 @@ async function complementos(
     ids.length === 0
       ? []
       : db.execute(sql`
-          SELECT r.person_id::text AS id, count(*)::int AS resultados,
+          WITH RECURSIVE miembros_grupo(canonica, id, salto) AS (
+            SELECT id, id, 0 FROM sport_person WHERE id IN (${listaUuid(ids)})
+            UNION ALL
+            SELECT mg.canonica, mp.id, mg.salto + 1
+            FROM sport_person mp JOIN miembros_grupo mg ON mp.merged_into_person_id = mg.id
+            WHERE mg.salto < ${SALTOS}
+          )
+          SELECT g.canonica::text AS id, count(*)::int AS resultados,
                  string_agg(DISTINCT c.weapon::text, ',') AS armas
-          FROM sport_result r JOIN sport_competition c ON c.id = r.competition_id
-          WHERE r.person_id IN (${listaUuid(ids)})
-          GROUP BY r.person_id`),
+          FROM miembros_grupo g
+          JOIN sport_result r ON r.person_id = g.id
+          JOIN sport_competition c ON c.id = r.competition_id
+          GROUP BY g.canonica`),
     claves.length === 0
       ? []
       : db.execute(sql`
@@ -182,8 +198,9 @@ async function complementos(
  * Búsqueda de deportistas globales, paginada por clave `(nombre normalizado,
  * id)`. Guarda de sesión antes de cualquier SQL. No lee `athlete` ni ninguna
  * tabla de cuenta: incluye personas sin cuenta, con ficha inactiva o con sólo
- * un alias coincidente, y excluye las fundidas en otra (se llega a ellas por
- * la persona que prevalece). Nunca dispara una lectura de fuentes externas.
+ * un alias coincidente, y excluye las fundidas en otra: se llega a ellas por
+ * la persona que prevalece, a través de los alias y hechos de todo su grupo.
+ * Nunca dispara una lectura de fuentes externas.
  */
 export async function buscarDeportistas(
   ctx: ContextoExplorador,

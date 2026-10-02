@@ -2,6 +2,7 @@ import { cargarEvidencia, type DepsEvidencia } from '@/lib/entries/evidencia';
 import {
   identificarObservacion,
   refsPublicadas,
+  temporadaDe,
   type AtletaConLicencias,
   type RefPublicada,
 } from '@/lib/entries/identidad';
@@ -43,6 +44,18 @@ export type PropietarioResuelto =
   | { estado: 'conflicto' }
   | { estado: 'no_disponible' };
 
+/**
+ * Cada referencia se acota con la temporada de SU fuente (FIE «2027», RFEE
+ * «2026-2027»). Sin ello el resolvedor usaría la de la observación, que aquí es
+ * FIE, y una licencia RFEE guardada con «2026-2027» nunca coincidiría.
+ */
+function conTemporadaDeSuFuente(dia: string) {
+  return (ref: RefPublicada): RefPublicada => ({
+    ...ref,
+    scopeSeason: ref.scopeSeason || temporadaDe(ref.scopeSource, dia) || '',
+  });
+}
+
 export async function resolverPersonaPropia(
   ctx: ContextoExplorador,
   profileId: string,
@@ -57,9 +70,14 @@ export async function resolverPersonaPropia(
   const candidatas = new Set<string>();
   let contradiccion = false;
 
+  const directasPorAtleta = new Map<string, Set<string>>();
   for (const enlace of await deps.personasEnlazadas(athleteIds)) {
     const persona = await resolverPersona(ctx.db, enlace.personId);
-    if (persona) candidatas.add(persona.canonicaId);
+    if (!persona) continue;
+    candidatas.add(persona.canonicaId);
+    const propias = directasPorAtleta.get(enlace.athleteId) ?? new Set<string>();
+    propias.add(persona.canonicaId);
+    directasPorAtleta.set(enlace.athleteId, propias);
   }
 
   const refsPorAtleta = new Map<string, RefPublicada[]>();
@@ -72,7 +90,7 @@ export async function resolverPersonaPropia(
       ...refsPublicadas({ fuente: 'fie', licencia: a.fieLicense, observadoEl: hoy }),
       ...refsPublicadas({ fuente: 'skermo_rfee', licencia: a.rfeeLicense, observadoEl: hoy }),
     ];
-    refsPorAtleta.set(a.id, refs);
+    refsPorAtleta.set(a.id, refs.map(conTemporadaDeSuFuente(hoy)));
   }
 
   const evidencia = await cargarEvidencia(deps.evidencia, [...refsPorAtleta.values()].flat());
@@ -87,9 +105,17 @@ export async function resolverPersonaPropia(
       contradiccion = true;
       continue;
     }
-    if (identidad.resolucion.kind !== 'confirmed' || identidad.athleteId !== a.id) continue;
+    if (identidad.resolucion.kind !== 'confirmed') continue;
     const persona = await resolverPersona(ctx.db, identidad.resolucion.personId);
-    if (persona) candidatas.add(persona.canonicaId);
+    if (!persona) continue;
+    // La evidencia que contradice el enlace directo de ESTA ficha no se ignora.
+    const directas = directasPorAtleta.get(a.id);
+    if (directas && directas.size > 0 && !directas.has(persona.canonicaId)) {
+      contradiccion = true;
+      continue;
+    }
+    if (identidad.athleteId !== a.id) continue;
+    candidatas.add(persona.canonicaId);
   }
 
   if (contradiccion) return { estado: 'conflicto' };

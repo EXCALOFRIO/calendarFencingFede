@@ -1,9 +1,25 @@
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import { filas, type ContextoExplorador } from './contexto';
 import type { Genero } from './tipos';
 
 /** Cuántas fusiones A→B→C se siguen antes de dar la cadena por rota. */
-const SALTOS = 3;
+export const SALTOS = 3;
+
+/**
+ * Subconsulta con los IDs de la persona que prevalece y las fundidas en ella
+ * (misma profundidad que `resolverPersona`), para `x.person_id IN ${...}`.
+ * Hace descubribles por alias y hechos retenidos en una persona fundida sin
+ * añadir filas: se usa dentro de EXISTS, nunca como JOIN.
+ */
+export function sqlGrupoDe(canonica: SQL): SQL {
+  return sql`(WITH RECURSIVE miembros_grupo(id, salto) AS (
+      SELECT ${canonica}, 0
+      UNION ALL
+      SELECT mp.id, mg.salto + 1
+      FROM sport_person mp JOIN miembros_grupo mg ON mp.merged_into_person_id = mg.id
+      WHERE mg.salto < ${SALTOS}
+    ) SELECT id FROM miembros_grupo)`;
+}
 
 export type PersonaResuelta = {
   /** Persona que prevalece tras seguir las fusiones. */

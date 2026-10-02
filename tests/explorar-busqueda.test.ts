@@ -30,7 +30,7 @@ const fila = (id: string, nombre: string, extra: Record<string, unknown> = {}) =
 });
 
 const consultaPrincipal = /FROM sport_person p\s+WHERE/;
-const conteos = /GROUP BY r\.person_id/;
+const conteos = /GROUP BY g\.canonica/;
 const homonimos = /GROUP BY name_normalized/;
 
 afterEach(() => vi.unstubAllGlobals());
@@ -157,7 +157,7 @@ describe('filtros combinados sobre el mismo hecho', () => {
       hasta: '2026-05-31',
     });
     const { text, params } = sentencias[0];
-    const existe = text.match(/EXISTS \(\s*SELECT 1 FROM sport_result r[\s\S]*?\n\s*\)/);
+    const existe = text.match(/EXISTS \(\s*SELECT 1 FROM sport_result r[\s\S]*?\n {2}\)/);
     expect(existe).not.toBeNull();
     const bloque = existe![0];
     expect(bloque).toMatch(/c\.season = /);
