@@ -252,9 +252,15 @@ export function FeedMovil({
                 key={`${m.anio}-${m.mes}`}
                 type="button"
                 onClick={() => {
+                  const sinMovimiento = window.matchMedia(
+                    '(prefers-reduced-motion: reduce)',
+                  ).matches;
                   document
                     .getElementById(ancla(m))
-                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    ?.scrollIntoView({
+                      behavior: sinMovimiento ? 'auto' : 'smooth',
+                      block: 'start',
+                    });
                 }}
                 className={cn(
                   'objetivo-libre flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors',

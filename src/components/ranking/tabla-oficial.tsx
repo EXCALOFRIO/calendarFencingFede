@@ -26,6 +26,8 @@ import type {
   RankingRowView,
   TablaOficial,
 } from '@/lib/queries/ranking';
+import type { Weapon } from '@/lib/auth/session';
+import { puedeVerInterno } from '@/lib/ranking/acceso-interno';
 import type { CutoffStatus } from '@/lib/ranking/compute';
 import { nombreCasa } from '@/lib/nombres';
 import { cn, formatDateEs } from '@/lib/utils';
@@ -126,7 +128,14 @@ export function TablaRankingOficial({
   mios,
   grupoInicial,
   conMiFicha = false,
+  armasAutorizadas = [],
 }: {
+  /**
+   * Armas cuyo cálculo interno puede ver esta cuenta (`armasInternas`). El
+   * bloque y las promesas del cálculo salen por el ARMA seleccionada: sin
+   * permiso no se confunde la falta de acceso con la falta de resultados.
+   */
+  armasAutorizadas?: readonly Weapon[];
   grupos: Grupo[];
   tablas: Record<string, TablaOficial>;
   /** `grupo` -> `athleteId` -> distancia al corte, medida sobre el puesto oficial. */
@@ -156,6 +165,7 @@ export function TablaRankingOficial({
   const grupo = grupos.find((g) => clave(g) === claveActual) ?? grupos[0];
   const tabla = tablas[clave(grupo)];
   const corteDelGrupo = cortes[clave(grupo)] ?? {};
+  const verCalculo = puedeVerInterno(armasAutorizadas, grupo.weapon);
 
   /**
    * Al cambiar de arma se conservan género y categoría SI existen para la nueva
@@ -286,7 +296,7 @@ export function TablaRankingOficial({
               />
             </span>
             <span className="mt-1 inline-flex items-center gap-1 text-sm text-primary-text">
-              Ver tus datos y el cálculo
+              {verCalculo ? 'Ver tus datos y el cálculo' : 'Ver tus datos'}
               <ChevronRight className="size-4 shrink-0" aria-hidden />
             </span>
           </span>
@@ -407,8 +417,9 @@ export function TablaRankingOficial({
           De estos {tabla.rows.length} tiradores,{' '}
           <span className="cifra text-sm">{tabla.rows.length - conFicha}</span> no
           tienen ficha en la aplicación, así que de ellos solo se sabe lo que
-          publica la federación: ni plazos, ni inscripciones, ni el cálculo
-          abierto. Se arregla de uno en uno, y cada alta es una fila menos.
+          publica la federación: ni plazos, ni inscripciones
+          {verCalculo ? ', ni el cálculo abierto' : ''}. Se arregla de uno en
+          uno, y cada alta es una fila menos.
         </p>
       ) : null}
 
@@ -428,65 +439,104 @@ export function TablaRankingOficial({
                   {filaAbierta.club ? `. Código de club ${filaAbierta.club}` : ''}
                 </SheetDescription>
               </SheetHeader>
-              <div className="flex flex-col gap-6 px-4 pb-10">
-                <Oficial
-                  fila={filaAbierta}
-                  temporada={tabla.seasonLabel}
-                  deCuantos={tabla.clasificados}
-                  corte={
-                    filaAbierta.athleteId
-                      ? (corteDelGrupo[filaAbierta.athleteId] ?? null)
-                      : null
-                  }
-                  urlFuente={tabla.sourceUrl}
-                />
-
-                {/*
-                  El cálculo interno, con su nombre puesto y debajo del oficial.
-                  Nunca al lado sin etiqueta: son dos números distintos y
-                  confundirlos sería peor que no enseñar ninguno.
-                */}
-                <div className="flex flex-col gap-3 border-t pt-5">
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                    <h3 className="text-lg">Cálculo de esta aplicación</h3>
-                    <p className="text-xs text-muted-foreground">
-                      No es el ranking de la federación
-                    </p>
-                  </div>
-
-                  {filaAbierta.athleteId &&
-                  desgloses[`${clave(grupo)}|${filaAbierta.athleteId}`] ? (
-                    <Desglose
-                      puesto={
-                        internos[`${clave(grupo)}|${filaAbierta.athleteId}`]
-                          ?.position ?? 0
-                      }
-                      total={
-                        internos[`${clave(grupo)}|${filaAbierta.athleteId}`]
-                          ?.totalPoints ?? 0
-                      }
-                      pruebas={desgloses[`${clave(grupo)}|${filaAbierta.athleteId}`]}
-                      corte={null}
-                      regla={tabla.rule}
-                      esTuyo={
-                        filaAbierta.athleteId !== null &&
-                        mios.includes(filaAbierta.athleteId)
-                      }
-                    />
-                  ) : (
-                    <p className="medida text-sm text-muted-foreground">
-                      Todavía no hay ningún resultado de esta temporada
-                      emparejado con su licencia, así que no hay cálculo propio
-                      que abrir. El puesto oficial de arriba no depende de esto:
-                      lo publica la federación.
-                    </p>
-                  )}
-                </div>
-              </div>
+              <DetalleFilaOficial
+                fila={filaAbierta}
+                tabla={tabla}
+                corte={
+                  filaAbierta.athleteId
+                    ? (corteDelGrupo[filaAbierta.athleteId] ?? null)
+                    : null
+                }
+                desglose={
+                  filaAbierta.athleteId
+                    ? (desgloses[`${clave(grupo)}|${filaAbierta.athleteId}`] ?? null)
+                    : null
+                }
+                interno={
+                  filaAbierta.athleteId
+                    ? (internos[`${clave(grupo)}|${filaAbierta.athleteId}`] ?? null)
+                    : null
+                }
+                esTuyo={
+                  filaAbierta.athleteId !== null && mios.includes(filaAbierta.athleteId)
+                }
+                verCalculo={verCalculo}
+              />
             </>
           ) : null}
         </SheetContent>
       </Sheet>
+    </div>
+  );
+}
+
+/**
+ * Cuerpo del panel de una fila oficial: el dato de la federación siempre y,
+ * debajo y con su nombre puesto, el cálculo interno solo si esta cuenta puede
+ * verlo para el arma de la tabla.
+ *
+ * Sin permiso no se pinta ni el bloque ni la frase «sin cálculo propio»:
+ * decirla confundiría la falta de acceso con la falta de resultados.
+ */
+export function DetalleFilaOficial({
+  fila,
+  tabla,
+  corte,
+  desglose,
+  interno,
+  esTuyo,
+  verCalculo,
+}: {
+  fila: FilaOficial;
+  tabla: TablaOficial;
+  corte: CutoffStatus | null;
+  desglose: BreakdownEntry[] | null;
+  interno: RankingRowView | null;
+  esTuyo: boolean;
+  verCalculo: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-6 px-4 pb-10">
+      <Oficial
+        fila={fila}
+        temporada={tabla.seasonLabel}
+        deCuantos={tabla.clasificados}
+        corte={corte}
+        urlFuente={tabla.sourceUrl}
+      />
+
+      {verCalculo ? (
+        /*
+          El cálculo interno, con su nombre puesto y debajo del oficial.
+          Nunca al lado sin etiqueta: son dos números distintos y
+          confundirlos sería peor que no enseñar ninguno.
+        */
+        <div className="flex flex-col gap-3 border-t pt-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <h3 className="text-lg">Cálculo de esta aplicación</h3>
+            <p className="text-xs text-muted-foreground">
+              No es el ranking de la federación
+            </p>
+          </div>
+
+          {fila.athleteId && desglose ? (
+            <Desglose
+              puesto={interno?.position ?? 0}
+              total={interno?.totalPoints ?? 0}
+              pruebas={desglose}
+              corte={null}
+              regla={tabla.rule}
+              esTuyo={esTuyo}
+            />
+          ) : (
+            <p className="medida text-sm text-muted-foreground">
+              Todavía no hay ningún resultado de esta temporada emparejado con
+              su licencia, así que no hay cálculo propio que abrir. El puesto
+              oficial de arriba no depende de esto: lo publica la federación.
+            </p>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

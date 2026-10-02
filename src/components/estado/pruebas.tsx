@@ -356,7 +356,15 @@ function Cifra({
  * a quien sí figura con su nombre es cómo se pierde un torneo, igual que lo
  * contrario. El motivo exacto va escrito debajo, en `Procedencia`.
  */
-function PastillaOficial({ prueba: p }: { prueba: PruebaPropia }) {
+export const ROTULO_PASTILLA: Record<PruebaPropia['oficial']['estado'], string> = {
+  dentro: 'Dentro',
+  sin_emparejar: 'Sin confirmar',
+  /** Leída y sin inscritos: no es una lista sin leer ni «no estás». */
+  vacia: 'Lista vacía',
+  sin_publicar: 'Lista sin consultar',
+};
+
+export function PastillaOficial({ prueba: p }: { prueba: PruebaPropia }) {
   if (p.oficial.estado === 'dentro') {
     return (
       <span className={cn(PASTILLA, 'border-ok/40 bg-ok/10 font-medium text-ok')}>
@@ -371,7 +379,7 @@ function PastillaOficial({ prueba: p }: { prueba: PruebaPropia }) {
       className={cn(PASTILLA, 'border-border bg-secondary/60 text-muted-foreground')}
     >
       <CircleHelp className="size-3.5 shrink-0" aria-hidden />
-      {p.oficial.estado === 'sin_emparejar' ? 'Sin confirmar' : 'Lista no publicada'}
+      {ROTULO_PASTILLA[p.oficial.estado]}
     </span>
   );
 }
@@ -384,7 +392,7 @@ function PastillaOficial({ prueba: p }: { prueba: PruebaPropia }) {
  * Y sin párrafo: la explicación de qué significa «Sin confirmar» también va al
  * pie. Aquí solo el dato, que es el número de inscritos y de quién es la lista.
  */
-function Procedencia({ oficial }: { oficial: PruebaPropia['oficial'] }) {
+export function Procedencia({ oficial }: { oficial: PruebaPropia['oficial'] }) {
   return (
     <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-muted-foreground">
       <span>
@@ -404,8 +412,10 @@ function Procedencia({ oficial }: { oficial: PruebaPropia['oficial'] }) {
               ? 'inscrito publicado'
               : 'inscritos publicados'}
           </>
+        ) : oficial.estado === 'vacia' ? (
+          <>La lista se leyó y todavía no publica inscritos</>
         ) : (
-          <>Sin lista de inscritos publicada</>
+          <>Lista de inscritos sin consultar</>
         )}
       </span>
       {oficial.sourceUrl ? (

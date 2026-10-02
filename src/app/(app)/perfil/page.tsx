@@ -102,7 +102,7 @@ export default async function Pagina({
         <dl className="flex flex-wrap gap-x-8 gap-y-3 pt-3">
           <Dato etiqueta="Nombre">{perfil.fullName}</Dato>
           <Dato etiqueta="Correo">
-            <span className="block truncate">{perfil.email}</span>
+            <span className="block break-all">{perfil.email}</span>
           </Dato>
           <Dato etiqueta="Papel">{PAPEL[perfil.role] ?? perfil.role}</Dato>
           <Dato etiqueta="Club">

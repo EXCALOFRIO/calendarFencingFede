@@ -12,13 +12,20 @@
  * `tests/estado.test.ts`.
  */
 
+import type { EstadoLista } from '@/lib/entries/lectura';
+
 /**
  * Qué dice la lista OFICIAL de una prueba sobre uno de mis tiradores.
  *
  *   `dentro`        su ficha figura en la lista publicada. Manda esto.
  *   `sin_emparejar` la fuente publica la lista pero ninguna fila trae licencia,
  *                   así que la aplicación **no puede afirmar nada**.
- *   `sin_publicar`  la fuente todavía no ha publicado inscritos.
+ *   `vacia`         la fuente se leyó y no publica ningún inscrito todavía.
+ *   `sin_publicar`  la lista de esta prueba aún no se ha consultado.
+ *
+ * Los dos últimos son distintos y ninguno dice «no estás»: una lista leída y
+ * vacía no es una lista sin leer, y en ningún caso la aplicación afirma que
+ * alguien no esté inscrito.
  *
  * El estado del medio existe porque hoy es el normal: hay miles de filas de
  * listas oficiales en la base y ninguna trae licencia, que es lo único por lo
@@ -27,16 +34,19 @@
  * aparece en la lista es tan dañino como lo contrario**, así que no se dice: se
  * dice «sin confirmar» y se da el enlace a la lista de la fuente.
  */
-export type EstadoOficial = 'dentro' | 'sin_emparejar' | 'sin_publicar';
+export type EstadoOficial = 'dentro' | 'sin_emparejar' | 'vacia' | 'sin_publicar';
 
 export function estadoDeListaOficial(entrada: {
   /** ¿Hay una fila de la lista oficial emparejada con su ficha? */
   emparejado: boolean;
   /** Cuántos inscritos publica la fuente en esa prueba. */
   publicados: number;
+  /** Estado de lectura de la lista de la prueba, si se conoce. */
+  lista?: EstadoLista;
 }): EstadoOficial {
   if (entrada.emparejado) return 'dentro';
-  return entrada.publicados > 0 ? 'sin_emparejar' : 'sin_publicar';
+  if (entrada.publicados > 0) return 'sin_emparejar';
+  return entrada.lista === 'vacia' ? 'vacia' : 'sin_publicar';
 }
 
 /**

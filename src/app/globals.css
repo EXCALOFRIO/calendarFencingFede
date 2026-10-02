@@ -855,12 +855,44 @@
     color: var(--foreground);
   }
 
+  /**
+   * Movimiento reducido: sin animaciones en bucle ni desplazamiento suave.
+   *
+   * Sólo acortar la duración dejaba los giros (`animate-spin`) y el pulso de
+   * los esqueletos repitiéndose cada 0,01 ms, o sea parpadeando. Con una sola
+   * iteración el estado de carga sigue diciéndose con su texto y no con
+   * movimiento.
+   */
   @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto !important;
+    }
+
     *,
     *::before,
     *::after {
       animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
+    }
+  }
+
+  /**
+   * El foco no queda debajo de la cabecera fija ni de la barra inferior.
+   *
+   * La cabecera mide 3,5 rem (más una línea cuando hay aviso de datos viejos)
+   * y la barra del móvil 3,25 rem más el área segura. Sin este margen, al
+   * tabular hacia un control cercano al borde el navegador lo deja tapado
+   * (WCAG 2.4.11).
+   */
+  html {
+    scroll-padding-top: 5rem;
+    scroll-padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+
+  @media (min-width: 1024px) {
+    html {
+      scroll-padding-bottom: 1rem;
     }
   }
 }

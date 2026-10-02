@@ -19,6 +19,13 @@ import {
   mergeDeadlines,
 } from '@/lib/deadlines';
 import { getDeadlineRules } from '@/lib/queries/calendar';
+import type { EstadoLista } from '@/lib/entries/lectura';
+import {
+  type FilaPropia,
+  resumirParaMiEstado,
+  torneosSinLeer,
+  unirResumenes,
+} from '@/lib/entries/resumen-mi-estado';
 import { inscritosUnidosDeTorneos, tarjetasConAtletas } from '@/lib/queries/inscritos-union';
 import { getRankingSeason } from '@/lib/queries/ranking';
 import {
@@ -29,11 +36,13 @@ import {
 } from '@/lib/ranking/compute';
 import { type EstadoOficial, estadoDeListaOficial } from './oficial';
 
-function maxFecha(fechas: (Date | null)[]): Date | null {
-  return fechas.reduce<Date | null>(
-    (max, f) => (f && (!max || f > max) ? f : max),
-    null,
-  );
+/**
+ * Lee la lista unida de unos torneos y conserva sólo lo que «Mi estado» usa:
+ * la unión (con sus observaciones por fila) no sale de esta función.
+ */
+async function leerResumen(torneos: string[], propios: ReadonlySet<string>) {
+  const { filas, estados } = await inscritosUnidosDeTorneos(torneos);
+  return { resumen: resumirParaMiEstado(filas, propios), estados };
 }
 
 /**
@@ -345,18 +354,8 @@ export async function getPruebasPropias(
   const tarjetasConMia = await tarjetasConAtletas(ids, hoy);
 
   const propios = new Set(ids);
-  const { filas: unidasMias } = await inscritosUnidosDeTorneos(tarjetasConMia);
-  const mias = unidasMias.flatMap((f) =>
-    f.athleteIds
-      .filter((id) => propios.has(id))
-      .map((athleteId) => ({
-        competitionId: f.competitionId,
-        athleteId,
-        equipo: f.equipo,
-        sourceUrl: f.observaciones.find((o) => o.sourceUrl)?.sourceUrl ?? null,
-        leidoEl: maxFecha(f.observaciones.map((o) => o.leidoEl)),
-      })),
-  );
+  const primera = await leerResumen(tarjetasConMia, propios);
+  const mias = primera.resumen.mias;
 
   const idsConMia = [...new Set(mias.map((m) => m.competitionId))];
 
@@ -430,20 +429,12 @@ export async function getPruebasPropias(
 
   const idsCandidatas = candidatas.map((c) => c.competitionId);
 
-  const [publicados, reglas, recuentos] = await Promise.all([
+  const [publicados, reglas] = await Promise.all([
     db
       .select()
       .from(eventDeadline)
       .where(inArray(eventDeadline.eventCompetitionId, idsCandidatas)),
     getDeadlineRules(),
-    /**
-     * Cuántos inscritos publica la fuente en cada prueba candidata.
-     *
-     * Hace falta para poder distinguir «la fuente no ha publicado la lista» de
-     * «la ha publicado y no sabemos emparejarte». Sin el número, las dos frases
-     * se leerían igual y una de las dos sería mentira.
-     */
-    inscritosUnidosDeTorneos([...new Set(candidatas.map((c) => c.eventId))]),
   ]);
 
   const plazosPorPrueba = new Map<string, ComputedDeadline[]>();
@@ -463,29 +454,12 @@ export async function getPruebasPropias(
     plazosPorPrueba.set(d.eventCompetitionId, lista);
   }
 
-  /** Filas visibles tras la unión, no filas crudas de cada fuente. */
-  const recuentoPorPrueba = new Map<
-    string,
-    { n: number; sourceUrl: string | null; leidoEl: Date | null }
-  >();
-  for (const f of recuentos.filas) {
-    const actual = recuentoPorPrueba.get(f.competitionId);
-    recuentoPorPrueba.set(f.competitionId, {
-      n: (actual?.n ?? 0) + 1,
-      sourceUrl:
-        actual?.sourceUrl ?? f.observaciones.find((o) => o.sourceUrl)?.sourceUrl ?? null,
-      leidoEl: maxFecha([
-        actual?.leidoEl ?? null,
-        ...f.observaciones.map((o) => o.leidoEl),
-      ]),
-    });
-  }
   const miaPorClave = new Map(
     mias.map((m) => [`${m.athleteId}|${m.competitionId}`, m]),
   );
 
   const ahora = new Date();
-  const salida: PruebaPropia[] = [];
+  const salida: Provisional[] = [];
 
   for (const c of candidatas) {
     const plazos = mergeDeadlines(
@@ -498,7 +472,6 @@ export async function getPruebasPropias(
       }),
     );
     const estado = deadlineStatus(plazos, ahora);
-    const recuento = recuentoPorPrueba.get(c.competitionId) ?? null;
 
     for (const t of tiradores) {
       const mia = miaPorClave.get(`${t.id}|${c.competitionId}`);
@@ -537,16 +510,8 @@ export async function getPruebasPropias(
         startTime: c.startTime,
         plazos,
         estado,
-        oficial: {
-          estado: estadoDeListaOficial({
-            emparejado: dentro,
-            publicados: recuento?.n ?? 0,
-          }),
-          publicados: recuento?.n ?? 0,
-          equipo: mia?.equipo && mia.equipo !== '' ? mia.equipo : null,
-          sourceUrl: mia?.sourceUrl ?? recuento?.sourceUrl ?? null,
-          leidoEl: mia?.leidoEl ?? recuento?.leidoEl ?? null,
-        },
+        dentro,
+        mia,
       });
     }
   }
@@ -555,11 +520,12 @@ export async function getPruebasPropias(
    * Orden: primero lo confirmado y por fecha de competición, después lo que
    * antes cierra. Es el único orden que sirve para decidir: lo que ya está
    * cerrado en tu favor se mira por calendario, y lo que no, por urgencia.
+   * No depende de los recuentos de la lista, por eso éstos se leen después.
    */
-  return salida
+  const elegidas = salida
     .sort((a, b) => {
-      const aDentro = a.oficial.estado === 'dentro' ? 0 : 1;
-      const bDentro = b.oficial.estado === 'dentro' ? 0 : 1;
+      const aDentro = a.dentro ? 0 : 1;
+      const bDentro = b.dentro ? 0 : 1;
       if (aDentro !== bDentro) return aDentro - bDentro;
       if (aDentro === 0) return a.startDate.localeCompare(b.startDate);
       return (
@@ -569,7 +535,54 @@ export async function getPruebasPropias(
       );
     })
     .slice(0, tope);
+
+  /**
+   * Cuántos inscritos publica la fuente en cada prueba que se va a enseñar.
+   *
+   * Hace falta para distinguir «la fuente no ha publicado la lista» de «la ha
+   * publicado y no sabemos emparejarte». Sólo se leen los torneos de las filas
+   * que salen (`tope`), no los de todas las candidatas, y los que ya se
+   * leyeron arriba para saber quién está dentro no se repiten.
+   */
+  const pendientesDeLeer = torneosSinLeer(
+    elegidas.map((e) => e.eventId),
+    new Set(tarjetasConMia),
+  );
+  const segunda =
+    pendientesDeLeer.length > 0
+      ? await leerResumen(pendientesDeLeer, propios)
+      : { resumen: { mias: [], recuentos: new Map() }, estados: {} };
+  const { recuentos } = unirResumenes(primera.resumen, segunda.resumen);
+  const estadosDeLista: Record<string, EstadoLista> = {
+    ...primera.estados,
+    ...segunda.estados,
+  };
+
+  return elegidas.map(({ dentro, mia, ...resto }) => {
+    const recuento = recuentos.get(resto.competitionId) ?? null;
+    const publicados = recuento?.n ?? 0;
+    return {
+      ...resto,
+      oficial: {
+        estado: estadoDeListaOficial({
+          emparejado: dentro,
+          publicados,
+          lista: estadosDeLista[resto.competitionId],
+        }),
+        publicados,
+        equipo: mia?.equipo && mia.equipo !== '' ? mia.equipo : null,
+        sourceUrl: mia?.sourceUrl ?? recuento?.sourceUrl ?? null,
+        leidoEl: mia?.leidoEl ?? recuento?.leidoEl ?? null,
+      },
+    };
+  });
 }
+
+/** Una fila ya filtrada y ordenable, a la que aún le falta el recuento de la lista. */
+type Provisional = Omit<PruebaPropia, 'oficial'> & {
+  dentro: boolean;
+  mia: FilaPropia | undefined;
+};
 
 // ------------------------------------------------------ 3: ¿a cuánto del corte ---
 

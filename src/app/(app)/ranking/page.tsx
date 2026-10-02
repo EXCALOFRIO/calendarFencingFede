@@ -263,6 +263,7 @@ export default async function Pagina() {
               mios={mios}
               grupoInicial={grupoInicial}
               conMiFicha={puestosOficiales.length > 0 || fichasFie.size > 0}
+              armasAutorizadas={armas}
             />
           }
           fie={

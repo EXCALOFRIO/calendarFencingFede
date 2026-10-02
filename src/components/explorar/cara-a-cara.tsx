@@ -632,7 +632,7 @@ export function ChipsCaraACara({
             )}
           >
             <span className="text-muted-foreground">{chip.etiqueta}</span>
-            <span className="max-w-48 truncate font-medium">{chip.valor}</span>
+            <span className="max-w-48 min-w-0 py-1 font-medium break-words">{chip.valor}</span>
             <X className="size-3.5" aria-hidden />
           </Link>
         </li>

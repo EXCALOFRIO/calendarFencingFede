@@ -83,6 +83,13 @@ export default async function AppLayout({
 
   return (
     <div className="hueco-barra flex min-h-dvh flex-col">
+      {/* Primer elemento enfocable: salta la cabecera y la navegación. */}
+      <a
+        href="#contenido"
+        className="sr-only z-50 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
+      >
+        Saltar al contenido
+      </a>
       {/*
         LA CABECERA ES UNA SUPERFICIE, NO UN CRISTAL SUCIO.
 
@@ -126,7 +133,8 @@ export default async function AppLayout({
           <div className="flex shrink-0 items-center gap-1">
             <Link
               href="/perfil"
-              className="flex items-center gap-2 rounded-md p-1 pr-2 transition-colors hover:bg-accent"
+              aria-label={`Perfil de ${nombre}`}
+              className="flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-md p-1 pr-2 transition-colors hover:bg-accent"
             >
               {/*
                 El disco pasa de 28 a 32 px y las iniciales de 11 a 12 px. A
@@ -153,8 +161,14 @@ export default async function AppLayout({
             </Link>
 
             <form action={salir}>
-              <Button variant="ghost" size="icon" type="submit" aria-label="Salir">
-                <LogOut />
+              <Button
+                variant="ghost"
+                size="icon"
+                type="submit"
+                aria-label="Salir"
+                className="size-11"
+              >
+                <LogOut aria-hidden />
               </Button>
             </form>
           </div>
@@ -178,7 +192,13 @@ export default async function AppLayout({
         El mismo ancho que la cabecera, y de la misma fuente: `.ancho-app` es
         un token, no dos números escritos a mano que se desincronizan.
       */}
-      <main className="ancho-app flex flex-1 flex-col px-4 py-4">{children}</main>
+      <main
+        id="contenido"
+        tabIndex={-1}
+        className="ancho-app flex flex-1 flex-col px-4 py-4 outline-none"
+      >
+        {children}
+      </main>
 
       <NavMovil role={perfil.role} />
     </div>
