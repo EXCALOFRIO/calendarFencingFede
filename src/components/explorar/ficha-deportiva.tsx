@@ -1,7 +1,8 @@
-import { ExternalLink, Info, TriangleAlert } from 'lucide-react';
+import { Info, Swords, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
 import { Button } from '@/components/ui/button';
+import { rutaCaraACara } from '@/lib/sport/explorar/cara-a-cara-url';
 import {
   ESTADO_COBERTURA,
   etiquetaHecho,
@@ -10,6 +11,7 @@ import {
   fuenteRanking,
   fuenteResultado,
 } from '@/lib/sport/explorar/etiquetas';
+import { Bloque, Celda, Dato, EnlaceFuente, Nota, fechaLegible, type Nivel } from './piezas';
 import { construirUrlFicha, RUTA_EXPLORAR, type CriteriosFicha } from '@/lib/sport/explorar/ficha-url';
 import type { HistorialVista, VistaFicha } from '@/lib/sport/explorar/ficha-pantalla';
 import type {
@@ -25,8 +27,6 @@ import {
   GENDER_LABEL,
   WEAPON_LABEL,
   cn,
-  esFechaIsoReal,
-  formatDateEs,
   titular,
 } from '@/lib/utils';
 
@@ -38,85 +38,6 @@ import {
  * fecha que la fuente no publica se dice «no publicada»: nunca se rellena con
  * una por defecto ni se cuenta como cero.
  */
-
-type Nivel = 'pagina' | 'seccion';
-
-function Titulo({ nivel, id, children }: { nivel: Nivel; id: string; children: React.ReactNode }) {
-  return nivel === 'pagina' ? (
-    <h2 id={id} className="text-xl">
-      {children}
-    </h2>
-  ) : (
-    <h3 id={id} className="text-lg">
-      {children}
-    </h3>
-  );
-}
-
-function Bloque({
-  id,
-  titulo,
-  nivel,
-  children,
-}: {
-  id: string;
-  titulo: string;
-  nivel: Nivel;
-  children: React.ReactNode;
-}) {
-  return (
-    <section aria-labelledby={id} className="flex min-w-0 flex-col gap-3">
-      <div className="border-b pb-2">
-        <Titulo nivel={nivel} id={id}>
-          {titulo}
-        </Titulo>
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function Nota({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <p className={cn('medida text-xs text-muted-foreground', className)}>{children}</p>;
-}
-
-function Celda({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="text-xs text-muted-foreground md:sr-only">{etiqueta}</span>
-      {children}
-    </div>
-  );
-}
-
-function fechaLegible(iso: string): string {
-  return esFechaIsoReal(iso) ? formatDateEs(iso) : iso;
-}
-
-/** Sólo enlaces web: una URL con otro esquema de una fuente no se vuelve clicable. */
-function enlaceSeguro(url: string | null): string | null {
-  return url && /^https?:\/\//i.test(url) ? url : null;
-}
-
-function EnlaceFuente({ url, etiqueta }: { url: string | null; etiqueta: string }) {
-  const href = enlaceSeguro(url);
-  if (!href) return null;
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex min-h-11 items-center gap-1 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none md:min-h-0"
-    >
-      {etiqueta}
-      <ExternalLink className="size-3.5" aria-hidden />
-    </a>
-  );
-}
-
-function Dato({ children }: { children: React.ReactNode }) {
-  return <span className="text-sm">{children}</span>;
-}
 
 /* ------------------------------------------------------------------ cabecera */
 
@@ -536,6 +457,32 @@ export function CoberturaFichaVista({ cobertura, nivel }: { cobertura: Cobertura
   );
 }
 
+/* ------------------------------------------------------------------ cara a cara */
+
+/**
+ * Entrada al cara a cara desde cualquier ficha, propia o ajena. La persona va
+ * en la ruta; el rival se elige ya en la pantalla del cara a cara.
+ */
+export function EntradaCaraACara({ ficha, nivel }: { ficha: FichaDeportiva; nivel: Nivel }) {
+  return (
+    <Bloque id="ficha-cara-a-cara" titulo="Cara a cara" nivel={nivel}>
+      <Nota>
+        Compara a {titular(ficha.nombre)} con otra persona en asaltos individuales ya importados:
+        poule y eliminación directa, con el marcador visto desde esta ficha. Los encuentros por
+        equipos, los BYE y las finales sin marcador no cuentan.
+      </Nota>
+      <div>
+        <Button asChild variant="outline">
+          <Link href={rutaCaraACara(ficha.id)} prefetch={false}>
+            <Swords aria-hidden />
+            Elegir un rival
+          </Link>
+        </Button>
+      </div>
+    </Bloque>
+  );
+}
+
 /* ---------------------------------------------------------------- composición */
 
 export function FichaCompleta({
@@ -557,6 +504,7 @@ export function FichaCompleta({
     <div className="flex flex-col gap-6">
       <CabeceraFicha ficha={ficha} titulo={conTitulo} />
       <HistorialFicha historial={historial} base={base} criterios={criterios} nivel={nivel} />
+      <EntradaCaraACara ficha={ficha} nivel={nivel} />
       <EstadisticasFicha ficha={ficha} nivel={nivel} />
       <RankingOficialFicha ficha={ficha} base={base} criterios={criterios} nivel={nivel} />
       <CoberturaFichaVista cobertura={ficha.cobertura} nivel={nivel} />

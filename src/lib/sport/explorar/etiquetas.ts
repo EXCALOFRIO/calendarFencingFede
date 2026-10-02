@@ -31,6 +31,13 @@ export function etiquetaTipo(tipo: string | null): string {
   return CIRCUIT_LABEL[tipo] ?? tipo;
 }
 
+/** Fase de un asalto; una fase desconocida se muestra tal cual. */
+export function etiquetaFase(fase: string): string {
+  if (fase === 'POULE') return 'Poule';
+  if (fase === 'TABLEAU') return 'Eliminación directa';
+  return fase;
+}
+
 const HECHO: Record<string, string> = {
   results: 'Puestos finales',
   ranking: 'Puestos finales',

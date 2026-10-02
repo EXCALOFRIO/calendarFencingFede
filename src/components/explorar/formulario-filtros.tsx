@@ -42,7 +42,7 @@ const NOMBRE_FUENTE: Record<OpcionTemporada['fuente'], string> = {
   RFEE: 'RFEE (nacional, septiembre a agosto)',
 };
 
-const ARMAS: Opcion[] = Object.entries(WEAPON_LABEL).map(([valor, etiqueta]) => ({ valor, etiqueta }));
+export const ARMAS: Opcion[] = Object.entries(WEAPON_LABEL).map(([valor, etiqueta]) => ({ valor, etiqueta }));
 const GENEROS: Opcion[] = Object.entries(GENDER_LABEL).map(([valor, etiqueta]) => ({ valor, etiqueta }));
 const CATEGORIAS: Opcion[] = Object.entries(CATEGORY_LABEL).map(([valor, etiqueta]) => ({ valor, etiqueta }));
 const AMBITOS: Opcion[] = [
@@ -64,7 +64,7 @@ const CLAVES_AVANZADAS = [
   'hasta',
 ] as const;
 
-function CampoSelect({
+export function CampoSelect({
   id,
   etiqueta,
   valor,
