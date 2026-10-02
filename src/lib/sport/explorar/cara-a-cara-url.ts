@@ -86,6 +86,19 @@ export function urlVistaDelRival(
   return construirUrlCaraACara(rivalId, { temporada: c.temporada, arma: c.arma, fase: c.fase, rival: personaId });
 }
 
+/**
+ * Fija el rival conservando temporada, arma y fase. Sólo `q` y `cursor` se
+ * descartan: pertenecen a la búsqueda de rival, y dejar caer un filtro
+ * ampliaría la comparación sin que la persona lo note.
+ */
+export function urlElegirRival(
+  personaId: string,
+  rivalId: string,
+  c: Partial<CriteriosCaraACara>,
+): string {
+  return construirUrlCaraACara(personaId, { rival: rivalId, temporada: c.temporada, arma: c.arma, fase: c.fase });
+}
+
 export function rivalValido(rival: string): boolean {
   return UUID_RE.test(rival);
 }

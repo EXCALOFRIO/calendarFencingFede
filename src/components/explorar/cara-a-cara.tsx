@@ -7,6 +7,7 @@ import {
   chipsCaraACara,
   construirUrlCaraACara,
   rutaCaraACara,
+  urlElegirRival,
   urlVistaDelRival,
   type CriteriosCaraACara,
 } from '@/lib/sport/explorar/cara-a-cara-url';
@@ -426,11 +427,14 @@ function OtrosCoincidentes({
   otros,
   persona,
   excluidos,
+  listaConfirmadaLeida,
   criterios,
 }: {
   otros: OtrosVista;
   persona: PersonaCaraACara;
   excluidos: ReadonlySet<string>;
+  /** Sin la lista confirmada leída, `excluidos` está vacío por desconocimiento, no por ausencia. */
+  listaConfirmadaLeida: boolean;
   criterios: CriteriosCaraACara;
 }) {
   if (otros.tipo === 'error') {
@@ -451,15 +455,23 @@ function OtrosCoincidentes({
       <h3 id="h2h-otros" className="text-lg">
         Otras personas con ese nombre
       </h3>
-      <Nota>
-        Aún no tienen asaltos confirmados con {titular(persona.nombre)} en lo importado. Abrir el cara a
-        cara muestra qué cubre la lectura, no un balance.
-      </Nota>
+      {listaConfirmadaLeida ? (
+        <Nota>
+          Aún no tienen asaltos confirmados con {titular(persona.nombre)} en lo importado. Abrir el cara a
+          cara muestra qué cubre la lectura, no un balance.
+        </Nota>
+      ) : (
+        <Nota>
+          Son personas indexadas con ese nombre. No se ha podido comprobar la lista de rivales con asaltos
+          confirmados, así que no se sabe si alguna tiene asaltos con {titular(persona.nombre)}: su
+          cobertura se determina al abrirlo, y ahí se muestra qué cubre la lectura, no un balance.
+        </Nota>
+      )}
       <ul aria-labelledby="h2h-otros" className="divide-y rounded-md border bg-card">
         {items.map((d) => (
           <FilaPersona
             key={d.id}
-            href={construirUrlCaraACara(persona.id, { rival: d.id, temporada: criterios.temporada })}
+            href={urlElegirRival(persona.id, d.id, criterios)}
             nombre={d.nombre}
             pais={d.pais}
             aviso={
@@ -535,7 +547,7 @@ export function ElegirRival({
                 {rivales.items.map((r) => (
                   <FilaPersona
                     key={r.id}
-                    href={construirUrlCaraACara(persona.id, { rival: r.id, temporada: criterios.temporada })}
+                    href={urlElegirRival(persona.id, r.id, criterios)}
                     nombre={r.nombre}
                     pais={r.pais}
                     detalle={
@@ -591,7 +603,13 @@ export function ElegirRival({
       </Bloque>
 
       {otros ? (
-        <OtrosCoincidentes otros={otros} persona={persona} excluidos={idsRivales} criterios={criterios} />
+        <OtrosCoincidentes
+          otros={otros}
+          persona={persona}
+          excluidos={idsRivales}
+          listaConfirmadaLeida={rivales.tipo === 'ok'}
+          criterios={criterios}
+        />
       ) : null}
     </div>
   );

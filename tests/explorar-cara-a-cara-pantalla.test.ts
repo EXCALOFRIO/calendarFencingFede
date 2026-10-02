@@ -13,6 +13,7 @@ import {
   chipsCaraACara,
   construirUrlCaraACara,
   leerCriteriosCaraACara,
+  urlElegirRival,
   urlVistaDelRival,
   type CriteriosCaraACara,
 } from '@/lib/sport/explorar/cara-a-cara-url';
@@ -460,6 +461,138 @@ describe('cargarCaraACaraPantalla: elegir rival', () => {
     );
     expect(marcado).toContain('Puede faltar por importar');
     expect(marcado).not.toMatch(/nunca|Nadie/i);
+  });
+});
+
+describe('elegir rival conserva temporada, arma y fase', () => {
+  const todos = { temporada: '2027', arma: 'ESPADA', fase: 'POULE' } as const;
+  const persona = { id: UUID_A, nombre: 'Lucia Garcia', pais: 'ESP' };
+  const coincidente = {
+    id: UUID_C,
+    nombre: 'Nora Diaz',
+    alias: null,
+    pais: 'ITA',
+    genero: 'F' as const,
+    anioNacimiento: 2006,
+    resultadosImportados: 0,
+    armas: [],
+    mismoNombre: 1,
+  };
+
+  it('urlElegirRival fija el rival, conserva los tres filtros y descarta q y cursor', () => {
+    expect(urlElegirRival(UUID_A, UUID_B, { ...todos, q: 'ruiz', cursor: 'abc' })).toBe(
+      `/explorar/${UUID_A}/cara-a-cara?rival=${UUID_B}&temporada=2027&arma=ESPADA&fase=POULE`,
+    );
+    expect(urlElegirRival(UUID_A, UUID_B, CRITERIOS_CARA_A_CARA_VACIOS)).toBe(
+      `/explorar/${UUID_A}/cara-a-cara?rival=${UUID_B}`,
+    );
+  });
+
+  it('los enlaces de la lista confirmada y de la búsqueda suplementaria llevan arma y fase', () => {
+    const marcado = html(
+      React.createElement(ElegirRival, {
+        persona,
+        rivales: {
+          tipo: 'ok',
+          items: [{ id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3 }],
+          siguiente: null,
+          sinResultados: false,
+        },
+        otros: { tipo: 'ok', items: [coincidente] },
+        criterios: { ...CRITERIOS_CARA_A_CARA_VACIOS, ...todos, q: 'diaz' },
+      }),
+    );
+    const sufijo = 'temporada=2027&amp;arma=ESPADA&amp;fase=POULE';
+    expect(marcado).toContain(`href="/explorar/${UUID_A}/cara-a-cara?rival=${UUID_B}&amp;${sufijo}"`);
+    expect(marcado).toContain(`href="/explorar/${UUID_A}/cara-a-cara?rival=${UUID_C}&amp;${sufijo}"`);
+  });
+
+  it('Cambiar de rival y volver a elegir conserva los filtros de ida y vuelta', () => {
+    const datos = {
+      personas: { yo: persona, rival: { id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA' } },
+    } as unknown as DatosCaraACara;
+    const cabecera = html(
+      React.createElement(CabeceraCaraACara, { datos, criterios: criterios({ ...todos, cursor: 'zz' }) }),
+    );
+    const cambiar = `/explorar/${UUID_A}/cara-a-cara?temporada=2027&amp;arma=ESPADA&amp;fase=POULE`;
+    expect(cabecera).toContain(`href="${cambiar}"`);
+
+    const elegida = leerCriteriosCaraACara(
+      Object.fromEntries(new URL(`http://x${cambiar.replace(/&amp;/g, '&')}`).searchParams),
+    );
+    expect(elegida).toMatchObject(todos);
+    expect(urlElegirRival(UUID_A, UUID_C, elegida)).toContain('arma=ESPADA&fase=POULE');
+  });
+
+  it('con la lista de rivales caída y la búsqueda correcta, no afirma que falten asaltos', async () => {
+    const { ctx } = crearContexto({
+      respuestas: [
+        ...sinFusiones,
+        cabeceras,
+        {
+          cuando: /FROM sport_person p\s+WHERE/,
+          filas: [
+            { id: UUID_C, nombre: 'Nora Diaz', claveNombre: 'nora diaz', alias: null, pais: 'ITA', genero: 'F', anioNacimiento: 2006 },
+          ],
+        },
+      ],
+    });
+    const original = ctx.db.execute.bind(ctx.db);
+    const parcial = {
+      ...ctx,
+      db: {
+        execute: ((c: never) =>
+          /sport_bout/.test(JSON.stringify(c)) ? Promise.reject(new Error('boom')) : original(c)) as never,
+      },
+    };
+    const entrada = { ...CRITERIOS_CARA_A_CARA_VACIOS, ...todos, q: 'diaz' };
+    const v = await cargarCaraACaraPantalla(parcial, UUID_A, entrada);
+    if (v.tipo !== 'elegir') throw new Error(v.tipo);
+    expect(v.rivales).toEqual({ tipo: 'error' });
+    if (v.otros?.tipo !== 'ok') throw new Error('la búsqueda debía ir bien');
+    expect(v.otros.items.map((d) => d.id)).toEqual([UUID_C]);
+
+    const marcado = html(
+      React.createElement(ElegirRival, { persona: v.persona, rivales: v.rivales, otros: v.otros, criterios: entrada }),
+    );
+    expect(marcado).toContain('Ha fallado la consulta; no es que no haya rivales');
+    expect(marcado).toContain('Nora Diaz');
+    expect(marcado).toContain('al abrirlo');
+    expect(marcado).not.toContain('Aún no tienen asaltos confirmados');
+    expect(marcado).not.toMatch(/sin asaltos|no tienen asaltos/i);
+    expect(marcado).toContain(`rival=${UUID_C}&amp;temporada=2027&amp;arma=ESPADA&amp;fase=POULE`);
+  });
+
+  it('cualquier lista de rivales no leída (no sólo error) usa el texto neutro', () => {
+    for (const rivales of [
+      { tipo: 'no_disponible' },
+      { tipo: 'entrada_invalida' },
+      { tipo: 'cursor_invalido' },
+    ] as const) {
+      const marcado = html(
+        React.createElement(ElegirRival, {
+          persona,
+          rivales,
+          otros: { tipo: 'ok', items: [coincidente] },
+          criterios: CRITERIOS_CARA_A_CARA_VACIOS,
+        }),
+      );
+      expect(marcado).toContain('al abrirlo');
+      expect(marcado).not.toContain('Aún no tienen asaltos confirmados');
+    }
+  });
+
+  it('con la lista leída, el texto de personas sin asaltos confirmados se mantiene', () => {
+    const marcado = html(
+      React.createElement(ElegirRival, {
+        persona,
+        rivales: { tipo: 'ok', items: [], siguiente: null, sinResultados: true },
+        otros: { tipo: 'ok', items: [coincidente] },
+        criterios: CRITERIOS_CARA_A_CARA_VACIOS,
+      }),
+    );
+    expect(marcado).toContain('Aún no tienen asaltos confirmados');
+    expect(marcado).not.toContain('al abrirlo');
   });
 });
 
