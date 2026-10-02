@@ -7,7 +7,13 @@ import {
   quitarFavoritoAccion,
 } from '@/app/(app)/explorar/favoritos-acciones';
 import { Button } from '@/components/ui/button';
-import { alternarFavorito, type CambioFavorito } from '@/lib/sport/explorar/favorito-alternar';
+import { alternarFavorito } from '@/lib/sport/explorar/favorito-alternar';
+import {
+  estadoInicial,
+  iniciarOperacion,
+  reconciliarProp,
+  resolverOperacion,
+} from '@/lib/sport/explorar/favorito-estado';
 import { cn } from '@/lib/utils';
 
 /** Destino del foco tras quitar desde la lista, cuando la fila desaparece. */
@@ -34,22 +40,25 @@ export function BotonFavorito({
   inicial: boolean;
   variante?: 'ficha' | 'lista';
 }) {
-  const [guardado, setGuardado] = useState(inicial);
+  const [estado, setEstado] = useState(() => estadoInicial(inicial));
+  // La misma instancia sigue montada al navegar o refrescar: la prop nueva se
+  // reconcilia durante el render, sin pisar una operación en vuelo.
+  const reconciliado = reconciliarProp(estado, inicial);
+  if (reconciliado !== estado) setEstado(reconciliado);
+  const { guardado, cambio } = reconciliado;
   const [optimista, setOptimista] = useOptimistic(guardado);
-  const [cambio, setCambio] = useState<CambioFavorito | null>(null);
   const [pendiente, iniciar] = useTransition();
 
   function alternar() {
-    if (pendiente) return;
-    setCambio(null);
+    if (pendiente || reconciliado.enVuelo) return;
+    setEstado(iniciarOperacion);
     iniciar(async () => {
       setOptimista(!guardado);
       const r = await alternarFavorito(personaId, guardado, {
         guardar: guardarFavoritoAccion,
         quitar: quitarFavoritoAccion,
       });
-      setGuardado(r.favorito);
-      setCambio(r);
+      setEstado((e) => resolverOperacion(e, r));
       if (variante === 'lista' && r.resultado === 'quitado') {
         document.getElementById(ID_ENCABEZADO_FAVORITOS)?.focus();
       }
