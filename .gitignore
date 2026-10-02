@@ -23,3 +23,6 @@ capturas/*.png
 tests/ui/informe.json
 dev.log
 tests/ui/iconos.html
+
+# Libro del piloto de IA (contadores locales de documentos y coste)
+.piloto-ia

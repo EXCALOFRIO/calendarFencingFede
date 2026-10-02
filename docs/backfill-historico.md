@@ -219,6 +219,41 @@ la deniega, o no puede medir, esas listas no se reescriben: conservan su huella
 y su marca de lectura, no parecen hidratadas y siguen siendo elegibles. Las
 listas con contenido nuevo no se retienen.
 
+## Piloto de IA sobre PDF (límite 10 documentos y 1 €)
+
+**Estado: ejecución real bloqueada.** No se ha enviado ningún PDF a ningún
+modelo ni existe consumo observado. Cloudflare publica la tarifa de Workers AI
+(`@cf/zai-org/glm-5.3-flash`: 0,15 US$ por millón de tokens de entrada y 0,50 US$
+de salida, consultada el 02/10/2026) y declara que no entrena con el contenido
+del cliente, pero eso no acredita acceso a inferencia, modelo, plan, cuota ni
+coste de **esta** cuenta: el binding `AI` existe y el token del proyecto no tiene
+permiso de Workers AI. Tampoco hay aprobación explícita de envío. Además, un PDF
+de resultados es un listado nominal (posibles menores) y no se envía a un modelo
+sin acreditar su tratamiento. No hay proveedor alternativo ni compra.
+
+`src/lib/ingest/backfill/piloto-ia.ts` es el limitador, probado con un cliente
+falso (`tests/piloto-ia.test.ts`):
+
+- Bloquea el documento 11, un documento ya intentado (no hay reintentos, ni
+  tras un fallo) y toda llamada cuya **estimación conservadora** (1 token por
+  carácter, prompt fijo de 20.000 tokens, salida al tope de 8.192 y margen 1,25)
+  sumada a lo ya comprometido supere 1 €. Importes en micro-euros enteros.
+- Reserva antes de llamar. Un fallo conserva la estimación como gasto posible.
+- Exige vía verificada (acceso, modelo, plan/cuota, condiciones de datos y
+  aprobación explícita) y privacidad `sin_datos_personales`; si falta algo no se
+  invoca al cliente.
+- Libros separados por modo (`.piloto-ia/libro-real.json` y
+  `libro-simulacion.json`, ignorados por git): una simulación no gasta
+  presupuesto real y un libro ilegible falla en vez de reiniciar el contador.
+- Una extracción de IA es siempre `pendiente_revision_humana`; la ambigua, la sin
+  citas verificadas y la simulada se descartan.
+
+`npm run piloto-ia -- --archivo a.pdf [--archivo b.pdf] [--simular]` mide
+páginas, bytes y caracteres en memoria y muestra tres escenarios de coste
+(bajo, base, conservador) marcados como estimación previa, no factura. No tiene
+modo de envío y no imprime texto. El coste simulado nunca se presenta como
+consumo observado.
+
 ## Pendiente del propietario
 
 Aplicar las migraciones 0017–0019 y confirmar el plan de Neon. Hasta entonces
