@@ -8,7 +8,7 @@ históricos (FIE, Skermo, PDF de la RFEE, y Engarde/FWW como complemento).
 | Comando | Qué hace |
 | --- | --- |
 | `npm run backfill` | **Simulación.** Lee la base con `SELECT`, planifica, mide la ocupación y proyecta el crecimiento. No hace ninguna petición a proveedores y no escribe. |
-| `npm run backfill -- --aplicar` | Ejecuta **un lote acotado** y escribe. Exige la migración 0017 aplicada por el propietario. Primero recorre los índices FIE/Skermo (como mucho la mitad de `--max-peticiones`) y luego lee las unidades. |
+| `npm run backfill -- --aplicar` | Ejecuta **un lote acotado** y escribe. Exige la migración 0017, que ya está aplicada (ver «Estado real tras la integración»). Primero recorre los índices FIE/Skermo (como mucho la mitad de `--max-peticiones`) y luego lee las unidades. |
 | `npm run backfill -- --aplicar --sin-descubrir` | Igual, pero sin recorrer índices: sólo retoma lo ya conocido. |
 
 Opciones útiles: `--fuentes`, `--temporadas`, `--max-tareas`, `--max-peticiones`,
@@ -191,8 +191,9 @@ de salida 3). Sin medición tampoco se continúa. El informe incluye la medició
 antes y después, y la diferencia por tabla e índices.
 
 - Umbral por defecto: **0,4 GiB** mientras el plan de Neon no esté verificado.
-- La base lógica observada al empezar fue de 27,71 MiB; no es el consumo
-  facturado.
+- La base lógica histórica (antes de la integración) fue de 27,71 MiB. Tras el
+  piloto real se midió la base completa en 29,35 → 30,17 MiB; ninguna es
+  consumo facturado y no acreditan un plan.
 - Un plan verificado se indica con `--neon-umbral-gib N --neon-verificado-en AAAA-MM-DD`.
 - No se compra, migra ni amplía nada, y no hay ningún corte oculto.
 - La estimación del plan (por ejemplo 150 puestos por prueba) sólo ordena el
@@ -202,9 +203,11 @@ antes y después, y la diferencia por tabla e índices.
   medir, esa unidad no escribe nada, queda `pendiente` y el lote se detiene por
   capacidad. Es una proyección con tasas conservadoras, no un crecimiento
   medido ni facturado.
-- El SELECT de ocupación mide el esquema público (17,84 MiB en la última
-  medición); no equivale a los 27,71 MiB de la base completa ni al
-  almacenamiento facturado.
+- El SELECT de ocupación mide el esquema público. La medición de simulación
+  anterior a la integración dio 17,84 MiB; la del piloto real dio 18,64 MiB
+  antes y 19,46 MiB después (+0,82 MiB, con un tope de piloto de 16 MiB). No
+  equivale a los 29,35 → 30,17 MiB de la base completa ni al almacenamiento
+  facturado, y las cifras no son comparables entre sí como una serie.
 
 ## Referencias de inscripción (migración 0018)
 
@@ -221,16 +224,28 @@ listas con contenido nuevo no se retienen.
 
 ## Piloto de IA sobre PDF (límite 10 documentos y 1 €)
 
-**Estado: ejecución real bloqueada.** No se ha enviado ningún PDF a ningún
-modelo ni existe consumo observado. Cloudflare publica la tarifa de Workers AI
-(`@cf/zai-org/glm-5.3-flash`: 0,15 US$ por millón de tokens de entrada y 0,50 US$
-de salida, consultada el 02/10/2026) y declara que no entrena con el contenido
-del cliente, pero eso no acredita acceso a inferencia, modelo, plan, cuota ni
-coste de **esta** cuenta: el binding `AI` existe y el token del proyecto no tiene
-permiso de Workers AI. Tampoco hay aprobación explícita de envío. Además, un PDF
-de resultados es un listado nominal (posibles menores) y no se envía a un modelo
-sin acreditar su tratamiento. No hay proveedor alternativo ni compra.
+**Estado: sin inferencia real.** El usuario aprobó un piloto de **hasta diez PDF
+y 1 € en total**; esa autorización existe y el limitador la respeta como tope.
+Aun así **no se ha enviado ningún PDF a ningún modelo ni existe consumo
+observado**, porque lo que sigue sin verificarse es la vía, no el permiso:
 
+- **Acceso y modelo.** El binding `AI` existe, pero el token del proyecto no
+  tiene permiso de Workers AI (la vía REST responde 401) y no hay una inferencia
+  aceptada por esta cuenta ni el modelo `@cf/zai-org/glm-5.3-flash` confirmado
+  para ella.
+- **Coste y cuota de la cuenta.** Cloudflare publica la tarifa (0,15 US$ por
+  millón de tokens de entrada y 0,50 US$ de salida, consultada el 02/10/2026),
+  pero eso no acredita el plan, la cuota ni el precio efectivo de **esta** cuenta.
+- **Privacidad.** Cloudflare declara que no entrena con el contenido del cliente,
+  pero un PDF de resultados es un listado nominal (posibles menores) y no se
+  envía a un modelo sin acreditar su tratamiento.
+
+No hay proveedor alternativo, compra ni gasto nuevo. La bandera
+`aprobacionExplicita` del código se mantiene a `false` mientras la vía no esté
+verificada (conservador): el visto bueno de presupuesto no equivale al de enviar
+un documento concreto. El commit `6b969ba` añadió las guardas y un informe local
+sin inferencia real; nada de ello es una lectura de IA ni un resultado
+extraído.
 `src/lib/ingest/backfill/piloto-ia.ts` es el limitador, probado con un cliente
 falso (`tests/piloto-ia.test.ts`):
 
@@ -254,12 +269,40 @@ páginas, bytes y caracteres en memoria y muestra tres escenarios de coste
 modo de envío y no imprime texto. El coste simulado nunca se presenta como
 consumo observado.
 
+## Estado real tras la integración (02/10/2026)
+
+Las migraciones 0017–0019 **ya están aplicadas** en Neon (PostgreSQL 18.0.6),
+con sus tres filas de ledger (de 16 a 19) en una sola transacción de 70
+sentencias; las 13 tablas `sport_*` y las categorías M10/M12 existen. No hay
+más SQL ni ingesta pendientes para esa integración, y no se reaplican (ver
+`docs/migraciones-deportivas.md`).
+
+El piloto real fue acotado y **no es un corpus completo**: dos pruebas FIE de
+París 2024 (una edición), una de Bogotá 2027, un PDF de la RFEE 2018-2019
+(cobertura parcial: poules 16/84, 4 regiones sin atribución segura) y un ranking
+oficial FIE 2024 (903 entradas). Ninguno de los puestos del PDF ni de las
+entradas del ranking quedó enlazado a una persona. Las relecturas del ranking y
+del PDF devolvieron `sin_cambios`. Se usaron `SELECT` mínimos y las funciones de
+lectura existentes; no se probaron las lecturas autenticadas de la interfaz.
+
+Límites de esa evidencia: 21 peticiones HTTP conocidas más una invocación mal
+entrecomillada de la que no se conoce el número de peticiones; por tanto no se
+afirma un total exhaustivo ni que se cumplieran los límites de 40 peticiones y
+300 s para todo el conjunto. La igualdad de conteos legacy antes y después del
+piloto no prueba igualdad de valores, y `notification` tiene 3 filas sin
+atribución confirmada.
+
 ## Pendiente del propietario
 
-Aplicar las migraciones 0017–0019 y confirmar el plan de Neon. Hasta entonces
-nada de esto está probado contra SQL real, ni la reconciliación de PDF después
-de la carga, ni la autenticación, ni la IA, ni un despliegue.
-
+- Confirmar el plan de Neon (el umbral conservador de 0,4 GiB sigue vigente
+  mientras no se verifique).
+- Decidir si el backfill sigue por lotes acotados (`--aplicar`), fuente por
+  fuente. Nada lo lanza solo.
+- Verificar la vía del piloto de IA (acceso, modelo, cuota y privacidad) antes de
+  cualquier envío; hasta entonces no se gasta nada.
+- La reconciliación de PDF tras la carga real, la autenticación con sesión
+  propia y el despliegue se comprueban con la QA privada manual
+  (`docs/matriz-qa-manual-responsive.md`); el agente no las ejecutó.
 ## Códigos de salida
 
 `0` correcto · `1` argumentos no válidos · `2` esquema 0017 no aplicado ·

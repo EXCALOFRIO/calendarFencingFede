@@ -2,7 +2,7 @@
 
 Los favoritos son un acceso rápido privado a fichas deportivas. No envían avisos, no generan notificaciones ni permisos del navegador, no siguen a nadie y no enseñan ranking interno.
 
-Esta guía es para quien tenga una sesión real. Los tests automáticos cubren acciones, vistas renderizadas en servidor y estados, pero no un navegador con sesión. Requiere la migración 0017 aplicada. No crees usuarios de prueba en producción: usa una cuenta tuya.
+Esta guía es para quien tenga una sesión real. Los tests automáticos cubren acciones, vistas renderizadas en servidor y estados, pero no un navegador con sesión. La migración 0017 ya está aplicada en la base real. No crees usuarios de prueba en producción: usa una cuenta tuya.
 
 ## Dónde está
 

@@ -42,16 +42,53 @@ asistencia y ranking calculado por el sistema en lugar de a mano.
 
 ---
 
+## Explorar: deportistas, ediciones y favoritos
+
+Además del calendario, la aplicación tiene una parte de consulta deportiva
+(`/explorar`): búsqueda de deportistas con ficha y temporada, ediciones y
+series de torneos con sus resultados, cara a cara entre dos deportistas
+(solo asaltos individuales; equipos, relevos, BYE y posiciones no generan
+victorias) y una lista privada de favoritos. Los favoritos no son alertas: no
+envían avisos ni piden permisos del navegador.
+
+- **Todo dato de estas pantallas exige sesión.** Cada página, cada acción de
+  servidor y el diseño común redirigen o deniegan sin sesión **antes** de leer
+  datos. Las excepciones existentes son `/entrar`, los recursos estáticos, los
+  feeds iCal (`/api/calendario/<token>`, con su propio token revocable) y
+  `/api/archivos/*`, que sirve los PDF y snapshots guardados en R2 **sin
+  sesión**: la protección es una ruta larga e impredecible, heredada de la
+  plataforma anterior (el código lo documenta). Como esos PDF pueden llevar
+  listas nominales, restringir esa ruta queda como mejora pendiente.
+- Los datos salen de las tablas `sport_*`, que **no son un corpus completo**:
+  solo hay lo que se ha importado de forma acotada (ver «Estado real de los
+  datos históricos»). Una prueba sin resultados importados se muestra como «sin
+  datos», nunca como «no hay resultados».
+- Una persona deportiva no es una cuenta. Un ID externo (FIE, RFEE) tiene
+  ámbito y vigencia, y los homónimos no se fusionan por nombre. El
+  `athlete_id` antiguo de una inscripción no basta como prueba de identidad.
+- El ranking interno y su cálculo solo se ven con el rol y el arma
+  autorizados; la tabla oficial se ve igual para todos los roles.
+
+---
+
 ## Puesta en marcha
 
-```bash
-npm install
-cp .env.example .env     # y rellena las variables (ver más abajo)
-npm run db:migrate       # crea las tablas en Neon
-npm run db:seed          # temporada y tablas de normativa (NO datos de ejemplo)
-npm run ingest           # primera carga desde las fuentes oficiales
-npm run dev
+Entorno de referencia: Windows con PowerShell 7 y Node 22. Usa los shims
+`npm.cmd` y `npx.cmd` si `npx` a secas falla.
+
+```powershell
+npm.cmd ci
+Copy-Item .env.example .env     # y rellena las variables (ver más abajo)
+npm.cmd run dev
 ```
+
+**La `DATABASE_URL` de un `.env` real apunta a la base existente, no a una
+rama de pruebas.** Para una base **nueva y vacía**, `npm run db:migrate` crea las
+tablas y `npm run db:seed` carga la temporada y la normativa (no datos de
+ejemplo). Contra la base ya existente **no** ejecutes `db:push`, `db:seed`,
+`demo`, `demo:borrar`, `e2e:limpiar` ni `ingest` masivo, y no uses el migrador
+general: las migraciones deportivas tienen su propio comando acotado (ver
+«Migraciones deportivas»).
 
 ### Variables de entorno
 
@@ -62,12 +99,18 @@ npm run dev
 | `NEON_AUTH_COOKIE_SECRET` | Firma de la cookie de sesión | Sí |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Avisos por correo | No (sin ella no se envía nada, pero la app funciona) |
 | `CRON_SECRET` | Protege los endpoints de cron | Sí en producción |
+| `NEXT_PUBLIC_APP_URL` | Origen absoluto de la aplicación (feed iCal, correos). Se fija **al compilar** | Sí al compilar para publicar |
 | `BLOB_READ_WRITE_TOKEN` *o* `AWS_*` | PDFs y snapshots | No (sin ella no se guardan snapshots) |
 | `AI_*` | Extracción de dossieres (fase opcional) | No |
 | `SKERMO_SUBMIT_*` | Envío directo a Skermo (fase opcional) | No |
+| `CLOUDFLARE_API_TOKEN` | Solo desarrollo local; **nunca** viaja dentro del paquete ni se usa para publicar (se publica con el inicio de sesión OAuth de Wrangler) | No |
 
-Todo el proyecto está pensado para caber en planes gratuitos: Neon Free,
-Vercel Hobby y Resend Free. Con unos 20 usuarios no se roza ningún límite.
+Nunca pegues valores de `.env` en tickets, logs ni informes: comprueba solo si
+una variable existe.
+
+El diseño busca caber en planes baratos: Neon (el tamaño facturado y el plan
+de esta base **no están verificados**), Resend Free y Cloudflare Workers.
+Los crons (nueve) exigen Workers de pago: el plan gratuito corta en cinco.
 
 ---
 
@@ -123,7 +166,8 @@ Detalles que costaron encontrarse y que conviene no perder:
 src/
   app/
     (app)/            Pantallas con sesión: Mi estado, Calendario, Convocatorias,
-                      Ranking, Documentos, Mi club, Administración
+                      Ranking, Explorar (deportistas, ediciones, favoritos),
+                      Perfil, Documentos, Mi club, Administración
     entrar/           Acceso con código de un solo uso
     api/              Cron, feeds iCal, autenticación
   components/         Interfaz. primitives.tsx son las piezas base
@@ -132,6 +176,8 @@ src/
     ingest/           Scrapers, normalización, validación y upsert
     entries/          Máquina de estados de las inscripciones
     ranking/          Cálculo del ranking interno
+    sport/            Persona deportiva, IDs externos, Explorar y favoritos
+    db/               Migración aditiva acotada (migracion-aditiva.ts)
     ai/               Extracción de dossieres (opcional)
     skermo/           Envío directo a Skermo (opcional)
 tests/
@@ -149,124 +195,237 @@ tests/
   `neon_auth` de la propia base, no en un tercero. `user_profile.auth_user_id`
   apunta a ese id **sin clave ajena**, a propósito: ese esquema lo migra Neon y
   encadenar nuestras migraciones a las suyas es pedir una rotura.
-- **Región `fra1`** en Vercel y Neon en AWS Frankfurt: base de datos y servidor
-  en el mismo sitio y cerca de España.
+- **Neon en AWS Frankfurt.** La región `fra1` de `vercel.json` es de la
+  plataforma anterior; el Worker de Cloudflare no la usa.
+
+---
+
+## Datos históricos y backfill
+
+El backfill (`npm run backfill`) importa de forma **acotada y reanudable**
+resultados históricos de FIE, Skermo/RFEE (HTML y PDF) y, como complemento,
+Engarde y Fencing Worldwide. Su manual completo, con límites, códigos de salida
+y estados, está en [`docs/backfill-historico.md`](docs/backfill-historico.md).
+
+```powershell
+npm.cmd run backfill                      # simulación: solo SELECT, sin red, sin escribir
+npm.cmd run backfill -- --aplicar         # un lote acotado; lo decide una persona
+```
+
+Nada lo lanza solo: no hay cron ni trigger de backfill. No existe un modo «todo
+el corpus» (topes de 200 tareas, 2000 peticiones, 30 minutos y 50 relecturas) y
+no se lanzan dos `--aplicar` solapados sobre la misma clave. Los argumentos con
+`|` (por ejemplo `'fie|2024|246'`) se pasan con
+`node node_modules/tsx/dist/cli.mjs scripts/<script>.ts '<argumento>'`: los
+shims `.cmd` pueden tragarse el pipe.
+
+### Estado real de los datos históricos (02/10/2026)
+
+- **No hay corpus histórico completo.** Solo se cargó un piloto real acotado
+  en tablas `sport_*`: dos pruebas FIE de París 2024 (individual y equipos,
+  una sola edición), una de Bogotá 2027, **un** PDF de la RFEE (2018-2019,
+  cobertura parcial) y **un** ranking oficial FIE 2024 (903 entradas).
+  Cobertura de cada fuente, temporadas pendientes y fuentes no consultadas
+  siguen sin importar. «Fuente no publicada», «índice pendiente», «error» y
+  «conjunto vacío publicado» son estados distintos y no se mezclan.
+- Las personas de esas lecturas no se enlazan por nombre: el PDF y el ranking
+  quedaron con 0 puestos/entradas ligados a persona. Es identidad conservadora,
+  no un fallo.
+- **Primera relectura FIE tras la migración 0018.** La 0018 añade referencias de
+  inscripción y cambia la huella de cada lista de inscritos FIE: la primera
+  lectura elegible fuerza una reescritura de esa lista, acotada a 60 por
+  pasada, con guarda de capacidad y cadencia. No hay hidratación exhaustiva
+  inmediata ni lote ilimitado; las inscripciones antiguas sin referencia se
+  informan aparte.
+- El pilotaje de IA sobre PDF (máximo 10 PDF y 1 € aprobados) **no se ejecutó**:
+  hay limitador y estimador, pero ningún PDF se envió a un modelo y no existe
+  consumo observado. No está verificado ni el acceso a inferencia, ni el
+  tratamiento de datos de menores, ni la cuota de la cuenta; mientras tanto no
+  se gasta nada.
+- Medidas de tamaño del piloto: base completa 29,35 → 30,17 MiB y esquema
+  `public` 18,64 → 19,46 MiB (+0,82 MiB). Son medidas lógicas distintas entre sí
+  y de la lectura histórica de 27,71 MiB: no son consumo facturado ni prueban
+  un plan.
+- La contabilidad de peticiones del piloto no es exhaustiva: hay 21 peticiones
+  HTTP conocidas más una invocación mal entrecomillada cuyo número de
+  peticiones se desconoce. No se afirma que se cumplieran los límites de
+  40 peticiones/300 s para todo el conjunto.
+
+---
+
+## Migraciones deportivas y recuperación
+
+Las migraciones 0017 → 0018 → 0019 (13 tablas `sport_*`, referencias de
+inscripción, categorías M10/M12) **ya están aplicadas** en Neon (PostgreSQL
+18.0.6), con sus tres filas de ledger, en una sola transacción. El ledger pasó
+de 16 a 19 filas. **No se reaplican.**
+
+```powershell
+node node_modules/tsx/dist/cli.mjs scripts/aplicar-migraciones-deportivas.ts   # preflight de solo lectura
+```
+
+Ese preflight sale con código 2 desde que las migraciones existen; es el
+resultado esperado y no un fallo. Hay un test sobre su lógica
+(`tests/migracion-aditiva.test.ts`).
+
+**Recuperación, con sus límites:**
+
+- Antes del commit de una migración aditiva, la transacción se revierte entera,
+  ledger incluido.
+- **Después del commit solo se revierte el código** (publicar la versión
+  anterior del Worker). Las tablas, los enums, los datos y el ledger se quedan
+  como están. No hay SQL de bajada automático (`down` borraría datos deportivos
+  y no está autorizado) ni se borran enums.
+- **No hay copia de seguridad ni punto de restauración de Neon acreditados.**
+  Volver a una versión anterior del Worker no revierte Neon ni repara daños
+  anteriores.
+
+**Lo que no se afirma.** El 02/10/2026 un trabajador ejecutó suites de pruebas
+que podían escribir en la base existente (registrado en las notas de la misión, no versionadas). Una
+auditoría de solo lectura previa a la integración, los conteos legacy iguales
+(`result`, `event`, `event_link`, `athlete`, `competition_registration`,
+`event_competition`, `user_profile`) antes y después del piloto y la
+coherencia actual **no demuestran** que el incidente no tuviera consecuencias
+históricas: igualdad de conteos no es igualdad de valores. La tabla
+`notification` tiene 3 filas frente a 0 en la auditoría previa, sin atribución
+confirmada; no se ha investigado ni limpiado nada. Detalle del procedimiento en
+[`docs/migraciones-deportivas.md`](docs/migraciones-deportivas.md).
 
 ---
 
 ## Dónde se despliega
 
-### https://calendario-fie-fede.excalofrio.workers.dev
+**Solo** el Worker `calendario-fie-fede` de la cuenta Cloudflare
+`52d39cf14bc17b94754729436036124d`, en
+**https://calendario-fie-fede.excalofrio.workers.dev**. La cuenta tiene otros
+Workers ajenos: no se tocan. La base **se queda en Neon** (el driver HTTP
+`@neondatabase/serverless` funciona en Workers y el esquema usa enums, `uuid` y
+`jsonb`, que D1 no tiene).
 
-Cloudflare Workers, leyendo la base de Neon de
-verdad. La base **se queda en Neon**: el driver HTTP
-`@neondatabase/serverless` funciona en Workers sin tocar nada, y el esquema es
-Postgres con enums, `uuid` y `jsonb`, que D1 no tiene.
+`wrangler.jsonc` manda: nombre, `main` (`worker/index.ts`, que reexporta el
+`fetch` de OpenNext y añade el manejador `scheduled`), assets, los bindings
+(`ASSETS`, `IMAGES`, `AI` y el bucket de archivos) y los crons. **No cambies
+bindings ni crons al publicar.**
 
-**Cada vez que cambia la URL hay que hacer dos cosas**, y sin ellas el
-despliegue no sirve:
+### Origen y Neon Auth
 
-1. **Recompilar con la URL nueva.** `NEXT_PUBLIC_APP_URL` se sustituye dentro
-   del código en tiempo de compilación —el feed iCal y los correos construyen
-   direcciones absolutas con ella—, así que ponerla como secreto **no**
-   arregla un paquete compilado con otra.
-2. **Declararla en Neon Auth.** Panel de Neon → **Auth › Configuration ›
-   Domains**, con protocolo y sin barra final. Si falta, el inicio de sesión
-   responde `403 INVALID_ORIGIN`: la pantalla carga y nadie puede entrar.
+`NEXT_PUBLIC_APP_URL` se sustituye dentro del código al **compilar**: el feed
+iCal y los correos construyen direcciones absolutas con ella, así que ponerla
+como secreto no arregla un paquete compilado con otra. El `.env` local suele
+traer `http://localhost:3000`; para publicar, el comando de compilación la
+fija a mano. El origen publicado tiene que figurar en Neon Auth (panel de Neon,
+Auth › Configuration › Domains, con protocolo y sin barra final); si falta, el
+inicio de sesión responde `403 INVALID_ORIGIN`. Este proyecto no cambia
+dominios de Neon Auth ni de Cloudflare.
 
-```bash
-set -a; source .env; set +a
-export NEXT_PUBLIC_APP_URL="https://calendario-fie-fede.excalofrio.workers.dev"
-export CF_ENV_EMBEBIDO=1
-npm run cf:build && npx opennextjs-cloudflare deploy
-npm run produccion     # entra con un navegador y comprueba que funciona
+### Compilar (sin `CF_ENV_EMBEBIDO`)
+
+La receta antigua con `CF_ENV_EMBEBIDO=1` ya no se usa: incrustaba variables de
+ejecución dentro del paquete como muleta. Los secretos viven en el almacén de
+secretos de Cloudflare (nombres: `DATABASE_URL`, `NEON_AUTH_URL`,
+`NEON_AUTH_COOKIE_SECRET`, `CRON_SECRET`) y nunca van en el paquete.
+`scripts/compilar-cloudflare.mjs` retira los `.env` copiados por Next y vacía
+`.open-next/cloudflare/next-env.mjs`. Hace falta **al menos 5 GiB libres** en C:.
+
+```powershell
+Set-Location -LiteralPath 'C:\Users\alejandro.c.ramirez\Documents\calendarioFedeEsgrima'
+if ((Get-PSDrive C).Free -lt 5GB) { throw 'Menos de 5 GiB libres: no compilar' }
+Remove-Item Env:CF_ENV_EMBEBIDO -ErrorAction SilentlyContinue
+$env:NEXT_PUBLIC_APP_URL = 'https://calendario-fie-fede.excalofrio.workers.dev'
+npm.cmd run cf:build          # next build + empaquetado OpenNext
 ```
+
+Antes de publicar, comprueba que el paquete no lleva valores secretos sin
+imprimirlos (busca los valores cargados en memoria dentro de `.open-next` y
+cuenta coincidencias; no muestres nunca el valor ni la línea).
+
+### Publicar el artefacto ya comprobado
+
+`npm run cf:deploy` **recompila** (`cf:build`) y por eso no sirve para publicar
+exactamente lo que acabas de comprobar. El comando directo de OpenNext publica
+lo que hay en `.open-next` sin recompilar. Entra con el inicio de sesión OAuth
+de Wrangler y desactiva la lectura de `.env` para que su token no se use como
+atajo:
+
+```powershell
+Remove-Item Env:CLOUDFLARE_API_TOKEN -ErrorAction SilentlyContinue
+$env:CLOUDFLARE_ACCOUNT_ID = '52d39cf14bc17b94754729436036124d'
+node node_modules/@opennextjs/cloudflare/dist/cli/index.js deploy --env-file NUL
+```
+
+Antes, anota la versión que está al 100 %
+(`node node_modules/wrangler/bin/wrangler.js deployments list --name calendario-fie-fede --env-file NUL`)
+para poder volver a ella.
+
+**Volver atrás.** `wrangler rollback <versión-anterior> --name calendario-fie-fede --env-file NUL`
+(o publicar de nuevo la versión anterior desde el panel) revierte **el
+código**. No revierte Neon: tablas, datos y ledger quedan como estén. La
+versión publicada y la anterior de cada publicación se registran en
+[`docs/entrega-release.md`](docs/entrega-release.md).
+
+### Los secretos
+
+Están en el almacén de Cloudflare. `npm run cf:secretos` los sube leyéndolos de
+`.env`, de uno en uno y por la entrada estándar, sin imprimir ningún valor; **no
+se ejecuta al publicar**. Lo que **nunca** viaja dentro es el
+`CLOUDFLARE_API_TOKEN` ni el `.env` completo.
 
 ### Sobre el subdominio de la URL
 
 `excalofrio` es el subdominio de `workers.dev` **de la cuenta**, no de este
-proyecto, y lo comparten los dieciséis Workers que hay. Se cambia **solo
-desde el panel** (Workers & Pages → columna derecha → *Account details* →
-*Subdomain* → el lápiz): por API, el `PUT` responde
-`10036 Account already has an associated subdomain` y `PATCH`/`POST`,
-`10405 Method not allowed for this authentication scheme`.
-
-Cambiarlo afecta a los dieciséis a la vez y las URL antiguas dejan de
-responder de inmediato. Los ocho Workers de `oxpea` que se sirven desde
-dominio propio (`oxpea.com`, `app.`, `api.`, `reservas.`, `admin.`, `demo.`,
-`docs.`, `www.`) no se enteran; el resto sí cambia de dirección.
-
-Para una URL sin `workers.dev` hace falta un dominio propio: basta un
-registro nuevo en una zona que ya esté en Cloudflare.
-
-### Los secretos
-
-Están en el almacén de Cloudflare (`npm run cf:secretos` los sube leyéndolos
-de `.env`, de uno en uno y por la entrada estándar, sin imprimir ningún
-valor). Pero además van **dentro del paquete** mientras se compile con
-`CF_ENV_EMBEBIDO=1`, que es una muleta: la compilación lo avisa en cada
-pasada. Para quitarla, compilar sin esa variable.
-
-Lo que **nunca** viaja dentro es el `CLOUDFLARE_API_TOKEN`. Next, en modo
-standalone, copia el `.env` del proyecto a la salida y OpenNext lo empaqueta;
-en el primer despliegue subió el fichero entero, incluido ese token, que puede
-desplegar y modificar Workers de toda la cuenta. No era accesible desde fuera
-—se sirve un 404, y tampoco está entre los ficheros públicos— pero un secreto
-de despliegue dentro de la cosa desplegada está mal. El paso 4 de
-`scripts/compilar-cloudflare.mjs` lo borra.
+proyecto, y lo comparten todos sus Workers. Se cambia **solo desde el panel**;
+cambiarlo afecta a todos a la vez y las URL antiguas dejan de responder.
 
 ### Crons
 
-Ocho, uno por fuente y a horas distintas: si la FIE cambia su API, el resto
-sigue funcionando. Están registrados y aceptados en Cloudflare, lo que solo
-ocurre con Workers de pago (el plan gratuito corta en cinco).
+Nueve, uno por fuente o tarea y a horas distintas (UTC): si una fuente cambia,
+las demás siguen funcionando. Coinciden `triggers.crons` de `wrangler.jsonc` y la
+tabla `TAREAS` de `worker/index.ts`; si cambias una, cambia la otra.
 
-`vercel.json` se conserva sin borrar, pero **no gobierna nada** del despliegue
-vivo: es la referencia de la que salió la lista. Si cambias una franja ahí, no
-pasa nada hasta que la copies a `triggers.crons` de `wrangler.jsonc` **y** a
-la tabla `TAREAS` de `worker/index.ts`.
+| Cron (UTC) | Tarea |
+|---|---|
+| `0 3 * * *` | `ingest/skermo_rfee` |
+| `30 3 * * *` | `ingest/fie` |
+| `0 4 * * *` | `ingest/efc` |
+| `30 4 * * *` | `ingest/skermo_regional` |
+| `0 5 * * *` | `ingest/rfee_wp` |
+| `30 5 * * *` | `ingest/skermo_ranking` |
+| `0 6 * * *` | `extraer` |
+| `45 6 * * *` | `ingest/fie_tiradores` |
+| `0 7 * * *` | `notify` |
 
-```bash
-npm run cf:build     # next build + empaquetado para el Worker
-npm run cf:preview   # el Worker entero en local, con bindings de verdad
-npm run cf:deploy    # compila y despliega
+Los comentarios antiguos que hablan de ocho son anteriores. **Nunca invoques un
+endpoint de cron como comprobación de salud**: ejecuta ingestas y envíos
+reales. `vercel.json` se conserva como referencia histórica y no gobierna
+nada del despliegue vivo.
+
+### Comprobación posterior a publicar (sin sesión)
+
+Solo lectura y sin cron: `/entrar` responde 200; las rutas privadas
+(`/`, `/estado`, `/ranking`, `/perfil`, `/explorar`, `/explorar/ediciones`,
+`/explorar/favoritos` y las fichas) redirigen a `/entrar`, también con la
+cabecera `RSC: 1`; un token de feed iCal inexistente no devuelve datos; los
+recursos estáticos responden. El resultado de la última publicación está en
+[`docs/entrega-release.md`](docs/entrega-release.md).
+
+**Qué no cubre.** Esas comprobaciones son anónimas. Inicio de sesión real, roles,
+datos por arma, favoritos y los cuatro anchos son **QA privada manual del
+propietario después de publicar**:
+[`docs/matriz-qa-manual-responsive.md`](docs/matriz-qa-manual-responsive.md) y
+[`docs/favoritos-guia-manual.md`](docs/favoritos-guia-manual.md). No se crean
+cuentas temporales ni se reutilizan cookies para suplirla.
+
+### Compilar en Windows
+
+Next 16 deja en `.next/standalone` enlaces a paquetes externalizados que
+OpenNext reproduce con `symlinkSync` sin tipo, lo que exige permisos de
+administrador. `scripts/compilar-cloudflare.mjs` los retira antes de empaquetar.
+En Linux basta `next build && opennextjs-cloudflare build`.
+
+```powershell
+npm.cmd run cf:preview   # el Worker entero en local, con bindings (no es una comprobación de producción)
 ```
 
-Al compilar en Windows hace falta el guion propio: Next 16 deja en
-`.next/standalone` enlaces a los paquetes que externaliza y OpenNext los
-reproduce con `symlinkSync` sin tipo, lo que exige permisos de administrador.
-`scripts/compilar-cloudflare.mjs` los retira antes de empaquetar. En Linux
-basta `next build && opennextjs-cloudflare build`.
-
----
-
-**Cloudflare Workers** (`@opennextjs/cloudflare`). Manda `wrangler.jsonc`.
-
-`vercel.json` se conserva sin borrar, pero **no gobierna nada** del despliegue
-vivo: es la referencia de la que salió la lista de crons. Si cambias una
-franja ahí, no pasa nada hasta que la copies a `triggers.crons` de
-`wrangler.jsonc` **y** a la tabla `TAREAS` de `worker/index.ts`.
-
-La base de datos **se queda en Neon**: el driver HTTP
-`@neondatabase/serverless` funciona en Workers sin tocar nada, y el esquema es
-Postgres con enums, `uuid` y `jsonb`, que D1 no tiene.
-
-```bash
-npm run cf:build     # next build + empaquetado para el Worker
-npm run cf:preview   # el Worker entero en local, con bindings de verdad
-npm run cf:deploy    # compila y despliega
-```
-
-Al compilar hay que pasar la URL final, porque `NEXT_PUBLIC_APP_URL` se
-sustituye dentro del código en tiempo de compilación y no se puede cambiar
-después desde el panel:
-
-```bash
-NEXT_PUBLIC_APP_URL=https://calendario-esgrima.<subdominio>.workers.dev \
-  npm run cf:build
-```
-- **Un cron por fuente, a horas distintas.** Si la FIE cambia su API, el resto
-  sigue funcionando.
 - **Ningún número de la normativa vive en el código.** Importes, plazos,
   coeficientes y años de nacimiento están en tablas con su pantalla de edición
   y su historial de cambios.
@@ -275,12 +434,21 @@ NEXT_PUBLIC_APP_URL=https://calendario-esgrima.<subdominio>.workers.dev \
 
 ## Verificación
 
-```bash
-npm test          # parsers contra HTML real + lógica de dominio
-npm run typecheck
-npm run build
+Comprobaciones automáticas **seguras**, en este orden y una detrás de otra:
+
+```powershell
+npx.cmd vitest run --exclude=tests/datos.test.ts --exclude=tests/enlaces.test.ts --exclude=tests/seguridad.test.ts --maxWorkers=3
+npm.cmd run typecheck -- --incremental false
+git diff --check
+npm.cmd run cf:build      # solo con >= 5 GiB libres; ver «Dónde se despliega»
 ```
 
+**No ejecutes `npm test` ni Vitest sin esas exclusiones**, ni siquiera
+aisladas o como diagnóstico: `tests/enlaces.test.ts` recalcula datos reales,
+`tests/seguridad.test.ts` crea y borra fixtures de aplicación y
+`tests/datos.test.ts` toca la base existente. `npm run lint` no sirve en
+Next 16 y no se ejecuta. `npm run e2e` y `npm run produccion` necesitan una
+sesión real y no forman parte de esta comprobación.
 Lo que cubren los tests:
 
 - **Parsers con HTML real guardado** (`tests/fixtures/*.gz`): si Skermo cambia

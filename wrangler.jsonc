@@ -79,7 +79,7 @@
    * aquí, tócala también allí o esa ejecución no hará nada.
    *
    * OJO: el plan gratuito de Workers permite 5 Cron Triggers por CUENTA y
-   * estos son 8. Hace falta Workers Paid (ver informe).
+   * estos son 9. Hace falta Workers Paid (ver informe).
    */
   "triggers": {
     "crons": [

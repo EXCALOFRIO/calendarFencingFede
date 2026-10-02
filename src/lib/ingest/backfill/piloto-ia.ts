@@ -71,7 +71,9 @@ export type EvidenciaViaIa = {
  * Estado a 02/10/2026. La documentación pública de Cloudflare publica la tarifa y
  * dice que no entrena con el contenido del cliente, pero eso no es acceso, cuota
  * ni plan de ESTA cuenta: el token del proyecto no tiene permiso de Workers AI
- * (la vía REST responde 401) y no hay aprobación explícita de envío.
+ * (la vía REST responde 401). El usuario aprobó un piloto de hasta 10 PDF y 1 €,
+ * pero esa bandera se mantiene a `false` mientras la vía no esté verificada: el
+ * visto bueno de presupuesto no sustituye al de enviar un documento concreto.
  */
 export const VIA_IA_ACTUAL: EvidenciaViaIa = {
   accesoInferenciaCuenta: false,

@@ -2,7 +2,9 @@
 
 Esta matriz es para la **revisión privada manual posterior a la publicación**.
 Nadie la ha ejecutado todavía: no hay cuenta de prueba ni navegador autenticado
-disponibles para el agente, y no se crean cuentas para suplirlos. Lo que sí hay
+disponibles para el agente, y no se crean cuentas temporales ni se reutilizan
+cookies o sesiones para suplirlos. Las comprobaciones anónimas posteriores a la
+publicación (ver `docs/entrega-release.md`) no sustituyen a ninguna fila. Lo que sí hay
 es revisión de código y pruebas de servidor directas, que no sustituyen a esta
 matriz (ver «Qué está comprobado y qué no»).
 
@@ -85,9 +87,31 @@ Todas distintas entre sí y ninguna de una vista privada:
   muestra (tope 5), sin repetir los ya leídos. La cota superior pasa de 1.302
   filas crudas a, como mucho, lo que tengan esos torneos. No se midió con la
   cuenta de ningún usuario ni se midieron tiempos.
-- **Sintética y reproducible**, en `tests/estado-lista-oficial-proyeccion.test.ts`
-  (120 torneos × 80 inscritos): filas leídas 9.600 → 400 y bytes retenidos de
-  la proyección 3.505.621 → 639. Es una medida del diseño con datos inventados,
-  no de la aplicación en producción.
-- Tiempos y tamaños transferidos antes y después: **no medidos** (no hay sesión
-  ni base comparables, y el espacio libre en disco impide compilar).
+- **Proyección sintética (no es una medida de producción)**, reproducible en
+  `tests/estado-lista-oficial-proyeccion.test.ts` (120 torneos × 80 inscritos
+  inventados): filas leídas 9.600 → 400 y bytes retenidos de la proyección
+  3.505.621 → 639. Describe el diseño de la consulta con datos fabricados; no
+  se midió con la aplicación publicada ni con ninguna cuenta.
+- **Core Web Vitals, tiempos y bytes transferidos reales: no medidos.** No hay
+  sesión privada ni una base comparable antes y después, y esta guía no fija
+  ningún objetivo numérico de CWV. Una publicación correcta tampoco los mide.
+  Medirlos forma parte de la QA privada del propietario (por ejemplo, con las
+  herramientas de rendimiento del navegador sobre su propia sesión).
+
+## Recorrido por cuenta (a ejecutar por el propietario, con sesión propia)
+
+Marca cada casilla en 320, 393, 768 y 1440 px; en cada ancho, además, teclado,
+zoom al 200 % y movimiento reducido (pasos 3, 5 y 6 de «Cómo ejecutarla»).
+
+| Cuenta | Qué comprobar |
+|---|---|
+| **Atleta** | Entrar con código; `/estado` distingue Dentro / Sin confirmar / Lista vacía / Lista sin consultar; `/ranking` no ofrece «Ver tus datos y el cálculo» ni bloque de cálculo; `/explorar` busca, abre ficha y conserva temporada y modalidad; cara a cara solo muestra asaltos individuales; favoritos (ver `docs/favoritos-guia-manual.md`); datos oficiales de inscripción visibles sin etiquetas de procedencia por inscrito. |
+| **Seleccionador, arma propia** | `/ranking` de su arma muestra «Ver tus datos y el cálculo» y el bloque «Cálculo de esta aplicación». |
+| **Seleccionador, otra arma** | `/ranking` de otra arma **no** lo muestra y conserva puesto, puntos, club y corte oficiales; al cambiar de arma con el selector el texto cambia sin recargar. |
+| **Admin** | Todas las armas con cálculo; `/admin/salud` y cuarentena accesibles; ningún botón de ingesta se pulsa en la QA. |
+| **Sin sesión** | Ya comprobado de forma anónima en la publicación: cada ruta privada redirige a `/entrar`. Repetirlo en el navegador propio. |
+
+Guardas y límites a observar en la revisión: ningún dato nominal en la URL; un
+error nunca se lee como «sin resultados»; una prueba sin datos importados dice
+«sin datos», no «sin participantes»; la cobertura histórica es parcial (ver
+`README.md`, «Estado real de los datos históricos»).
