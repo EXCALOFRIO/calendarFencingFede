@@ -171,13 +171,16 @@ describe('ejecutarFwwPrueba', () => {
     expect(r.hechos?.asaltos).toBe(1);
   });
 
-  it('429 en la clasificación FWW: error técnico, sin cobertura vacía', async () => {
+  it('429 en la clasificación FWW: error técnico, anotado como error sin intento y sin cobertura vacía', async () => {
     const { d, cob } = deps({
       leerResultadosFww: async () => lecturaFww({ estado: 'error', pagina: null, httpStatus: 429, motivo: 'HTTP 429 al pedir la prueba' }),
     });
     const r = await ejecutarFwwPrueba(d, { canonica: canonica(), resultadosUrl: URL_RES, urls: { poules: [], cuadro: [] } });
     expect(r.estado).toBe('error');
     expect(r.tecnico?.status).toBe(429);
-    expect(cob).toEqual([]);
+    // Sólo queda la marca de error del hecho: ni sin_resultados ni cifras inventadas, y el 429 no gasta un intento.
+    expect(cob).toHaveLength(1);
+    expect(cob[0].fila).toMatchObject({ status: 'error', factKind: 'results', sinIntento: true });
+    expect(cob[0].fila.publishedTotal).toBeUndefined();
   });
 });

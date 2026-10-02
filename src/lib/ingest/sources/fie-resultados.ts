@@ -716,6 +716,12 @@ export type OpcionesLecturaPrueba = OpcionesRanking & {
    * paginados) ya se leyeron en la primera lectura: no se piden otra vez.
    */
   omitirAsaltos?: boolean;
+  /**
+   * Fases que esta lectura pide. Una fase ya completa en una ejecución anterior (el ranking
+   * cuando sólo faltan poules o cuadro) no se vuelve a leer: `false` la deja en `null`.
+   * Ausente = todas, salvo lo que diga `omitirAsaltos`.
+   */
+  fases?: { ranking?: boolean; poules?: boolean; cuadro?: boolean };
 };
 
 export async function leerPruebaFie(
@@ -744,19 +750,15 @@ export async function leerPruebaFie(
   if ('error' in n) return vacia(n.error);
   const individual = n.prueba.formato === 'INDIVIDUAL';
 
-  const ranking = await leerRanking(season, competitionId, deps, opciones);
-  if (!individual || opciones.omitirAsaltos) {
-    return {
-      season,
-      competitionId,
-      prueba: n.prueba,
-      errorPrueba: null,
-      ranking,
-      poules: null,
-      cuadro: null,
-    };
-  }
-  const poules = await leerAsaltos(urlPoules(season, competitionId), normalizarPoules, true, deps);
-  const cuadro = await leerAsaltos(urlCuadro(season, competitionId), normalizarCuadro, true, deps);
+  const fases = opciones.fases;
+  const ranking = fases?.ranking === false ? null : await leerRanking(season, competitionId, deps, opciones);
+  const quierePoules = individual && !opciones.omitirAsaltos && fases?.poules !== false;
+  const quiereCuadro = individual && !opciones.omitirAsaltos && fases?.cuadro !== false;
+  const poules = quierePoules
+    ? await leerAsaltos(urlPoules(season, competitionId), normalizarPoules, true, deps)
+    : null;
+  const cuadro = quiereCuadro
+    ? await leerAsaltos(urlCuadro(season, competitionId), normalizarCuadro, true, deps)
+    : null;
   return { season, competitionId, prueba: n.prueba, errorPrueba: null, ranking, poules, cuadro };
 }

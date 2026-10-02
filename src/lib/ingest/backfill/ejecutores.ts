@@ -16,6 +16,7 @@ import { persistirLecturaPdf, type DepsPersistenciaPdf } from './pdf-persist';
 import { clasificarFalloTecnico, type EstadoResultadoTarea, type ResultadoTarea, type Tarea } from './orquestador';
 import type { GuardaCapacidad } from './guarda-capacidad';
 import { motivoDePresupuesto } from './presupuesto-http';
+import { motivoHttp } from '../http-retry';
 
 /**
  * Despacho de una tarea del backfill al adaptador de su fuente. Cada paso hace
@@ -24,6 +25,8 @@ import { motivoDePresupuesto } from './presupuesto-http';
  * la vez dentro de la ejecución. Todo entra por dependencias: aquí no hay red
  * ni base.
  */
+
+export type EstadoFasesFie = Record<'ranking' | 'pools' | 'tableau', { status: string; cursor: string | null } | null>;
 
 export type DepsEjecutores = {
   /**
@@ -36,6 +39,11 @@ export type DepsEjecutores = {
     persistencia: DepsPersistenciaFie;
     /** Cursor de continuación guardado AHORA (puede haber avanzado en un intento anterior del mismo lote). */
     cursorActual: (season: number, competitionId: number) => Promise<string | null>;
+    /**
+     * Estado guardado AHORA de cada fase. Sin esta dependencia se pide todo en cada lectura, salvo
+     * las poules y el cuadro al continuar un ranking paginado.
+     */
+    fasesActuales?: (season: number, competitionId: number) => Promise<EstadoFasesFie>;
   };
   skermo?: {
     leer: (e: { federacion: string; season: string; competitionId: string; releer: boolean }) => Promise<LecturaSkermo>;
@@ -76,6 +84,22 @@ function falloTecnico(mensajes: readonly (string | null | undefined)[], peticion
   return null;
 }
 
+/**
+ * Una fase se pide mientras no tenga cobertura leída: sin fila, pendiente o con error se pide.
+ * Un ranking parcial (continuación) también, y retoma por su cursor.
+ */
+const FASE_RANKING_LEIDA = new Set(['completo', 'sin_resultados', 'conflicto']);
+const FASE_ASALTOS_LEIDA = new Set(['completo', 'sin_resultados', 'parcial', 'conflicto']);
+
+function fasesPorLeer(actuales: EstadoFasesFie): { ranking: boolean; poules: boolean; cuadro: boolean } {
+  const leida = (f: { status: string } | null, validas: ReadonlySet<string>) => f !== null && validas.has(f.status);
+  return {
+    ranking: !leida(actuales.ranking, FASE_RANKING_LEIDA),
+    poules: !leida(actuales.pools, FASE_ASALTOS_LEIDA),
+    cuadro: !leida(actuales.tableau, FASE_ASALTOS_LEIDA),
+  };
+}
+
 async function ejecutarFie(deps: DepsEjecutores['fie'], t: Tarea, guarda?: GuardaCapacidad): Promise<ResultadoTarea> {
   const season = Number(t.season);
   const competitionId = Number(t.competitionKey);
@@ -87,10 +111,17 @@ async function ejecutarFie(deps: DepsEjecutores['fie'], t: Tarea, guarda?: Guard
     ? 1
     : desdeCursorFie(await deps.cursorActual(season, competitionId), { season, competitionId, pageSize: TAMANO_PAGINA_RANKING });
 
-  const lectura = await leerPruebaFie(season, competitionId, deps.lectura, {
-    desdePagina,
-    omitirAsaltos: desdePagina > 1,
-  });
+  // Sólo se piden las fases que faltan: un ranking ya completo no se repite en cada lote mientras
+  // poules o cuadro esperan. Una relectura o la revisita de una prueba reciente vuelve a leerlo todo.
+  const relee = t.releer || t.motivo === 'releer' || t.motivo === 'cadencia_reciente' || t.motivo === 'categorias_ampliadas';
+  const fases = !relee && deps.fasesActuales ? fasesPorLeer(await deps.fasesActuales(season, competitionId)) : null;
+
+  const lectura = await leerPruebaFie(
+    season,
+    competitionId,
+    deps.lectura,
+    fases ? { desdePagina, fases } : { desdePagina, omitirAsaltos: desdePagina > 1 },
+  );
   const peticionesLeidas = 1 + (lectura.ranking?.paginasLeidas ?? 0) + (lectura.poules ? 1 : 0) + (lectura.cuadro ? 1 : 0);
   if (!lectura.prueba) {
     const cortada = cortadaPorPresupuesto([lectura.errorPrueba], peticionesLeidas);
@@ -136,7 +167,11 @@ async function ejecutarFie(deps: DepsEjecutores['fie'], t: Tarea, guarda?: Guard
   );
   if (tecnico) return { ...tecnico, hechos };
 
-  const estado = resumen.cobertura.ranking ?? 'pendiente';
+  // Con el ranking ya cerrado en otra ejecución, el resultado es el de las fases que esta leyó.
+  // Una fase que falló o quedó diferida no se tapa con un ranking completo de la misma lectura.
+  const fasesAsaltos = [resumen.cobertura.pools, resumen.cobertura.tableau];
+  const faseSinCerrar = fasesAsaltos.find((e) => e === 'error' || e === 'pendiente');
+  const estado = faseSinCerrar ?? resumen.cobertura.ranking ?? estadoMasUrgente(fasesAsaltos);
   const mapa: Record<string, EstadoResultadoTarea> = {
     completo: 'completo',
     parcial: 'parcial',
@@ -146,6 +181,13 @@ async function ejecutarFie(deps: DepsEjecutores['fie'], t: Tarea, guarda?: Guard
     error: 'error',
   };
   return { estado: mapa[estado] ?? 'pendiente', peticiones, hechos };
+}
+
+const ORDEN_URGENCIA = ['error', 'conflicto', 'pendiente', 'parcial', 'completo', 'sin_resultados'] as const;
+
+function estadoMasUrgente(estados: readonly (string | undefined)[]): string {
+  const presentes = estados.filter((e): e is string => e !== undefined);
+  return ORDEN_URGENCIA.find((e) => presentes.includes(e)) ?? 'pendiente';
 }
 
 async function ejecutarSkermo(deps: NonNullable<DepsEjecutores['skermo']>, t: Tarea, guarda?: GuardaCapacidad): Promise<ResultadoTarea> {
@@ -238,11 +280,19 @@ async function ejecutarEnlaces(deps: NonNullable<DepsEjecutores['enlaces']>, t: 
   const competitionId = Number(t.competitionKey);
   if (!Number.isInteger(season) || !Number.isInteger(competitionId)) return error(`Clave FIE no válida: ${t.clave}`);
   const d = await deps.descubrir(season, competitionId);
-  const estadosHttp = [d.ficha.htmlStatus, d.ficha.jsonStatus].filter((s): s is number => typeof s === 'number');
   if (!d.prueba || !d.enlaces) {
-    const fallo = estadosHttp.find((s) => s === 429 || s >= 500);
-    if (fallo !== undefined && d.ficha.datos === 'ninguno') {
-      return { estado: 'error', peticiones: 2, mensaje: `HTTP ${fallo} al pedir la ficha FIE`, tecnico: { status: fallo, retryAfterMs: null } };
+    // El JSON oficial manda: su fallo y su Retry-After se miran antes que los de la ficha web.
+    const fallo = [
+      { status: d.ficha.jsonStatus, retryAfterMs: d.ficha.jsonRetryAfterMs },
+      { status: d.ficha.htmlStatus, retryAfterMs: d.ficha.htmlRetryAfterMs },
+    ].find((s) => s.status !== null && (s.status === 429 || s.status >= 500));
+    if (fallo?.status != null && d.ficha.datos === 'ninguno') {
+      return {
+        estado: 'error',
+        peticiones: 2,
+        mensaje: motivoHttp(fallo.status, fallo.retryAfterMs, ' al pedir la ficha FIE'),
+        tecnico: { status: fallo.status, retryAfterMs: fallo.retryAfterMs ?? null },
+      };
     }
     // Sin JSON legible no hay nada que evaluar, y eso no equivale a «aún no publicado».
     return { estado: 'sin_cambios', peticiones: 2, mensaje: 'Sin prueba oficial legible: no se evalúa ningún enlace' };
@@ -265,7 +315,7 @@ export function crearEjecutor(deps: DepsEjecutores): (t: Tarea) => Promise<Resul
         if (!deps.complementarios) return error('Engarde no está configurado en este modo');
         const [org, evt] = t.competitionKey.split('/');
         if (!org || !evt) return error(`Clave Engarde no válida: ${t.clave}`);
-        return ejecutarEngardeTorneo(deps.complementarios, org, evt, t.season);
+        return ejecutarEngardeTorneo(deps.complementarios, org, evt, t.season, deps.capacidad);
       }
       case 'fww_prueba': {
         if (!deps.complementarios) return error('FWW no está configurado en este modo');
@@ -274,11 +324,15 @@ export function crearEjecutor(deps: DepsEjecutores): (t: Tarea) => Promise<Resul
         // Sin canónica cargada no hay con qué cotejar: queda diferido, no se fuerza ni se vacía.
         if (!canonica) return { estado: 'pendiente', peticiones: 0, mensaje: 'La prueba canónica aún no está cargada' };
         const lista = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
-        return ejecutarFwwPrueba(deps.complementarios, {
-          canonica,
-          resultadosUrl: typeof t.datos?.sourceUrl === 'string' ? t.datos.sourceUrl : null,
-          urls: { poules: lista(t.datos?.poules), cuadro: lista(t.datos?.cuadro) },
-        });
+        return ejecutarFwwPrueba(
+          deps.complementarios,
+          {
+            canonica,
+            resultadosUrl: typeof t.datos?.sourceUrl === 'string' ? t.datos.sourceUrl : null,
+            urls: { poules: lista(t.datos?.poules), cuadro: lista(t.datos?.cuadro) },
+          },
+          deps.capacidad,
+        );
       }
       case 'enlaces_fie':
         return deps.enlaces ? ejecutarEnlaces(deps.enlaces, t) : error('Los enlaces no están configurados en este modo');

@@ -222,7 +222,14 @@ export type DepsBackfillCli = {
     temporadas: string[];
     maxPeticiones: number;
     presupuesto: PresupuestoHttp;
-  }) => Promise<{ catalogo: FilaCatalogo[]; peticiones: number; pendientes: number; errores: string[] }>;
+  }) => Promise<{
+    catalogo: FilaCatalogo[];
+    peticiones: number;
+    pendientes: number;
+    errores: string[];
+    /** Fallo técnico que cortó la enumeración (429, 5xx, red); el progreso ya está guardado. */
+    tecnico?: { status: number | null; retryAfterMs: number | null };
+  }>;
   ahora: () => Date;
   /** Reloj en ms del lote; por defecto Date.now. */
   reloj?: () => number;
@@ -295,6 +302,7 @@ export async function ejecutarBackfillCli(deps: DepsBackfillCli, o: OpcionesCli)
 
   let catalogo: FilaCatalogo[] = [];
   let descubiertas: UnidadDescubierta[] = [];
+  let limiteRemoto = false;
   if (!o.aplicar) {
     lineas.push('Descubrimiento del inventario: sólo con --aplicar (la simulación no hace ninguna petición de red).');
   } else if (!o.descubrir || !deps.descubrir) {
@@ -318,6 +326,15 @@ export async function ejecutarBackfillCli(deps: DepsBackfillCli, o: OpcionesCli)
           `índices_sin_leer=${d.pendientes} (lo no leído sigue pendiente, no se da por vacío)`,
       );
       for (const e of d.errores.slice(0, 5)) lineas.push(`  índice con error: ${e.slice(0, 160)}`);
+      if (d.tecnico) {
+        const espera = d.tecnico.retryAfterMs === null ? 'sin Retry-After' : `Retry-After ${Math.ceil(d.tecnico.retryAfterMs / 1000)} s`;
+        lineas.push(
+          `Descubrimiento detenido por un fallo técnico de la fuente (HTTP ${d.tecnico.status ?? 'red'}, ${espera}): ` +
+            'el progreso del índice y las pruebas ya descubiertas quedan guardados',
+        );
+        // Un 429 es el límite de la fuente: no se sigue leyendo en este lote, se vuelve a lanzar pasada la espera.
+        if (d.tecnico.status === 429) limiteRemoto = true;
+      }
     } catch (e) {
       lineas.push(`Descubrimiento fallido: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`);
     }
@@ -361,6 +378,11 @@ export async function ejecutarBackfillCli(deps: DepsBackfillCli, o: OpcionesCli)
     for (const [serie, r] of Object.entries(series)) {
       if (r.descubiertas > 0) lineas.push(`Serie ${serie}: descubiertas=${r.descubiertas} importadas=${r.importadas}`);
     }
+  }
+
+  if (limiteRemoto) {
+    lineas.push('Lote detenido por el límite de la fuente (HTTP 429): no se ejecutó ninguna lectura; vuelve a lanzarlo pasada la espera.');
+    return salida(CODIGO_LIMITE_REMOTO, plan);
   }
 
   const agregada = await deps.leerAgregada();

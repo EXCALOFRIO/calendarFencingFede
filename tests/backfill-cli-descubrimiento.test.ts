@@ -120,6 +120,41 @@ describe('CLI: el inventario genera unidades sin depender de cobertura de result
     expect(r.codigo).toBe(0);
   });
 
+  it('un 429 del descubrimiento detiene el lote con el código de límite remoto y muestra el Retry-After', async () => {
+    const { base, ejecutadas, crearEjecutor } = montar({
+      descubrir: async () => ({
+        catalogo: [prueba(1)],
+        peticiones: 3,
+        pendientes: 2,
+        errores: ['HTTP 429 al pedir la página'],
+        tecnico: { status: 429, retryAfterMs: 45_000 },
+      }),
+    });
+    const r = await ejecutarBackfillCli(base, opciones(['--aplicar']));
+    const texto = r.lineas.join('\n');
+    expect(r.codigo).toBe(4);
+    expect(texto).toMatch(/HTTP 429, Retry-After 45 s/);
+    expect(texto).toMatch(/el progreso del índice y las pruebas ya descubiertas quedan guardados/);
+    expect(ejecutadas).toEqual([]);
+    expect(crearEjecutor).not.toHaveBeenCalled();
+  });
+
+  it('un 5xx del descubrimiento se informa pero el lote sigue con lo ya conocido', async () => {
+    const { base, ejecutadas } = montar({
+      descubrir: async () => ({
+        catalogo: [prueba(1)],
+        peticiones: 2,
+        pendientes: 1,
+        errores: [],
+        tecnico: { status: 503, retryAfterMs: null },
+      }),
+    });
+    const r = await ejecutarBackfillCli(base, opciones(['--aplicar']));
+    expect(r.lineas.join('\n')).toMatch(/HTTP 503, sin Retry-After/);
+    expect(r.codigo).toBe(0);
+    expect(ejecutadas.map((t) => t.clave)).toEqual(['fie|2027|1']);
+  });
+
   it('el presupuesto del lote se entrega al ejecutor y al descubrimiento: es uno solo', async () => {
     let delDescubrimiento: unknown;
     let delEjecutor: unknown;

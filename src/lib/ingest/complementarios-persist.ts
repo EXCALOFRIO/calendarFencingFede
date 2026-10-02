@@ -46,13 +46,16 @@ const SIN_ESCRITURA: ResumenEscritura = { nuevos: 0, revisados: 0, sinCambios: 0
 type PlanSinHechosEscritos =
   | { accion: 'revision'; motivos: readonly string[] }
   | { accion: 'conflicto'; motivo: string }
-  | { accion: 'diferir'; motivo: string };
+  | { accion: 'diferir'; motivo: string }
+  | { accion: 'sin_canonica'; motivos: readonly string[] };
 
 /**
  * Revisión, conflicto y aplazamiento no escriben hechos, pero SÍ dejan constancia
  * de qué candidato (URL, clave), con qué motivo y en qué estado: sin ella, una
  * cobertura «completo» anterior seguiría intacta y la revisión humana no sabría
- * qué mirar. `rechazar` y `sin_cambios` no registran nada.
+ * qué mirar. Un candidato sin canónica compatible queda pendiente con los motivos
+ * reales del cotejo: no asigna competencia ni equivale a «no publicado». `rechazar`
+ * y `sin_cambios` no registran nada.
  */
 export function estadoDeAccionSinHechos(plan: { accion: string }): {
   status: FilaCoberturaGenerica['status'];
@@ -67,9 +70,48 @@ export function estadoDeAccionSinHechos(plan: { accion: string }): {
       return { status: 'conflicto', lastError: p.motivo.slice(0, 300), cursor: 'conflicto' };
     case 'diferir':
       return { status: 'pendiente', lastError: `diferido: ${p.motivo}`, cursor: 'diferido' };
+    case 'sin_canonica':
+      return {
+        status: 'pendiente',
+        lastError: `sin_canonica: ${p.motivos.length > 0 ? p.motivos.join(',') : 'ninguna prueba canónica coincide'}`.slice(0, 300),
+        cursor: 'sin_canonica',
+      };
     default:
       return null;
   }
+}
+
+/**
+ * Fallo de lectura de la fuente (403, página rota...) de un hecho cuya unidad ya se conoce.
+ * Sólo marca el error de ese hecho: no toca cifras ni hechos válidos de una lectura anterior.
+ */
+export async function persistirErrorFuente(
+  deps: Pick<DepsComplemento, 'esquema' | 'upsertCobertura'>,
+  entrada: {
+    season: string;
+    competitionId: string | null;
+    proveedor: string;
+    clave: string;
+    url: string;
+    factKind: 'results' | 'pools' | 'tableau';
+    motivo: string | null;
+    /** El fallo es técnico y reintentable: queda anotado sin gastar un intento. */
+    sinIntento?: boolean;
+  },
+): Promise<{ estado: 'aplicado' | 'esquema_no_aplicado' }> {
+  if (!(await deps.esquema()).identidad) return { estado: 'esquema_no_aplicado' };
+  await deps.upsertCobertura(entrada.proveedor, {
+    season: entrada.season,
+    factKind: entrada.factKind,
+    competitionKey: entrada.clave,
+    competitionId: entrada.competitionId,
+    status: 'error',
+    sourceUrl: entrada.url,
+    lastError: (entrada.motivo ?? 'Fallo de lectura').slice(0, 300),
+    cursor: 'error',
+    ...(entrada.sinIntento ? { sinIntento: true } : {}),
+  });
+  return { estado: 'aplicado' };
 }
 
 /** Constancia de un candidato revisado, en conflicto o diferido. `competitionId` es `null` si no hubo canónica aceptada. */

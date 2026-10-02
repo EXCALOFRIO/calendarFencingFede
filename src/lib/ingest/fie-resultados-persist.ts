@@ -13,6 +13,7 @@ import {
 } from '@/lib/sport/id-guard';
 import { sha256 } from '@/lib/utils';
 import { codificarCursorFie } from './backfill/cursor-fie';
+import { motivoDePresupuesto } from './backfill/presupuesto-http';
 import type {
   AsaltoFie,
   EstadoCobertura,
@@ -86,6 +87,8 @@ export type FilaCobertura = {
   lastError: string | null;
   /** Checkpoint de continuación; `null` lo limpia y `undefined` no lo toca. */
   cursor?: string | null;
+  /** Fase aplazada por el presupuesto del lote: no es una lectura, no gasta un intento. */
+  sinIntento?: boolean;
 };
 
 export type DepsPersistenciaFie = {
@@ -377,6 +380,22 @@ export async function persistirLecturaFie(
     [cuadro, 'tableau', 'cuadro'],
   ] as const) {
     if (!parte) continue;
+    // Una fase que el presupuesto del lote no dejó pedir no es un fallo de la fuente: queda
+    // pendiente y reanudable, sin gastar un intento y sin tocar lo que ya hubiera guardado.
+    if (motivoDePresupuesto(parte.cobertura.error)) {
+      await deps.upsertCobertura({
+        season,
+        factKind,
+        competitionKey,
+        competitionId,
+        status: 'pendiente',
+        sourceUrl: parte.url,
+        lastError: parte.cobertura.error,
+        sinIntento: true,
+      });
+      resumen.cobertura[factKind] = 'pendiente';
+      continue;
+    }
     const ok = parte.cobertura.estado !== 'error';
     if (ok && parte.asaltos.length > 0) {
       resumen[clave] = await deps.upsertAsaltos(

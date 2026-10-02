@@ -1,6 +1,7 @@
-import { and, gt, inArray } from 'drizzle-orm';
+import { and, eq, gt, inArray } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { sportImportCoverage } from '@/db/schema';
+import type { DepsPersistenciaDescubrimiento } from './backfill/descubrimiento-persist';
 import { escribirCobertura } from './fie-resultados-db';
 import {
   claveImportacion,
@@ -57,6 +58,62 @@ export async function guardarInventario(
     guardadas += 1;
   }
   return { guardadas, omitidas };
+}
+
+const LOTE_SEMILLAS = 200;
+
+/**
+ * Persistencia del progreso del descubrimiento del backfill: checkpoint del índice con las reglas
+ * de `escribirCobertura` y pruebas descubiertas como cobertura `pendiente` sin intentos, con
+ * `ON CONFLICT DO NOTHING` para no pisar nunca una lectura ya hecha.
+ */
+export function crearDepsPersistenciaDescubrimientoDb(db: Db): DepsPersistenciaDescubrimiento {
+  return {
+    escribirCobertura: (source, fila) => escribirCobertura(db, source, fila),
+    async sembrar(filas) {
+      for (let i = 0; i < filas.length; i += LOTE_SEMILLAS) {
+        await db
+          .insert(sportImportCoverage)
+          .values(
+            filas.slice(i, i + LOTE_SEMILLAS).map(({ source, fila }) => ({
+              source,
+              season: fila.season,
+              factKind: fila.factKind,
+              competitionKey: fila.competitionKey,
+              status: 'pendiente' as const,
+              attempts: 0,
+              sourceUrl: fila.sourceUrl,
+              cursor: fila.cursor,
+            })),
+          )
+          .onConflictDoNothing({
+            target: [
+              sportImportCoverage.source,
+              sportImportCoverage.season,
+              sportImportCoverage.factKind,
+              sportImportCoverage.competitionKey,
+            ],
+          });
+      }
+    },
+    async leerIndices() {
+      const filas = await db
+        .select({
+          source: sportImportCoverage.source,
+          season: sportImportCoverage.season,
+          competitionKey: sportImportCoverage.competitionKey,
+          status: sportImportCoverage.status,
+          publishedTotal: sportImportCoverage.publishedTotal,
+          importedTotal: sportImportCoverage.importedTotal,
+          cursor: sportImportCoverage.cursor,
+          sourceUrl: sportImportCoverage.sourceUrl,
+          lastError: sportImportCoverage.lastError,
+        })
+        .from(sportImportCoverage)
+        .where(eq(sportImportCoverage.factKind, 'index'));
+      return filas;
+    },
+  };
 }
 
 /**

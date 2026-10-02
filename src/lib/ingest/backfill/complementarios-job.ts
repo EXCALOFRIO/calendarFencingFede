@@ -1,9 +1,15 @@
 import { conciliarAsaltosFww } from '../conciliar-asaltos-fww';
-import { candidatoDeFww, planificarComplemento } from '../conciliar-complementario';
+import {
+  candidatoDeFww,
+  planificarComplemento,
+  type CandidatoComplementario,
+  type PlanComplementario,
+} from '../conciliar-complementario';
 import { conciliarTorneoEngarde, type CanonicaConPrimarios } from '../conciliar-torneo-engarde';
 import {
   persistirAsaltosComplemento,
   persistirComplemento,
+  persistirErrorFuente,
   persistirEstadoCandidato,
   type DepsAsaltosComplemento,
   type DepsComplemento,
@@ -11,6 +17,7 @@ import {
 import { clasificarSerie } from '../series-complementarias';
 import { leerTorneoEngarde, type DepsEngarde, type LecturaTorneoEngarde } from '../sources/engarde';
 import { leerResultadosFww, parsearUrlFww, puestosDeFww } from '../sources/fww';
+import type { GuardaCapacidad } from './guarda-capacidad';
 import { clasificarFalloTecnico, type ResultadoTarea } from './orquestador';
 import { motivoDePresupuesto } from './presupuesto-http';
 
@@ -96,6 +103,7 @@ export async function ejecutarEngardeTorneo(
   evt: string,
   /** Temporada de la unidad: sólo se usa para anotar candidatos sin canónica aceptada (en revisión). */
   season: string | null = null,
+  guarda?: GuardaCapacidad,
 ): Promise<ResultadoTarea> {
   const leer = deps.leerTorneo ?? leerTorneoEngarde;
   const conciliar = deps.conciliar ?? conciliarTorneoEngarde;
@@ -117,6 +125,20 @@ export async function ejecutarEngardeTorneo(
   });
 
   const resultados = await conciliar(torneo, canonicas, deps.engarde);
+  if (guarda) {
+    // Lo que decide si se escribe es el torneo ya leído, no la estimación del plan.
+    const conCanonica = resultados.filter((r) => r.canonica);
+    const decision = await guarda({
+      puestos: conCanonica.reduce((s, r) => s + (r.plan.accion === 'escribir' ? r.plan.puestos.length : 0), 0),
+      asaltos: conCanonica.reduce((s, r) => s + (r.cuadro?.plan.accion === 'escribir' ? r.cuadro.plan.asaltos.length : 0), 0),
+      documentos: 0,
+      unidades: Math.max(1, conCanonica.length * 2),
+    });
+    if (!decision.continuar) {
+      const leidas = 1 + conCanonica.reduce((s, r) => s + 1 + (r.cuadro?.lectura ? 1 : 0), 0);
+      return { estado: 'pendiente', peticiones: leidas, mensaje: decision.mensaje, capacidad: decision };
+    }
+  }
   const serie = clasificarSerie({ nombre: torneo.nombre });
   let puestos = 0;
   let asaltos = 0;
@@ -131,7 +153,7 @@ export async function ejecutarEngardeTorneo(
   for (const r of resultados) {
     if (!r.canonica) {
       sinCerrar += 1;
-      if (r.plan.accion === 'revision' && season) {
+      if ((r.plan.accion === 'revision' || r.plan.accion === 'sin_canonica') && season) {
         const p = await persistirEstadoCandidato(deps.persistencia, {
           season,
           competitionId: null,
@@ -194,16 +216,31 @@ export type EntradaFww = {
   urls: { poules: readonly string[]; cuadro: readonly string[] };
 };
 
-export async function ejecutarFwwPrueba(deps: DepsComplementosJob, entrada: EntradaFww): Promise<ResultadoTarea> {
+type FaseFww = Awaited<ReturnType<typeof conciliarAsaltosFww>>['poules'];
+
+const claveFww = (url: string): string | null => {
+  const ref = parsearUrlFww(url);
+  return ref ? `${ref.id}-${ref.temporada}` : null;
+};
+
+export async function ejecutarFwwPrueba(
+  deps: DepsComplementosJob,
+  entrada: EntradaFww,
+  guarda?: GuardaCapacidad,
+): Promise<ResultadoTarea> {
   const leerFinales = deps.leerResultadosFww ?? leerResultadosFww;
   const conciliarFases = deps.conciliarAsaltosFww ?? conciliarAsaltosFww;
   const { canonica } = entrada;
+  const season = canonica.prueba.season;
   let peticiones = 0;
   let puestos = 0;
   let asaltos = 0;
   let sinCerrar = 0;
   const fallos = new Fallos();
 
+  // Se lee todo antes de escribir nada: la capacidad se decide sobre el lote real.
+  let finales: { candidato: CandidatoComplementario; plan: PlanComplementario; publicado: number | null } | null = null;
+  let errorFinales: { url: string; motivo: string | null } | null = null;
   if (entrada.resultadosUrl) {
     peticiones += 1;
     const lectura = await leerFinales(entrada.resultadosUrl, deps.engarde);
@@ -211,58 +248,110 @@ export async function ejecutarFwwPrueba(deps: DepsComplementosJob, entrada: Entr
       // Sin finales leídos nada queda cerrado, sea cual sea el motivo del fallo (429, 5xx o 403).
       fallos.anotar(lectura.motivo, peticiones);
       sinCerrar += 1;
+      errorFinales = { url: lectura.url, motivo: lectura.motivo };
     } else if (lectura.pagina) {
-      const ref = parsearUrlFww(lectura.url);
-      const candidato = candidatoDeFww(lectura.url, ref ? `${ref.id}-${ref.temporada}` : lectura.url, lectura.pagina);
+      const candidato = candidatoDeFww(lectura.url, claveFww(lectura.url) ?? lectura.url, lectura.pagina);
       const plan = planificarComplemento({
         prueba: canonica.prueba,
         candidato,
         lectura: { estado: lectura.estado, puestos: puestosDeFww(lectura.pagina), motivo: lectura.motivo },
         primarios: canonica.primarios,
       });
-      const r = await persistirComplemento(deps.persistencia, {
-        competitionId: canonica.competitionId,
-        prueba: canonica.prueba,
-        candidato,
-        plan,
-        publicado: lectura.publicado,
-      });
-      if (r.estado === 'esquema_no_aplicado') return { estado: 'esquema_no_aplicado', peticiones };
-      puestos += r.puestos.nuevos + r.puestos.revisados;
-      if (!cerrado(plan)) sinCerrar += 1;
+      finales = { candidato, plan, publicado: lectura.publicado };
     } else {
       // Sin página no hay contexto que cotejar: queda diferido, no se fabrica sin_resultados.
       sinCerrar += 1;
     }
   }
 
+  let fases: { poules: FaseFww; cuadro: FaseFww } | null = null;
   if (entrada.urls.poules.length > 0 || entrada.urls.cuadro.length > 0) {
     peticiones += entrada.urls.poules.length + entrada.urls.cuadro.length;
-    const fases = await conciliarFases({ canonica, urls: entrada.urls }, deps.engarde);
-    for (const [fase, nombre] of [
-      [fases.poules, 'POULE'],
-      [fases.cuadro, 'TABLEAU'],
-    ] as const) {
-      if (fase.plan.accion === 'sin_hechos' && fase.plan.estado === 'error') {
-        fallos.anotar(fase.plan.motivo, peticiones);
-      }
-      fallos.anotarParcial(fase.lectura.estado === 'parcial' ? fase.lectura.motivo : null, peticiones);
-      // Sin documento leído no hay candidato con el que registrar cobertura.
-      if (!fase.candidato) {
-        sinCerrar += 1;
-        continue;
-      }
-      const r = await persistirAsaltosComplemento(deps.persistencia, {
-        competitionId: canonica.competitionId,
-        prueba: canonica.prueba,
-        candidato: fase.candidato,
-        fase: nombre,
-        plan: fase.plan,
-      });
-      if (r.estado === 'esquema_no_aplicado') return { estado: 'esquema_no_aplicado', peticiones };
-      asaltos += r.asaltos.nuevos + r.asaltos.revisados;
-      if (!cerrado(fase.plan)) sinCerrar += 1;
+    try {
+      fases = await conciliarFases({ canonica, urls: entrada.urls }, deps.engarde);
+    } catch (e) {
+      // Lo ya leído de los finales se persiste igualmente; el fallo de las fases queda anotado en la unidad.
+      fallos.anotar(e instanceof Error ? e.message : String(e), peticiones);
+      sinCerrar += 1;
     }
+  }
+  const delasFases = fases
+    ? ([
+        [fases.poules, 'POULE', 'pools', entrada.urls.poules],
+        [fases.cuadro, 'TABLEAU', 'tableau', entrada.urls.cuadro],
+      ] as const)
+    : [];
+  for (const [fase] of delasFases) {
+    if (fase.plan.accion === 'sin_hechos' && fase.plan.estado === 'error') fallos.anotar(fase.plan.motivo, peticiones);
+    fallos.anotarParcial(fase.lectura.estado === 'parcial' ? fase.lectura.motivo : null, peticiones);
+  }
+
+  if (guarda && (finales || delasFases.length > 0)) {
+    const decision = await guarda({
+      puestos: finales?.plan.accion === 'escribir' ? finales.plan.puestos.length : 0,
+      asaltos: delasFases.reduce((s, [fase]) => s + (fase.plan.accion === 'escribir' ? fase.plan.asaltos.length : 0), 0),
+      documentos: 0,
+      unidades: Math.max(1, (finales ? 1 : 0) + delasFases.length),
+    });
+    if (!decision.continuar) return { estado: 'pendiente', peticiones, mensaje: decision.mensaje, capacidad: decision };
+  }
+
+  // Un fallo de la fuente se anota en el hecho de la unidad conocida sin tocar sus cifras ni sus hechos válidos;
+  // la denegación del presupuesto no es un fallo de la fuente y no se escribe.
+  const anotarError = async (url: string, motivo: string | null, factKind: 'results' | 'pools' | 'tableau') => {
+    const clave = claveFww(url);
+    if (!clave || motivoDePresupuesto(motivo)) return null;
+    return persistirErrorFuente(deps.persistencia, {
+      season,
+      competitionId: canonica.competitionId,
+      proveedor: 'fww',
+      clave,
+      url,
+      factKind,
+      motivo,
+      // Un 429/5xx se reintenta dentro y entre lotes: no debe agotar los intentos de la unidad.
+      sinIntento: clasificarFalloTecnico(new Error(motivo ?? '')) !== null,
+    });
+  };
+
+  if (errorFinales) {
+    const r = await anotarError(errorFinales.url, errorFinales.motivo, 'results');
+    if (r?.estado === 'esquema_no_aplicado') return { estado: 'esquema_no_aplicado', peticiones };
+  }
+  if (finales) {
+    const r = await persistirComplemento(deps.persistencia, {
+      competitionId: canonica.competitionId,
+      prueba: canonica.prueba,
+      candidato: finales.candidato,
+      plan: finales.plan,
+      publicado: finales.publicado,
+    });
+    if (r.estado === 'esquema_no_aplicado') return { estado: 'esquema_no_aplicado', peticiones };
+    puestos += r.puestos.nuevos + r.puestos.revisados;
+    if (!cerrado(finales.plan)) sinCerrar += 1;
+  }
+
+  for (const [fase, nombre, factKind, urls] of delasFases) {
+    // Sin documento leído no hay candidato: si falló, el error se anota con la URL de la fase; si no, queda diferido.
+    if (!fase.candidato) {
+      sinCerrar += 1;
+      if (fase.plan.accion === 'sin_hechos' && fase.plan.estado === 'error') {
+        const url = urls.find((u) => claveFww(u) !== null);
+        const r = url ? await anotarError(url, fase.plan.motivo, factKind) : null;
+        if (r?.estado === 'esquema_no_aplicado') return { estado: 'esquema_no_aplicado', peticiones };
+      }
+      continue;
+    }
+    const r = await persistirAsaltosComplemento(deps.persistencia, {
+      competitionId: canonica.competitionId,
+      prueba: canonica.prueba,
+      candidato: fase.candidato,
+      fase: nombre,
+      plan: fase.plan,
+    });
+    if (r.estado === 'esquema_no_aplicado') return { estado: 'esquema_no_aplicado', peticiones };
+    asaltos += r.asaltos.nuevos + r.asaltos.revisados;
+    if (!cerrado(fase.plan)) sinCerrar += 1;
   }
 
   const fallido = fallos.resultado(peticiones, { puestos, asaltos });

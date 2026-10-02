@@ -441,7 +441,7 @@ describe('referencia a la fila original del inventario', () => {
     const a = almacen();
     await persistirLecturaPdf(a.d, lectura(), { ...ctx, indice: 7, refOriginal: 'doc-7', sourceUrl: URL_DOC });
     const cp = decodificarCheckpointPdf(a.doc()?.cursor);
-    expect(cp?.origen).toEqual({ indice: 7, refOriginal: 'doc-7', sourceUrl: URL_DOC });
+    expect(cp?.origen).toEqual({ indice: 7, refOriginal: 'doc-7', sourceUrl: URL_DOC, titulo: null });
   });
 
   it('el título de la fila sólo sustituye a la cabecera ausente de un documento de una sola prueba', async () => {

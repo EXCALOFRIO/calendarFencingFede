@@ -58,9 +58,15 @@ async function descubrir(e: Parameters<NonNullable<DepsBackfillCli['descubrir']>
   const { crearRedPresupuestada } = await import('../src/lib/ingest/backfill/red-presupuestada');
   const { descubrirCatalogo } = await import('../src/lib/ingest/backfill/descubrimiento');
   const { federacionesSkermo } = await import('../src/lib/ingest/historico-red');
+  const { crearDepsPersistenciaDescubrimientoDb } = await import('../src/lib/ingest/inventario-historico-db');
   const red = crearRedPresupuestada(e.presupuesto, dormir, await redBase());
   return descubrirCatalogo(
-    { fie: red.inventarioFie, skermo: red.inventarioSkermo, federaciones: () => federacionesSkermo() },
+    {
+      fie: red.inventarioFie,
+      skermo: red.inventarioSkermo,
+      federaciones: () => federacionesSkermo(),
+      persistencia: crearDepsPersistenciaDescubrimientoDb(db),
+    },
     { fuentes: e.fuentes, temporadas: e.temporadas },
     e.maxPeticiones,
   );
@@ -109,6 +115,18 @@ async function crearEjecutor(presupuesto: Parameters<DepsBackfillCli['crearEjecu
         );
         const cursor = filas[0]?.cursor;
         return typeof cursor === 'string' ? cursor : null;
+      },
+      fasesActuales: async (season, competitionId) => {
+        const filas = await consultar(
+          `select fact_kind, status, cursor from sport_import_coverage
+           where source = 'fie' and fact_kind in ('ranking','pools','tableau') and season = '${Number(season)}'
+             and competition_key = '${Number(competitionId)}'`,
+        );
+        const de = (tipo: string) => {
+          const f = filas.find((x) => x.fact_kind === tipo);
+          return f ? { status: String(f.status), cursor: typeof f.cursor === 'string' ? f.cursor : null } : null;
+        };
+        return { ranking: de('ranking'), pools: de('pools'), tableau: de('tableau') };
       },
     },
     skermo: {

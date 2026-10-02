@@ -412,6 +412,9 @@ export type EstadoFichaFie = {
   enlaceFicha: string | null;
   jsonStatus: number | null;
   htmlStatus: number | null;
+  /** `Retry-After` que acompañó a esa respuesta (429/5xx), si lo hubo. */
+  jsonRetryAfterMs: number | null;
+  htmlRetryAfterMs: number | null;
   aviso: string | null;
 };
 
@@ -426,6 +429,8 @@ export function evaluarFichaFie(entrada: {
   htmlStatus: number | null;
   urlHtml: string;
   alternativaVerificada?: string | null;
+  jsonRetryAfterMs?: number | null;
+  htmlRetryAfterMs?: number | null;
 }): EstadoFichaFie {
   const { jsonStatus, htmlStatus, urlHtml } = entrada;
   const datos = jsonStatus === 200 ? 'json' : 'ninguno';
@@ -446,6 +451,8 @@ export function evaluarFichaFie(entrada: {
     enlaceFicha: htmlOk ? urlHtml : (entrada.alternativaVerificada ?? null),
     jsonStatus,
     htmlStatus,
+    jsonRetryAfterMs: entrada.jsonRetryAfterMs ?? null,
+    htmlRetryAfterMs: entrada.htmlRetryAfterMs ?? null,
     aviso,
   };
 }
@@ -520,17 +527,25 @@ export async function sondearFichaFie(
   competitionId: number,
   alternativaVerificada: string | null = null,
 ): Promise<EstadoFichaFie> {
-  const estado = async (url: string): Promise<number | null> => {
+  const estado = async (url: string): Promise<{ status: number | null; retryAfterMs: number | null }> => {
     try {
-      return (await deps.get(url)).status;
+      const r = await deps.get(url);
+      return { status: r.status, retryAfterMs: r.retryAfterMs ?? null };
     } catch {
-      return null;
+      return { status: null, retryAfterMs: null };
     }
   };
   const urlHtml = urlFichaFie(season, competitionId);
-  const [jsonStatus, htmlStatus] = await Promise.all([
+  const [json, html] = await Promise.all([
     estado(`https://fie.org/api/fie/competition/${season}/${competitionId}`),
     estado(urlHtml),
   ]);
-  return evaluarFichaFie({ jsonStatus, htmlStatus, urlHtml, alternativaVerificada });
+  return evaluarFichaFie({
+    jsonStatus: json.status,
+    htmlStatus: html.status,
+    jsonRetryAfterMs: json.retryAfterMs,
+    htmlRetryAfterMs: html.retryAfterMs,
+    urlHtml,
+    alternativaVerificada,
+  });
 }

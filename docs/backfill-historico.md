@@ -32,7 +32,20 @@ resultados HTML genera una unidad; cada PDF enlazado, una unidad por documento
 con su URL, el índice de la fila y la referencia original de esa fila. La
 simulación **no descubre por red**: sólo informa del inventario ya guardado.
 El resumen por serie (`Serie X: descubiertas=N importadas=M`) distingue lo que
-el índice nombra de lo que tiene puestos importados. Una tarea por clave de
+el índice nombra de lo que tiene puestos importados.
+
+**Progreso del descubrimiento.** Cada unidad que el índice cierra se siembra en
+cobertura como `pendiente` (FIE → ranking, Skermo → resultados, PDF → documento
+con su origen) **antes** de avanzar el checkpoint del índice, y el checkpoint
+guarda la página siguiente. Los lotes siguientes retoman esa página o
+temporada en lugar de releer el mismo prefijo, y las unidades sembradas
+siguen en el plan aunque aún no se hayan ejecutado. La siembra nunca pisa una
+cobertura existente. Un `429` o `5xx` del índice detiene la enumeración
+posterior y conserva el checkpoint; el `429` devuelve su `Retry-After` y el
+comando termina con código 4 sin ejecutar el lote, mientras que un `5xx` se
+informa y el lote sigue con lo ya conocido. El dry-run no usa red.
+
+Una tarea por clave de
 prueba o documento, con el motivo más urgente:
 
 1. `continuar`: la lectura FIE quedó con un cursor (fuente, temporada,
@@ -79,7 +92,23 @@ Las fuentes complementarias agregan cada hecho intentado: un tableau parcial,
 diferido, en revisión o con error impide que la unidad salga `completo`. Un
 parcial con 429/5xx conserva lo válido y sube la señal técnica para el backoff.
 Los candidatos en revisión, conflicto o diferidos dejan URL, motivo y estado en
-la cobertura, sin escribir hechos, y reemplazan un `completo` anterior.
+la cobertura, sin escribir hechos, y reemplazan un `completo` anterior. Un
+torneo Engarde sin prueba canónica correspondiente queda `pendiente` con
+cursor `sin_canonica`, su URL y los motivos reales de la comparación; no se
+asigna competición ni se infiere ausencia primaria, y un `completo` anterior
+deja de figurar como vigente. Un error de fuente FWW (por ejemplo 403 en las
+finales, o todas las páginas de una fase fallidas) se guarda como `error` de esa
+unidad con su URL, sin borrar hechos ni denominadores anteriores; si es 429/5xx
+no gasta intento, y una denegación del presupuesto sigue siendo `pendiente`,
+distinta del error de la fuente.
+
+**Fases FIE diferidas.** Con un presupuesto pequeño, una fase (poules o cuadro)
+que no cabe queda `pendiente` de forma durable, sin intento ni error remoto, y
+la tarea no desaparece. Si el ranking ya está completo no se vuelve a pedir en
+cada lote: las ejecuciones siguientes avanzan las fases pendientes.
+
+Los enlaces FIE conservan el `Retry-After` del JSON oficial (o de la ficha web)
+hasta el resultado técnico; no se sustituye por un valor por defecto.
 
 ## Qué significa cada estado
 
@@ -107,16 +136,25 @@ rango de fechas de todas sus pruebas, y cada prueba conserva su cabecera: un
 documento con pruebas de dos fechas no queda bajo la última cabecera. El hash de
 un asalto incluye la fecha publicada (una corrección sólo de fecha cambia el
 hash), y los asaltos aceptados guardan página, región y marcador
-(`explicito` o `derivado_de_totales`) en su URL de origen.
+(`explicito` o `derivado_de_totales`) en su URL de origen. Al releer un
+documento (`--releer`, o desde cobertura) sin la fila del inventario, el índice,
+la referencia original y el título ya verificados del checkpoint se conservan,
+de modo que la edición no cambia por faltar el contexto. El checkpoint que
+siembra el descubrimiento aporta ese origen y no cuenta como una corrección.
 
 Cuando cambia el SHA se reconcilian los hechos del documento: tras escribir la
 versión nueva se borran los puestos y asaltos de ese documento que ya no
 aparecen (una fila movida no se duplica y un asalto ahora conflictivo no queda
 vigente). Un error técnico conserva el último dato válido. Si la corrección no
 se puede aplicar con seguridad, el documento queda en `conflicto` con
-`correccion_pendiente_revision` y el SHA no se acepta como leído. Limitación: la
-reconciliación borra filas, no hay columna de «vigente», y no se ha probado
-contra SQL real.
+`correccion_pendiente_revision` y el SHA no se acepta como leído. Antes de mutar
+hechos en una corrección con lectura fiable, el documento pasa a `pendiente` con
+checkpoint incompleto (sin SHA aceptado, `correccion_en_curso`); si una escritura,
+la reconciliación o el checkpoint final fallan, queda `error` (o, si tampoco se
+puede escribir eso, el marcador incompleto) y la ejecución siguiente la repite.
+Sólo se marca `completo` con el SHA nuevo al terminar. Limitación: no hay
+transacción global ni columna de «vigente», la reconciliación borra filas, y
+los fallos tardíos sólo se han probado con un almacén simulado, no con SQL real.
 
 ## Un solo importador por clave
 
@@ -140,7 +178,7 @@ antes y después, y la diferencia por tabla e índices.
 - Un plan verificado se indica con `--neon-umbral-gib N --neon-verificado-en AAAA-MM-DD`.
 - No se compra, migra ni amplía nada, y no hay ningún corte oculto.
 - La estimación del plan (por ejemplo 150 puestos por prueba) sólo ordena el
-  lote. Justo antes de escribir, cada unidad FIE, Skermo o PDF vuelve a pasar la
+  lote. Justo antes de escribir, cada unidad FIE, Skermo, PDF, Engarde o FWW vuelve a pasar la
   guarda con los puestos y asaltos realmente leídos (una prueba de 2400
   puestos o un torneo entero pesan más que la estimación). Si deniega o no puede
   medir, esa unidad no escribe nada, queda `pendiente` y el lote se detiene por

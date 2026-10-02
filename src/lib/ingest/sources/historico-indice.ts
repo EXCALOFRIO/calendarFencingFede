@@ -284,7 +284,19 @@ export type OpcionesInventario = {
   /** Releer también lo ya leído (resultados corregidos). */
   releer?: boolean;
   importadas?: ReadonlySet<string>;
+  /**
+   * Se espera tras cerrar cada unidad (temporada o federación) y ANTES de pasar a la siguiente: es
+   * donde quien llama persiste el checkpoint y las pruebas descubiertas de esa unidad.
+   */
+  alUnidad?: (unidad: UnidadInventario, filas: readonly FilaCatalogo[]) => Promise<void>;
+  /**
+   * Distingue un fallo técnico de la fuente (429, 5xx, red). Con uno, la enumeración se detiene: lo
+   * que falta queda pendiente y el fallo sube en `tecnico`, con su `Retry-After` si lo hubo.
+   */
+  clasificarFallo?: (e: unknown) => FalloTecnicoInventario | null;
 };
+
+export type FalloTecnicoInventario = { status: number | null; retryAfterMs: number | null };
 
 export type ResultadoInventario = {
   unidades: UnidadInventario[];
@@ -292,9 +304,15 @@ export type ResultadoInventario = {
   /** Unidades que aún necesitan otra ejecución (pendiente, parcial, error, inaccesible). */
   pendientes: UnidadInventario[];
   peticiones: number;
+  /** La enumeración se cortó por un fallo técnico de la fuente; lo no leído sigue pendiente. */
+  tecnico?: FalloTecnicoInventario;
 };
 
 const LEIDA = new Set<EstadoUnidad>(['leido', 'sin_filas']);
+
+/** Una unidad con página guardada tras un fallo conserva lo ya leído: se reanuda, no se empieza de cero. */
+const reanudable = (u: UnidadInventario | undefined): u is UnidadInventario =>
+  u !== undefined && (u.estado === 'parcial' || (u.estado === 'error' && u.filas > 0)) && (u.siguientePagina ?? 0) > 1;
 
 function mensaje(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -310,11 +328,19 @@ export async function inventariarSkermo(
   const unidades: UnidadInventario[] = [];
   const catalogo: FilaCatalogo[] = [];
   let peticiones = 0;
+  let tecnico: FalloTecnicoInventario | undefined;
 
   const pedir = async (federacion: string, temporadaId?: string): Promise<string> => {
     if (peticiones > 0 && delayMs > 0) await (deps.esperar ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(delayMs);
     peticiones += 1;
     return deps.indice(federacion, temporadaId);
+  };
+  const cerrar = async (u: UnidadInventario, filas: readonly FilaCatalogo[] = []) => {
+    unidades.push(u);
+    await opciones.alUnidad?.(u, filas);
+  };
+  const detener = (e: unknown) => {
+    tecnico ??= opciones.clasificarFallo?.(e) ?? undefined;
   };
 
   for (const fed of federaciones) {
@@ -325,7 +351,7 @@ export async function inventariarSkermo(
       unidades.push({ ...unidadBase(fuente, fed.codigo, '', urlFed), estado: 'no_verificado' });
       continue;
     }
-    if (peticiones >= maxPeticiones) {
+    if (peticiones >= maxPeticiones || tecnico) {
       unidades.push(unidadBase(fuente, fed.codigo, '', urlFed));
       continue;
     }
@@ -334,13 +360,14 @@ export async function inventariarSkermo(
     try {
       base = await pedir(fed.codigo);
     } catch (e) {
-      unidades.push({ ...unidadBase(fuente, fed.codigo, '', urlFed), estado: 'inaccesible', error: mensaje(e) });
+      detener(e);
+      await cerrar({ ...unidadBase(fuente, fed.codigo, '', urlFed), estado: 'inaccesible', error: mensaje(e) });
       continue;
     }
 
     const opcionesSelector = deps.temporadas(base);
     if (opcionesSelector.length === 0) {
-      unidades.push({
+      await cerrar({
         ...unidadBase(fuente, fed.codigo, '', urlFed),
         estado: 'error',
         error: 'El índice no trae selector de temporadas: no se puede enumerar',
@@ -358,8 +385,8 @@ export async function inventariarSkermo(
         continue;
       }
       // La temporada marcada ya viene en la página base: no cuesta petición.
-      if (!t.selected && peticiones >= maxPeticiones) {
-        unidades.push(unidadBase(fuente, fed.codigo, t.label, url));
+      if (!t.selected && (peticiones >= maxPeticiones || tecnico)) {
+        unidades.push(previa ?? unidadBase(fuente, fed.codigo, t.label, url));
         continue;
       }
 
@@ -367,7 +394,8 @@ export async function inventariarSkermo(
       try {
         html = t.selected ? base : await pedir(fed.codigo, t.value);
       } catch (e) {
-        unidades.push({ ...unidadBase(fuente, fed.codigo, t.label, url), estado: 'error', error: mensaje(e) });
+        detener(e);
+        await cerrar({ ...unidadBase(fuente, fed.codigo, t.label, url), estado: 'error', error: mensaje(e) });
         continue;
       }
 
@@ -382,20 +410,23 @@ export async function inventariarSkermo(
       );
       catalogo.push(...filas);
       const r = recuento(filas);
-      unidades.push({
-        ...unidadBase(fuente, fed.codigo, t.label, url),
-        // Cero filas es «índice vacío publicado», no «sin pruebas ese año».
-        estado: leido.rowsSeen === 0 ? 'sin_filas' : 'leido',
-        filas: filas.length,
-        publicado: leido.rowsSeen,
-        enlaces: r.enlaces,
-        sinDocumento: r.sinDocumento,
-        descuadradas: leido.mismatches,
-        error:
-          leido.mismatches > 0
-            ? `${leido.mismatches} filas no cuadran con la cabecera: el marcado pudo cambiar`
-            : null,
-      });
+      await cerrar(
+        {
+          ...unidadBase(fuente, fed.codigo, t.label, url),
+          // Cero filas es «índice vacío publicado», no «sin pruebas ese año».
+          estado: leido.rowsSeen === 0 ? 'sin_filas' : 'leido',
+          filas: filas.length,
+          publicado: leido.rowsSeen,
+          enlaces: r.enlaces,
+          sinDocumento: r.sinDocumento,
+          descuadradas: leido.mismatches,
+          error:
+            leido.mismatches > 0
+              ? `${leido.mismatches} filas no cuadran con la cabecera: el marcado pudo cambiar`
+              : null,
+        },
+        filas,
+      );
     }
   }
 
@@ -404,6 +435,7 @@ export async function inventariarSkermo(
     catalogo,
     pendientes: unidades.filter((u) => !LEIDA.has(u.estado) && u.estado !== 'no_verificado'),
     peticiones,
+    ...(tecnico ? { tecnico } : {}),
   };
 }
 
@@ -538,6 +570,7 @@ export async function inventariarFie(
   const unidades: UnidadInventario[] = [];
   const catalogo: FilaCatalogo[] = [];
   let peticiones = 0;
+  let tecnico: FalloTecnicoInventario | undefined;
 
   const pedir = async (url: string): Promise<unknown> => {
     if (peticiones > 0 && delayMs > 0) await (deps.esperar ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(delayMs);
@@ -556,12 +589,15 @@ export async function inventariarFie(
       declaradas = t.temporadas;
       temporadasCompletas = t.completa;
     } catch (e) {
+      const fallida = { ...unidadBase('fie', 'FIE', '', urlTemporadas), estado: 'inaccesible' as const, error: mensaje(e) };
+      const fallo = opciones.clasificarFallo?.(e);
       return {
-        unidades: [{ ...unidadBase('fie', 'FIE', '', urlTemporadas), estado: 'inaccesible', error: mensaje(e) }],
+        unidades: [fallida],
         catalogo,
-        pendientes: [{ ...unidadBase('fie', 'FIE', '', urlTemporadas), estado: 'inaccesible', error: mensaje(e) }],
+        pendientes: [fallida],
         peticiones,
         temporadasCompletas: false,
+        ...(fallo ? { tecnico: fallo } : {}),
       };
     }
   }
@@ -575,18 +611,19 @@ export async function inventariarFie(
       continue;
     }
 
-    let pagina = !releer && previa?.estado === 'parcial' && previa.siguientePagina ? previa.siguientePagina : 1;
-    let leidas = !releer && previa?.estado === 'parcial' ? previa.filas : 0;
-    let publicado: number | null = previa?.estado === 'parcial' ? previa.publicado : null;
+    const retoma = !releer && reanudable(previa);
+    let pagina = retoma ? (previa?.siguientePagina ?? 1) : 1;
+    let leidas = retoma ? (previa?.filas ?? 0) : 0;
+    let publicado: number | null = retoma ? (previa?.publicado ?? null) : null;
     const filas: FilaCatalogo[] = [];
     let estado: EstadoUnidad = 'pendiente';
     let error: string | null = null;
     let siguiente: number | null = pagina > 1 ? pagina : null;
     let invalidas = 0;
-    const reanudada = !releer && previa?.estado === 'parcial';
+    const reanudada = retoma;
 
     for (;;) {
-      if (peticiones >= maxPeticiones) {
+      if (peticiones >= maxPeticiones || tecnico) {
         estado = leidas > 0 || filas.length > 0 ? 'parcial' : 'pendiente';
         siguiente = pagina;
         break;
@@ -615,6 +652,7 @@ export async function inventariarFie(
         estado = 'error';
         error = mensaje(e);
         siguiente = pagina;
+        tecnico ??= opciones.clasificarFallo?.(e) ?? undefined;
         break;
       }
     }
@@ -625,7 +663,7 @@ export async function inventariarFie(
     const enlaces = { ...r.enlaces };
     if (antes) for (const k of Object.keys(enlaces) as (keyof RecuentoEnlaces)[]) enlaces[k] += antes.enlaces[k];
     const descuadradas = invalidas + (antes?.descuadradas ?? 0);
-    unidades.push({
+    const unidad: UnidadInventario = {
       ...unidadBase('fie', 'FIE', temporada, url),
       estado,
       filas: leidas,
@@ -635,7 +673,12 @@ export async function inventariarFie(
       descuadradas,
       siguientePagina: siguiente,
       error: error ?? (descuadradas > 0 ? `${descuadradas} pruebas no cumplen el esquema esperado` : null),
-    });
+    };
+    unidades.push(unidad);
+    // Una temporada que el tope o un fallo técnico dejó sin tocar no tiene nada nuevo que anotar.
+    if (filas.length > 0 || estado === 'error' || estado === 'leido' || estado === 'sin_filas') {
+      await opciones.alUnidad?.(unidad, filas);
+    }
   }
 
   return {
@@ -644,6 +687,7 @@ export async function inventariarFie(
     pendientes: unidades.filter((u) => !LEIDA.has(u.estado)),
     peticiones,
     temporadasCompletas,
+    ...(tecnico ? { tecnico } : {}),
   };
 }
 

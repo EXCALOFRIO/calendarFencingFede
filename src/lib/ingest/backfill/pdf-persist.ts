@@ -155,8 +155,10 @@ export type CheckpointPdf = {
   revisionTotal: number;
   rechazos: MotivoRechazo[];
   rechazosTotal: number;
+  /** Marca del checkpoint sembrado por el descubrimiento: aún no hay lectura ni hechos. */
+  semilla?: boolean;
   /** Fila del inventario de la que salió la URL. */
-  origen?: { indice: number | null; refOriginal: string | null; sourceUrl: string | null };
+  origen?: { indice: number | null; refOriginal: string | null; sourceUrl: string | null; titulo?: string | null };
   edicion?: { nombre: string; inicio: string | null; fin: string | null };
   pruebas?: PruebaCheckpoint[];
   pruebasTotal?: number;
@@ -293,7 +295,7 @@ const LINEAS_CABECERA_CHECKPOINT = 4;
 export async function persistirLecturaPdf(
   deps: DepsPersistenciaPdf,
   lectura: LecturaPdf,
-  contexto: ContextoPdf,
+  contextoEntrada: ContextoPdf,
   opciones: { releer?: boolean } = {},
 ): Promise<ResumenPdf> {
   const resumen: ResumenPdf = {
@@ -310,7 +312,7 @@ export async function persistirLecturaPdf(
   const esquema = await deps.esquema();
   if (!esquema.identidad) return { ...resumen, estado: 'esquema_no_aplicado' };
 
-  const { season } = contexto;
+  const { season } = contextoEntrada;
   const docKey = claveDocumento(lectura.docId);
   const docBase = { season, competitionKey: docKey, competitionId: null, sourceUrl: lectura.url };
 
@@ -327,6 +329,18 @@ export async function persistirLecturaPdf(
 
   const previo = await deps.leerCheckpoint(season, docKey);
   const previoCp = decodificarCheckpointPdf(previo?.cursor);
+  // El checkpoint sembrado por el descubrimiento sólo aporta el origen: no hay hechos que corregir ni retirar.
+  const previoConHechos = previoCp !== null && (previoCp.sha256 !== null || previoCp.correccion !== undefined) ? previoCp : null;
+  // Una relectura (p. ej. `--releer` desde cobertura) puede llegar sin la fila del inventario: la evidencia ya
+  // verificada del checkpoint no se pierde, y la edición común no cambia por faltar el contexto.
+  const origenPrevio = previoCp?.origen;
+  const contexto: ContextoPdf = {
+    ...contextoEntrada,
+    indice: contextoEntrada.indice ?? origenPrevio?.indice ?? null,
+    refOriginal: contextoEntrada.refOriginal ?? origenPrevio?.refOriginal ?? null,
+    sourceUrl: contextoEntrada.sourceUrl ?? origenPrevio?.sourceUrl ?? null,
+    titulo: contextoEntrada.titulo ?? origenPrevio?.titulo ?? null,
+  };
   if (
     !opciones.releer &&
     previo &&
@@ -390,6 +404,7 @@ export async function persistirLecturaPdf(
       indice: contexto.indice ?? null,
       refOriginal: contexto.refOriginal ?? null,
       sourceUrl: contexto.sourceUrl ?? null,
+      titulo: contexto.titulo ?? null,
     },
     edicion: { nombre: edicion.nombre, inicio: edicion.inicio, fin: edicion.fin },
     pruebas: recortar(lectura.pruebas).map((p) => ({
@@ -413,14 +428,11 @@ export async function persistirLecturaPdf(
     motivosNoFiable.push('clasificación incompleta o contradictoria');
   }
   const lecturaFiable = motivosNoFiable.length === 0;
-  const esCorreccion = previoCp !== null && previoCp.sha256 !== sha;
+  const esCorreccion = previoConHechos !== null && previoConHechos.sha256 !== sha;
+  const shaPrevio = previoConHechos?.sha256 ?? previoConHechos?.correccion?.shaPrevio ?? null;
 
   if (esCorreccion && !lecturaFiable) {
-    const correccion = {
-      shaPrevio: previoCp.sha256 ?? previoCp.correccion?.shaPrevio ?? null,
-      shaNuevo: sha,
-      motivos: motivosNoFiable,
-    };
+    const correccion = { shaPrevio, shaNuevo: sha, motivos: motivosNoFiable };
     // Sin huella aceptada ni cifras: los hechos anteriores siguen y la siguiente ejecución reintenta.
     await deps.upsertCobertura({
       ...docBase,
@@ -437,130 +449,150 @@ export async function persistirLecturaPdf(
   const vigentes: PruebaVigente[] = [];
   let importados = 0;
 
-  for (const { p, arma, genero, formato, categoria } of aceptadas) {
-    const key = clavePrueba(lectura.docId, p.clave);
-    const primeraPagina = p.paginas.length > 0 ? Math.min(...p.paginas) : null;
-    const competitionId = await deps.upsertPrueba({
-      competitionKey: key,
-      edicionKey: `pdf:${lectura.docId}`,
-      edicion,
-      nombre: tituloDe(p) ?? (soloUna ? contexto.titulo?.trim() || null : null) ?? `RFEE ${lectura.docId}`,
-      season,
-      fecha: p.fecha,
-      arma,
-      genero,
-      categoria,
-      categoriaOriginal: p.categoriaOriginal,
-      formato,
-      url: primeraPagina === null ? lectura.url : `${lectura.url}#page=${primeraPagina}`,
+  // Desde aquí el documento deja de tener la huella vieja como aceptada: si algo falla a medias, el estado
+  // persistido es incompleto o error, nunca completo con hechos de dos lecturas mezclados.
+  const registrarCorreccion = (status: EstadoCobertura, lastError: string, motivos: string[]) =>
+    deps.upsertCobertura({
+      ...docBase,
+      factKind: 'pdf',
+      status,
+      lastError,
+      cursor: JSON.stringify(construirCheckpoint({ sha256: null, correccion: { shaPrevio, shaNuevo: sha, motivos } })),
     });
-    resumen.competiciones.push(key);
+  if (esCorreccion) await registrarCorreccion('pendiente', 'correccion_en_curso', ['correccion_en_curso']);
+  try {
+    for (const { p, arma, genero, formato, categoria } of aceptadas) {
+      const key = clavePrueba(lectura.docId, p.clave);
+      const primeraPagina = p.paginas.length > 0 ? Math.min(...p.paginas) : null;
+      const competitionId = await deps.upsertPrueba({
+        competitionKey: key,
+        edicionKey: `pdf:${lectura.docId}`,
+        edicion,
+        nombre: tituloDe(p) ?? (soloUna ? contexto.titulo?.trim() || null : null) ?? `RFEE ${lectura.docId}`,
+        season,
+        fecha: p.fecha,
+        arma,
+        genero,
+        categoria,
+        categoriaOriginal: p.categoriaOriginal,
+        formato,
+        url: primeraPagina === null ? lectura.url : `${lectura.url}#page=${primeraPagina}`,
+      });
+      resumen.competiciones.push(key);
 
-    const prefijo = `${lectura.docId}:${p.clave}:`;
-    const filas: FilaResultado[] = await Promise.all(
-      p.puestos.map(async (x) => ({
-        sourceFactKey: `${prefijo}${x.sourceFactKey}`,
-        personId: null,
-        sourceName: x.nombre,
-        sourceCountryCode: null,
-        sourceClub: x.club,
-        position: x.posicion,
-        positionRaw: x.posicionRaw,
-        officialPoints: null,
-        occurredOn: p.fecha,
-        sourceUrl: urlPagina(lectura.url, x.region),
-        contentHash: await hashDe(x.posicion, x.posicionRaw, x.nombre, x.club, p.fecha, x.region),
-      })),
-    );
-    if (filas.length > 0) {
-      const r = await deps.upsertResultados(competitionId, filas);
-      resumen.puestos = sumar(resumen.puestos, r);
-      resumen.sinIdentidad += filas.length;
-      importados += filas.length;
+      const prefijo = `${lectura.docId}:${p.clave}:`;
+      const filas: FilaResultado[] = await Promise.all(
+        p.puestos.map(async (x) => ({
+          sourceFactKey: `${prefijo}${x.sourceFactKey}`,
+          personId: null,
+          sourceName: x.nombre,
+          sourceCountryCode: null,
+          sourceClub: x.club,
+          position: x.posicion,
+          positionRaw: x.posicionRaw,
+          officialPoints: null,
+          occurredOn: p.fecha,
+          sourceUrl: urlPagina(lectura.url, x.region),
+          contentHash: await hashDe(x.posicion, x.posicionRaw, x.nombre, x.club, p.fecha, x.region),
+        })),
+      );
+      if (filas.length > 0) {
+        const r = await deps.upsertResultados(competitionId, filas);
+        resumen.puestos = sumar(resumen.puestos, r);
+        resumen.sinIdentidad += filas.length;
+        importados += filas.length;
+      }
+
+      const asaltos: FilaAsalto[] =
+        p.asaltos.length > 0 && formato === 'INDIVIDUAL'
+          ? await Promise.all(
+              p.asaltos.map(async (a) => ({
+                phase: a.fase,
+                roundKey: a.ronda,
+                fencerARef: `${prefijo}${a.refA}`,
+                fencerBRef: `${prefijo}${a.refB}`,
+                fencerAPersonId: null,
+                fencerBPersonId: null,
+                fencerAName: a.nombreA,
+                fencerBName: a.nombreB,
+                scoreA: a.puntosA,
+                scoreB: a.puntosB,
+                occurredOn: p.fecha,
+                sourceUrl: urlAsalto(lectura.url, a.region, a.marcador),
+                // La fecha publicada y el origen del marcador son parte del hecho: una corrección que sólo
+                // cambie uno de ellos tiene que revisar la fila, no quedar como idéntica.
+                contentHash: await hashDe(a.fase, a.ronda, a.puntosA, a.puntosB, a.nombreA, a.nombreB, p.fecha, a.marcador, a.region),
+              })),
+            )
+          : [];
+      if (asaltos.length > 0) {
+        resumen.asaltos = sumar(resumen.asaltos, await deps.upsertAsaltos(competitionId, asaltos));
+      }
+      vigentes.push({
+        competitionId,
+        competitionKey: key,
+        resultados: filas.map((f) => f.sourceFactKey),
+        asaltos: asaltos.map(({ phase, roundKey, fencerARef, fencerBRef }) => ({ phase, roundKey, fencerARef, fencerBRef })),
+      });
+
+      const base = { season, competitionKey: key, competitionId, sourceUrl: lectura.url };
+      await deps.upsertCobertura(filaDeCobertura(base, 'results', p.cobertura.puestos, p.rechazos));
+      await deps.upsertCobertura(filaDeCobertura(base, 'pools', p.cobertura.poules, p.rechazos));
+      await deps.upsertCobertura(filaDeCobertura(base, 'tableau', p.cobertura.cuadro, p.rechazos));
     }
 
-    const asaltos: FilaAsalto[] =
-      p.asaltos.length > 0 && formato === 'INDIVIDUAL'
-        ? await Promise.all(
-            p.asaltos.map(async (a) => ({
-              phase: a.fase,
-              roundKey: a.ronda,
-              fencerARef: `${prefijo}${a.refA}`,
-              fencerBRef: `${prefijo}${a.refB}`,
-              fencerAPersonId: null,
-              fencerBPersonId: null,
-              fencerAName: a.nombreA,
-              fencerBName: a.nombreB,
-              scoreA: a.puntosA,
-              scoreB: a.puntosB,
-              occurredOn: p.fecha,
-              sourceUrl: urlAsalto(lectura.url, a.region, a.marcador),
-              // La fecha publicada y el origen del marcador son parte del hecho: una corrección que sólo
-              // cambie uno de ellos tiene que revisar la fila, no quedar como idéntica.
-              contentHash: await hashDe(a.fase, a.ronda, a.puntosA, a.puntosB, a.nombreA, a.nombreB, p.fecha, a.marcador, a.region),
-            })),
-          )
-        : [];
-    if (asaltos.length > 0) {
-      resumen.asaltos = sumar(resumen.asaltos, await deps.upsertAsaltos(competitionId, asaltos));
-    }
-    vigentes.push({
-      competitionId,
-      competitionKey: key,
-      resultados: filas.map((f) => f.sourceFactKey),
-      asaltos: asaltos.map(({ phase, roundKey, fencerARef, fencerBRef }) => ({ phase, roundKey, fencerARef, fencerBRef })),
-    });
-
-    const base = { season, competitionKey: key, competitionId, sourceUrl: lectura.url };
-    await deps.upsertCobertura(filaDeCobertura(base, 'results', p.cobertura.puestos, p.rechazos));
-    await deps.upsertCobertura(filaDeCobertura(base, 'pools', p.cobertura.poules, p.rechazos));
-    await deps.upsertCobertura(filaDeCobertura(base, 'tableau', p.cobertura.cuadro, p.rechazos));
-  }
-
-  if (previoCp !== null && lecturaFiable) {
-    const r = await deps.reconciliar({ season, docId: lectura.docId, vigentes });
-    resumen.retirados = { puestos: r.puestosRetirados, asaltos: r.asaltosRetirados, pruebas: r.pruebasRetiradas.length };
-    for (const t of r.pruebasRetiradas) {
-      const base = { season, competitionKey: t.competitionKey, competitionId: t.competitionId, sourceUrl: lectura.url };
-      for (const factKind of ['results', 'pools', 'tableau'] as const) {
-        await deps.upsertCobertura({
-          ...base,
-          factKind,
-          status: 'sin_resultados',
-          publishedTotal: null,
-          importedTotal: 0,
-          lastError: 'La prueba ya no aparece en la lectura vigente del documento',
-          cursor: 'retirada_por_correccion',
-        });
+    if (previoConHechos !== null && lecturaFiable) {
+      const r = await deps.reconciliar({ season, docId: lectura.docId, vigentes });
+      resumen.retirados = { puestos: r.puestosRetirados, asaltos: r.asaltosRetirados, pruebas: r.pruebasRetiradas.length };
+      for (const t of r.pruebasRetiradas) {
+        const base = { season, competitionKey: t.competitionKey, competitionId: t.competitionId, sourceUrl: lectura.url };
+        for (const factKind of ['results', 'pools', 'tableau'] as const) {
+          await deps.upsertCobertura({
+            ...base,
+            factKind,
+            status: 'sin_resultados',
+            publishedTotal: null,
+            importedTotal: 0,
+            lastError: 'La prueba ya no aparece en la lectura vigente del documento',
+            cursor: 'retirada_por_correccion',
+          });
+        }
       }
     }
+
+    const hayConflicto = lectura.pruebas.some((p) => p.estado === 'conflicto') || lectura.estado === 'conflicto';
+
+    let status: EstadoCobertura = lectura.estado;
+    if (pendienteCategorias) status = 'pendiente';
+    else if (hayConflicto) status = 'conflicto';
+    else if (status === 'completo' && (revision.length > 0 || rechazos.length > 0 || lectura.ocr.necesario || pruebasNoCompletas)) {
+      status = 'parcial';
+    }
+
+    const motivos: string[] = [];
+    if (revision.length > 0) motivos.push(`${revision.length} pruebas en revisión (${[...new Set(revision.map((r) => r.motivo))].join(', ')})`);
+    if (rechazos.length > 0) motivos.push(`${rechazos.length} regiones o páginas rechazadas`);
+    if (lectura.ocr.necesario) motivos.push(`OCR necesario en páginas ${lectura.ocr.paginas.join(',')} (no ejecutado)`);
+    if (pruebasNoCompletas && motivos.length === 0) motivos.push('Alguna prueba quedó incompleta');
+
+    await deps.upsertCobertura({
+      ...docBase,
+      factKind: 'pdf',
+      status,
+      publishedTotal: null,
+      importedTotal: importados,
+      lastError: motivos.length > 0 ? motivos.join('; ') : null,
+      cursor: JSON.stringify(construirCheckpoint({ retirados: resumen.retirados })),
+    });
+    resumen.documento = status;
+  } catch (e) {
+    if (esCorreccion) {
+      const motivo = `correccion_fallida: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300);
+      // Si esta escritura también falla queda el marcador incompleto previo, que tampoco acepta la huella.
+      await registrarCorreccion('error', motivo, [motivo]).catch(() => undefined);
+    }
+    throw e;
   }
-
-  const hayConflicto = lectura.pruebas.some((p) => p.estado === 'conflicto') || lectura.estado === 'conflicto';
-
-  let status: EstadoCobertura = lectura.estado;
-  if (pendienteCategorias) status = 'pendiente';
-  else if (hayConflicto) status = 'conflicto';
-  else if (status === 'completo' && (revision.length > 0 || rechazos.length > 0 || lectura.ocr.necesario || pruebasNoCompletas)) {
-    status = 'parcial';
-  }
-
-  const motivos: string[] = [];
-  if (revision.length > 0) motivos.push(`${revision.length} pruebas en revisión (${[...new Set(revision.map((r) => r.motivo))].join(', ')})`);
-  if (rechazos.length > 0) motivos.push(`${rechazos.length} regiones o páginas rechazadas`);
-  if (lectura.ocr.necesario) motivos.push(`OCR necesario en páginas ${lectura.ocr.paginas.join(',')} (no ejecutado)`);
-  if (pruebasNoCompletas && motivos.length === 0) motivos.push('Alguna prueba quedó incompleta');
-
-  await deps.upsertCobertura({
-    ...docBase,
-    factKind: 'pdf',
-    status,
-    publishedTotal: null,
-    importedTotal: importados,
-    lastError: motivos.length > 0 ? motivos.join('; ') : null,
-    cursor: JSON.stringify(construirCheckpoint({ retirados: resumen.retirados })),
-  });
-  resumen.documento = status;
   return resumen;
 }
 

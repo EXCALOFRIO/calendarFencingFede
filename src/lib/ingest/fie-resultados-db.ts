@@ -131,6 +131,11 @@ export type FilaCoberturaGenerica = {
   lastError: string | null;
   /** Estado fino que el enum no distingue (p. ej. «solo_enlace»). `undefined` = no tocar. */
   cursor?: string | null;
+  /**
+   * Aplazamiento que no es una lectura (el presupuesto del lote cortó la fase): no suma un
+   * intento ni mueve la última comprobación, así que nunca agota la unidad.
+   */
+  sinIntento?: boolean;
 };
 
 /** Cobertura por fuente/temporada/tipo/prueba; una lectura fallida no pisa las cifras. */
@@ -151,10 +156,10 @@ export async function escribirCobertura(
       status: f.status,
       publishedTotal: f.publishedTotal ?? null,
       importedTotal: f.importedTotal ?? 0,
-      attempts: 1,
+      attempts: f.sinIntento ? 0 : 1,
       sourceUrl: f.sourceUrl,
       cursor: f.cursor ?? null,
-      lastCheckedAt: sql`now()`,
+      lastCheckedAt: f.sinIntento ? null : sql`now()`,
       lastError: f.lastError,
     })
     .onConflictDoUpdate({
@@ -173,10 +178,11 @@ export async function escribirCobertura(
               publishedTotal: sql`excluded.published_total`,
               importedTotal: sql`excluded.imported_total`,
             }),
-        attempts: sql`${sportImportCoverage.attempts} + 1`,
+        ...(f.sinIntento
+          ? {}
+          : { attempts: sql`${sportImportCoverage.attempts} + 1`, lastCheckedAt: sql`now()` }),
         sourceUrl: sql`excluded.source_url`,
         ...(f.cursor === undefined ? {} : { cursor: sql`excluded.cursor` }),
-        lastCheckedAt: sql`now()`,
         lastError: sql`excluded.last_error`,
         updatedAt: sql`now()`,
       },
