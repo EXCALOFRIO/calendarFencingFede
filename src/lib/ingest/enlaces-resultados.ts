@@ -7,6 +7,7 @@ import {
   type MotivoCotejo,
   type PruebaCanonica,
 } from './conciliar-complementario';
+import { esPresupuestoAgotado } from './backfill/presupuesto-http';
 import { mapCategory, mapFormat, mapGender, mapWeapon } from './mappers';
 import { clasificarSerie } from './series-complementarias';
 import {
@@ -347,6 +348,7 @@ export async function evaluarEnlacesOficiales(
     if (rango[r.estado] > rango[actual.estado] || sustituyeVacio) salida[r.proveedor] = r;
   };
 
+  const vigilada = vigilarPresupuesto(deps);
   const vistos = new Set<string>();
   for (const p of publicados) {
     const c = clasificarEnlace(p.url);
@@ -369,12 +371,38 @@ export async function evaluarEnlacesOficiales(
       continue;
     }
     try {
-      guardar(c.proveedor === 'engarde' ? await verificarEngarde(c, prueba, deps) : await verificarFww(c, prueba, deps));
-    } catch {
+      guardar(c.proveedor === 'engarde' ? await verificarEngarde(c, prueba, vigilada.deps) : await verificarFww(c, prueba, vigilada.deps));
+    } catch (e) {
+      if (esPresupuestoAgotado(e)) throw e;
       guardar({ proveedor: c.proveedor, estado: 'error', url: null, motivos: ['no_comprobable'], resultadosImportados: false });
     }
+    vigilada.lanzarSiDenegado();
   }
   return salida;
+}
+
+/**
+ * Los lectores de Engarde y FWW convierten cualquier excepción de red en una lectura `error`: una
+ * denegación del presupuesto se recuerda aquí para propagarla, porque no es un enlace «no comprobable».
+ */
+function vigilarPresupuesto(deps: DepsVerificacionEnlaces): { deps: DepsVerificacionEnlaces; lanzarSiDenegado: () => void } {
+  let denegado: unknown = null;
+  const vigilar =
+    <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
+    async (...args: A): Promise<R> => {
+      try {
+        return await fn(...args);
+      } catch (e) {
+        if (esPresupuestoAgotado(e)) denegado ??= e;
+        throw e;
+      }
+    };
+  return {
+    deps: { get: vigilar(deps.get), post: vigilar(deps.post) },
+    lanzarSiDenegado: () => {
+      if (denegado) throw denegado;
+    },
+  };
 }
 
 /** Texto y destino que la interfaz puede mostrar; `href: null` = no hay enlace que ofrecer. */
@@ -507,11 +535,11 @@ export async function descubrirEnlacesFie(
   season: number,
   competitionId: number,
 ): Promise<DescubrimientoEnlaces> {
-  const ficha = await sondearFichaFie(deps, season, competitionId);
+  const { ficha, cuerpoJson } = await sondearFichaConCuerpo(deps, season, competitionId);
   if (ficha.datos !== 'json') return { prueba: null, ficha, publicados: [], enlaces: null };
   let meta: unknown;
   try {
-    meta = JSON.parse((await deps.get(`https://fie.org/api/fie/competition/${season}/${competitionId}`)).body);
+    meta = JSON.parse(cuerpoJson ?? '');
   } catch {
     return { prueba: null, ficha: { ...ficha, datos: 'ninguno' }, publicados: [], enlaces: null };
   }
@@ -527,12 +555,27 @@ export async function sondearFichaFie(
   competitionId: number,
   alternativaVerificada: string | null = null,
 ): Promise<EstadoFichaFie> {
-  const estado = async (url: string): Promise<{ status: number | null; retryAfterMs: number | null }> => {
+  return (await sondearFichaConCuerpo(deps, season, competitionId, alternativaVerificada)).ficha;
+}
+
+/**
+ * Sondeo de la ficha que conserva el cuerpo de la respuesta JSON: es la metadata, y pedirla otra vez
+ * dejaría sin comprobar el estado ni el Retry-After de esa segunda respuesta.
+ */
+async function sondearFichaConCuerpo(
+  deps: Pick<DepsEngarde, 'get'>,
+  season: number,
+  competitionId: number,
+  alternativaVerificada: string | null = null,
+): Promise<{ ficha: EstadoFichaFie; cuerpoJson: string | null }> {
+  const estado = async (url: string) => {
     try {
       const r = await deps.get(url);
-      return { status: r.status, retryAfterMs: r.retryAfterMs ?? null };
-    } catch {
-      return { status: null, retryAfterMs: null };
+      return { status: r.status as number | null, retryAfterMs: r.retryAfterMs ?? null, body: r.body };
+    } catch (e) {
+      // Un presupuesto denegado deja la unidad pendiente; no equivale a una ficha que no respondió.
+      if (esPresupuestoAgotado(e)) throw e;
+      return { status: null, retryAfterMs: null, body: null };
     }
   };
   const urlHtml = urlFichaFie(season, competitionId);
@@ -540,12 +583,15 @@ export async function sondearFichaFie(
     estado(`https://fie.org/api/fie/competition/${season}/${competitionId}`),
     estado(urlHtml),
   ]);
-  return evaluarFichaFie({
-    jsonStatus: json.status,
-    htmlStatus: html.status,
-    jsonRetryAfterMs: json.retryAfterMs,
-    htmlRetryAfterMs: html.retryAfterMs,
-    urlHtml,
-    alternativaVerificada,
-  });
+  return {
+    ficha: evaluarFichaFie({
+      jsonStatus: json.status,
+      htmlStatus: html.status,
+      jsonRetryAfterMs: json.retryAfterMs,
+      htmlRetryAfterMs: html.retryAfterMs,
+      urlHtml,
+      alternativaVerificada,
+    }),
+    cuerpoJson: json.status === 200 ? json.body : null,
+  };
 }

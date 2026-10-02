@@ -77,7 +77,9 @@ export async function descubrirCatalogo(
     clasificarFallo: clasificarFalloTecnico,
     alUnidad: persistencia
       ? (unidad: UnidadInventario, filas: readonly FilaCatalogo[]) =>
-          persistirUnidadDescubierta(persistencia, unidad, unidadesDesdeCatalogo(filas, filtro))
+          // Un índice guardado como completo ha de dejar sembradas todas sus salidas: el filtro de fuentes
+          // sólo decide qué se ejecuta, y una pasada posterior no vuelve a leer el índice para recuperarlas.
+          persistirUnidadDescubierta(persistencia, unidad, unidadesDesdeCatalogo(filas))
       : undefined,
   };
 
@@ -95,13 +97,15 @@ export async function descubrirCatalogo(
     }
   }
 
-  const quiereSkermo = quiere('skermo_rfee') || quiere('skermo_regional');
+  // Los PDF de resultados salen de los índices Skermo: pedir sólo `rfee_pdf` necesita esos índices padres.
+  const quierePdf = quiere('rfee_pdf');
+  const quiereSkermo = quiere('skermo_rfee') || quiere('skermo_regional') || quierePdf;
   // Tras un fallo técnico no se sigue enumerando: insistir contra la fuente que acaba de limitar sólo agrava el límite.
   if (quiereSkermo && restantes > 0 && !resultado.tecnico) {
     const etiquetas = (filtro.temporadas ?? []).filter((t) => !ANIO_FIE.test(t));
     if (!filtro.temporadas?.length || etiquetas.length > 0) {
-      const federaciones = deps.federaciones().filter((f) =>
-        f.codigo === 'RFEE' ? quiere('skermo_rfee') : quiere('skermo_regional'),
+      const federaciones = deps.federaciones().filter(
+        (f) => quierePdf || (f.codigo === 'RFEE' ? quiere('skermo_rfee') : quiere('skermo_regional')),
       );
       anotar(
         await inventariarSkermo(deps.skermo, federaciones, {

@@ -45,6 +45,19 @@ posterior y conserva el checkpoint; el `429` devuelve su `Retry-After` y el
 comando termina con código 4 sin ejecutar el lote, mientras que un `5xx` se
 informa y el lote sigue con lo ya conocido. El dry-run no usa red.
 
+**Filtros de ejecución frente a descubrimiento.** `--fuentes` y `--temporadas`
+limitan qué se **ejecuta**: el plan sólo lee la cobertura de esas fuentes y
+sus temporadas. No recortan lo que un índice completo siembra. Un índice
+global (`index:RFEE`) sólo se guarda como `completo` después de sembrar todas
+sus salidas (pruebas HTML y PDF), de modo que `--fuentes skermo_rfee` deja
+pendientes sus `rfee_pdf` y una pasada posterior con `rfee_pdf` o sin filtro
+los planifica sin releer el índice. A la inversa, `--fuentes rfee_pdf` necesita
+los índices Skermo de los que salen los PDF: los recorre (dentro del mismo
+presupuesto) y siembra los documentos desconocidos, pero el lote sólo ejecuta
+`rfee_pdf`; las pruebas HTML descubiertas quedan pendientes sin ejecutarse. Los
+índices padres no se buscan por búsqueda de interfaz: son los mismos índices
+públicos del inventario.
+
 Una tarea por clave de
 prueba o documento, con el motivo más urgente:
 
@@ -108,7 +121,12 @@ la tarea no desaparece. Si el ranking ya está completo no se vuelve a pedir en
 cada lote: las ejecuciones siguientes avanzan las fases pendientes.
 
 Los enlaces FIE conservan el `Retry-After` del JSON oficial (o de la ficha web)
-hasta el resultado técnico; no se sustituye por un valor por defecto.
+hasta el resultado técnico; no se sustituye por un valor por defecto. La
+metadata JSON se pide una sola vez (la del sondeo de la ficha), de modo que no
+hay una segunda respuesta cuyo estado quede sin comprobar. Si el presupuesto
+compartido niega una petición del camino de enlaces (sondeo o verificación de
+un enlace publicado), la unidad queda `pendiente` sin intento: no se convierte
+en «sin prueba oficial legible» ni en un enlace «no comprobable» guardado.
 
 ## Qué significa cada estado
 
