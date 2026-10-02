@@ -38,6 +38,17 @@ export function formatEur(value: string | number | null | undefined): string {
   }).format(n);
 }
 
+/** `aaaa-mm-dd` que además existe en el calendario (rechaza 2026-99-99 y 2026-02-31). */
+export function esFechaIsoReal(iso: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return false;
+  const [anio, mes, dia] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const fecha = new Date(Date.UTC(anio, mes - 1, dia));
+  return (
+    fecha.getUTCFullYear() === anio && fecha.getUTCMonth() === mes - 1 && fecha.getUTCDate() === dia
+  );
+}
+
 export function formatDateEs(iso: string | Date): string {
   const d = typeof iso === 'string' ? new Date(`${iso.slice(0, 10)}T12:00:00Z`) : iso;
   return new Intl.DateTimeFormat('es-ES', {

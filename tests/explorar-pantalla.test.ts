@@ -8,6 +8,7 @@ import type { DeportistaResumen } from '@/lib/sport/explorar/tipos';
 import {
   CRITERIOS_VACIOS,
   construirUrl,
+  opcionesTemporada,
   type CriteriosExplorar,
 } from '@/lib/sport/explorar/url';
 import { UUID_A, UUID_B, UUID_C, crearContexto, perfil } from './helpers/explorar';
@@ -271,7 +272,7 @@ describe('vista de resultados', () => {
 describe('formulario de filtros', () => {
   const formulario = (atajoEspana: boolean, c: CriteriosExplorar = CRITERIOS_VACIOS) =>
     renderToStaticMarkup(
-      React.createElement(FormularioFiltros, { criterios: c, temporadas: ['2026-2027', '2025-2026'], atajoEspana }),
+      React.createElement(FormularioFiltros, { criterios: c, temporadas: opcionesTemporada('2026-10-02', 2), atajoEspana }),
     );
 
   it('el atajo España sólo existe cuando la pantalla lo habilita para el rol', () => {

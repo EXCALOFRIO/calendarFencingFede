@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { formatDateEs } from '@/lib/utils';
+import { esFechaIsoReal, formatDateEs } from '@/lib/utils';
 
 /**
  * Campo de fecha.
@@ -17,7 +17,9 @@ import { formatDateEs } from '@/lib/utils';
  * marzo.
  *
  * Hacia fuera siempre habla en ISO (`aaaa-mm-dd`), que es lo que esperan las
- * acciones de servidor.
+ * acciones de servidor. Un texto que no es una fecha real sale como vacío,
+ * salvo que el caller pida `conservarInvalido`: entonces sale el texto tal
+ * cual, para que no se confunda con un campo dejado en blanco a propósito.
  */
 export function CampoFecha({
   id,
@@ -25,22 +27,31 @@ export function CampoFecha({
   valorIso,
   onChange,
   ayuda,
+  conservarInvalido = false,
 }: {
   id: string;
   etiqueta: string;
   valorIso: string;
   onChange: (iso: string) => void;
   ayuda?: string;
+  conservarInvalido?: boolean;
 }) {
-  const [texto, setTexto] = React.useState(() => deIso(valorIso));
+  const [texto, setTexto] = React.useState(() => textoDeCampo(valorIso));
+  const ultimoEmitido = React.useRef(valorIso);
 
   // Si el formulario se rellena desde fuera (editar una fila), el campo sigue.
+  // Lo que el propio campo acaba de emitir no cuenta: reescribirlo borraría el
+  // texto a medio teclear cuando todavía no es una fecha.
   React.useEffect(() => {
-    setTexto(deIso(valorIso));
+    if (valorIso === ultimoEmitido.current) return;
+    ultimoEmitido.current = valorIso;
+    setTexto(textoDeCampo(valorIso));
   }, [valorIso]);
 
   const iso = aIso(texto);
   const vacio = texto.trim().length === 0;
+  const invalido = !vacio && iso === null;
+  const idAyuda = `${id}-ayuda`;
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -51,13 +62,17 @@ export function CampoFecha({
         inputMode="numeric"
         autoComplete="off"
         placeholder="dd/mm/aaaa"
-        aria-invalid={!vacio && iso === null}
+        aria-invalid={invalido}
+        aria-describedby={idAyuda}
         onChange={(e) => {
+          const emitido = valorEmitido(e.target.value, conservarInvalido);
+          ultimoEmitido.current = emitido;
           setTexto(e.target.value);
-          onChange(aIso(e.target.value) ?? '');
+          onChange(emitido);
         }}
       />
       <p
+        id={idAyuda}
         className={
           !vacio && iso === null ? 'text-xs text-danger' : 'text-xs text-muted-foreground'
         }
@@ -76,7 +91,7 @@ export function CampoFecha({
 export function aIso(texto: string): string | null {
   const limpio = texto.trim();
   if (!limpio) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(limpio)) return limpio;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(limpio)) return esFechaIsoReal(limpio) ? limpio : null;
 
   const partes = limpio.split(/[/\-.]/).map((p) => p.trim());
   if (partes.length !== 3) return null;
@@ -89,6 +104,23 @@ export function aIso(texto: string): string | null {
   const prueba = new Date(`${iso}T12:00:00Z`);
   if (Number.isNaN(prueba.getTime()) || prueba.getUTCDate() !== d) return null;
   return iso;
+}
+
+/** Lo que el campo comunica al caller para un texto dado. */
+export function valorEmitido(texto: string, conservarInvalido: boolean): string {
+  const iso = aIso(texto);
+  if (iso) return iso;
+  return conservarInvalido && texto.trim().length > 0 ? texto : '';
+}
+
+/**
+ * Texto con que se pinta un valor recibido del caller. Una fecha real se
+ * muestra como `dd/mm/aaaa`; cualquier otra cosa se enseña tal cual para que
+ * el usuario vea qué es lo que está mal en lugar de verlo reescrito.
+ */
+export function textoDeCampo(valor: string): string {
+  if (/^\d{4}-\d{2}-\d{2}/.test(valor) && esFechaIsoReal(valor.slice(0, 10))) return deIso(valor);
+  return valor;
 }
 
 /** `aaaa-mm-dd` -> `dd/mm/aaaa`, para rellenar el campo al editar. */

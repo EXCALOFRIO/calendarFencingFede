@@ -17,7 +17,9 @@ import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -25,12 +27,20 @@ import {
   RUTA_EXPLORAR,
   alternarEspana,
   construirUrl,
+  etiquetaTemporada,
   hayCriterios,
   type CriteriosExplorar,
+  type OpcionTemporada,
 } from '@/lib/sport/explorar/url';
-import { CATEGORY_LABEL, GENDER_LABEL, WEAPON_LABEL } from '@/lib/utils';
+import { CATEGORY_LABEL, GENDER_LABEL, WEAPON_LABEL, esFechaIsoReal } from '@/lib/utils';
 
 type Opcion = { valor: string; etiqueta: string };
+type Grupo = { etiqueta: string; opciones: Opcion[] };
+
+const NOMBRE_FUENTE: Record<OpcionTemporada['fuente'], string> = {
+  FIE: 'FIE (internacional, año en que termina)',
+  RFEE: 'RFEE (nacional, septiembre a agosto)',
+};
 
 const ARMAS: Opcion[] = Object.entries(WEAPON_LABEL).map(([valor, etiqueta]) => ({ valor, etiqueta }));
 const GENEROS: Opcion[] = Object.entries(GENDER_LABEL).map(([valor, etiqueta]) => ({ valor, etiqueta }));
@@ -59,6 +69,7 @@ function CampoSelect({
   etiqueta,
   valor,
   opciones,
+  grupos = [],
   textoVacio,
   onChange,
 }: {
@@ -66,6 +77,7 @@ function CampoSelect({
   etiqueta: string;
   valor: string;
   opciones: Opcion[];
+  grupos?: Grupo[];
   textoVacio: string;
   onChange: (valor: string) => void;
 }) {
@@ -86,22 +98,78 @@ function CampoSelect({
               {o.etiqueta}
             </SelectItem>
           ))}
+          {grupos.map((g) => (
+            <SelectGroup key={g.etiqueta}>
+              <SelectLabel>{g.etiqueta}</SelectLabel>
+              {g.opciones.map((o) => (
+                <SelectItem key={o.valor} value={o.valor}>
+                  {o.etiqueta}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          ))}
         </SelectContent>
       </Select>
     </div>
   );
 }
 
-function erroresDe(c: CriteriosExplorar): Partial<Record<'torneo' | 'nacionalidad' | 'intervalo', string>> {
-  const errores: Partial<Record<'torneo' | 'nacionalidad' | 'intervalo', string>> = {};
+/**
+ * Opciones del selector de temporada: un grupo por fuente y, aparte, la
+ * temporada de la URL si no está entre las ofrecidas, para que el selector
+ * nunca muestre «Todas» mientras el filtro está activo.
+ */
+export function agruparTemporadas(
+  temporadas: OpcionTemporada[],
+  actual: string,
+): { sueltas: Opcion[]; grupos: Grupo[] } {
+  const sueltas =
+    actual !== '' && !temporadas.some((t) => t.valor === actual)
+      ? [{ valor: actual, etiqueta: etiquetaTemporada(actual) }]
+      : [];
+  const grupos = (['FIE', 'RFEE'] as const).map((fuente) => ({
+    etiqueta: NOMBRE_FUENTE[fuente],
+    opciones: temporadas
+      .filter((t) => t.fuente === fuente)
+      .map(({ valor, etiqueta }) => ({ valor, etiqueta })),
+  }));
+  return { sueltas, grupos };
+}
+
+type ClaveError = 'torneo' | 'nacionalidad' | 'desde' | 'hasta' | 'intervalo';
+
+const MENSAJE_FECHA = (nombre: string) =>
+  `«${nombre}» no es una fecha válida. Escríbela como 03/10/2026 o bórrala para poder buscar.`;
+
+/**
+ * Una fecha rellena que no existe (`31/02/2026`, `2026-99-99`) es un error,
+ * no un campo vacío: enviarla en blanco ampliaría la búsqueda sin avisar.
+ */
+export function erroresDe(c: CriteriosExplorar): Partial<Record<ClaveError, string>> {
+  const errores: Partial<Record<ClaveError, string>> = {};
   if (c.torneo.length === 1) errores.torneo = 'Escribe al menos dos letras del torneo.';
   if (c.nacionalidad !== '' && !/^[A-Z]{3}$/.test(c.nacionalidad)) {
     errores.nacionalidad = 'El país son tres letras, por ejemplo ESP o FRA.';
   }
-  if (c.desde && c.hasta && c.desde > c.hasta) {
+  const desdeReal = c.desde !== '' && esFechaIsoReal(c.desde);
+  const hastaReal = c.hasta !== '' && esFechaIsoReal(c.hasta);
+  if (c.desde !== '' && !desdeReal) errores.desde = MENSAJE_FECHA('Desde');
+  if (c.hasta !== '' && !hastaReal) errores.hasta = MENSAJE_FECHA('Hasta');
+  if (desdeReal && hastaReal && c.desde > c.hasta) {
     errores.intervalo = 'La fecha «Desde» tiene que ser anterior o igual a «Hasta».';
   }
   return errores;
+}
+
+export type PreparacionBusqueda =
+  | { ok: true; url: string }
+  | { ok: false; errores: Partial<Record<ClaveError, string>> };
+
+/** Única puerta entre el borrador del formulario y la URL: sin errores no hay navegación. */
+export function prepararBusqueda(c: CriteriosExplorar): PreparacionBusqueda {
+  const errores = erroresDe(c);
+  if (Object.keys(errores).length > 0) return { ok: false, errores };
+  return { ok: true, url: construirUrl(c) };
 }
 
 /**
@@ -116,7 +184,7 @@ export function FormularioFiltros({
   atajoEspana,
 }: {
   criterios: CriteriosExplorar;
-  temporadas: string[];
+  temporadas: OpcionTemporada[];
   atajoEspana: boolean;
 }) {
   const router = useRouter();
@@ -134,19 +202,21 @@ export function FormularioFiltros({
     setBorrador((actual) => ({ ...actual, ...parcial }));
 
   const buscar = (siguiente: CriteriosExplorar) => {
-    if (Object.keys(erroresDe(siguiente)).length > 0) {
+    const preparada = prepararBusqueda(siguiente);
+    if (!preparada.ok) {
       setAvisar(true);
+      // Un error en un filtro avanzado no puede quedar tras el panel plegado.
+      if (CLAVES_AVANZADAS.some((k) => k in preparada.errores)) setAbierto(true);
       return;
     }
     setAvisar(false);
-    empezar(() => router.push(construirUrl(siguiente)));
+    empezar(() => router.push(preparada.url));
   };
 
-  const opcionesTemporada: Opcion[] = (
-    borrador.temporada && !temporadas.includes(borrador.temporada)
-      ? [borrador.temporada, ...temporadas]
-      : temporadas
-  ).map((t) => ({ valor: t, etiqueta: t }));
+  const { sueltas: temporadaFueraDeLista, grupos: gruposTemporada } = agruparTemporadas(
+    temporadas,
+    borrador.temporada,
+  );
 
   const espanaActiva = borrador.nacionalidad === 'ESP';
 
@@ -281,7 +351,8 @@ export function FormularioFiltros({
               id="explorar-temporada"
               etiqueta="Temporada"
               valor={borrador.temporada}
-              opciones={opcionesTemporada}
+              opciones={temporadaFueraDeLista}
+              grupos={gruposTemporada}
               textoVacio="Todas"
               onChange={(temporada) => poner({ temporada })}
             />
@@ -309,6 +380,7 @@ export function FormularioFiltros({
               etiqueta="Desde"
               valorIso={borrador.desde}
               onChange={(desde) => poner({ desde })}
+              conservarInvalido
               ayuda="Opcional."
             />
             <CampoFecha
@@ -316,6 +388,7 @@ export function FormularioFiltros({
               etiqueta="Hasta"
               valorIso={borrador.hasta}
               onChange={(hasta) => poner({ hasta })}
+              conservarInvalido
               ayuda="Opcional."
             />
           </div>

@@ -1,4 +1,10 @@
-import { CATEGORY_LABEL, GENDER_LABEL, WEAPON_LABEL, formatDateEs } from '@/lib/utils';
+import {
+  CATEGORY_LABEL,
+  GENDER_LABEL,
+  WEAPON_LABEL,
+  esFechaIsoReal,
+  formatDateEs,
+} from '@/lib/utils';
 
 /**
  * Criterios de Explorar tal y como viajan en la URL.
@@ -152,8 +158,9 @@ const FORMATO_LABEL: Record<string, string> = {
   EQUIPOS: 'Equipos',
 };
 
+/** Una fecha que no existe se muestra en bruto: formatearla lanzaría o la disfrazaría. */
 function fechaLegible(iso: string): string {
-  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? formatDateEs(iso) : iso;
+  return esFechaIsoReal(iso) ? formatDateEs(iso) : iso;
 }
 
 export function valorLegible(clave: ClaveCriterio, valor: string): string {
@@ -171,6 +178,8 @@ export function valorLegible(clave: ClaveCriterio, valor: string): string {
     case 'desde':
     case 'hasta':
       return fechaLegible(valor);
+    case 'temporada':
+      return etiquetaTemporada(valor);
     case 'edicionId':
       return 'una edición concreta';
     default:
@@ -184,6 +193,8 @@ export type ChipCriterio = {
   valor: string;
   /** URL de la misma búsqueda sin este criterio y desde la primera página. */
   quitar: string;
+  /** Fecha que no existe: el chip enseña el valor bruto y sigue siendo quitable. */
+  fechaInvalida: boolean;
 };
 
 export function chipsActivos(criterios: CriteriosExplorar): ChipCriterio[] {
@@ -192,6 +203,7 @@ export function chipsActivos(criterios: CriteriosExplorar): ChipCriterio[] {
     etiqueta: ETIQUETA[clave],
     valor: valorLegible(clave, criterios[clave]),
     quitar: construirUrl({ ...criterios, [clave]: '' }),
+    fechaInvalida: (clave === 'desde' || clave === 'hasta') && !esFechaIsoReal(criterios[clave]),
   }));
 }
 
@@ -201,8 +213,45 @@ export function chipsActivos(criterios: CriteriosExplorar): ChipCriterio[] {
  * civil, así que en octubre de 2026 la vigente es 2026-2027.
  */
 export function temporadasOfrecidas(hoy: string, cuantas = 16): string[] {
+  const inicio = inicioTemporada(hoy);
+  return Array.from({ length: cuantas }, (_, i) => `${inicio - i}-${inicio - i + 1}`);
+}
+
+function inicioTemporada(hoy: string): number {
   const anio = Number(hoy.slice(0, 4));
   const mes = Number(hoy.slice(5, 7));
-  const inicio = mes >= 9 ? anio : anio - 1;
-  return Array.from({ length: cuantas }, (_, i) => `${inicio - i}-${inicio - i + 1}`);
+  return mes >= 9 ? anio : anio - 1;
+}
+
+export type OpcionTemporada = {
+  /** Clave tal y como se guarda: FIE `AAAA`, RFEE `AAAA-AAAA`. */
+  valor: string;
+  etiqueta: string;
+  fuente: 'FIE' | 'RFEE';
+};
+
+/**
+ * Temporadas que se pueden elegir, de la vigente hacia atrás y por fuente.
+ * Cada fuente tiene su propia clave: la FIE guarda el año en que termina la
+ * temporada (`2027` es sept. 2026 - ago. 2027) y la RFEE el rango completo.
+ * No son intercambiables ni un año civil, así que se ofrecen las dos y se
+ * etiquetan con la fuente.
+ */
+export function opcionesTemporada(hoy: string, cuantas = 16): OpcionTemporada[] {
+  const inicio = inicioTemporada(hoy);
+  const fie = Array.from({ length: cuantas }, (_, i): OpcionTemporada => {
+    const valor = String(inicio + 1 - i);
+    return { valor, etiqueta: etiquetaTemporada(valor), fuente: 'FIE' };
+  });
+  const rfee = temporadasOfrecidas(hoy, cuantas).map(
+    (valor): OpcionTemporada => ({ valor, etiqueta: etiquetaTemporada(valor), fuente: 'RFEE' }),
+  );
+  return [...fie, ...rfee];
+}
+
+/** Nombre visible de una clave de temporada; lo desconocido se muestra tal cual. */
+export function etiquetaTemporada(valor: string): string {
+  if (/^\d{4}$/.test(valor)) return `FIE ${valor}`;
+  if (/^\d{4}-\d{4}$/.test(valor)) return `RFEE ${valor}`;
+  return valor;
 }

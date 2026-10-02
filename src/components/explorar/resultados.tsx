@@ -12,7 +12,7 @@ import {
   rutaFicha,
   type CriteriosExplorar,
 } from '@/lib/sport/explorar/url';
-import { GENDER_LABEL, WEAPON_LABEL } from '@/lib/utils';
+import { GENDER_LABEL, WEAPON_LABEL, cn } from '@/lib/utils';
 
 /** Filtros activos como enlaces que los quitan uno a uno. */
 export function ChipsActivos({ criterios }: { criterios: CriteriosExplorar }) {
@@ -25,11 +25,15 @@ export function ChipsActivos({ criterios }: { criterios: CriteriosExplorar }) {
           <Link
             href={chip.quitar}
             prefetch={false}
-            aria-label={`Quitar filtro ${chip.etiqueta}: ${chip.valor}`}
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-full border bg-secondary px-3 text-sm hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+            aria-label={`Quitar filtro ${chip.etiqueta}: ${chip.valor}${chip.fechaInvalida ? ' (fecha no válida)' : ''}`}
+            className={cn(
+              'inline-flex min-h-11 items-center gap-1.5 rounded-full border bg-secondary px-3 text-sm hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+              chip.fechaInvalida && 'border-danger/40',
+            )}
           >
             <span className="text-muted-foreground">{chip.etiqueta}</span>
             <span className="max-w-48 truncate font-medium">{chip.valor}</span>
+            {chip.fechaInvalida ? <span className="text-xs text-danger">no válida</span> : null}
             <X className="size-3.5" aria-hidden />
           </Link>
         </li>

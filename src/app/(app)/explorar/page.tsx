@@ -9,7 +9,7 @@ import {
 import { getSessionProfile } from '@/lib/auth/session';
 import { cargarExplorar } from '@/lib/sport/explorar/pantalla';
 import { contextoReal } from '@/lib/sport/explorar/real';
-import { construirUrl, leerCriterios, temporadasOfrecidas } from '@/lib/sport/explorar/url';
+import { construirUrl, leerCriterios, opcionesTemporada } from '@/lib/sport/explorar/url';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Explorar' };
@@ -55,7 +55,7 @@ export default async function Pagina({
         <FormularioFiltros
           key={construirUrl(criterios, cursor)}
           criterios={criterios}
-          temporadas={temporadasOfrecidas(hoy)}
+          temporadas={opcionesTemporada(hoy)}
           atajoEspana={atajoEspana}
         />
         <ChipsActivos criterios={criterios} />
