@@ -114,6 +114,10 @@ describe('páginas sin sesión', () => {
   it('/ y /perfil niegan en su página y el diseño común redirige a /entrar antes de cargar datos', async () => {
     const { default: Calendario } = await import('@/app/(app)/page');
     await expect(Calendario()).rejects.toThrow('NO_AUTENTICADO');
+    // El contexto de retorno viaja en la URL: leerlo no abre la ruta sin sesión.
+    await expect(
+      Calendario({ searchParams: Promise.resolve({ mes: '2026-11', armas: 'ESPADA', q: 'mundial' }) }),
+    ).rejects.toThrow('NO_AUTENTICADO');
     const { default: Perfil } = await import('@/app/(app)/perfil/page');
     await expect(Perfil({ searchParams: sinConsulta } as never)).rejects.toThrow('NO_AUTENTICADO');
 

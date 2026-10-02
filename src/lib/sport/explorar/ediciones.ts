@@ -6,6 +6,8 @@ import { codificarCursor, decodificarCursor, UUID_RE } from './cursor';
 import {
   enlacesDePrueba,
   estadoResultados,
+  FUENTE_FIE,
+  lecturasDePuestos,
   type Clasificacion,
   type EdicionDetalle,
   type EdicionResumen,
@@ -156,7 +158,7 @@ export function aPrueba(
     resultados: {
       estado: estadoResultados(
         importados,
-        lecturas.filter((l) => l.hecho === 'results'),
+        lecturasDePuestos(lecturas),
       ),
       importados,
     },
@@ -192,14 +194,15 @@ async function leerPruebas(
   );
   if (pruebas.length === 0) return porEdicion;
 
-  // Lectura de puestos por prueba y estado de enlaces por la clave de la prueba
-  // canónica (`fuente:clave`), que es como se guardan.
+  // Lectura de puestos por prueba (`results`, o `ranking` si es de la FIE) y
+  // estado de enlaces por la clave de la prueba canónica (`fuente:clave`), que
+  // es como se guardan.
   const lecturas = filas<FilaLectura>(
     await ctx.db.execute(sql`
       SELECT cov.competition_id::text AS "pruebaId", cov.fact_kind AS hecho, cov.source AS fuente,
              cov.status::text AS estado, cov.cursor AS cursor, cov.source_url AS url
       FROM sport_import_coverage cov
-      WHERE cov.fact_kind = 'results'
+      WHERE (cov.fact_kind = 'results' OR (cov.fact_kind = 'ranking' AND cov.source = ${FUENTE_FIE}))
         AND cov.competition_id IN (SELECT c.id FROM sport_competition c WHERE c.edition_id IN (${ids}))
       UNION ALL
       SELECT c.id::text, cov.fact_kind, cov.source, cov.status::text, cov.cursor, cov.source_url

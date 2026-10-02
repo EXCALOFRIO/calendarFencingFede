@@ -27,7 +27,8 @@ function primero(valor: string | string[] | undefined): string {
   return ((Array.isArray(valor) ? valor[0] : valor) ?? '').trim();
 }
 
-const LONGITUD_MAXIMA_RETORNO = 1500;
+/** Cabe una edición con prueba, cursor y el origen del calendario codificado dentro. */
+const LONGITUD_MAXIMA_RETORNO = 2400;
 
 /**
  * Búsqueda de Explorar, página de favoritos o página de edición a la que

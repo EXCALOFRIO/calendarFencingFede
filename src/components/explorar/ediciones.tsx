@@ -174,10 +174,12 @@ function FilaPrueba({
   edicion,
   p,
   elegida,
+  origen,
 }: {
   edicion: EdicionResumen;
   p: PruebaDeEdicion;
   elegida: boolean;
+  origen?: string;
 }) {
   return (
     <li
@@ -193,7 +195,7 @@ function FilaPrueba({
       <div className="flex flex-col items-start">
         {p.resultados.importados > 0 ? (
           <Link
-            href={construirUrlEdicion(edicion.id, { prueba: p.id })}
+            href={construirUrlEdicion(edicion.id, { prueba: p.id, origen })}
             prefetch={false}
             aria-label={`Ver la clasificación: ${nombreDePrueba(p)}`}
             className={ENLACE}
@@ -217,9 +219,12 @@ function FilaPrueba({
 export function PruebasDeEdicion({
   edicion,
   seleccionada,
+  origen,
 }: {
   edicion: EdicionDetalle;
   seleccionada: string;
+  /** Calendario del que se llegó; sus enlaces de clasificación lo conservan. */
+  origen?: string;
 }) {
   if (edicion.pruebasDetalle.length === 0) {
     return (
@@ -238,7 +243,7 @@ export function PruebasDeEdicion({
           <h3 className="pb-2 text-lg">{g.formato === 'EQUIPOS' ? 'Por equipos' : 'Individuales'}</h3>
           <ul className="divide-y rounded-md border bg-card">
             {g.pruebas.map((p) => (
-              <FilaPrueba key={p.id} edicion={edicion} p={p} elegida={p.id === seleccionada} />
+              <FilaPrueba key={p.id} edicion={edicion} p={p} elegida={p.id === seleccionada} origen={origen} />
             ))}
           </ul>
         </section>
@@ -307,7 +312,8 @@ export function ClasificacionDePrueba({
   criterios: CriteriosEdicion;
 }) {
   // La ficha vuelve a esta misma página de esta misma clasificación.
-  const volver = construirUrlEdicion(edicion.id, { prueba: prueba.id, cursor: criterios.cursor });
+  const origen = criterios.origen;
+  const volver = construirUrlEdicion(edicion.id, { prueba: prueba.id, cursor: criterios.cursor, origen });
   return (
     <Bloque id="edicion-clasificacion" titulo={`Clasificación: ${nombreDePrueba(prueba)}`} nivel="pagina">
       {clasificacion.filas.length === 0 ? (
@@ -328,7 +334,7 @@ export function ClasificacionDePrueba({
           <nav aria-label="Páginas de la clasificación" className="flex flex-wrap items-center gap-3">
             {criterios.cursor ? (
               <Button asChild variant="outline">
-                <Link href={construirUrlEdicion(edicion.id, { prueba: prueba.id })} prefetch={false}>
+                <Link href={construirUrlEdicion(edicion.id, { prueba: prueba.id, origen })} prefetch={false}>
                   Volver al principio
                 </Link>
               </Button>
@@ -336,7 +342,7 @@ export function ClasificacionDePrueba({
             {clasificacion.siguiente ? (
               <Button asChild variant="outline">
                 <Link
-                  href={construirUrlEdicion(edicion.id, { prueba: prueba.id, cursor: clasificacion.siguiente })}
+                  href={construirUrlEdicion(edicion.id, { prueba: prueba.id, cursor: clasificacion.siguiente, origen })}
                   prefetch={false}
                   rel="next"
                 >
@@ -377,7 +383,13 @@ export function EdicionCompleta({
   const elegida = edicion.pruebasDetalle.find((p) => p.id === criterios.prueba) ?? null;
   return (
     <div className="flex flex-col gap-6">
-      <nav aria-label="Volver">
+      <nav aria-label="Volver" className="flex flex-wrap items-center gap-x-5">
+        {criterios.origen ? (
+          <Link href={criterios.origen} prefetch={false} className={ENLACE_VOLVER}>
+            <ArrowLeft className="size-4" aria-hidden />
+            Volver al calendario
+          </Link>
+        ) : null}
         <Link href={RUTA_EDICIONES} prefetch={false} className={ENLACE_VOLVER}>
           <ArrowLeft className="size-4" aria-hidden />
           Volver a las ediciones
@@ -403,7 +415,7 @@ export function EdicionCompleta({
       ) : null}
 
       <Bloque id="edicion-pruebas" titulo="Pruebas publicadas" nivel="pagina">
-        <PruebasDeEdicion edicion={edicion} seleccionada={criterios.prueba} />
+        <PruebasDeEdicion edicion={edicion} seleccionada={criterios.prueba} origen={criterios.origen} />
       </Bloque>
 
       {elegida && edicion.clasificacion ? (

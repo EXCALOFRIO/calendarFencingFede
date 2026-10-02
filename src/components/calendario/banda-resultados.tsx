@@ -10,7 +10,7 @@ import {
 } from '@/components/explorar/prueba-resultados';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { VistaResultadosEvento } from '@/lib/sport/explorar/ediciones-pantalla';
-import { construirUrlEdicion, rutaEdicion, urlExplorarDePrueba } from '@/lib/sport/explorar/edicion-url';
+import { construirUrlEdicion, urlExplorarDePrueba } from '@/lib/sport/explorar/edicion-url';
 
 /**
  * Resultados verificados del torneo, leídos aparte de la ficha: abrirla no
@@ -24,7 +24,7 @@ type Lectura = { evento: string; vista: VistaResultadosEvento | 'fallo' };
 const ENLACE =
   'inline-flex min-h-11 items-center text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none md:min-h-0';
 
-export function BandaResultados({ eventoId }: { eventoId: string }) {
+export function BandaResultados({ eventoId, retorno }: { eventoId: string; retorno?: string }) {
   const [lectura, setLectura] = React.useState<Lectura | null>(null);
 
   React.useEffect(() => {
@@ -57,7 +57,7 @@ export function BandaResultados({ eventoId }: { eventoId: string }) {
           <Skeleton className="h-4 w-1/2" />
         </div>
       ) : (
-        <CuerpoResultados vista={vista} />
+        <CuerpoResultados vista={vista} retorno={retorno} />
       )}
     </section>
   );
@@ -71,7 +71,18 @@ function Nota({ children, alerta = false }: { children: React.ReactNode; alerta?
   );
 }
 
-export function CuerpoResultados({ vista }: { vista: VistaResultadosEvento | 'fallo' }) {
+/**
+ * `retorno` es el calendario tal y como se está mirando (periodo, ámbito y
+ * filtros): los enlaces a la edición lo llevan para que Atrás desde la
+ * edición, una persona o los favoritos devuelva a esa misma vista.
+ */
+export function CuerpoResultados({
+  vista,
+  retorno,
+}: {
+  vista: VistaResultadosEvento | 'fallo';
+  retorno?: string;
+}) {
   if (vista === 'fallo' || vista.tipo === 'error') {
     return (
       <Nota alerta>
@@ -101,7 +112,7 @@ export function CuerpoResultados({ vista }: { vista: VistaResultadosEvento | 'fa
     <ul className="flex flex-col gap-4">
       {vista.ediciones.map((edicion) => (
         <li key={edicion.id} className="flex flex-col gap-2">
-          <Link href={rutaEdicion(edicion.id)} className={ENLACE}>
+          <Link href={construirUrlEdicion(edicion.id, { origen: retorno })} className={ENLACE}>
             {edicion.nombre} · temporada {edicion.temporada}
           </Link>
           {edicion.pruebasDetalle.length === 0 ? (
@@ -114,7 +125,7 @@ export function CuerpoResultados({ vista }: { vista: VistaResultadosEvento | 'fa
                   <EstadoResultadosPrueba estado={prueba.resultados.estado} importados={prueba.resultados.importados} />
                   <EnlacesResultados enlaces={prueba.enlaces} />
                   <span className="flex flex-wrap gap-x-4">
-                    <Link href={construirUrlEdicion(edicion.id, { prueba: prueba.id })} className={ENLACE}>
+                    <Link href={construirUrlEdicion(edicion.id, { prueba: prueba.id, origen: retorno })} className={ENLACE}>
                       Ver clasificación
                     </Link>
                     <Link href={urlExplorarDePrueba(edicion.id, prueba)} className={ENLACE}>

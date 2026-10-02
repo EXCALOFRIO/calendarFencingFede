@@ -42,6 +42,22 @@ export function estadoResultados(
   return 'pendiente';
 }
 
+/** Fuente de la FIE en `sport_import_coverage`. */
+export const FUENTE_FIE = 'fie';
+
+/**
+ * Las lecturas de cobertura que hablan de los puestos finales de una prueba.
+ * El resto de fuentes (Skermo, Engarde, PDF) los guardan como `results`; la FIE
+ * los guarda como `ranking` porque su API de resultados es un ranking de la
+ * prueba. Poules y cuadro (`pools`/`tableau`) nunca cierran la clasificación,
+ * ni un `ranking` de otra fuente: el ranking oficial por temporada no es de una prueba.
+ */
+export function lecturasDePuestos<T extends { hecho: string; fuente: string }>(lecturas: readonly T[]): T[] {
+  return lecturas.filter(
+    (l) => l.hecho === 'results' || (l.hecho === 'ranking' && l.fuente === FUENTE_FIE),
+  );
+}
+
 export const TEXTO_ESTADO_RESULTADOS: Record<EstadoResultados, { titulo: string; ayuda: string }> = {
   completo: {
     titulo: 'Clasificación importada',

@@ -1,3 +1,4 @@
+import { sanitizarRetornoCalendario } from '@/lib/calendario/contexto-url';
 import { UUID_RE } from './cursor';
 import { CRITERIOS_VACIOS, RUTA_EXPLORAR, construirUrl, type CriteriosExplorar } from './url';
 
@@ -20,6 +21,11 @@ export type CriteriosEdicion = {
   /** Prueba de la edición cuya clasificación se enseña, o vacío. */
   prueba: string;
   cursor: string;
+  /**
+   * Calendario del que se llegó, ya saneado, con su periodo y filtros. Sólo
+   * está si se llegó desde el calendario; viaja por edición → persona → atrás.
+   */
+  origen?: string;
 };
 
 export const CRITERIOS_EDICION_VACIOS: CriteriosEdicion = { prueba: '', cursor: '' };
@@ -35,17 +41,24 @@ export function edicionDeRuta(segmento: string): string | null {
 
 export function leerCriteriosEdicion(params: Parametros): CriteriosEdicion {
   const prueba = primero(params.prueba);
+  const origen = sanitizarRetornoCalendario(primero(params.origen));
   return {
     prueba: UUID_RE.test(prueba) ? prueba.toLowerCase() : '',
     cursor: primero(params.cursor).slice(0, LONGITUD_MAXIMA_CURSOR),
+    ...(origen ? { origen } : {}),
   };
 }
 
-/** Cambiar de prueba cambia la consulta: el cursor nunca viaja a otra clasificación. */
+/**
+ * Cambiar de prueba cambia la consulta: el cursor nunca viaja a otra
+ * clasificación. El origen del calendario sí viaja siempre: no es parte de la consulta.
+ */
 export function construirUrlEdicion(edicionId: string, c: Partial<CriteriosEdicion> = {}): string {
   const params = new URLSearchParams();
   if (c.prueba) params.set('prueba', c.prueba);
   if (c.cursor) params.set('cursor', c.cursor);
+  const origen = sanitizarRetornoCalendario(c.origen);
+  if (origen) params.set('origen', origen);
   const texto = params.toString();
   return `${rutaEdicion(edicionId)}${texto ? `?${texto}` : ''}`;
 }
@@ -67,6 +80,7 @@ export function sanitizarRetornoEdicion(crudo: string): string {
   const criterios = leerCriteriosEdicion({
     prueba: consulta.get('prueba') ?? undefined,
     cursor: consulta.get('cursor') ?? undefined,
+    origen: consulta.get('origen') ?? undefined,
   });
   return construirUrlEdicion(edicion, criterios);
 }

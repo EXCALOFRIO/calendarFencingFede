@@ -181,6 +181,83 @@ describe('leerEdicionesDeEvento', () => {
   });
 });
 
+describe('cobertura de resultados por fuente', () => {
+  const fila = (hecho: string, fuente: string, estado: string) => ({
+    pruebaId: PRUEBA,
+    hecho,
+    fuente,
+    estado,
+    cursor: null,
+    url: null,
+  });
+
+  async function estadoDe(importados: number, cobertura: ReturnType<typeof fila>[]) {
+    const { ctx, sentencias } = crearContexto({
+      respuestas: [
+        { cuando: /JOIN event ev ON ev\.id = e\.event_id/, filas: [edicion(ED_JO, 'Jeux Olympiques Paris 2024')] },
+        respuestaPruebas({ importados }),
+        { cuando: /FROM sport_import_coverage cov/, filas: cobertura },
+      ],
+    });
+    const r = await leerEdicionesDeEvento(ctx, { eventoId: UUID_A });
+    if (r.estado !== 'ok') throw new Error('se esperaba ok');
+    return { resultados: r.ediciones[0]?.pruebasDetalle[0]?.resultados, sentencias };
+  }
+
+  it('FIE guarda los puestos como «ranking»: una lectura completa de 34 puestos se muestra completa', async () => {
+    const { resultados, sentencias } = await estadoDe(34, [fila('ranking', 'fie', 'completo')]);
+    expect(resultados).toEqual({ estado: 'completo', importados: 34 });
+    const consulta = sentencias.map((s) => s.text).join('\n');
+    expect(consulta).toMatch(/cov\.fact_kind = 'ranking' AND cov\.source = \$\d+/);
+    expect(sentencias.some((s) => s.params.includes('fie'))).toBe(true);
+    expect(consulta).not.toMatch(/'pools'|'tableau'/);
+  });
+
+  it('Skermo y el resto de fuentes siguen guardando «results»', async () => {
+    expect((await estadoDe(12, [fila('results', 'skermo_rfee', 'completo')])).resultados).toEqual({
+      estado: 'completo',
+      importados: 12,
+    });
+  });
+
+  it('el ranking de FIE refleja parcial, error, vacío y pendiente sin disfrazarlos', async () => {
+    expect((await estadoDe(20, [fila('ranking', 'fie', 'parcial')])).resultados?.estado).toBe('parcial');
+    expect((await estadoDe(0, [fila('ranking', 'fie', 'error')])).resultados?.estado).toBe('error');
+    expect((await estadoDe(0, [fila('ranking', 'fie', 'sin_resultados')])).resultados?.estado).toBe('sin_resultados');
+    expect((await estadoDe(0, [fila('ranking', 'fie', 'conflicto')])).resultados?.estado).toBe('conflicto');
+    expect((await estadoDe(0, [])).resultados?.estado).toBe('pendiente');
+  });
+
+  it('poules, cuadro y rankings de otra fuente no dan por cerrada la clasificación final', async () => {
+    const { resultados } = await estadoDe(34, [
+      fila('pools', 'fie', 'completo'),
+      fila('tableau', 'fie', 'completo'),
+      fila('ranking', 'rfee', 'completo'),
+    ]);
+    expect(resultados).toEqual({ estado: 'parcial', importados: 34 });
+  });
+
+  it('el estado llega a la pantalla: la prueba FIE completa dice «Clasificación importada»', async () => {
+    const { ctx } = crearContexto({
+      respuestas: [
+        { cuando: /JOIN event ev ON ev\.id = e\.event_id/, filas: [edicion(ED_JO, 'Jeux Olympiques Paris 2024')] },
+        respuestaPruebas({ importados: 34 }),
+        { cuando: /FROM sport_import_coverage cov/, filas: [fila('ranking', 'fie', 'completo')] },
+      ],
+    });
+    const r = await leerEdicionesDeEvento(ctx, { eventoId: UUID_A });
+    if (r.estado !== 'ok' || !r.ediciones[0]) throw new Error('se esperaba ok');
+    const marcado = html(
+      React.createElement(PruebasDeEdicion, {
+        edicion: { ...r.ediciones[0], pruebaDesconocida: false, clasificacion: null },
+        seleccionada: '',
+      }),
+    );
+    expect(marcado).toContain('Clasificación importada');
+    expect(marcado).not.toContain('Clasificación parcial');
+  });
+});
+
 describe('leerEdicion', () => {
   it('guarda antes de validar y valida antes de consultar', async () => {
     const sinSesion = crearContexto({ perfil: null });

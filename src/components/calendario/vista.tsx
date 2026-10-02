@@ -82,6 +82,12 @@ import { FichaEvento } from './ficha-evento';
 import { LoQueViene, diasHasta, plazoDelEvento } from './lo-que-viene';
 import { ColumnaMes, FeedMovil } from './timeline';
 import { agruparEnBloques, rangoRealDeEvento } from '@/lib/calendario/bloques';
+import {
+  construirUrlCalendario,
+  type Ambito,
+  type ContextoCalendarioLeido,
+  type Vista,
+} from '@/lib/calendario/contexto-url';
 import { hoyMadrid } from '@/lib/callups/fechas';
 
 export type TiradorOpcion = {
@@ -91,8 +97,6 @@ export type TiradorOpcion = {
   weapons: string[];
   eligibleCategories: string[];
 };
-
-type Vista = 'mes' | 'trimestre';
 
 /**
  * Cuántas competiciones se enseñan en «lo próximo, fuera de este mes».
@@ -133,8 +137,6 @@ const GENEROS: { v: 'M' | 'F'; largo: string }[] = [
  * lo tuyo en un sitio», que es de lo que se quejaba el usuario al principio
  * —mirar en tres webs distintas—. Arrancar ya partido sería volver a eso.
  */
-type Ambito = 'TODO' | 'NACIONAL' | 'INTERNACIONAL';
-
 const AMBITOS: { v: Ambito; largo: string }[] = [
   { v: 'TODO', largo: 'Todo' },
   { v: 'NACIONAL', largo: 'Nacional' },
@@ -212,7 +214,13 @@ export function VistaCalendario({
   actualizado,
   solicitarInscripcion,
   cargarInscritos,
+  inicial,
 }: {
+  /**
+   * Periodo y filtros con los que se reabre el calendario al volver de una
+   * edición o una persona (ver `contexto-url.ts`). Sin él, se abre con lo suyo.
+   */
+  inicial?: ContextoCalendarioLeido;
   eventos: EventView[];
   /**
    * Quién está mirando. Solo el papel y las armas: es lo que decide con qué
@@ -242,7 +250,10 @@ export function VistaCalendario({
    * inscribir mandaba SIEMPRE al mayor.
    */
   const [tiradorId, setTiradorId] = React.useState<string | null>(
-    tiradores[0]?.id ?? null,
+    () =>
+      tiradores.find((t) => t.id === inicial?.tiradorId)?.id ??
+      tiradores[0]?.id ??
+      null,
   );
   const tirador = tiradores.find((t) => t.id === tiradorId) ?? tiradores[0] ?? null;
 
@@ -281,8 +292,14 @@ export function VistaCalendario({
     esgrima se planifica por trimestres —hay que pedir vuelos y pedir días—, y
     un mes solo deja fuera justo lo que se está decidiendo.
   */
-  const [vista, setVista] = React.useState<Vista>('trimestre');
-  const [ancla, setAncla] = React.useState(() => new Date());
+  const [vista, setVista] = React.useState<Vista>(
+    inicial?.vista ?? 'trimestre',
+  );
+  const [ancla, setAncla] = React.useState(() => {
+    if (!inicial?.mes) return new Date();
+    const [anio, mes] = inicial.mes.split('-').map(Number);
+    return new Date(anio, mes - 1, 1);
+  });
   /*
     EL ÁMBITO: NACIONAL O INTERNACIONAL.
 
@@ -300,11 +317,25 @@ export function VistaCalendario({
     Si se separasen las dos reglas, un día dirían cosas distintas y la
     tarjeta tendría un color y el filtro otro.
   */
-  const [ambito, setAmbito] = React.useState<Ambito>('TODO');
-  const [armas, setArmas] = React.useState<Weapon[]>(propio.armas);
-  const [generos, setGeneros] = React.useState<('M' | 'F')[]>(propio.generos);
-  const [categorias, setCategorias] = React.useState<string[]>(propio.categorias);
-  const [busqueda, setBusqueda] = React.useState('');
+  const [ambito, setAmbito] = React.useState<Ambito>(inicial?.ambito ?? 'TODO');
+  /*
+    Lo recordado manda sobre lo de arranque, pero sólo si aún significa algo:
+    una selección vacía o categorías que ya no existen en el calendario dejarían
+    la pantalla sin torneos, así que en ese caso se arranca con lo suyo.
+  */
+  const [armas, setArmas] = React.useState<Weapon[]>(
+    inicial?.armas?.length ? inicial.armas : propio.armas,
+  );
+  const [generos, setGeneros] = React.useState<('M' | 'F')[]>(
+    inicial?.generos?.length ? inicial.generos : propio.generos,
+  );
+  const [categorias, setCategorias] = React.useState<string[]>(() => {
+    const recordadas = (inicial?.categorias ?? []).filter((c) =>
+      categoriasDisponibles.includes(c),
+    );
+    return recordadas.length > 0 ? recordadas : propio.categorias;
+  });
+  const [busqueda, setBusqueda] = React.useState(inicial?.busqueda ?? '');
   const [buscando, setBuscando] = React.useState(false);
   /**
    * Hacia dónde se movió la última vez.
@@ -455,9 +486,41 @@ export function VistaCalendario({
   // El salto de mes va en un efecto y no en el `onSelect` para que también
   // funcione al cambiar de coincidencia con las flechas.
   const encontrado = coincidencias[cual] ?? null;
+  /*
+    Al volver con una búsqueda recordada, el periodo recordado manda: saltar al
+    mes de la primera coincidencia deshacería justo lo que se vuelve a ver.
+    Sólo se omite ese primer salto, y se libera en cuanto hay uno propio.
+  */
+  const [sinSaltoDe] = React.useState<string | null>(() =>
+    inicial?.mes && inicial.busqueda ? (encontrado?.id ?? null) : null,
+  );
+  const yaSalto = React.useRef(false);
   React.useEffect(() => {
-    if (encontrado) irA(encontrado.startDate);
-  }, [encontrado, irA]);
+    if (!encontrado) return;
+    if (!yaSalto.current && encontrado.id === sinSaltoDe) return;
+    yaSalto.current = true;
+    irA(encontrado.startDate);
+  }, [encontrado, irA, sinSaltoDe]);
+
+  /**
+   * El calendario tal y como se está mirando, como dirección acotada: es lo que
+   * llevan los enlaces a una edición para que volver desde ella, una persona o
+   * los favoritos reabra este mismo periodo y estos filtros.
+   */
+  const retornoCalendario = React.useMemo(
+    () =>
+      construirUrlCalendario({
+        vista,
+        mes: `${ancla.getFullYear()}-${String(ancla.getMonth() + 1).padStart(2, '0')}`,
+        ambito,
+        armas,
+        generos,
+        categorias,
+        busqueda,
+        tiradorId: tirador?.id,
+      }),
+    [vista, ancla, ambito, armas, generos, categorias, busqueda, tirador?.id],
+  );
 
   /** Se cuentan pruebas, no torneos: es lo que de verdad se puede tirar. */
   const numPruebas = React.useMemo(
@@ -1106,6 +1169,7 @@ export function VistaCalendario({
               inscripciones={inscripciones}
               inscritos={inscritos}
               falloInscritos={falloInscritos}
+              retornoCalendario={retornoCalendario}
               onSolicitar={async (competitionId) => {
                 if (!tirador) return;
                 const r = await solicitarInscripcion(competitionId, tirador.id);

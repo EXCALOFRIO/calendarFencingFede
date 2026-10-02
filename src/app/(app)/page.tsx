@@ -3,6 +3,7 @@ import { db } from '@/db';
 import { entry } from '@/db/schema';
 import { VistaCalendario, type TiradorOpcion } from '@/components/calendario/vista';
 import { getManagedAthletes, requireProfile } from '@/lib/auth/session';
+import { leerContextoCalendario } from '@/lib/calendario/contexto-url';
 import { deriveCategoriesFromBirthDate } from '@/lib/categories';
 import { requestEntry } from '@/lib/entries/actions';
 import { inscritosDelEvento } from './inscritos';
@@ -21,8 +22,14 @@ export const metadata = { title: 'Calendario' };
  * o de filtro es instantáneo. En un pabellón con mala cobertura, esperar a
  * la red en cada toque es la diferencia entre usarlo y no usarlo.
  */
-export default async function CalendarioPage() {
+export default async function CalendarioPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+} = {}) {
   const perfil = await requireProfile();
+  // Periodo y filtros con los que se vuelve desde una edición o una persona.
+  const inicial = leerContextoCalendario((await searchParams) ?? {});
 
   const [eventos, atletas, temporada, frescura] = await Promise.all([
     /**
@@ -95,6 +102,7 @@ export default async function CalendarioPage() {
 
   return (
     <VistaCalendario
+      inicial={inicial}
       eventos={eventos}
       /**
        * Papel y armas, que es lo que decide con qué filtros se abre la

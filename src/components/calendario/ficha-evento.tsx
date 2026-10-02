@@ -301,9 +301,12 @@ export function FichaEvento({
   tirador,
   inscritos,
   falloInscritos = false,
+  retornoCalendario,
 }: {
   evento: EventView;
   tirador: TiradorOpcion | null;
+  /** Dirección del calendario con su periodo y filtros, para volver a él desde los resultados. */
+  retornoCalendario?: string;
   /**
    * `inscripciones` y `onSolicitar` siguen en el tipo porque los pasa
    * `vista.tsx`, que es de otro agente: la ficha ya no tramita inscripciones
@@ -455,7 +458,7 @@ export function FichaEvento({
 
       <BandaConvocatoria evento={evento} prueba={prueba} />
 
-      <BandaResultados eventoId={evento.id} />
+      <BandaResultados eventoId={evento.id} retorno={retornoCalendario} />
     </div>
   );
 }
