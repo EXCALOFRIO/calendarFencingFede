@@ -133,6 +133,16 @@ export function sqlCobertura(ids: readonly string[]) {
   ] as const;
 }
 
+/**
+ * Con sólo el año de nacimiento no se puede demostrar la mayoría de edad: quien
+ * cumple 18 este mismo año podría seguir siendo menor. Se trata como menor a
+ * todo el que cumple 18 o menos este año.
+ */
+export function posibleMenor(anioNacimiento: number | null, hoy: string): boolean {
+  if (anioNacimiento === null) return false;
+  return Number(hoy.slice(0, 4)) - anioNacimiento <= 18;
+}
+
 export type ResultadoFicha =
   | { estado: 'ok'; ficha: FichaDeportiva }
   | { estado: 'entrada_invalida' }
@@ -209,6 +219,9 @@ export async function leerFicha(ctx: ContextoExplorador, entrada: unknown): Prom
     historiaCompleta: false,
   };
 
+  const esPropia = propietario.estado === 'confirmada' && propietario.personaId === canonicaId;
+  const esMenor = posibleMenor(cabecera.anioNacimiento, ctx.hoy());
+
   return {
     estado: 'ok',
     ficha: {
@@ -219,8 +232,10 @@ export async function leerFicha(ctx: ContextoExplorador, entrada: unknown): Prom
         .filter((n) => n !== cabecera.nombre),
       pais: cabecera.pais,
       genero: cabecera.genero,
-      anioNacimiento: cabecera.anioNacimiento,
-      esPropia: propietario.estado === 'confirmada' && propietario.personaId === canonicaId,
+      // De un menor ajeno no sale ni el año: sólo hechos deportivos publicados.
+      anioNacimiento: esMenor && !esPropia ? null : cabecera.anioNacimiento,
+      esMenor,
+      esPropia,
       estadisticas: {
         conjunto: 'clasificaciones_individuales',
         porTipo: aEstadisticas(filas<FilaEstadistica>(estadisticas)),

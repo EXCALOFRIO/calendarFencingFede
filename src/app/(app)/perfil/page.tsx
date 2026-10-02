@@ -2,13 +2,16 @@ import { LogOut } from 'lucide-react';
 import { salir } from '../salir';
 import { headers } from 'next/headers';
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { Seccion } from '@/components/estado/piezas';
 import { Calendarios, type FeedVista } from '@/components/perfil/calendarios';
+import { HistorialPropio, HistorialPropioCargando } from '@/components/perfil/historial-propio';
 import { Dato, FichaTirador } from '@/components/perfil/tirador';
 import { Button } from '@/components/ui/button';
 import { getManagedAthletes, requireProfile } from '@/lib/auth/session';
 import { deriveCategoriesFromBirthDate } from '@/lib/categories';
 import { FEED_META, FEED_TYPES, feedUrl, webcalUrl } from '@/lib/ical';
+import { leerCriteriosFicha } from '@/lib/sport/explorar/ficha-url';
 import { getCurrentSeason } from '@/lib/queries/calendar';
 import { revocarCalendario } from './acciones';
 
@@ -53,14 +56,20 @@ async function origen(): Promise<string> {
   return `${protocolo}://${host}`;
 }
 
-export default async function Pagina() {
+export default async function Pagina({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const perfil = await requireProfile();
 
-  const [atletas, temporada, base] = await Promise.all([
+  const [atletas, temporada, base, consulta] = await Promise.all([
     getManagedAthletes(perfil.profileId),
     getCurrentSeason(),
     origen(),
+    searchParams,
   ]);
+  const criteriosFicha = leerCriteriosFicha(consulta);
 
   const hoy = new Date().toISOString().slice(0, 10);
 
@@ -143,6 +152,15 @@ export default async function Pagina() {
           </div>
         )}
       </Seccion>
+
+      {/*
+        Historial por defecto, no un enlace. Va en su propio límite de carga
+        para que la cuenta y la ficha se vean sin esperar a las consultas
+        deportivas; si fallan, el error se queda dentro de esta sección.
+      */}
+      <Suspense key={JSON.stringify(criteriosFicha)} fallback={<HistorialPropioCargando />}>
+        <HistorialPropio criterios={criteriosFicha} />
+      </Suspense>
 
       <Seccion titulo="El calendario en tu móvil">
         <div className="pt-3">

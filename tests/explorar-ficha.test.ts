@@ -35,7 +35,7 @@ const atleta = (id = 'ath-1') => ({
 
 const cabecera = (id: string, nombre = 'Lucia Garcia') => ({
   cuando: /display_name AS nombre/,
-  filas: [{ id, nombre, pais: 'ESP', genero: 'F', anioNacimiento: 2008 }],
+  filas: [{ id, nombre, pais: 'ESP', genero: 'F', anioNacimiento: 1990 }],
 });
 
 const resumenVacio = [
@@ -226,7 +226,7 @@ describe('ficha ajena: sólo hechos deportivos', () => {
     const r = await leerFicha(ctx, { personaId: UUID_A });
     if (r.estado !== 'ok') throw new Error(r.estado);
 
-    expect(r.ficha).toMatchObject({ esPropia: false, alias: ['GARCIA Lucia'], anioNacimiento: 2008 });
+    expect(r.ficha).toMatchObject({ esPropia: false, alias: ['GARCIA Lucia'], anioNacimiento: 1990 });
     expect(r.ficha.cobertura).toEqual({
       resultadosImportados: 4,
       pruebasConResultado: 4,

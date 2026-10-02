@@ -134,7 +134,10 @@ export type FichaDeportiva = {
   alias: string[];
   pais: string | null;
   genero: Genero | null;
+  /** `null` también cuando es una persona posiblemente menor que no es la propia. */
   anioNacimiento: number | null;
+  /** Posible menor (sólo se conoce el año de nacimiento): la pantalla minimiza lo que enseña. */
+  esMenor: boolean;
   esPropia: boolean;
   estadisticas: { conjunto: 'clasificaciones_individuales'; porTipo: EstadisticaPorTipo[] };
   cobertura: CoberturaFicha;
