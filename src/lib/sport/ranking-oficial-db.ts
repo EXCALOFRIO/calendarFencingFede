@@ -88,6 +88,83 @@ export function sqlRankingOficial(
     FROM elegida e`;
 }
 
+export type EntradaPersonaRankingOficial = {
+  publicacion: PublicacionRankingResumen & {
+    publishedTotal: number | null;
+    sourceUrl: string | null;
+  };
+  sourceRef: string;
+  position: number | null;
+  points: string | null;
+};
+
+/**
+ * Puesto de unas personas en cada lista oficial de UNA temporada y modalidad.
+ *
+ * Para cada `(fuente, arma, género, categoría de la fuente)` se toma la misma
+ * publicación que `sqlRankingOficial` (la más reciente de esa temporada exacta)
+ * y sólo después se busca a la persona en ella: si no figura en la última
+ * publicación no se le atribuye la de una anterior. Es una única sentencia, así
+ * que cabecera y fila salen del mismo snapshot. Temporada y modalidad son
+ * obligatorias: no hay «la última» ni mezcla de individual y equipos.
+ */
+export function sqlRankingOficialDePersonas(
+  personIds: readonly string[],
+  season: string,
+  format: 'INDIVIDUAL' | 'EQUIPOS',
+) {
+  const ids = sql.join(
+    personIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  return sql`
+    WITH elegidas AS (
+      SELECT DISTINCT ON (p.source, p.weapon, p.gender, p.category_raw, p.format)
+             p.id, p.source, p.season, p.weapon::text AS weapon, p.gender::text AS gender,
+             p.category::text AS category, p.category_raw, p.format::text AS format,
+             p.published_on::text AS published_on, p.published_total, p.source_url
+      FROM sport_ranking_publication p
+      WHERE p.season = ${season} AND p.format::text = ${format}
+      ORDER BY p.source, p.weapon, p.gender, p.category_raw, p.format,
+               p.published_on DESC, p.fetched_at DESC, p.id DESC
+    )
+    SELECT g.id, g.source, g.season, g.weapon, g.gender, g.category,
+           g.category_raw AS "categoryRaw", g.format, g.published_on AS "publishedOn",
+           g.published_total AS "publishedTotal", g.source_url AS "sourceUrl",
+           e.source_ref AS "sourceRef", e.position, e.points::text AS points
+    FROM elegidas g
+    JOIN sport_ranking_entry e ON e.publication_id = g.id
+    WHERE e.person_id IN (${ids})
+    ORDER BY g.weapon, g.gender, g.category_raw, g.source, e.source_ref`;
+}
+
+export async function leerRankingOficialDePersonas(
+  db: Pick<Db, 'execute'>,
+  personIds: readonly string[],
+  season: string,
+  format: 'INDIVIDUAL' | 'EQUIPOS',
+): Promise<EntradaPersonaRankingOficial[]> {
+  if (personIds.length === 0) return [];
+  const resultado = await db.execute(sqlRankingOficialDePersonas(personIds, season, format));
+  const rows = (Array.isArray(resultado)
+    ? resultado
+    : (resultado as { rows?: unknown }).rows) as
+    | (PublicacionRankingResumen & {
+        publishedTotal: number | null;
+        sourceUrl: string | null;
+        sourceRef: string;
+        position: number | null;
+        points: string | null;
+      })[]
+    | undefined;
+  return (rows ?? []).map(({ sourceRef, position, points, ...publicacion }) => ({
+    publicacion,
+    sourceRef,
+    position: position === null ? null : Number(position),
+    points,
+  }));
+}
+
 /**
  * Lista oficial de una temporada concreta, paginada. Sólo lectura sobre las
  * tablas `sport_ranking_*`; no toca el ranking interno.
