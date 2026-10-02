@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { EnlaceEdiciones, EnlaceVolverAEdicion } from '@/components/explorar/ediciones';
 import { EnlaceFavoritos } from '@/components/explorar/favoritos';
 import { FormularioFiltros } from '@/components/explorar/formulario-filtros';
 import {
@@ -8,6 +9,7 @@ import {
   ListaDeportistas,
 } from '@/components/explorar/resultados';
 import { getSessionProfile } from '@/lib/auth/session';
+import { edicionDeRuta } from '@/lib/sport/explorar/edicion-url';
 import { cargarExplorar } from '@/lib/sport/explorar/pantalla';
 import { contextoReal } from '@/lib/sport/explorar/real';
 import { construirUrl, leerCriterios, opcionesTemporada } from '@/lib/sport/explorar/url';
@@ -41,6 +43,7 @@ export default async function Pagina({
   if (vista.tipo === 'sin_sesion') redirect('/entrar');
 
   const atajoEspana = perfil.role === 'coach' || perfil.role === 'admin';
+  const edicionAcotada = edicionDeRuta(criterios.edicionId);
   const hoy = new Date().toISOString().slice(0, 10);
 
   return (
@@ -50,7 +53,10 @@ export default async function Pagina({
         <p className="text-sm text-muted-foreground">
           Deportistas de todas las federaciones, con o sin cuenta, activos o retirados.
         </p>
-        <EnlaceFavoritos className="ml-auto" />
+        <span className="ml-auto flex flex-wrap items-center gap-x-4">
+          <EnlaceEdiciones />
+          <EnlaceFavoritos />
+        </span>
       </header>
 
       <div className="flex flex-col gap-3">
@@ -61,6 +67,7 @@ export default async function Pagina({
           atajoEspana={atajoEspana}
         />
         <ChipsActivos criterios={criterios} />
+        {edicionAcotada ? <EnlaceVolverAEdicion edicionId={edicionAcotada} /> : null}
       </div>
 
       {vista.tipo === 'ok' ? (

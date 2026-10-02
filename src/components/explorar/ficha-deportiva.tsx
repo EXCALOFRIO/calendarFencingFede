@@ -4,13 +4,14 @@ import { BanderaPais } from '@/components/bandera';
 import { Button } from '@/components/ui/button';
 import { rutaCaraACara } from '@/lib/sport/explorar/cara-a-cara-url';
 import {
-  ESTADO_COBERTURA,
+  estadoLectura,
   etiquetaHecho,
   etiquetaTipo,
   explicacionSinVinculo,
   fuenteRanking,
   fuenteResultado,
 } from '@/lib/sport/explorar/etiquetas';
+import { RUTA_EDICIONES } from '@/lib/sport/explorar/edicion-url';
 import { RUTA_FAVORITOS } from '@/lib/sport/explorar/favoritos-url';
 import { Bloque, Celda, Dato, EnlaceFuente, Nota, fechaLegible, type Nivel } from './piezas';
 import {
@@ -466,7 +467,7 @@ export function CoberturaFichaVista({ cobertura, nivel }: { cobertura: Cobertura
       {cobertura.lecturas.length > 0 ? (
         <ul className="divide-y rounded-md border bg-card" aria-label="Estado de lectura por tipo de dato">
           {cobertura.lecturas.map((l) => {
-            const estado = ESTADO_COBERTURA[l.estado];
+            const estado = estadoLectura(l.hecho, l.estado);
             return (
               <li
                 key={`${l.hecho}-${l.estado}`}
@@ -559,6 +560,8 @@ export function FichaCompleta({
 export function VolverAExplorar({ volver }: { volver: string }) {
   const destino = sanitizarRetorno(volver) || RUTA_EXPLORAR;
   const aFavoritos = destino === RUTA_FAVORITOS || destino.startsWith(`${RUTA_FAVORITOS}?`);
+  const aEdicion = destino.startsWith(`${RUTA_EDICIONES}/`);
+  const aSeries = destino === RUTA_EDICIONES;
   return (
     <nav aria-label="Volver">
       <Link
@@ -567,7 +570,13 @@ export function VolverAExplorar({ volver }: { volver: string }) {
         className="inline-flex min-h-11 items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
       >
         <ArrowLeft className="size-4" aria-hidden />
-        {aFavoritos ? 'Volver a Favoritos' : 'Volver a Explorar'}
+        {aFavoritos
+          ? 'Volver a Favoritos'
+          : aEdicion
+            ? 'Volver a la edición'
+            : aSeries
+              ? 'Volver a las ediciones'
+              : 'Volver a Explorar'}
       </Link>
     </nav>
   );

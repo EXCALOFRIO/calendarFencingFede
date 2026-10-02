@@ -1,4 +1,5 @@
 import { UUID_RE } from './cursor';
+import { RUTA_EDICIONES, sanitizarRetornoEdicion } from './edicion-url';
 import { LONGITUD_MAXIMA_CURSOR, RUTA_FAVORITOS, construirUrlFavoritos } from './favoritos-url';
 import { CLAVES_CRITERIO, RUTA_EXPLORAR, construirUrl, leerCriterios, rutaFicha } from './url';
 
@@ -29,9 +30,10 @@ function primero(valor: string | string[] | undefined): string {
 const LONGITUD_MAXIMA_RETORNO = 1500;
 
 /**
- * Búsqueda de Explorar (o página de la lista de favoritos) a la que volver
- * desde una ficha. El valor viaja en la URL, así que no se fía: sólo vale
- * `/explorar` con su consulta o `/explorar/favoritos` con su cursor, y se
+ * Búsqueda de Explorar, página de favoritos o página de edición a la que
+ * volver desde una ficha. El valor viaja en la URL, así que no se fía: sólo
+ * vale `/explorar` con su consulta, `/explorar/favoritos` con su cursor o
+ * `/explorar/ediciones[/id]` con su prueba y cursor, y se
  * reconstruye con las claves que cada pantalla conoce. Un esquema, un host,
  * otra ruta, un fragmento o una barra invertida dan vacío, y vacío significa
  * volver a `/explorar` a secas.
@@ -43,6 +45,9 @@ export function sanitizarRetorno(valor: string | undefined): string {
   if (crudo === RUTA_FAVORITOS || crudo.startsWith(`${RUTA_FAVORITOS}?`)) {
     const cursor = new URLSearchParams(crudo.slice(RUTA_FAVORITOS.length + 1)).get('cursor') ?? '';
     return cursor.length > LONGITUD_MAXIMA_CURSOR ? '' : construirUrlFavoritos(cursor.trim());
+  }
+  if (crudo === RUTA_EDICIONES || crudo.startsWith(`${RUTA_EDICIONES}/`) || crudo.startsWith(`${RUTA_EDICIONES}?`)) {
+    return sanitizarRetornoEdicion(crudo);
   }
   if (crudo !== RUTA_EXPLORAR && !crudo.startsWith(`${RUTA_EXPLORAR}?`)) return '';
 

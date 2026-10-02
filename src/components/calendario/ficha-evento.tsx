@@ -40,6 +40,7 @@ import type {
   EventView,
 } from '@/lib/queries/calendar';
 import { mapsLinks, timezoneInfo } from '@/lib/travel';
+import { BandaResultados } from './banda-resultados';
 import { BarraPlazos } from './barra-plazos';
 import { AccesoAlPabellon, HorariosTorneo } from './horarios-torneo';
 import {
@@ -453,6 +454,8 @@ export function FichaEvento({
       ) : null}
 
       <BandaConvocatoria evento={evento} prueba={prueba} />
+
+      <BandaResultados eventoId={evento.id} />
     </div>
   );
 }

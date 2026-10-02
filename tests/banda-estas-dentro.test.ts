@@ -12,6 +12,7 @@ import type { QuienVa } from '@/app/(app)/inscritos';
 import type { CompetitionView, EventView } from '@/lib/queries/calendar';
 
 vi.mock('@/app/(app)/detalle-evento', () => ({ detalleDelEvento: vi.fn() }));
+vi.mock('@/app/(app)/explorar/resultados-evento', () => ({ resultadosDelEvento: vi.fn() }));
 
 const { BandaEstasDentro } = await import(
   '@/components/calendario/ficha-evento'

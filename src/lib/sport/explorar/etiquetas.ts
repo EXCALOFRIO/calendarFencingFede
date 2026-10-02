@@ -68,6 +68,33 @@ export const ESTADO_COBERTURA: Record<EstadoCoberturaDto, { texto: string; ayuda
   conflicto: { texto: 'Datos en conflicto', ayuda: 'Las fuentes se contradicen y está pendiente de revisión.' },
 };
 
+/**
+ * Texto de una lectura de cobertura. Para los enlaces, «completo» sólo quiere
+ * decir que el enlace está registrado (Fencing Time Live exige cuenta y nunca
+ * trae resultados importados): no se presenta como «Leído completo».
+ */
+export function estadoLectura(
+  hecho: string,
+  estado: EstadoCoberturaDto,
+): { texto: string; ayuda: string } {
+  if (hecho === 'link') {
+    if (estado === 'completo') {
+      return {
+        texto: 'Enlace registrado',
+        ayuda:
+          'Hay un enlace específico a otra fuente. No significa que sus resultados estén importados.',
+      };
+    }
+    if (estado === 'pendiente') {
+      return {
+        texto: 'Sin enlace publicado',
+        ayuda: 'No se ha encontrado un enlace específico: no es cero resultados ni un error.',
+      };
+    }
+  }
+  return ESTADO_COBERTURA[estado];
+}
+
 const MOTIVO_SIN_FICHA = {
   sin_ficha: {
     titulo: 'Tu cuenta no tiene una ficha de tirador',

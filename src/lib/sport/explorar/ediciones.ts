@@ -1,0 +1,386 @@
+import { sql } from 'drizzle-orm';
+import { z } from 'zod';
+import { clasificarSerie, SERIES_COMPLEMENTARIAS, type SerieComplementaria } from '@/lib/ingest/series-complementarias';
+import { exigirPerfil, filas, type ContextoExplorador } from './contexto';
+import { codificarCursor, decodificarCursor, UUID_RE } from './cursor';
+import {
+  enlacesDePrueba,
+  estadoResultados,
+  type Clasificacion,
+  type EdicionDetalle,
+  type EdicionResumen,
+  type FilaClasificacion,
+  type FilaEnlace,
+  type PruebaDeEdicion,
+} from './edicion-modelo';
+import { LIMITE_MAXIMO } from './entrada';
+import { listaUuid, plegarSql } from './filtros-sql';
+import type { Arma, Formato, Genero } from './tipos';
+
+/**
+ * Lecturas de ediciones y de la clasificación de sus pruebas. Sólo leen Neon:
+ * ni llaman a una fuente externa ni dependen de que la edición esté vinculada
+ * al calendario. Cada lectura exige sesión antes de validar o consultar nada.
+ */
+
+const LIMITE_EDICIONES_SERIE = 200;
+const LIMITE_PRUEBAS = 200;
+const LIMITE_EDICIONES_EVENTO = 6;
+const CLASE_CLASIFICACION = 'clasificacion-edicion';
+
+const uuid = z.string().regex(UUID_RE);
+
+export const esquemaEdicion = z
+  .object({
+    edicionId: uuid,
+    prueba: uuid.optional(),
+    cursor: z.string().min(1).max(600).optional(),
+    limite: z.number().int().min(1).max(LIMITE_MAXIMO).optional(),
+  })
+  .strict();
+
+const esquemaEvento = z.object({ eventoId: uuid }).strict();
+
+type FilaEdicion = {
+  id: string;
+  nombre: string;
+  temporada: string;
+  fuente: string;
+  ciudad: string | null;
+  pais: string | null;
+  inicio: string | null;
+  fin: string | null;
+  pruebas: number;
+  armas: string | null;
+  formatos: string | null;
+};
+
+function lista<T extends string>(texto: string | null): T[] {
+  return texto ? (texto.split(',').filter(Boolean) as T[]) : [];
+}
+
+export function aResumen(f: FilaEdicion): EdicionResumen {
+  return {
+    id: f.id,
+    nombre: f.nombre,
+    temporada: f.temporada,
+    fuente: f.fuente,
+    ciudad: f.ciudad,
+    pais: f.pais,
+    inicio: f.inicio,
+    fin: f.fin,
+    pruebas: Number(f.pruebas),
+    armas: lista<Arma>(f.armas),
+    formatos: lista<Formato>(f.formatos),
+    serie: clasificarSerie({ nombre: f.nombre }),
+  };
+}
+
+/** Columnas de una edición con el resumen de sus pruebas (alias `e`). */
+const COLUMNAS_EDICION = sql`
+  e.id::text AS id, e.name AS nombre, e.season AS temporada, e.source AS fuente,
+  e.city AS ciudad, e.country_code AS pais, e.start_date::text AS inicio, e.end_date::text AS fin,
+  (SELECT count(*)::int FROM sport_competition c WHERE c.edition_id = e.id) AS pruebas,
+  (SELECT string_agg(DISTINCT c.weapon::text, ',') FROM sport_competition c WHERE c.edition_id = e.id) AS armas,
+  (SELECT string_agg(DISTINCT c.format::text, ',') FROM sport_competition c WHERE c.edition_id = e.id) AS formatos`;
+
+export type ResultadoSeries =
+  | { estado: 'ok'; series: { serie: SerieComplementaria; ediciones: EdicionResumen[] }[] }
+  | { estado: 'no_disponible' };
+
+/**
+ * Ediciones de las tres series complementarias que existen en la base. La
+ * serie se decide por el nombre publicado de la edición (como el backfill) y
+ * lo no reconocido se omite: nunca se completa una serie con ediciones o pruebas
+ * que la fuente no publicó. Una serie sin ediciones se devuelve vacía.
+ */
+export async function leerSeries(ctx: ContextoExplorador): Promise<ResultadoSeries> {
+  await exigirPerfil(ctx);
+  if (!(await ctx.esquema()).identidad) return { estado: 'no_disponible' };
+
+  const rows = filas<FilaEdicion>(
+    await ctx.db.execute(sql`
+      SELECT ${COLUMNAS_EDICION}
+      FROM sport_edition e
+      WHERE ${plegarSql(sql`e.name`)} ~ 'olymp|olimp|mediterr'
+      ORDER BY e.start_date DESC NULLS LAST, e.id DESC
+      LIMIT ${LIMITE_EDICIONES_SERIE}`),
+  );
+  const ediciones = rows.map(aResumen);
+  return {
+    estado: 'ok',
+    series: SERIES_COMPLEMENTARIAS.map((serie) => ({
+      serie,
+      ediciones: ediciones.filter((e) => e.serie === serie),
+    })),
+  };
+}
+
+type FilaPrueba = {
+  id: string;
+  edicionId: string;
+  arma: Arma;
+  genero: Genero;
+  categoria: string;
+  categoriaRaw: string | null;
+  formato: Formato;
+  fecha: string | null;
+  fuente: string;
+  pruebaCalendarioId: string | null;
+  importados: number;
+};
+
+type FilaLectura = {
+  pruebaId: string;
+  hecho: string;
+  fuente: string;
+  estado: string;
+  cursor: string | null;
+  url: string | null;
+};
+
+export function aPrueba(
+  f: FilaPrueba,
+  lecturas: readonly FilaLectura[],
+): PruebaDeEdicion {
+  const importados = Number(f.importados);
+  return {
+    id: f.id,
+    arma: f.arma,
+    genero: f.genero,
+    categoria: { codigo: f.categoria, raw: f.categoriaRaw },
+    formato: f.formato,
+    fecha: f.fecha,
+    fuente: f.fuente,
+    pruebaCalendarioId: f.pruebaCalendarioId,
+    resultados: {
+      estado: estadoResultados(
+        importados,
+        lecturas.filter((l) => l.hecho === 'results'),
+      ),
+      importados,
+    },
+    enlaces: enlacesDePrueba(
+      lecturas
+        .filter((l) => l.hecho === 'link')
+        .map<FilaEnlace>((l) => ({ fuente: l.fuente, cursor: l.cursor, url: l.url })),
+    ),
+  };
+}
+
+/** Pruebas de varias ediciones con su estado de resultados y sus enlaces comprobados. */
+async function leerPruebas(
+  ctx: ContextoExplorador,
+  edicionIds: readonly string[],
+): Promise<Map<string, PruebaDeEdicion[]>> {
+  const porEdicion = new Map<string, PruebaDeEdicion[]>();
+  if (edicionIds.length === 0) return porEdicion;
+  const ids = listaUuid(edicionIds);
+
+  const pruebas = filas<FilaPrueba>(
+    await ctx.db.execute(sql`
+      SELECT c.id::text AS id, c.edition_id::text AS "edicionId", c.weapon::text AS arma,
+             c.gender::text AS genero, c.category::text AS categoria, c.category_raw AS "categoriaRaw",
+             c.format::text AS formato, c.competition_date::text AS fecha, c.source AS fuente,
+             c.event_competition_id::text AS "pruebaCalendarioId",
+             (SELECT count(*)::int FROM sport_result r WHERE r.competition_id = c.id) AS importados
+      FROM sport_competition c
+      WHERE c.edition_id IN (${ids})
+      ORDER BY c.edition_id, c.competition_date NULLS LAST, c.format::text, c.weapon::text,
+               c.gender::text, c.category::text, c.id
+      LIMIT ${LIMITE_PRUEBAS}`),
+  );
+  if (pruebas.length === 0) return porEdicion;
+
+  // Lectura de puestos por prueba y estado de enlaces por la clave de la prueba
+  // canónica (`fuente:clave`), que es como se guardan.
+  const lecturas = filas<FilaLectura>(
+    await ctx.db.execute(sql`
+      SELECT cov.competition_id::text AS "pruebaId", cov.fact_kind AS hecho, cov.source AS fuente,
+             cov.status::text AS estado, cov.cursor AS cursor, cov.source_url AS url
+      FROM sport_import_coverage cov
+      WHERE cov.fact_kind = 'results'
+        AND cov.competition_id IN (SELECT c.id FROM sport_competition c WHERE c.edition_id IN (${ids}))
+      UNION ALL
+      SELECT c.id::text, cov.fact_kind, cov.source, cov.status::text, cov.cursor, cov.source_url
+      FROM sport_competition c
+      JOIN sport_import_coverage cov
+        ON cov.fact_kind = 'link' AND cov.season = c.season
+       AND cov.competition_key = c.source || ':' || c.competition_key
+      WHERE c.edition_id IN (${ids}) AND cov.source LIKE 'enlace:%'`),
+  );
+
+  for (const f of pruebas) {
+    const dto = aPrueba(f, lecturas.filter((l) => l.pruebaId === f.id));
+    const actuales = porEdicion.get(f.edicionId) ?? [];
+    actuales.push(dto);
+    porEdicion.set(f.edicionId, actuales);
+  }
+  return porEdicion;
+}
+
+export type ResultadoEdicionesEvento =
+  | { estado: 'ok'; ediciones: (EdicionResumen & { pruebasDetalle: PruebaDeEdicion[] })[] }
+  | { estado: 'entrada_invalida' }
+  | { estado: 'no_disponible' };
+
+/**
+ * Ediciones deportivas vinculadas a un torneo del calendario (también las
+ * vinculadas a su par absorbido). Una lista vacía significa «sin edición
+ * vinculada»; no dice nada sobre si el torneo ha tenido resultados.
+ */
+export async function leerEdicionesDeEvento(
+  ctx: ContextoExplorador,
+  entrada: unknown,
+): Promise<ResultadoEdicionesEvento> {
+  await exigirPerfil(ctx);
+  const analizada = esquemaEvento.safeParse(entrada);
+  if (!analizada.success) return { estado: 'entrada_invalida' };
+  if (!(await ctx.esquema()).identidad) return { estado: 'no_disponible' };
+
+  const { eventoId } = analizada.data;
+  const rows = filas<FilaEdicion>(
+    await ctx.db.execute(sql`
+      SELECT ${COLUMNAS_EDICION}
+      FROM sport_edition e
+      JOIN event ev ON ev.id = e.event_id
+      WHERE ev.id = ${eventoId}::uuid OR ev.canonical_event_id = ${eventoId}::uuid
+      ORDER BY e.start_date NULLS LAST, e.id
+      LIMIT ${LIMITE_EDICIONES_EVENTO}`),
+  );
+  const resumenes = rows.map(aResumen);
+  const pruebas = await leerPruebas(ctx, resumenes.map((e) => e.id));
+  return {
+    estado: 'ok',
+    ediciones: resumenes.map((e) => ({ ...e, pruebasDetalle: pruebas.get(e.id) ?? [] })),
+  };
+}
+
+export type ResultadoEdicion =
+  | { estado: 'ok'; edicion: EdicionDetalle }
+  | { estado: 'entrada_invalida' }
+  | { estado: 'cursor_invalido' }
+  | { estado: 'no_encontrada' }
+  | { estado: 'no_disponible' };
+
+type FilaPuesto = {
+  id: string;
+  puesto: number | null;
+  puestoPublicado: string | null;
+  nombre: string;
+  pais: string | null;
+  club: string | null;
+  personaId: string | null;
+};
+
+/**
+ * Una edición con todas sus pruebas y, si se pide una, su clasificación
+ * paginada por posición. La clasificación sale de UNA fuente (la que más puestos
+ * tiene) para no mezclar dos lecturas de la misma prueba; las demás se avisan.
+ * Una fila lleva `personaId` sólo si el resultado está vinculado a una persona
+ * deportiva: nunca se busca por nombre ni se usa una cuenta.
+ */
+export async function leerEdicion(ctx: ContextoExplorador, entrada: unknown): Promise<ResultadoEdicion> {
+  await exigirPerfil(ctx);
+  const analizada = esquemaEdicion.safeParse(entrada);
+  if (!analizada.success) return { estado: 'entrada_invalida' };
+  const { edicionId, prueba, cursor, limite: pedido } = analizada.data;
+
+  // El cursor sólo vale para la misma edición y prueba.
+  const huella = { edicionId, prueba: prueba ?? null };
+  let clave: readonly (string | number)[] | null = null;
+  if (cursor) {
+    clave = decodificarCursor(CLASE_CLASIFICACION, huella, cursor, 3);
+    if (!clave || !UUID_RE.test(String(clave[2])) || ![0, 1].includes(Number(clave[0]))) {
+      return { estado: 'cursor_invalido' };
+    }
+  }
+
+  if (!(await ctx.esquema()).identidad) return { estado: 'no_disponible' };
+
+  const [cabecera] = filas<FilaEdicion>(
+    await ctx.db.execute(sql`
+      SELECT ${COLUMNAS_EDICION}
+      FROM sport_edition e
+      WHERE e.id = ${edicionId}::uuid`),
+  );
+  if (!cabecera) return { estado: 'no_encontrada' };
+
+  const pruebasDetalle = (await leerPruebas(ctx, [edicionId])).get(edicionId) ?? [];
+  const elegida = prueba ? pruebasDetalle.find((p) => p.id === prueba) : undefined;
+
+  let clasificacion: Clasificacion | null = null;
+  if (elegida) {
+    clasificacion = await leerClasificacion(ctx, elegida.id, huella, clave, pedido ?? LIMITE_MAXIMO);
+  }
+
+  return {
+    estado: 'ok',
+    edicion: {
+      ...aResumen(cabecera),
+      pruebasDetalle,
+      pruebaDesconocida: Boolean(prueba) && !elegida,
+      clasificacion,
+    },
+  };
+}
+
+async function leerClasificacion(
+  ctx: ContextoExplorador,
+  pruebaId: string,
+  huella: unknown,
+  clave: readonly (string | number)[] | null,
+  limite: number,
+): Promise<Clasificacion> {
+  const fuentes = filas<{ fuente: string; n: number }>(
+    await ctx.db.execute(sql`
+      SELECT r.source AS fuente, count(*)::int AS n
+      FROM sport_result r
+      WHERE r.competition_id = ${pruebaId}::uuid
+      GROUP BY r.source
+      ORDER BY count(*) DESC, r.source`),
+  );
+  const principal = fuentes[0];
+  if (!principal) return { pruebaId, fuente: '', filas: [], siguiente: null, otrasFuentes: [] };
+
+  const posicion = sql`(r.position IS NULL)::int, coalesce(r.position, 0), r.id`;
+  const condicion = clave
+    ? sql`AND ((r.position IS NULL)::int, coalesce(r.position, 0), r.id) > (${Number(clave[0])}::int, ${Number(clave[1])}::int, ${String(clave[2])}::uuid)`
+    : sql``;
+  const rows = filas<FilaPuesto>(
+    await ctx.db.execute(sql`
+      SELECT r.id::text AS id, r.position AS puesto, r.position_raw AS "puestoPublicado",
+             r.source_name AS nombre, r.source_country_code AS pais, r.source_club AS club,
+             r.person_id::text AS "personaId"
+      FROM sport_result r
+      WHERE r.competition_id = ${pruebaId}::uuid AND r.source = ${principal.fuente} ${condicion}
+      ORDER BY ${posicion}
+      LIMIT ${limite + 1}`),
+  );
+  const pagina = rows.slice(0, limite);
+  const ultima = pagina[pagina.length - 1];
+  const siguiente =
+    rows.length > limite && ultima
+      ? codificarCursor(CLASE_CLASIFICACION, huella, [
+          ultima.puesto === null ? 1 : 0,
+          ultima.puesto ?? 0,
+          ultima.id,
+        ])
+      : null;
+
+  return {
+    pruebaId,
+    fuente: principal.fuente,
+    filas: pagina.map<FilaClasificacion>((r) => ({
+      id: r.id,
+      puesto: r.puesto === null ? null : Number(r.puesto),
+      puestoPublicado: r.puestoPublicado,
+      nombre: r.nombre,
+      pais: r.pais,
+      club: r.club,
+      personaId: r.personaId,
+    })),
+    siguiente,
+    otrasFuentes: fuentes.slice(1).map((f) => ({ fuente: f.fuente, filas: Number(f.n) })),
+  };
+}
