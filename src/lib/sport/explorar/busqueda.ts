@@ -157,7 +157,7 @@ export function sqlBusqueda(
     LIMIT ${limite + 1}`;
 }
 
-async function complementos(
+export async function complementos(
   db: ContextoExplorador['db'],
   ids: readonly string[],
   claves: readonly string[],
