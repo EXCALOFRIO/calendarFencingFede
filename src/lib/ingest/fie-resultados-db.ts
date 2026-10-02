@@ -11,6 +11,7 @@ import { depsEvidenciaDb } from '@/lib/entries/evidencia-db';
 import { esquemaDeportivo } from '@/lib/sport/esquema-db';
 import { crearGuardDb } from '@/lib/sport/id-guard-db';
 import {
+  claveEdicionFie,
   FUENTE_FIE,
   type DepsPersistenciaFie,
   type FilaAsalto,
@@ -196,8 +197,7 @@ export function crearDepsPersistenciaFieDb(db: Db): DepsPersistenciaFie {
     guard: crearGuardDb(db),
 
     async upsertPrueba(p) {
-      const tournamentKey =
-        p.tournamentId !== null ? String(p.tournamentId) : `competition:${p.competitionId}`;
+      const { clave: tournamentKey, agrupaPruebas } = claveEdicionFie(p);
       const season = String(p.season);
       const [edicion] = await db
         .insert(sportEdition)
@@ -216,8 +216,13 @@ export function crearDepsPersistenciaFieDb(db: Db): DepsPersistenciaFie {
           target: [sportEdition.source, sportEdition.season, sportEdition.tournamentKey],
           set: {
             name: sql`excluded.name`,
-            startDate: sql`excluded.start_date`,
-            endDate: sql`excluded.end_date`,
+            // Una edición compartida abarca todas sus pruebas: LEAST/GREATEST ignoran NULL.
+            startDate: agrupaPruebas
+              ? sql`least(${sportEdition.startDate}, excluded.start_date)`
+              : sql`excluded.start_date`,
+            endDate: agrupaPruebas
+              ? sql`greatest(${sportEdition.endDate}, excluded.end_date)`
+              : sql`excluded.end_date`,
             city: sql`excluded.city`,
             countryCode: sql`excluded.country_code`,
             sourceUrl: sql`excluded.source_url`,

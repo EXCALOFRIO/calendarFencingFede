@@ -67,6 +67,7 @@ const metadataSchema = z.object({
   name: texto,
   type: texto,
   category: texto,
+  competitionCategory: texto,
   location: texto,
   federation: texto,
   startDate: texto,
@@ -164,6 +165,8 @@ export type PruebaFie = {
   /** `null` históricamente (los Juegos de París); la edición usa entonces la prueba. */
   tournamentId: number | null;
   nombre: string | null;
+  /** `competitionCategory` publicada (`JO` = Juegos Olímpicos); sólo presente si la FIE la trae. */
+  categoriaCompeticion?: string;
   ciudad: string | null;
   federacion: string | null;
   inicio: string | null;
@@ -305,6 +308,7 @@ export function normalizarPrueba(
       competitionId,
       tournamentId: m.tournamentId ?? null,
       nombre: limpio(m.name),
+      ...(limpio(m.competitionCategory) ? { categoriaCompeticion: limpio(m.competitionCategory)! } : {}),
       ciudad: limpio(m.location),
       federacion: limpio(m.federation),
       inicio: m.startDate ?? null,

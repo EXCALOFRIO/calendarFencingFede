@@ -21,6 +21,28 @@ import type {
   PruebaFie,
   PuestoFie,
 } from './sources/fie-resultados';
+import { claveEdicionSerieSinTorneo } from './series-complementarias';
+
+/**
+ * Clave natural de la edición (`tournament_key`) de una prueba FIE y si agrupa
+ * pruebas por serie. Con `tournamentId` se conserva tal cual. Sin él, sólo las
+ * pruebas de una serie complementaria con ciudad publicada comparten edición
+ * (los Juegos de París: individual y equipos); cualquier otra sigue siendo su
+ * propia edición `competition:<id>`, nunca se une por nombre o fecha.
+ */
+export function claveEdicionFie(
+  p: Pick<PruebaFie, 'tournamentId' | 'competitionId' | 'nombre' | 'categoriaCompeticion' | 'ciudad'>,
+): { clave: string; agrupaPruebas: boolean } {
+  if (p.tournamentId !== null) return { clave: String(p.tournamentId), agrupaPruebas: false };
+  const serie = claveEdicionSerieSinTorneo({
+    nombre: p.nombre,
+    categoriaCompeticion: p.categoriaCompeticion,
+    ciudad: p.ciudad,
+  });
+  return serie === null
+    ? { clave: `competition:${p.competitionId}`, agrupaPruebas: false }
+    : { clave: serie, agrupaPruebas: true };
+}
 
 /**
  * Persistencia de una lectura de resultados FIE sobre el modelo deportivo.

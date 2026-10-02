@@ -64,6 +64,26 @@ export function clasificarSerie(entrada: {
   return null;
 }
 
+const claveCiudad = (ciudad: string): string => `c:${plano(ciudad)}`;
+
+/**
+ * Edición de una serie cuando la FIE no publica `tournamentId` (los Juegos
+ * Olímpicos): serie + ciudad publicada, que junto con la temporada de la clave
+ * natural distingue Tokio de París y los Juegos de un Mediterráneo en la misma
+ * sede. Sin serie reconocida o sin ciudad no hay prueba de pertenencia y
+ * devuelve `null`: la prueba no se agrupa con otras por nombre o fecha.
+ */
+export function claveEdicionSerieSinTorneo(entrada: {
+  nombre?: string | null;
+  categoriaCompeticion?: string | null;
+  ciudad?: string | null;
+}): string | null {
+  const serie = clasificarSerie(entrada);
+  const ciudad = entrada.ciudad ? fixDoubleEncodedUtf8(entrada.ciudad).trim() : '';
+  if (!serie || !ciudad) return null;
+  return `${serie}|${claveCiudad(ciudad)}`;
+}
+
 export type FuenteSerie = 'fie' | 'engarde';
 
 /** Estado de los resultados de una prueba, sin confundir ausencia con cero. */
@@ -126,7 +146,7 @@ export function pruebaDeSerieFie(entrada: unknown): PruebaDeSerie | null {
     fuente: 'fie',
     season: String(f.season),
     // Los Juegos Olímpicos traen `tournamentId` null: la edición es su ciudad en esa temporada.
-    claveEdicion: f.tournamentId != null ? `t${f.tournamentId}` : `c:${plano(ciudad ?? nombre ?? '')}`,
+    claveEdicion: f.tournamentId != null ? `t${f.tournamentId}` : claveCiudad(ciudad ?? nombre ?? ''),
     clavePrueba: String(f.competitionId),
     nombreEdicion: nombre,
     ciudad,
