@@ -79,6 +79,13 @@ async function prepararPersona(ctx: ContextoExplorador, entrada: unknown): Promi
 /**
  * Guarda a la persona que prevalece tras las fusiones; una relación previa con
  * un miembro fundido se sustituye por ella, de modo que sigue habiendo una.
+ *
+ * La lista ordena cada grupo por su `created_at` más reciente. La fila
+ * canónica hereda esa fecha antes de retirar a los miembros (también si ya
+ * existía), de modo que consolidar ni mueve la posición ni repite a la persona
+ * al seguir un cursor anterior. Sin filas previas se usa la fecha del servidor;
+ * guardar de nuevo nunca retrocede ni adelanta una fecha ya vigente. Si el
+ * borrado posterior falla, repetir la acción termina la consolidación.
  */
 export async function guardarFavorito(
   ctx: ContextoExplorador,
@@ -88,9 +95,13 @@ export async function guardarFavorito(
   if (p.estado !== 'ok') return { estado: p.estado };
 
   await ctx.db.execute(sql`
-    INSERT INTO sport_favorite (profile_id, person_id)
-    VALUES (${p.profileId}::uuid, ${p.canonicaId}::uuid)
-    ON CONFLICT (profile_id, person_id) DO NOTHING`);
+    INSERT INTO sport_favorite (profile_id, person_id, created_at)
+    SELECT ${p.profileId}::uuid, ${p.canonicaId}::uuid, COALESCE(max(f.created_at), now())
+    FROM sport_favorite f
+    WHERE f.profile_id = ${p.profileId}::uuid AND f.person_id IN (${listaUuid(p.ids)})
+    ON CONFLICT (profile_id, person_id)
+    DO UPDATE SET created_at = EXCLUDED.created_at
+    WHERE sport_favorite.created_at < EXCLUDED.created_at`);
 
   const fundidas = p.ids.filter((id) => id !== p.canonicaId);
   if (fundidas.length > 0) {

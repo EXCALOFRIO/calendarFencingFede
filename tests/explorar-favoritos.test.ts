@@ -82,8 +82,8 @@ describe('favoritos: guardar', () => {
       expect(s.params).toContain(perfil().profileId);
       expect(s.text).not.toMatch(/user_profile|athlete|notif|email|sport_person\s+SET|sport_result/i);
     }
-    expect(w[0].text).toMatch(/ON CONFLICT .*DO NOTHING/is);
-    expect(w[0].params).toEqual([perfil().profileId, UUID_A]);
+    expect(w[0].text).toMatch(/ON CONFLICT .*DO UPDATE .*created_at < EXCLUDED\.created_at/is);
+    expect(w[0].params).toEqual([perfil().profileId, UUID_A, perfil().profileId, UUID_A]);
   });
 
   it('guardar dos veces emite la misma sentencia idempotente, sin error', async () => {
@@ -107,7 +107,7 @@ describe('favoritos: guardar', () => {
     const r = await guardarFavorito(ctx, { personaId: UUID_A });
     expect(r).toEqual({ estado: 'ok', personaId: UUID_B, favorito: true });
     const insert = sentencias.find((s) => /^\s*INSERT/i.test(s.text));
-    expect(insert?.params).toEqual([perfil().profileId, UUID_B]);
+    expect(insert?.params).toEqual([perfil().profileId, UUID_B, perfil().profileId, UUID_B, UUID_A]);
     // Consolida una relación previa con el miembro fundido sin tocar otras cuentas.
     const borrado = sentencias.find((s) => /^\s*DELETE/i.test(s.text));
     expect(borrado?.text).toMatch(/profile_id = \$/);
