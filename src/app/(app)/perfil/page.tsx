@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { Seccion } from '@/components/estado/piezas';
+import { EnlaceFavoritos } from '@/components/explorar/favoritos';
 import { Calendarios, type FeedVista } from '@/components/perfil/calendarios';
 import { HistorialPropio, HistorialPropioCargando } from '@/components/perfil/historial-propio';
 import { Dato, FichaTirador } from '@/components/perfil/tirador';
@@ -110,6 +111,13 @@ export default async function Pagina({
             )}
           </Dato>
         </dl>
+      </Seccion>
+
+      <Seccion titulo="Favoritos" accion={<EnlaceFavoritos />}>
+        <p className="medida pt-3 text-sm text-muted-foreground">
+          Las fichas deportivas que has guardado para volver a ellas. La lista es privada y guardar a
+          alguien no envía avisos.
+        </p>
       </Seccion>
 
       <Seccion

@@ -11,6 +11,7 @@ import {
   fuenteRanking,
   fuenteResultado,
 } from '@/lib/sport/explorar/etiquetas';
+import { RUTA_FAVORITOS } from '@/lib/sport/explorar/favoritos-url';
 import { Bloque, Celda, Dato, EnlaceFuente, Nota, fechaLegible, type Nivel } from './piezas';
 import {
   construirUrlFicha,
@@ -46,7 +47,16 @@ import {
 
 /* ------------------------------------------------------------------ cabecera */
 
-export function CabeceraFicha({ ficha, titulo = true }: { ficha: FichaDeportiva; titulo?: boolean }) {
+export function CabeceraFicha({
+  ficha,
+  titulo = true,
+  acciones,
+}: {
+  ficha: FichaDeportiva;
+  titulo?: boolean;
+  /** Controles propios de la cuenta que mira, como guardar en favoritos. */
+  acciones?: React.ReactNode;
+}) {
   return (
     <header className="flex flex-col gap-2">
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
@@ -59,6 +69,7 @@ export function CabeceraFicha({ ficha, titulo = true }: { ficha: FichaDeportiva;
           <span className="rounded-full border px-2 py-0.5 text-xs">Es tu ficha deportiva</span>
         ) : null}
       </div>
+      {acciones}
       <dl className="flex flex-wrap gap-x-8 gap-y-2">
         <div className="flex flex-col gap-0.5">
           <dt className="text-xs text-muted-foreground">País</dt>
@@ -514,6 +525,7 @@ export function FichaCompleta({
   criterios,
   nivel,
   conTitulo = true,
+  acciones,
 }: {
   ficha: FichaDeportiva;
   historial: HistorialVista;
@@ -521,10 +533,11 @@ export function FichaCompleta({
   criterios: CriteriosFicha;
   nivel: Nivel;
   conTitulo?: boolean;
+  acciones?: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-6">
-      <CabeceraFicha ficha={ficha} titulo={conTitulo} />
+      <CabeceraFicha ficha={ficha} titulo={conTitulo} acciones={acciones} />
       <HistorialFicha historial={historial} base={base} criterios={criterios} nivel={nivel} />
       <EntradaCaraACara ficha={ficha} nivel={nivel} />
       <EstadisticasFicha ficha={ficha} nivel={nivel} />
@@ -537,21 +550,24 @@ export function FichaCompleta({
 /* --------------------------------------------------------------------- retorno */
 
 /**
- * Enlace de vuelta a la búsqueda de la que se llegó. `volver` ya viene saneado
- * por `leerCriteriosFicha`; se vuelve a sanear aquí porque este componente se
- * puede usar con cualquier cadena. Sin búsqueda (entrada directa) lleva a
- * `/explorar`. No sustituye al botón Atrás del navegador.
+ * Enlace de vuelta a la búsqueda (o a la página de favoritos) de la que se
+ * llegó. `volver` ya viene saneado por `leerCriteriosFicha`; se vuelve a
+ * sanear aquí porque este componente se puede usar con cualquier cadena. Sin
+ * origen (entrada directa) lleva a `/explorar`. No sustituye al botón Atrás del
+ * navegador.
  */
 export function VolverAExplorar({ volver }: { volver: string }) {
+  const destino = sanitizarRetorno(volver) || RUTA_EXPLORAR;
+  const aFavoritos = destino === RUTA_FAVORITOS || destino.startsWith(`${RUTA_FAVORITOS}?`);
   return (
     <nav aria-label="Volver">
       <Link
-        href={sanitizarRetorno(volver) || RUTA_EXPLORAR}
+        href={destino}
         prefetch={false}
         className="inline-flex min-h-11 items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
       >
         <ArrowLeft className="size-4" aria-hidden />
-        Volver a Explorar
+        {aFavoritos ? 'Volver a Favoritos' : 'Volver a Explorar'}
       </Link>
     </nav>
   );

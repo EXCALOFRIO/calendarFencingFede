@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { EnlaceFavoritos } from '@/components/explorar/favoritos';
 import { FormularioFiltros } from '@/components/explorar/formulario-filtros';
 import {
   ChipsActivos,
@@ -49,6 +50,7 @@ export default async function Pagina({
         <p className="text-sm text-muted-foreground">
           Deportistas de todas las federaciones, con o sin cuenta, activos o retirados.
         </p>
+        <EnlaceFavoritos className="ml-auto" />
       </header>
 
       <div className="flex flex-col gap-3">

@@ -1,8 +1,10 @@
 import { redirect } from 'next/navigation';
 import { EstadoFicha, FichaCompleta, VolverAExplorar } from '@/components/explorar/ficha-deportiva';
+import { ControlFavoritoFicha } from '@/components/explorar/favoritos';
 import { getSessionProfile } from '@/lib/auth/session';
+import { cargarEstadoFavorito } from '@/lib/sport/explorar/favoritos-pantalla';
 import { cargarFichaPantalla } from '@/lib/sport/explorar/ficha-pantalla';
-import { leerCriteriosFicha, personaDeRuta } from '@/lib/sport/explorar/ficha-url';
+import { construirUrlFicha, leerCriteriosFicha, personaDeRuta } from '@/lib/sport/explorar/ficha-url';
 import { contextoReal } from '@/lib/sport/explorar/real';
 import { RUTA_EXPLORAR } from '@/lib/sport/explorar/url';
 
@@ -33,10 +35,16 @@ export default async function Pagina({
   const personaId = personaDeRuta(segmento);
   const criterios = leerCriteriosFicha(consulta);
 
-  const vista = personaId
-    ? await cargarFichaPantalla(contextoReal(), personaId, criterios)
-    : ({ tipo: 'entrada_invalida' } as const);
-  if (vista.tipo === 'sin_sesion') redirect('/entrar');
+  // Independientes entre sí: el estado de favorito no espera a la ficha.
+  const [vista, favorito] = personaId
+    ? await Promise.all([
+        cargarFichaPantalla(contextoReal(), personaId, criterios),
+        cargarEstadoFavorito(contextoReal(), personaId),
+      ])
+    : ([{ tipo: 'entrada_invalida' }, { tipo: 'no_encontrada' }] as const);
+  if (vista.tipo === 'sin_sesion' || favorito.tipo === 'sin_sesion') redirect('/entrar');
+
+  const base = `${RUTA_EXPLORAR}/${personaId}`;
 
   return (
     <div className="flex flex-col gap-6">
@@ -46,9 +54,16 @@ export default async function Pagina({
         <FichaCompleta
           ficha={vista.ficha}
           historial={vista.historial}
-          base={`${RUTA_EXPLORAR}/${personaId}`}
+          base={base}
           criterios={criterios}
           nivel="pagina"
+          acciones={
+            <ControlFavoritoFicha
+              estado={favorito}
+              nombre={vista.ficha.nombre}
+              reintentar={construirUrlFicha(base, criterios)}
+            />
+          }
         />
       ) : vista.tipo === 'ok' ? null : (
         <>
