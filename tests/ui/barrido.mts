@@ -50,7 +50,7 @@ const PAPELES: [string, string, string[]][] = [
     // ficha, se barre la pantalla de confirmación; con la de la dirección
     // técnica, que no tiene, se barre el buscador. Son los dos estados que
     // puede enseñar la misma URL.
-    ['/', '/estado', '/convocatorias', '/ranking', '/documentos', '/perfil', '/alta'],
+    ['/', '/estado', '/convocatorias', '/ranking', '/explorar', '/documentos', '/perfil', '/alta'],
   ],
   /*
     Aquí se barría también una cuenta de **tutora** (`madre@demo.local`). Se ha
@@ -64,8 +64,12 @@ const PAPELES: [string, string, string[]][] = [
     la que acabábamos de cerrar la puerta a propósito. Si algún día vuelve el
     papel de tutor, vuelve esta línea.
   */
-  ['seleccionador', 'seleccionador.florete@demo.local', ['/', '/tiradores', '/convocatorias']],
-  ['espada', 'seleccionador.espada@demo.local', ['/', '/tiradores', '/convocatorias']],
+  [
+    'seleccionador',
+    'seleccionador.florete@demo.local',
+    ['/', '/tiradores', '/convocatorias', '/explorar', '/explorar?nacionalidad=ESP'],
+  ],
+  ['espada', 'seleccionador.espada@demo.local', ['/', '/tiradores', '/convocatorias', '/explorar']],
   [
     'admin',
     'direccion.tecnica@demo.local',
@@ -74,6 +78,7 @@ const PAPELES: [string, string, string[]][] = [
       '/estado',
       '/convocatorias',
       '/ranking',
+      '/explorar',
       '/tiradores',
       '/admin',
       '/admin/inscripciones',

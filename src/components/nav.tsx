@@ -4,6 +4,7 @@ import {
   CalendarDays,
   ClipboardCheck,
   ListOrdered,
+  Search,
   Settings,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -36,9 +37,9 @@ type Destino = {
  *
  * Cuántos hay, por papel (sin «Normativa», ver más abajo):
  *
- *   tirador             Calendario · Mi estado · Ranking
- *   seleccionador       Calendario · Ranking
- *   dirección técnica   + Gestión
+ *   tirador             Calendario · Mi estado · Explorar · Ranking
+ *   seleccionador       Calendario · Explorar · Ranking
+ *   dirección técnica   Calendario · Explorar · Ranking · Gestión
  *
  * Cuatro o cinco caben en la barra del móvil a 393 px con la etiqueta
  * entera, y desde que «Normativa» salió de la barra ya nadie llega a seis:
@@ -87,6 +88,20 @@ const DESTINOS: Destino[] = [
     corta: 'Estado',
     icono: ClipboardCheck,
     roles: ['athlete'],
+  },
+  /*
+    «EXPLORAR» ES PARA TODOS LOS PAPELES.
+
+    Es el buscador de deportistas (retirados y sin cuenta incluidos), común a
+    cualquier cuenta con sesión. Va justo antes del ranking porque son las dos
+    formas de mirar a otras personas, y con él el máximo sigue siendo cuatro
+    destinos en la barra del móvil.
+  */
+  {
+    href: '/explorar',
+    etiqueta: 'Explorar',
+    corta: 'Explorar',
+    icono: Search,
   },
   /*
     «SELECCIÓN» Y «TIRADORES» YA NO OCUPAN SITIO EN LA BARRA.
@@ -138,7 +153,7 @@ function activo(pathname: string, href: string): boolean {
   return href === '/' ? pathname === '/' : pathname.startsWith(href);
 }
 
-function visibles(role: Role): Destino[] {
+export function visibles(role: Role): Destino[] {
   return DESTINOS.filter((d) => !d.roles || d.roles.includes(role));
 }
 
