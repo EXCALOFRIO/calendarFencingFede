@@ -39,7 +39,7 @@ Se ejecutaron una detrás de otra:
 | `npm run cf:build` | Aprobado. No se ejecutó además `npm run build` por separado: `cf:build` ya lo contiene. |
 | Espacio libre en C: | 6,59 GiB al empezar, 7,07 GiB antes del build y 6,95 GiB después (umbral 5 GiB; no se liberó nada). Una lectura anterior de 4,61 GiB estaba por debajo y se repitió antes de compilar. |
 | Secretos en el paquete | Se buscaron 14 valores sensibles de `.env` (incluidas la contraseña y el usuario de `DATABASE_URL`) en los 2157 ficheros de `.open-next`: **0 coincidencias y 0 ficheros `.env`**. `next-env.mjs` quedó vacío. El resultado del `wrangler deploy --dry-run` (3 ficheros) tampoco tuvo coincidencias. Solo se imprimieron nombres y recuentos. Los valores no secretos `AI_PROVIDER` y `AI_MODEL` se excluyeron del escaneo porque aparecen en el código y en `wrangler.jsonc`. |
-| Revisión final independiente (antes de publicar) | `VERDICT: PROCEED`, sin defectos bloqueantes en guardas, privacidad, estado de migraciones, últimos arreglos, secretos del paquete y destino/bindings/crons. Dos notas no bloqueantes se resolvieron: el comentario de `wrangler.jsonc` ahora dice 9 crons y se documentó que `/api/archivos/*` es una excepción abierta. |
+| Revisión final independiente (antes de publicar) | `VERDICT: PROCEED`, sin defectos bloqueantes en guardas, privacidad, estado de migraciones, últimos arreglos, secretos del paquete y destino/bindings/crons. Dos notas no bloqueantes se resolvieron: el comentario de `wrangler.jsonc` ahora dice 9 crons y se anotó que `/api/archivos/*` era una excepción abierta; esa anotación se retiró después porque la excepción no estaba aprobada (véase «Estado de los datos y límites de la evidencia» y la guarda de sesión posterior a `3fb282b6`). |
 
 `npm run lint` no sirve en Next 16 y no se ejecutó.
 
@@ -124,6 +124,12 @@ pantallas nuevas de Explorar dejan de existir, pero sus tablas siguen en la base
   gastó nada nuevo.
 - La proyección de «Mi estado» (9.600 → 400 filas) es **sintética**, con datos
   inventados; no hay Core Web Vitals reales.
-- `/api/archivos/*` sirve PDF y snapshots de R2 sin sesión (diseño heredado,
-  documentado en el código). Es una excepción a «todo exige sesión» y queda como
-  mejora pendiente de decisión.
+- `/api/archivos/*` servía PDF y snapshots de R2 sin sesión y con caché pública
+  de un año en la versión publicada `3fb282b6`. Eso no fue una excepción
+  aprobada, sino un defecto: el código ahora exige `getSessionProfile` antes de
+  leer R2 (anónimo o revocado: `401` sin lectura del cubo) y responde
+  `private, no-store`. **Hasta republicar el artefacto corregido, producción
+  sigue con el comportamiento anterior.** La guarda no puede recuperar copias
+  antiguas cacheadas o descargadas ni cubre un `R2_PUBLIC_BASE_URL` externo; no
+  se purgó ninguna caché ni se borró ningún fichero. La republicación queda para
+  la siguiente tarea de entrega, con reconstrucción comprobada del artefacto.

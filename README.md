@@ -54,11 +54,16 @@ envían avisos ni piden permisos del navegador.
 - **Todo dato de estas pantallas exige sesión.** Cada página, cada acción de
   servidor y el diseño común redirigen o deniegan sin sesión **antes** de leer
   datos. Las excepciones existentes son `/entrar`, los recursos estáticos, los
-  feeds iCal (`/api/calendario/<token>`, con su propio token revocable) y
-  `/api/archivos/*`, que sirve los PDF y snapshots guardados en R2 **sin
-  sesión**: la protección es una ruta larga e impredecible, heredada de la
-  plataforma anterior (el código lo documenta). Como esos PDF pueden llevar
-  listas nominales, restringir esa ruta queda como mejora pendiente.
+  feeds iCal (`/api/calendario/<token>`, con su propio token revocable).
+  `/api/archivos/*`, que sirve los PDF (también borradores) y snapshots
+  guardados en R2, **no es una excepción**: su handler comprueba
+  `getSessionProfile` antes de leer el cubo, deniega con `401` sin sesión o con
+  la cuenta revocada sin tocar R2 y responde siempre `Cache-Control: private,
+  no-store`. No hay permisos por destinatario, solo sesión vigente. La guarda
+  no recupera copias que se hubieran cacheado o descargado antes ni cubre un
+  dominio externo en `R2_PUBLIC_BASE_URL`; no se purgó caché ni se borraron
+  ficheros. La versión publicada `3fb282b6` es anterior a esta guarda: hasta
+  republicar el artefacto corregido, esa ruta sigue abierta en producción.
 - Los datos salen de las tablas `sport_*`, que **no son un corpus completo**:
   solo hay lo que se ha importado de forma acotada (ver «Estado real de los
   datos históricos»). Una prueba sin resultados importados se muestra como «sin
