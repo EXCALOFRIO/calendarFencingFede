@@ -61,7 +61,7 @@ function FilaFavorito({ d, volver }: { d: FavoritoResumen; volver: string }) {
           </span>
         ) : null}
       </Link>
-      <BotonFavorito personaId={d.id} nombre={d.nombre} inicial variante="lista" />
+      <BotonFavorito personaId={d.id} nombre={d.nombre} inicial lectura={d} variante="lista" />
     </li>
   );
 }
@@ -235,7 +235,7 @@ export function ControlFavoritoFicha({
 }) {
   switch (estado.tipo) {
     case 'ok':
-      return <BotonFavorito key={estado.personaId} personaId={estado.personaId} nombre={nombre} inicial={estado.favorito} />;
+      return <BotonFavorito key={estado.personaId} personaId={estado.personaId} nombre={nombre} inicial={estado.favorito} lectura={estado} />;
     case 'no_disponible':
       return <p className="medida text-xs text-muted-foreground">Favoritos aún no está activo en esta instalación.</p>;
     case 'error':

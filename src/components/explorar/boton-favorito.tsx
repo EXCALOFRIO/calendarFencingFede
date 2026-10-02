@@ -9,6 +9,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { alternarFavorito } from '@/lib/sport/explorar/favorito-alternar';
 import {
+  type LecturaFavorito,
   estadoInicial,
   iniciarOperacion,
   reconciliarProp,
@@ -33,17 +34,21 @@ export function BotonFavorito({
   personaId,
   nombre,
   inicial,
+  lectura,
   variante = 'ficha',
 }: {
   personaId: string;
   nombre: string;
   inicial: boolean;
+  /** Objeto de la lectura de servidor de la que sale inicial: instancia nueva en cada lectura. */
+  lectura: LecturaFavorito;
   variante?: 'ficha' | 'lista';
 }) {
-  const [estado, setEstado] = useState(() => estadoInicial(inicial));
-  // La misma instancia sigue montada al navegar o refrescar: la prop nueva se
-  // reconcilia durante el render, sin pisar una operación en vuelo.
-  const reconciliado = reconciliarProp(estado, inicial);
+  const [estado, setEstado] = useState(() => estadoInicial(inicial, lectura));
+  // La misma instancia sigue montada al navegar o refrescar: una lectura nueva
+  // se reconcilia durante el render, aunque su valor sea igual al anterior, sin
+  // pisar una operación en vuelo.
+  const reconciliado = reconciliarProp(estado, inicial, lectura);
   if (reconciliado !== estado) setEstado(reconciliado);
   const { guardado, cambio } = reconciliado;
   const [optimista, setOptimista] = useOptimistic(guardado);

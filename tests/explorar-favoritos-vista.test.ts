@@ -205,7 +205,7 @@ describe('lista de favoritos: estados distintos', () => {
 
 describe('control Guardar/Quitar', () => {
   const boton = (inicial: boolean, variante?: 'ficha' | 'lista') =>
-    html(React.createElement(BotonFavorito, { personaId: UUID_A, nombre: 'Lucía García', inicial, variante }));
+    html(React.createElement(BotonFavorito, { personaId: UUID_A, nombre: 'Lucía García', inicial, lectura: {}, variante }));
 
   it('Favorito: ofrece quitar y comunica el estado con texto, no sólo con color', () => {
     const salida = boton(true);
