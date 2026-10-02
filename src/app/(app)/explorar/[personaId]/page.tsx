@@ -1,7 +1,5 @@
-import { ArrowLeft } from 'lucide-react';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { EstadoFicha, FichaCompleta } from '@/components/explorar/ficha-deportiva';
+import { EstadoFicha, FichaCompleta, VolverAExplorar } from '@/components/explorar/ficha-deportiva';
 import { getSessionProfile } from '@/lib/auth/session';
 import { cargarFichaPantalla } from '@/lib/sport/explorar/ficha-pantalla';
 import { leerCriteriosFicha, personaDeRuta } from '@/lib/sport/explorar/ficha-url';
@@ -42,15 +40,7 @@ export default async function Pagina({
 
   return (
     <div className="flex flex-col gap-6">
-      <nav aria-label="Volver">
-        <Link
-          href={RUTA_EXPLORAR}
-          className="inline-flex min-h-11 items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-        >
-          <ArrowLeft className="size-4" aria-hidden />
-          Volver a Explorar
-        </Link>
-      </nav>
+      <VolverAExplorar volver={criterios.volver} />
 
       {vista.tipo === 'ok' && personaId ? (
         <FichaCompleta

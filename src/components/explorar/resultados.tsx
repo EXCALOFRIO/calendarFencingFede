@@ -2,6 +2,7 @@ import { SearchX, TriangleAlert, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
 import { Button } from '@/components/ui/button';
+import { rutaFichaConRetorno } from '@/lib/sport/explorar/ficha-url';
 import type { VistaExplorar } from '@/lib/sport/explorar/pantalla';
 import type { DeportistaResumen } from '@/lib/sport/explorar/tipos';
 import {
@@ -51,12 +52,12 @@ function Celda({ etiqueta, children }: { etiqueta: string; children: React.React
   );
 }
 
-function FilaDeportista({ d }: { d: DeportistaResumen }) {
+function FilaDeportista({ d, volver }: { d: DeportistaResumen; volver: string }) {
   const homonimo = d.mismoNombre > 1;
   return (
     <li>
       <Link
-        href={rutaFicha(d.id)}
+        href={rutaFichaConRetorno(d.id, volver)}
         prefetch={false}
         className="grid min-h-11 gap-x-4 gap-y-2 px-3 py-3 hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] md:items-center"
       >
@@ -125,6 +126,8 @@ export function ListaDeportistas({
   cursorActual: string | undefined;
   criterios: CriteriosExplorar;
 }) {
+  // La ficha vuelve a esta misma página de esta misma búsqueda, no a la lista desnuda.
+  const volver = construirUrl(criterios, cursorActual);
   return (
     <section aria-labelledby="explorar-resultados" className="flex flex-col gap-3">
       <h2 id="explorar-resultados" className="text-xl">
@@ -137,7 +140,7 @@ export function ListaDeportistas({
 
       <ul className="divide-y rounded-md border bg-card" aria-label="Deportistas encontrados">
         {items.map((d) => (
-          <FilaDeportista key={d.id} d={d} />
+          <FilaDeportista key={d.id} d={d} volver={volver} />
         ))}
       </ul>
 

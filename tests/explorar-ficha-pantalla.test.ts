@@ -538,6 +538,7 @@ describe('URL de la ficha', () => {
       ranking: '2025-2026',
       formato: 'EQUIPOS',
       cursor: 'abc',
+      volver: '',
     });
     expect(leerCriteriosFicha({ formato: 'LASER' }).formato).toBe('');
     expect(leerCriteriosFicha({ ranking: ['2024', '2025'] }).ranking).toBe('2024');

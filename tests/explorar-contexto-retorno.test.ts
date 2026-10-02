@@ -1,0 +1,240 @@
+import * as React from 'react';
+import { readFileSync } from 'node:fs';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it, vi } from 'vitest';
+import type { HistorialVista } from '@/lib/sport/explorar/ficha-pantalla';
+import {
+  CRITERIOS_FICHA_VACIOS,
+  construirUrlFicha,
+  leerCriteriosFicha,
+  rutaFichaConRetorno,
+  sanitizarRetorno,
+  type CriteriosFicha,
+} from '@/lib/sport/explorar/ficha-url';
+import type { FichaDeportiva } from '@/lib/sport/explorar/tipos';
+import {
+  CRITERIOS_VACIOS,
+  construirUrl,
+  leerCriterios,
+  type CriteriosExplorar,
+} from '@/lib/sport/explorar/url';
+import { UUID_A } from './helpers/explorar';
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  usePathname: () => '/explorar',
+}));
+
+const { ListaDeportistas } = await import('@/components/explorar/resultados');
+const { HistorialFicha, RankingOficialFicha, VolverAExplorar } = await import(
+  '@/components/explorar/ficha-deportiva'
+);
+
+const html = (nodo: React.ReactElement) => renderToStaticMarkup(nodo);
+const criterios = (parcial: Partial<CriteriosExplorar>): CriteriosExplorar => ({
+  ...CRITERIOS_VACIOS,
+  ...parcial,
+});
+
+const resumen = {
+  id: UUID_A,
+  nombre: 'Lucía García',
+  alias: null,
+  pais: 'ESP',
+  genero: 'F' as const,
+  anioNacimiento: 2001,
+  resultadosImportados: 3,
+  armas: ['FLORETE' as const],
+  mismoNombre: 1,
+};
+
+const itemHistorial = {
+  id: '00000000-0000-4000-8000-000000000001',
+  puesto: 2,
+  puestoPublicado: null,
+  puntosOficiales: null,
+  fuente: 'fie',
+  enlace: null,
+  torneo: { id: 'e1', nombre: 'COPA', ciudad: null, pais: 'ESP' },
+  tipoDocumentado: null,
+  prueba: { id: 'c1', arma: 'ESPADA', genero: 'F', categoria: { codigo: 'ABS', raw: null }, formato: 'INDIVIDUAL' },
+  temporada: '2026',
+  fecha: null,
+} as never;
+
+const decodificar = (href: string): string | null => {
+  const m = /[?&]volver=([^&"#]*)/.exec(href);
+  return m ? decodeURIComponent(m[1]) : null;
+};
+
+describe('fila de Explorar → URL de ficha → enlace de retorno', () => {
+  const lista = (c: CriteriosExplorar, cursorActual?: string) =>
+    html(
+      React.createElement(ListaDeportistas, {
+        items: [resumen],
+        siguiente: 'tok-2',
+        cursorActual,
+        criterios: c,
+      }),
+    );
+
+  it('la fila lleva la búsqueda exacta (filtros y página) como retorno local', () => {
+    const c = criterios({ q: 'garcia', arma: 'SABLE', nacionalidad: 'ESP' });
+    const salida = lista(c, 'tok-1');
+    const href = /href="(\/explorar\/[^"]+)"/.exec(salida)?.[1]?.replaceAll('&amp;', '&');
+    expect(href).toBeTruthy();
+    expect(href?.startsWith(`/explorar/${UUID_A}?volver=`)).toBe(true);
+    expect(decodificar(href as string)).toBe(construirUrl(c, 'tok-1'));
+  });
+
+  it('la ficha abierta desde esa fila vuelve a los mismos filtros, cursor y página', () => {
+    const c = criterios({ q: 'garcia', torneo: 'Madrid', desde: '2025-01-01' });
+    const salida = lista(c, 'tok-1');
+    const href = /href="(\/explorar\/[^"]+)"/.exec(salida)?.[1]?.replaceAll('&amp;', '&') as string;
+    const leidos = leerCriteriosFicha(Object.fromEntries(new URL(href, 'http://x.test').searchParams));
+    expect(leidos.volver).toBe(construirUrl(c, 'tok-1'));
+    const volver = html(React.createElement(VolverAExplorar, { volver: leidos.volver }));
+    expect(volver).toContain(`href="${construirUrl(c, 'tok-1').replaceAll('&', '&amp;')}"`);
+    expect(volver).not.toContain('href="/explorar"');
+  });
+
+  it('en la primera página el retorno no lleva cursor', () => {
+    const salida = lista(criterios({ q: 'garcia' }));
+    const href = /href="(\/explorar\/[^"]+)"/.exec(salida)?.[1]?.replaceAll('&amp;', '&') as string;
+    expect(decodificar(href)).toBe('/explorar?q=garcia');
+  });
+});
+
+describe('sanitización del retorno local', () => {
+  it('acepta sólo búsquedas de Explorar y las reconstruye con claves conocidas', () => {
+    expect(sanitizarRetorno('/explorar?q=garcia&cursor=abc')).toBe('/explorar?q=garcia&cursor=abc');
+    expect(sanitizarRetorno('/explorar?q=a&desconocido=1&arma=sable')).toBe('/explorar?q=a&arma=SABLE');
+  });
+
+  it.each([
+    ['vacío', ''],
+    ['sitio externo', 'https://malicioso.example/explorar'],
+    ['esquema relativo', '//malicioso.example/explorar'],
+    ['barra invertida', '/\\malicioso.example'],
+    ['barra invertida tras ruta', '/explorar\\..\\x'],
+    ['esquema peligroso', 'javascript:alert(1)'],
+    ['data', 'data:text/html,x'],
+    ['otra ruta local', '/perfil'],
+    ['subruta', '/explorar/otra'],
+    ['prefijo parecido', '/explorarx?q=a'],
+    ['fragmento', '/explorar#x'],
+    ['salto de línea', '/explorar?q=a\nSet-Cookie: x'],
+    ['longitud excesiva', `/explorar?q=${'a'.repeat(5000)}`],
+  ])('descarta: %s', (_motivo, valor) => {
+    expect(sanitizarRetorno(valor)).toBe('');
+  });
+
+  it('un valor repetido no puede colar un destino externo', () => {
+    expect(leerCriteriosFicha({ volver: ['/explorar?q=a', 'https://malicioso.example'] }).volver).toBe(
+      '/explorar?q=a',
+    );
+    expect(leerCriteriosFicha({ volver: ['https://malicioso.example', '/explorar?q=a'] }).volver).toBe('');
+  });
+
+  it('la entrada directa no tiene retorno y vuelve a /explorar', () => {
+    expect(leerCriteriosFicha({}).volver).toBe('');
+    const directo = html(React.createElement(VolverAExplorar, { volver: '' }));
+    expect(directo).toContain('href="/explorar"');
+    const malo = html(React.createElement(VolverAExplorar, { volver: 'https://malicioso.example' }));
+    expect(malo).toContain('href="/explorar"');
+    expect(malo).not.toContain('malicioso');
+  });
+
+  it('Explorar sin criterios no añade ruido a la ficha', () => {
+    expect(rutaFichaConRetorno(UUID_A, '/explorar')).toBe(`/explorar/${UUID_A}`);
+    expect(rutaFichaConRetorno(UUID_A, 'https://malicioso.example')).toBe(`/explorar/${UUID_A}`);
+  });
+
+  it('el retorno vuelve a leerse igual que Explorar lo leería', () => {
+    const c = criterios({ q: 'garcía ñ', ambito: 'NACIONAL' });
+    const url = construirUrl(c, 'tok');
+    const { criterios: leidos, cursor } = leerCriterios(Object.fromEntries(new URL(url, 'http://x.test').searchParams));
+    expect(construirUrl(leidos, cursor)).toBe(sanitizarRetorno(url));
+  });
+});
+
+describe('cambio de modalidad y enlaces de ficha conservan el contexto', () => {
+  const ficha = (r: Partial<FichaDeportiva['rankingOficial']>) =>
+    ({
+      id: UUID_A,
+      rankingOficial: {
+        temporada: '2024',
+        formato: 'INDIVIDUAL',
+        temporadasDisponibles: ['2025', '2024'],
+        entradas: [],
+        ...r,
+      },
+    }) as unknown as FichaDeportiva;
+  const ranking = (r: Partial<FichaDeportiva['rankingOficial']>, c: Partial<CriteriosFicha>) =>
+    html(
+      React.createElement(RankingOficialFicha, {
+        nivel: 'pagina',
+        base: '/explorar/x',
+        criterios: { ...CRITERIOS_FICHA_VACIOS, ...c },
+        ficha: ficha(r),
+      }),
+    );
+
+  it('Ver equipos conserva la temporada elegida y descarta el cursor del historial', () => {
+    const salida = ranking({}, { ranking: '2024', formato: 'INDIVIDUAL', cursor: 'tok' });
+    expect(salida).toContain('href="/explorar/x?ranking=2024&amp;formato=EQUIPOS#ficha-ranking"');
+    expect(salida).not.toContain('cursor=');
+  });
+
+  it('al invertir vuelve a individual con la misma temporada', () => {
+    const salida = ranking({ formato: 'EQUIPOS' }, { ranking: '2024', formato: 'EQUIPOS' });
+    expect(salida).toContain('href="/explorar/x?ranking=2024&amp;formato=INDIVIDUAL#ficha-ranking"');
+    expect(salida).toContain('Ver individual');
+  });
+
+  it('sin temporada elegida el cambio de modalidad no inventa ninguna', () => {
+    const salida = ranking({ temporadasDisponibles: [] }, {});
+    expect(salida).toContain('href="/explorar/x?formato=EQUIPOS#ficha-ranking"');
+    expect(salida).not.toContain('ranking=2');
+  });
+
+  it('el cambio de modalidad y las temporadas arrastran el retorno a Explorar', () => {
+    const volver = '/explorar?q=garcia&cursor=tok-1';
+    const salida = ranking({}, { ranking: '2024', volver });
+    const codificado = 'volver=%2Fexplorar%3Fq%3Dgarcia%26cursor%3Dtok-1';
+    expect(salida).toContain(`ranking=2024&amp;formato=EQUIPOS&amp;${codificado}#ficha-ranking`);
+    expect(salida).toContain(`ranking=2025&amp;${codificado}#ficha-ranking`);
+  });
+
+  it('la paginación del historial conserva ranking, modalidad y retorno', () => {
+    const historial: HistorialVista = { tipo: 'ok', items: [itemHistorial], siguiente: 'tok-2', sinResultados: false };
+    const volver = '/explorar?q=garcia';
+    const salida = html(
+      React.createElement(HistorialFicha, {
+        historial,
+        base: '/explorar/x',
+        nivel: 'pagina',
+        criterios: { ranking: '2024', formato: 'EQUIPOS', cursor: 'tok-1', volver },
+      }),
+    );
+    const codificado = 'volver=%2Fexplorar%3Fq%3Dgarcia';
+    expect(salida).toContain(`href="/explorar/x?ranking=2024&amp;formato=EQUIPOS&amp;${codificado}#historial"`);
+    expect(salida).toContain(`ranking=2024&amp;formato=EQUIPOS&amp;cursor=tok-2&amp;${codificado}#historial`);
+  });
+
+  it('construirUrlFicha sólo añade el retorno cuando existe', () => {
+    expect(construirUrlFicha('/explorar/x', { ranking: '2024' })).toBe('/explorar/x?ranking=2024');
+    expect(construirUrlFicha('/explorar/x', { volver: '/explorar?q=a' })).toBe(
+      '/explorar/x?volver=%2Fexplorar%3Fq%3Da',
+    );
+  });
+});
+
+describe('la ruta de la ficha usa el retorno sin tocar la política de acceso', () => {
+  it('lee el retorno de la URL y no sustituye el botón Atrás del navegador', () => {
+    const fuente = readFileSync('src/app/(app)/explorar/[personaId]/page.tsx', 'utf8');
+    expect(fuente).toContain('<VolverAExplorar volver={criterios.volver}');
+    expect(fuente).not.toMatch(/history\.back|router\.back|'use client'/);
+    expect(fuente.indexOf("redirect('/entrar')")).toBeLessThan(fuente.indexOf('cargarFichaPantalla(contextoReal'));
+  });
+});

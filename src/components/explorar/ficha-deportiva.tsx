@@ -1,4 +1,4 @@
-import { Info, Swords, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, Info, Swords, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,12 @@ import {
   fuenteResultado,
 } from '@/lib/sport/explorar/etiquetas';
 import { Bloque, Celda, Dato, EnlaceFuente, Nota, fechaLegible, type Nivel } from './piezas';
-import { construirUrlFicha, RUTA_EXPLORAR, type CriteriosFicha } from '@/lib/sport/explorar/ficha-url';
+import {
+  construirUrlFicha,
+  RUTA_EXPLORAR,
+  sanitizarRetorno,
+  type CriteriosFicha,
+} from '@/lib/sport/explorar/ficha-url';
 import type { HistorialVista, VistaFicha } from '@/lib/sport/explorar/ficha-pantalla';
 import type {
   CoberturaFicha,
@@ -244,7 +249,11 @@ export function RankingOficialFicha({
         </p>
         <Button asChild variant="outline" size="sm">
           <Link
-            href={construirUrlFicha(base, { formato: otro }, 'ficha-ranking')}
+            href={construirUrlFicha(
+              base,
+              { ranking: criterios.ranking, formato: otro, volver: criterios.volver },
+              'ficha-ranking',
+            )}
             prefetch={false}
             scroll={false}
           >
@@ -260,7 +269,11 @@ export function RankingOficialFicha({
             return (
               <Link
                 key={t}
-                href={construirUrlFicha(base, { ranking: t, formato: criterios.formato }, 'ficha-ranking')}
+                href={construirUrlFicha(
+                  base,
+                  { ranking: t, formato: criterios.formato, volver: criterios.volver },
+                  'ficha-ranking',
+                )}
                 prefetch={false}
                 scroll={false}
                 aria-current={actual ? 'true' : undefined}
@@ -370,7 +383,11 @@ export function HistorialFicha({
               {criterios.cursor ? (
                 <Button asChild variant="outline">
                   <Link
-                    href={construirUrlFicha(base, { ranking: criterios.ranking, formato: criterios.formato }, 'historial')}
+                    href={construirUrlFicha(
+                      base,
+                      { ranking: criterios.ranking, formato: criterios.formato, volver: criterios.volver },
+                      'historial',
+                    )}
                     prefetch={false}
                   >
                     Volver a los más recientes
@@ -382,7 +399,12 @@ export function HistorialFicha({
                   <Link
                     href={construirUrlFicha(
                       base,
-                      { ranking: criterios.ranking, formato: criterios.formato, cursor: historial.siguiente },
+                      {
+                        ranking: criterios.ranking,
+                        formato: criterios.formato,
+                        cursor: historial.siguiente,
+                        volver: criterios.volver,
+                      },
                       'historial',
                     )}
                     prefetch={false}
@@ -509,6 +531,29 @@ export function FichaCompleta({
       <RankingOficialFicha ficha={ficha} base={base} criterios={criterios} nivel={nivel} />
       <CoberturaFichaVista cobertura={ficha.cobertura} nivel={nivel} />
     </div>
+  );
+}
+
+/* --------------------------------------------------------------------- retorno */
+
+/**
+ * Enlace de vuelta a la búsqueda de la que se llegó. `volver` ya viene saneado
+ * por `leerCriteriosFicha`; se vuelve a sanear aquí porque este componente se
+ * puede usar con cualquier cadena. Sin búsqueda (entrada directa) lleva a
+ * `/explorar`. No sustituye al botón Atrás del navegador.
+ */
+export function VolverAExplorar({ volver }: { volver: string }) {
+  return (
+    <nav aria-label="Volver">
+      <Link
+        href={sanitizarRetorno(volver) || RUTA_EXPLORAR}
+        prefetch={false}
+        className="inline-flex min-h-11 items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+      >
+        <ArrowLeft className="size-4" aria-hidden />
+        Volver a Explorar
+      </Link>
+    </nav>
   );
 }
 

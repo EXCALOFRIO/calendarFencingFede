@@ -210,8 +210,9 @@ describe('vista de resultados', () => {
       resumen({ id: UUID_A, nombre: 'Ana Perez', mismoNombre: 2, pais: 'ESP', anioNacimiento: 2001 }),
       resumen({ id: UUID_B, nombre: 'Ana Perez', mismoNombre: 2, pais: 'FRA', anioNacimiento: 1994 }),
     ]);
-    expect(html).toContain(`href="/explorar/${UUID_A}"`);
-    expect(html).toContain(`href="/explorar/${UUID_B}"`);
+    // Cada fila lleva además la búsqueda a la que volver desde la ficha.
+    expect(html).toContain(`href="/explorar/${UUID_A}?volver=%2Fexplorar%3Fq%3Dgarcia"`);
+    expect(html).toContain(`href="/explorar/${UUID_B}?volver=%2Fexplorar%3Fq%3Dgarcia"`);
     expect(html).toContain('2 personas con este nombre');
     expect(html).toContain('nacimiento 2001');
     expect(html).toContain('nacimiento 1994');

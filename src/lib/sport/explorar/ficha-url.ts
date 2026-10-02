@@ -1,10 +1,10 @@
 import { UUID_RE } from './cursor';
-import { RUTA_EXPLORAR } from './url';
+import { CLAVES_CRITERIO, RUTA_EXPLORAR, construirUrl, leerCriterios, rutaFicha } from './url';
 
 /**
  * Criterios de la ficha deportiva en la URL: temporada del ranking oficial,
- * modalidad y cursor del historial. La misma lectura sirve a la ficha de
- * cualquier persona y al historial propio de `/perfil`, que sólo cambia la
+ * modalidad y cursor del historial, más la búsqueda de Explorar a la que se
+ * vuelve. La misma lectura sirve a la ficha de cualquier persona y al historial propio de `/perfil`, que sólo cambia la
  * ruta base.
  */
 
@@ -13,14 +13,41 @@ export type CriteriosFicha = {
   ranking: string;
   formato: '' | 'INDIVIDUAL' | 'EQUIPOS';
   cursor: string;
+  /** Búsqueda de Explorar de la que se llegó (ya saneada), o vacío en entrada directa. */
+  volver: string;
 };
 
-export const CRITERIOS_FICHA_VACIOS: CriteriosFicha = { ranking: '', formato: '', cursor: '' };
+export const CRITERIOS_FICHA_VACIOS: CriteriosFicha = { ranking: '', formato: '', cursor: '', volver: '' };
 
 type Parametros = Record<string, string | string[] | undefined>;
 
 function primero(valor: string | string[] | undefined): string {
   return ((Array.isArray(valor) ? valor[0] : valor) ?? '').trim();
+}
+
+const LONGITUD_MAXIMA_RETORNO = 1500;
+
+/**
+ * Búsqueda de Explorar a la que volver desde una ficha. El valor viaja en la
+ * URL, así que no se fía: sólo vale `/explorar` con su consulta, y se
+ * reconstruye con las claves que Explorar conoce. Un esquema, un host, otra
+ * ruta, un fragmento o una barra invertida dan vacío, y vacío significa volver
+ * a `/explorar` a secas.
+ */
+export function sanitizarRetorno(valor: string | undefined): string {
+  const crudo = (valor ?? '').trim();
+  if (!crudo || crudo.length > LONGITUD_MAXIMA_RETORNO) return '';
+  if (/[\u0000-\u001f\u007f\\]/.test(crudo)) return '';
+  if (crudo !== RUTA_EXPLORAR && !crudo.startsWith(`${RUTA_EXPLORAR}?`)) return '';
+
+  const consulta = new URLSearchParams(crudo.slice(RUTA_EXPLORAR.length + 1));
+  const params: Record<string, string> = {};
+  for (const clave of [...CLAVES_CRITERIO, 'cursor']) {
+    const v = consulta.get(clave);
+    if (v !== null) params[clave] = v;
+  }
+  const { criterios, cursor } = leerCriterios(params);
+  return construirUrl(criterios, cursor);
 }
 
 export function leerCriteriosFicha(params: Parametros): CriteriosFicha {
@@ -29,6 +56,7 @@ export function leerCriteriosFicha(params: Parametros): CriteriosFicha {
     ranking: primero(params.ranking).slice(0, 12),
     formato: formato === 'INDIVIDUAL' || formato === 'EQUIPOS' ? formato : '',
     cursor: primero(params.cursor).slice(0, 600),
+    volver: sanitizarRetorno(primero(params.volver)),
   };
 }
 
@@ -58,8 +86,21 @@ export function construirUrlFicha(
   if (c.ranking) params.set('ranking', c.ranking);
   if (c.formato) params.set('formato', c.formato);
   if (c.cursor) params.set('cursor', c.cursor);
+  if (c.volver) params.set('volver', c.volver);
   const texto = params.toString();
   return `${base}${texto ? `?${texto}` : ''}${ancla ? `#${ancla}` : ''}`;
+}
+
+/**
+ * Ficha de una persona abierta desde una búsqueda de Explorar: la dirección
+ * lleva la búsqueda (filtros y página) para poder volver a ella. Sin
+ * búsqueda, o con un retorno no válido, es la ruta desnuda.
+ */
+export function rutaFichaConRetorno(personaId: string, volver: string): string {
+  const retorno = sanitizarRetorno(volver);
+  return retorno && retorno !== RUTA_EXPLORAR
+    ? construirUrlFicha(rutaFicha(personaId), { volver: retorno })
+    : rutaFicha(personaId);
 }
 
 /** Ruta de otra persona, o `null` si el segmento no es un identificador. */
