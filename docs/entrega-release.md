@@ -4,7 +4,109 @@ Fecha: 02/10/2026. Este documento dice qué se publicó, qué se comprobó y qu�
 **no** se comprobó. La revisión privada (con cuenta real) es del propietario y
 queda **pendiente**.
 
-## Qué se publicó
+Hubo **dos** publicaciones ese día en el mismo Worker. La **última** es la
+versión `b0da2841-1b10-4ba7-8d7b-ee9401fbbd7b` (sección siguiente); la primera,
+`3fb282b6`, se conserva más abajo como registro histórico y **no** es la
+vigente.
+
+## Publicación vigente: `b0da2841` (corrección de `/api/archivos/*`)
+
+| Dato | Valor |
+|---|---|
+| Worker | `calendario-fie-fede` (solo ese) |
+| Cuenta | `52d39cf14bc17b94754729436036124d` |
+| Origen | https://calendario-fie-fede.excalofrio.workers.dev |
+| Versión nueva (100 %) | `b0da2841-1b10-4ba7-8d7b-ee9401fbbd7b` (19:43 UTC) |
+| Versión anterior (para volver el código) | `3fb282b6-2800-433a-b7da-d8be528ed193` (18:16 UTC), que **no** tiene la guarda de `/api/archivos/*` |
+| Código | HEAD `e25ffcd` (guarda de sesión + `private, no-store` en el handler) |
+| Compilación | `npm run cf:build` nuevo para este commit, con `NEXT_PUBLIC_APP_URL` fijada al origen y **sin** `CF_ENV_EMBEBIDO` |
+| Publicación | `opennextjs-cloudflare deploy --env-file NUL` sobre ese `.open-next` ya comprobado: el registro muestra la subida de assets y del Worker, sin fase de compilación; autenticado con el OAuth de Wrangler y sin `CLOUDFLARE_API_TOKEN` |
+
+Se conservaron los bindings (`ARCHIVOS` en R2, `IMAGES`, `AI`, `ASSETS`), las
+variables de `wrangler.jsonc` y los **nueve crons** (la salida del despliegue
+los lista). Los nueve nombres de secretos siguen en el almacén (solo nombres,
+ningún valor). No se tocaron otros Workers, cuotas, planes, dominios, cuentas de
+Neon Auth ni compras, no se purgó ninguna caché ni se borró ningún fichero, no se
+hizo más SQL ni ingesta y no se hizo `git push`.
+
+### Comprobaciones antes de publicar (esta publicación)
+
+Una detrás de otra:
+
+| Comprobación | Resultado |
+|---|---|
+| Vitest seguro del manifiesto, exacto y sin tiempo de espera ampliado | **Aprobado a la primera:** 1798 aprobados, 7 omitidos, 110 ficheros aprobados y 2 omitidos (155 s). No hubo reintento. |
+| `npm run typecheck -- --incremental false` | Aprobado (código 0) |
+| `git diff --check` | Aprobado (código 0) |
+| `npm run cf:build` | Aprobado (código 0). Incluye `next build` y el empaquetado OpenNext. |
+| Espacio libre en C: | 13,38 GiB antes del build y 13,20 GiB después (umbral 5 GiB; no se liberó nada). La lectura de 4,61 GiB de una sesión anterior quedó superada por esta medida. |
+| Secretos en el paquete | 15 valores sensibles de `.env` buscados en memoria en los 2160 ficheros de `.open-next`: **0 coincidencias y 0 ficheros `.env`**; `next-env.mjs` quedó vacío. Solo se imprimieron nombres y recuentos. |
+| El paquete contiene la guarda | El `handler.mjs` empaquetado incluye el handler de `/api/archivos` con `Cache-Control: private, no-store`. |
+| Revisión final focalizada **previa** a publicar (subagente independiente, solo lectura) | `VERDICT: PROCEED`: sin defectos en guardas, privacidad (por muestreo), migración actual, últimos arreglos, ausencia de secretos del paquete ni destino/bindings/crons. Fue anterior al despliegue y no una revisión posterior presentada como previa. No fue una auditoría amplia; no verificó a fondo el test de la guarda ni las excepciones públicas por búsqueda. |
+
+El gate del commit `e25ffcd` **falló**: 1796 aprobados y 7 omitidos, con dos
+tiempos agotados (`inscritos-limites` y `skermo`, idempotencia del parseo), y el
+código de salida del `pipeline` que se anotó fue 0 pese al fallo; ese 0 no
+cuenta como aprobado. Los dos ficheros pasaron aislados (40/40)
+y el diagnóstico de `tests/acceso-anonimo-matriz.test.ts` con
+`--testTimeout=180000` (14/14) **no es un gate aprobado** ni demuestra que la
+causa fuese la carga. El gate de esta publicación, con el comando exacto, sin
+ampliar tiempos y con el código de salida leído sin filtrar, pasó a la primera
+(código 0); eso no borra el fallo anterior ni explica su causa.
+
+### Comprobaciones después de publicar (solo lectura, sin sesión)
+
+Peticiones HTTP `GET` de lectura. **No se invocó ningún cron ni endpoint de
+ingesta.**
+
+- `/entrar`: `200`, título «Entrar · CalendarFencing», sin referencias a
+  `localhost`. (Una primera petición del lote dio un error SSL transitorio del
+  cliente; la repetición dio `200`.)
+- Sin sesión, `307` a `/entrar` en `/`, `/estado`, `/ranking`, `/perfil`,
+  `/convocatorias`, `/documentos`, `/tiradores`, `/alta`, `/admin`, `/explorar`,
+  `/explorar/ediciones`, `/explorar/ediciones/<id>`, `/explorar/favoritos`,
+  `/explorar/<personaId>` y `/explorar/<personaId>/cara-a-cara` (UUID
+  inexistentes).
+- Con `RSC: 1` y siguiendo la redirección `?_rsc`: `200` con `NEXT_REDIRECT` y
+  sin `sport_`, `nombre` ni `apellido` (`/`, `/explorar`, `/explorar/favoritos`,
+  `/ranking` y una ficha).
+- `/api/archivos/<clave inexistente y sanitizada>` sin sesión: **`401`**,
+  `Cache-Control: private, no-store` y cuerpo `{"ok":false,...}`. No se pidió
+  ningún documento real.
+- Feed iCal con token inexistente: `404`; una ruta inexistente: `404`.
+- Recursos: dos `/_next/static/chunks/*.js` responden `200` con
+  `text/javascript` y `/manifest.webmanifest` responde `200`.
+- `agent-browser` **se colgó otra vez** (la apertura de `/explorar` no terminó en
+  75 s); la sesión se cerró. No hay captura ni comprobación de navegador, solo
+  HTTP.
+
+**Qué demuestra y qué no.** La guarda responde `401` a una petición anónima; eso
+no prueba que una sesión válida lea bien un fichero ni que no existan copias
+antiguas cacheadas o descargadas con la política de `3fb282b6`, que esta guarda
+no recupera. Un `R2_PUBLIC_BASE_URL` externo, si se usara, queda fuera de la
+guarda. No se probó inicio de sesión, roles, datos por arma, favoritos, cara a
+cara con datos, correos, rendimiento ni los cuatro anchos: es la QA privada
+manual del propietario.
+
+### Volver el código a la versión anterior
+
+Revierte **solo el código** y **reabre** `/api/archivos/*` sin sesión (la
+versión `3fb282b6` no lo protege), por lo que solo conviene si la nueva
+versión falla por otra razón:
+
+```powershell
+$env:CLOUDFLARE_ACCOUNT_ID = '52d39cf14bc17b94754729436036124d'
+node node_modules/wrangler/bin/wrangler.js rollback 3fb282b6-2800-433a-b7da-d8be528ed193 --name calendario-fie-fede --env-file NUL
+```
+
+Neon **no** se revierte: tablas `sport_*`, enums, datos y ledger (19 filas) se
+quedan, y no hay SQL de bajada ni respaldo o punto de restauración acreditados.
+
+## Primera publicación del 02/10/2026: `3fb282b6` (histórica)
+
+Registro de la publicación anterior, sustituida después por `b0da2841`.
+
+### Qué se publicó
 
 | Dato | Valor |
 |---|---|
@@ -27,7 +129,7 @@ nueve nombres de secretos siguen en el almacén (`AWS_ACCESS_KEY_ID`,
 tocaron otros Workers, cuotas, planes, dominios, cuentas de Neon Auth ni
 compras. No se hizo `git push`.
 
-## Comprobaciones antes de publicar
+### Comprobaciones antes de publicar (primera publicación)
 
 Se ejecutaron una detrás de otra:
 
@@ -43,7 +145,7 @@ Se ejecutaron una detrás de otra:
 
 `npm run lint` no sirve en Next 16 y no se ejecutó.
 
-## Comprobaciones después de publicar (solo lectura, sin sesión)
+### Comprobaciones después de publicar (primera publicación)
 
 Hechas con peticiones HTTP `GET` de lectura. **No se invocó ningún cron ni
 endpoint de ingesta.**
@@ -84,7 +186,11 @@ copiadas:
    código de acceso llega por correo. Si el inicio de sesión responde
    `403 INVALID_ORIGIN`, falta añadirlo ahí.
 
-## Cómo volver atrás
+## Cómo volver atrás (solo la primera publicación, histórico)
+
+Para la publicación vigente, ver «Volver el código a la versión anterior»
+arriba. Lo siguiente describía el regreso de `3fb282b6` a `39b7900c` y ya no es
+la vía recomendada, porque `3fb282b6` ya no es la versión en producción.
 
 Revierte **solo el código**:
 
@@ -125,11 +231,15 @@ pantallas nuevas de Explorar dejan de existir, pero sus tablas siguen en la base
 - La proyección de «Mi estado» (9.600 → 400 filas) es **sintética**, con datos
   inventados; no hay Core Web Vitals reales.
 - `/api/archivos/*` servía PDF y snapshots de R2 sin sesión y con caché pública
-  de un año en la versión publicada `3fb282b6`. Eso no fue una excepción
-  aprobada, sino un defecto: el código ahora exige `getSessionProfile` antes de
-  leer R2 (anónimo o revocado: `401` sin lectura del cubo) y responde
-  `private, no-store`. **Hasta republicar el artefacto corregido, producción
-  sigue con el comportamiento anterior.** La guarda no puede recuperar copias
-  antiguas cacheadas o descargadas ni cubre un `R2_PUBLIC_BASE_URL` externo; no
-  se purgó ninguna caché ni se borró ningún fichero. La republicación queda para
-  la siguiente tarea de entrega, con reconstrucción comprobada del artefacto.
+  de un año en la versión `3fb282b6`. Eso no fue una excepción aprobada, sino un
+  defecto: la versión vigente `b0da2841` exige `getSessionProfile` antes de leer
+  R2 (anónimo o revocado: `401` sin lectura del cubo) y responde
+  `private, no-store`. Tras publicar, una petición anónima con una clave
+  inexistente dio `401`. La guarda no puede recuperar copias antiguas cacheadas
+  o descargadas mientras estuvo `3fb282b6` ni cubre un `R2_PUBLIC_BASE_URL`
+  externo; no se purgó ninguna caché ni se borró ningún fichero.
+- La publicación `b0da2841` no hizo escrituras en Neon ni ingesta. Los límites
+  anteriores (piloto acotado, 21 peticiones conocidas más una desconocida,
+  conteos iguales sin prueba de valores iguales, 3 `notification` sin
+  atribución) se mantienen y no hay investigación nueva del incidente ni
+  limpieza.

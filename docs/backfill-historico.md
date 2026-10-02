@@ -294,16 +294,25 @@ atribución confirmada.
 
 ## Pendiente del propietario
 
+Las migraciones y el piloto acotado ya están hechos (ver arriba); no queda SQL
+pendiente. Lo que sigue pendiente es:
+
 - Confirmar el plan de Neon (el umbral conservador de 0,4 GiB sigue vigente
   mientras no se verifique).
 - Decidir si el backfill sigue por lotes acotados (`--aplicar`), fuente por
-  fuente. Nada lo lanza solo.
-- Verificar la vía del piloto de IA (acceso, modelo, cuota y privacidad) antes de
-  cualquier envío; hasta entonces no se gasta nada.
-- La reconciliación de PDF tras la carga real, la autenticación con sesión
-  propia y el despliegue se comprueban con la QA privada manual
-  (`docs/matriz-qa-manual-responsive.md`); el agente no las ejecutó.
+  fuente. Nada lo lanza solo y no existe un lote «todo el corpus».
+- Piloto de IA: el permiso de presupuesto (hasta diez PDF y 1 €) **ya lo dio el
+  usuario**; no falta permiso. Lo que no está verificado es la vía de
+  inferencia, el coste y la cuota de esta cuenta, el modelo y el tratamiento de
+  datos de menores. Hasta acreditarlo no se envía ningún PDF ni se gasta nada.
+- La reconciliación de PDF tras la carga real y la autenticación con sesión
+  propia se comprueban con la QA privada manual posterior a publicar
+  (`docs/matriz-qa-manual-responsive.md`); el agente no las ejecutó. El Worker
+  ya está publicado (ver `docs/entrega-release.md`).
+
 ## Códigos de salida
 
-`0` correcto · `1` argumentos no válidos · `2` esquema 0017 no aplicado ·
-`3` parada por capacidad · `4` límite remoto (429 persistente).
+`0` correcto · `1` argumentos no válidos · `2` esquema 0017 no aplicado (hoy ya
+está aplicado; el código 2 del preflight de `aplicar-migraciones-deportivas.ts`
+es otro comando y significa «ya aplicado») · `3` parada por capacidad · `4`
+límite remoto (429 persistente).

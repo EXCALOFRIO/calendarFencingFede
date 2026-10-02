@@ -1,6 +1,7 @@
 # Matriz de QA manual: responsive, accesibilidad y carga
 
-Esta matriz es para la **revisión privada manual posterior a la publicación**.
+Esta matriz es para la **revisión privada manual posterior a la publicación**
+(versión vigente `b0da2841`, ver `docs/entrega-release.md`).
 Nadie la ha ejecutado todavía: no hay cuenta de prueba ni navegador autenticado
 disponibles para el agente, y no se crean cuentas temporales ni se reutilizan
 cookies o sesiones para suplirlos. Las comprobaciones anónimas posteriores a la

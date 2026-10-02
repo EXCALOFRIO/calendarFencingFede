@@ -62,8 +62,11 @@ envían avisos ni piden permisos del navegador.
   no-store`. No hay permisos por destinatario, solo sesión vigente. La guarda
   no recupera copias que se hubieran cacheado o descargado antes ni cubre un
   dominio externo en `R2_PUBLIC_BASE_URL`; no se purgó caché ni se borraron
-  ficheros. La versión publicada `3fb282b6` es anterior a esta guarda: hasta
-  republicar el artefacto corregido, esa ruta sigue abierta en producción.
+  ficheros. La versión `3fb282b6` (primera publicación) es anterior a esta
+  guarda; la versión `b0da2841-1b10-4ba7-8d7b-ee9401fbbd7b`, publicada después,
+  la incluye. Volver a `3fb282b6` reabriría esa ruta. Tras publicar solo se
+  comprobó, sin sesión y con una clave inexistente, que responde `401` con
+  `private, no-store`; no se pidió ningún documento real.
 - Los datos salen de las tablas `sport_*`, que **no son un corpus completo**:
   solo hay lo que se ha importado de forma acotada (ver «Estado real de los
   datos históricos»). Una prueba sin resultados importados se muestra como «sin
@@ -360,13 +363,16 @@ node node_modules/@opennextjs/cloudflare/dist/cli/index.js deploy --env-file NUL
 
 Antes, anota la versión que está al 100 %
 (`node node_modules/wrangler/bin/wrangler.js deployments list --name calendario-fie-fede --env-file NUL`)
-para poder volver a ella.
+para poder volver a ella. Una publicación requiere autorización explícita del
+propietario para ese destino; el comando es de uso humano y no se lanza solo.
 
 **Volver atrás.** `wrangler rollback <versión-anterior> --name calendario-fie-fede --env-file NUL`
 (o publicar de nuevo la versión anterior desde el panel) revierte **el
 código**. No revierte Neon: tablas, datos y ledger quedan como estén. La
 versión publicada y la anterior de cada publicación se registran en
-[`docs/entrega-release.md`](docs/entrega-release.md).
+[`docs/entrega-release.md`](docs/entrega-release.md). Ojo: la versión
+anterior de la última publicación (`3fb282b6`) sirve `/api/archivos/*` sin
+sesión; volver a ella reabre ese defecto.
 
 ### Los secretos
 
@@ -409,8 +415,10 @@ nada del despliegue vivo.
 Solo lectura y sin cron: `/entrar` responde 200; las rutas privadas
 (`/`, `/estado`, `/ranking`, `/perfil`, `/explorar`, `/explorar/ediciones`,
 `/explorar/favoritos` y las fichas) redirigen a `/entrar`, también con la
-cabecera `RSC: 1`; un token de feed iCal inexistente no devuelve datos; los
-recursos estáticos responden. El resultado de la última publicación está en
+cabecera `RSC: 1`; un token de feed iCal inexistente no devuelve datos;
+`/api/archivos/<clave inexistente>` responde `401` sin tocar R2 (nunca pidas un
+documento real); los recursos estáticos responden. El resultado de la última
+publicación está en
 [`docs/entrega-release.md`](docs/entrega-release.md).
 
 **Qué no cubre.** Esas comprobaciones son anónimas. Inicio de sesión real, roles,
