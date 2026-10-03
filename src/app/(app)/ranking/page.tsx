@@ -288,10 +288,9 @@ export default async function Pagina() {
           <p className="mt-6 flex items-start gap-2 text-sm text-muted-foreground">
             <IdCard className="mt-0.5 size-4 shrink-0" aria-hidden />
             <span className="medida">
-              Tu cuenta todavía no tiene ficha, así que la aplicación no sabe
-              cuál de estas filas eres tú.{' '}
-              <Link href="/alta" className="underline underline-offset-2">
-                Búscate y confírmalo con tu licencia
+              Vincula tu ficha para ver tu puesto.{' '}
+              <Link href="/alta" className="inline-flex min-h-[44px] items-center text-primary-text underline underline-offset-4">
+                Buscar mi ficha
               </Link>
               .
             </span>
@@ -308,12 +307,12 @@ export default async function Pagina() {
    */
   return (
     <>
-      <Cabecera contexto="Sin clasificación oficial publicada" />
+      <Cabecera contexto="Clasificación oficial RFEE" />
       <div className="flex max-w-2xl flex-col items-start gap-3 rounded-lg border border-dashed px-4 py-10">
         <h2 className="text-xl">Todavía no hay clasificación oficial</h2>
         <p className="medida text-sm text-muted-foreground">
-          La clasificación de la RFEE de esta temporada aún no se ha leído de la
-          fuente oficial. En cuanto se publique y se lea, aparecerá aquí.
+          Aún no se ha cargado el ranking RFEE de esta temporada. Aparecerá aquí
+          cuando se lea la fuente oficial.
         </p>
       </div>
     </>
@@ -395,7 +394,7 @@ function armarFichas({
 function Cabecera({ contexto }: { contexto: string }) {
   return (
     <div className="mb-6 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-      <h1 className="text-2xl sm:text-3xl">Ranking</h1>
+      <h1 className="text-3xl sm:text-4xl">Ranking</h1>
       <p className="text-sm text-muted-foreground">{contexto}</p>
     </div>
   );

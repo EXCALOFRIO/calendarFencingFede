@@ -1,0 +1,16 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "plugins": [],
+    "types": ["node"]
+  },
+  "include": [
+    "../index.ts",
+    "./*.ts",
+    "../../../cloudflare-env.d.ts",
+    "../../../tests/d1-schema*.test.ts",
+    "../../../tests/d1-runtime*.test.ts"
+  ],
+  "exclude": ["../../../node_modules"]
+}

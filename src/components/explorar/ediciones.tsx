@@ -17,8 +17,8 @@ import {
 import type { VistaEdicion, VistaSeries } from '@/lib/sport/explorar/ediciones-pantalla';
 import { fuenteResultado } from '@/lib/sport/explorar/etiquetas';
 import { rutaFichaConRetorno } from '@/lib/sport/explorar/ficha-url';
-import { WEAPON_LABEL, cn } from '@/lib/utils';
-import { Bloque, Nota, fechaLegible } from './piezas';
+import { WEAPON_LABEL, cn, titular } from '@/lib/utils';
+import { Aclaracion, Bloque, Nota, fechaLegible } from './piezas';
 import { EnlacesResultados, EstadoResultadosPrueba, nombreDePrueba } from './prueba-resultados';
 
 const ENLACE =
@@ -85,25 +85,26 @@ function FilaEdicion({ e }: { e: EdicionResumen }) {
       <Link
         href={rutaEdicion(e.id)}
         prefetch={false}
-        className="grid min-h-11 gap-x-4 gap-y-1 px-3 py-3 hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1.5fr)] md:items-center"
+        className="grid min-h-11 gap-x-6 gap-y-3 px-4 py-4 hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1.5fr)] md:items-center"
       >
         <span className="flex min-w-0 flex-col gap-0.5">
-          <span className="font-medium break-words">{e.nombre}</span>
-          <span className="text-xs text-muted-foreground">
-            Temporada {e.temporada}
-            {e.ciudad ? ` · ${e.ciudad}` : ''}
+          <span className="text-base font-semibold break-words">{titular(e.nombre)}</span>
+          <span className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span>Temporada {e.temporada}</span>
+            {e.ciudad ? <span>{e.ciudad}</span> : null}
           </span>
         </span>
         <span className="text-sm">{fechas ?? <span className="text-muted-foreground">Fechas no publicadas</span>}</span>
         <span className="flex flex-col gap-0.5 text-sm">
           <span>
-            {e.pruebas} {e.pruebas === 1 ? 'prueba publicada' : 'pruebas publicadas'}
+            <span className="cifra text-3xl leading-none">{e.pruebas}</span>{' '}
+            <span className="text-xs text-muted-foreground">{e.pruebas === 1 ? 'prueba publicada' : 'pruebas publicadas'}</span>
           </span>
-          <span className="text-xs text-muted-foreground">
-            {e.armas.length > 0 ? e.armas.map((a) => WEAPON_LABEL[a]).join(', ') : 'Sin armas indicadas'}
+          <span className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span>{e.armas.length > 0 ? e.armas.map((a) => WEAPON_LABEL[a]).join(', ') : 'Sin armas indicadas'}</span>
             {e.formatos.length > 0
-              ? ` · ${e.formatos.map((f) => (f === 'EQUIPOS' ? 'equipos' : 'individual')).join(' y ')}`
-              : ''}
+              ? <span>{e.formatos.map((f) => (f === 'EQUIPOS' ? 'equipos' : 'individual')).join(' y ')}</span>
+              : null}
           </span>
         </span>
       </Link>
@@ -133,10 +134,12 @@ export function ListaSeries({ series }: { series: { serie: SerieComplementaria; 
           </Bloque>
         );
       })}
-      <Nota>
-        La serie se reconoce por el nombre publicado de la edición. Las categorías y modalidades son las que cada
-        fuente publica; los Juegos Olímpicos de la Juventud no se incluyen.
-      </Nota>
+      <Aclaracion titulo="Criterios de estas series">
+        <Nota>
+          La serie se reconoce por el nombre publicado de la edición. Las categorías y modalidades son las que cada
+          fuente publica; los Juegos Olímpicos de la Juventud no se incluyen.
+        </Nota>
+      </Aclaracion>
     </div>
   );
 }
@@ -184,10 +187,10 @@ function FilaPrueba({
   return (
     <li
       aria-current={elegida ? 'true' : undefined}
-      className={cn('grid gap-x-6 gap-y-3 px-3 py-3 md:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.5fr)]', elegida && 'bg-accent/40')}
+      className={cn('grid gap-x-6 gap-y-3 px-4 py-4 md:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,1.5fr)]', elegida && 'bg-marcado')}
     >
       <div className="flex min-w-0 flex-col gap-1">
-        <h3 className="text-base font-medium break-words">{nombreDePrueba(p)}</h3>
+        <h3 className="text-xl leading-tight break-words">{nombreDePrueba(p)}</h3>
         {p.fecha ? <span className="text-xs text-muted-foreground">{fechaLegible(p.fecha)}</span> : null}
         <EstadoResultadosPrueba estado={p.resultados.estado} importados={p.resultados.importados} />
       </div>
@@ -261,9 +264,9 @@ function FilaPuesto({
 }) {
   const contenido = (
     <>
-      <span className="cifra text-2xl leading-none md:text-right">{fila.puesto ?? '—'}</span>
+      <span className="cifra self-start text-3xl leading-none md:self-center md:text-right" aria-label={fila.puesto === null ? 'Sin puesto numérico' : `Puesto ${fila.puesto}`}>{fila.puesto ?? '—'}</span>
       <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="font-medium break-words">{fila.nombre}</span>
+        <span className="font-semibold break-words">{fila.nombre}</span>
         {fila.puesto === null && fila.puestoPublicado ? (
           <span className="text-xs text-muted-foreground">Publicado como «{fila.puestoPublicado}»</span>
         ) : null}
@@ -271,14 +274,14 @@ function FilaPuesto({
           <span className="text-xs text-muted-foreground">Sin ficha deportiva vinculada</span>
         )}
       </span>
-      <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+      <span className="col-start-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm md:col-start-3">
         {fila.pais ? <BanderaPais pais={fila.pais} /> : <span className="text-muted-foreground">País no publicado</span>}
-        {fila.club ? <span className="text-xs text-muted-foreground">{fila.club}</span> : null}
+        {fila.club ? <span className="min-w-0 text-xs text-muted-foreground break-words">{fila.club}</span> : null}
       </span>
     </>
   );
   const rejilla =
-    'grid min-h-11 grid-cols-[3rem_minmax(0,1fr)] items-center gap-x-4 gap-y-1 px-3 py-3 md:grid-cols-[3rem_minmax(0,2fr)_minmax(0,1.5fr)]';
+    'grid min-h-11 grid-cols-[3rem_minmax(0,1fr)] items-center gap-x-4 gap-y-2 px-4 py-4 md:grid-cols-[3rem_minmax(0,2fr)_minmax(0,1.5fr)]';
   return (
     <li>
       {fila.personaId ? (
@@ -364,10 +367,12 @@ export function ClasificacionDePrueba({
           .
         </Nota>
       ) : null}
-      <Nota>
-        Sólo las filas vinculadas a una persona deportiva abren su ficha. Una fila sin vínculo se conserva tal y
-        como la publicó la fuente: no se asigna a nadie por parecido de nombre.
-      </Nota>
+      <Aclaracion titulo="Cómo abrir una ficha desde la clasificación">
+        <Nota>
+          Sólo las filas vinculadas a una persona deportiva abren su ficha. Una fila sin vínculo se conserva tal y
+          como la publicó la fuente: no se asigna a nadie por parecido de nombre.
+        </Nota>
+      </Aclaracion>
     </Bloque>
   );
 }
@@ -396,16 +401,30 @@ export function EdicionCompleta({
         </Link>
       </nav>
 
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl break-words sm:text-3xl">{edicion.nombre}</h1>
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-          {edicion.serie ? <span className="font-medium text-foreground">{ETIQUETA_SERIE[edicion.serie]}</span> : null}
-          <span>Temporada {edicion.temporada}</span>
-          {edicion.ciudad ? <span>{edicion.ciudad}</span> : null}
-          {edicion.pais ? <BanderaPais pais={edicion.pais} /> : null}
-          {fechas ? <span>{fechas}</span> : null}
-          <span>Fuente: {fuenteResultado(edicion.fuente)}</span>
-        </p>
+      <header className="flex min-w-0 flex-col gap-4 border-y border-l-2 border-l-primary bg-card px-4 py-5 sm:px-6 sm:py-6">
+        <h1 className="text-3xl leading-tight break-words sm:text-4xl">{titular(edicion.nombre)}</h1>
+        {edicion.serie ? <p className="text-sm text-muted-foreground">{ETIQUETA_SERIE[edicion.serie]}</p> : null}
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-10">
+          <div className="min-w-0">
+            <dt className="text-xs text-muted-foreground">Temporada</dt>
+            <dd className="text-sm">{edicion.temporada}</dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="text-xs text-muted-foreground">Sede</dt>
+            <dd className="flex flex-wrap items-center gap-2 text-sm break-words">
+              <span>{edicion.ciudad ?? 'Ciudad no publicada'}</span>
+              {edicion.pais ? <BanderaPais pais={edicion.pais} /> : <span className="text-muted-foreground">País no publicado</span>}
+            </dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="text-xs text-muted-foreground">Fechas</dt>
+            <dd className="text-sm">{fechas ?? <span className="text-muted-foreground">No publicadas</span>}</dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="text-xs text-muted-foreground">Fuente</dt>
+            <dd className="text-sm">{fuenteResultado(edicion.fuente)}</dd>
+          </div>
+        </dl>
       </header>
 
       {edicion.pruebaDesconocida ? (

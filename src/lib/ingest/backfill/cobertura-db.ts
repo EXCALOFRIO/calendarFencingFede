@@ -18,7 +18,7 @@ const numero = (v: unknown): number => {
 
 function comoFecha(v: unknown): Date | null {
   if (v === null || v === undefined) return null;
-  const d = v instanceof Date ? v : new Date(String(v));
+  const d = v instanceof Date ? v : new Date(typeof v === 'number' ? v : String(v));
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
@@ -116,9 +116,9 @@ export async function leerCoberturaAgregada(consultar: ConsultaSql): Promise<Fil
                 when cursor like '{"v":1,"fuente":"fie"%' then 'continuacion'
                 else null end as clase_cursor,
            (published_total is null or imported_total >= published_total) as consistente,
-           count(*)::int as n,
-           coalesce(sum(published_total), 0)::bigint as publicado,
-           coalesce(sum(imported_total), 0)::bigint as importado
+           count(*) as n,
+           coalesce(sum(published_total), 0) as publicado,
+           coalesce(sum(imported_total), 0) as importado
     from sport_import_coverage
     group by 1, 2, 3, 4, 5`);
   return filas.map((f) => ({
@@ -126,7 +126,7 @@ export async function leerCoberturaAgregada(consultar: ConsultaSql): Promise<Fil
     factKind: String(f.fact_kind),
     status: String(f.status) as FilaCoberturaAgregada['status'],
     claseCursor: f.clase_cursor === 'no_publicado' || f.clase_cursor === 'continuacion' ? f.clase_cursor : null,
-    consistente: f.consistente === true || f.consistente === 't' || f.consistente === 'true',
+    consistente: f.consistente === 1 || f.consistente === true || f.consistente === 't' || f.consistente === 'true',
     n: numero(f.n),
     publicado: numero(f.publicado),
     importado: numero(f.importado),
@@ -150,15 +150,15 @@ export type ReferenciasHistoricas = {
  * recuento, no una hidratación: ninguna lectura histórica se dispara desde aquí.
  */
 export async function contarReferenciasHistoricas(consultar: ConsultaSql): Promise<ReferenciasHistoricas> {
-  const [existe] = await consultar(`select to_regclass('public.sport_registration_ref') is not null as ok`);
-  const tabla = existe?.ok === true || existe?.ok === 't' || existe?.ok === 'true';
+  const [existe] = await consultar(`select exists(select 1 from sqlite_master where type='table' and name='sport_registration_ref') as ok`);
+  const tabla = existe?.ok === 1 || existe?.ok === true;
   const base = `
     from competition_registration r
     join event_competition ec on ec.id = r.event_competition_id
     where r.source = 'fie'`;
   const [t] = await consultar(`
-    select count(*)::int as total,
-           count(*) filter (where ec.competition_date < current_date)::int as historicas
+    select count(*) as total,
+           count(*) filter (where ec.competition_date < date('now')) as historicas
     ${base}`);
   const resultado: ReferenciasHistoricas = {
     tablaDisponible: tabla,
@@ -169,9 +169,9 @@ export async function contarReferenciasHistoricas(consultar: ConsultaSql): Promi
   };
   if (!tabla) return resultado;
   const [c] = await consultar(`
-    select count(*) filter (where exists (select 1 from sport_registration_ref f where f.registration_id = r.id))::int as con_ref,
-           count(*) filter (where ec.competition_date < current_date
-                              and not exists (select 1 from sport_registration_ref f where f.registration_id = r.id))::int as hist_sin_ref
+    select count(*) filter (where exists (select 1 from sport_registration_ref f where f.registration_id = r.id)) as con_ref,
+           count(*) filter (where ec.competition_date < date('now')
+                              and not exists (select 1 from sport_registration_ref f where f.registration_id = r.id)) as hist_sin_ref
     ${base}`);
   return { ...resultado, conReferencia: numero(c?.con_ref), historicasSinReferencia: numero(c?.hist_sin_ref) };
 }

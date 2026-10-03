@@ -69,7 +69,7 @@ type Tramo = {
 
 const PINTA: Record<'pasado' | 'actual' | 'futuro', { barra: string; texto: string }> = {
   // Lo ya vencido se apaga: está ahí para situarte, no para leerlo.
-  pasado: { barra: 'bg-muted-foreground/25', texto: 'text-muted-foreground/60' },
+  pasado: { barra: 'bg-muted-foreground/25', texto: 'text-muted-foreground' },
   actual: { barra: 'bg-current', texto: '' },
   futuro: { barra: 'bg-muted-foreground/15', texto: 'text-muted-foreground' },
 };
@@ -176,7 +176,7 @@ export function BarraPlazos({ plazos, estado, conEstado = true }: Props) {
         */
         style={{
           gridTemplateColumns: tramos
-            .map((t) => (t.cierra ? '1fr' : 'minmax(3.5rem, 0.5fr)'))
+            .map((t) => (t.cierra ? 'minmax(0, 1fr)' : 'minmax(3.5rem, 0.5fr)'))
             .join(' '),
         }}
       >
@@ -193,10 +193,11 @@ export function BarraPlazos({ plazos, estado, conEstado = true }: Props) {
             >
               {/* Importe del tramo, encima de su trozo de barra. */}
               <div
+                data-plazo="importe"
                 className={cn(
-                  'truncate text-[0.68rem] leading-tight font-medium tabular-nums sm:text-xs',
+                  'break-words text-[0.68rem] leading-tight font-medium tabular-nums sm:text-xs',
                   t.estado === 'pasado'
-                    ? 'text-muted-foreground/60'
+                    ? 'text-muted-foreground'
                     : t.estado === 'actual'
                       ? ''
                       : 'text-muted-foreground',
@@ -255,7 +256,7 @@ export function BarraPlazos({ plazos, estado, conEstado = true }: Props) {
                 className={cn(
                   'flex min-w-0 flex-col items-end pl-1.5 text-right text-[0.68rem] leading-tight tabular-nums sm:text-xs',
                   t.estado === 'pasado'
-                    ? 'text-muted-foreground/60'
+                    ? 'text-muted-foreground'
                     : 'text-muted-foreground',
                 )}
               >
@@ -269,15 +270,16 @@ export function BarraPlazos({ plazos, estado, conEstado = true }: Props) {
                   los dos límites de agregación salen de la circular.
                 */}
                 <span
+                  data-plazo="fecha"
                   className={cn(
-                    'truncate',
+                    'max-w-full break-words',
                     t.cierra?.origin === 'CALCULADO' &&
                       'underline decoration-dotted decoration-from-font underline-offset-2',
                   )}
                 >
                   {dia}
                 </span>
-                {hora ? <span className="truncate opacity-80">{hora}</span> : null}
+                {hora ? <span data-plazo="hora" className="max-w-full break-words">{hora}</span> : null}
               </div>
             </div>
           );
@@ -318,7 +320,7 @@ export function BarraPlazos({ plazos, estado, conEstado = true }: Props) {
                 «las fechas de puntos» se leía como si hablara de la
                 puntuación. Visto en la captura de la ficha, no deducido.
               */}
-              {conEstado ? ' · las ' : 'Las '}
+              {conEstado ? '. Las ' : 'Las '}
               fechas subrayadas de puntos son estimadas según la normativa, no
               publicadas
             </span>

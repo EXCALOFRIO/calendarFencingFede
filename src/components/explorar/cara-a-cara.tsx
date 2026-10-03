@@ -22,7 +22,7 @@ import { etiquetaFase } from '@/lib/sport/explorar/etiquetas';
 import type { AsaltoDto, DeportistaResumen } from '@/lib/sport/explorar/tipos';
 import { etiquetaTemporada, rutaFicha } from '@/lib/sport/explorar/url';
 import { CATEGORY_LABEL, GENDER_LABEL, WEAPON_LABEL, cn, titular } from '@/lib/utils';
-import { Bloque, Celda, Dato, EnlaceFuente, Nota, fechaLegible } from './piezas';
+import { Aclaracion, Bloque, Celda, Dato, EnlaceFuente, Nota, fechaLegible } from './piezas';
 
 /**
  * Cara a cara individual. Sólo lleva lo que traen los DTO de `cara-a-cara.ts`:
@@ -102,7 +102,7 @@ export function CoberturaCaraACaraVista({
       </div>
 
       {cobertura.pruebasComunes > 0 ? (
-        <dl className="flex flex-wrap gap-x-8 gap-y-2">
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 border-y bg-card p-4 lg:grid-cols-4">
           <div className="flex flex-col gap-0.5">
             <dt className="text-xs text-muted-foreground">Pruebas comunes importadas</dt>
             <dd className="cifra text-2xl leading-none">{cobertura.pruebasComunes}</dd>
@@ -164,35 +164,37 @@ export function BalanceCaraACara({ datos }: { datos: DatosCaraACara }) {
   }
   return (
     <Bloque id="h2h-balance" titulo="Balance" nivel="pagina">
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:flex sm:flex-wrap">
-        <div className="flex min-w-0 flex-col gap-0.5">
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-5 border-y bg-card p-4 sm:p-6 lg:grid-cols-4">
+        <div className="flex min-w-0 flex-col gap-2">
           <dt className="text-xs text-muted-foreground break-words">Victorias de {titular(yo.nombre)}</dt>
           <dd className="cifra text-5xl leading-none">{r.victorias}</dd>
         </div>
-        <div className="flex min-w-0 flex-col gap-0.5">
+        <div className="flex min-w-0 flex-col gap-2">
           <dt className="text-xs text-muted-foreground break-words">Victorias de {titular(rival.nombre)}</dt>
           <dd className="cifra text-5xl leading-none">{r.derrotas}</dd>
         </div>
         {r.sinDecidir > 0 ? (
-          <div className="flex min-w-0 flex-col gap-0.5">
+          <div className="flex min-w-0 flex-col gap-2">
             <dt className="text-xs text-muted-foreground">Marcador igualado, sin ganador</dt>
             <dd className="cifra text-5xl leading-none">{r.sinDecidir}</dd>
           </div>
         ) : null}
-        <div className="flex min-w-0 flex-col gap-0.5">
+        <div className="col-span-2 flex min-w-0 flex-col gap-2 lg:col-span-1">
           <dt className="text-xs text-muted-foreground">Tantos de {titular(yo.nombre)} y del rival</dt>
-          <dd className="cifra text-5xl leading-none">
+          <dd className="cifra flex flex-wrap items-baseline gap-x-2 text-5xl leading-none">
             {r.tantosFavor}
             <span className="text-muted-foreground"> a </span>
             {r.tantosContra}
           </dd>
         </div>
       </dl>
-      <Nota>
-        Cuenta {r.asaltos} {r.asaltos === 1 ? 'asalto individual' : 'asaltos individuales'} con
-        marcador publicado e importados con estos filtros, cada uno una sola vez aunque la matriz
-        de la poule lo publique desde las dos perspectivas. No es el balance de toda su carrera.
-      </Nota>
+      <Aclaracion titulo={`Balance de ${r.asaltos} ${r.asaltos === 1 ? 'asalto importado' : 'asaltos importados'}`}>
+        <Nota>
+          Cuenta {r.asaltos} {r.asaltos === 1 ? 'asalto individual' : 'asaltos individuales'} con
+          marcador publicado e importados con estos filtros, cada uno una sola vez aunque la matriz
+          de la poule lo publique desde las dos perspectivas. No es el balance de toda su carrera.
+        </Nota>
+      </Aclaracion>
     </Bloque>
   );
 }
@@ -203,12 +205,12 @@ function FilaAsalto({ a, yo, rival }: { a: AsaltoDto; yo: PersonaCaraACara; riva
   const categoria = CATEGORY_LABEL[a.prueba.categoria.codigo as keyof typeof CATEGORY_LABEL] ?? a.prueba.categoria.codigo;
   const victoria = a.resultado === 'victoria';
   return (
-    <li className="grid gap-x-4 gap-y-2 px-3 py-3 md:grid-cols-[minmax(0,1.3fr)_minmax(0,3fr)_minmax(0,1.2fr)_minmax(0,1.6fr)_minmax(0,1fr)] md:items-center">
-      <Celda etiqueta="Marcador">
+    <li className="grid grid-cols-2 gap-x-4 gap-y-4 px-4 py-5 md:grid-cols-[minmax(0,1.3fr)_minmax(0,3fr)_minmax(0,1.2fr)_minmax(0,1.6fr)_minmax(0,1fr)] md:items-center">
+      <Celda etiqueta="Marcador" className="col-span-2 md:col-span-1">
         <span className="flex items-baseline gap-2">
-          <span className="cifra text-3xl leading-none">{a.marcador.mios}</span>
+          <span className="cifra text-4xl leading-none">{a.marcador.mios}</span>
           <span className="text-xs text-muted-foreground">frente a</span>
-          <span className="cifra text-3xl leading-none text-muted-foreground">{a.marcador.rival}</span>
+          <span className="cifra text-4xl leading-none text-muted-foreground">{a.marcador.rival}</span>
         </span>
         <span className="text-xs break-words">
           <span className={victoria ? 'font-medium text-ok' : 'font-medium text-danger'}>
@@ -217,7 +219,7 @@ function FilaAsalto({ a, yo, rival }: { a: AsaltoDto; yo: PersonaCaraACara; riva
           de {titular(yo.nombre)} sobre {titular(rival.nombre)}
         </span>
       </Celda>
-      <Celda etiqueta="Torneo y prueba">
+      <Celda etiqueta="Torneo y prueba" className="col-span-2 md:col-span-1">
         <span className="font-medium break-words">{titular(a.torneo.nombre)}</span>
         <span className="text-xs text-muted-foreground break-words">
           {WEAPON_LABEL[a.prueba.arma]} {GENDER_LABEL[a.prueba.genero].toLowerCase()}, {categoria}
@@ -258,10 +260,12 @@ export function AsaltosCaraACara({
   const base = { ...criterios, cursor: '' };
   return (
     <Bloque id="h2h-asaltos" titulo="Asaltos" nivel="pagina">
-      <Nota>
-        Del más reciente al más antiguo. El marcador está visto desde {titular(yo.nombre)}. La ronda
-        es la clave que publica la fuente; si no la publica, no se completa.
-      </Nota>
+      <Aclaracion titulo={`Marcador desde ${titular(yo.nombre)}`}>
+        <Nota>
+          Del más reciente al más antiguo. El marcador está visto desde {titular(yo.nombre)}. La ronda
+          es la clave que publica la fuente; si no la publica, no se completa.
+        </Nota>
+      </Aclaracion>
       {datos.items.length === 0 ? (
         <p role="status" className="medida text-sm text-muted-foreground">
           {datos.resumen.asaltos > 0
@@ -318,35 +322,33 @@ export function CabeceraCaraACara({
     ENLACE_CLASES,
   );
   return (
-    <header className="flex flex-col gap-2">
-      <h1 className="text-2xl break-words sm:text-3xl">
-        {titular(yo.nombre)} frente a {titular(rival.nombre)}
-      </h1>
-      <dl className="flex flex-wrap gap-x-8 gap-y-2">
-        <div className="flex flex-col gap-0.5">
+    <header className="flex min-w-0 flex-col gap-4 border-y border-l-2 border-l-primary bg-card px-4 py-5 sm:px-6 sm:py-6">
+      <h1 className="text-3xl leading-tight sm:text-4xl">Cara a cara</h1>
+      <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
+        <div className="flex min-w-0 flex-col gap-1">
           <dt className="text-xs text-muted-foreground">Visto desde</dt>
-          <dd className="flex items-center gap-2 text-sm">
-            {titular(yo.nombre)}
+          <dd className="flex min-w-0 flex-col items-start gap-2">
+            <span className="font-display text-2xl leading-tight break-words sm:text-3xl">{titular(yo.nombre)}</span>
             {yo.pais ? <BanderaPais pais={yo.pais} conNombre /> : null}
           </dd>
         </div>
-        <div className="flex flex-col gap-0.5">
+        <div className="flex min-w-0 flex-col gap-1">
           <dt className="text-xs text-muted-foreground">Rival</dt>
-          <dd className="flex items-center gap-2 text-sm">
-            {titular(rival.nombre)}
+          <dd className="flex min-w-0 flex-col items-start gap-2">
+            <span className="font-display text-2xl leading-tight break-words sm:text-3xl">{titular(rival.nombre)}</span>
             {rival.pais ? <BanderaPais pais={rival.pais} conNombre /> : null}
           </dd>
         </div>
       </dl>
       <nav aria-label="Enlaces del cara a cara" className="flex flex-wrap gap-x-5 gap-y-1">
-        <Link href={rutaFicha(yo.id)} prefetch={false} className={enlace}>
-          Ficha de {titular(yo.nombre)}
+        <Link href={rutaFicha(yo.id)} prefetch={false} className={enlace} aria-label={`Ficha de ${titular(yo.nombre)}`}>
+          Ficha consultada
         </Link>
-        <Link href={rutaFicha(rival.id)} prefetch={false} className={enlace}>
-          Ficha de {titular(rival.nombre)}
+        <Link href={rutaFicha(rival.id)} prefetch={false} className={enlace} aria-label={`Ficha de ${titular(rival.nombre)}`}>
+          Ficha del rival
         </Link>
-        <Link href={urlVistaDelRival(yo.id, rival.id, criterios)} prefetch={false} className={enlace}>
-          Verlo desde {titular(rival.nombre)}
+        <Link href={urlVistaDelRival(yo.id, rival.id, criterios)} prefetch={false} className={enlace} aria-label={`Verlo desde ${titular(rival.nombre)}`}>
+          Invertir perspectiva
         </Link>
         <Link
           href={construirUrlCaraACara(yo.id, { temporada: criterios.temporada, arma: criterios.arma, fase: criterios.fase })}
@@ -372,11 +374,13 @@ export function CaraACaraCompleto({
       <BalanceCaraACara datos={datos} />
       <CoberturaCaraACaraVista cobertura={datos.cobertura} hayAsaltos={datos.resumen.asaltos > 0} />
       <AsaltosCaraACara datos={datos} criterios={criterios} />
-      <Nota>
-        Sólo cuentan asaltos individuales entre dos personas confirmadas con el marcador
-        publicado. Los resultados finales, los BYE, los encuentros por equipos y los relevos no
-        suman victorias ni derrotas.
-      </Nota>
+      <Aclaracion titulo="Qué se incluye en el cara a cara">
+        <Nota>
+          Sólo cuentan asaltos individuales entre dos personas confirmadas con el marcador
+          publicado. Los resultados finales, los BYE, los encuentros por equipos y los relevos no
+          suman victorias ni derrotas.
+        </Nota>
+      </Aclaracion>
     </div>
   );
 }
@@ -402,7 +406,7 @@ function FilaPersona({
         href={href}
         prefetch={false}
         className={cn(
-          'grid min-h-11 gap-x-4 gap-y-1 px-3 py-3 hover:bg-accent focus-visible:bg-accent md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.5fr)] md:items-center',
+          'grid min-h-11 gap-x-4 gap-y-2 px-4 py-4 hover:bg-accent focus-visible:bg-accent md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.5fr)] md:items-center',
           ENLACE_CLASES,
         )}
       >
@@ -621,13 +625,13 @@ export function ChipsCaraACara({
   return (
     <ul aria-label="Filtros activos" className="flex flex-wrap gap-2">
       {chips.map((chip) => (
-        <li key={chip.clave}>
+        <li key={chip.clave} className="min-w-0 max-w-full">
           <Link
             href={chip.quitar}
             prefetch={false}
             aria-label={`Quitar filtro ${chip.etiqueta}: ${chip.valor}`}
             className={cn(
-              'inline-flex min-h-11 items-center gap-1.5 rounded-full border bg-secondary px-3 text-sm hover:bg-accent',
+              'inline-flex min-h-11 max-w-full flex-wrap items-center gap-1.5 rounded-full border bg-secondary px-3 text-sm hover:bg-accent',
               ENLACE_CLASES,
             )}
           >

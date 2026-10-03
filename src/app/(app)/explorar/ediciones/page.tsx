@@ -39,11 +39,10 @@ export default async function Pagina() {
         </Link>
       </nav>
 
-      <header className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <h1 className="text-2xl sm:text-3xl">Ediciones y series</h1>
-        <p className="text-sm text-muted-foreground">
-          Juegos Olímpicos, Juegos Mediterráneos y Campeonato del Mediterráneo, con las pruebas que cada
-          fuente publicó.
+      <header className="flex min-w-0 flex-col gap-2 border-b pb-4">
+        <h1 className="text-3xl leading-tight sm:text-4xl">Ediciones y series</h1>
+        <p className="medida text-sm text-muted-foreground">
+          Consulta las pruebas y clasificaciones publicadas de cada edición.
         </p>
       </header>
 

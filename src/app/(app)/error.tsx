@@ -4,6 +4,7 @@ import { KeyRound, Lock, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
+import { ERROR_SOLO_LECTURA, ERROR_VISTA_CADUCADA } from '@/lib/auth/read-only';
 
 /**
  * ===========================================================================
@@ -59,6 +60,23 @@ export default function ErrorAplicacion({
   const mensaje = error.message ?? '';
   const caducada = /NO_AUTENTICADO/.test(mensaje);
   const sinPermiso = /Esta pantalla es para/.test(mensaje);
+
+  if (error.digest === ERROR_SOLO_LECTURA || error.digest === ERROR_VISTA_CADUCADA) {
+    return (
+      <Marco
+        icono={<Lock className="size-6 text-muted-foreground" aria-hidden />}
+        titulo={error.digest === ERROR_VISTA_CADUCADA ? 'La vista previa ha caducado' : 'Esta vista es de solo lectura'}
+        texto="No se ha guardado ningún cambio. Vuelve a tu cuenta administradora o elige otra vista privada."
+      >
+        <form action="/vista-previa/salir" method="post">
+          <Button type="submit" className="min-h-11">Salir de la vista previa</Button>
+        </form>
+        <Button variant="outline" asChild className="min-h-11">
+          <Link href="/vista-previa">Elegir otra vista</Link>
+        </Button>
+      </Marco>
+    );
+  }
 
   if (caducada) {
     return (

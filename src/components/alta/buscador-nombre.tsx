@@ -29,13 +29,11 @@ import { BotonSoyYo, FalloAlVincular } from './boton-soy-yo';
  * sí es una acción de servidor, que es donde tiene que estar un cambio.
  *
  * -------------------------------------------------------------------------
- * QUIEN CONFIRMA ES LA PERSONA, NO LA MÁQUINA
+ * LA DECLARACIÓN PROPIA NO CONFIRMA LA IDENTIDAD
  * -------------------------------------------------------------------------
  * Aunque la búsqueda devuelva un único candidato con el nombre exacto, NO se
- * vincula sola. El botón es el punto en el que la aplicación deja de suponer y
- * alguien se responsabiliza, y eso es lo que hace que buscar por nombre sea
- * aceptable en un proyecto que tiene prohibido emparejar por nombre. El porqué
- * completo está en `src/lib/altas/por-nombre.ts`.
+ * vincula sola. El botón guarda una solicitud sin permisos; la dirección
+ * técnica verifica la identidad por una vía independiente y aprueba el enlace.
  *
  * De cada candidato se enseña solo lo que sirve para reconocerse —nombre
  * publicado, arma, categoría, club y el AÑO de nacimiento— porque en estas
@@ -75,6 +73,7 @@ export function BuscadorNombre({
         Tu cuenta no está unida a ninguna ficha, así que el calendario no sabe
         cuál es tu arma. Escribe tu nombre como te salga: se busca en las listas
         oficiales de la RFEE y de la FIE, y las erratas se perdonan.
+        La dirección técnica revisará tu identidad antes de vincular la ficha.
       </p>
 
       {/*
@@ -97,6 +96,7 @@ export function BuscadorNombre({
             defaultValue={escrito || nombreCuenta}
             placeholder="Nombre y apellidos"
             autoComplete="name"
+            maxLength={160}
             spellCheck={false}
             aria-invalid={resultado?.ok === false}
             aria-describedby={resultado?.ok === false ? 'error-nombre' : undefined}
@@ -301,9 +301,9 @@ function Candidatos({
       <p className="medida flex items-start gap-2 pt-3 text-xs text-muted-foreground">
         <UserCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
         <span>
-          Queda apuntado que has sido tú quien lo ha confirmado, con la fecha y
-          lo que escribiste. Y cada cuenta vincula una sola ficha: si te
-          equivocas, tendrá que arreglarlo la dirección técnica.
+          El botón guarda una solicitud, no concede acceso a esta ficha.
+          La dirección técnica debe verificar tu identidad por una vía independiente
+          antes de aprobarla. Cada cuenta puede tener una solicitud pendiente.
         </span>
       </p>
     </section>
@@ -331,15 +331,13 @@ function NoApareces({ esPersonal }: { esPersonal: boolean }) {
             ? ' Mientras tanto el calendario funciona, aunque sin filtrar por tu arma.'
             : ''}{' '}
           {/*
-            Y para quien tenga el carné delante: la vía de la licencia sigue
-            ahí. Es una prueba más fuerte que reconocerse en una lista, así que
-            no se esconde; solo deja de ser lo primero que se pide.
+            La búsqueda por licencia también exige revisión de identidad.
           */}
           <Link
             href="/alta?con=licencia"
             className="text-primary-text underline underline-offset-4"
           >
-            También puedes identificarte con tu número de licencia de la RFEE.
+            También puedes buscar con tu número de licencia de la RFEE, con la misma revisión.
           </Link>
         </span>
       </p>

@@ -48,15 +48,17 @@ export default async function Pagina({
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <h1 className="text-2xl sm:text-3xl">Explorar</h1>
-        <p className="text-sm text-muted-foreground">
-          Deportistas de todas las federaciones, con o sin cuenta, activos o retirados.
-        </p>
-        <span className="ml-auto flex flex-wrap items-center gap-x-4">
+      <header className="flex min-w-0 flex-wrap items-end justify-between gap-x-6 gap-y-3 border-b pb-4">
+        <div className="flex min-w-0 flex-col gap-1">
+          <h1 className="text-3xl leading-tight sm:text-4xl">Explorar</h1>
+          <p className="text-sm text-muted-foreground">
+            Encuentra deportistas, resultados y rankings publicados.
+          </p>
+        </div>
+        <nav aria-label="Colecciones de Explorar" className="flex flex-wrap items-center gap-x-5 gap-y-1">
           <EnlaceEdiciones />
           <EnlaceFavoritos />
-        </span>
+        </nav>
       </header>
 
       <div className="flex flex-col gap-3">

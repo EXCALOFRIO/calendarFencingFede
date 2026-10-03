@@ -1,23 +1,22 @@
 import { sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { sportCompetition, sportEdition } from '@/db/schema';
-import { depsEvidenciaDb } from '@/lib/entries/evidencia-db';
-import { categoriasHistoricasAplicadas, esquemaDeportivo } from '@/lib/sport/esquema-db';
-import { crearGuardDb } from '@/lib/sport/id-guard-db';
+import { categoriasD1, crearGuardIdentidadD1, evidenciaD1, esquemaD1 } from './backfill/identidad-db';
+import { DB_NOW } from './sport-incremental/lease';
 import { escribirCobertura, escribirResultados } from './fie-resultados-db';
 import type { DepsPersistenciaSkermo } from './skermo-finales-persist';
 
 /**
- * Implementación Neon de la persistencia de puestos finales de Skermo. Reutiliza
+ * Implementación D1 de la persistencia de puestos finales de Skermo. Reutiliza
  * los escritores de resultados y cobertura de la FIE (misma clave natural y
  * mismas reglas de revisión) y el guard de IDs compartido. No hay borrados.
  */
 export function crearDepsPersistenciaSkermoDb(db: Db): DepsPersistenciaSkermo {
   return {
-    esquema: esquemaDeportivo,
-    categoriasHistoricas: categoriasHistoricasAplicadas,
-    evidencia: depsEvidenciaDb,
-    guard: crearGuardDb(db),
+    esquema: esquemaD1(db),
+    categoriasHistoricas: categoriasD1(db),
+    evidencia: evidenciaD1(db),
+    guard: crearGuardIdentidadD1(db),
 
     async upsertPrueba(p) {
       // Skermo no tiene entidad de torneo en el índice de resultados: cada
@@ -42,7 +41,7 @@ export function crearDepsPersistenciaSkermoDb(db: Db): DepsPersistenciaSkermo {
             endDate: sql`excluded.end_date`,
             city: sql`excluded.city`,
             sourceUrl: sql`excluded.source_url`,
-            updatedAt: sql`now()`,
+            updatedAt: DB_NOW,
           },
         })
         .returning({ id: sportEdition.id });
@@ -73,7 +72,7 @@ export function crearDepsPersistenciaSkermoDb(db: Db): DepsPersistenciaSkermo {
             format: sql`excluded.format`,
             competitionDate: sql`excluded.competition_date`,
             sourceUrl: sql`excluded.source_url`,
-            updatedAt: sql`now()`,
+            updatedAt: DB_NOW,
           },
         })
         .returning({ id: sportCompetition.id });

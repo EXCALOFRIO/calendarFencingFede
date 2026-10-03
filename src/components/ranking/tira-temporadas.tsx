@@ -163,8 +163,8 @@ export function TiraTemporadas({
           primera tarjeta. Es también donde los pone la FIE.
         */}
         <div className="flex shrink-0 gap-2">
-          <CarouselPrevious className="static size-9 translate-y-0 rounded-full" />
-          <CarouselNext className="static size-9 translate-y-0 rounded-full" />
+          <CarouselPrevious className="static size-11 translate-y-0 rounded-full" aria-label="Temporadas anteriores en la tira" />
+          <CarouselNext className="static size-11 translate-y-0 rounded-full" aria-label="Temporadas siguientes en la tira" />
         </div>
       </div>
 
@@ -205,7 +205,7 @@ function Tarjeta({
     <article
       className={cn(
         // Filete de luz arriba, como el canto de una chapa. No sombra.
-        'flex h-full min-h-36 flex-col gap-1 rounded-lg border-t bg-card px-3 py-3',
+        'flex h-full min-h-40 flex-col gap-2 border-t bg-secondary px-3 py-3',
         destacada ? 'border-t-primary/60' : 'border-t-filete',
       )}
     >
@@ -215,14 +215,14 @@ function Tarjeta({
         <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
           <span className="flex items-baseline">
             <span className="text-sm text-muted-foreground">#</span>
-            <span className="cifra text-3xl">{temporada.puesto ?? '—'}</span>
+            <span className="cifra text-4xl">{temporada.puesto ?? '—'}</span>
           </span>
           <Flecha tendencia={tendencia} />
         </div>
 
         <p className="flex min-w-0 items-baseline gap-1 text-xs text-muted-foreground">
           <span aria-hidden>/</span>
-          <span className="min-w-0 truncate">{temporada.categoria}</span>
+          <span className="min-w-0 break-words">{temporada.categoria}</span>
         </p>
       </div>
 
@@ -233,7 +233,9 @@ function Tarjeta({
         </span>
         <span className="text-xs text-muted-foreground">
           {temporada.puntos === null ? 'puntos no publicados' : 'puntos'}
-          {temporada.pruebas ? ` · ${temporada.pruebas} pruebas` : ''}
+          {temporada.pruebas !== null && temporada.pruebas !== undefined ? (
+            <span className="block">{temporada.pruebas} pruebas</span>
+          ) : null}
         </span>
       </div>
 

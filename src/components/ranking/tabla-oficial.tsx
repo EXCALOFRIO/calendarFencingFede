@@ -242,7 +242,7 @@ export function TablaRankingOficial({
   const quedan = filtradas.length - filasVisibles.length;
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="ranking flex min-w-0 flex-col gap-4">
       {/*
         Los controles, compartidos con la tabla del ranking mundial.
 
@@ -268,11 +268,12 @@ export function TablaRankingOficial({
         números del mismo tamaño y, sin este contraste, el tuyo se pierde.
       */}
       {misFilas.map((fila) => (
-        <button
+        <Button
+          variant="ghost"
           key={fila.id}
           type="button"
           onClick={() => setAbierto(fila.athleteId)}
-          className="flex cursor-pointer items-start gap-4 rounded-lg border-t border-filete bg-card px-4 py-4 text-left transition-colors hover:bg-accent"
+          className="flex h-auto min-w-0 cursor-pointer items-start justify-start gap-4 rounded-none border-y border-filete-alto bg-card px-4 py-4 text-left whitespace-normal transition-colors hover:bg-accent"
         >
           {conMiFicha ? null : (
             <span className="flex w-16 shrink-0 flex-col">
@@ -300,7 +301,7 @@ export function TablaRankingOficial({
               <ChevronRight className="size-4 shrink-0" aria-hidden />
             </span>
           </span>
-        </button>
+        </Button>
       ))}
 
       {/*
@@ -326,24 +327,28 @@ export function TablaRankingOficial({
         otra vez el «mucho texto» de la queja. Aquí queda solo lo que el
         subtítulo no dice: cuándo se leyó y dónde está el original.
       */}
-      <p className="medida text-xs text-muted-foreground">
-        Clasificación oficial de la RFEE
-        {tabla.actualizadoEl ? ` · leída el ${formatDateEs(tabla.actualizadoEl)}` : ''}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-filete-alto pt-2 text-xs text-muted-foreground">
+        <span>Clasificación oficial RFEE</span>
+        {tabla.actualizadoEl ? <span>Leída {formatDateEs(tabla.actualizadoEl)}</span> : null}
         {tabla.sourceUrl ? (
-          <>
-            {' · '}
+          <Button variant="link" size="sm" className="px-0 text-xs text-primary-text" asChild>
             <a
               href={tabla.sourceUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 text-primary-text underline underline-offset-4"
             >
-              ver la fuente
+              Ver la fuente
               <ExternalLink className="size-3 shrink-0" aria-hidden />
             </a>
-          </>
+          </Button>
         ) : null}
-      </p>
+      </div>
+
+      {filasVisibles.length === 0 ? (
+        <p className="border-y border-filete-alto py-6 text-sm text-muted-foreground">
+          {busqueda ? 'Ningún tirador coincide. Prueba otro nombre.' : 'Sin puestos publicados en este grupo.'}
+        </p>
+      ) : null}
 
       <Table>
         <TableHeader>
@@ -414,12 +419,10 @@ export function TablaRankingOficial({
 
       {conFicha < tabla.rows.length ? (
         <p className="medida text-xs text-muted-foreground">
-          De estos {tabla.rows.length} tiradores,{' '}
-          <span className="cifra text-sm">{tabla.rows.length - conFicha}</span> no
-          tienen ficha en la aplicación, así que de ellos solo se sabe lo que
-          publica la federación: ni plazos, ni inscripciones
-          {verCalculo ? ', ni el cálculo abierto' : ''}. Se arregla de uno en
-          uno, y cada alta es una fila menos.
+          <span className="cifra text-base">{tabla.rows.length - conFicha}</span>{' '}
+          {tabla.rows.length - conFicha === 1 ? 'tirador' : 'tiradores'} sin ficha vinculada.
+          {' '}Solo se muestran sus datos publicados por la RFEE,
+          no sus plazos ni inscripciones{verCalculo ? ' ni su cálculo interno' : ''}.
         </p>
       ) : null}
 
@@ -752,14 +755,14 @@ function Fila({
       }
       aria-label={onAbrir ? `Ver los datos de ${fila.nombre}` : undefined}
       className={cn(
-        onAbrir && 'cursor-pointer',
-        esMia && 'bg-primary/10 hover:bg-primary/15',
+        onAbrir && 'cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
+        esMia && 'bg-marcado hover:bg-accent',
       )}
     >
       <TableCell className="pl-0 text-right align-top">
         <span
           className={cn(
-            'cifra text-xl',
+            'cifra text-2xl',
             esMia ? 'text-primary-text' : 'text-foreground',
           )}
         >
@@ -768,8 +771,8 @@ function Fila({
       </TableCell>
 
       <TableCell className="whitespace-normal align-top">
-        <span className="flex items-center gap-2">
-          <span className="font-medium text-foreground">{fila.nombre}</span>
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="min-w-0 break-words font-medium text-foreground">{fila.nombre}</span>
           {esMia ? (
             <Badge variant="outline" className="border-primary/50 text-primary-text">
               Tú
@@ -811,7 +814,7 @@ function Fila({
         </span>
       </TableCell>
 
-      <TableCell className="hidden max-w-48 truncate align-top text-muted-foreground md:table-cell">
+      <TableCell className="hidden whitespace-normal align-top text-muted-foreground md:table-cell">
         <CodigoClub codigo={fila.club} />
       </TableCell>
 

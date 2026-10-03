@@ -1,5 +1,6 @@
-import { and, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
-import { alias } from 'drizzle-orm/pg-core';
+import { and, desc, eq, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
+import { contieneSinMayusculas as ilike, enLista as inArray } from '@/lib/sqlite';
 import { db } from '@/db';
 import { documentoVigencia, officialDocument } from '@/db/schema';
 import type { EstadoVigencia } from './vigencia';
@@ -235,13 +236,13 @@ export async function datosDeDocumentos(opciones: {
 
     db
       .select({
-        coinciden: sql<number>`count(*) filter (where ${filtro ?? sql`true`})::int`,
-        total: sql<number>`count(*)::int`,
-        superadas: sql<number>`count(*) filter (where ${documentoVigencia.estado} = 'superada')::int`,
-        canceladas: sql<number>`count(*) filter (where ${documentoVigencia.estado} = 'cancelada')::int`,
-        duplicadas: sql<number>`count(*) filter (where ${documentoVigencia.estado} = 'duplicada')::int`,
-        conPdfRoto: sql<number>`count(*) filter (where ${documentoVigencia.hashError} like '%404%')::int`,
-        calculadas: sql<number>`count(${documentoVigencia.documentoId})::int`,
+        coinciden: sql<number>`count(*) filter (where ${filtro ?? sql`true`})`,
+        total: sql<number>`count(*)`,
+        superadas: sql<number>`count(*) filter (where ${documentoVigencia.estado} = 'superada')`,
+        canceladas: sql<number>`count(*) filter (where ${documentoVigencia.estado} = 'cancelada')`,
+        duplicadas: sql<number>`count(*) filter (where ${documentoVigencia.estado} = 'duplicada')`,
+        conPdfRoto: sql<number>`count(*) filter (where ${documentoVigencia.hashError} like '%404%')`,
+        calculadas: sql<number>`count(${documentoVigencia.documentoId})`,
       })
       .from(officialDocument)
       .leftJoin(documentoVigencia, eq(documentoVigencia.documentoId, officialDocument.id)),

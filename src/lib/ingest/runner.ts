@@ -1,4 +1,5 @@
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { enLista as inArray, lotesDeInsercion } from '@/lib/sqlite';
 import { db } from '@/db';
 import {
   competitionRegistration,
@@ -11,6 +12,7 @@ import {
 } from '@/db/schema';
 import { recalcularVigencia } from '../documentos/recalcular';
 import { tocaLeerRanking } from './cadencia-ranking';
+import { consultaUltimaLecturaRanking } from './cadencia-ranking-db';
 import { esquemaDeportivo } from '@/lib/sport/esquema-db';
 import { sha256 } from '../utils';
 import {
@@ -850,16 +852,17 @@ export async function ingestInscritosFie(
    * que publica la FIE de SU prueba, y así sigue valiendo el día que la
    * decisión de dónde escribir cambie.
    */
-  for (const lote of chunk(aEscribir, 100)) {
+  for (const lote of chunk(aEscribir, 45)) {
     const valores = sql.join(
-      lote.map((l) => sql`(${l.destino.pruebaFieId}::uuid, ${l.huella}::text)`),
+      lote.map((l) => sql`(${l.destino.pruebaFieId}, ${l.huella})`),
       sql`, `,
     );
     await db.execute(sql`
+      with v(id, huella) as (values ${valores})
       update ${eventCompetition} as ec
       set registrations_hash = v.huella,
-          registrations_checked_at = ${ahora}
-      from (values ${valores}) as v(id, huella)
+          registrations_checked_at = ${ahora.getTime()}
+      from v
       where ec.id = v.id
     `);
   }
@@ -876,16 +879,17 @@ export async function ingestInscritosFie(
   await db.execute(sql`
     update event_competition as ec
     set source_url = 'https://fie.org/competition/'
-      || split_part(e.source_id, '-', 2) || '/'
-      || split_part(e.source_id, '-', 3) || '/entries'
+      || substr(e.source_id, 5, 4) || '/'
+      || substr(e.source_id, 10) || '/entries'
     from event as e
     where e.id = ec.event_id
       and e.source = 'fie'
-      and e.source_id ~ '^fie-[0-9]{4}-[0-9]+$'
+      and e.source_id glob 'fie-[0-9][0-9][0-9][0-9]-[0-9]*'
+      and substr(e.source_id, 10) not glob '*[^0-9]*'
       and ec.source_url is distinct from (
         'https://fie.org/competition/'
-        || split_part(e.source_id, '-', 2) || '/'
-        || split_part(e.source_id, '-', 3) || '/entries'
+        || substr(e.source_id, 5, 4) || '/'
+        || substr(e.source_id, 10) || '/entries'
       )
   `);
 
@@ -991,7 +995,7 @@ async function ingestOfficialDocuments(): Promise<Dispatched> {
 
   const nuevos = candidates.filter((d) => !yaExisten.has(d.wpMediaId));
 
-  for (const lote of chunk(candidates, 100)) {
+  for (const lote of lotesDeInsercion(candidates, officialDocument)) {
     /**
      * `wp_media_id` es único, así que un solo INSERT ... ON CONFLICT hace de
      * alta y de actualización a la vez. Solo se refrescan título, URL y fecha:
@@ -1031,10 +1035,11 @@ async function ingestOfficialDocuments(): Promise<Dispatched> {
   const adminEmail = process.env.ADMIN_ALERT_EMAIL;
   const conRecargos = nuevos.filter((d) => d.mentionsFees);
   if (adminEmail && conRecargos.length > 0) {
-    const queued = await db
-      .insert(notification)
-      .values(
-        conRecargos.map((doc) => ({
+    for (const lote of lotesDeInsercion(conRecargos, notification)) {
+      const queued = await db
+        .insert(notification)
+        .values(
+          lote.map((doc) => ({
           dedupeKey: `circular-fees:${doc.wpMediaId}`,
           toEmail: adminEmail,
           kind: 'circular_normativa',
@@ -1047,11 +1052,12 @@ async function ingestOfficialDocuments(): Promise<Dispatched> {
             'Revisa si hay que actualizar las tablas de normativa ' +
             '(plazos y recargos, categorías de la temporada, coeficientes ' +
             'de ranking). La app no cambia ningún importe por su cuenta.\n',
-        })),
-      )
-      .onConflictDoNothing({ target: notification.dedupeKey })
-      .returning({ id: notification.id });
-    feeAlerts = queued.length;
+          })),
+        )
+        .onConflictDoNothing({ target: notification.dedupeKey })
+        .returning({ id: notification.id });
+      feeAlerts += queued.length;
+    }
   }
 
   /**
@@ -1136,7 +1142,7 @@ async function saveQuarantine(
   const nuevos = items.filter((item) => !yaPendientes.has(item.sourceId ?? ''));
   if (nuevos.length === 0) return 0;
 
-  for (const lote of chunk(nuevos, 100)) {
+  for (const lote of lotesDeInsercion(nuevos, ingestQuarantine)) {
     await db.insert(ingestQuarantine).values(
       lote.map((item) => ({
         ingestRunId: runId,
@@ -1286,7 +1292,7 @@ export async function openQuarantineCount() {
   return db
     .select({
       source: ingestQuarantine.source,
-      count: sql<number>`count(*)::int`,
+      count: sql<number>`count(*)`,
     })
     .from(ingestQuarantine)
     .where(isNull(ingestQuarantine.resolvedAt))
@@ -1300,7 +1306,7 @@ export async function openQuarantineCount() {
  */
 export async function countEventsBetween(from: string, to: string) {
   const [row] = await db
-    .select({ count: sql<number>`count(*)::int` })
+    .select({ count: sql<number>`count(*)` })
     .from(event)
     .where(and(sql`${event.startDate} >= ${from}`, sql`${event.startDate} <= ${to}`));
   return row?.count ?? 0;
@@ -1326,28 +1332,9 @@ export async function countEventsBetween(from: string, to: string) {
  */
 async function decidirCadenciaRanking() {
   try {
-    const [ultima] = await db
-      .select({ finishedAt: ingestRun.finishedAt })
-      .from(ingestRun)
-      .where(
-        and(
-          eq(ingestRun.source, 'skermo_ranking'),
-          eq(ingestRun.status, 'ok'),
-          /**
-           * Y que haya TERMINADO. Sin esto la cadencia no funcionaba nunca, y
-           * de la forma más silenciosa posible: la fila de la ejecución en
-           * curso se inserta con `finished_at` a null y con el estado `ok` por
-           * defecto, y **Postgres ordena los nulos PRIMERO en un `DESC`**, así
-           * que la consulta se encontraba a sí misma, leía `null` y decidía
-           * «nunca se ha leído el ranking» → descargar. O sea, se seguía
-           * descargando todas las noches y el registro decía que era la
-           * primera vez. Visto ejecutando el cron dos veces seguidas.
-           */
-          isNotNull(ingestRun.finishedAt),
-        ),
-      )
-      .orderBy(desc(ingestRun.finishedAt))
-      .limit(1);
+    // Excluye la ejecución en curso y los saltos sin descarga. De otro modo,
+    // cada salto diario reiniciaría la semana y el ranking nunca se releería.
+    const [ultima] = await consultaUltimaLecturaRanking(db);
 
     const ventana = new Date(Date.now() - 8 * 86_400_000)
       .toISOString()

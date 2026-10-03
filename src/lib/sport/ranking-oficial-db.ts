@@ -45,18 +45,18 @@ export function sqlRankingOficial(
   const formato = filtro.format ?? 'INDIVIDUAL';
   return sql`
     WITH elegida AS (
-      SELECT id, source, season, weapon::text AS weapon, gender::text AS gender,
-             category::text AS category, category_raw, format::text AS format,
-             published_on::text AS published_on, published_total, source_url
+      SELECT id, source, season, weapon AS weapon, gender AS gender,
+             category AS category, category_raw, format AS format,
+             published_on AS published_on, published_total, source_url
       FROM sport_ranking_publication
       WHERE source = ${filtro.source}
         AND season = ${filtro.season}
-        AND weapon::text = ${filtro.weapon}
-        AND gender::text = ${filtro.gender}
-        AND format::text = ${formato}
-        ${filtro.category === undefined ? sql`` : sql`AND category::text = ${filtro.category}`}
+        AND weapon = ${filtro.weapon}
+        AND gender = ${filtro.gender}
+        AND format = ${formato}
+        ${filtro.category === undefined ? sql`` : sql`AND category = ${filtro.category}`}
         ${filtro.categoryRaw === undefined ? sql`` : sql`AND category_raw = ${filtro.categoryRaw}`}
-        ${filtro.hasta === undefined ? sql`` : sql`AND published_on <= ${filtro.hasta}::date`}
+        ${filtro.hasta === undefined ? sql`` : sql`AND published_on <= ${filtro.hasta}`}
       ORDER BY published_on DESC, fetched_at DESC, id DESC
       LIMIT 1
     )
@@ -65,17 +65,17 @@ export function sqlRankingOficial(
            e.published_total AS "publishedTotal", e.source_url AS "sourceUrl",
            (
              SELECT coalesce(
-               jsonb_agg(
-                 jsonb_build_object(
+               json_group_array(
+                 json_object(
                    'sourceRef', f.source_ref,
                    'personId', f.person_id,
                    'sourceName', f.source_name,
                    'countryCode', f.country_code,
                    'position', f.position,
-                   'points', f.points::text
-                 ) ORDER BY f.position ASC NULLS LAST, f.source_ref ASC
+                   'points', f.points
+                 )
                ),
-               '[]'::jsonb
+               '[]'
              )
              FROM (
                SELECT source_ref, person_id, source_name, country_code, position, points
@@ -113,25 +113,25 @@ export function sqlRankingOficialDePersonas(
   season: string,
   format: 'INDIVIDUAL' | 'EQUIPOS',
 ) {
-  const ids = sql.join(
-    personIds.map((id) => sql`${id}::uuid`),
-    sql`, `,
-  );
+  const ids = sql`SELECT value FROM json_each(${JSON.stringify(personIds)})`;
   return sql`
-    WITH elegidas AS (
-      SELECT DISTINCT ON (p.source, p.weapon, p.gender, p.category_raw, p.format)
-             p.id, p.source, p.season, p.weapon::text AS weapon, p.gender::text AS gender,
-             p.category::text AS category, p.category_raw, p.format::text AS format,
-             p.published_on::text AS published_on, p.published_total, p.source_url
+    WITH ordenadas AS (
+      SELECT p.id, p.source, p.season, p.weapon AS weapon, p.gender AS gender,
+             p.category AS category, p.category_raw, p.format AS format,
+             p.published_on AS published_on, p.published_total, p.source_url,
+             row_number() OVER (
+               PARTITION BY p.source, p.weapon, p.gender, p.category_raw, p.format
+               ORDER BY p.published_on DESC, p.fetched_at DESC, p.id DESC
+             ) AS orden
       FROM sport_ranking_publication p
-      WHERE p.season = ${season} AND p.format::text = ${format}
-      ORDER BY p.source, p.weapon, p.gender, p.category_raw, p.format,
-               p.published_on DESC, p.fetched_at DESC, p.id DESC
+      WHERE p.season = ${season} AND p.format = ${format}
+    ), elegidas AS (
+      SELECT * FROM ordenadas WHERE orden = 1
     )
     SELECT g.id, g.source, g.season, g.weapon, g.gender, g.category,
            g.category_raw AS "categoryRaw", g.format, g.published_on AS "publishedOn",
            g.published_total AS "publishedTotal", g.source_url AS "sourceUrl",
-           e.source_ref AS "sourceRef", e.position, e.points::text AS points
+           e.source_ref AS "sourceRef", e.position, e.points AS points
     FROM elegidas g
     JOIN sport_ranking_entry e ON e.publication_id = g.id
     WHERE e.person_id IN (${ids})

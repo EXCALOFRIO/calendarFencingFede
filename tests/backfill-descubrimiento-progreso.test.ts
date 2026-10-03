@@ -4,6 +4,7 @@ import type { DepsPersistenciaDescubrimiento } from '@/lib/ingest/backfill/descu
 import { ErrorHttp } from '@/lib/ingest/http-retry';
 import { planificarDesdeCobertura, type FilaPlan } from '@/lib/ingest/backfill/plan';
 import { AlmacenCobertura } from './helpers/almacen-cobertura';
+import { claveDocumentoPdf } from '@/lib/ingest/backfill/inventario-unidades';
 
 /**
  * El descubrimiento guarda su progreso antes de avanzar: pruebas descubiertas de cada temporada
@@ -241,7 +242,7 @@ describe('descubrimiento con progreso durable entre lotes pequeños', () => {
     await descubrirCatalogo(deps(), { fuentes: ['skermo_rfee', 'rfee_pdf'] }, 10);
 
     expect(almacen.obtener('skermo_rfee', 'results', 'RFEE:77', '2024-2025')).toMatchObject({ status: 'pendiente', attempts: 0 });
-    const pdf = almacen.obtener('rfee_pdf', 'pdf', 'doc:abc', '2024-2025');
+    const pdf = almacen.obtener('rfee_pdf', 'pdf', claveDocumentoPdf('https://rfes.example/docs/abc.pdf'), '2024-2025');
     expect(pdf).toMatchObject({ status: 'pendiente', attempts: 0 });
     expect(JSON.parse(pdf?.cursor ?? '{}')).toMatchObject({
       sha256: null,

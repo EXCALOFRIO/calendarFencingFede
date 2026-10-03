@@ -177,7 +177,7 @@ describe('lectura del cara a cara', () => {
     expect(r.cobertura.estado).toBe('verificado');
 
     const sql = texto();
-    expect(sql).toMatch(/c\.format::text = 'INDIVIDUAL'/);
+    expect(sql).toMatch(/c\.format = 'INDIVIDUAL'/);
     expect(sql).toMatch(/b\.score_a <> b\.score_b/);
     expect(sql).not.toMatch(/user_profile|ranking_interno|internal_ranking|email/i);
     for (const k of clavesDe(r)) expect(CLAVES_PRIVADAS).not.toContain(k);
@@ -259,7 +259,7 @@ describe('lectura del cara a cara', () => {
       temporada: '2025-2026',
     });
     const resumen = sentencias.find((s) => /count\(\*\) FILTER/.test(s.text))!;
-    expect(resumen.text).toMatch(/b\.phase = \$/);
+    expect(resumen.text).toMatch(/b\.phase = \?/);
     expect(resumen.params).toContain('TABLEAU');
     expect(resumen.params).toContain('2025-2026');
   });
@@ -353,7 +353,7 @@ describe('rivales', () => {
     if (r.estado !== 'ok') throw new Error(r.estado);
     expect(r.items).toEqual([{ id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3 }]);
     expect(r.siguiente).toBeTruthy();
-    expect(texto()).toMatch(/c\.format::text = 'INDIVIDUAL'/);
+    expect(texto()).toMatch(/c\.format = 'INDIVIDUAL'/);
     for (const k of clavesDe(r)) expect(CLAVES_PRIVADAS).not.toContain(k);
 
     expect(await listarRivales(ctx, { personaId: UUID_A, limite: 1, q: 'otra', cursor: r.siguiente! })).toEqual({

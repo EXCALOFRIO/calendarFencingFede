@@ -1,14 +1,26 @@
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
-import { db } from '@/db';
+import { and, eq, or, sql } from 'drizzle-orm';
+import { enLista as inArray, textoSinAcentos } from '@/lib/sqlite';
+import { db, type Db } from '@/db';
+import { nowMilliseconds } from '@/db/d1/columns';
 import {
   athlete,
-  athleteWeapon,
   club,
   officialRankingEntry,
   userProfile,
 } from '@/db/schema';
 import { titular, yearFromIsoDate } from '@/lib/utils';
-import { ACENTOS, LLANOS, normalizarLicencia, sinAcentos } from './texto';
+import { normalizarLicencia, sinAcentos } from './texto';
+import { solicitarVinculo } from './solicitudes';
+import {
+  type AprobacionVinculo,
+  aprobacionVigente,
+  cierreAprobacion,
+  cuentaSinFicha,
+  escribirVinculoAtomico,
+  evidenciaValida,
+  exigirUnCambio,
+} from './vinculo-atomico';
+import { requiresGuardianAccount } from '@/lib/categories';
 
 /**
  * Alta de un tirador a partir del ranking oficial de la RFEE.
@@ -25,24 +37,19 @@ import { ACENTOS, LLANOS, normalizarLicencia, sinAcentos } from './texto';
  * -------------------------------------------------------------------------
  * Nombre, apellidos, fecha de nacimiento, club, arma, género y licencia salen
  * de la fila de `official_ranking_entry`, que es una copia fiel de lo que
- * publica `app.skermo.org/ranking-rfee/public/RFEE`. Lo único que teclea la
- * persona es su número de licencia, y no para guardarlo: para demostrar que la
- * fila es suya.
+ * publica `app.skermo.org/ranking-rfee/public/RFEE`. Una licencia tecleada
+ * ayuda a encontrar la fila, pero no se guarda como prueba de identidad.
  *
  * -------------------------------------------------------------------------
- * POR QUÉ LA LICENCIA ES LA PRUEBA DE IDENTIDAD
+ * LA LICENCIA NO CONCEDE PROPIEDAD
  * -------------------------------------------------------------------------
  * La tabla del ranking publica puesto, nombre, fecha de nacimiento, club y
  * puntos — pero **no la licencia** (eso lo dice el comentario del esquema y es
  * la razón de que `source_license` se rellene a posteriori, ficha a ficha).
- * Así que el número de licencia es algo que el tirador lleva en su carné y que
- * no se puede leer de la pantalla pública del ranking. Para una aplicación de
- * veinte personas de la selección, eso es una prueba de identidad razonable.
- *
- * Lo que NO es: un secreto criptográfico. Quien conozca la licencia de otro
- * puede reclamar su ficha. De ahí los dos límites de abajo —una ficha por
- * cuenta y una cuenta por ficha— y el contador de intentos: rebotan el caso
- * fácil (probar a ver si suena) sin fingir que esto es autenticación fuerte.
+ * No es un secreto criptográfico: conocerla no autoriza a gestionar la ficha.
+ * El autoservicio guarda una solicitud pendiente. La dirección técnica debe
+ * verificar la identidad por una vía independiente. El enlace se escribe
+ * atómicamente junto a las armas, las fuentes y el rastro de aprobación.
  */
 
 export type Arma = 'FLORETE' | 'ESPADA' | 'SABLE';
@@ -67,9 +74,8 @@ export type ClasificacionOficial = {
  *
  * Trae **todo lo que hace falta para distinguir a dos homónimos** —arma,
  * género, categoría, club, año de nacimiento y puesto— y nada más. En concreto
- * NO trae la licencia: si la trajera, el dato que sirve de prueba viajaría al
- * navegador de cualquiera que escriba un apellido y la comprobación del paso
- * siguiente no valdría nada.
+ * NO trae la licencia ni la fecha completa: no son necesarias para reconocer
+ * la fila ni deben viajar al navegador de quien escriba un apellido.
  */
 export type Candidato = {
   /** Clave estable del tirador en Skermo. No es la licencia. */
@@ -120,7 +126,11 @@ export type MotivoRechazo =
   | 'SIN_LICENCIA_EN_LA_FUENTE'
   | 'LICENCIA_NO_COINCIDE'
   | 'YA_VINCULADO'
-  | 'DEMASIADOS_INTENTOS';
+  | 'DEMASIADOS_INTENTOS'
+  | 'REVISION_PENDIENTE'
+  | 'SOLICITUD_PENDIENTE'
+  | 'CUENTA_NO_ELEGIBLE'
+  | 'VINCULO_CAMBIO';
 
 export type Alta = {
   atletaId: string;
@@ -139,7 +149,7 @@ export type ResultadoAlta =
   | { ok: false; motivo: MotivoRechazo; error: string };
 
 /** El nombre de la fuente, en minúsculas y sin acentos, dentro de la consulta. */
-const NOMBRE_LLANO = sql`lower(translate(${officialRankingEntry.sourceAthleteName}, ${ACENTOS}, ${LLANOS}))`;
+const NOMBRE_LLANO = textoSinAcentos(officialRankingEntry.sourceAthleteName);
 
 /** Mínimo de letras para buscar por nombre. Con una sale media federación. */
 const MINIMO_NOMBRE = 3;
@@ -266,39 +276,6 @@ export async function buscarCandidatos(
 }
 
 /**
- * Intentos fallidos de licencia por cuenta.
- *
- * Vive en memoria del proceso a propósito: no hace falta tabla para frenar a
- * quien prueba licencias a mano, y el coste de una tabla nueva (migración,
- * limpieza, otro sitio donde mirar) no se paga con lo que da. La contrapartida
- * es honesta y hay que decirla: con varias instancias del servidor, cada una
- * lleva su cuenta, y al reiniciar se olvida. Frena a una persona probando, no
- * a un guion decidido.
- */
-const INTENTOS = new Map<string, { fallos: number; desde: number }>();
-const VENTANA_MS = 10 * 60 * 1000;
-const MAX_FALLOS = 5;
-
-function intentosAgotados(profileId: string): boolean {
-  const registro = INTENTOS.get(profileId);
-  if (!registro) return false;
-  if (Date.now() - registro.desde > VENTANA_MS) {
-    INTENTOS.delete(profileId);
-    return false;
-  }
-  return registro.fallos >= MAX_FALLOS;
-}
-
-function apuntarFallo(profileId: string): void {
-  const registro = INTENTOS.get(profileId);
-  if (!registro || Date.now() - registro.desde > VENTANA_MS) {
-    INTENTOS.set(profileId, { fallos: 1, desde: Date.now() });
-    return;
-  }
-  registro.fallos += 1;
-}
-
-/**
  * Vincula la ficha de un tirador del ranking oficial a una cuenta.
  *
  * Devuelve el motivo del rechazo como código, no solo como frase: la pantalla
@@ -311,15 +288,14 @@ export async function vincularFichaDesdeRanking({
   licencia,
   origen,
   evidencia,
+  aprobacion,
+  adminProfileId,
 }: {
   profileId: string;
   /** La `clave` de un `Candidato` (el id del tirador en Skermo). */
   clave: string;
   /**
-   * La prueba de identidad. **Obligatoria en el autoservicio** y ausente en el
-   * guion: quien ejecuta `scripts/alta-desde-ranking.ts` es la dirección
-   * técnica, que ya es la autoridad que da de alta a la gente y no tiene por
-   * qué conocer la licencia de nadie. Pedírsela sería teatro.
+   * Dato opcional de búsqueda, nunca una credencial de propiedad.
    */
   licencia?: string;
   /**
@@ -328,11 +304,8 @@ export async function vincularFichaDesdeRanking({
    * escribe en `athlete.linked_via` y, solo en el guion de demostración, deja
    * el consentimiento firmado.
    *
-   * `nombre` es la vía que pidió el usuario: la persona se reconoció en la
-   * lista oficial y pulsó «Sí, soy yo». NO pide licencia, y es legítimo porque
-   * quien decide es ella sobre su propia identidad; el razonamiento completo
-   * está en la cabecera de `src/lib/altas/por-nombre.ts`. Lo que sí exige es
-   * que quede escrito quién lo confirmó: de ahí `evidencia`.
+   * `nombre` y `autoservicio` solo solicitan revisión. No modifican la ficha,
+   * sus fuentes, armas, club o permisos.
    *
    * `direccion` es el alta desde `/admin/usuarios`. Como el guion, no pide
    * licencia: quien pulsa ES la autoridad que da de alta a la gente. Y a
@@ -343,14 +316,32 @@ export async function vincularFichaDesdeRanking({
   origen: 'autoservicio' | 'guion' | 'nombre' | 'direccion';
   /** Qué escribió y qué fila reclamó. Obligatorio con `origen: 'nombre'`. */
   evidencia?: string;
-}): Promise<ResultadoAlta> {
+  /** Always obtained from the writable admin session, never from form data. */
+  adminProfileId?: string;
+  aprobacion?: AprobacionVinculo;
+}, database: Db = db): Promise<ResultadoAlta> {
+  if (origen === 'nombre' || origen === 'autoservicio') {
+    const solicitud = await solicitarVinculo({
+      profileId, clave: `rfee:${clave}`, nombreEscrito: evidencia?.slice(0, 160) ?? '',
+      ...(origen === 'autoservicio' ? { licencia: licencia ?? '' } : {}),
+    }, database);
+    return rechazoVinculo(solicitud.ok ? 'REVISION_PENDIENTE' : solicitud.motivo);
+  }
+  const actorId = aprobacion?.adminProfileId ?? adminProfileId;
+  if (origen === 'direccion' && (!actorId || (aprobacion && !evidenciaValida(aprobacion)))) {
+    return rechazoVinculo('CUENTA_NO_ELEGIBLE');
+  }
+  const [perfil] = await database.select({ id: userProfile.id }).from(userProfile)
+    .where(and(eq(userProfile.id, profileId), eq(userProfile.role, 'athlete'),
+      sql`${userProfile.inviteStatus} in ('pendiente','aceptada')`)).limit(1);
+  if (!perfil) return rechazoVinculo('CUENTA_NO_ELEGIBLE');
   /**
    * Una ficha por cuenta. No es una limitación técnica: si una cuenta ya
    * gestiona un tirador, «búscate en el ranking» no es lo que necesita, y
    * dejarla reclamar una segunda ficha convierte esta pantalla en la forma
    * cómoda de colgarse la ficha de otro.
    */
-  const [suya] = await db
+  const [suya] = await database
     .select({ id: athlete.id, nombre: athlete.firstName })
     .from(athlete)
     .where(
@@ -376,19 +367,10 @@ export async function vincularFichaDesdeRanking({
     };
   }
 
-  if (intentosAgotados(profileId)) {
-    return {
-      ok: false,
-      motivo: 'DEMASIADOS_INTENTOS',
-      error:
-        `Has fallado la licencia ${MAX_FALLOS} veces. Espera diez minutos y ` +
-        'vuelve a intentarlo, o pide a la dirección técnica que te vincule la ' +
-        'ficha; tardan menos que tú adivinando.',
-    };
-  }
-
-  const filas = await db
+  const filas = await database
     .select({
+      id: officialRankingEntry.id,
+      atletaId: officialRankingEntry.athleteId,
       nombre: officialRankingEntry.sourceAthleteName,
       nombrePila: officialRankingEntry.sourceFirstName,
       apellidos: officialRankingEntry.sourceLastName,
@@ -420,7 +402,7 @@ export async function vincularFichaDesdeRanking({
 
   const licenciaOficial = filas.find((f) => f.licencia)?.licencia ?? null;
 
-  if (!licenciaOficial) {
+  if (!licenciaOficial && origen === 'guion') {
     return {
       ok: false,
       motivo: 'SIN_LICENCIA_EN_LA_FUENTE',
@@ -428,22 +410,6 @@ export async function vincularFichaDesdeRanking({
         'De esta fila todavía no tenemos el número de licencia, así que no hay ' +
         'nada con lo que comprobar que eres tú, ni con qué emparejar el resto ' +
         'de tus clasificaciones. Pídele la vinculación a la dirección técnica.',
-    };
-  }
-
-  if (
-    origen === 'autoservicio' &&
-    normalizarLicencia(licenciaOficial) !== normalizarLicencia(licencia ?? '')
-  ) {
-    apuntarFallo(profileId);
-    return {
-      ok: false,
-      motivo: 'LICENCIA_NO_COINCIDE',
-      error:
-        'Esa licencia no es la de esta ficha. Mírala en tu carné de la RFEE: ' +
-        'son tres letras y cinco cifras, con la forma ABC01234. Comprueba ' +
-        'también que has elegido la fila que te corresponde, que puede haber ' +
-        'homónimos.',
     };
   }
 
@@ -477,8 +443,8 @@ export async function vincularFichaDesdeRanking({
    * apunta es un enlace que alguien decidió antes.
    */
   const existente = licenciaLlana
-    ? await fichaPorLicencia(licenciaLlana)
-    : await fichaDeLaFilaDelRanking(clave);
+    ? await fichaPorLicencia(licenciaLlana, database)
+    : await fichaDeLaFilaDelRanking(clave, database);
 
   if (
     existente &&
@@ -503,82 +469,42 @@ export async function vincularFichaDesdeRanking({
    * `FED-M-C` no es un nombre bonito, pero es el que permite cruzarlo después.
    * No se traduce ni se adorna.
    */
-  const clubId = await clubDe(primera.clubFuente);
-
-  const nota =
-    origen === 'autoservicio'
-      ? 'Alta de autoservicio: la persona se identificó con su número de ' +
-        'licencia en /alta y los datos salen del ranking oficial de la RFEE. ' +
-        'No la creó la dirección técnica.'
-      : origen === 'nombre'
-        ? 'Alta de autoservicio por nombre: la persona se reconoció en la ' +
-          'clasificación oficial de la RFEE y confirmó ella misma que era su ' +
-          'ficha. No la creó la dirección técnica.'
-        : origen === 'direccion'
-          ? 'Alta creada por la dirección técnica desde el ranking oficial de ' +
-            'la RFEE: nombre, licencia, fecha de nacimiento, club y armas ' +
-            'salen de la fuente, no del teclado.'
-          : 'Alta creada a partir del ranking oficial de la RFEE con ' +
-            'scripts/alta-desde-ranking.ts.';
-
-  /**
-   * Cómo quedó vinculada, para poder auditarla después. Mismo vocabulario que
-   * `fie_fencer.linked_via`, y la respuesta a «¿qué fichas se vincularon sin
-   * comprobar la licencia?» es una consulta y no leer frases en castellano.
-   */
-  const rastro = {
-    linkedVia:
-      origen === 'autoservicio'
-        ? 'licencia_rfee'
-        : origen === 'nombre'
-          ? 'persona'
-          : 'direccion_tecnica',
-    linkedAt: new Date(),
-    linkedByProfileId: profileId,
-    linkedEvidence:
-      evidencia ??
-      (origen === 'autoservicio'
-        ? `La licencia tecleada coincidió con la de la fila ${clave} del ranking oficial.`
-        : `Alta creada por la dirección técnica desde la fila ${clave} del ranking oficial.`),
-  };
-
-  const atletaId =
-    existente?.id ??
-    (
-      await db
-        .insert(athlete)
-        .values({
-          firstName: nombrePila || nombre,
-          lastName: apellidos,
-          birthDate: primera.nacimiento,
-          gender: primera.genero === 'F' ? 'F' : 'M',
-          clubId,
-          rfeeLicense: licenciaLlana,
-          /**
-           * Ni fecha de caducidad de licencia ni consentimiento: la fuente no
-           * publica ninguno de los dos y ponerlos sería inventarlos. Salen en
-           * «Qué te falta» de `/estado`, que es donde tienen que salir.
-           */
-          consentSignedAt: origen === 'guion' ? new Date() : null,
-          userProfileId: profileId,
-          notes: nota,
-          ...rastro,
-        })
-        .returning({ id: athlete.id })
-    )[0].id;
-
-  if (existente) {
-    await db
-      .update(athlete)
-      .set({
-        userProfileId: profileId,
-        clubId,
-        notes: existente.notes ? `${existente.notes} ${nota}` : nota,
-        ...rastro,
-        updatedAt: new Date(),
-      })
-      .where(eq(athlete.id, atletaId));
+  if (requiresGuardianAccount(primera.nacimiento)) return rechazoVinculo('CUENTA_NO_ELEGIBLE');
+  if (filas.some((fila) => fila.atletaId && fila.atletaId !== existente?.id)) {
+    return rechazoVinculo('YA_VINCULADO');
   }
+  const { clubId, crearClub } = await clubDe(primera.clubFuente, database);
+
+  const nota = origen === 'direccion'
+    ? 'Vinculación aprobada por la dirección técnica con los datos del ranking oficial de la RFEE.'
+    : 'Alta creada a partir del ranking oficial de la RFEE con scripts/alta-desde-ranking.ts.';
+  const atletaId = existente?.id ?? crypto.randomUUID();
+  const claveFuente = `rfee:${clave}`;
+  const prueba = aprobacion?.evidencia.trim() ?? evidencia ??
+    `Alta creada por la dirección técnica desde la fila ${clave} del ranking oficial.`;
+  const aprobada = aprobacion ? aprobacionVigente(aprobacion, profileId, claveFuente)
+    : origen === 'direccion' ? sql`exists (select 1 from user_profile where id = ${actorId!}
+        and role = 'admin' and invite_status in ('pendiente','aceptada'))` : sql`1 = 1`;
+  const fuenteVigente = sql`exists (select 1 from official_ranking_entry
+      where id = ${primera.id} and skermo_athlete_id = ${clave}
+        and source_license is ${primera.licencia} and source_birth_date = ${primera.nacimiento})
+    and not exists (select 1 from official_ranking_entry where skermo_athlete_id = ${clave}
+      and athlete_id is not null and athlete_id <> ${atletaId})`;
+  const condicion = sql`${cuentaSinFicha(profileId)} and ${aprobada} and ${fuenteVigente}`;
+  const propiedad = existente ? sql`update athlete set user_profile_id = ${profileId},
+    club_id = ${clubId}, notes = ${existente.notes ? `${existente.notes} ${nota}` : nota},
+    linked_via = 'direccion_tecnica', linked_at = ${nowMilliseconds},
+    linked_by_profile_id = ${actorId ?? profileId}, linked_evidence = ${prueba},
+    updated_at = ${nowMilliseconds}
+    where id = ${atletaId} and active = 1 and user_profile_id is null
+      and guardian_profile_id is null and ${condicion}`
+    : sql`insert into athlete(id,first_name,last_name,birth_date,gender,club_id,rfee_license,
+        consent_signed_at,user_profile_id,notes,linked_via,linked_at,linked_by_profile_id,linked_evidence)
+      select ${atletaId},${nombrePila || nombre},${apellidos},${primera.nacimiento},
+        ${primera.genero === 'F' ? 'F' : 'M'},${clubId},${licenciaLlana},
+        ${origen === 'guion' ? nowMilliseconds : sql`null`},${profileId},${nota},
+        'direccion_tecnica',${nowMilliseconds},${actorId ?? profileId},${prueba}
+      where ${condicion} on conflict(rfee_license) do nothing`;
 
   /**
    * Las armas, que es lo que determina todo lo que ve en el calendario. Van
@@ -586,38 +512,20 @@ export async function vincularFichaDesdeRanking({
    * compite en las dos, y dejarle una sola le esconde medio calendario.
    */
   const armas = [...new Set(filas.map((f) => f.arma))];
-  await db
-    .insert(athleteWeapon)
-    .values(armas.map((arma) => ({ athleteId: atletaId, weapon: arma })))
-    .onConflictDoNothing();
+  const relacionadas = armas.map((arma) => sql`insert into athlete_weapon(athlete_id,weapon)
+    values(${atletaId},${arma}) on conflict do nothing`);
 
   /**
    * Emparejar TODAS sus filas del ranking, no solo la que se buscó. Un tirador
    * puede estar en absoluto y en sub-23, o en dos armas.
    *
-   * Se empareja por LICENCIA y por ID DE SKERMO, **nunca por nombre**: hay
-   * homónimos y los acentos van a su aire. El id de Skermo se añadió con el
-   * alta por nombre y no es una concesión: es la clave de la fuente, la misma
-   * que forma `official_ranking_entry_key`, y es la fila exacta que la persona
-   * reclamó. Hace falta porque a 4 de los 809 tiradores del ranking todavía no
-   * se les ha resuelto la licencia, y sin esto sus filas se quedarían
-   * huérfanas aunque su ficha ya exista.
+   * Solo se actualiza el ID de Skermo aprobado, nunca otros IDs por compartir
+   * nombre o licencia en temporadas diferentes. No se confirma una fusión de
+   * identidades nacionales/internacionales desde esta operación de permisos.
    */
-  const emparejadas = await db
-    .update(officialRankingEntry)
-    .set({ athleteId: atletaId, updatedAt: new Date() })
-    .where(
-      and(
-        licenciaLlana
-          ? or(
-              sql`upper(${officialRankingEntry.sourceLicense}) = ${licenciaLlana}`,
-              eq(officialRankingEntry.skermoAthleteId, clave),
-            )
-          : eq(officialRankingEntry.skermoAthleteId, clave),
-        isNull(officialRankingEntry.athleteId),
-      ),
-    )
-    .returning({ id: officialRankingEntry.id });
+  relacionadas.push(sql`update official_ranking_entry
+    set athlete_id = ${atletaId}, updated_at = ${nowMilliseconds}
+    where skermo_athlete_id = ${clave} and athlete_id is null returning id`);
 
   /**
    * El club en la cuenta, solo si no tenía ninguno y solo para tiradores y
@@ -625,19 +533,14 @@ export async function vincularFichaDesdeRanking({
    * lo que ven, pero tampoco hace falta tocárselo.
    */
   if (clubId) {
-    await db
-      .update(userProfile)
-      .set({ clubId, updatedAt: new Date() })
-      .where(
-        and(
-          eq(userProfile.id, profileId),
-          isNull(userProfile.clubId),
-          or(eq(userProfile.role, 'athlete'), eq(userProfile.role, 'guardian')),
-        ),
-      );
+    relacionadas.push(sql`update user_profile set club_id = ${clubId}, updated_at = ${nowMilliseconds}
+      where id = ${profileId} and club_id is null and role = 'athlete'`);
   }
-
-  INTENTOS.delete(profileId);
+  const guardada = await escribirVinculoAtomico([
+    ...(crearClub ? [crearClub] : []), propiedad, exigirUnCambio, ...relacionadas,
+    ...(aprobacion ? cierreAprobacion(aprobacion, profileId, claveFuente, atletaId) : []),
+  ], database);
+  if (!guardada) return rechazoVinculo('VINCULO_CAMBIO');
 
   return {
     ok: true,
@@ -649,14 +552,14 @@ export async function vincularFichaDesdeRanking({
       fechaNacimiento: primera.nacimiento,
       armas,
       clasificaciones: filas.map(aClasificacion),
-      filasEmparejadas: emparejadas.length,
+      filasEmparejadas: guardada[(crearClub ? 1 : 0) + 2 + armas.length].rows.length,
     },
   };
 }
 
 /** La ficha que ya tiene esa licencia, si la hay. */
-async function fichaPorLicencia(licenciaLlana: string) {
-  const [ficha] = await db
+async function fichaPorLicencia(licenciaLlana: string, database: Db) {
+  const [ficha] = await database
     .select({
       id: athlete.id,
       userProfileId: athlete.userProfileId,
@@ -677,8 +580,8 @@ async function fichaPorLicencia(licenciaLlana: string) {
  * lo rellena una licencia o una persona, así que si hay algo ahí es un enlace
  * que alguien ya decidió.
  */
-async function fichaDeLaFilaDelRanking(clave: string) {
-  const [ficha] = await db
+async function fichaDeLaFilaDelRanking(clave: string, database: Db) {
+  const [ficha] = await database
     .select({
       id: athlete.id,
       userProfileId: athlete.userProfileId,
@@ -693,22 +596,28 @@ async function fichaDeLaFilaDelRanking(clave: string) {
 }
 
 /** Busca el club por el código de la fuente y lo crea si no existe. */
-async function clubDe(nombreFuente: string | null): Promise<string | null> {
-  if (!nombreFuente) return null;
+async function clubDe(nombreFuente: string | null, database: Db) {
+  if (!nombreFuente) return { clubId: null, crearClub: null };
 
-  const [existente] = await db
+  const [existente] = await database
     .select({ id: club.id })
     .from(club)
     .where(eq(club.name, nombreFuente))
     .limit(1);
 
-  if (existente) return existente.id;
+  if (existente) return { clubId: existente.id, crearClub: null };
+  const id = crypto.randomUUID();
+  return { clubId: id, crearClub: sql`insert into club(id,name) values(${id},${nombreFuente})` };
+}
 
-  const [creado] = await db
-    .insert(club)
-    .values({ name: nombreFuente })
-    .returning({ id: club.id });
-  return creado.id;
+function rechazoVinculo(motivo: MotivoRechazo): ResultadoAlta {
+  const mensajes: Partial<Record<MotivoRechazo, string>> = {
+    REVISION_PENDIENTE: 'Solicitud guardada. La dirección técnica debe verificar tu identidad antes de vincular la ficha.',
+    SOLICITUD_PENDIENTE: 'Ya tienes otra solicitud pendiente. Espera su revisión o cancélala antes de elegir otra ficha.',
+    CUENTA_NO_ELEGIBLE: 'Esta cuenta no puede recibir una ficha de tirador. Consulta a la dirección técnica.',
+    VINCULO_CAMBIO: 'La ficha, la cuenta o la solicitud ha cambiado. No se ha vinculado nada; vuelve a revisarlo.',
+  };
+  return { ok: false, motivo, error: mensajes[motivo] ?? 'No se ha solicitado la vinculación. Revisa los datos con la dirección técnica.' };
 }
 
 type FilaRanking = {

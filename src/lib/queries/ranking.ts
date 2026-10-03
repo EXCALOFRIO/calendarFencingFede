@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { enLista as inArray } from '@/lib/sqlite';
 import { cache } from 'react';
 import { db } from '@/db';
 import {
@@ -115,15 +116,15 @@ export const getRankingStatus = cache(async () => {
 
   const [counts] = await db
     .select({
-      total: sql<number>`count(*)::int`,
-      matched: sql<number>`count(${resultTable.athleteId})::int`,
+      total: sql<number>`count(*)`,
+      matched: sql<number>`count(${resultTable.athleteId})`,
     })
     .from(resultTable);
 
   const [snapshot] = await db
     .select({
-      count: sql<number>`count(*)::int`,
-      lastComputedAt: sql<Date | null>`max(${rankingSnapshotTable.computedAt})`,
+      count: sql<number>`count(*)`,
+      lastComputedAt: sql<Date | null>`max(${rankingSnapshotTable.computedAt})`.mapWith(rankingSnapshotTable.computedAt),
     })
     .from(rankingSnapshotTable)
     .where(eq(rankingSnapshotTable.seasonId, season.id));
@@ -174,7 +175,7 @@ export async function listRankingGroups(
       weapon: rankingSnapshotTable.weapon,
       gender: rankingSnapshotTable.gender,
       category: rankingSnapshotTable.category,
-      athletes: sql<number>`count(*)::int`,
+      athletes: sql<number>`count(*)`,
     })
     .from(rankingSnapshotTable)
     .where(
@@ -406,7 +407,7 @@ export async function getAthleteBreakdown(
           eq(rankingPointTable.athleteId, athleteId),
         ),
       )
-      .orderBy(desc(rankingPointTable.finalPoints)),
+      .orderBy(desc(sql`cast(${rankingPointTable.finalPoints} as real)`)),
     getRankingTable(armas, group),
   ]);
 
@@ -693,7 +694,7 @@ export async function getRankingScreenData(
         inArray(eventCompetitionTable.weapon, [...armas]),
       ),
     )
-    .orderBy(desc(rankingPointTable.finalPoints));
+    .orderBy(desc(sql`cast(${rankingPointTable.finalPoints} as real)`));
 
   const breakdowns: Record<string, BreakdownEntry[]> = {};
   for (const p of points) {
@@ -956,9 +957,9 @@ export const contarRankingOficial = cache(
   async (): Promise<{ filas: number; tiradores: number; sinFicha: number }> => {
     const [fila] = await db
       .select({
-        filas: sql<number>`count(*)::int`,
-        tiradores: sql<number>`count(distinct ${officialRankingEntryTable.skermoAthleteId})::int`,
-        sinFicha: sql<number>`count(*) filter (where ${officialRankingEntryTable.athleteId} is null)::int`,
+        filas: sql<number>`count(*)`,
+        tiradores: sql<number>`count(distinct ${officialRankingEntryTable.skermoAthleteId})`,
+        sinFicha: sql<number>`count(*) filter (where ${officialRankingEntryTable.athleteId} is null)`,
       })
       .from(officialRankingEntryTable);
 
@@ -1043,7 +1044,7 @@ export async function getPuestosOficiales(
       weapon: officialRankingEntryTable.weapon,
       gender: officialRankingEntryTable.gender,
       categoryRaw: officialRankingEntryTable.categoryRaw,
-      cuantos: sql<number>`count(*) filter (where ${officialRankingEntryTable.position} is not null)::int`,
+      cuantos: sql<number>`count(*) filter (where ${officialRankingEntryTable.position} is not null)`,
     })
     .from(officialRankingEntryTable)
     .groupBy(
@@ -1365,7 +1366,7 @@ export async function listPropuestasFie(limit = 100): Promise<PropuestaFie[]> {
       candidatoAthleteId: fieFencerTable.proposedAthleteId,
       candidatoNombre: sql<
         string | null
-      >`nullif(concat_ws(' ', ${athleteTable.firstName}, ${athleteTable.lastName}), '')`,
+      >`nullif(trim(coalesce(${athleteTable.firstName}, '') || ' ' || coalesce(${athleteTable.lastName}, '')), '')`,
       candidatoFechaNacimiento: athleteTable.birthDate,
     })
     .from(fieFencerTable)
@@ -1407,7 +1408,7 @@ export const contarFichasFie = cache(
   }> => {
     const [fila] = await db
       .select({
-        confirmadas: sql<number>`count(*) filter (where ${fieFencerTable.linkStatus} = 'CONFIRMADO')::int`,
+        confirmadas: sql<number>`count(*) filter (where ${fieFencerTable.linkStatus} = 'CONFIRMADO')`,
         /**
          * Propuestas DE VERDAD: las que tienen un candidato que mirar.
          *
@@ -1420,9 +1421,9 @@ export const contarFichasFie = cache(
         propuestas: sql<number>`count(*) filter (
           where ${fieFencerTable.linkStatus} = 'PROPUESTO'
             and ${fieFencerTable.proposedAthleteId} is not null
-        )::int`,
-        rechazadas: sql<number>`count(*) filter (where ${fieFencerTable.linkStatus} = 'RECHAZADO')::int`,
-        conFoto: sql<number>`count(*) filter (where ${fieFencerTable.linkStatus} = 'CONFIRMADO' and ${fieFencerTable.photoUrl} is not null)::int`,
+        )`,
+        rechazadas: sql<number>`count(*) filter (where ${fieFencerTable.linkStatus} = 'RECHAZADO')`,
+        conFoto: sql<number>`count(*) filter (where ${fieFencerTable.linkStatus} = 'CONFIRMADO' and ${fieFencerTable.photoUrl} is not null)`,
       })
       .from(fieFencerTable);
 
@@ -1500,7 +1501,7 @@ export type TablaClasificacionFie = {
 export const listGruposClasificacionFie = cache(
   async (): Promise<{ season: number | null; grupos: GrupoClasificacion[] }> => {
     const [ultima] = await db
-      .select({ season: sql<number>`max(${fieClasificacionTable.season})::int` })
+      .select({ season: sql<number>`max(${fieClasificacionTable.season})` })
       .from(fieClasificacionTable);
     const season = ultima?.season ?? null;
     if (!season) return { season: null, grupos: [] };
@@ -1511,7 +1512,7 @@ export const listGruposClasificacionFie = cache(
         weapon: fieClasificacionTable.weapon,
         gender: fieClasificacionTable.gender,
         category: fieClasificacionTable.category,
-        tiradores: sql<number>`count(*)::int`,
+        tiradores: sql<number>`count(*)`,
       })
       .from(fieClasificacionTable)
       .where(eq(fieClasificacionTable.season, season))
@@ -1611,7 +1612,7 @@ export async function getClasificacionFie(params: {
   const propios = new Set(params.athleteIdsPropios ?? []);
 
   const [ultima] = await db
-    .select({ season: sql<number>`max(${fieClasificacionTable.season})::int` })
+    .select({ season: sql<number>`max(${fieClasificacionTable.season})` })
     .from(fieClasificacionTable);
   const season = ultima?.season ?? null;
   if (!season) return null;

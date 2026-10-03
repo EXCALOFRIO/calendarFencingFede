@@ -1,5 +1,6 @@
-import { and, eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { cache } from 'react';
+import { cookies, headers } from 'next/headers';
 import { db } from '@/db';
 import {
   athlete,
@@ -8,7 +9,11 @@ import {
   profileWeapon,
   userProfile,
 } from '@/db/schema';
-import { auth } from './server';
+import { getAuth } from './server';
+import { correoVerificado, esRolAplicacion } from './access-policy';
+import { COOKIE_VISTA_PREVIA, verificarVistaPrevia } from './preview-token';
+import { exigirEscritura, vistaPreviaCaducada } from './read-only';
+import { COOKIE_ACCESO_QA, leerConcesionQa, verificarSesionQa } from './qa-token';
 
 /**
  * Los papeles que existen en la aplicación.
@@ -72,18 +77,62 @@ export type SessionProfile = {
    * seleccionador puede mirar cualquier arma con un clic.
    */
   weapons: Weapon[];
+  /** No cambia la identidad real ni el perfil del administrador. */
+  preview?: { adminProfileId: string; expiresAt: number };
+  /** Identidad técnica efímera; nunca tiene permisos de escritura. */
+  qa?: { grantId: string; expiresAt: number };
 };
 
 /**
  * Perfil de la persona que ha entrado, o `null`.
  *
  * Va envuelto en `cache()` de React para que una misma petición no consulte la
- * base cinco veces: cada consulta a Neon es un viaje HTTP.
+ * base cinco veces. No hay caché de sesión compartida entre peticiones.
  */
-export const getSessionProfile = cache(async (): Promise<SessionProfile | null> => {
-  const { data: session } = await auth.getSession();
+export const getAuthenticatedProfile = cache(async (): Promise<SessionProfile | null> => {
+  try {
+    return await leerPerfilAutenticado();
+  } catch {
+    // Drizzle errors can contain bound emails/credentials. Do not let Next
+    // log them as unhandled page/action errors, or fall back to personal QA.
+    if ((await cookies()).get(COOKIE_ACCESO_QA)) vistaPreviaCaducada();
+    return null;
+  }
+});
+
+async function leerPerfilAutenticado(): Promise<SessionProfile | null> {
+  const qaCookie = (await cookies()).get(COOKIE_ACCESO_QA);
+  if (qaCookie) {
+    const secret = process.env.NEON_AUTH_COOKIE_SECRET ?? '';
+    const token = verificarSesionQa(qaCookie.value, leerConcesionQa(), secret);
+    if (!token) vistaPreviaCaducada();
+    const [admin] = await db.select({
+      profileId: userProfile.id,
+      email: userProfile.email,
+      fullName: userProfile.fullName,
+      role: userProfile.role,
+      clubId: userProfile.clubId,
+      clubName: club.name,
+    }).from(userProfile).leftJoin(club, eq(userProfile.clubId, club.id))
+      .where(and(
+        eq(userProfile.id, token.adminProfileId),
+        eq(userProfile.role, 'admin'),
+        ne(userProfile.inviteStatus, 'revocada'),
+      )).limit(1);
+    if (!admin || admin.role !== 'admin') vistaPreviaCaducada();
+    return {
+      ...admin,
+      role: 'admin',
+      authUserId: `qa:${token.grantId}`,
+      icalToken: '',
+      weapons: [],
+      qa: { grantId: token.grantId, expiresAt: token.expiresAt },
+      preview: { adminProfileId: admin.profileId, expiresAt: token.expiresAt },
+    };
+  }
+  const session = await getAuth().api.getSession({ headers: await headers() }).catch(() => null);
   const user = session?.user;
-  if (!user?.email) return null;
+  if (!user?.email || !correoVerificado(user)) return null;
 
   const [row] = await db
     .select({
@@ -100,9 +149,9 @@ export const getSessionProfile = cache(async (): Promise<SessionProfile | null> 
     .from(userProfile)
     .leftJoin(club, eq(userProfile.clubId, club.id))
     .where(
-      or(
+      and(
         eq(userProfile.authUserId, user.id),
-        eq(userProfile.email, user.email.toLowerCase()),
+        sql`lower(trim(${userProfile.email})) = ${user.email.trim().toLowerCase()}`,
       ),
     )
     .limit(1);
@@ -116,21 +165,11 @@ export const getSessionProfile = cache(async (): Promise<SessionProfile | null> 
    * ya abierta en el móvil seguiría dentro hasta que caducase su sesión, que
    * son días. Comprobándolo aquí, la siguiente página que cargue ya lo echa.
    */
-  if (row.inviteStatus === 'revocada') return null;
+  if (row.inviteStatus === 'revocada' || !esRolAplicacion(row.role)) return null;
 
-  /**
-   * Primer acceso: el perfil se creó por invitación (alta individual o
-   * importación CSV) antes de que la persona tuviera cuenta. Al entrar por
-   * primera vez se enlaza con su identidad. Esto es lo que permite dar de alta
-   * a 20 personas por CSV sin que ninguna exista todavía en el sistema de
-   * autenticación.
-   */
-  if (!row.authUserId) {
-    await db
-      .update(userProfile)
-      .set({ authUserId: user.id, inviteStatus: 'aceptada', updatedAt: new Date() })
-      .where(eq(userProfile.id, row.profileId));
-  }
+  // Se conservan los IDs del proveedor gestionado. Solo verificar un OTP
+  // puede reclamar una invitación sin enlace; leer la sesión nunca la reclama.
+  if (row.authUserId !== user.id || row.email.trim().toLowerCase() !== user.email.trim().toLowerCase()) return null;
 
   // Solo se consultan las armas de quien puede tenerlas: para un tirador o un
   // tutor sería una consulta de más en cada carga de página.
@@ -148,13 +187,75 @@ export const getSessionProfile = cache(async (): Promise<SessionProfile | null> 
     email: row.email,
     profileId: row.profileId,
     fullName: row.fullName,
-    role: row.role as Role,
+    role: row.role,
     clubId: row.clubId,
     clubName: row.clubName,
     icalToken: row.icalToken,
     weapons,
   };
+}
+
+/** La vista previa siempre vuelve a comprobar la cuenta administradora real. */
+export const getSessionProfile = cache(async (): Promise<SessionProfile | null> => {
+  try {
+    return await leerPerfilEfectivo();
+  } catch {
+    // Preserve the public read-only failure without leaking private SQL data.
+    vistaPreviaCaducada();
+  }
 });
+
+async function leerPerfilEfectivo(): Promise<SessionProfile | null> {
+  const real = await getAuthenticatedProfile();
+  if (!real) return null;
+  const previewCookie = (await cookies()).get(COOKIE_VISTA_PREVIA);
+  if (!previewCookie) return real;
+
+  const secret = process.env.NEON_AUTH_COOKIE_SECRET ?? '';
+  const token = verificarVistaPrevia(previewCookie.value, secret, real);
+  // Nunca volver silenciosamente al admin con una cookie caducada: un
+  // formulario abierto como tirador no debe acabar escribiendo como admin.
+  if (!token) vistaPreviaCaducada();
+
+  const [row] = await db
+    .select({
+      profileId: userProfile.id,
+      email: userProfile.email,
+      fullName: userProfile.fullName,
+      role: userProfile.role,
+      clubId: userProfile.clubId,
+      clubName: club.name,
+    })
+    .from(userProfile)
+    .leftJoin(club, eq(userProfile.clubId, club.id))
+    .where(
+      and(
+        eq(userProfile.id, token.profileId),
+        eq(userProfile.role, token.role),
+        ne(userProfile.inviteStatus, 'revocada'),
+      ),
+    )
+    .limit(1);
+  if (!row || !esRolAplicacion(row.role)) vistaPreviaCaducada();
+
+  const weapons = row.role === 'coach'
+    ? (await db.select({ weapon: profileWeapon.weapon }).from(profileWeapon)
+      .where(eq(profileWeapon.profileId, row.profileId))).map((r) => r.weapon)
+    : [];
+  return {
+    ...row,
+    role: row.role,
+    authUserId: real.authUserId,
+    // El feed personal es una credencial duradera: no se copia a la vista.
+    icalToken: '',
+    weapons,
+    ...(real.qa ? { qa: real.qa } : {}),
+    preview: {
+      adminProfileId: real.profileId,
+      expiresAt: Math.min(token.expiresAt, real.qa?.expiresAt ?? token.expiresAt),
+    },
+  };
+}
 
 /** Lanza si no hay sesión. Para rutas y acciones que exigen estar dentro. */
 export async function requireProfile(): Promise<SessionProfile> {
@@ -170,6 +271,18 @@ export async function requireRole(...roles: Role[]): Promise<SessionProfile> {
       `Esta pantalla es para ${roles.join(' o ')}, y tu cuenta es "${profile.role}".`,
     );
   }
+  return profile;
+}
+
+export async function requireWritableProfile(): Promise<SessionProfile> {
+  const profile = await requireProfile();
+  exigirEscritura(profile);
+  return profile;
+}
+
+export async function requireWritableRole(...roles: Role[]): Promise<SessionProfile> {
+  const profile = await requireRole(...roles);
+  exigirEscritura(profile);
   return profile;
 }
 

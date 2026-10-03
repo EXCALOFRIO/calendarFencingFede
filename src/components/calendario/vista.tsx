@@ -200,9 +200,7 @@ function encajaEnElAmbito(evento: EventView, ambito: Ambito): boolean {
  * MARCADO»). La selección múltiple sigue en `ToggleGroup`, elegir-uno en
  * `Select` y la navegación en un `ButtonGroup` de botones fantasma.
  *
- * Y **una altura para toda la fila de herramientas: `h-8`** (32 px). Eran
- * tres alturas distintas y el botón de filtros sobresalía 4 px por abajo del
- * buscador con el que comparte grupo; medido en el navegador, no a ojo.
+ * Todas las herramientas tienen al menos 44 × 44 px, también en escritorio.
  */
 export function VistaCalendario({
   eventos,
@@ -669,7 +667,7 @@ export function VistaCalendario({
   const mostrarCategoria = categorias.length > 1;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2 sm:gap-3">
+    <div className="calendario flex min-h-0 min-w-0 flex-1 flex-col gap-3">
       {/*
         UNA FILA. NO CUATRO.
         ---------------------------------------------------------------------
@@ -699,8 +697,8 @@ export function VistaCalendario({
         entonces lleva el contador de coincidencias y las flechas, y el estado
         de búsqueda tiene que verse.
       */}
-      <div className="shrink-0">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+      <div className="shrink-0 border-b border-filete-alto pb-3">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
           {/*
             El mes en dos pesos en la misma línea: el nombre golpea y el año
             acompaña. Se lee «octubre» de un tirón y el año si te fijas. Es el
@@ -712,7 +710,7 @@ export function VistaCalendario({
             propio en cuanto aparecía «Hoy». Si estás mirando otro año, el año
             sale, que es cuando de verdad hace falta saberlo.
           */}
-          <h1 className="order-1 shrink-0 text-xl leading-none sm:text-3xl">
+          <h1 className="order-1 w-full min-w-0 text-3xl leading-none sm:w-auto sm:text-4xl">
             {vista === 'mes' ? (
               <>
                 {nombreMes(ancla, false)}{' '}
@@ -772,9 +770,9 @@ export function VistaCalendario({
             <Button
               variant="ghost"
               size="icon"
-              className="size-8"
+              className="size-11"
               onClick={() => mover(-1)}
-              aria-label="Anterior"
+              aria-label={vista === 'mes' ? 'Mes anterior' : 'Trimestre anterior'}
             >
               <ChevronLeft />
             </Button>
@@ -787,7 +785,8 @@ export function VistaCalendario({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 px-2"
+                className="h-11 px-3"
+                aria-label="Ir al mes actual"
                 onClick={() => {
                   setDireccion(0);
                   setAncla(new Date());
@@ -799,9 +798,9 @@ export function VistaCalendario({
             <Button
               variant="ghost"
               size="icon"
-              className="size-8"
+              className="size-11"
               onClick={() => mover(1)}
-              aria-label="Siguiente"
+              aria-label={vista === 'mes' ? 'Mes siguiente' : 'Trimestre siguiente'}
             >
               <ChevronRight />
             </Button>
@@ -825,7 +824,7 @@ export function VistaCalendario({
             <Button
               variant="outline"
               size="sm"
-              className="h-8 gap-2 px-2 text-muted-foreground"
+              className="h-11 gap-2 px-3 text-muted-foreground"
               onClick={() => setBuscando(true)}
               aria-label="Buscar un torneo o una sede"
             >
@@ -913,8 +912,7 @@ export function VistaCalendario({
           <span className="min-w-0 flex-1">
             <span className="font-medium text-primary-text">Vincula tu ficha</span>{' '}
             <span className="text-muted-foreground">
-              y el calendario se filtrará por tu arma y tu categoría. Se busca
-              en el ranking oficial de la RFEE.
+              para ver tu arma y categoría.
             </span>
           </span>
           <ChevronRight className="size-4 shrink-0" aria-hidden />
@@ -926,9 +924,8 @@ export function VistaCalendario({
           <EmptyHeader>
             <EmptyTitle>Ninguna prueba con estos filtros</EmptyTitle>
             <EmptyDescription>
-              La combinación de arma, género y categoría que hay puesta no
-              existe en esta temporada. Abre los filtros o mira el calendario
-              entero.
+              No hay pruebas cargadas para esta combinación. Cambia los filtros
+              o consulta el calendario completo.
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
@@ -1112,8 +1109,7 @@ export function VistaCalendario({
             <CommandList>
               {busqueda.trim() === '' ? (
                 <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                  Escribe el nombre de un torneo o de una ciudad. El calendario
-                  salta a su mes y lo resalta; no se esconde nada.
+                  Busca un torneo o una ciudad para ir a su mes.
                 </div>
               ) : coincidencias.length === 0 ? (
                 <CommandEmpty>
@@ -1129,24 +1125,24 @@ export function VistaCalendario({
                       irA(e.startDate);
                       setBuscando(false);
                     }}
-                    className="flex-col items-start gap-0.5"
+                    className="min-h-[44px] flex-col items-start gap-1 py-3"
                   >
-                    <span className="flex w-full items-baseline gap-2">
-                      <span className="min-w-0 flex-1 truncate font-medium">
+                    <span className="flex w-full flex-wrap items-baseline gap-x-2 gap-y-1">
+                      <span className="min-w-0 flex-1 break-words font-medium">
                         {titularTorneo(e.name)}
                       </span>
                       <span className="cifra shrink-0 text-xs text-muted-foreground">
                         {formatDateRangeEs(e.startDate, e.endDate)}
                       </span>
                     </span>
-                    <span className="flex w-full items-baseline gap-2 text-xs text-muted-foreground">
+                    <span className="flex w-full flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-muted-foreground">
                       <span className="shrink-0">
                         {organismoDe(e.source, e.scope, e.circuit)}
                       </span>
-                      <span className="min-w-0 flex-1 truncate">
+                      <span className="min-w-0 break-words">
                         {CIRCUIT_SHORT[e.circuit] ?? CIRCUIT_LABEL[e.circuit] ?? e.circuit}
                       </span>
-                      <span className="shrink-0 truncate">
+                      <span className="min-w-0 break-words">
                         {e.city ? titular(e.city) : 'Sede sin publicar'}
                         {e.country ? `, ${e.country}` : ''}
                       </span>
@@ -1249,7 +1245,7 @@ function FranjaDestacada({
     return (
       <div
         className={cn(
-          'flex h-11 min-w-0 items-center gap-2 text-sm text-muted-foreground',
+          'flex min-h-[44px] min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground',
           clase,
         )}
       >
@@ -1260,11 +1256,11 @@ function FranjaDestacada({
           suspensivos que parecen un fallo. Lo que hay que saber cabe en la
           primera frase.
         */}
-        <span className="min-w-0 flex-1 truncate">
+        <span className="min-w-0 flex-1">
           Ningún torneo coincide.
           <span className="hidden sm:inline"> El calendario sigue como estaba.</span>
         </span>
-        <Button variant="ghost" size="sm" className="h-8 shrink-0 px-2 text-xs" onClick={onLimpiar}>
+        <Button variant="ghost" size="sm" className="h-11 shrink-0 px-2 text-xs" onClick={onLimpiar}>
           Quitar la búsqueda
         </Button>
       </div>
@@ -1277,14 +1273,14 @@ function FranjaDestacada({
          texto, quedarse sin competiciones por delante movería la rejilla. */
       <p
         className={cn(
-          'flex h-11 min-w-0 items-center truncate text-sm text-muted-foreground',
+          'flex min-h-[44px] min-w-0 items-center text-sm text-muted-foreground',
           clase,
         )}
       >
         {hayTiradores
-          ? 'No te queda ninguna competición por delante con estos filtros.'
-          : 'No queda ningún torneo por delante con estos filtros.'}{' '}
-        Mira otro mes o abre los filtros.
+          ? 'Sin próximas competiciones cargadas para ti.'
+          : 'Sin próximos torneos cargados.'}{' '}
+        Cambia los filtros.
       </p>
     );
   }
@@ -1318,18 +1314,18 @@ function FranjaDestacada({
       Y 44 px no es un número redondo: es el objetivo táctil mínimo, y esta
       fila entera es la acción principal de la pantalla.
     */
-    <div className={cn('flex h-11 items-center gap-1 overflow-hidden', clase)}>
+    <div className={cn('flex min-h-[44px] flex-wrap items-center gap-2', clase)}>
       <Item
         asChild
         size="sm"
-        className="h-full min-w-0 flex-1 cursor-pointer gap-2.5 rounded-md px-1 py-0 hover:bg-accent"
+        className="min-h-[44px] min-w-0 flex-1 cursor-pointer gap-3 rounded-md px-2 py-2 hover:bg-accent"
       >
         <button
           type="button"
           /* `text-left`: un `<button>` centra su texto por defecto y arrastra a
              todos sus hijos. Sin esto, el nombre del torneo salía centrado
              sobre su propia línea de datos y la franja parecía un cartel. */
-          className="text-left"
+          className="text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           onClick={() => onAbrir(evento)}
           aria-label={
             enMarcha
@@ -1351,16 +1347,16 @@ function FranjaDestacada({
                 <span className="cifra text-2xl leading-none text-primary-text">
                   Ahora
                 </span>
-                <span className="text-[0.6rem] leading-none text-muted-foreground">
+                <span className="text-xs leading-none text-muted-foreground">
                   en marcha
                 </span>
               </>
             ) : (
               <>
-                <span className="cifra text-3xl leading-none text-foreground">
+                <span className="cifra text-4xl leading-none text-foreground">
                   {dias}
                 </span>
-                <span className="text-[0.6rem] leading-none text-muted-foreground">
+                <span className="text-xs leading-none text-muted-foreground">
                   {dias === 1 ? 'día' : 'días'}
                 </span>
               </>
@@ -1373,8 +1369,8 @@ function FranjaDestacada({
             fecha, la sede y el organismo se apagan por orden según el ancho
             que haya, que es el orden en que dejan de hacer falta.
           */}
-          <ItemContent className="min-w-0 flex-row flex-nowrap items-baseline gap-x-2">
-            <span className="min-w-0 max-w-full truncate text-sm font-semibold sm:text-base">
+          <ItemContent className="min-w-0 flex-row flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="min-w-0 basis-full break-words text-sm font-semibold">
               {titularTorneo(evento.name)}
             </span>
             {plazo ? (
@@ -1390,13 +1386,13 @@ function FranjaDestacada({
             <span className="cifra hidden shrink-0 rounded-full bg-secondary px-1.5 py-px text-xs text-foreground sm:inline">
               {formatDateRangeEs(evento.startDate, evento.endDate)}
             </span>
-            <span className="hidden min-w-0 shrink truncate text-xs text-muted-foreground sm:inline">
+            <span className="hidden min-w-0 break-words text-xs text-muted-foreground sm:inline">
               {evento.city ? titular(evento.city) : 'Sede sin publicar'}
               {evento.country ? `, ${evento.country}` : ''}
             </span>
-            <span className="hidden min-w-0 shrink truncate text-xs text-muted-foreground xl:inline">
-              {organismo}
-              {circuito ? ` · ${circuito}` : ''}
+            <span className="hidden min-w-0 flex-wrap gap-x-2 text-xs text-muted-foreground xl:inline-flex">
+              <span>{organismo}</span>
+              {circuito ? <span>{circuito}</span> : null}
             </span>
           </ItemContent>
         </button>
@@ -1415,7 +1411,7 @@ function FranjaDestacada({
           <Button
             variant="ghost"
             size="icon"
-            className="size-8"
+            className="size-11"
             aria-label="Coincidencia anterior"
             onClick={onAnterior}
           >
@@ -1424,7 +1420,7 @@ function FranjaDestacada({
           <Button
             variant="ghost"
             size="icon"
-            className="size-8"
+            className="size-11"
             aria-label="Coincidencia siguiente"
             onClick={onSiguiente}
           >
@@ -1433,7 +1429,7 @@ function FranjaDestacada({
           <Button
             variant="ghost"
             size="icon"
-            className="size-8"
+            className="size-11"
             aria-label="Quitar la búsqueda"
             onClick={onLimpiar}
           >
@@ -1577,13 +1573,13 @@ function PanelFiltros({
             pero un solo sitio para las dos formas es una regla menos que
             recordar.
           */}
-          <div className="flex items-center gap-3 pr-10">
-            <p className="min-w-0 text-xs text-muted-foreground">
-              <span className="cifra text-base text-foreground">{numPruebas}</span>{' '}
-              {numPruebas === 1 ? 'prueba' : 'pruebas'} ·{' '}
-              <span className="cifra text-base text-foreground">{numTorneos}</span>{' '}
-              {numTorneos === 1 ? 'torneo' : 'torneos'}
-            </p>
+          <div className="flex flex-wrap items-center gap-3 pr-10">
+            <div className="flex flex-wrap items-baseline gap-3 text-xs text-muted-foreground">
+              <span><span className="cifra text-3xl text-foreground">{numPruebas}</span>{' '}
+                {numPruebas === 1 ? 'prueba' : 'pruebas'}</span>
+              <span><span className="cifra text-3xl text-foreground">{numTorneos}</span>{' '}
+                {numTorneos === 1 ? 'torneo' : 'torneos'}</span>
+            </div>
 
             {/*
               «Solo lo mío» únicamente cuando «lo mío» y «todo» son cosas
@@ -1593,7 +1589,7 @@ function PanelFiltros({
               <Button
                 variant="secondary"
                 size="sm"
-                className="h-8 shrink-0 px-2 text-xs"
+                className="h-11 shrink-0 px-2 text-xs"
                 onClick={todoPuesto ? verLoMio : verTodo}
               >
                 {todoPuesto ? 'Solo lo mío' : 'Ver todo'}
@@ -1602,7 +1598,7 @@ function PanelFiltros({
               <Button
                 variant="secondary"
                 size="sm"
-                className="h-8 shrink-0 px-2 text-xs"
+                className="h-11 shrink-0 px-2 text-xs"
                 onClick={verTodo}
                 disabled={todoPuesto}
               >
@@ -1629,7 +1625,7 @@ function PanelFiltros({
               className="w-full"
             >
               {AMBITOS.map((a) => (
-                <ToggleGroupItem key={a.v} value={a.v} className="h-9 flex-1 text-sm">
+                <ToggleGroupItem key={a.v} value={a.v} className="h-11 min-w-0 flex-1 px-2 text-sm">
                   {a.largo}
                 </ToggleGroupItem>
               ))}
@@ -1655,7 +1651,7 @@ function PanelFiltros({
               className="w-full"
             >
               {ARMAS.map((a) => (
-                <ToggleGroupItem key={a} value={a} className="h-9 flex-1 text-sm">
+                <ToggleGroupItem key={a} value={a} className="h-11 min-w-0 flex-1 px-2 text-sm">
                   {WEAPON_LABEL[a]}
                 </ToggleGroupItem>
               ))}
@@ -1692,7 +1688,7 @@ function PanelFiltros({
               className="w-full"
             >
               {GENEROS.map((g) => (
-                <ToggleGroupItem key={g.v} value={g.v} className="h-9 flex-1 text-sm">
+                <ToggleGroupItem key={g.v} value={g.v} className="h-11 min-w-0 flex-1 px-2 text-sm">
                   {g.largo}
                 </ToggleGroupItem>
               ))}
@@ -1722,10 +1718,10 @@ function PanelFiltros({
               variant="outline"
               className="w-full"
             >
-              <ToggleGroupItem value="mes" className="h-9 flex-1 text-sm">
+              <ToggleGroupItem value="mes" className="h-11 flex-1 text-sm">
                 Un mes
               </ToggleGroupItem>
-              <ToggleGroupItem value="trimestre" className="h-9 flex-1 text-sm">
+              <ToggleGroupItem value="trimestre" className="h-11 flex-1 text-sm">
                 Tres meses
               </ToggleGroupItem>
             </ToggleGroup>
@@ -1765,7 +1761,8 @@ function PanelFiltros({
                 const puesta = categorias.includes(c);
                 const nombre = CATEGORY_LABEL[c as keyof typeof CATEGORY_LABEL] ?? c;
                 return (
-                  <button
+                  <Button
+                    variant="outline"
                     key={c}
                     type="button"
                     aria-pressed={puesta}
@@ -1780,11 +1777,11 @@ function PanelFiltros({
                       })
                     }
                     className={cn(
-                      'objetivo-libre inline-flex h-8 items-center gap-1 rounded-md border px-2 text-sm transition-colors',
+                      'inline-flex h-11 items-center gap-1 rounded-md border px-2 text-sm transition-colors',
                       'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                       puesta
-                        ? 'border-primary/50 bg-primary/15 text-primary-text'
-                        : 'border-border text-muted-foreground hover:bg-accent',
+                        ? 'border-primary-text bg-marcado font-semibold text-primary-text'
+                        : 'border-input bg-secondary text-muted-foreground hover:bg-accent',
                     )}
                   >
                     <CircleCheck
@@ -1792,7 +1789,7 @@ function PanelFiltros({
                       aria-hidden
                     />
                     {nombre}
-                  </button>
+                  </Button>
                 );
               })}
             </div>
@@ -1812,11 +1809,11 @@ function PanelFiltros({
                 value={tiradorId ?? ''}
                 onValueChange={(v) => v && cambiarTirador(v)}
                 variant="outline"
-                className="w-full"
+                className="w-full flex-wrap gap-2"
               >
                 {tiradores.map((t) => (
-                  <ToggleGroupItem key={t.id} value={t.id} className="h-9 flex-1 text-sm">
-                    {nombreCorto(t.fullName)}
+                  <ToggleGroupItem key={t.id} value={t.id} className="h-auto min-h-[44px] min-w-0 flex-1 whitespace-normal text-sm">
+                    {t.fullName}
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
@@ -1824,11 +1821,10 @@ function PanelFiltros({
           ) : null}
 
           {temporada || actualizado ? (
-            <p className="text-[0.7rem] text-muted-foreground">
-              {temporada ? `Temporada ${temporada}` : ''}
-              {temporada && actualizado ? ' · ' : ''}
-              {actualizado ? `datos del ${actualizado}` : ''}
-            </p>
+            <div className="flex flex-wrap gap-x-3 gap-y-1 border-t pt-2 text-xs text-muted-foreground">
+              {temporada ? <span>Temporada {temporada}</span> : null}
+              {actualizado ? <span>Actualizado {actualizado}</span> : null}
+            </div>
           ) : null}
         </FieldGroup>
   );
@@ -1853,7 +1849,7 @@ function PanelFiltros({
           ya era el mismo (4 px) en toda la fila.
         */
   const disparador = (
-    <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5 px-2.5">
+    <Button variant="outline" size="sm" className="h-11 shrink-0 gap-1.5 px-3" aria-label={`Filtros del calendario: ${rotulo}${generos.length === 1 ? `, ${GENDER_LABEL[generos[0]]}` : ''}`}>
           <SlidersHorizontal className="size-4" aria-hidden />
           <span className="cifra text-sm leading-none tracking-tight">{rotulo}</span>
           {generos.length === 1 ? (
@@ -1983,9 +1979,4 @@ function nombreMes(d: Date, conAnio = true): string {
 function isoDeHoy(): string {
   // En hora española, no en la del que ejecuta: ver `hoyMadrid`.
   return hoyMadrid();
-}
-
-/** El nombre de pila basta para distinguir a dos hermanos en un botón. */
-function nombreCorto(nombre: string): string {
-  return nombre.replace(/^DEMO\s+/i, '').split(/\s+/)[0] ?? nombre;
 }

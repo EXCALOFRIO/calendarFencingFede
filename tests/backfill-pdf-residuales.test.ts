@@ -286,7 +286,7 @@ describe('corrección de un documento con fallos tardíos', () => {
     a.fallos.upsertAsaltos = true;
     await expect(persistirLecturaPdf(a.d, corregida(), ctx)).rejects.toThrow('asaltos');
     expect(a.doc()?.status).toBe('error');
-    expect(a.doc()?.lastError).toContain('asaltos');
+    expect(a.doc()?.lastError).toBe('correccion_fallida');
     expect(decodificarCheckpointPdf(a.doc()?.cursor)).toMatchObject({ sha256: null, correccion: { shaPrevio: SHA_A, shaNuevo: SHA_B } });
 
     a.fallos.upsertAsaltos = false;

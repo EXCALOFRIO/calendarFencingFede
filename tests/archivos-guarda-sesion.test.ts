@@ -110,8 +110,37 @@ describe('/api/archivos exige sesión vigente antes de leer R2', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('text/html');
     expect(res.headers.get('Cache-Control')).toBe('private, no-store');
+    expect(res.headers.get('Content-Disposition')).toBe('attachment');
+    expect(res.headers.get('Content-Security-Policy')).toContain('sandbox');
+    expect(res.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(await res.text()).toBe('<html>snap</html>');
   });
+
+  it.each(['historico-interno', 'migracion-interna', 'backup-interno'])(
+    'ni una sesión válida puede descargar archivos internos completos: %s',
+    async (prefijo) => {
+      h.getSessionProfile.mockResolvedValue(PERFIL);
+      const res = await llamar([prefijo, 'hash-ficticio.json.gz']);
+      expect(res.status).toBe(404);
+      expect(h.get).not.toHaveBeenCalled();
+      expect(res.headers.get('Cache-Control')).toBe('private, no-store');
+    },
+  );
+
+  it.each([
+    { ruta: ['%malformado'] },
+    { ruta: ['carpeta', 'fichero\\oculto'] },
+    { ruta: ['carpeta', '\u0000'] },
+    { ruta: ['x'.repeat(513)] },
+  ])(
+    'rechaza una ruta dañada sin leer el objeto: %j',
+    async ({ ruta }) => {
+      h.getSessionProfile.mockResolvedValue(PERFIL);
+      const res = await llamar(ruta);
+      expect(res.status).toBe(400);
+      expect(h.get).not.toHaveBeenCalled();
+    },
+  );
 
   it('con sesión válida conserva 400, 404 y 503 con no-store', async () => {
     h.getSessionProfile.mockResolvedValue(PERFIL);

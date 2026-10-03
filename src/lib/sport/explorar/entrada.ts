@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { categoryEnum } from '@/db/schema/enums';
+import { categoryEnum } from '@/db/schema';
 import { palabrasNombre } from '@/lib/nombres';
 import { FECHA_RE, UUID_RE } from './cursor';
 import type { FiltrosBusqueda, FiltrosPrueba } from './tipos';

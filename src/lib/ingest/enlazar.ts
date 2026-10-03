@@ -1,4 +1,5 @@
-import { and, inArray, isNotNull, isNull, lt, notInArray, sql } from 'drizzle-orm';
+import { and, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { enLista as inArray, fueraDeLista as notInArray, lotesDeInsercion } from '@/lib/sqlite';
 import { db } from '@/db';
 import { event, eventCompetition, eventLink } from '@/db/schema';
 import { claveCiudad } from './ciudades';
@@ -434,7 +435,7 @@ async function guardarEnlaces(
     })),
   ];
 
-  for (const lote of trocear(filas, 100)) {
+  for (const lote of lotesDeInsercion(filas, eventLink)) {
     await db
       .insert(eventLink)
       .values(lote)
@@ -478,15 +479,16 @@ async function guardarEnlaces(
    * alternativa (un UPDATE por evento) serían decenas de viajes de red a Neon
    * dentro de una función que muere a los 300 s.
    */
-  for (const lote of trocear(pares, 200)) {
+  for (const lote of trocear(pares, 45)) {
     const valores = sql.join(
-      lote.map((p) => sql`(${p.linkedEventId}::uuid, ${p.canonicalEventId}::uuid)`),
+      lote.map((p) => sql`(${p.linkedEventId}, ${p.canonicalEventId})`),
       sql`, `,
     );
     await db.execute(sql`
+      with v(linked, canon) as (values ${valores})
       update ${event} as e
       set canonical_event_id = v.canon
-      from (values ${valores}) as v(linked, canon)
+      from v
       where e.id = v.linked
         and e.canonical_event_id is distinct from v.canon
     `);

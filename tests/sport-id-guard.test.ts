@@ -1,7 +1,6 @@
-import { PgDialect } from 'drizzle-orm/pg-core';
-import type { SQL } from 'drizzle-orm';
-import { describe, expect, it } from 'vitest';
-import type { Db } from '@/db';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createD1Database } from '@/db';
+import { localD1 } from '@/db/d1/testing';
 import type { ExternalIdRow } from '@/lib/identity/resolver';
 import {
   ambitoCompatible,
@@ -244,92 +243,68 @@ describe('confirmarIdExterno', () => {
   });
 });
 
-describe('guard sobre Postgres: forma de la unidad atómica (SQL generado, sin base)', () => {
-  const dialect = new PgDialect();
-  const texto = (s: SQL) => dialect.sqlToQuery(s);
-
-  function dbFalsa(resultadoEscritura: unknown) {
-    const ejecutadas: SQL[] = [];
-    let lote: SQL[] = [];
-    const db = {
-      execute: (s: SQL) => {
-        ejecutadas.push(s);
-        return s as never;
-      },
-      batch: async (items: SQL[]) => {
-        lote = items;
-        return [[{ pg_advisory_xact_lock: '' }], resultadoEscritura];
-      },
-    } as unknown as Pick<Db, 'batch' | 'execute'>;
-    return { db, ejecutadas, lote: () => lote };
+describe('guard nativo D1: confirmación atómica en SQLite real', () => {
+  const abiertos: ReturnType<typeof localD1>[] = [];
+  afterEach(() => { abiertos.splice(0).forEach((local) => local.close()); });
+  function fixture() {
+    const local = localD1();
+    abiertos.push(local);
+    local.sqlite.exec("INSERT INTO sport_person(id,display_name,name_normalized) VALUES ('a','Fixture A','a'),('b','Fixture B','b'),('c','Fixture C','c')");
+    return { ...local, guard: crearGuardDb(createD1Database(local.binding)) };
   }
 
-  it('toma el cerrojo por ID ANTES del insert condicionado, en el mismo batch', async () => {
-    const { db, lote } = dbFalsa([{ id: 'x' }]);
-    const ok = await crearGuardDb(db).confirmar(candidato({ personId: '00000000-0000-4000-8000-000000000001' }));
-    expect(ok).toBe(true);
-    const [cerrojo, escritura] = lote().map(texto);
-    expect(cerrojo.sql).toMatch(/pg_advisory_xact_lock/);
-    expect(cerrojo.params).toContain('sport_external_id|fie_addr_id|100|fie');
-    expect(escritura.sql).toMatch(/INSERT INTO sport_external_id/);
-    expect(escritura.sql).toMatch(/WHERE NOT\s+EXISTS/);
+  it('confirma el ID condicionado en una unidad serializada y no duplica al repetir', async () => {
+    const local = fixture();
+    expect(await local.guard.confirmar(candidato())).toBe(true);
+    expect(await local.guard.confirmar(candidato())).toBe(true);
+    expect(local.sqlite.prepare('SELECT count(*) AS n FROM sport_external_id').get()!.n).toBe(1);
+    expect(local.calls.every((c) => c.parameters <= 100)).toBe(true);
+    expect(local.calls.some((c) => /pg_advisory|::date|::uuid/.test(c.sql))).toBe(false);
   });
 
-  it('el choque es inclusivo, con fin abierto, comodín de ámbito y persona distinta', async () => {
-    const { db, lote } = dbFalsa([]);
-    await crearGuardDb(db).confirmar(candidato({ personId: '00000000-0000-4000-8000-000000000001' }));
-    const { sql } = texto(lote()[1]);
-    expect(sql).toMatch(/e\.scope_federation = '' OR \$\d+ = '' OR e\.scope_federation = \$\d+/);
-    expect(sql).toMatch(/e\.scope_season = '' OR/);
-    expect(sql).toMatch(/e\.scope_weapon = '' OR/);
-    expect(sql).toMatch(/e\.valid_from <= coalesce\(\$\d+::date, 'infinity'::date\)/);
-    expect(sql).toMatch(/\$\d+::date <= coalesce\(e\.valid_to, 'infinity'::date\)/);
-    expect(sql).toMatch(/e\.link_status = 'CONFIRMADO'/);
-    expect(sql).toMatch(/coalesce\(ep\.merged_into_person_id, e\.person_id\) <> coalesce\(/);
+  it('rechaza otra persona en vigencias inclusivas y con ámbitos comodín', async () => {
+    const local = fixture();
+    expect(await local.guard.confirmar(candidato({ personId: 'a', validFrom: '2018-01-01', validTo: '2020-01-01' }))).toBe(true);
+    expect(await local.guard.confirmar(candidato({ validFrom: '2020-01-01', scopeFederation: 'RFEE' }))).toBe(false);
+    expect(await local.guard.confirmar(candidato({ validFrom: '2020-01-02', scopeFederation: 'RFEE' }))).toBe(true);
   });
 
-  it('canoniza candidato y existente, y reutiliza la fila exacta propia antes de insertar', async () => {
-    const { db, lote } = dbFalsa([{ id: 'x' }]);
-    const id = '00000000-0000-4000-8000-000000000002';
-    await crearGuardDb(db).confirmar(candidato({ personId: id, validFrom: '2020-01-01' }));
-    const { sql, params } = texto(lote()[1]);
-    // El candidato se sustituye por su persona canónica en el choque y en la fila propia.
-    expect(sql).toMatch(/coalesce\(ep\.merged_into_person_id, e\.person_id\) <> coalesce\(\(SELECT cp\.merged_into_person_id FROM sport_person cp WHERE cp\.id = \$\d+::uuid\), \$\d+::uuid\)/);
-    expect(sql).toMatch(/WITH propia AS \(\s+UPDATE sport_external_id e/);
-    expect(sql).toMatch(/e\.valid_from = \$\d+::date/);
-    expect(sql).toMatch(/e\.scope_federation = \$\d+\s+AND e\.scope_season = \$\d+\s+AND e\.scope_weapon = \$\d+/);
-    expect(sql).toMatch(/coalesce\(\(SELECT ep\.merged_into_person_id FROM sport_person ep WHERE ep\.id = e\.person_id\), e\.person_id\) = coalesce\(/);
-    expect(sql).toMatch(/WHERE NOT EXISTS \(SELECT 1 FROM propia\)\s+AND NOT\s+EXISTS/);
-    expect(sql).toMatch(/ON CONFLICT ON CONSTRAINT sport_external_id_person_key/);
-    expect(sql).toMatch(/SELECT id FROM propia\s+UNION ALL\s+SELECT id FROM nueva/);
-    expect(params).toContain(id);
+  it('canoniza una persona fusionada y reutiliza su fila exacta propia', async () => {
+    const local = fixture();
+    expect(await local.guard.confirmar(candidato({ personId: 'a' }))).toBe(true);
+    local.sqlite.exec("UPDATE sport_person SET merged_into_person_id='b' WHERE id='a'");
+    expect(await local.guard.confirmar(candidato({ evidence: 'actualizado' }))).toBe(true);
+    expect(local.sqlite.prepare('SELECT person_id,evidence FROM sport_external_id').all())
+      .toEqual([{ person_id: 'a', evidence: 'actualizado' }]);
+    expect(await local.guard.confirmar(candidato({ personId: 'c' }))).toBe(false);
   });
 
-  it('con una fila propia actualizada devuelve true aunque no haya insert', async () => {
-    const { db } = dbFalsa({ rows: [{ id: 'fila-existente' }] });
-    expect(await crearGuardDb(db).confirmar(candidato({ personId: '00000000-0000-4000-8000-000000000002' }))).toBe(true);
+  it('devuelve true al actualizar una fila propia sin insertar otra', async () => {
+    const local = fixture();
+    await local.guard.confirmar(candidato());
+    expect(await local.guard.confirmar(candidato({ validTo: '2027-01-01' }))).toBe(true);
+    expect(local.sqlite.prepare('SELECT valid_to FROM sport_external_id').all())
+      .toEqual([{ valid_to: '2027-01-01' }]);
   });
 
-  it('devuelve false cuando la escritura condicionada no insertó nada', async () => {
-    const { db } = dbFalsa([]);
-    expect(await crearGuardDb(db).confirmar(candidato({ personId: '00000000-0000-4000-8000-000000000001' }))).toBe(false);
+  it('un choque no inserta la persona, su alias ni su ID', async () => {
+    const local = fixture();
+    await local.guard.confirmar(candidato({ personId: 'a' }));
+    const persona: PersonaNuevaConId = { id: 'nueva', displayName: 'Fixture nueva', nameNormalized: 'fixture nueva', gender: 'F', countryCode: 'ESP', aliasSource: 'fie' };
+    expect(await local.guard.confirmar(candidato({ personId: persona.id }), persona)).toBe(false);
+    expect(local.sqlite.prepare("SELECT id FROM sport_person WHERE id='nueva'").all()).toEqual([]);
+    expect(local.sqlite.prepare('SELECT person_id FROM sport_person_alias').all()).toEqual([]);
   });
 
-  it('con persona nueva crea persona, alias e ID en una sola sentencia condicionada', async () => {
-    const { db, lote } = dbFalsa({ rows: [{ id: 'x' }] });
-    const persona: PersonaNuevaConId = {
-      id: '00000000-0000-4000-8000-000000000001',
-      displayName: 'FIE 100',
-      nameNormalized: '100 fie',
-      gender: 'F',
-      countryCode: 'ESP',
-      aliasSource: 'fie',
-    };
-    expect(await crearGuardDb(db).confirmar(candidato({ personId: persona.id }), persona)).toBe(true);
-    const { sql } = texto(lote()[1]);
-    expect(sql).toMatch(/INSERT INTO sport_person \(/);
-    expect(sql).toMatch(/INSERT INTO sport_person_alias/);
-    expect(sql).toMatch(/INSERT INTO sport_external_id/);
-    expect(sql.match(/NOT\s+EXISTS/g)).toHaveLength(1);
+  it('crea persona, alias e ID juntos y revierte todo ante un fallo de constraint', async () => {
+    const local = fixture();
+    const persona: PersonaNuevaConId = { id: 'nueva', displayName: 'Fixture nueva', nameNormalized: 'fixture nueva', gender: 'F', countryCode: 'ESP', aliasSource: 'fie' };
+    expect(await local.guard.confirmar(candidato({ personId: persona.id }), persona)).toBe(true);
+    expect(local.sqlite.prepare('SELECT person_id FROM sport_person_alias').all()).toEqual([{ person_id: 'nueva' }]);
+    const invalid = { ...persona, id: 'fallo' };
+    local.sqlite.exec("CREATE TRIGGER fixture_failure BEFORE INSERT ON sport_external_id WHEN NEW.value='200' BEGIN SELECT RAISE(ABORT,'fixture_failure'); END");
+    await expect(local.guard.confirmar(candidato({ personId: invalid.id, value: '200' }), invalid)).rejects.toThrow();
+    expect(local.sqlite.prepare("SELECT id FROM sport_person WHERE id='fallo'").all()).toEqual([]);
+    expect(local.sqlite.prepare("SELECT person_id FROM sport_person_alias WHERE person_id='fallo'").all()).toEqual([]);
   });
 });

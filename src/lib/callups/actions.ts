@@ -1,6 +1,6 @@
 'use server';
 
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
 import {
@@ -12,9 +12,10 @@ import {
   notification,
   userProfile,
 } from '@/db/schema';
-import { getManagedAthletes, requireProfile, requireRole } from '@/lib/auth/session';
+import { getManagedAthletes, requireRole, requireWritableProfile, requireWritableRole } from '@/lib/auth/session';
 import { storeFile, storageBackend } from '@/lib/storage';
 import { formatDateRangeEs, formatDateTimeEs } from '@/lib/utils';
+import { enLista as inArray, lotesDeInsercion } from '@/lib/sqlite';
 import { parseFechaMadrid } from './fechas';
 
 export type ResultadoAccion =
@@ -44,7 +45,7 @@ export async function responderConvocatoria(
   respuesta: 'confirmado' | 'rechazado',
   motivo?: string,
 ): Promise<ResultadoAccion> {
-  const profile = await requireProfile();
+  const profile = await requireWritableProfile();
 
   const [fila] = await db
     .select({
@@ -176,7 +177,7 @@ async function avisarAlSeleccionador(
 export async function crearConvocatoria(
   formData: FormData,
 ): Promise<ResultadoAccion & { callUpId?: string }> {
-  const profile = await requireRole('admin');
+  const profile = await requireWritableRole('admin');
 
   const eventId = String(formData.get('eventId') ?? '').trim();
   const title = String(formData.get('title') ?? '').trim();
@@ -262,7 +263,7 @@ export async function guardarConvocados(
   callUpId: string,
   seleccion: SeleccionConvocado[],
 ): Promise<ResultadoAccion> {
-  await requireRole('admin');
+  await requireWritableRole('admin');
 
   const [convocatoria] = await db
     .select({ id: callUp.id, published: callUp.published })
@@ -302,18 +303,16 @@ export async function guardarConvocados(
   const nuevas = seleccion.filter((s) => !yaEstaban.has(clave(s)));
 
   if (nuevas.length > 0) {
-    await db
-      .insert(callUpAthlete)
-      .values(
-        nuevas.map((n) => ({
-          callUpId,
-          athleteId: n.athleteId,
-          eventCompetitionId: n.eventCompetitionId,
-          placeType: n.placeType,
-          rankingPositionAtCutoff: n.rankingPositionAtCutoff,
-        })),
-      )
-      .onConflictDoNothing();
+    const filasNuevas = nuevas.map((n) => ({
+      callUpId,
+      athleteId: n.athleteId,
+      eventCompetitionId: n.eventCompetitionId,
+      placeType: n.placeType,
+      rankingPositionAtCutoff: n.rankingPositionAtCutoff,
+    }));
+    for (const lote of lotesDeInsercion(filasNuevas, callUpAthlete)) {
+      await db.insert(callUpAthlete).values(lote).onConflictDoNothing();
+    }
   }
 
   // Cambios de tipo de plaza en los que ya estaban.
@@ -353,7 +352,7 @@ export async function guardarConvocados(
 
 /** Quita a un convocado, incluso si ya había respondido. */
 export async function quitarConvocado(rowId: string): Promise<ResultadoAccion> {
-  await requireRole('admin');
+  await requireWritableRole('admin');
   await db.delete(callUpAthlete).where(eq(callUpAthlete.id, rowId));
   revalidatePath('/admin/convocatorias');
   revalidatePath('/convocatorias');
@@ -369,7 +368,7 @@ export async function quitarConvocado(rowId: string): Promise<ResultadoAccion> {
  * selección sin enterarse.
  */
 export async function publicarConvocatoria(callUpId: string): Promise<ResultadoAccion> {
-  await requireRole('admin');
+  await requireWritableRole('admin');
 
   const [convocatoria] = await db
     .select({
@@ -507,11 +506,15 @@ async function encolarAvisos(callUpId: string, athleteIds: string[]): Promise<nu
 
   if (valores.length === 0) return 0;
 
-  const insertadas = await db
-    .insert(notification)
-    .values(valores)
-    .onConflictDoNothing({ target: notification.dedupeKey })
-    .returning({ id: notification.id });
+  let insertadas = 0;
+  for (const lote of lotesDeInsercion(valores, notification)) {
+    const filasInsertadas = await db
+      .insert(notification)
+      .values(lote)
+      .onConflictDoNothing({ target: notification.dedupeKey })
+      .returning({ id: notification.id });
+    insertadas += filasInsertadas.length;
+  }
 
   await db
     .update(callUpAthlete)
@@ -523,12 +526,12 @@ async function encolarAvisos(callUpId: string, athleteIds: string[]): Promise<nu
       ),
     );
 
-  return insertadas.length;
+  return insertadas;
 }
 
 /** Borra una convocatoria. Solo en borrador: lo publicado no se hace desaparecer. */
 export async function eliminarConvocatoria(callUpId: string): Promise<ResultadoAccion> {
-  await requireRole('admin');
+  await requireWritableRole('admin');
 
   const [fila] = await db
     .select({ published: callUp.published })

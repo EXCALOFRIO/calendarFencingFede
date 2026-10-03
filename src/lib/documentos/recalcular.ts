@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import { lotesDeInsercion } from '@/lib/sqlite';
 import { db } from '@/db';
 import { documentoVigencia, officialDocument } from '@/db/schema';
 import {
@@ -68,7 +69,7 @@ export async function recalcularVigencia(): Promise<{
 
   // --- 3. Escritura en tandas ---
   const ahora = new Date();
-  for (const tanda of trocear(calculadas, 200)) {
+  for (const tanda of lotesDeInsercion(calculadas, documentoVigencia)) {
     await db
       .insert(documentoVigencia)
       .values(tanda.map((v) => aFila(v, ahora)))

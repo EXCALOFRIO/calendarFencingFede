@@ -73,7 +73,8 @@ export type DepsPersistenciaRanking = {
     publicacion: PublicacionRanking,
     filas: FilaEntradaRanking[],
   ) => Promise<ResultadoEscrituraRanking>;
-  upsertCobertura: (fila: FilaCoberturaRanking) => Promise<void>;
+  /** Optional effective status, e.g. an empty-after-published conflict. */
+  upsertCobertura: (fila: FilaCoberturaRanking) => Promise<void | EstadoCobertura>;
 };
 
 export type ResumenPersistenciaRanking = {
@@ -217,13 +218,13 @@ export async function persistirLecturaRanking(
   // a ser «la última» de su temporada. Sólo queda anotada en la cobertura, sin
   // pisar las cifras de la última lectura buena.
   if (!publicacion || cobertura.estado !== 'completo') {
-    await deps.upsertCobertura({
+    const effective = await deps.upsertCobertura({
       ...base,
       status: cobertura.estado,
       ...(cobertura.estado === 'sin_resultados' ? { publishedTotal: 0, importedTotal: 0 } : {}),
       lastError: cobertura.error,
     });
-    resumen.cobertura = cobertura.estado;
+    resumen.cobertura = effective ?? cobertura.estado;
     return resumen;
   }
 

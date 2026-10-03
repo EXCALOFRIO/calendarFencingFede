@@ -18,14 +18,21 @@ const LETRAS_SIN = 'aaaaaeeeeiiiiooooouuuuncAAAAAEEEEIIIIOOOOOUUUUNC';
 
 /** Texto en minúsculas, sin acentos y con la puntuación convertida en espacios. */
 export function plegarSql(columna: SQL): SQL {
-  return sql`regexp_replace(lower(translate(${columna}, ${LETRAS_CON}, ${LETRAS_SIN})), '[^a-z0-9]+', ' ', 'g')`;
+  // SQLite no incluye translate/regexp_replace ni plegado Unicode en lower.
+  // El número de sustituciones es fijo, no depende del tamaño de la tabla.
+  return sql`(WITH RECURSIVE plegado(texto, paso) AS (
+    SELECT lower(${columna}), 1
+    UNION ALL
+    SELECT replace(texto, substr(${LETRAS_CON}, paso, 1), substr(${LETRAS_SIN}, paso, 1)), paso + 1
+    FROM plegado WHERE paso <= ${LETRAS_CON.length}
+  ) SELECT lower(replace(replace(replace(replace(texto, '-', ' '), ',', ' '), '.', ' '), '/', ' '))
+    FROM plegado ORDER BY paso DESC LIMIT 1)`;
 }
 
 export function listaUuid(ids: readonly string[]): SQL {
-  return sql.join(
-    ids.map((id) => sql`${id}::uuid`),
-    sql`, `,
-  );
+  // Un grupo puede contener más de 100 miembros. JSON1 conserva todos sin
+  // rebasar los parámetros D1 ni multiplicar una misma fila entre lotes.
+  return sql`SELECT value FROM json_each(${JSON.stringify(ids)})`;
 }
 
 /**
@@ -41,22 +48,22 @@ export function listaUuid(ids: readonly string[]): SQL {
 export function condicionesPrueba(f: FiltrosPrueba, fecha: SQL): SQL[] {
   const condiciones: SQL[] = [];
   if (f.temporada) condiciones.push(sql`c.season = ${f.temporada}`);
-  if (f.edicionId) condiciones.push(sql`e.id = ${f.edicionId}::uuid`);
+  if (f.edicionId) condiciones.push(sql`e.id = ${f.edicionId}`);
   if (f.torneo) {
     condiciones.push(sql`${plegarSql(sql`e.name`)} LIKE ${`%${f.torneo}%`}`);
   }
-  if (f.desde) condiciones.push(sql`${fecha} >= ${f.desde}::date`);
-  if (f.hasta) condiciones.push(sql`${fecha} <= ${f.hasta}::date`);
-  if (f.arma) condiciones.push(sql`c.weapon::text = ${f.arma}`);
-  if (f.genero) condiciones.push(sql`c.gender::text = ${f.genero}`);
-  if (f.categoria) condiciones.push(sql`c.category::text = ${f.categoria}`);
+  if (f.desde) condiciones.push(sql`${fecha} >= ${f.desde}`);
+  if (f.hasta) condiciones.push(sql`${fecha} <= ${f.hasta}`);
+  if (f.arma) condiciones.push(sql`c.weapon = ${f.arma}`);
+  if (f.genero) condiciones.push(sql`c.gender = ${f.genero}`);
+  if (f.categoria) condiciones.push(sql`c.category = ${f.categoria}`);
   if (f.categoriaRaw) condiciones.push(sql`c.category_raw = ${f.categoriaRaw}`);
-  if (f.formato) condiciones.push(sql`c.format::text = ${f.formato}`);
+  if (f.formato) condiciones.push(sql`c.format = ${f.formato}`);
   if (f.ambito) {
     // Ámbito del evento vinculado; una edición FIE sin vínculo es internacional.
     // Sin ninguna de las dos pruebas el ámbito es desconocido y no coincide.
     condiciones.push(
-      sql`coalesce(ev0.scope::text, CASE WHEN e.source = 'fie' THEN 'INTERNACIONAL' END) = ${f.ambito}`,
+      sql`coalesce(ev0.scope, CASE WHEN e.source = 'fie' THEN 'INTERNACIONAL' END) = ${f.ambito}`,
     );
   }
   return condiciones;
@@ -69,8 +76,8 @@ export function y(condiciones: readonly SQL[]): SQL {
 /** Tipo de torneo sólo si el calendario lo documenta. FIE_CIRCUITO/OTRO no distinguen tipo. */
 export const TIPO_DOCUMENTADO = sql.raw(`(
   CASE
-    WHEN ev0.circuit IS NOT NULL AND ev0.circuit::text NOT IN ('FIE_CIRCUITO', 'OTRO') THEN ev0.circuit::text
-    WHEN evc.circuit IS NOT NULL AND evc.circuit::text NOT IN ('FIE_CIRCUITO', 'OTRO') THEN evc.circuit::text
+    WHEN ev0.circuit IS NOT NULL AND ev0.circuit NOT IN ('FIE_CIRCUITO', 'OTRO') THEN ev0.circuit
+    WHEN evc.circuit IS NOT NULL AND evc.circuit NOT IN ('FIE_CIRCUITO', 'OTRO') THEN evc.circuit
   END
 )`);
 
@@ -82,5 +89,5 @@ export const UNION_EVENTO_CANONICO = sql.raw(
 /** Fecha de un resultado para filtrar y ordenar; sin fecha usa la de la prueba y la edición. */
 export const FECHA_RESULTADO = sql.raw('coalesce(r.occurred_on, c.competition_date, e.start_date)');
 export const FECHA_ORDEN_RESULTADO = sql.raw(
-  "coalesce(r.occurred_on, c.competition_date, e.start_date, DATE '0001-01-01')",
+  "coalesce(r.occurred_on, c.competition_date, e.start_date, '0001-01-01')",
 );

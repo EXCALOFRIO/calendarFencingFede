@@ -1,5 +1,6 @@
-import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { alias } from 'drizzle-orm/pg-core';
+import { and, eq, isNull } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
+import { enLista as inArray, lotesDeInsercion } from '@/lib/sqlite';
 import { db } from '@/db';
 import {
   athlete,
@@ -19,6 +20,7 @@ import {
   mergeDeadlines,
 } from '@/lib/deadlines';
 import { sendPendingNotifications } from '@/lib/email/resend';
+import { limpiarAutenticacionCaducada } from '@/lib/auth/mantenimiento';
 import { getDeadlineRules } from '@/lib/queries/calendar';
 import {
   CATEGORY_LABEL,
@@ -54,6 +56,7 @@ export async function GET(request: Request) {
   const denegado = autorizarCron(request);
   if (denegado) return denegado;
 
+  const sesionesCaducadasEliminadas = await limpiarAutenticacionCaducada();
   const ahora = new Date();
 
   const avisos = await encolarAvisosDePlazo(ahora);
@@ -64,6 +67,7 @@ export async function GET(request: Request) {
     avisosEncolados: avisos.encolados,
     inscripcionesRevisadas: avisos.revisadas,
     correo,
+    autenticacionCaducadaEliminada: sesionesCaducadasEliminadas,
   });
 }
 
@@ -249,13 +253,16 @@ async function encolarAvisosDePlazo(
 
   if (pendientes.length === 0) return { encolados: 0, revisadas: filas.length };
 
-  const insertados = await db
-    .insert(notification)
-    .values(pendientes)
-    .onConflictDoNothing({ target: notification.dedupeKey })
-    .returning({ id: notification.id });
-
-  return { encolados: insertados.length, revisadas: filas.length };
+  let encolados = 0;
+  for (const lote of lotesDeInsercion(pendientes, notification)) {
+    const insertados = await db
+      .insert(notification)
+      .values(lote)
+      .onConflictDoNothing({ target: notification.dedupeKey })
+      .returning({ id: notification.id });
+    encolados += insertados.length;
+  }
+  return { encolados, revisadas: filas.length };
 }
 
 const ESTADO_LEGIBLE: Record<string, string> = {

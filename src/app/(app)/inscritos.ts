@@ -1,6 +1,7 @@
 'use server';
 
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
+import { enLista as inArray } from '@/lib/sqlite';
 import { db } from '@/db';
 import { athlete, club, entry, eventCompetition } from '@/db/schema';
 import { getManagedAthletes, requireProfile } from '@/lib/auth/session';

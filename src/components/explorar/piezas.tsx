@@ -7,11 +7,11 @@ export type Nivel = 'pagina' | 'seccion';
 
 function Titulo({ nivel, id, children }: { nivel: Nivel; id: string; children: React.ReactNode }) {
   return nivel === 'pagina' ? (
-    <h2 id={id} className="text-xl">
+    <h2 id={id} className="text-2xl leading-tight break-words sm:text-3xl">
       {children}
     </h2>
   ) : (
-    <h3 id={id} className="text-lg">
+    <h3 id={id} className="text-xl leading-tight break-words sm:text-2xl">
       {children}
     </h3>
   );
@@ -30,7 +30,7 @@ export function Bloque({
 }) {
   return (
     <section aria-labelledby={id} className="flex min-w-0 flex-col gap-3">
-      <div className="border-b pb-2">
+      <div className="border-b pb-3">
         <Titulo nivel={nivel} id={id}>
           {titulo}
         </Titulo>
@@ -41,13 +41,39 @@ export function Bloque({
 }
 
 export function Nota({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <p className={cn('medida text-xs text-muted-foreground', className)}>{children}</p>;
+  return <p className={cn('medida text-xs leading-relaxed text-muted-foreground', className)}>{children}</p>;
 }
 
-export function Celda({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
+/** La explicación sigue disponible sin competir con los datos de la ficha. */
+export function Aclaracion({
+  titulo,
+  children,
+}: {
+  titulo: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="text-xs text-muted-foreground md:sr-only">{etiqueta}</span>
+    <details className="min-w-0 text-sm">
+      <summary className="min-h-11 cursor-pointer content-center rounded-sm py-2 text-muted-foreground break-words hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none">
+        {titulo}
+      </summary>
+      <div className="flex min-w-0 flex-col gap-3 border-l pl-4 pb-3">{children}</div>
+    </details>
+  );
+}
+
+export function Celda({
+  etiqueta,
+  children,
+  className,
+}: {
+  etiqueta: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn('flex min-w-0 flex-col gap-1', className)}>
+      <span className="text-xs leading-relaxed text-muted-foreground">{etiqueta}</span>
       {children}
     </div>
   );
@@ -71,10 +97,10 @@ export function EnlaceFuente({ url, etiqueta }: { url: string | null; etiqueta: 
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex min-h-11 items-center gap-1 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none md:min-h-0"
+      className="inline-flex min-h-11 w-fit max-w-full items-center gap-1.5 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
     >
       {etiqueta}
-      <ExternalLink className="size-3.5" aria-hidden />
+      <ExternalLink className="size-3.5 shrink-0" aria-hidden />
     </a>
   );
 }

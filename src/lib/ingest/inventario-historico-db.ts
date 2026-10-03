@@ -1,5 +1,6 @@
 import { and, eq, gt, inArray } from 'drizzle-orm';
 import type { Db } from '@/db';
+import { lotesDeInsercion } from '@/lib/sqlite';
 import { sportImportCoverage } from '@/db/schema';
 import type { DepsPersistenciaDescubrimiento } from './backfill/descubrimiento-persist';
 import { escribirCobertura } from './fie-resultados-db';
@@ -60,8 +61,6 @@ export async function guardarInventario(
   return { guardadas, omitidas };
 }
 
-const LOTE_SEMILLAS = 200;
-
 /**
  * Persistencia del progreso del descubrimiento del backfill: checkpoint del índice con las reglas
  * de `escribirCobertura` y pruebas descubiertas como cobertura `pendiente` sin intentos, con
@@ -71,21 +70,20 @@ export function crearDepsPersistenciaDescubrimientoDb(db: Db): DepsPersistenciaD
   return {
     escribirCobertura: (source, fila) => escribirCobertura(db, source, fila),
     async sembrar(filas) {
-      for (let i = 0; i < filas.length; i += LOTE_SEMILLAS) {
+      const semillas = filas.map(({ source, fila }) => ({
+        source,
+        season: fila.season,
+        factKind: fila.factKind,
+        competitionKey: fila.competitionKey,
+        status: 'pendiente' as const,
+        attempts: 0,
+        sourceUrl: fila.sourceUrl,
+        cursor: fila.cursor,
+      }));
+      for (const lote of lotesDeInsercion(semillas, sportImportCoverage)) {
         await db
           .insert(sportImportCoverage)
-          .values(
-            filas.slice(i, i + LOTE_SEMILLAS).map(({ source, fila }) => ({
-              source,
-              season: fila.season,
-              factKind: fila.factKind,
-              competitionKey: fila.competitionKey,
-              status: 'pendiente' as const,
-              attempts: 0,
-              sourceUrl: fila.sourceUrl,
-              cursor: fila.cursor,
-            })),
-          )
+          .values(lote)
           .onConflictDoNothing({
             target: [
               sportImportCoverage.source,

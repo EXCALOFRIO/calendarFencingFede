@@ -7,7 +7,7 @@ import { esquemaDeportivo } from '@/lib/sport/esquema-db';
 import type { ContextoExplorador } from './contexto';
 
 /**
- * Único punto que conecta el explorador con Neon y con la sesión real. El
+ * Único punto que conecta el explorador con D1 y con la sesión real. El
  * perfil sale de `getSessionProfile`, que devuelve `null` sin sesión y con
  * acceso revocado; no hay otra vía de identidad.
  */
@@ -30,10 +30,13 @@ export function contextoReal(): ContextoExplorador {
       },
       async personasEnlazadas(athleteIds) {
         if (athleteIds.length === 0) return [];
-        const filas = await db
-          .select({ personId: sportPerson.id, athleteId: sportPerson.athleteId })
-          .from(sportPerson)
-          .where(inArray(sportPerson.athleteId, athleteIds));
+        const filas = [];
+        for (let inicio = 0; inicio < athleteIds.length; inicio += 90) {
+          filas.push(...await db
+            .select({ personId: sportPerson.id, athleteId: sportPerson.athleteId })
+            .from(sportPerson)
+            .where(inArray(sportPerson.athleteId, athleteIds.slice(inicio, inicio + 90))));
+        }
         return filas.flatMap((f) => (f.athleteId ? [{ personId: f.personId, athleteId: f.athleteId }] : []));
       },
       fichasFiePorAtleta: depsEvidenciaDb.fichasFiePorAtleta,

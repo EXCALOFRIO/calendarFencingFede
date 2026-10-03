@@ -12,7 +12,14 @@ const PENDIENTES = ['0017_identidad_deportiva', '0018_referencias_de_inscripcion
 const journal = JSON.parse(readFileSync('drizzle/meta/_journal.json', 'utf8')) as {
   entries: { tag: string; when: number }[];
 };
-const locales = cargarMigracionesLocales(journal, (tag) => readFileSync(`drizzle/${tag}.sql`, 'utf8'));
+// Este escenario histórico termina en 0019; añadir 0020 no cambia qué
+// migraciones pertenecen a la entrega deportiva ya aplicada.
+const ultimaDeportiva = journal.entries.findIndex((e) => e.tag === PENDIENTES.at(-1));
+if (ultimaDeportiva < 0) throw new Error('Falta la última migración deportiva.');
+const locales = cargarMigracionesLocales(
+  { entries: journal.entries.slice(0, ultimaDeportiva + 1) },
+  (tag) => readFileSync(`drizzle/${tag}.sql`, 'utf8'),
+);
 const previas = locales.slice(0, -3);
 
 const estadoBase = (): EstadoLeido => ({
@@ -42,7 +49,7 @@ describe('preflight de migraciones aditivas 0017→0018→0019', () => {
     expect(crlf[0].sentencias.join('')).not.toContain('\r');
   });
 
-  it('las tres pendientes son la cola del journal y crean las 13 tablas', () => {
+  it('las tres pendientes son la cola del escenario hasta 0019 y crean las 13 tablas', () => {
     expect(locales.slice(-3).map((m) => m.tag)).toEqual(PENDIENTES);
     const sql = locales.slice(-3).map((m) => m.sentencias.join('\n')).join('\n');
     const creadas = [...sql.matchAll(/CREATE TABLE IF NOT EXISTS "(sport_[a-z_]+)"/g)].map((r) => r[1]).sort();

@@ -3,24 +3,19 @@ import { db } from '@/db';
 import { crearDetectorCondicion, crearDetectorEsquema } from './esquema';
 
 export const esquemaDeportivo = crearDetectorEsquema(async () => {
-  const [fila] = await db
-    .select({
-      identidad: sql<boolean>`(to_regclass('public.sport_person') is not null and to_regclass('public.sport_external_id') is not null)`,
-      referencias: sql<boolean>`to_regclass('public.sport_registration_ref') is not null`,
-    })
-    .from(sql`(select 1) as catalogo`);
-  return { identidad: Boolean(fila?.identidad), referencias: Boolean(fila?.referencias) };
+  const { rows } = await db.execute<{ name: string }>(sql`
+    SELECT name FROM sqlite_master
+    WHERE type = 'table' AND name IN ('sport_person', 'sport_external_id', 'sport_registration_ref')`);
+  const tablas = new Set(rows.map((r) => r.name));
+  return {
+    identidad: tablas.has('sport_person') && tablas.has('sport_external_id'),
+    referencias: tablas.has('sport_registration_ref'),
+  };
 });
 
-/** Migración 0019: `category_code` ya admite M10 y M12. */
+/** En SQLite las categorías admitidas se documentan en el CHECK del catálogo. */
 export const categoriasHistoricasAplicadas = crearDetectorCondicion(async () => {
-  const [fila] = await db
-    .select({
-      aplicada: sql<boolean>`(
-        select count(*) = 2 from pg_enum e join pg_type t on t.oid = e.enumtypid
-        where t.typname = 'category_code' and e.enumlabel in ('M10', 'M12')
-      )`,
-    })
-    .from(sql`(select 1) as catalogo`);
-  return Boolean(fila?.aplicada);
+  const { rows } = await db.execute<{ sql: string }>(sql`
+    SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'sport_competition'`);
+  return Boolean(rows[0]?.sql.includes("'M10'") && rows[0]?.sql.includes("'M12'"));
 });

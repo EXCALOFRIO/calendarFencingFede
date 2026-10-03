@@ -16,12 +16,14 @@ import {
   FECHA_ORDEN_RESULTADO,
   FECHA_RESULTADO,
   listaUuid,
-  TIPO_DOCUMENTADO,
   UNION_EVENTO_CANONICO,
   unionesPrueba,
   y,
 } from './filtros-sql';
 import { leerCabeceras, resolverPersona } from './personas';
+import { consultaEstadisticas } from './estadisticas-sql';
+import { aDetalleEstadistico, type FilaAgregadoEstadistico } from './estadisticas';
+import { TIPO_ESTADISTICO_DOCUMENTADO } from './estadisticas-tipo';
 import { resolverPersonaPropia, type PropietarioResuelto } from './propietario';
 import type {
   Arma,
@@ -91,40 +93,25 @@ export function aEstadisticas(rows: readonly FilaEstadistica[]): EstadisticaPorT
 }
 
 /**
- * Estadísticas por tipo de torneo DOCUMENTADO a partir de clasificaciones
- * individuales publicadas, una por prueba (una prueba leída en dos fuentes no
- * cuenta dos veces). Una inscripción sin resultado no existe aquí: no se lee
- * `competition_registration`. El tipo sale del circuito del calendario
- * vinculado; sin vínculo o con circuito genérico va al grupo `null`.
+ * Agregados acotados del historial individual importado. Sólo se deduplican
+ * hechos idénticos de la misma prueba o con equivalencia explícita; hechos
+ * discrepantes no aportan puesto. No se lee `competition_registration`.
+ * El tipo exige procedencia verificable del campo oficial, nunca el título.
  */
 export function sqlEstadisticas(ids: readonly string[]) {
-  return sql`
-    SELECT tipo, count(*) FILTER (WHERE puesto IS NOT NULL)::int AS clasificaciones,
-           min(puesto)::int AS "mejorPuesto",
-           count(*) FILTER (WHERE puesto <= 3)::int AS podios,
-           count(*) FILTER (WHERE puesto = 1)::int AS victorias,
-           count(*) FILTER (WHERE puesto IS NULL)::int AS "sinPuesto"
-    FROM (
-      SELECT DISTINCT ON (r.competition_id) ${TIPO_DOCUMENTADO} AS tipo, r.position AS puesto
-      FROM sport_result r
-      ${unionesPrueba('r')}
-      ${UNION_EVENTO_CANONICO}
-      WHERE r.person_id IN (${listaUuid(ids)}) AND c.format::text = 'INDIVIDUAL'
-      ORDER BY r.competition_id, (r.position IS NULL), r.revised_at DESC, r.id DESC
-    ) una_por_prueba
-    GROUP BY tipo`;
+  return consultaEstadisticas(ids);
 }
 
 export function sqlCobertura(ids: readonly string[]) {
   const lista = listaUuid(ids);
   return [
     sql`
-      SELECT count(*)::int AS resultados, count(DISTINCT r.competition_id)::int AS pruebas,
-             count(DISTINCT c.edition_id)::int AS ediciones
+      SELECT count(*) AS resultados, count(DISTINCT r.competition_id) AS pruebas,
+             count(DISTINCT c.edition_id) AS ediciones
       FROM sport_result r JOIN sport_competition c ON c.id = r.competition_id
       WHERE r.person_id IN (${lista})`,
     sql`
-      SELECT cov.fact_kind AS hecho, cov.status::text AS estado, count(*)::int AS pruebas
+      SELECT cov.fact_kind AS hecho, cov.status AS estado, count(*) AS pruebas
       FROM sport_import_coverage cov
       WHERE cov.competition_id IN (
         SELECT DISTINCT r.competition_id FROM sport_result r WHERE r.person_id IN (${lista}))
@@ -193,7 +180,7 @@ export async function leerFicha(ctx: ContextoExplorador, entrada: unknown): Prom
     ctx.db.execute(sql`
       SELECT p.season AS temporada
       FROM sport_ranking_entry e JOIN sport_ranking_publication p ON p.id = e.publication_id
-      WHERE e.person_id IN (${lista}) AND p.format::text = ${formato}
+      WHERE e.person_id IN (${lista}) AND p.format = ${formato}
       GROUP BY p.season
       ORDER BY max(p.published_on) DESC, p.season DESC
       LIMIT 40`),
@@ -238,7 +225,10 @@ export async function leerFicha(ctx: ContextoExplorador, entrada: unknown): Prom
       esPropia,
       estadisticas: {
         conjunto: 'clasificaciones_individuales',
-        porTipo: aEstadisticas(filas<FilaEstadistica>(estadisticas)),
+        porTipo: aEstadisticas(
+          filas<FilaAgregadoEstadistico>(estadisticas).filter((r) => r.clase === 'tipo'),
+        ),
+        detalle: aDetalleEstadistico(filas<FilaAgregadoEstadistico>(estadisticas)),
       },
       cobertura,
       rankingOficial: {
@@ -283,19 +273,20 @@ export function sqlHistorial(
   const condiciones = [sql`r.person_id IN (${listaUuid(ids)})`, ...condicionesPrueba(filtros, FECHA_RESULTADO)];
   if (clave) {
     condiciones.push(
-      sql`(${FECHA_ORDEN_RESULTADO}, r.id) < (${String(clave[0])}::date, ${String(clave[1])}::uuid)`,
+      sql`(${FECHA_ORDEN_RESULTADO}, r.id) < (${String(clave[0])}, ${String(clave[1])})`,
     );
   }
   return sql`
-    SELECT r.id::text AS id, r.position AS puesto, r.position_raw AS "puestoPublicado",
-           r.official_points::text AS puntos, r.source AS fuente,
+    SELECT r.id AS id, CASE WHEN r.position > 0 THEN r.position END AS puesto,
+           r.position_raw AS "puestoPublicado",
+           r.official_points AS puntos, r.source AS fuente,
            coalesce(r.source_url, c.source_url) AS enlace,
-           e.id::text AS "torneoId", e.name AS torneo, e.city AS ciudad, e.country_code AS "paisTorneo",
-           ${TIPO_DOCUMENTADO} AS tipo,
-           c.id::text AS "pruebaId", c.weapon::text AS arma, c.gender::text AS genero,
-           c.category::text AS categoria, c.category_raw AS "categoriaRaw", c.format::text AS formato,
-           c.season AS temporada, (${FECHA_RESULTADO})::text AS fecha,
-           (${FECHA_ORDEN_RESULTADO})::text AS "fechaOrden"
+           e.id AS "torneoId", e.name AS torneo, e.city AS ciudad, e.country_code AS "paisTorneo",
+           ${TIPO_ESTADISTICO_DOCUMENTADO} AS tipo,
+           c.id AS "pruebaId", c.weapon AS arma, c.gender AS genero,
+           c.category AS categoria, c.category_raw AS "categoriaRaw", c.format AS formato,
+           c.season AS temporada, (${FECHA_RESULTADO}) AS fecha,
+           (${FECHA_ORDEN_RESULTADO}) AS "fechaOrden"
     FROM sport_result r
     ${unionesPrueba('r')}
     ${UNION_EVENTO_CANONICO}

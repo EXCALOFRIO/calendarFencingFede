@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AHORA_SQL, enLista as inArray, lotesDeInsercion } from '@/lib/sqlite';
 import { mapCategory, mapGender, mapWeapon } from '../mappers';
 import { formatZodIssues } from '../types';
 import { fetchJson } from '../fetcher';
@@ -742,7 +743,7 @@ export async function ingestFieTiradores(
   const { athlete, fieFencer, fieWorldRanking, ingestQuarantine } = await import(
     '@/db/schema'
   );
-  const { eq, inArray, sql } = await import('drizzle-orm');
+  const { eq, sql } = await import('drizzle-orm');
 
   const stats: FieTiradoresStats = {
     itemsSeen: 0,
@@ -1027,7 +1028,7 @@ export async function ingestFieTiradores(
     });
   }
 
-  for (const lote of trocear(filasFencer, 200)) {
+  for (const lote of lotesDeInsercion(filasFencer, fieFencer)) {
     await db
       .insert(fieFencer)
       .values(lote)
@@ -1248,7 +1249,7 @@ export async function ingestFieTiradores(
     return true;
   });
 
-  for (const lote of trocear(rankingSinDuplicados, 300)) {
+  for (const lote of lotesDeInsercion(rankingSinDuplicados, fieWorldRanking)) {
     await db
       .insert(fieWorldRanking)
       .values(lote)
@@ -1292,7 +1293,7 @@ export async function ingestFieTiradores(
   stats.peticiones += clasificacion.peticiones;
 
   // --- 10. Cuarentena ---
-  for (const lote of trocear(cuarentena, 100)) {
+  for (const lote of lotesDeInsercion(cuarentena, ingestQuarantine)) {
     if (lote.length === 0) continue;
     await db.insert(ingestQuarantine).values(
       lote.map((item) => ({
@@ -1386,7 +1387,7 @@ async function guardarClasificacionMundial(opciones: {
 }> {
   const { fieClasificacion } = await import('@/db/schema');
   const { db } = await import('@/db');
-  const { and, eq, inArray, sql } = await import('drizzle-orm');
+  const { and, eq, sql } = await import('drizzle-orm');
   const { sha256 } = await import('@/lib/utils');
 
   const resumen = {
@@ -1494,7 +1495,7 @@ async function guardarClasificacionMundial(opciones: {
     if (format === 'INDIVIDUAL') resumen.individuales += filas.length;
     else resumen.selecciones += filas.length;
 
-    for (const lote of trocear(porEscribir, 300)) {
+    for (const lote of lotesDeInsercion(porEscribir, fieClasificacion)) {
       await db
         .insert(fieClasificacion)
         .values(lote)
@@ -1516,7 +1517,7 @@ async function guardarClasificacionMundial(opciones: {
             eventCount: sql`excluded."event_count"`,
             sourceUrl: sql`excluded."source_url"`,
             contentHash: sql`excluded."content_hash"`,
-            updatedAt: sql`now()`,
+            updatedAt: AHORA_SQL,
           },
         });
     }

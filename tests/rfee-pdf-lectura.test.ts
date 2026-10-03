@@ -88,21 +88,26 @@ describe('leerPdfRfee', () => {
         throw new PdfNoLeible('HTTP 500 al pedir el PDF');
       },
     });
-    expect(l).toMatchObject({ estado: 'error', docId: 'abc123', error: 'HTTP 500 al pedir el PDF', pruebas: [], sha256: null });
+    expect(l).toMatchObject({ estado: 'error', docId: docIdDeUrl(l.url), error: 'HTTP 500 al pedir el PDF', pruebas: [], sha256: null });
     expect(l.ocr.ejecutado).toBe(false);
   });
 
   it('lee los bytes que entrega la dependencia y conserva la URL y la huella', async () => {
     const bytes = pdfMinimo([texto(100, 700, 'Documento sin resultados reconocibles')]);
     const l = await leerPdfRfee('https://app.skermo.org/client/1/def456.pdf', { bytes: async () => bytes });
-    expect(l).toMatchObject({ url: 'https://app.skermo.org/client/1/def456.pdf', docId: 'def456' });
+    expect(l).toMatchObject({ url: 'https://app.skermo.org/client/1/def456.pdf', docId: docIdDeUrl(l.url) });
     expect(l.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(l.estado).toBe('pendiente');
     expect(l.pruebas).toHaveLength(0);
   });
 
-  it('docIdDeUrl usa el último segmento sin extensión', () => {
-    expect(docIdDeUrl('https://app.skermo.org/client/1/8a18f4649d0b77c3c078165715948a7a.pdf')).toBe('8a18f4649d0b77c3c078165715948a7a');
-    expect(docIdDeUrl('no es url')).toBe('doc');
+  it('docIdDeUrl identifica la URL completa y no confunde nombres ni prefijos iguales', () => {
+    const url = 'https://app.skermo.org/client/1/results.pdf';
+    expect(docIdDeUrl(url)).toMatch(/^url-[a-f0-9]{64}$/);
+    expect(docIdDeUrl(url)).not.toBe(docIdDeUrl('https://app.skermo.org/client/2/results.pdf'));
+    expect(docIdDeUrl(url)).toBe(docIdDeUrl(`${url}#page=2`));
+    const prefix = 'a'.repeat(40);
+    expect(docIdDeUrl(`https://app.skermo.org/client/1/${prefix}A.pdf`)).not.toBe(docIdDeUrl(`https://app.skermo.org/client/1/${prefix}B.pdf`));
+    expect(() => docIdDeUrl('no es url')).toThrow();
   });
 });

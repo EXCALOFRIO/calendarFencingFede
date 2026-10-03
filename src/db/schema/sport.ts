@@ -457,6 +457,9 @@ export const sportRankingPublication = pgTable(
     format: eventTypeEnum('format').notNull().default('INDIVIDUAL'),
     /** Fecha de publicación según la fuente o, si no la da, del día leído. */
     publishedOn: date('published_on').notNull(),
+    /** Both supported ranking sources publish no date: this is an observation, NOT a final publication date. */
+    dateBasis: text('date_basis').notNull().default('observed'),
+    revision: integer('revision').notNull().default(1),
     sourceUrl: text('source_url'),
     publishedTotal: integer('published_total'),
     fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),

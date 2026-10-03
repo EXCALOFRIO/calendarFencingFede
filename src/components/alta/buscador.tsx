@@ -15,27 +15,23 @@ type Buscar = (texto: string) => Promise<ResultadoBusqueda>;
 type Vincular = (clave: string, licencia: string) => Promise<ResultadoVinculo>;
 
 /**
- * «Búscate y confirma con tu licencia».
+ * «Búscate con tu licencia y solicita revisión».
  *
  * Son dos pasos y solo dos, en la misma pantalla y sin submenús:
  *
  *   1. escribe su apellido o su licencia y se reconoce en la lista,
- *   2. teclea su número de licencia y la ficha queda colgada de su cuenta.
+ *   2. solicita revisión; la dirección técnica verifica y aprueba el enlace.
  *
  * -------------------------------------------------------------------------
  * POR QUÉ HAY UN SEGUNDO PASO
  * -------------------------------------------------------------------------
  * Si bastara con el nombre, cualquiera podría reclamar la ficha de Carlos
  * Llavador —y con ella su puesto, sus convocatorias y sus inscripciones—. El
- * número de licencia lo lleva cada uno en su carné y la página pública del
- * ranking **no** lo publica, así que teclearlo es la prueba razonable de que la
- * fila es tuya. La pantalla lo dice con esas palabras, no como una advertencia
- * legal: quien lee «hace falta tu licencia porque el ranking no la publica»
- * entiende para qué sirve, y quien lee «por motivos de seguridad» no entiende
- * nada.
+ * número de licencia ayuda a encontrar una fila, pero tampoco es una
+ * credencial. Ambas vías quedan pendientes hasta una revisión independiente.
  *
- * Lo que la lista NO trae es la licencia de nadie. Si la trajera, el dato que
- * sirve de prueba viajaría al navegador de cualquiera que escriba un apellido.
+ * La lista no trae la licencia de nadie: no hace falta enviarla al navegador
+ * de quien escriba un apellido.
  */
 export function Buscador({
   buscar,
@@ -102,7 +98,7 @@ export function Buscador({
         <p className="medida text-sm text-muted-foreground">
           Tu cuenta ({nombreCuenta}) todavía no está unida a ninguna ficha, así
           que el calendario no sabe cuál es tu arma. Búscate en la clasificación
-          oficial de la RFEE y confírmalo con tu licencia.
+          oficial de la RFEE y solicita una revisión de identidad.
         </p>
       )}
 
@@ -118,7 +114,7 @@ export function Buscador({
               base. Así lo que se ve al acabar y lo que se ve al volver mañana
               son exactamente lo mismo, sin dos versiones de la verdad.
             */
-            router.replace('/alta?hecha=1');
+            router.replace('/alta?pendiente=1');
             router.refresh();
           }}
         />
@@ -147,6 +143,7 @@ export function Buscador({
                 }}
                 placeholder="Apellido, o licencia completa"
                 autoComplete="off"
+                maxLength={160}
                 spellCheck={false}
                 aria-invalid={error !== null}
                 aria-describedby={error ? 'error-busqueda' : undefined}
@@ -357,9 +354,9 @@ function Confirmacion({
       <div className="flex flex-col gap-1">
         <h2 className="text-xl">Confirma que eres tú</h2>
         <p className="medida text-sm text-muted-foreground">
-          La página del ranking publica el nombre, el club y el puesto, pero no
-          la licencia. Escribiéndola demuestras que esta ficha es tuya y no la de
-          alguien que se llama igual. La tienes en tu carné de la RFEE.
+          La licencia ayuda a localizar la fila, pero no es una credencial de acceso.
+          La dirección técnica verificará tu identidad antes de aprobar la vinculación.
+          La solicitud no permite gestionar las convocatorias o inscripciones de esta ficha.
         </p>
       </div>
 
@@ -423,7 +420,7 @@ function Confirmacion({
         <div className="flex flex-wrap items-center gap-2">
           <Button type="submit" disabled={enviando || licencia.trim().length === 0}>
             {enviando ? <Loader2 className="animate-spin" aria-hidden /> : null}
-            Vincular mi ficha
+            Solicitar revisión de mi ficha
           </Button>
           <Button type="button" variant="ghost" onClick={onVolver}>
             <ArrowLeft aria-hidden />

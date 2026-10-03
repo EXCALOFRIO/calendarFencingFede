@@ -3,8 +3,10 @@ import { BuscadorNombre } from '@/components/alta/buscador-nombre';
 import { FichaVinculada } from '@/components/alta/ficha-vinculada';
 import { getManagedAthletes, requireProfile } from '@/lib/auth/session';
 import { MENSAJE_RECHAZO, buscarPorNombre } from '@/lib/altas/por-nombre';
-import { buscarEnRanking, vincularFicha } from './acciones';
+import { buscarEnRanking, cancelarSolicitudVinculo, vincularFicha } from './acciones';
 import { getResumenFicha } from './consultas';
+import { solicitudPendiente } from '@/lib/altas/solicitudes';
+import { Button } from '@/components/ui/button';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Vincula tu ficha' };
@@ -34,13 +36,14 @@ export const metadata = { title: 'Vincula tu ficha' };
  * licencia para poder mirar el calendario era un muro puesto en la puerta.
  *
  * La vía de la licencia no se ha borrado —vive en `?con=licencia`— porque
- * sigue siendo una prueba más fuerte. Lo que ha cambiado es cuál va primero.
+ * ayuda a encontrar la fila exacta, pero no acredita su propiedad. Ambas vías
+ * necesitan una revisión independiente de la dirección técnica.
  *
  * -------------------------------------------------------------------------
- * DOS ESTADOS, UNA URL
+ * TRES ESTADOS, UNA URL
  * -------------------------------------------------------------------------
- * Si la cuenta NO tiene ficha, se enseña el buscador. Si la tiene —porque
- * acaba de vincularla o porque volvió a mirar—, se enseña la ficha con su
+ * Si la cuenta NO tiene ficha, se enseña el buscador o su solicitud pendiente.
+ * Si la tiene —porque se aprobó el vínculo o porque volvió a mirar—, se enseña la ficha con su
  * puesto oficial. Son la misma pantalla a propósito: la confirmación de que el
  * alta funcionó es exactamente lo que se ve al volver, así que no hay dos
  * versiones de la verdad que puedan separarse.
@@ -54,10 +57,11 @@ export default async function Pagina({
 }: {
   searchParams: Promise<{
     hecha?: string;
+    pendiente?: string;
     con?: string;
     /** Lo que se escribió en «¿Cómo te llamas?». La búsqueda es un GET. */
     q?: string;
-    /** Código de `MotivoRechazo` si «Sí, soy yo» no pudo vincular. */
+    /** Código de `MotivoRechazo` si no se pudo registrar la solicitud. */
     fallo?: string;
   }>;
 }) {
@@ -80,6 +84,23 @@ export default async function Pagina({
       );
     }
   }
+  const pendiente = await solicitudPendiente(perfil.profileId);
+  if (pendiente) {
+    return (
+      <section className="flex min-w-0 flex-col gap-4">
+        <h1 className="text-2xl sm:text-3xl">Solicitud pendiente de revisión</h1>
+        <p role="status" className="medida text-sm text-muted-foreground">
+          La dirección técnica debe verificar tu identidad antes de vincular la ficha.
+          Todavía no tienes permisos para gestionar sus convocatorias o inscripciones.
+          Puedes seguir consultando el calendario.
+        </p>
+        <p className="text-sm">Referencia en la fuente: {pendiente.clave}</p>
+        <form action={cancelarSolicitudVinculo}>
+          <Button type="submit" variant="outline">Cancelar y elegir otra ficha</Button>
+        </form>
+      </section>
+    );
+  }
 
   /**
    * La vía larga, con el número de licencia, sigue existiendo en `?con=licencia`.
@@ -87,8 +108,8 @@ export default async function Pagina({
    * No se enseña de primeras porque pedirle a alguien el carné de la RFEE para
    * poder mirar el calendario era exactamente el muro que había que quitar, y
    * porque el nombre lo tiene en la cabeza y la licencia en un cajón. Pero no
-   * se borra: es una prueba de identidad más fuerte que reconocerse, y a quien
-   * la tenga a mano se le deja usarla.
+   * se borra: ayuda a localizar la fila exacta. No es una credencial ni evita
+   * la revisión independiente antes de conceder la propiedad.
    */
   if (parametros.con === 'licencia') {
     return (

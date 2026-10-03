@@ -4,8 +4,6 @@ import {
   desc,
   eq,
   gte,
-  ilike,
-  inArray,
   isNull,
   like,
   lte,
@@ -13,7 +11,8 @@ import {
   or,
   sql,
 } from 'drizzle-orm';
-import { alias } from 'drizzle-orm/pg-core';
+import { alias } from 'drizzle-orm/sqlite-core';
+import { contieneSinMayusculas as ilike, enLista as inArray } from '@/lib/sqlite';
 import { cache } from 'react';
 import { db } from '@/db';
 import {
@@ -1377,7 +1376,7 @@ export const getDataFreshness = cache(async () => {
 export const contarPruebas = cache(async (): Promise<number> => {
   const hoy = new Date().toISOString().slice(0, 10);
   const [fila] = await db
-    .select({ n: sql<number>`count(*)::int` })
+    .select({ n: sql<number>`count(*)` })
     .from(eventCompetition)
     .innerJoin(event, eq(eventCompetition.eventId, event.id))
     .where(

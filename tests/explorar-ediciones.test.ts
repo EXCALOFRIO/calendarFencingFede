@@ -51,7 +51,7 @@ const FILAS_SERIES = [
 ];
 
 const respuestaPruebas = (extra: Record<string, unknown> = {}) => ({
-  cuando: /c\.format::text AS formato/,
+  cuando: /c\.format AS formato/,
   filas: [
     {
       id: PRUEBA,
@@ -97,7 +97,9 @@ describe('leerSeries', () => {
     expect(r.series.map((s) => s.ediciones.map((e) => e.id))).toEqual([[ED_JO], [ED_JM], [ED_CM]]);
     expect(r.series.flatMap((s) => s.ediciones).map((e) => e.pruebas)).toEqual([2, 2, 2]);
     expect(sentencias).toHaveLength(1);
-    expect(sentencias[0]?.text).toMatch(/olymp\|olimp\|mediterr/);
+    expect(sentencias[0]?.text).toMatch(/LIKE '%olymp%'/);
+    expect(sentencias[0]?.text).toMatch(/LIKE '%olimp%'/);
+    expect(sentencias[0]?.text).toMatch(/LIKE '%mediterr%'/);
   });
 
   it('una serie sin ediciones importadas se devuelve vacía en lugar de desaparecer', async () => {
@@ -208,7 +210,7 @@ describe('cobertura de resultados por fuente', () => {
     const { resultados, sentencias } = await estadoDe(34, [fila('ranking', 'fie', 'completo')]);
     expect(resultados).toEqual({ estado: 'completo', importados: 34 });
     const consulta = sentencias.map((s) => s.text).join('\n');
-    expect(consulta).toMatch(/cov\.fact_kind = 'ranking' AND cov\.source = \$\d+/);
+    expect(consulta).toMatch(/cov\.fact_kind = 'ranking' AND cov\.source = \?/);
     expect(sentencias.some((s) => s.params.includes('fie'))).toBe(true);
     expect(consulta).not.toMatch(/'pools'|'tableau'/);
   });
@@ -320,7 +322,7 @@ describe('leerEdicion', () => {
     const segunda = await leerEdicion(ctx, { edicionId: ED_JO, prueba: PRUEBA, cursor: siguiente ?? '', limite: 2 });
     expect(segunda.estado).toBe('ok');
     const ultima = sentencias.at(-1);
-    expect(ultima?.text).toMatch(/> \(\$\d+::int, \$\d+::int, \$\d+::uuid\)/);
+    expect(ultima?.text).toMatch(/> \(\?, \?, \?\)/);
 
     // Cambiar de prueba o de edición invalida el cursor.
     expect(await leerEdicion(ctx, { edicionId: ED_JO, cursor: siguiente })).toEqual({ estado: 'cursor_invalido' });

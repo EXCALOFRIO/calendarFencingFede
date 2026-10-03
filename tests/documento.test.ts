@@ -1,13 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   FormatoNoLeible,
+  LimiteDocumentoExcedido,
+  MAX_BYTES_XML_DOCUMENTO,
   entradaZipComoTexto,
   formatoDeDocumento,
   indiceZip,
+  leerBytesAcotados,
   textoDeDocumento,
   textoDeDocumentoOdf,
   textoDeDocumentoOoxml,
 } from '@/lib/ai/documento';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 /**
  * ===========================================================================
@@ -268,6 +276,89 @@ describe('el ZIP se lee por su directorio central', () => {
   });
 });
 
+describe('el XML se limita antes de retener o decodificar su salida', () => {
+  for (const nombre of ['word/document.xml', 'content.xml']) {
+    for (const comprimir of [true, false]) {
+      it(`${nombre}, método ${comprimir ? 8 : 0}: admite exactamente 4 MiB`, async () => {
+        const contenido = 'A'.repeat(MAX_BYTES_XML_DOCUMENTO);
+        const zip = await zipDePrueba([{ nombre, contenido }], comprimir);
+        expect(await entradaZipComoTexto(zip, nombre)).toBe(contenido);
+      });
+
+      it(`${nombre}, método ${comprimir ? 8 : 0}: rechaza un byte más`, async () => {
+        const zip = await zipDePrueba([
+          { nombre, contenido: 'A'.repeat(MAX_BYTES_XML_DOCUMENTO + 1) },
+        ], comprimir);
+        if (comprimir) {
+          expect(zip.byteLength).toBeLessThan(10_000);
+          // El tamaño inflado declarado tampoco es de confianza.
+          const vista = new DataView(zip.buffer);
+          const central = vista.getUint32(zip.length - 22 + 16, true);
+          vista.setUint32(central + 24, 1, true);
+          vista.setUint32(22, 1, true);
+        }
+        await expect(entradaZipComoTexto(zip, nombre)).rejects.toThrow(LimiteDocumentoExcedido);
+      });
+    }
+  }
+
+  it('cuenta bytes UTF-8, no caracteres', async () => {
+    const zip = await zipDePrueba([
+      { nombre: 'word/document.xml', contenido: 'á'.repeat(MAX_BYTES_XML_DOCUMENTO / 2 + 1) },
+    ]);
+    await expect(entradaZipComoTexto(zip, 'word/document.xml')).rejects.toThrow(/tope de 4 MiB/);
+  });
+
+  it('reúne bloques dentro del presupuesto exacto y libera el lector', async () => {
+    const flujo = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(new Uint8Array([1, 2]));
+        c.enqueue(new Uint8Array());
+        c.enqueue(new Uint8Array([3, 4]));
+        c.close();
+      },
+    });
+    expect(await leerBytesAcotados(flujo, 4, 'xml')).toEqual(new Uint8Array([1, 2, 3, 4]));
+    expect(flujo.locked).toBe(false);
+  });
+
+  it('cancela en el primer exceso, no pide otro bloque y conserva el rechazo', async () => {
+    let pedidos = 0;
+    const cancel = vi.fn(() => { throw new Error('detalle sintético que no debe salir'); });
+    const flujo = new ReadableStream<Uint8Array>({
+      pull(c) {
+        pedidos += 1;
+        c.enqueue(new Uint8Array([1, 2]));
+      },
+      cancel,
+    }, { highWaterMark: 0 });
+    await expect(leerBytesAcotados(flujo, 3, 'xml')).rejects.toThrow(LimiteDocumentoExcedido);
+    expect(pedidos).toBe(2);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(flujo.locked).toBe(false);
+  });
+
+  it('cancela también la salida del descompresor cuando rebasa el presupuesto', async () => {
+    const zip = await docxDePrueba();
+    let pedidos = 0;
+    const cancel = vi.fn();
+    const readable = new ReadableStream<Uint8Array>({
+      pull(c) {
+        pedidos += 1;
+        c.enqueue(new Uint8Array(MAX_BYTES_XML_DOCUMENTO / 2 + 1));
+      },
+      cancel,
+    }, { highWaterMark: 0 });
+    vi.stubGlobal('DecompressionStream', class {
+      readable = readable;
+      writable = new WritableStream();
+    });
+    await expect(entradaZipComoTexto(zip, 'word/document.xml')).rejects.toThrow(/tope de 4 MiB/);
+    expect(pedidos).toBe(2);
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // 3. OOXML -> texto: LAS FILAS DE TABLA
 // ---------------------------------------------------------------------------
@@ -324,6 +415,15 @@ describe('el texto de un Word conserva las filas de tabla', () => {
 // ---------------------------------------------------------------------------
 
 describe('textoDeDocumento decide por el formato', () => {
+  it.each([true, false])('lee un OpenDocument ordinario, comprimido=%s', async (comprimir) => {
+    const zip = await zipDePrueba([{ nombre: 'content.xml', contenido: CONTENT_XML_ODF }], comprimir);
+    const leido = await textoDeDocumento(zip, { url: 'https://ejemplo.test/dossier.odt', minCaracteres: 20 });
+    expect(leido.formato).toBe('odt');
+    expect(leido.tieneTexto).toBe(true);
+    expect(leido.paginas).toBeNull();
+    expect(leido.texto).toContain('14:00 - 19:30  Control de armas');
+  });
+
   it('lee un Word y NO se inventa un número de páginas', async () => {
     const leido = await textoDeDocumento(await docxDePrueba(), { url: 'https://x/y.docx' });
     expect(leido.formato).toBe('docx');

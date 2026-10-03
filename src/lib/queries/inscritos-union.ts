@@ -1,4 +1,5 @@
-import { and, asc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, isNull, or, sql } from 'drizzle-orm';
+import { enLista as inArray } from '@/lib/sqlite';
 import { db } from '@/db';
 import {
   athlete,
@@ -53,7 +54,7 @@ const depsDb: DepsLector = {
           prueba: clavePrueba(eventCompetition),
           tarjeta: tarjetaSql,
           arma: eventCompetition.weapon,
-          dia: sql<string | null>`coalesce(${eventCompetition.competitionDate}, ${event.startDate})::text`,
+          dia: sql<string | null>`coalesce(${eventCompetition.competitionDate}, ${event.startDate})`,
           nombre: competitionRegistration.sourceAthleteName,
           equipo: competitionRegistration.sourceTeam,
           clubPublicado: competitionRegistration.sourceClub,
@@ -77,8 +78,8 @@ const depsDb: DepsLector = {
           id: eventCompetition.id,
           prueba: clavePrueba(eventCompetition),
           tarjeta: tarjetaSql,
-          propia: sql<boolean>`${event.canonicalEventId} is null`,
-          consultada: sql<boolean>`(${eventCompetition.registrationsCheckedAt} is not null or ${eventCompetition.registrationCount} is not null)`,
+          propia: sql<boolean>`${event.canonicalEventId} is null`.mapWith(Boolean),
+          consultada: sql<boolean>`(${eventCompetition.registrationsCheckedAt} is not null or ${eventCompetition.registrationCount} is not null)`.mapWith(Boolean),
         })
         .from(eventCompetition)
         .innerJoin(event, eq(event.id, eventCompetition.eventId))

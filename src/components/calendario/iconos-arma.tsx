@@ -234,7 +234,7 @@ export function EtiquetaArma({
     <abbr
       title={WEAPON_LABEL[arma]}
       className={cn(
-        'shrink-0 font-bold uppercase tracking-tight no-underline',
+        'shrink-0 font-bold tracking-tight no-underline',
         className,
       )}
     >

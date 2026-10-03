@@ -1,6 +1,7 @@
 import { ArrowLeft, Info, Swords, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { rutaCaraACara } from '@/lib/sport/explorar/cara-a-cara-url';
 import {
@@ -13,7 +14,9 @@ import {
 } from '@/lib/sport/explorar/etiquetas';
 import { RUTA_EDICIONES } from '@/lib/sport/explorar/edicion-url';
 import { RUTA_FAVORITOS } from '@/lib/sport/explorar/favoritos-url';
-import { Bloque, Celda, Dato, EnlaceFuente, Nota, fechaLegible, type Nivel } from './piezas';
+import { Aclaracion, Bloque, Celda, Dato, EnlaceFuente, Nota, fechaLegible, type Nivel } from './piezas';
+import { EstadisticasDeportistaVista } from './estadisticas-deportista';
+import { FotoDeportista } from './foto-deportista';
 import {
   construirUrlFicha,
   RUTA_EXPLORAR,
@@ -59,19 +62,29 @@ export function CabeceraFicha({
   acciones?: React.ReactNode;
 }) {
   return (
-    <header className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        {titulo ? (
-          <h1 className="text-2xl break-words sm:text-3xl">{titular(ficha.nombre)}</h1>
-        ) : (
-          <p className="text-lg font-medium break-words">{titular(ficha.nombre)}</p>
-        )}
-        {ficha.esPropia ? (
-          <span className="rounded-full border px-2 py-0.5 text-xs">Es tu ficha deportiva</span>
-        ) : null}
+    <header className="flex min-w-0 flex-col gap-4 border-y border-l-2 border-l-primary bg-card px-4 py-5 sm:px-6 sm:py-6">
+      <div className="flex items-start justify-between gap-3">
+        <FotoDeportista
+          personaId={ficha.id}
+          nombre={ficha.nombre}
+          ocultar={ficha.esMenor}
+          tamano="mini"
+          decorativa
+          className="shrink-0"
+        />
+        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-4 gap-y-2">
+          {titulo ? (
+            <h1 className="min-w-0 text-3xl leading-tight break-words sm:text-4xl">{titular(ficha.nombre)}</h1>
+          ) : (
+            <p className="min-w-0 font-display text-3xl leading-tight break-words">{titular(ficha.nombre)}</p>
+          )}
+          {ficha.esPropia ? (
+            <Badge variant="outline">Es tu ficha deportiva</Badge>
+          ) : null}
+        </div>
+        {acciones ? <div className="min-w-0 max-w-[45%] shrink-0">{acciones}</div> : null}
       </div>
-      {acciones}
-      <dl className="flex flex-wrap gap-x-8 gap-y-2">
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-10">
         <div className="flex flex-col gap-0.5">
           <dt className="text-xs text-muted-foreground">País</dt>
           <dd>
@@ -101,7 +114,7 @@ export function CabeceraFicha({
           </dd>
         </div>
         {ficha.alias.length > 0 ? (
-          <div className="flex min-w-0 flex-col gap-0.5">
+          <div className="col-span-2 flex min-w-0 flex-col gap-0.5">
             <dt className="text-xs text-muted-foreground">También publicado como</dt>
             <dd className="text-sm break-words">{ficha.alias.join(', ')}</dd>
           </div>
@@ -116,10 +129,12 @@ export function CabeceraFicha({
           </span>
         </p>
       ) : null}
-      <Nota>
-        La ficha no dice si la persona sigue compitiendo: sólo recoge lo que han publicado las
-        fuentes. Que no tenga cuenta en la aplicación no significa que esté retirada.
-      </Nota>
+      <Aclaracion titulo="Sobre esta ficha">
+        <Nota>
+          La ficha no dice si la persona sigue compitiendo: sólo recoge lo que han publicado las
+          fuentes. Que no tenga cuenta en la aplicación no significa que esté retirada.
+        </Nota>
+      </Aclaracion>
     </header>
   );
 }
@@ -129,19 +144,19 @@ export function CabeceraFicha({
 function FilaEstadistica({ e }: { e: EstadisticaPorTipo }) {
   const sinDato = <span className="text-sm text-muted-foreground">Sin dato</span>;
   return (
-    <li className="grid gap-x-4 gap-y-2 px-3 py-3 md:grid-cols-[minmax(0,2fr)_repeat(5,minmax(0,1fr))] md:items-center">
-      <span className="min-w-0 font-medium break-words">{etiquetaTipo(e.tipo)}</span>
+    <li className="grid grid-cols-2 gap-x-4 gap-y-4 px-4 py-5 sm:grid-cols-3 md:grid-cols-[minmax(0,2fr)_repeat(5,minmax(0,1fr))] md:items-center">
+      <span className="col-span-2 min-w-0 font-medium break-words sm:col-span-3 md:col-span-1">{etiquetaTipo(e.tipo)}</span>
       <Celda etiqueta="Clasificaciones con puesto">
-        <span className="cifra text-2xl leading-none">{e.clasificaciones}</span>
+        <span className="cifra text-4xl leading-none">{e.clasificaciones}</span>
       </Celda>
       <Celda etiqueta="Mejor puesto">
-        {e.mejorPuesto !== null ? <span className="cifra text-2xl leading-none">{e.mejorPuesto}</span> : sinDato}
+        {e.mejorPuesto !== null ? <span className="cifra text-4xl leading-none">{e.mejorPuesto}</span> : sinDato}
       </Celda>
       <Celda etiqueta="Podios">
-        <span className="cifra text-2xl leading-none">{e.podios}</span>
+        <span className="cifra text-4xl leading-none">{e.podios}</span>
       </Celda>
       <Celda etiqueta="Victorias">
-        <span className="cifra text-2xl leading-none">{e.victorias}</span>
+        <span className="cifra text-4xl leading-none">{e.victorias}</span>
       </Celda>
       <Celda etiqueta="Sin puesto numérico">
         <Dato>{e.sinPuestoNumerico}</Dato>
@@ -151,15 +166,17 @@ function FilaEstadistica({ e }: { e: EstadisticaPorTipo }) {
 }
 
 export function EstadisticasFicha({ ficha, nivel }: { ficha: FichaDeportiva; nivel: Nivel }) {
+  if (ficha.estadisticas.detalle) {
+    return (
+      <Bloque id="ficha-estadisticas" titulo="Estadísticas del historial importado" nivel={nivel}>
+        <EstadisticasDeportistaVista detalle={ficha.estadisticas.detalle} />
+      </Bloque>
+    );
+  }
   const { porTipo } = ficha.estadisticas;
   const { pruebasConResultado, ediciones } = ficha.cobertura;
   return (
     <Bloque id="ficha-estadisticas" titulo="Estadísticas por tipo de torneo" nivel={nivel}>
-      <Nota>
-        Cuentan sólo clasificaciones individuales con resultado publicado, una por prueba. Una
-        inscripción sin final no cuenta como participación. El tipo sale del calendario cuando lo
-        documenta; si no, la prueba va a «Sin tipo documentado» y nunca se deduce del título.
-      </Nota>
       {porTipo.length === 0 ? (
         <p role="status" className="medida text-sm text-muted-foreground">
           No hay clasificaciones individuales importadas. Puede que falte importar esa información;
@@ -178,6 +195,13 @@ export function EstadisticasFicha({ ficha, nivel }: { ficha: FichaDeportiva; niv
           </Nota>
         </>
       )}
+      <Aclaracion titulo="Cómo se cuentan las estadísticas">
+        <Nota>
+          Cuentan sólo clasificaciones individuales con resultado publicado, una por prueba. Una
+          inscripción sin final no cuenta como participación. El tipo sale del calendario cuando lo
+          documenta; si no, la prueba va a «Sin tipo documentado» y nunca se deduce del título.
+        </Nota>
+      </Aclaracion>
     </Bloque>
   );
 }
@@ -187,8 +211,8 @@ export function EstadisticasFicha({ ficha, nivel }: { ficha: FichaDeportiva; niv
 function FilaRanking({ e }: { e: EntradaRankingOficial }) {
   const categoria = CATEGORY_LABEL[e.categoria.codigo as keyof typeof CATEGORY_LABEL] ?? e.categoria.codigo;
   return (
-    <li className="grid gap-x-4 gap-y-2 px-3 py-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] md:items-center">
-      <span className="flex min-w-0 flex-col gap-0.5">
+    <li className="grid grid-cols-2 gap-x-4 gap-y-4 px-4 py-5 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] md:items-center">
+      <span className="col-span-2 flex min-w-0 flex-col gap-1 md:col-span-1">
         <span className="font-medium break-words">
           {WEAPON_LABEL[e.arma]} {GENDER_LABEL[e.genero].toLowerCase()}, {categoria}
         </span>
@@ -200,7 +224,7 @@ function FilaRanking({ e }: { e: EntradaRankingOficial }) {
       <Celda etiqueta="Puesto en la lista">
         {e.puesto !== null ? (
           <span className="flex items-baseline gap-1.5">
-            <span className="cifra text-2xl leading-none">{e.puesto}</span>
+            <span className="cifra text-4xl leading-none">{e.puesto}</span>
             {e.totalPublicado !== null ? (
               <span className="text-xs text-muted-foreground">de {e.totalPublicado}</span>
             ) : null}
@@ -211,21 +235,23 @@ function FilaRanking({ e }: { e: EntradaRankingOficial }) {
       </Celda>
       <Celda etiqueta="Puntos">
         {e.puntos !== null ? (
-          <span className="cifra text-2xl leading-none">{e.puntos}</span>
+          <span className="cifra text-3xl leading-none break-all">{e.puntos}</span>
         ) : (
           <span className="text-sm text-muted-foreground">Puntos no publicados</span>
         )}
       </Celda>
-      <Celda etiqueta="Fecha de la lista">
+      <Celda etiqueta="Fecha de la lista" className="col-span-2 md:col-span-1">
         {e.fecha.sourcePublishedOn ? (
           <Dato>Publicada el {fechaLegible(e.fecha.sourcePublishedOn)}</Dato>
         ) : (
           <>
             <Dato>Leída el {fechaLegible(e.fecha.observedOn)}</Dato>
-            <span className="text-xs text-muted-foreground">
-              La fuente no publica la fecha de la lista. «Leída el» es el día en que se obtuvo, no la
-              situación a final de temporada.
-            </span>
+            <Aclaracion titulo="Fecha de lectura, no de publicación">
+              <Nota>
+                La fuente no publica la fecha de la lista. «Leída el» es el día en que se obtuvo, no la
+                situación a final de temporada.
+              </Nota>
+            </Aclaracion>
           </>
         )}
         <EnlaceFuente url={e.enlace} etiqueta="Ver la lista en la fuente" />
@@ -249,11 +275,13 @@ export function RankingOficialFicha({
   const otro = r.formato === 'INDIVIDUAL' ? 'EQUIPOS' : 'INDIVIDUAL';
   return (
     <Bloque id="ficha-ranking" titulo="Ranking oficial publicado" nivel={nivel}>
-      <Nota>
-        Es la lista que publica cada federación para una temporada y una modalidad. No es el puesto
-        de un torneo ni ningún cálculo propio de esta aplicación. Cada puesto pertenece a la lista,
-        temporada y fuente que se indican.
-      </Nota>
+      <Aclaracion titulo="Qué representa este ranking">
+        <Nota>
+          Es la lista que publica cada federación para una temporada y una modalidad. No es el puesto
+          de un torneo ni ningún cálculo propio de esta aplicación. Cada puesto pertenece a la lista,
+          temporada y fuente que se indican.
+        </Nota>
+      </Aclaracion>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <p className="text-sm">
@@ -291,7 +319,7 @@ export function RankingOficialFicha({
                 aria-current={actual ? 'true' : undefined}
                 className={cn(
                   'inline-flex min-h-11 items-center rounded-full border px-3 text-sm hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
-                  actual && 'border-foreground font-medium',
+                  actual && 'border-primary-text bg-marcado font-semibold text-primary-text',
                 )}
               >
                 {etiquetaTemporada(t)}
@@ -329,12 +357,12 @@ export function RankingOficialFicha({
 function FilaHistorial({ r }: { r: ResultadoHistorial }) {
   const categoria = CATEGORY_LABEL[r.prueba.categoria.codigo as keyof typeof CATEGORY_LABEL] ?? r.prueba.categoria.codigo;
   return (
-    <li className="grid gap-x-4 gap-y-2 px-3 py-3 md:grid-cols-[minmax(0,1fr)_minmax(0,3fr)_minmax(0,1fr)_minmax(0,1.5fr)] md:items-center">
+    <li className="grid grid-cols-2 gap-x-4 gap-y-4 px-4 py-5 md:grid-cols-[minmax(0,1fr)_minmax(0,3fr)_minmax(0,1fr)_minmax(0,1.5fr)] md:items-center">
       <Celda etiqueta="Fecha y temporada">
         {r.fecha ? <Dato>{fechaLegible(r.fecha)}</Dato> : <span className="text-sm text-muted-foreground">Fecha no publicada</span>}
         <span className="text-xs text-muted-foreground">{etiquetaTemporada(r.temporada)}</span>
       </Celda>
-      <Celda etiqueta="Torneo y prueba">
+      <Celda etiqueta="Torneo y prueba" className="order-first col-span-2 md:order-none md:col-span-1">
         <span className="font-medium break-words">{titular(r.torneo.nombre)}</span>
         <span className="text-xs text-muted-foreground break-words">
           {WEAPON_LABEL[r.prueba.arma]} {GENDER_LABEL[r.prueba.genero].toLowerCase()}, {categoria}
@@ -347,7 +375,7 @@ function FilaHistorial({ r }: { r: ResultadoHistorial }) {
       </Celda>
       <Celda etiqueta="Puesto final">
         {r.puesto !== null ? (
-          <span className="cifra text-3xl leading-none">{r.puesto}</span>
+          <span className="cifra text-4xl leading-none">{r.puesto}</span>
         ) : (
           <span className="text-sm">{r.puestoPublicado ?? <span className="text-muted-foreground">Sin puesto publicado</span>}</span>
         )}
@@ -374,10 +402,12 @@ export function HistorialFicha({
 }) {
   return (
     <Bloque id="historial" titulo="Historial de resultados" nivel={nivel}>
-      <Nota>
-        Puestos finales publicados, del más reciente al más antiguo. Una inscripción sin final no
-        aparece aquí: no es un resultado ni una participación clasificada.
-      </Nota>
+      <Aclaracion titulo="Resultados publicados, del más reciente al más antiguo">
+        <Nota>
+          Puestos finales publicados, del más reciente al más antiguo. Una inscripción sin final no
+          aparece aquí: no es un resultado ni una participación clasificada.
+        </Nota>
+      </Aclaracion>
       {historial.tipo === 'ok' ? (
         historial.sinResultados ? (
           <p role="status" className="medida text-sm text-muted-foreground">
@@ -500,11 +530,14 @@ export function CoberturaFichaVista({ cobertura, nivel }: { cobertura: Cobertura
 export function EntradaCaraACara({ ficha, nivel }: { ficha: FichaDeportiva; nivel: Nivel }) {
   return (
     <Bloque id="ficha-cara-a-cara" titulo="Cara a cara" nivel={nivel}>
-      <Nota>
-        Compara a {titular(ficha.nombre)} con otra persona en asaltos individuales ya importados:
-        poule y eliminación directa, con el marcador visto desde esta ficha. Los encuentros por
-        equipos, los BYE y las finales sin marcador no cuentan.
-      </Nota>
+      <Nota>Consulta los asaltos individuales publicados frente a otro deportista.</Nota>
+      <Aclaracion titulo="Qué asaltos se incluyen">
+        <Nota>
+          Compara a {titular(ficha.nombre)} con otra persona en asaltos individuales ya importados:
+          poule y eliminación directa, con el marcador visto desde esta ficha. Los encuentros por
+          equipos, los BYE y las finales sin marcador no cuentan.
+        </Nota>
+      </Aclaracion>
       <div>
         <Button asChild variant="outline">
           <Link href={rutaCaraACara(ficha.id)} prefetch={false}>
@@ -539,9 +572,9 @@ export function FichaCompleta({
   return (
     <div className="flex flex-col gap-6">
       <CabeceraFicha ficha={ficha} titulo={conTitulo} acciones={acciones} />
+      <EstadisticasFicha ficha={ficha} nivel={nivel} />
       <HistorialFicha historial={historial} base={base} criterios={criterios} nivel={nivel} />
       <EntradaCaraACara ficha={ficha} nivel={nivel} />
-      <EstadisticasFicha ficha={ficha} nivel={nivel} />
       <RankingOficialFicha ficha={ficha} base={base} criterios={criterios} nivel={nivel} />
       <CoberturaFichaVista cobertura={ficha.cobertura} nivel={nivel} />
     </div>

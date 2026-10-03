@@ -203,31 +203,37 @@ describe('lista de favoritos: estados distintos', () => {
   );
 });
 
-describe('control Guardar/Quitar', () => {
+describe('estrella minimalista de favoritos', () => {
   const boton = (inicial: boolean, variante?: 'ficha' | 'lista') =>
     html(React.createElement(BotonFavorito, { personaId: UUID_A, nombre: 'Lucía García', inicial, lectura: {}, variante }));
 
-  it('Favorito: ofrece quitar y comunica el estado con texto, no sólo con color', () => {
+  it('favorito: estrella rellena, estado pulsado y nombre accesible, sin botón rotulado', () => {
     const salida = boton(true);
     expect(salida).toContain('data-estado="favorito"');
-    expect(salida).toContain('>Favorito<');
-    expect(salida).toContain('>Quitar de favoritos<');
+    expect(salida).toContain('fill-current');
+    expect(salida).toContain('aria-pressed="true"');
+    expect(salida).not.toContain('>Favorito<');
+    expect(salida).not.toContain('>Quitar de favoritos<');
     expect(salida).toContain('aria-label="Quitar de favoritos: Lucía García"');
     expect(salida).toContain('aria-disabled="false"');
   });
 
-  it('Sin guardar: ofrece guardar', () => {
+  it('sin guardar: estrella vacía y estado no pulsado, sin etiquetas duplicadas', () => {
     const salida = boton(false);
     expect(salida).toContain('data-estado="sin-guardar"');
-    expect(salida).toContain('>Sin guardar<');
-    expect(salida).toContain('>Guardar en favoritos<');
+    expect(salida).toContain('aria-pressed="false"');
+    expect(salida).not.toContain('fill-current');
+    expect(salida).not.toContain('>Sin guardar<');
+    expect(salida).not.toContain('>Guardar en favoritos<');
+    expect(salida).toContain('aria-label="Guardar en favoritos: Lucía García"');
   });
 
   it('tiene región de estado siempre presente, objetivo táctil de 44 px y ninguna promesa de avisos', () => {
     const salida = boton(false);
     expect(salida).toContain('role="status"');
     expect(salida).toContain('min-h-11');
-    expect(salida).toContain('No envía avisos ni notificaciones');
+    expect(salida).toContain('min-w-11');
+    expect(salida).toContain('aria-busy="false"');
     expect(salida).not.toMatch(/te avisaremos|recibirás|alerta|suscri|seguir|siguiendo/i);
   });
 
@@ -235,6 +241,21 @@ describe('control Guardar/Quitar', () => {
     const salida = boton(true, 'lista');
     expect(salida).toMatch(/role="status"[^>]*class="[^"]*sr-only/);
     expect(salida).not.toContain('No envía avisos');
+  });
+
+  it('la ficha tampoco ocupa espacio con la nota o una insignia redundante', () => {
+    const salida = boton(false);
+    expect(salida).toMatch(/role="status"[^>]*class="sr-only"/);
+    expect(salida).not.toContain('Acceso rápido privado');
+    const control = /<button\b[^>]*>[\s\S]*?<\/button>/.exec(salida)?.[0] ?? '';
+    const clases = /class="([^"]+)"/.exec(control)?.[1].split(/\s+/) ?? [];
+    expect(clases).not.toContain('border');
+    expect(clases).not.toContain('bg-marcado');
+    expect(clases).not.toContain('bg-primary');
+    expect(control).toContain('data-variant="ghost"');
+    expect(control).toContain('focus-visible:ring');
+    expect(control).toContain('motion-reduce:transition-none');
+    expect(control.match(/<svg\b/g)).toHaveLength(1);
   });
 
   it('el componente sólo conoce las acciones de guardar y quitar, y no pide permisos del navegador', () => {

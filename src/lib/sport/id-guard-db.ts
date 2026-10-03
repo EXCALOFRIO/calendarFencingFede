@@ -1,167 +1,126 @@
 import { sql, type SQL } from 'drizzle-orm';
 import type { Db } from '@/db';
+import { AHORA_SQL } from '@/lib/sqlite';
 import type { ExternalIdRow } from '@/lib/identity/resolver';
-import type {
-  DepsGuardConfirmacion,
-  IdExternoCandidato,
-  PersonaNuevaConId,
-} from './id-guard';
+import type { DepsGuardConfirmacion, IdExternoCandidato, PersonaNuevaConId } from './id-guard';
 
-/**
- * Comprobación + escritura atómica del guard de IDs externos.
- *
- * Neon por HTTP no tiene transacciones interactivas, pero `db.batch` ejecuta
- * sus sentencias en UNA transacción (READ COMMITTED: cada sentencia ve lo ya
- * confirmado). Por eso van dos: primero un cerrojo consultivo por
- * `(scheme, value, scope_source)`, que serializa a todo el que quiera
- * confirmar ese mismo ID; y después el INSERT condicionado a que no exista un
- * choque. Si el cerrojo y el INSERT fueran una sola sentencia, el INSERT
- * ya habría tomado su instantánea y no vería a quien confirmó mientras esperaba.
- *
- * La condición repite en SQL la regla de `id-guard.ts` (ámbitos con vacío
- * comodín, vigencias inclusivas con fin abierto, persona distinta siguiendo
- * una fusión); los tests comparan ambas sobre los mismos casos.
- */
-
-type Filas = { id?: string }[];
-
-function filasDe(resultado: unknown): Filas {
-  if (Array.isArray(resultado)) return resultado as Filas;
-  const rows = (resultado as { rows?: unknown } | null)?.rows;
-  return Array.isArray(rows) ? (rows as Filas) : [];
+/** D1 batch es una unidad serializada. Cada escritura vuelve a comprobar el
+ * choque dentro de esa unidad: no hay cerrojo PG ni comprobación TOCTOU. */
+function canonica(id: SQL): SQL {
+  return sql`(WITH RECURSIVE cadena(id, destino, salto) AS (
+    SELECT p.id, p.merged_into_person_id, 0 FROM sport_person p WHERE p.id = ${id}
+    UNION ALL
+    SELECT p.id, p.merged_into_person_id, c.salto + 1
+    FROM sport_person p JOIN cadena c ON p.id = c.destino WHERE c.salto < 3
+  ) SELECT id FROM cadena WHERE destino IS NULL LIMIT 1)`;
 }
 
-function cerrojo(c: IdExternoCandidato): SQL {
-  const clave = `sport_external_id|${c.scheme}|${c.value.trim()}|${c.scopeSource}`;
-  return sql`SELECT pg_advisory_xact_lock(hashtextextended(${clave}, 0))`;
+function personaCanonica(c: IdExternoCandidato): SQL {
+  // Una nueva persona aún no está en el catálogo. Una cadena existente rota
+  // devuelve NULL y no puede confirmarse como si fuera una identidad nueva.
+  return sql`CASE WHEN EXISTS (SELECT 1 FROM sport_person WHERE id = ${c.personId})
+    THEN ${canonica(sql`${c.personId}`)} ELSE ${c.personId} END`;
 }
 
-/** Hay otra persona confirmada con el mismo ID, ámbito compatible y vigencia solapada. */
 export function sqlHayChoque(c: IdExternoCandidato): SQL {
   return sql`EXISTS (
-    SELECT 1
-    FROM sport_external_id e
-    LEFT JOIN sport_person ep ON ep.id = e.person_id
+    SELECT 1 FROM sport_external_id e
     WHERE e.link_status = 'CONFIRMADO'
-      AND e.scheme = ${c.scheme}
-      AND e.value = ${c.value.trim()}
+      AND e.scheme = ${c.scheme} AND e.value = ${c.value.trim()}
       AND e.scope_source = ${c.scopeSource}
       AND (e.scope_federation = '' OR ${c.scopeFederation} = '' OR e.scope_federation = ${c.scopeFederation})
       AND (e.scope_season = '' OR ${c.scopeSeason} = '' OR e.scope_season = ${c.scopeSeason})
       AND (e.scope_weapon = '' OR ${c.scopeWeapon} = '' OR e.scope_weapon = ${c.scopeWeapon})
-      AND e.valid_from <= coalesce(${c.validTo}::date, 'infinity'::date)
-      AND ${c.validFrom}::date <= coalesce(e.valid_to, 'infinity'::date)
-      AND coalesce(ep.merged_into_person_id, e.person_id) <> ${personaCanonica(c)}
+      AND e.valid_from <= coalesce(${c.validTo}, '9999-12-31')
+      AND ${c.validFrom} <= coalesce(e.valid_to, '9999-12-31')
+      AND coalesce(${canonica(sql`e.person_id`)}, e.person_id) <> ${personaCanonica(c)}
   )`;
 }
 
-/**
- * Persona que prevalece para el candidato (sigue una fusión A→B de un nivel).
- * Si la persona aún no existe (alta en la misma unidad) es ella misma.
- */
-function personaCanonica(c: IdExternoCandidato): SQL {
-  return sql`coalesce((SELECT cp.merged_into_person_id FROM sport_person cp WHERE cp.id = ${c.personId}::uuid), ${c.personId}::uuid)`;
+function propia(c: IdExternoCandidato): SQL {
+  return sql`e.link_status = 'CONFIRMADO'
+    AND e.scheme = ${c.scheme} AND e.value = ${c.value.trim()}
+    AND e.scope_source = ${c.scopeSource} AND e.scope_federation = ${c.scopeFederation}
+    AND e.scope_season = ${c.scopeSeason} AND e.scope_weapon = ${c.scopeWeapon}
+    AND e.valid_from = ${c.validFrom}
+    AND ${canonica(sql`e.person_id`)} = ${personaCanonica(c)}`;
 }
 
-function columnasId(c: IdExternoCandidato): SQL {
-  return sql`${c.scheme}, ${c.value.trim()}, ${c.scopeSource}, ${c.scopeFederation}, ${c.scopeSeason}, ${c.scopeWeapon}, ${c.validFrom}::date, ${c.validTo}::date, 'CONFIRMADO'::sport_link_status, ${c.linkedVia}, now(), ${c.evidence}`;
-}
-
-const NOMBRES_ID = sql.raw(
-  'scheme, value, scope_source, scope_federation, scope_season, scope_weapon, valid_from, valid_to, link_status, linked_via, linked_at, evidence',
-);
-
-export function sqlConfirmarPersonaExistente(c: IdExternoCandidato): SQL {
-  // `sport_external_id_confirmed_key` no incluye person_id: si la fila exacta ya
-  // está confirmada para A y se reconfirma como B (A→B) o como A, insertar de
-  // nuevo chocaría con ella (23505). Se actualiza la fila propia y no se inserta.
-  // `ON CONFLICT` sólo cubre la fila de la misma persona que aún no está confirmada.
-  return sql`WITH propia AS (
-      UPDATE sport_external_id e
-      SET valid_to = ${c.validTo}::date,
-          linked_via = ${c.linkedVia},
-          linked_at = now(),
-          evidence = ${c.evidence},
-          updated_at = now()
-      WHERE e.link_status = 'CONFIRMADO'
-        AND e.scheme = ${c.scheme}
-        AND e.value = ${c.value.trim()}
-        AND e.scope_source = ${c.scopeSource}
-        AND e.scope_federation = ${c.scopeFederation}
-        AND e.scope_season = ${c.scopeSeason}
-        AND e.scope_weapon = ${c.scopeWeapon}
-        AND e.valid_from = ${c.validFrom}::date
-        AND coalesce((SELECT ep.merged_into_person_id FROM sport_person ep WHERE ep.id = e.person_id), e.person_id) = ${personaCanonica(c)}
-        AND NOT ${sqlHayChoque(c)}
-      RETURNING e.id
-    ),
-    nueva AS (
-      INSERT INTO sport_external_id (person_id, ${NOMBRES_ID})
-      SELECT ${c.personId}::uuid, ${columnasId(c)}
-      WHERE NOT EXISTS (SELECT 1 FROM propia)
-        AND NOT ${sqlHayChoque(c)}
-      ON CONFLICT ON CONSTRAINT sport_external_id_person_key DO UPDATE
-        SET link_status = 'CONFIRMADO',
-            valid_to = excluded.valid_to,
-            linked_via = excluded.linked_via,
-            linked_at = excluded.linked_at,
-            evidence = excluded.evidence,
-            updated_at = now()
-      RETURNING id
-    )
-    SELECT id FROM propia
-    UNION ALL
-    SELECT id FROM nueva`;
-}
-
-export function sqlConfirmarPersonaNueva(c: IdExternoCandidato, p: PersonaNuevaConId): SQL {
-  return sql`WITH nueva AS (
-      INSERT INTO sport_person (id, display_name, name_normalized, gender, country_code)
-      SELECT ${p.id}::uuid, ${p.displayName}, ${p.nameNormalized}, ${p.gender}::gender, ${p.countryCode}
-      WHERE NOT ${sqlHayChoque(c)}
-      RETURNING id
-    ),
-    alias AS (
-      INSERT INTO sport_person_alias (person_id, source, name_original, name_normalized)
-      SELECT id, ${p.aliasSource}, ${p.displayName}, ${p.nameNormalized} FROM nueva
-      ON CONFLICT DO NOTHING
-    )
-    INSERT INTO sport_external_id (person_id, ${NOMBRES_ID})
-    SELECT id, ${columnasId(c)} FROM nueva
+export function sqlActualizarIdPropio(c: IdExternoCandidato): SQL {
+  return sql`UPDATE sport_external_id AS e
+    SET valid_to = ${c.validTo}, linked_via = ${c.linkedVia},
+        linked_at = ${AHORA_SQL}, evidence = ${c.evidence}, updated_at = ${AHORA_SQL}
+    WHERE ${propia(c)} AND NOT ${sqlHayChoque(c)}
     RETURNING id`;
+}
+
+/** Segunda sentencia del batch: no vuelve a insertar una fila propia fundida. */
+export function sqlConfirmarPersonaExistente(c: IdExternoCandidato): SQL {
+  return sql`INSERT INTO sport_external_id (
+    person_id, scheme, value, scope_source, scope_federation, scope_season,
+    scope_weapon, valid_from, valid_to, link_status, linked_via, linked_at, evidence
+  )
+  SELECT ${c.personId}, ${c.scheme}, ${c.value.trim()}, ${c.scopeSource},
+    ${c.scopeFederation}, ${c.scopeSeason}, ${c.scopeWeapon},
+    ${c.validFrom}, ${c.validTo}, 'CONFIRMADO', ${c.linkedVia}, ${AHORA_SQL}, ${c.evidence}
+  WHERE ${personaCanonica(c)} IS NOT NULL
+    AND NOT ${sqlHayChoque(c)}
+    AND NOT EXISTS (SELECT 1 FROM sport_external_id e WHERE ${propia(c)})
+  ON CONFLICT (person_id, scheme, value, scope_source, scope_federation, scope_season, scope_weapon, valid_from)
+  DO UPDATE SET link_status = 'CONFIRMADO', valid_to = excluded.valid_to,
+    linked_via = excluded.linked_via, linked_at = excluded.linked_at,
+    evidence = excluded.evidence, updated_at = ${AHORA_SQL}
+  RETURNING id`;
+}
+
+/** Primera sentencia del alta atómica. Ninguna persona huérfana si hay choque. */
+export function sqlConfirmarPersonaNueva(c: IdExternoCandidato, p: PersonaNuevaConId): SQL {
+  return sql`INSERT INTO sport_person (id, display_name, name_normalized, gender, country_code)
+    SELECT ${p.id}, ${p.displayName}, ${p.nameNormalized}, ${p.gender}, ${p.countryCode}
+    WHERE ${personaCanonica(c)} IS NOT NULL AND NOT ${sqlHayChoque(c)}
+    RETURNING id`;
+}
+
+function filasDe(resultado: unknown): Record<string, unknown>[] {
+  if (Array.isArray(resultado)) return resultado;
+  const rows = (resultado as { rows?: unknown } | null)?.rows;
+  return Array.isArray(rows) ? rows : [];
 }
 
 export function crearGuardDb(db: Pick<Db, 'batch' | 'execute'>): DepsGuardConfirmacion {
   return {
-    async confirmar(candidato, persona) {
-      const escritura = persona
-        ? sqlConfirmarPersonaNueva(candidato, persona)
-        : sqlConfirmarPersonaExistente(candidato);
-      const [, resultado] = await db.batch([
-        db.execute(cerrojo(candidato)),
-        db.execute(escritura),
+    async confirmar(c, p) {
+      if (p && p.id !== c.personId) return false;
+      const sentencias = p ? [
+        sqlConfirmarPersonaNueva(c, p),
+        sql`INSERT INTO sport_person_alias (person_id, source, name_original, name_normalized)
+          SELECT ${p.id}, ${p.aliasSource}, ${p.displayName}, ${p.nameNormalized}
+          WHERE EXISTS (SELECT 1 FROM sport_person WHERE id = ${p.id}) AND NOT ${sqlHayChoque(c)}
+          ON CONFLICT DO NOTHING`,
+        sqlConfirmarPersonaExistente(c),
+      ] : [sqlActualizarIdPropio(c), sqlConfirmarPersonaExistente(c)];
+      const resultados = await db.batch(sentencias.map((s) => db.execute(s)) as [
+        ReturnType<Db['execute']>, ...ReturnType<Db['execute']>[],
       ]);
-      return filasDe(resultado).length > 0;
+      return p
+        ? filasDe(resultados.at(-1)).length > 0
+        : resultados.some((r) => filasDe(r).length > 0);
     },
-
-    async conflictos(candidato) {
+    async conflictos(c) {
       const resultado = await db.execute(sql`
         SELECT e.person_id AS "personId", e.scheme, e.value, e.scope_source AS "scopeSource",
-               e.scope_federation AS "scopeFederation", e.scope_season AS "scopeSeason",
-               e.scope_weapon AS "scopeWeapon", e.valid_from::text AS "validFrom",
-               e.valid_to::text AS "validTo", e.link_status AS "linkStatus"
+          e.scope_federation AS "scopeFederation", e.scope_season AS "scopeSeason",
+          e.scope_weapon AS "scopeWeapon", e.valid_from AS "validFrom",
+          e.valid_to AS "validTo", e.link_status AS "linkStatus"
         FROM sport_external_id e
-        LEFT JOIN sport_person ep ON ep.id = e.person_id
-        WHERE e.link_status = 'CONFIRMADO'
-          AND e.scheme = ${candidato.scheme}
-          AND e.value = ${candidato.value.trim()}
-          AND e.scope_source = ${candidato.scopeSource}
-          AND (e.scope_federation = '' OR ${candidato.scopeFederation} = '' OR e.scope_federation = ${candidato.scopeFederation})
-          AND (e.scope_season = '' OR ${candidato.scopeSeason} = '' OR e.scope_season = ${candidato.scopeSeason})
-          AND (e.scope_weapon = '' OR ${candidato.scopeWeapon} = '' OR e.scope_weapon = ${candidato.scopeWeapon})
-          AND e.valid_from <= coalesce(${candidato.validTo}::date, 'infinity'::date)
-          AND ${candidato.validFrom}::date <= coalesce(e.valid_to, 'infinity'::date)
-          AND coalesce(ep.merged_into_person_id, e.person_id) <> ${personaCanonica(candidato)}`);
+        WHERE e.link_status = 'CONFIRMADO' AND e.scheme = ${c.scheme}
+          AND e.value = ${c.value.trim()} AND e.scope_source = ${c.scopeSource}
+          AND (e.scope_federation = '' OR ${c.scopeFederation} = '' OR e.scope_federation = ${c.scopeFederation})
+          AND (e.scope_season = '' OR ${c.scopeSeason} = '' OR e.scope_season = ${c.scopeSeason})
+          AND (e.scope_weapon = '' OR ${c.scopeWeapon} = '' OR e.scope_weapon = ${c.scopeWeapon})
+          AND e.valid_from <= coalesce(${c.validTo}, '9999-12-31')
+          AND ${c.validFrom} <= coalesce(e.valid_to, '9999-12-31')
+          AND coalesce(${canonica(sql`e.person_id`)}, e.person_id) <> ${personaCanonica(c)}`);
       return filasDe(resultado) as unknown as ExternalIdRow[];
     },
   };

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DatabaseSync } from 'node:sqlite';
 import { contarReferenciasHistoricas, leerCoberturaAgregada, leerFilasPlan } from '@/lib/ingest/backfill/cobertura-db';
 import {
   MAX_REESCRITURAS_POR_REFERENCIAS,
@@ -92,16 +93,45 @@ describe('lecturas SQL de cobertura (sólo SELECT)', () => {
   });
 
   it('contarReferenciasHistoricas separa las históricas sin referencia y respeta la tabla ausente', async () => {
-    const sinTabla = await contarReferenciasHistoricas(async (t) =>
-      /to_regclass/.test(t) ? [{ ok: false }] : [{ total: 10, historicas: 7 }],
-    );
-    expect(sinTabla).toMatchObject({ tablaDisponible: false, inscripcionesFie: 10, inscripcionesFieHistoricas: 7, conReferencia: null, historicasSinReferencia: null });
+    const sqlite = new DatabaseSync(':memory:');
+    try {
+      sqlite.exec(`
+        PRAGMA foreign_keys = ON;
+        CREATE TABLE event_competition(id TEXT PRIMARY KEY, competition_date TEXT);
+        CREATE TABLE competition_registration(id TEXT PRIMARY KEY,
+          event_competition_id TEXT REFERENCES event_competition(id), source TEXT);
+      `);
+      for (let i = 0; i < 10; i++) {
+        sqlite.prepare("INSERT INTO event_competition VALUES (?,date('now',?))").run(
+          `competition-${i}`, i < 7 ? '-1 day' : i === 7 ? '+0 days' : '+1 day',
+        );
+        sqlite.prepare('INSERT INTO competition_registration VALUES (?,?,?)')
+          .run(`registration-${i}`, `competition-${i}`, 'fie');
+      }
+      sqlite.prepare("INSERT INTO competition_registration VALUES ('other-source','competition-0','other')").run();
+      const consultas: string[] = [];
+      const consultar = async (text: string) => {
+        consultas.push(text);
+        return sqlite.prepare(text).all();
+      };
+      const sinTabla = await contarReferenciasHistoricas(consultar);
+      expect(sinTabla).toEqual({ tablaDisponible: false, inscripcionesFie: 10, inscripcionesFieHistoricas: 7, conReferencia: null, historicasSinReferencia: null });
+      expect(consultas).toHaveLength(2);
 
-    const conTabla = await contarReferenciasHistoricas(async (t) => {
-      if (/to_regclass/.test(t)) return [{ ok: true }];
-      if (/con_ref/.test(t)) return [{ con_ref: 4, hist_sin_ref: 6 }];
-      return [{ total: 10, historicas: 7 }];
-    });
-    expect(conTabla).toMatchObject({ tablaDisponible: true, conReferencia: 4, historicasSinReferencia: 6 });
+      sqlite.exec('CREATE TABLE sport_registration_ref(registration_id TEXT REFERENCES competition_registration(id))');
+      for (const i of [0, 7, 8, 9, 9]) {
+        // Two references on the same inscription must not double its count.
+        sqlite.prepare('INSERT INTO sport_registration_ref VALUES (?)').run(`registration-${i}`);
+      }
+      const conTabla = await contarReferenciasHistoricas(consultar);
+      expect(conTabla).toEqual({ tablaDisponible: true, inscripcionesFie: 10, inscripcionesFieHistoricas: 7, conReferencia: 4, historicasSinReferencia: 6 });
+      expect(consultas).toHaveLength(5);
+      for (const text of consultas) {
+        expect(text).toMatch(/^\s*select/i);
+        expect(text).not.toMatch(/\b(insert|update|delete|drop|alter)\b/i);
+      }
+    } finally {
+      sqlite.close();
+    }
   });
 });

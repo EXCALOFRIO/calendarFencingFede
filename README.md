@@ -86,29 +86,35 @@ Entorno de referencia: Windows con PowerShell 7 y Node 22. Usa los shims
 
 ```powershell
 npm.cmd ci
-Copy-Item .env.example .env     # y rellena las variables (ver más abajo)
-npm.cmd run dev
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+# Completa los secretos locales y prepara D1 local antes de consultar datos.
+npm.cmd run cf:preview
 ```
 
-**La `DATABASE_URL` de un `.env` real apunta a la base existente, no a una
-rama de pruebas.** Para una base **nueva y vacía**, `npm run db:migrate` crea las
-tablas y `npm run db:seed` carga la temporada y la normativa (no datos de
-ejemplo). Contra la base ya existente **no** ejecutes `db:push`, `db:seed`,
-`demo`, `demo:borrar`, `e2e:limpiar` ni `ingest` masivo, y no uses el migrador
-general: las migraciones deportivas tienen su propio comando acotado (ver
-«Migraciones deportivas»).
+El runtime necesita el binding **`DB` de Cloudflare D1** y no vuelve a Neon
+si falta. `next dev` sin bindings sirve para trabajar en componentes, no para
+leer datos o autenticar cuentas. No actives bindings remotos para una demo.
+La preparación, importación verificada y orden de migraciones están en
+[`docs/migracion-cloudflare.md`](docs/migracion-cloudflare.md).
+Los comandos antiguos de Drizzle/PostgreSQL no preparan D1. No ejecutes
+`db:push`, `db:seed`, `demo`, `demo:borrar`, `e2e:limpiar` ni una ingesta masiva
+contra datos existentes.
 
 ### Variables de entorno
 
 | Variable | Para qué | ¿Obligatoria? |
 |---|---|---|
-| `DATABASE_URL` | Neon Postgres (cadena *pooled*) | Sí |
-| `NEON_AUTH_URL` | Base de Neon Auth | Sí |
-| `NEON_AUTH_COOKIE_SECRET` | Firma de la cookie de sesión | Sí |
-| `RESEND_API_KEY`, `EMAIL_FROM` | Avisos por correo | No (sin ella no se envía nada, pero la app funciona) |
+| Binding `DB` | Datos, perfiles, permisos y controles de abuso en D1, sin fallback PostgreSQL | Sí |
+| `NEON_AUTH_URL` (o `NEON_AUTH_BASE_URL`) | API de Neon Auth gestionado; no es una conexión SQL | Sí |
+| `NEON_AUTH_COOKIE_SECRET` | Firma de cookies y vistas privadas; al menos 32 caracteres | Sí |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Avisos transaccionales opcionales; no envían códigos de acceso | No |
 | `CRON_SECRET` | Protege los endpoints de cron | Sí en producción |
 | `NEXT_PUBLIC_APP_URL` | Origen absoluto de la aplicación (feed iCal, correos). Se fija **al compilar** | Sí al compilar para publicar |
-| `BLOB_READ_WRITE_TOKEN` *o* `AWS_*` | PDFs y snapshots | No (sin ella no se guardan snapshots) |
+| Binding `ARCHIVOS` | R2 privado para PDFs, snapshots y originales | Sí para archivos obligatorios |
+| `D1_STORAGE_BUDGET_BYTES` | Asignación propia, como máximo 4 GiB; no es un tope de gasto | Sí en producción |
+| `SPORT_INCREMENTAL_ENABLED` | Incremental corto, inicialmente `false` | No activar antes de validar |
+| `MIGRATION_MAINTENANCE` | Bloquea aplicación y tareas programadas durante un corte controlado | `false` fuera del corte |
+| `NEON_SOURCE_DATABASE_URL` | Solo exportación local de migración, nunca runtime ni secreto del Worker | Solo exportador |
 | `AI_*` | Extracción de dossieres (fase opcional) | No |
 | `SKERMO_SUBMIT_*` | Envío directo a Skermo (fase opcional) | No |
 | `CLOUDFLARE_API_TOKEN` | Solo desarrollo local; **nunca** viaja dentro del paquete ni se usa para publicar (se publica con el inicio de sesión OAuth de Wrangler) | No |
@@ -116,17 +122,70 @@ general: las migraciones deportivas tienen su propio comando acotado (ver
 Nunca pegues valores de `.env` en tickets, logs ni informes: comprueba solo si
 una variable existe.
 
-El diseño busca caber en planes baratos: Neon (el tamaño facturado y el plan
-de esta base **no están verificados**), Resend Free y Cloudflare Workers.
+El destino es Cloudflare Workers, D1 y R2, con Neon Auth para el acceso.
+Neon conserva cuentas, sesiones y códigos; no es solamente un relé de correo.
+Resend es opcional para los avisos de plazo.
 Los crons (nueve) exigen Workers de pago: el plan gratuito corta en cinco.
+El plan facturado de la cuenta no se ha podido verificar por API. Las cuotas
+incluidas son compartidas y pueden generar sobrecostes; no se ha comprado nada.
+
+### Acceso y vistas privadas
+
+Las altas de perfiles las hace administración. El acceso normal verifica el
+correo con un código de Neon Auth gestionado. La ruta rechaza el registro público, los
+métodos de contraseña en producción y códigos para perfiles inexistentes o
+revocados. Un correo sin verificar no puede reclamar un perfil por email;
+si ya está enlazado, se exige su identificador de autenticación.
+
+No hay acceso por contraseña ni cambio automático de proveedor. D1 exige un
+reto de acceso solicitado desde la aplicación, de como mucho cinco minutos
+y tres intentos procesados. El proveedor consume el código una sola vez.
+Los límites persistentes guardan hashes HMAC, no correos, IPs ni códigos.
+Leer una sesión nunca reclama un perfil. Solo un OTP recién verificado puede
+enlazar una invitación sin ID; un ID existente distinto nunca se sustituye.
+
+### Acceso técnico temporal para QA
+
+No existe una contraseña maestra ni un usuario especial permanente. Con
+autorización del propietario, se puede cargar **puntualmente** el secreto
+`ACCESO_QA_CONCESION`: hash SHA-256 de una clave aleatoria de 32 bytes, UUID de
+concesión, UUID de un administrador existente y fechas de emisión/caducidad.
+El servidor exige una duración máxima de dos horas; vacío, inválido o caducado
+deja la entrada desactivada. `cf:secretos` no sube esta concesión.
+
+`POST /api/acceso-qa` solo admite JSON pequeño, origen propio y la clave en el
+cuerpo, nunca en una URL. No crea ni enlaza una identidad Neon. Emite una cookie
+`HttpOnly`, `Secure` en producción y `SameSite=Strict`, firmada y válida como
+mucho 30 minutos. La identidad técnica puede elegir las vistas privadas de los
+tres papeles, pero **todas** sus acciones de escritura se deniegan en el
+servidor, incluido administrador. No recibe tokens iCal personales ni puede
+usar el proxy de Neon Auth para leer, abrir o cerrar una sesión personal.
+
+Se comprueban en cada petición la concesión vigente y el administrador activo.
+Rotar o vaciar el secreto revoca sus cookies. Una cookie caducada no recupera
+silenciosamente otra identidad: hay que cerrar el acceso técnico. Al terminar
+la QA, revocar la concesión y cerrar la sesión técnica. No guardar claves,
+cookies ni concesiones en ficheros, capturas, registros o commits.
+
+`/vista-previa` permite a una cuenta administradora real elegir un perfil
+activo de dirección técnica, seleccionador o tirador. No aparece en la
+pantalla de acceso. La cookie privada está firmada, es `HttpOnly` y depende
+de la cuenta administradora vigente; la firma caduca a los 30 minutos.
+No se cambian cuentas ni se crean usuarios de demostración. Navegación,
+búsquedas y filtros siguen funcionando; las acciones de escritura,
+ingestas, IA y envíos se deniegan en el servidor. Los enlaces iCal privados
+no se copian. Una firma caducada no recupera permisos de administrador
+silenciosamente: exige salir o elegir otra vista.
 
 ---
 
 ## Cómo se alimentan los datos
 
-**Regla de oro: el usuario nunca dispara un scrape.** El scraper escribe en
-Neon y la aplicación solo lee de Neon. Da igual que haya 5 usuarios o 5.000: la
-carga sobre Skermo y la FIE es de **una petición al día por fuente**.
+**Al navegar no se dispara un scrape.** El scraper escribe en D1 y las
+pantallas leen D1. Administración tiene una actualización manual separada.
+La carga sobre las fuentes no crece por cada visita: los crons controlan las
+lecturas. **No es una sola petición diaria por fuente**: los rankings, las
+once regionales y los detalles FIE necesitan varias peticiones.
 
 | Fuente | Cómo se lee | Estado comprobado el 25/09/2026 |
 |---|---|---|
@@ -194,21 +253,26 @@ tests/
 
 ### Decisiones de arquitectura
 
-- **Drizzle + `@neondatabase/serverless`**: consultas por HTTP, sin pool de
-  conexiones que agotar en serverless. Como cada consulta es un viaje de red,
-  la ingestión precarga en dos consultas y compara en memoria: eso bajó una
-  carga completa de 116 s a 26 s, que es la diferencia entre caber o no en el
-  límite de 300 s de Vercel.
-- **Neon Auth** (Better Auth gestionado). Los usuarios viven en el esquema
-  `neon_auth` de la propia base, no en un tercero. `user_profile.auth_user_id`
-  apunta a ese id **sin clave ajena**, a propósito: ese esquema lo migra Neon y
-  encadenar nuestras migraciones a las suyas es pedir una rotura.
-- **Neon en AWS Frankfurt.** La región `fra1` de `vercel.json` es de la
-  plataforma anterior; el Worker de Cloudflare no la usa.
+- **Drizzle SQLite + binding D1**: UUIDs TEXT, fechas ISO, timestamps en
+  milisegundos, booleanos 0/1, JSON TEXT y decimales TEXT exactos. Las consultas
+  se resuelven por petición, no mediante una conexión global compartida.
+- **Neon Auth gestionado, solo API**: cuentas, sesiones y códigos permanecen
+  en Neon. D1 conserva perfiles, roles, invitaciones y controles de abuso.
+  El snapshot final preserva los IDs del mismo proveedor, no credenciales.
+- **R2 privado**: archivos servidos tras comprobar sesión. Los originales
+  masivos usan un prefijo interno que la ruta normal no entrega.
+- **Las tablas de aplicación Neon se conservan para rollback**, sin escrituras históricas nuevas ni
+  eliminación. El driver PostgreSQL queda aislado al exportador y herramientas
+  históricas, nunca como fallback del runtime.
 
 ---
 
 ## Datos históricos y backfill
+
+Recuentos por año/arma, tamaño y mediciones de lectura del 03/10/2026:
+[`docs/auditoria-historico-2026-10-03.md`](docs/auditoria-historico-2026-10-03.md).
+Es una fotografía **anterior** a la recuperación local autorizada ese día,
+no un certificado de corpus completo.
 
 El backfill (`npm run backfill`) importa de forma **acotada y reanudable**
 resultados históricos de FIE, Skermo/RFEE (HTML y PDF) y, como complemento,
@@ -216,20 +280,52 @@ Engarde y Fencing Worldwide. Su manual completo, con límites, códigos de salid
 y estados, está en [`docs/backfill-historico.md`](docs/backfill-historico.md).
 
 ```powershell
-npm.cmd run backfill                      # simulación: solo SELECT, sin red, sin escribir
-npm.cmd run backfill -- --aplicar         # un lote acotado; lo decide una persona
+npm.cmd run backfill -- --d1-local C:\datos\app.sqlite
+# Aplicar exige destino D1 explícito, guardias verificadas y proceso sin DATABASE_URL:
+npm.cmd run backfill -- --aplicar --d1-local C:\datos\app.sqlite
 ```
 
 Nada lo lanza solo: no hay cron ni trigger de backfill. No existe un modo «todo
 el corpus» (topes de 200 tareas, 2000 peticiones, 30 minutos y 50 relecturas) y
-no se lanzan dos `--aplicar` solapados sobre la misma clave. Los argumentos con
+no se lanzan dos `--aplicar` solapados: D1 exige un único propietario deportivo
+global, con guardias dentro de cada batch. Los argumentos con
 `|` (por ejemplo `'fie|2024|246'`) se pasan con
 `node node_modules/tsx/dist/cli.mjs scripts/<script>.ts '<argumento>'`: los
 shims `.cmd` pueden tragarse el pipe.
 
-### Estado real de los datos históricos (02/10/2026)
+### Estado real de los datos históricos (03/10/2026)
 
-- **No hay corpus histórico completo.** Solo se cargó un piloto real acotado
+La importación offline real, en SQLite privado compatible con D1, contiene
+**5.256 competiciones, 248.694 resultados y 668.128 asaltos**. Frente al
+snapshot inicial incorpora 3.671 competiciones, 198.212 resultados y
+635.173 asaltos. Pasan `foreign_key_check`, `quick_check` y las comprobaciones
+de procedencia; no faltan URL ni hash en resultados/asaltos. No crea personas
+ni fusiona homónimos: conserva 13.299 registros de persona e ID externo.
+**No es todavía una importación en D1 remoto ni un snapshot de corte.**
+
+- La segunda vuelta FIE evaluó las 3.154 unidades del inventario: 3.137
+  cerradas, 11 parciales y seis errores de fuente. Se procesó el inventario
+  completo offline; una unidad procesada puede guardar solo cobertura.
+- RFEE conserva 942 HTML y 1.408 PDF válidos; tres respuestas de tipo
+  incorrecto quedan rechazadas. Las campañas HTML y PDF terminaron, código 0.
+  Los HTML repitieron 31.151 resultados existentes; los PDF añadieron
+  2.194 resultados y 1.599 asaltos. Lecturas, documentos y hechos nuevos
+  son contadores distintos.
+- **Archivo privado R2 verificado:** 9.614 blobs FIE, tres particiones e
+  índice; 2.109 blobs nacionales y manifiesto. La ruta de archivos normal
+  deniega el prefijo interno. Los originales no sustituyen a los hechos.
+- Quedan parciales, OCR/revisión sin ejecutar, identidades aplazadas y
+  6.063 filas de cobertura FIE pendientes del inventario anterior,
+  mayoritariamente de 1958–2017. **No hay corpus histórico completo.**
+- El traslado combina solo cinco tablas de hechos con un export nuevo:
+  conserva perfiles, IDs Neon Auth, permisos y demás datos actuales.
+  Cualquier deriva de hechos o identidades respecto a la base aborta;
+  no mezcla UUIDs a ciegas. Ver el manual de migración.
+
+#### Registro del piloto anterior (02/10/2026)
+
+- El siguiente registro conserva el piloto real del 02/10, anterior a la
+  recuperación del 03/10:
   en tablas `sport_*`: dos pruebas FIE de París 2024 (individual y equipos,
   una sola edición), una de Bogotá 2027, **un** PDF de la RFEE (2018-2019,
   cobertura parcial) y **un** ranking oficial FIE 2024 (903 entradas).
@@ -276,6 +372,24 @@ Ese preflight sale con código 2 desde que las migraciones existen; es el
 resultado esperado y no un fallo. Hay un test sobre su lógica
 (`tests/migracion-aditiva.test.ts`).
 
+### Guarda de crons: migración 0020
+
+`0020_guardia_crons` añade una tabla de reservas, sin modificar las tablas
+deportivas. Tiene un comando propio que valida el ledger anterior, aplica
+solo esta migración y registra su hash en una única transacción:
+
+```powershell
+node node_modules/tsx/dist/cli.mjs scripts/aplicar-migracion-crons.ts
+# Solo con autorización explícita y preflight aprobado:
+node node_modules/tsx/dist/cli.mjs scripts/aplicar-migracion-crons.ts --aplicar
+```
+
+El primer comando solo lee. No se usa `db:push` ni el migrador general. La
+tabla debe existir antes de publicar el código que la utiliza.
+La aplicación autorizada del 03/10/2026 pasó el preflight y confirmó la tabla
+`cron_execution` y el ledger **19 → 20** con todos los hashes verificados.
+No hay que reaplicarla; el preflight se negará a modificar una guarda existente.
+
 **Recuperación, con sus límites:**
 
 - Antes del commit de una migración aditiva, la transacción se revierte entera,
@@ -306,32 +420,38 @@ confirmada; no se ha investigado ni limpiado nada. Detalle del procedimiento en
 **Solo** el Worker `calendario-fie-fede` de la cuenta Cloudflare
 `52d39cf14bc17b94754729436036124d`, en
 **https://calendario-fie-fede.excalofrio.workers.dev**. La cuenta tiene otros
-Workers ajenos: no se tocan. La base **se queda en Neon** (el driver HTTP
-`@neondatabase/serverless` funciona en Workers y el esquema usa enums, `uuid` y
-`jsonb`, que D1 no tiene).
+Workers y bases de otras aplicaciones: no se tocan. El destino dedicado es
+**`calendario-fie-fede-db`**, ID
+`e1c28f19-278c-4d8f-9c7c-9b9d1c45653e`, creado con jurisdicción UE.
+No se incluye `jurisdiction` en el binding: Wrangler no admite ese campo.
+Crear la base y preparar el código no significa que producción haya cambiado;
+solo la entrega verificada acredita el corte.
 
 `wrangler.jsonc` manda: nombre, `main` (`worker/index.ts`, que reexporta el
 `fetch` de OpenNext y añade el manejador `scheduled`), assets, los bindings
-(`ASSETS`, `IMAGES`, `AI` y el bucket de archivos) y los crons. **No cambies
-bindings ni crons al publicar.**
+(`DB`, `ASSETS`, `IMAGES`, `AI` y el bucket de archivos) y los crons. El corte
+añade exclusivamente la D1 verificada; los nueve crons existentes no cambian.
 
-### Origen y Neon Auth
+### Origen y autenticación gestionada
 
 `NEXT_PUBLIC_APP_URL` se sustituye dentro del código al **compilar**: el feed
 iCal y los correos construyen direcciones absolutas con ella, así que ponerla
 como secreto no arregla un paquete compilado con otra. El `.env` local suele
 traer `http://localhost:3000`; para publicar, el comando de compilación la
-fija a mano. El origen publicado tiene que figurar en Neon Auth (panel de Neon,
-Auth › Configuration › Domains, con protocolo y sin barra final); si falta, el
-inicio de sesión responde `403 INVALID_ORIGIN`. Este proyecto no cambia
-dominios de Neon Auth ni de Cloudflare.
+fija a mano. Las guardas solo admiten ese origen canónico para las mutaciones,
+que debe estar autorizado en Neon Auth. Se conservan `NEON_AUTH_URL` y
+`NEON_AUTH_COOKIE_SECRET`; `0001` crea únicamente controles de abuso en D1.
+Los feeds iCal deben renovarse. Las sesiones del mismo proveedor pueden seguir
+vigentes si se preservan sus IDs, secreto y origen, pendiente de QA real.
+No se cambia ningún dominio del proveedor ni de Cloudflare.
 
 ### Compilar (sin `CF_ENV_EMBEBIDO`)
 
 La receta antigua con `CF_ENV_EMBEBIDO=1` ya no se usa: incrustaba variables de
 ejecución dentro del paquete como muleta. Los secretos viven en el almacén de
-secretos de Cloudflare (nombres: `DATABASE_URL`, `NEON_AUTH_URL`,
-`NEON_AUTH_COOKIE_SECRET`, `CRON_SECRET`) y nunca van en el paquete.
+secretos de Cloudflare (`NEON_AUTH_COOKIE_SECRET`, `CRON_SECRET`, claves de correo
+y cifrado) y nunca van en el paquete. Las credenciales SQL de Neon/S3 no se usan
+en ejecución ni se suben en la nueva configuración.
 `scripts/compilar-cloudflare.mjs` retira los `.env` copiados por Next y vacía
 `.open-next/cloudflare/next-env.mjs`. Hace falta **al menos 5 GiB libres** en C:.
 
@@ -391,7 +511,7 @@ cambiarlo afecta a todos a la vez y las URL antiguas dejan de responder.
 
 Nueve, uno por fuente o tarea y a horas distintas (UTC): si una fuente cambia,
 las demás siguen funcionando. Coinciden `triggers.crons` de `wrangler.jsonc` y la
-tabla `TAREAS` de `worker/index.ts`; si cambias una, cambia la otra.
+tabla `TAREAS_CRON` de `src/lib/cron/programado.ts`; si cambias una, cambia la otra.
 
 | Cron (UTC) | Tarea |
 |---|---|
@@ -404,6 +524,14 @@ tabla `TAREAS` de `worker/index.ts`; si cambias una, cambia la otra.
 | `0 6 * * *` | `extraer` |
 | `45 6 * * *` | `ingest/fie_tiradores` |
 | `0 7 * * *` | `notify` |
+
+Cada tarea programada reclama atómicamente su ruta y minuto UTC programado
+en `cron_execution`. Dos disparos a los segundos 04 y 56 del mismo minuto comparten
+reserva: solo uno ejecuta la ruta. Un fallo no libera la reserva, porque
+repetir una ingesta parcial automáticamente podría duplicar efectos. La
+recuperación deliberada usa la ruta HTTP autorizada, no el cron duplicado.
+Si falta la configuración o no se puede reservar en D1, no se ejecuta.
+Esto protege el Worker actualizado, no una copia antigua sin la guarda.
 
 Los comentarios antiguos que hablan de ocho son anteriores. **Nunca invoques un
 endpoint de cron como comprobación de salud**: ejecuta ingestas y envíos
@@ -450,7 +578,7 @@ npm.cmd run cf:preview   # el Worker entero en local, con bindings (no es una co
 Comprobaciones automáticas **seguras**, en este orden y una detrás de otra:
 
 ```powershell
-npx.cmd vitest run --exclude=tests/datos.test.ts --exclude=tests/enlaces.test.ts --exclude=tests/seguridad.test.ts --maxWorkers=3
+node node_modules/vitest/vitest.mjs run --pool=forks --maxWorkers=2 --exclude tests/datos.test.ts --exclude tests/enlaces.test.ts --exclude tests/seguridad.test.ts --exclude tests/fie-resultados-vivo.test.ts --exclude tests/rfee-pdf-vivo.test.ts
 npm.cmd run typecheck -- --incremental false
 git diff --check
 npm.cmd run cf:build      # solo con >= 5 GiB libres; ver «Dónde se despliega»
@@ -462,6 +590,8 @@ aisladas o como diagnóstico: `tests/enlaces.test.ts` recalcula datos reales,
 `tests/datos.test.ts` toca la base existente. `npm run lint` no sirve en
 Next 16 y no se ejecuta. `npm run e2e` y `npm run produccion` necesitan una
 sesión real y no forman parte de esta comprobación.
+Las dos suites `*-vivo` hacen GETs a proveedores y requieren una ventana
+aprobada; se excluyen del gate offline aunque su bandera local esté presente.
 Lo que cubren los tests:
 
 - **Parsers con HTML real guardado** (`tests/fixtures/*.gz`): si Skermo cambia
@@ -516,10 +646,12 @@ contraseña).
 
 - **Skermo**: sus términos no prohíben el acceso automatizado y su `robots.txt`
   permite todo. Riesgo bajo.
-- **FIE**: sus términos exigen permiso escrito para almacenar su contenido. Por
-  eso de fie.org se guarda **lo mínimo** (identificador, fechas, arma,
-  categoría, sede) y se enlaza siempre al original; no se copian descripciones,
-  documentos ni textos informativos. Conviene pedirles ese permiso por escrito.
+- **FIE**: el propietario declara que tiene permiso de FIE y autorizó conservar
+  originales. Las copias se archivan en R2 privado, con hash y referencia a la
+  fuente; no se publican por la ruta normal de archivos. La declaración no
+  equivale a una revisión independiente del alcance de ese permiso. Las fotos
+  siguen enlazadas a una identidad oficial acreditada, sin rehosting ni
+  imágenes de menores.
 - **Datos de menores**: en España un menor de 14 años no puede consentir el
   tratamiento por sí mismo, así que la cuenta va a nombre del tutor y el
   tirador es un perfil vinculado. Se guarda el mínimo necesario y no viaja

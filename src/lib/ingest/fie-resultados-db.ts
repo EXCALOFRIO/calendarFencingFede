@@ -7,9 +7,8 @@ import {
   sportImportCoverage,
   sportResult,
 } from '@/db/schema';
-import { depsEvidenciaDb } from '@/lib/entries/evidencia-db';
-import { esquemaDeportivo } from '@/lib/sport/esquema-db';
-import { crearGuardDb } from '@/lib/sport/id-guard-db';
+import { crearGuardIdentidadD1, evidenciaD1, esquemaD1 } from './backfill/identidad-db';
+import { DB_NOW, MAX_BATCH_STATEMENTS } from './sport-incremental/lease';
 import {
   claveEdicionFie,
   FUENTE_FIE,
@@ -20,7 +19,7 @@ import {
 } from './fie-resultados-persist';
 
 /**
- * Implementación Neon de la persistencia de resultados FIE.
+ * Implementación D1 de la persistencia de resultados FIE.
  *
  * Todo es `INSERT … ON CONFLICT` sobre la clave natural del hecho, así que
  * repetir una lectura no duplica nada. Sólo se reescribe una fila (y sube su
@@ -28,7 +27,7 @@ import {
  * incorpora a una fila ya guardada sin tocar su revisión. No hay borrados.
  */
 
-const LOTE = 200;
+const LOTE = 3;
 
 function lotes<T>(items: readonly T[]): T[][] {
   const salida: T[][] = [];
@@ -36,9 +35,21 @@ function lotes<T>(items: readonly T[]): T[][] {
   return salida;
 }
 
-function resumir(total: number, devueltas: { insertado: boolean }[]): ResumenEscritura {
-  const nuevos = devueltas.filter((d) => d.insertado).length;
+function resumir(total: number, devueltas: { id: string }[], idsNuevos: Set<string>): ResumenEscritura {
+  const nuevos = devueltas.filter((d) => idsNuevos.has(d.id)).length;
   return { nuevos, revisados: devueltas.length - nuevos, sinCambios: total - devueltas.length };
+}
+
+async function marcarRelectura(db: Db, source: string, competitionId: string, kinds: string[]) {
+  // Large fact sets commit independently bounded batches. A later lease/DB
+  // failure must not leave an old COMPLETE checkpoint over a mixed snapshot.
+  // This is not a source check: keep counts/attempts/last_checked_at unchanged.
+  await db.update(sportImportCoverage).set({ status: 'pendiente',
+    lastError: 'sport_refresh_in_progress', updatedAt: DB_NOW }).where(and(
+    eq(sportImportCoverage.source, source), eq(sportImportCoverage.competitionId, competitionId),
+    eq(sportImportCoverage.status, 'completo'),
+    sql`${sportImportCoverage.factKind} in (select value from json_each(${JSON.stringify(kinds)}))`,
+  ));
 }
 
 /** Puestos por clave natural; compartido por todos los adaptadores de resultados. */
@@ -48,11 +59,18 @@ export async function escribirResultados(
   competitionId: string,
   filas: FilaResultado[],
 ): Promise<ResumenEscritura> {
-  const devueltas: { insertado: boolean }[] = [];
+  if (filas.length) await marcarRelectura(db, source, competitionId, ['ranking', 'results']);
+  const devueltas: { id: string }[] = [];
+  const idsNuevos = new Set<string>();
+  const queries = [];
   for (const lote of lotes(filas)) {
-    const r = await db
+    const values = lote.map((f) => {
+      const id = crypto.randomUUID(); idsNuevos.add(id);
+      return { ...f, id, competitionId, source };
+    });
+    queries.push(db
       .insert(sportResult)
-      .values(lote.map((f) => ({ ...f, competitionId, source })))
+      .values(values)
       .onConflictDoUpdate({
         target: [sportResult.competitionId, sportResult.source, sportResult.sourceFactKey],
         set: {
@@ -66,15 +84,18 @@ export async function escribirResultados(
           occurredOn: sql`excluded.occurred_on`,
           sourceUrl: sql`excluded.source_url`,
           revision: sql`CASE WHEN ${sportResult.contentHash} <> excluded.content_hash THEN ${sportResult.revision} + 1 ELSE ${sportResult.revision} END`,
-          revisedAt: sql`CASE WHEN ${sportResult.contentHash} <> excluded.content_hash THEN now() ELSE ${sportResult.revisedAt} END`,
+          revisedAt: sql`CASE WHEN ${sportResult.contentHash} <> excluded.content_hash THEN ${DB_NOW} ELSE ${sportResult.revisedAt} END`,
           contentHash: sql`excluded.content_hash`,
         },
         setWhere: sql`${sportResult.contentHash} <> excluded.content_hash OR (${sportResult.personId} IS NULL AND excluded.person_id IS NOT NULL)`,
       })
-      .returning({ insertado: sql<boolean>`(xmax = 0)` });
-    devueltas.push(...r);
+      .returning({ id: sportResult.id }));
   }
-  return resumir(filas.length, devueltas);
+  for (let i = 0; i < queries.length; i += MAX_BATCH_STATEMENTS) {
+    const [first, ...rest] = queries.slice(i, i + MAX_BATCH_STATEMENTS);
+    devueltas.push(...(await db.batch([first, ...rest])).flat());
+  }
+  return resumir(filas.length, devueltas, idsNuevos);
 }
 
 /** Asaltos por clave natural; compartido por FIE y las fuentes complementarias. */
@@ -84,11 +105,18 @@ export async function escribirAsaltos(
   competitionId: string,
   filas: FilaAsalto[],
 ): Promise<ResumenEscritura> {
-  const devueltas: { insertado: boolean }[] = [];
+  if (filas.length) await marcarRelectura(db, source, competitionId, ['pools', 'tableau']);
+  const devueltas: { id: string }[] = [];
+  const idsNuevos = new Set<string>();
+  const queries = [];
   for (const lote of lotes(filas)) {
-    const r = await db
+    const values = lote.map((f) => {
+      const id = crypto.randomUUID(); idsNuevos.add(id);
+      return { ...f, id, competitionId, source };
+    });
+    queries.push(db
       .insert(sportBout)
-      .values(lote.map((f) => ({ ...f, competitionId, source })))
+      .values(values)
       .onConflictDoUpdate({
         target: [
           sportBout.competitionId,
@@ -108,15 +136,18 @@ export async function escribirAsaltos(
           occurredOn: sql`excluded.occurred_on`,
           sourceUrl: sql`excluded.source_url`,
           revision: sql`CASE WHEN ${sportBout.contentHash} <> excluded.content_hash THEN ${sportBout.revision} + 1 ELSE ${sportBout.revision} END`,
-          revisedAt: sql`CASE WHEN ${sportBout.contentHash} <> excluded.content_hash THEN now() ELSE ${sportBout.revisedAt} END`,
+          revisedAt: sql`CASE WHEN ${sportBout.contentHash} <> excluded.content_hash THEN ${DB_NOW} ELSE ${sportBout.revisedAt} END`,
           contentHash: sql`excluded.content_hash`,
         },
         setWhere: sql`${sportBout.contentHash} <> excluded.content_hash OR (${sportBout.fencerAPersonId} IS NULL AND excluded.fencer_a_person_id IS NOT NULL) OR (${sportBout.fencerBPersonId} IS NULL AND excluded.fencer_b_person_id IS NOT NULL)`,
       })
-      .returning({ insertado: sql<boolean>`(xmax = 0)` });
-    devueltas.push(...r);
+      .returning({ id: sportBout.id }));
   }
-  return resumir(filas.length, devueltas);
+  for (let i = 0; i < queries.length; i += MAX_BATCH_STATEMENTS) {
+    const [first, ...rest] = queries.slice(i, i + MAX_BATCH_STATEMENTS);
+    devueltas.push(...(await db.batch([first, ...rest])).flat());
+  }
+  return resumir(filas.length, devueltas, idsNuevos);
 }
 
 export type FilaCoberturaGenerica = {
@@ -145,6 +176,15 @@ export async function escribirCobertura(
   source: string,
   f: FilaCoberturaGenerica,
 ): Promise<void> {
+  if (f.status === 'sin_resultados') {
+    const [published] = await db.select({ id: sportImportCoverage.id }).from(sportImportCoverage).where(and(
+      eq(sportImportCoverage.source, source), eq(sportImportCoverage.season, f.season),
+      eq(sportImportCoverage.factKind, f.factKind), eq(sportImportCoverage.competitionKey, f.competitionKey),
+      sql`${sportImportCoverage.importedTotal} > 0`,
+    )).limit(1);
+    if (published) f = { ...f, status: 'conflicto', publishedTotal: undefined, importedTotal: undefined,
+      lastError: 'empty_after_published_results' };
+  }
   const conservarCifras = f.publishedTotal === undefined;
   await db
     .insert(sportImportCoverage)
@@ -160,7 +200,7 @@ export async function escribirCobertura(
       attempts: f.sinIntento ? 0 : 1,
       sourceUrl: f.sourceUrl,
       cursor: f.cursor ?? null,
-      lastCheckedAt: f.sinIntento ? null : sql`now()`,
+      lastCheckedAt: f.sinIntento ? null : DB_NOW,
       lastError: f.lastError,
     })
     .onConflictDoUpdate({
@@ -181,20 +221,20 @@ export async function escribirCobertura(
             }),
         ...(f.sinIntento
           ? {}
-          : { attempts: sql`${sportImportCoverage.attempts} + 1`, lastCheckedAt: sql`now()` }),
+          : { attempts: sql`${sportImportCoverage.attempts} + 1`, lastCheckedAt: DB_NOW }),
         sourceUrl: sql`excluded.source_url`,
         ...(f.cursor === undefined ? {} : { cursor: sql`excluded.cursor` }),
         lastError: sql`excluded.last_error`,
-        updatedAt: sql`now()`,
+        updatedAt: DB_NOW,
       },
     });
 }
 
 export function crearDepsPersistenciaFieDb(db: Db): DepsPersistenciaFie {
   return {
-    esquema: esquemaDeportivo,
-    evidencia: depsEvidenciaDb,
-    guard: crearGuardDb(db),
+    esquema: esquemaD1(db),
+    evidencia: evidenciaD1(db),
+    guard: crearGuardIdentidadD1(db),
 
     async upsertPrueba(p) {
       const { clave: tournamentKey, agrupaPruebas } = claveEdicionFie(p);
@@ -218,15 +258,15 @@ export function crearDepsPersistenciaFieDb(db: Db): DepsPersistenciaFie {
             name: sql`excluded.name`,
             // Una edición compartida abarca todas sus pruebas: LEAST/GREATEST ignoran NULL.
             startDate: agrupaPruebas
-              ? sql`least(${sportEdition.startDate}, excluded.start_date)`
+              ? sql`coalesce(min(${sportEdition.startDate}, excluded.start_date), ${sportEdition.startDate}, excluded.start_date)`
               : sql`excluded.start_date`,
             endDate: agrupaPruebas
-              ? sql`greatest(${sportEdition.endDate}, excluded.end_date)`
+              ? sql`coalesce(max(${sportEdition.endDate}, excluded.end_date), ${sportEdition.endDate}, excluded.end_date)`
               : sql`excluded.end_date`,
             city: sql`excluded.city`,
             countryCode: sql`excluded.country_code`,
             sourceUrl: sql`excluded.source_url`,
-            updatedAt: sql`now()`,
+            updatedAt: DB_NOW,
           },
         })
         .returning({ id: sportEdition.id });
@@ -257,7 +297,7 @@ export function crearDepsPersistenciaFieDb(db: Db): DepsPersistenciaFie {
             format: sql`excluded.format`,
             competitionDate: sql`excluded.competition_date`,
             sourceUrl: sql`excluded.source_url`,
-            updatedAt: sql`now()`,
+            updatedAt: DB_NOW,
           },
         })
         .returning({ id: sportCompetition.id });
@@ -275,8 +315,8 @@ export function crearDepsPersistenciaFieDb(db: Db): DepsPersistenciaFie {
     async contarResultados(competitionId) {
       const [fila] = await db
         .select({
-          total: sql<number>`count(*)::int`,
-          sinPersona: sql<number>`count(*) filter (where ${sportResult.personId} is null)::int`,
+          total: sql<number>`count(*)`,
+          sinPersona: sql<number>`count(*) filter (where ${sportResult.personId} is null)`,
         })
         .from(sportResult)
         .where(and(eq(sportResult.competitionId, competitionId), eq(sportResult.source, FUENTE_FIE)));

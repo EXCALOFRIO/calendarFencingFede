@@ -1,4 +1,5 @@
-import { eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
+import { enLista as inArray } from '@/lib/sqlite';
 import { db } from '@/db';
 import { callUpAthlete, eventCompetition } from '@/db/schema';
 import type { Weapon } from '@/lib/auth/session';

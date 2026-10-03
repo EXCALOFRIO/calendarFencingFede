@@ -1,4 +1,5 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+import { enLista as inArray } from '@/lib/sqlite';
 import { db } from '@/db';
 import { fieFencer } from '@/db/schema';
 import { getManagedAthletes, requireProfile } from '@/lib/auth/session';

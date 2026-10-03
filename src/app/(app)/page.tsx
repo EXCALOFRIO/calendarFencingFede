@@ -81,10 +81,10 @@ export default async function CalendarioPage({
   if (eventos.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-start justify-center gap-2">
-        <h1 className="text-2xl">Todavía no hay competiciones</h1>
+        <h1 className="text-3xl sm:text-4xl">Calendario pendiente de carga</h1>
         <p className="medida text-sm text-muted-foreground">
-          El calendario se alimenta solo una vez al día de las fuentes
-          oficiales. Pide a un administrador que lance la primera carga.
+          Todavía no se han cargado competiciones de las fuentes oficiales.
+          Pide a dirección técnica que revise la carga.
         </p>
       </div>
     );

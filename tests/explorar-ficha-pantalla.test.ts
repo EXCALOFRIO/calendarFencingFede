@@ -116,7 +116,7 @@ describe('cargarFichaPantalla: historial propio por defecto', () => {
     if (vista.historial.tipo === 'ok') expect(vista.historial.items).toHaveLength(1);
     // El historial se pide por la persona que resolvió el servidor.
     const historial = sentencias.find((s) => /r\.id DESC\s+LIMIT/.test(s.text))!;
-    expect(historial.params).toContain(UUID_A);
+    expect(historial.params).toContain(JSON.stringify([UUID_A]));
   });
 
   it('con homónimo y sin vínculo no adjudica nada, explica el motivo y no lee hechos', async () => {
@@ -595,10 +595,13 @@ describe('rutas y perfil', () => {
         cabecera(UUID_A, 'Lucia Garcia'),
         { cuando: /r\.id DESC\s+LIMIT/, filas: [filaHistorial('00000000-0000-4000-8000-000000000001')] },
         reemplazar(/una_por_prueba/, [
-          { tipo: 'SEN_WC', clasificaciones: 1, mejorPuesto: 2, podios: 1, victorias: 0, sinPuesto: 0 },
+          { clase: 'total', tipo: null, pruebas: 1, clasificaciones: 1, mejorPuesto: 2, podios: 1, victorias: 0, sinPuesto: 0, conflictos: 0, sinFecha: 0, desde: '2026-03-01', hasta: '2026-03-01' },
+          { clase: 'tipo', tipo: 'SEN_WC', pruebas: 1, clasificaciones: 1, mejorPuesto: 2, podios: 1, victorias: 0, sinPuesto: 0 },
+          { clase: 'categoria', tipo: 'SEN_WC', categoria: 'ABS', categoriaRaw: 'Senior', arma: 'ESPADA', genero: 'F', pruebas: 1, clasificaciones: 1, mejorPuesto: 2, podios: 1, victorias: 0, sinPuesto: 0 },
+          { clase: 'temporada', temporada: '2026', pruebas: 1, clasificaciones: 1, mejorPuesto: 2, podios: 1, victorias: 0, sinPuesto: 0 },
         ]),
         { cuando: /GROUP BY p\.season/, filas: [{ temporada: '2026' }, { temporada: '2025' }] },
-        { cuando: /WITH elegidas/, filas: [filaRanking('2026', 14)] },
+        { cuando: /WITH ordenadas/, filas: [filaRanking('2026', 14)] },
         ...base.filter((b) => !/una_por_prueba|GROUP BY p\\.season/.test(String(b.cuando))),
       ],
     });
@@ -617,6 +620,8 @@ describe('rutas y perfil', () => {
     expect(salida).toContain('Es tu ficha deportiva');
     expect(salida).toContain('Copa del Mundo Madrid');
     expect(salida).toContain('Copa del Mundo Absoluta');
+    expect(salida).toContain('Estadísticas del historial importado');
+    expect(salida).toContain('1 de 1 pruebas importadas');
     expect(salida).toContain('FIE 2026');
     expect(salida).toContain('>14<');
     expect(salida).not.toContain('<h1');

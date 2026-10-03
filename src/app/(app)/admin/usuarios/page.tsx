@@ -2,6 +2,8 @@ import { SinAcceso, exigirRol } from '@/components/admin/guardia';
 import { Cabecera, Cifra, TiraCifras } from '@/components/admin/piezas';
 import { UsuariosPanel } from '@/components/admin/usuarios-panel';
 import { contarCuentas, listarAltasRecientes, listarClubesParaAlta } from '../consultas';
+import { SolicitudesVinculo } from '@/components/admin/solicitudes-vinculo';
+import { listarSolicitudesVinculo } from '@/lib/altas/solicitudes';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Usuarios' };
@@ -18,10 +20,11 @@ export default async function Pagina() {
     );
   }
 
-  const [clubes, altas, recuento] = await Promise.all([
+  const [clubes, altas, recuento, solicitudes] = await Promise.all([
     listarClubesParaAlta(),
     listarAltasRecientes(),
     contarCuentas(),
+    listarSolicitudesVinculo(),
   ]);
 
   return (
@@ -74,6 +77,7 @@ export default async function Pagina() {
         ) : null}
       </TiraCifras>
 
+      <SolicitudesVinculo solicitudes={solicitudes} />
       <UsuariosPanel clubes={clubes} altas={altas} />
     </div>
   );

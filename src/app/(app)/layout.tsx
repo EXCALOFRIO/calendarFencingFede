@@ -10,6 +10,7 @@ import { getManagedAthletes, getSessionProfile } from '@/lib/auth/session';
 import { deriveCategoriesFromBirthDate } from '@/lib/categories';
 import { getCurrentSeason, getDataFreshness } from '@/lib/queries/calendar';
 import { CATEGORY_LABEL, WEAPON_LABEL, formatDateEs } from '@/lib/utils';
+import { terminarAccesoQa, terminarVistaPrevia } from '@/app/vista-previa/actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -187,6 +188,33 @@ export default async function AppLayout({
           </p>
         ) : null}
       </header>
+
+      {perfil.preview ? (
+        <aside aria-label="Vista previa de solo lectura"
+          className="border-b bg-warn/10">
+          <div className="ancho-app flex flex-wrap items-center justify-between gap-3 px-4 py-2">
+            <p className="min-w-0 text-sm">
+              <strong>{perfil.qa ? 'QA temporal' : 'Vista previa'} · {ROL[perfil.role]}</strong>
+              <span className="block text-muted-foreground sm:ml-2 sm:inline">Solo lectura. Caduca a los 30 minutos.</span>
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" asChild className="min-h-11">
+                <Link href="/vista-previa">Cambiar vista</Link>
+              </Button>
+              <form action={terminarVistaPrevia}>
+                <Button type="submit" className="min-h-11">
+                  {perfil.qa ? 'Volver al selector' : 'Salir de la vista previa'}
+                </Button>
+              </form>
+              {perfil.qa ? (
+                <form action={terminarAccesoQa}>
+                  <Button variant="outline" type="submit" className="min-h-11">Cerrar acceso técnico</Button>
+                </form>
+              ) : null}
+            </div>
+          </div>
+        </aside>
+      ) : null}
 
       {/*
         El mismo ancho que la cabecera, y de la misma fuente: `.ancho-app` es

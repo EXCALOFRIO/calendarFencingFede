@@ -221,7 +221,7 @@ describe('cargarCaraACaraPantalla: cara a cara', () => {
     const lecturas = sentencias.filter((s) => /sport_bout|WITH comunes/.test(s.text) && !/RECURSIVE/.test(s.text));
     expect(lecturas).toHaveLength(3);
     for (const s of lecturas) {
-      expect(s.text).toMatch(/c\.format::text = 'INDIVIDUAL'/);
+      expect(s.text).toMatch(/c\.format = 'INDIVIDUAL'/);
       expect(s.text).not.toMatch(/internal_ranking|ranking_snapshot|user_profile|email/i);
     }
   });
@@ -285,7 +285,8 @@ describe('cargarCaraACaraPantalla: cara a cara', () => {
     expect(datos.siguiente).toBeNull();
     const resumen = sentencias.find((s) => /count\(\*\) FILTER/.test(s.text))!;
     expect(resumen.params).toContain('2026');
-    expect(resumen.params).toContain(UUID_B);
+    expect(resumen.text).toContain('json_each');
+    expect(resumen.params).toContain(JSON.stringify([UUID_B]));
   });
 
   it('el cursor emitido en una consulta se rechaza en otra temporada o con otro rival', async () => {
@@ -324,11 +325,12 @@ describe('cargarCaraACaraPantalla: cara a cara', () => {
       return sentencias.find((s) => /count\(\*\) FILTER/.test(s.text))!.params;
     };
     const [bPasada, cActual] = [await lectura(UUID_B, '2025'), await lectura(UUID_C, '2026')];
-    expect(bPasada).toContain(UUID_B);
+    expect(bPasada).toContain(JSON.stringify([UUID_B]));
     expect(bPasada).toContain('2025');
-    expect(bPasada).not.toContain(UUID_C);
-    expect(cActual).toContain(UUID_C);
+    expect(bPasada).not.toContain(JSON.stringify([UUID_C]));
+    expect(cActual).toContain(JSON.stringify([UUID_C]));
     expect(cActual).toContain('2026');
+    expect(cActual).not.toContain(JSON.stringify([UUID_B]));
     expect(cActual).not.toContain('2025');
   });
 });

@@ -1,6 +1,7 @@
 'use server';
 
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+import { enLista as inArray } from '@/lib/sqlite';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
 import { extraccionDocumento, extraccionPropuesta } from '@/db/schema';
@@ -12,7 +13,7 @@ import {
   leerConfiguracionIa,
   procesarDocumentoOficial,
 } from '@/lib/ai/extract';
-import { requireRole } from '@/lib/auth/session';
+import { requireWritableRole } from '@/lib/auth/session';
 
 /**
  * Acciones de la revisión de extracciones.
@@ -35,7 +36,7 @@ async function marcar(
   ids: string[],
   estado: 'aprobada' | 'rechazada' | 'pendiente',
 ): Promise<number> {
-  const perfil = await requireRole('admin');
+  const perfil = await requireWritableRole('admin');
 
   const filas = await db
     .update(extraccionPropuesta)
@@ -81,7 +82,7 @@ export async function reabrirPropuesta(id: string): Promise<ResultadoAccion> {
  * seguridad, solo cansancio. Los campos siguen firmados uno a uno.
  */
 export async function aprobarCircular(extraccionId: string): Promise<ResultadoAccion> {
-  await requireRole('admin');
+  await requireWritableRole('admin');
 
   const pendientes = await db
     .select({ id: extraccionPropuesta.id })
@@ -123,7 +124,7 @@ export async function aprobarCircular(extraccionId: string): Promise<ResultadoAc
 export async function confirmarEventoDeExtraccion(
   extraccionId: string,
 ): Promise<ResultadoAccion> {
-  const perfil = await requireRole('admin');
+  const perfil = await requireWritableRole('admin');
 
   const [extraccion] = await db
     .select({
@@ -181,7 +182,7 @@ export async function confirmarEventoDeExtraccion(
 export async function descartarEventoDeExtraccion(
   extraccionId: string,
 ): Promise<ResultadoAccion> {
-  await requireRole('admin');
+  await requireWritableRole('admin');
 
   const filas = await db
     .update(extraccionDocumento)
@@ -218,7 +219,7 @@ export async function descartarEventoDeExtraccion(
  * botón que no hace nada.
  */
 export async function procesarSiguientes(): Promise<ResultadoAccion> {
-  await requireRole('admin');
+  await requireWritableRole('admin');
 
   const config = leerConfiguracionIa();
   if (!config.activa) {

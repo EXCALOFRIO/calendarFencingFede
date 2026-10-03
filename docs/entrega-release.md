@@ -4,6 +4,123 @@ Fecha: 02/10/2026. Este documento dice qué se publicó, qué se comprobó y qu�
 **no** se comprobó. La revisión privada (con cuenta real) es del propietario y
 queda **pendiente**.
 
+## Trabajo posterior del 03/10/2026, todavía sin publicar
+
+Producción continúa en `b0da2841`, con Neon. El código pendiente migra datos
+y almacenamiento a D1/R2, conservando Neon Auth gestionado solo para cuentas,
+sesiones y códigos, por elección del propietario. No se ha hecho el corte, desplegado
+esa versión, confirmado los cambios ni hecho `git push`.
+
+- Se aplicó únicamente la guarda PostgreSQL `0020` (ledger 19 → 20) y se
+  desactivaron escritores antiguos. El Worker de producción no está congelado.
+  No se aplica `0021` a Neon; su CLI está retirado antes de cualquier I/O.
+- Se creó una D1 UE independiente y se confirmó su acceso de solo lectura:
+  `_cf_KV`, 12.288 bytes, sin esquema de aplicación ni importación.
+- El snapshot consistente de 199.027 filas se ensayó y verificó dos veces
+  localmente. Producción aún puede escribir en Neon; hace falta un corte
+  real y otro snapshot final.
+- R2 conserva verificados 9.614 blobs FIE, tres particiones e índice
+  (216.577.918 bytes con metadatos), y 2.109 blobs nacionales y manifiesto
+  (278.467.814 bytes). La relectura de índice/particiones/manifiesto FIE
+  pasó, código 0. Archivar originales no importa sus hechos.
+- Las campañas offline reales FIE, HTML y PDF terminaron. La copia histórica
+  verificada contiene 5.256 competiciones, 248.694 resultados y 668.128 asaltos:
+  3.671/198.212/635.173 más que el base. Los 31.151 puestos HTML ya existían;
+  los PDF añadieron 2.194 puestos y 1.599 asaltos, no todos los hechos leídos.
+  FKs/procedencia/cierre de contexto e integridad pasan, sin altas de personas
+  o fusiones. Staging local no es D1 remoto ni el snapshot de corte.
+- Quedan parciales, OCR/revisión, tres respuestas nacionales malformadas,
+  identidades aplazadas y 6.063 coberturas FIE antiguas pendientes.
+- El traslado local incorpora solo cinco tablas de hechos, conserva el
+  snapshot actual de perfiles/AuthIDs/permisos/demás datos y aborta ante deriva
+  de identidades o hechos. Requiere fuente cerrada en DELETE, hashes explícitos
+  y el mismo importador estricto; no carga el SQLite de staging a ciegas.
+- El Worker independiente de mantenimiento tiene dry-run y 13 casos probados,
+  sin código de aplicación o bindings. No se ha desplegado ni congelado tráfico.
+- El diseño pasó 92 pruebas focalizadas, con 36 renders sintéticos a 320,
+  393, 768 y 1440 px. No son QA autenticada de producción ni métricas reales
+  de rendimiento.
+- El gate offline **anterior a las correcciones de auditoría** pasó: **2.555 pruebas en 159 archivos**, código 0,
+  325,03 s, con un máximo de dos trabajadores. Se excluyeron explícitamente
+  `datos`, `enlaces`, `seguridad`, `fie-resultados-vivo` y `rfee-pdf-vivo`;
+  no acredita acceso real ni proveedores vivos.
+- El chequeo semántico completo de TypeScript pasó, código 0, sin incremental
+  (123,18 s). Antes falló con 18 errores y después con dos; esos errores se
+  corrigieron sin desactivar comprobaciones.
+- Los 36 renders responsive y la limpieza del navegador propio pasaron en
+  una ejecución focalizada de 88 pruebas y después en el gate completo.
+  Una ejecución anterior tuvo 218 pruebas aprobadas pero falló la limpieza:
+  no se cuenta como gate aprobado.
+- La compilación D1 anterior a las correcciones pasó, código 0, fijando el
+  dominio de producción y sin incrustar secretos. El primer build se detuvo
+  al detectar un origen local distinto. Ninguno acredita el paquete final
+  posterior a la auditoría, que debe compilarse y escanearse de nuevo.
+- La auditoría estándar de todo el repositorio identificó cuatro hallazgos
+  bloqueantes: propiedad por nombre, carrera de propietarios, fórmulas CSV
+  y descompresión sin presupuesto de salida. Se corrigieron localmente:
+  solicitudes revisadas por admin, CAS y batch atómico, celdas seguras y
+  lectura incremental de descarga/XML. No se han desplegado las correcciones.
+  Pasaron 181 pruebas focalizadas en siete archivos, seguidas de 101 en
+  cinco archivos tras los últimos ajustes de propiedad y checkpoint.
+- El control semántico posterior a las correcciones pasó, código 0, en
+  164,18 s. La regresión de propiedad ampliada pasó 36 pruebas, incluidas
+  restricciones SQL de evidencia/fechas y rechazo a menores de 14.
+  [Informe de seguridad y límites](./auditoria-seguridad-2026-10-03.md).
+- El primer gate completo posterior tuvo **2.711 pruebas aprobadas**, pero
+  salió con código 1 por el cierre de Chromium en Windows. No cuenta como
+  gate aprobado. Se corrigió la carrera entre la salida del sistema y la
+  observación de Node, sin ocultar procesos vivos; 54 pruebas responsive/de
+  cierre aprobaron después. Las repeticiones posteriores se registran abajo.
+- El paquete final posterior pasó `cf:build`, código 0, en 646,03 s, incluido
+  TypeScript y con el origen canónico. El dry-run de Wrangler pasó en 39,33 s.
+  Cero coincidencias con nueve valores sensibles/componentes en 2.228 archivos
+  del paquete y tres del dry-run; cero `.env`, `next-env.mjs` vacío. No se ha
+  publicado ni cambiado producción.
+- El segundo gate completo tuvo **2.721 pruebas aprobadas en 165 archivos**,
+  pero salió con código 1 al esperar el evento `close` del navegador.
+  La prueba posterior con CDP sin pipes no logró conectar y se retiró.
+  Ese gate permaneció fallido, pero queda superado por la pasada completa
+  final indicada abajo. No se ocultaron sus timeouts.
+- La descarga nacional terminó con 2.350/2.353 originales válidos. La segunda
+  vuelta FIE terminó con 3.154 evaluadas: 3.137 cerradas, 11 parciales y seis
+  errores, sin pending en ese inventario. No se reabrieron aprobaciones.
+- El control semántico final de todo el working tree volvió a pasar, código 0,
+  en 319,09 s. Una repetición focalizada de nueve suites agotó el timeout
+  externo de 240 s después de seis suites aprobadas, sin contarla como gate.
+  Las tres suites restantes (CSV, reemplazo local y cierre propio) pasaron
+  después: 56 pruebas, código 0. Es evidencia anterior, no el gate actual.
+- El acceso usa el proveedor y secreto Neon Auth existentes, sin conexión SQL
+  de aplicación a Neon. Se han retirado las tablas de sesiones/OTP locales.
+  El snapshot final debe conservar los IDs del proveedor, a diferencia del
+  ensayo previo. Falta validar acceso real antes de publicar. No hay acceso
+  de respaldo por contraseña ni concesión técnica QA activada.
+- Las seis suites que fallaban por supuestos PostgreSQL o cierre de navegador
+  se corrigieron: 121 pruebas focalizadas aprobadas. El gate completo, tipos
+  y compilación deben acreditarse otra vez si cambia el código durante la
+  auditoría. Los metadatos de registro npm no se obtuvieron por un timeout;
+  su ausencia no prueba que una dependencia sea segura o insegura.
+- El PDF se detuvo primero por un cursor retenido cobrado otra vez. Se
+  reprodujo y corrigió, preservando original/recibos y 4 GiB. La revisión
+  independiente detectó además dos bloqueos de integridad en correcciones:
+  ambos se reprodujeron en D1 nativo y se corrigieron antes de repetir toda
+  la campaña nacional desde una copia anterior, código 0 y sin flag incompleto.
+- La revisión final de namespace/capacidad/mantenimiento y composición no
+  confirmó nuevas vulnerabilidades ni bloqueos prácticos restantes. No
+  inspeccionó datos privados ni acreditó QA de producción.
+- **Gate offline final: 2.812 pruebas en 170 archivos, código 0, 235,80 s**,
+  dos workers y las mismas cinco exclusiones. El cierre responsive pasó.
+  TypeScript final sin incremental pasó, código 0, 100,24 s.
+- La compilación canónica del paquete actual pasó, código 0, en 181,94 s,
+  seguida del dry-run actual, código 0, en 12,28 s. El escaneo actual verificó
+  nueve valores sensibles/componentes: cero coincidencias en 2.228 archivos
+  del paquete y tres del dry-run, cero `.env` y tres exports de entorno vacíos.
+  El primer chequeo de esos exports usó un patrón incorrecto y salió con 1;
+  la comprobación corregida verificó su formato real y salió con 0. No hubo
+  coincidencias sensibles ni cambios del paquete entre ambos chequeos.
+
+Orden de corte, importación, capacidad y recuperación:
+[`migracion-cloudflare.md`](migracion-cloudflare.md).
+
 Hubo **dos** publicaciones ese día en el mismo Worker. La **última** es la
 versión `b0da2841-1b10-4ba7-8d7b-ee9401fbbd7b` (sección siguiente); la primera,
 `3fb282b6`, se conserva más abajo como registro histórico y **no** es la

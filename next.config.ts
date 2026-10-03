@@ -43,11 +43,11 @@ const nextConfig: NextConfig = {
  * Es decir: con la llamada puesta, no se puede compilar mientras haya un
  * `next dev` levantado. Comprobado, no supuesto.
  *
- * Lo que se pierde es poco: el único binding que toca el código de la
- * aplicación es el cubo de R2 (`src/lib/storage.ts`), y ahí la ausencia de
- * contexto de Cloudflare ya está contemplada: se cae al almacenamiento S3 de
- * Neon, que es justo lo que se quiere en local. Para probar de verdad contra
- * bindings está `npm run cf:preview`, que corre el Worker entero.
+ * Ahora DB (D1) también es obligatorio. `next dev` sin contexto sirve para
+ * trabajar en componentes, no para consultar datos ni autenticar cuentas:
+ * esas operaciones fallan de forma cerrada, sin respaldo Neon/S3.
+ * Para probar los bindings locales está `npm run cf:preview`, que corre el
+ * Worker entero. No activar bindings remotos de producción para una demo.
  */
 
 export default nextConfig;

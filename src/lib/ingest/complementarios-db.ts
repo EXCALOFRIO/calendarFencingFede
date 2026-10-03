@@ -1,7 +1,8 @@
-import { and, eq, gte, inArray, lte, notInArray, sql } from 'drizzle-orm';
+import { and, eq, gte, lte, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { sportBout, sportCompetition, sportEdition, sportImportCoverage, sportResult } from '@/db/schema';
-import { esquemaDeportivo } from '@/lib/sport/esquema-db';
+import { enLista, fueraDeLista } from '@/lib/sqlite';
+import { esquemaD1 } from './backfill/identidad-db';
 import type { DepsAsaltosComplemento, DepsComplemento } from './complementarios-persist';
 import {
   estadoAsaltosPrimarios,
@@ -17,7 +18,7 @@ export const FUENTES_COMPLEMENTARIAS = ['engarde', 'fww'] as const;
 
 export function crearDepsComplementoDb(db: Db): DepsComplemento & DepsAsaltosComplemento {
   return {
-    esquema: esquemaDeportivo,
+    esquema: esquemaD1(db),
     upsertResultados: (competitionId, source, filas) => escribirResultados(db, source, competitionId, filas),
     upsertAsaltos: (competitionId, source, filas) => escribirAsaltos(db, source, competitionId, filas),
     upsertCobertura: (source, fila) => escribirCobertura(db, source, fila),
@@ -72,7 +73,7 @@ export async function cargarCanonicasDb(
       and(
         gte(sportCompetition.competitionDate, rango.desde),
         lte(sportCompetition.competitionDate, rango.hasta),
-        notInArray(sportCompetition.source, [...FUENTES_COMPLEMENTARIAS]),
+        fueraDeLista(sportCompetition.source, [...FUENTES_COMPLEMENTARIAS]),
       ),
     );
   if (pruebas.length === 0) return [];
@@ -90,8 +91,8 @@ export async function cargarCanonicasDb(
       .from(sportResult)
       .where(
         and(
-          inArray(sportResult.competitionId, ids),
-          notInArray(sportResult.source, [...FUENTES_COMPLEMENTARIAS]),
+          enLista(sportResult.competitionId, ids),
+          fueraDeLista(sportResult.source, [...FUENTES_COMPLEMENTARIAS]),
         ),
       ),
     db
@@ -105,19 +106,19 @@ export async function cargarCanonicasDb(
       .from(sportImportCoverage)
       .where(
         and(
-          inArray(sportImportCoverage.competitionId, ids),
-          inArray(sportImportCoverage.factKind, ['ranking', 'results', 'pools', 'tableau']),
-          notInArray(sportImportCoverage.source, [...FUENTES_COMPLEMENTARIAS]),
+          enLista(sportImportCoverage.competitionId, ids),
+          enLista(sportImportCoverage.factKind, ['ranking', 'results', 'pools', 'tableau']),
+          fueraDeLista(sportImportCoverage.source, [...FUENTES_COMPLEMENTARIAS]),
         ),
       ),
     db
       .select({
         competitionId: sportBout.competitionId,
         fase: sportBout.phase,
-        n: sql<number>`count(*)::int`,
+        n: sql<number>`count(*)`,
       })
       .from(sportBout)
-      .where(and(inArray(sportBout.competitionId, ids), notInArray(sportBout.source, [...FUENTES_COMPLEMENTARIAS])))
+      .where(and(enLista(sportBout.competitionId, ids), fueraDeLista(sportBout.source, [...FUENTES_COMPLEMENTARIAS])))
       .groupBy(sportBout.competitionId, sportBout.phase),
   ]);
 

@@ -210,7 +210,7 @@ export function NavEscritorio({ role }: { role: Role }) {
             href={destino.href}
             aria-current={es ? 'page' : undefined}
             className={cn(
-              'rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors',
+              'inline-flex min-h-[44px] min-w-[44px] items-center rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
               es ? ACTIVO : INACTIVO,
             )}
           >
@@ -274,7 +274,7 @@ export function NavMovil({ role }: { role: Role }) {
   return (
     <nav
       aria-label="Secciones"
-      className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-filete-alto bg-card pb-[env(safe-area-inset-bottom)] lg:hidden"
     >
       <ul
         className="mx-auto grid max-w-xl"
@@ -289,7 +289,7 @@ export function NavMovil({ role }: { role: Role }) {
                 href={destino.href}
                 aria-current={es ? 'page' : undefined}
                 className={cn(
-                  'flex h-11 flex-col items-center justify-center rounded-md px-0.5 font-medium leading-tight transition-colors',
+                  'flex h-11 min-h-[44px] min-w-[44px] flex-col items-center justify-center rounded-md px-0.5 font-medium leading-tight transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
                   apretada ? 'text-[0.6rem]' : 'text-[0.68rem]',
                   /* El mismo par que en escritorio, incluido el `hover`: el
                      móvil se quedaba sin él y perdía la respuesta al toque. */
@@ -297,7 +297,7 @@ export function NavMovil({ role }: { role: Role }) {
                 )}
               >
                 <Icono className={apretada ? 'size-4' : 'size-5'} aria-hidden />
-                <span className="w-full truncate text-center">
+                <span className="w-full text-center">
                   {destino.corta ?? destino.etiqueta}
                 </span>
               </Link>

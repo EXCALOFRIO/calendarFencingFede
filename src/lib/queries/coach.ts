@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, sql } from 'drizzle-orm';
+import { enLista as inArray } from '@/lib/sqlite';
 import { db } from '@/db';
 import {
   athlete,
@@ -264,7 +265,7 @@ export async function countAthletesByWeapon() {
   return db
     .select({
       weapon: athleteWeapon.weapon,
-      count: sql<number>`count(distinct ${athleteWeapon.athleteId})::int`,
+      count: sql<number>`count(distinct ${athleteWeapon.athleteId})`,
     })
     .from(athleteWeapon)
     .innerJoin(athlete, eq(athleteWeapon.athleteId, athlete.id))

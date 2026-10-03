@@ -38,7 +38,12 @@ const sql = neon(url);
 
 const raiz = join(import.meta.dirname, '..', 'drizzle');
 const journal = JSON.parse(readFileSync(join(raiz, 'meta', '_journal.json'), 'utf8'));
-const locales = cargarMigracionesLocales(journal, (tag) => readFileSync(join(raiz, `${tag}.sql`), 'utf8'));
+const ultimaDeportiva = journal.entries.findIndex((e: { tag: string }) => e.tag === PENDIENTES.at(-1));
+if (ultimaDeportiva < 0) throw new Error('Falta la última migración deportiva.');
+const locales = cargarMigracionesLocales(
+  { entries: journal.entries.slice(0, ultimaDeportiva + 1) },
+  (tag) => readFileSync(join(raiz, `${tag}.sql`), 'utf8'),
+);
 
 const lista = (nombres: readonly string[]) => nombres.map((n) => `'${n}'`).join(',');
 

@@ -268,6 +268,8 @@ describe('el componente usa la reconciliación', () => {
   });
 
   it('los avisos siguen sin prometer alertas', () => {
-    expect(fuente).toContain('No envía avisos ni notificaciones');
+    expect(fuente).not.toMatch(/te avisaremos|recibirás|activar (las )?alertas/i);
+    // La explicación general vive en la lista, no repetida junto a cada estrella.
+    expect(readFileSync('src/components/explorar/favoritos.tsx', 'utf8')).toContain('no le avisa ni te avisa');
   });
 });

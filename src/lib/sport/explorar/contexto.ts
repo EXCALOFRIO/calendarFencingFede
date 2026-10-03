@@ -7,10 +7,10 @@ import type { DepsPropietario } from './propietario';
  * Dependencias de las lecturas del explorador. Los módulos de este directorio
  * no importan la base real: la reciben aquí, de modo que se ejercitan con un
  * registrador de SQL y un perfil controlado, y `real.ts` es el único sitio que
- * conecta Neon y la sesión.
+ * conecta D1 y la sesión.
  */
 export type ContextoExplorador = {
-  db: Pick<Db, 'execute'>;
+  db: Pick<Db, 'execute'> & Partial<Pick<Db, 'batch'>>;
   /** Perfil vigente de la petición, o `null` sin sesión o con acceso revocado. */
   perfil: () => Promise<SessionProfile | null>;
   esquema: () => Promise<EstadoEsquema>;
@@ -32,7 +32,7 @@ export async function exigirPerfil(ctx: ContextoExplorador): Promise<SessionProf
   return perfil;
 }
 
-/** Filas de un `db.execute` de Neon HTTP (array directo o `{ rows }`). */
+/** Filas de un `db.execute` (array directo o `{ rows }`). */
 export function filas<T>(resultado: unknown): T[] {
   if (Array.isArray(resultado)) return resultado as T[];
   const rows = (resultado as { rows?: unknown } | null)?.rows;

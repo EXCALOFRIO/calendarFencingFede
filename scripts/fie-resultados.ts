@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { rechazarEscrituraNoCoordinada } from '../src/lib/ingest/cli-obsoleto';
 import { leerPruebaFie, type ParteAsaltos } from '../src/lib/ingest/sources/fie-resultados';
 
 /**
@@ -13,6 +14,7 @@ import { leerPruebaFie, type ParteAsaltos } from '../src/lib/ingest/sources/fie-
  */
 
 const args = process.argv.slice(2);
+rechazarEscrituraNoCoordinada(args);
 const aplicar = args.includes('--aplicar');
 const [season, competitionId] = args.filter((a) => !a.startsWith('--')).map(Number);
 

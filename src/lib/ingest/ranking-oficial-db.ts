@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
 import type { Db } from '@/db';
 import {
@@ -8,8 +8,8 @@ import {
   sportRankingEntry,
   sportRankingPublication,
 } from '@/db/schema';
-import { depsEvidenciaDb } from '@/lib/entries/evidencia-db';
-import { categoriasHistoricasAplicadas, esquemaDeportivo } from '@/lib/sport/esquema-db';
+import { categoriasD1, evidenciaD1, esquemaD1 } from './backfill/identidad-db';
+import { DB_NOW, MAX_BATCH_STATEMENTS } from './sport-incremental/lease';
 import { escribirCobertura } from './fie-resultados-db';
 import {
   mismaLista,
@@ -20,7 +20,7 @@ import {
 import type { PublicacionRanking } from './sources/ranking-oficial-historico';
 
 /**
- * Implementación Neon de la persistencia de rankings oficiales por temporada.
+ * Implementación D1 de la persistencia de rankings oficiales por temporada.
  *
  * El driver HTTP no ofrece transacciones interactivas, pero `db.batch` envía
  * todas las sentencias en una única transacción no interactiva. Una publicación
@@ -31,7 +31,10 @@ import type { PublicacionRanking } from './sources/ranking-oficial-historico';
  * que ninguna sentencia depende del resultado de otra.
  */
 
-const LOTE = 500;
+// Eight columns including the UUID client default: 11 rows <= 88 binds.
+const LOTE = 11;
+// A complete correction is ONE atomic D1 batch; never split a publication.
+export const MAX_RANKING_ENTRIES_D1 = (MAX_BATCH_STATEMENTS - 2) * LOTE;
 
 function lotes<T>(items: readonly T[]): T[][] {
   const salida: T[][] = [];
@@ -39,7 +42,7 @@ function lotes<T>(items: readonly T[]): T[][] {
   return salida;
 }
 
-type Lote = [BatchItem<'pg'>, ...BatchItem<'pg'>[]];
+type Lote = [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]];
 
 const claveLista = (p: PublicacionRanking) =>
   and(
@@ -83,6 +86,7 @@ function lotePublicacionNueva(
       categoryRaw: p.categoriaOriginal,
       format: p.formato,
       publishedOn: p.publicadoEl,
+      dateBasis: 'observed',
       sourceUrl: p.url,
       publishedTotal: p.total,
     }),
@@ -103,7 +107,8 @@ function loteCorreccion(
   return [
     db
       .update(sportRankingPublication)
-      .set({ publishedTotal: p.total, sourceUrl: p.url, fetchedAt: sql`now()` })
+      .set({ publishedTotal: p.total, sourceUrl: p.url, fetchedAt: DB_NOW,
+        revision: sql`${sportRankingPublication.revision} + 1` })
       .where(eq(sportRankingPublication.id, id)),
     ...valoresEntradas(id, filas).map((valores) =>
       db
@@ -123,10 +128,8 @@ function loteCorreccion(
     db.delete(sportRankingEntry).where(
       and(
         eq(sportRankingEntry.publicationId, id),
-        notInArray(
-          sportRankingEntry.sourceRef,
-          filas.map((f) => f.sourceRef),
-        ),
+        sql`${sportRankingEntry.sourceRef} not in
+          (select value from json_each(${JSON.stringify(filas.map((f) => f.sourceRef))}))`,
       ),
     ),
   ];
@@ -138,6 +141,10 @@ export async function escribirPublicacion(
   filas: FilaEntradaRanking[],
   nuevoId: string = randomUUID(),
 ): Promise<ResultadoEscrituraRanking> {
+  if (!['skermo_ranking', 'fie_tiradores'].includes(p.fuente) ||
+    filas.length > MAX_RANKING_ENTRIES_D1 || new Set(filas.map((f) => f.sourceRef)).size !== filas.length) {
+    throw new Error('sport_ranking_shape_invalid');
+  }
   const [ultima] = await db
     .select({ id: sportRankingPublication.id, publishedOn: sportRankingPublication.publishedOn })
     .from(sportRankingPublication)
@@ -158,6 +165,7 @@ export async function escribirPublicacion(
       .from(sportRankingEntry)
       .where(eq(sportRankingEntry.publicationId, ultima.id));
 
+    if (guardadas.length > 0 && filas.length === 0) throw new Error('sport_empty_after_published');
     if (mismaLista(guardadas, filas)) {
       // Misma lista que la última de esta temporada: no hay publicación nueva.
       // Sólo se incorpora una persona que antes no estaba confirmada.
@@ -178,19 +186,24 @@ export async function escribirPublicacion(
         );
       let incorporadas = 0;
       if (incorporaciones.length > 0) {
-        const [primera, ...resto] = incorporaciones;
-        const resultados = await db.batch([primera, ...resto]);
-        incorporadas = resultados.reduce((suma, r) => suma + r.length, 0);
+        for (let i = 0; i < incorporaciones.length; i += MAX_BATCH_STATEMENTS) {
+          const [primera, ...resto] = incorporaciones.slice(i, i + MAX_BATCH_STATEMENTS);
+          const resultados = await db.batch([primera, ...resto]);
+          incorporadas += resultados.reduce((suma, r) => suma + r.length, 0);
+        }
       }
       return { estado: 'sin_cambios', publicationId: ultima.id, personasIncorporadas: incorporadas };
     }
 
-    if (ultima.publishedOn === p.publicadoEl) {
-      await db.batch(loteCorreccion(db, ultima.id, p, filas));
-      return { estado: 'creada', publicationId: ultima.id, personasIncorporadas: 0 };
-    }
   }
 
+  const [mismoDia] = await db.select({ id: sportRankingPublication.id, dateBasis: sportRankingPublication.dateBasis })
+    .from(sportRankingPublication).where(and(claveLista(p), eq(sportRankingPublication.publishedOn, p.publicadoEl))).limit(1);
+  if (mismoDia) {
+    if (mismoDia.dateBasis !== 'observed') throw new Error('sport_ranking_date_basis_conflict');
+    await db.batch(loteCorreccion(db, mismoDia.id, p, filas));
+    return { estado: 'creada', publicationId: mismoDia.id, personasIncorporadas: 0 };
+  }
   await db.batch(lotePublicacionNueva(db, nuevoId, p, filas));
   return { estado: 'creada', publicationId: nuevoId, personasIncorporadas: 0 };
 }
@@ -234,12 +247,28 @@ async function licenciasRfee(
 
 export function crearDepsPersistenciaRankingDb(db: Db): DepsPersistenciaRanking {
   return {
-    esquema: esquemaDeportivo,
-    categoriasHistoricas: categoriasHistoricasAplicadas,
-    evidencia: depsEvidenciaDb,
+    esquema: esquemaD1(db),
+    categoriasHistoricas: categoriasD1(db),
+    evidencia: evidenciaD1(db),
     licenciasRfee: (season, ids) => licenciasRfee(db, season, ids),
     escribirPublicacion: (p, filas) => escribirPublicacion(db, p, filas),
-    upsertCobertura: (f) => escribirCobertura(db, f.source, f),
+    async upsertCobertura(f) {
+      if (f.status === 'sin_resultados') {
+        const [previous] = await db.select({ id: sportImportCoverage.id })
+          .from(sportImportCoverage).where(and(
+            eq(sportImportCoverage.source, f.source), eq(sportImportCoverage.season, f.season),
+            eq(sportImportCoverage.factKind, f.factKind), eq(sportImportCoverage.competitionKey, f.competitionKey),
+            sql`${sportImportCoverage.importedTotal}>0`,
+          )).limit(1);
+        if (previous) {
+          await escribirCobertura(db, f.source, { ...f, status: 'conflicto', publishedTotal: undefined,
+            importedTotal: undefined, lastError: 'empty_after_published_results' });
+          return 'conflicto';
+        }
+      }
+      await escribirCobertura(db, f.source, f);
+      return f.status;
+    },
   };
 }
 

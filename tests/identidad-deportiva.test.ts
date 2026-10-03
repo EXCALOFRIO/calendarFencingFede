@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
+import { getTableConfig, type SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { describe, expect, it } from 'vitest';
 import * as schema from '@/db/schema';
 import {
@@ -120,7 +120,8 @@ describe('asaltos individuales', () => {
 });
 
 const sql = readFileSync('drizzle/0017_identidad_deportiva.sql', 'utf8');
-const tablas: PgTable[] = [
+const sqlD1 = readFileSync('drizzle-d1/0000_aplicacion.sql', 'utf8');
+const tablas: SQLiteTable[] = [
   schema.sportPerson, schema.sportPersonAlias, schema.sportExternalId, schema.sportLinkCandidate,
   schema.sportEdition, schema.sportCompetition, schema.sportResult, schema.sportBout,
   schema.sportRankingPublication, schema.sportRankingEntry, schema.sportFavorite, schema.sportImportCoverage,
@@ -143,7 +144,8 @@ describe('esquema y migración 0017', () => {
     for (const c of deportivas) {
       for (const i of c.indexes) expect(sql, i.config.name).toContain(`"${i.config.name}"`);
       for (const u of c.uniqueConstraints) expect(sql, u.name).toContain(`"${u.name}"`);
-      for (const k of c.checks) expect(sql, k.name).toContain(`"${k.name}"`);
+      // Native checks also cover SQLite storage types and former PG enums.
+      for (const k of c.checks) expect(sqlD1, k.name).toContain(`"${k.name}"`);
     }
   });
 

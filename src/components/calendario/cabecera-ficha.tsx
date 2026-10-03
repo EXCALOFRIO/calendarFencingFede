@@ -127,12 +127,12 @@ export function CabeceraFicha({ evento }: { evento: EventView }) {
           se ve de un vistazo, que es justo lo que se pidió.
         */}
         <SheetDescription asChild>
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-1 pt-1">
-            <div className="flex flex-col">
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-1 pt-1">
+            <div className="flex min-w-0 flex-col">
               <dt className="text-xs text-muted-foreground">Dónde</dt>
-              <dd className="flex items-center gap-1.5 text-sm text-foreground">
+              <dd className="flex min-w-0 items-start gap-1.5 text-sm text-foreground">
                 <MapPin className="size-3.5 shrink-0" aria-hidden />
-                <span className="truncate">
+                <span className="min-w-0 break-words">
                   {evento.city ? titular(evento.city) : 'Sede sin publicar'}
                   {evento.country ? `, ${evento.country}` : ''}
                 </span>

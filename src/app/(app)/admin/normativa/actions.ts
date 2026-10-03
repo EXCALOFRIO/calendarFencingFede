@@ -10,7 +10,7 @@ import {
   season,
   seasonCategory,
 } from '@/db/schema';
-import { requireRole } from '@/lib/auth/session';
+import { requireRole, requireWritableRole } from '@/lib/auth/session';
 import { parseFechaMadrid } from '@/lib/callups/fechas';
 
 export type ResultadoAccion =
@@ -81,7 +81,7 @@ function revalidar() {
  * así que sin esto el resto de pantallas no tienen dónde guardar nada.
  */
 export async function crearTemporada(formData: FormData): Promise<ResultadoAccion> {
-  const perfil = await requireRole('admin');
+  const perfil = await requireWritableRole('admin');
 
   const label = texto(formData, 'label');
   const startDate = texto(formData, 'startDate');
@@ -127,7 +127,7 @@ export async function crearTemporada(formData: FormData): Promise<ResultadoAccio
 }
 
 export async function marcarTemporadaActual(seasonId: string): Promise<ResultadoAccion> {
-  const perfil = await requireRole('admin');
+  const perfil = await requireWritableRole('admin');
 
   await db.update(season).set({ current: false });
   const [actualizada] = await db
@@ -161,7 +161,7 @@ export async function marcarTemporadaActual(seasonId: string): Promise<Resultado
  * plazo real de un evento, ese gana.
  */
 export async function guardarPlazo(formData: FormData): Promise<ResultadoAccion> {
-  const perfil = await requireRole('admin');
+  const perfil = await requireWritableRole('admin');
 
   const id = texto(formData, 'id');
   const seasonId = texto(formData, 'seasonId');
@@ -245,7 +245,7 @@ export async function guardarPlazo(formData: FormData): Promise<ResultadoAccion>
 }
 
 export async function borrarPlazo(id: string): Promise<ResultadoAccion> {
-  const perfil = await requireRole('admin');
+  const perfil = await requireWritableRole('admin');
 
   const [antes] = await db
     .select()
@@ -270,7 +270,7 @@ export async function borrarPlazo(id: string): Promise<ResultadoAccion> {
  * es lo que permite decir "puedes subir de categoría, pero no bajar".
  */
 export async function guardarCategoria(formData: FormData): Promise<ResultadoAccion> {
-  const perfil = await requireRole('admin');
+  const perfil = await requireWritableRole('admin');
 
   const id = texto(formData, 'id');
   const seasonId = texto(formData, 'seasonId');
@@ -360,7 +360,7 @@ export async function guardarCategoria(formData: FormData): Promise<ResultadoAcc
 }
 
 export async function borrarCategoria(id: string): Promise<ResultadoAccion> {
-  const perfil = await requireRole('admin');
+  const perfil = await requireWritableRole('admin');
 
   const [antes] = await db
     .select()
@@ -389,7 +389,7 @@ export async function borrarCategoria(id: string): Promise<ResultadoAccion> {
 export async function guardarReglaRanking(
   formData: FormData,
 ): Promise<ResultadoAccion> {
-  const perfil = await requireRole('admin');
+  const perfil = await requireWritableRole('admin');
 
   const id = texto(formData, 'id');
   const seasonId = texto(formData, 'seasonId');
@@ -485,7 +485,7 @@ export async function guardarReglaRanking(
 }
 
 export async function borrarReglaRanking(id: string): Promise<ResultadoAccion> {
-  const perfil = await requireRole('admin');
+  const perfil = await requireWritableRole('admin');
 
   const [antes] = await db
     .select()

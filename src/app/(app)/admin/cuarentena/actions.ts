@@ -1,10 +1,11 @@
 'use server';
 
-import { eq, inArray, isNull } from 'drizzle-orm';
+import { eq, isNull } from 'drizzle-orm';
+import { enLista as inArray } from '@/lib/sqlite';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
 import { ingestQuarantine } from '@/db/schema';
-import { requireRole } from '@/lib/auth/session';
+import { requireRole, requireWritableRole } from '@/lib/auth/session';
 
 export type ResultadoAccion =
   | { ok: true; message: string }
@@ -18,7 +19,7 @@ export type ResultadoAccion =
  * arreglar el scraper.
  */
 export async function resolverCuarentena(id: string): Promise<ResultadoAccion> {
-  await requireRole('admin');
+  await requireWritableRole('admin');
 
   const [fila] = await db
     .update(ingestQuarantine)
@@ -35,7 +36,7 @@ export async function resolverCuarentena(id: string): Promise<ResultadoAccion> {
 
 /** Marca varias de golpe, que es como se revisa cuando el fallo es el mismo. */
 export async function resolverVarias(ids: string[]): Promise<ResultadoAccion> {
-  await requireRole('admin');
+  await requireWritableRole('admin');
   if (ids.length === 0) return { ok: false, error: 'No has seleccionado ninguna.' };
 
   const filas = await db
@@ -51,7 +52,7 @@ export async function resolverVarias(ids: string[]): Promise<ResultadoAccion> {
 
 /** Devuelve una fila a "pendiente" si se marcó por error. */
 export async function reabrirCuarentena(id: string): Promise<ResultadoAccion> {
-  await requireRole('admin');
+  await requireWritableRole('admin');
 
   await db
     .update(ingestQuarantine)

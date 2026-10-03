@@ -39,16 +39,11 @@ const ENLACES_PROBLEMATICOS = '.next/standalone/.next/node_modules';
  * modificar Workers de la cuenta entera y **jamás** debe viajar dentro de uno.
  */
 const VARIABLES_DE_EJECUCION = new Set([
-  'DATABASE_URL',
   'NEON_AUTH_URL',
+  'NEON_AUTH_BASE_URL',
   'NEON_AUTH_COOKIE_SECRET',
   'CRON_SECRET',
-  'ACCESO_CON_CONTRASENA',
   'CREDENTIAL_ENCRYPTION_KEY',
-  'AWS_ENDPOINT_URL_S3',
-  'AWS_ACCESS_KEY_ID',
-  'AWS_SECRET_ACCESS_KEY',
-  'AWS_REGION',
   'RESEND_API_KEY',
   'EMAIL_FROM',
   'ADMIN_ALERT_EMAIL',

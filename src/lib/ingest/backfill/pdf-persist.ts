@@ -84,6 +84,8 @@ export type DepsPersistenciaPdf = {
   esquema: () => Promise<EstadoEsquema>;
   /** ¿Admite M10 y M12 (migración 0019)? Sin esta dependencia se supone que no. */
   categoriasHistoricas?: () => Promise<boolean>;
+  /** Preserve an existing namespace only after proving its exact original URL. */
+  resolverDocumento?: (season: string, sourceUrl: string, suggestedDocId: string) => Promise<string>;
   leerCheckpoint: (
     season: string,
     docKey: string,
@@ -313,6 +315,19 @@ export async function persistirLecturaPdf(
   if (!esquema.identidad) return { ...resumen, estado: 'esquema_no_aplicado' };
 
   const { season } = contextoEntrada;
+  if (deps.resolverDocumento) {
+    const docId = await deps.resolverDocumento(season, lectura.url, lectura.docId);
+    if (docId !== lectura.docId) {
+      // The positioned reader also prefixes its sporting test keys with docId.
+      // Preserve those keys on a verified legacy reread, not just the outer ID.
+      const prefix = `${lectura.docId}:`;
+      const clave = (key: string) => key.startsWith(prefix) ? `${docId}:${key.slice(prefix.length)}` : key;
+      lectura = { ...lectura, docId,
+        pruebas: lectura.pruebas.map((p) => ({ ...p, clave: clave(p.clave) })),
+        paginas: lectura.paginas.map((p) => ({ ...p, prueba: p.prueba === null ? null : clave(p.prueba) })),
+      };
+    }
+  }
   const docKey = claveDocumento(lectura.docId);
   const docBase = { season, competitionKey: docKey, competitionId: null, sourceUrl: lectura.url };
 
@@ -427,6 +442,14 @@ export async function persistirLecturaPdf(
   if (lectura.pruebas.some((p) => p.cobertura.puestos.estado !== 'completo' && p.cobertura.puestos.estado !== 'sin_resultados')) {
     motivosNoFiable.push('clasificación incompleta o contradictoria');
   }
+  if (lectura.pruebas.some((p) => [p.cobertura.poules, p.cobertura.cuadro]
+    .some((c) => c.estado !== 'completo' && c.estado !== 'sin_resultados'))) {
+    motivosNoFiable.push('asaltos incompletos o contradictorios');
+  }
+  if (lectura.estado === 'conflicto' || lectura.pruebas.some((p) =>
+    p.estado === 'conflicto' || p.excluidos.conflicto > 0 || p.excluidos.incoherente > 0)) {
+    motivosNoFiable.push('documento o prueba contradictorios');
+  }
   const lecturaFiable = motivosNoFiable.length === 0;
   const esCorreccion = previoConHechos !== null && previoConHechos.sha256 !== sha;
   const shaPrevio = previoConHechos?.sha256 ?? previoConHechos?.correccion?.shaPrevio ?? null;
@@ -449,8 +472,8 @@ export async function persistirLecturaPdf(
   const vigentes: PruebaVigente[] = [];
   let importados = 0;
 
-  // Desde aquí el documento deja de tener la huella vieja como aceptada: si algo falla a medias, el estado
-  // persistido es incompleto o error, nunca completo con hechos de dos lecturas mezclados.
+  // Marcar ANTES del primer hecho, también en la importación inicial: una
+  // interrupción no puede dejar hechos sin evidencia para una corrección.
   const registrarCorreccion = (status: EstadoCobertura, lastError: string, motivos: string[]) =>
     deps.upsertCobertura({
       ...docBase,
@@ -459,7 +482,8 @@ export async function persistirLecturaPdf(
       lastError,
       cursor: JSON.stringify(construirCheckpoint({ sha256: null, correccion: { shaPrevio, shaNuevo: sha, motivos } })),
     });
-  if (esCorreccion) await registrarCorreccion('pendiente', 'correccion_en_curso', ['correccion_en_curso']);
+  const enCurso = esCorreccion ? 'correccion_en_curso' : 'importacion_en_curso';
+  await registrarCorreccion('pendiente', enCurso, [enCurso]);
   try {
     for (const { p, arma, genero, formato, categoria } of aceptadas) {
       const key = clavePrueba(lectura.docId, p.clave);
@@ -541,7 +565,7 @@ export async function persistirLecturaPdf(
       await deps.upsertCobertura(filaDeCobertura(base, 'tableau', p.cobertura.cuadro, p.rechazos));
     }
 
-    if (previoConHechos !== null && lecturaFiable) {
+    if (lecturaFiable) {
       const r = await deps.reconciliar({ season, docId: lectura.docId, vigentes });
       resumen.retirados = { puestos: r.puestosRetirados, asaltos: r.asaltosRetirados, pruebas: r.pruebasRetiradas.length };
       for (const t of r.pruebasRetiradas) {
@@ -586,11 +610,10 @@ export async function persistirLecturaPdf(
     });
     resumen.documento = status;
   } catch (e) {
-    if (esCorreccion) {
-      const motivo = `correccion_fallida: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300);
-      // Si esta escritura también falla queda el marcador incompleto previo, que tampoco acepta la huella.
-      await registrarCorreccion('error', motivo, [motivo]).catch(() => undefined);
-    }
+    const motivo = esCorreccion ? 'correccion_fallida' : 'importacion_fallida';
+    // Si esta escritura también falla queda el marcador incompleto previo.
+    // No almacenar mensajes del transporte que podrían incluir SQL privado.
+    await registrarCorreccion('error', motivo, [motivo]).catch(() => undefined);
     throw e;
   }
   return resumen;

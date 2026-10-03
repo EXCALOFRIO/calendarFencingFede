@@ -7,6 +7,8 @@ import { LIMITE_MAXIMO, LIMITE_POR_DEFECTO } from './entrada';
 import { listaUuid } from './filtros-sql';
 import { resolverPersona, SALTOS } from './personas';
 import type { Arma, DeportistaResumen } from './tipos';
+import { exigirEscritura } from '@/lib/auth/read-only';
+import { AHORA_SQL } from '@/lib/sqlite';
 
 /**
  * Favoritos: relación `(cuenta, persona deportiva)` guardada para volver a una
@@ -30,8 +32,15 @@ const esquemaLista = z
   })
   .strict();
 
-/** `timestamptz::text` de PostgreSQL, con microsegundos y desplazamiento opcional. */
+/** Marca pública de orden, formateada desde los milisegundos SQLite. */
 const MARCA_RE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d{1,6})?([+-]\d{2}(:\d{2})?)?$/;
+
+function milisegundosMarca(marca: string): number {
+  const iso = marca.replace(' ', 'T');
+  return Date.parse(/[+-]\d{2}(:\d{2})?$/.test(iso)
+    ? iso.replace(/([+-]\d{2})$/, '$1:00')
+    : `${iso}Z`);
+}
 
 export type ResultadoFavorito =
   | { estado: 'ok'; personaId: string; favorito: boolean }
@@ -85,30 +94,34 @@ async function prepararPersona(ctx: ContextoExplorador, entrada: unknown): Promi
  * existía), de modo que consolidar ni mueve la posición ni repite a la persona
  * al seguir un cursor anterior. Sin filas previas se usa la fecha del servidor;
  * guardar de nuevo nunca retrocede ni adelanta una fecha ya vigente. Si el
- * borrado posterior falla, repetir la acción termina la consolidación.
+ * lote falla, D1 revierte también la herencia: no queda una consolidación parcial.
  */
 export async function guardarFavorito(
   ctx: ContextoExplorador,
   entrada: unknown,
 ): Promise<ResultadoFavorito> {
+  exigirEscritura(await exigirPerfil(ctx));
   const p = await prepararPersona(ctx, entrada);
   if (p.estado !== 'ok') return { estado: p.estado };
 
-  await ctx.db.execute(sql`
+  const guardar = sql`
     INSERT INTO sport_favorite (profile_id, person_id, created_at)
-    SELECT ${p.profileId}::uuid, ${p.canonicaId}::uuid, COALESCE(max(f.created_at), now())
+    SELECT ${p.profileId}, ${p.canonicaId}, COALESCE(max(f.created_at), ${AHORA_SQL})
     FROM sport_favorite f
-    WHERE f.profile_id = ${p.profileId}::uuid AND f.person_id IN (${listaUuid(p.ids)})
+    WHERE f.profile_id = ${p.profileId} AND f.person_id IN (${listaUuid(p.ids)})
     ON CONFLICT (profile_id, person_id)
     DO UPDATE SET created_at = EXCLUDED.created_at
-    WHERE sport_favorite.created_at < EXCLUDED.created_at`);
+    WHERE sport_favorite.created_at < EXCLUDED.created_at`;
 
   const fundidas = p.ids.filter((id) => id !== p.canonicaId);
   if (fundidas.length > 0) {
-    await ctx.db.execute(sql`
+    // D1 serializa la unidad entera: quitar no puede entrar entre heredar la
+    // fecha y retirar miembros. No hay transacción PostgreSQL ni fallback.
+    if (!ctx.db.batch) throw new Error('FAVORITOS_REQUIEREN_BATCH_ATOMICO');
+    await ctx.db.batch([ctx.db.execute(guardar), ctx.db.execute(sql`
       DELETE FROM sport_favorite
-      WHERE profile_id = ${p.profileId}::uuid AND person_id IN (${listaUuid(fundidas)})`);
-  }
+      WHERE profile_id = ${p.profileId} AND person_id IN (${listaUuid(fundidas)})`)]);
+  } else await ctx.db.execute(guardar);
   return { estado: 'ok', personaId: p.canonicaId, favorito: true };
 }
 
@@ -116,12 +129,13 @@ export async function quitarFavorito(
   ctx: ContextoExplorador,
   entrada: unknown,
 ): Promise<ResultadoFavorito> {
+  exigirEscritura(await exigirPerfil(ctx));
   const p = await prepararPersona(ctx, entrada);
   if (p.estado !== 'ok') return { estado: p.estado };
 
   await ctx.db.execute(sql`
     DELETE FROM sport_favorite
-    WHERE profile_id = ${p.profileId}::uuid AND person_id IN (${listaUuid(p.ids)})`);
+    WHERE profile_id = ${p.profileId} AND person_id IN (${listaUuid(p.ids)})`);
   return { estado: 'ok', personaId: p.canonicaId, favorito: false };
 }
 
@@ -135,7 +149,7 @@ export async function consultarFavorito(
   const [fila] = filas<{ n: number }>(
     await ctx.db.execute(sql`
       SELECT 1 AS n FROM sport_favorite
-      WHERE profile_id = ${p.profileId}::uuid AND person_id IN (${listaUuid(p.ids)})
+      WHERE profile_id = ${p.profileId} AND person_id IN (${listaUuid(p.ids)})
       LIMIT 1`),
   );
   return { estado: 'ok', personaId: p.canonicaId, favorito: Boolean(fila) };
@@ -163,13 +177,13 @@ export function sqlListaFavoritos(
   clave: readonly (string | number)[] | null,
 ) {
   const posicion = clave
-    ? sql`WHERE (g.creado, g.canonica) < (${String(clave[0])}::timestamptz, ${String(clave[1])}::uuid)`
+    ? sql`WHERE (g.creado, g.canonica) < (${milisegundosMarca(String(clave[0]))}, ${String(clave[1])})`
     : sql``;
   return sql`
-    SELECT p.id::text AS id, p.display_name AS nombre, p.name_normalized AS "claveNombre",
-           p.country_code AS pais, p.gender::text AS genero, p.birth_year AS "anioNacimiento",
-           g.creado::text AS "guardadoEl",
-           (SELECT count(*)::int FROM sport_person q
+    SELECT p.id AS id, p.display_name AS nombre, p.name_normalized AS "claveNombre",
+           p.country_code AS pais, p.gender AS genero, p.birth_year AS "anioNacimiento",
+           strftime('%Y-%m-%d %H:%M:%f', g.creado / 1000.0, 'unixepoch') AS "guardadoEl",
+           (SELECT count(*) FROM sport_person q
              WHERE q.merged_into_person_id IS NULL AND q.name_normalized = p.name_normalized) AS "mismoNombre"
     FROM (
       SELECT canonica, max(creado) AS creado FROM (
@@ -184,7 +198,7 @@ export function sqlListaFavoritos(
           SELECT id FROM ruta_fusion WHERE destino IS NULL LIMIT 1
         ) AS canonica
         FROM sport_favorite f
-        WHERE f.profile_id = ${profileId}::uuid
+        WHERE f.profile_id = ${profileId}
       ) crudos
       WHERE canonica IS NOT NULL
       GROUP BY canonica
@@ -208,7 +222,8 @@ export async function listarFavoritos(
   let clave: readonly (string | number)[] | null = null;
   if (analizada.data.cursor) {
     clave = decodificarCursor(CLASE, filtros, analizada.data.cursor, 2);
-    if (!clave || !MARCA_RE.test(String(clave[0])) || !UUID_RE.test(String(clave[1]))) {
+    if (!clave || !MARCA_RE.test(String(clave[0])) || !Number.isFinite(milisegundosMarca(String(clave[0])))
+      || !UUID_RE.test(String(clave[1]))) {
       return { estado: 'cursor_invalido' };
     }
   }

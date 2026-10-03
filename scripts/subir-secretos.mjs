@@ -28,16 +28,11 @@ const WORKER = 'calendario-fie-fede';
  * que para eso no es secreto.
  */
 const SECRETOS = [
-  ['DATABASE_URL', 'imprescindible: sin ella la aplicación no arranca'],
-  ['NEON_AUTH_URL', 'imprescindible: sin ella no se puede iniciar sesión'],
-  ['NEON_AUTH_COOKIE_SECRET', 'imprescindible: firma la cookie de sesión'],
+  ['NEON_AUTH_URL', 'URL del proveedor gestionado, sin conexión SQL'],
+  ['NEON_AUTH_BASE_URL', 'alias de la URL de Neon Auth'],
+  ['NEON_AUTH_COOKIE_SECRET', 'imprescindible: cookies y vistas privadas'],
   ['CRON_SECRET', 'imprescindible: sin ella las rutas de cron dan 503'],
-  ['ACCESO_CON_CONTRASENA', 'imprescindible hoy: sin ella no entra nadie'],
   ['CREDENTIAL_ENCRYPTION_KEY', 'cifra las credenciales de Skermo'],
-  ['AWS_ENDPOINT_URL_S3', 'almacenamiento de PDFs (respaldo de R2)'],
-  ['AWS_ACCESS_KEY_ID', 'almacenamiento de PDFs'],
-  ['AWS_SECRET_ACCESS_KEY', 'almacenamiento de PDFs'],
-  ['AWS_REGION', 'almacenamiento de PDFs'],
   ['RESEND_API_KEY', 'opcional: envío de correos'],
   ['EMAIL_FROM', 'opcional: remitente de los correos'],
   ['ADMIN_ALERT_EMAIL', 'opcional: aviso si una fuente falla dos días'],
@@ -100,9 +95,7 @@ function subir(nombre, valor) {
 
 const env = leerEnv();
 
-// El interruptor de la puerta de contraseña no está en `.env` por defecto: se
-// enciende aquí a propósito y se apaga borrando el secreto en Cloudflare.
-if (!env.get('ACCESO_CON_CONTRASENA')) env.set('ACCESO_CON_CONTRASENA', '1');
+// Este guion nunca habilita contraseñas ni sube DATABASE_URL al Worker.
 
 console.log(`Subiendo secretos al Worker «${WORKER}».\n`);
 
@@ -122,7 +115,8 @@ for (const [nombre, para] of SECRETOS) {
     console.log(`  ✓  ${nombre.padEnd(26)} ${para}`);
   } else {
     console.log(`  ✗  ${nombre.padEnd(26)} FALLÓ`);
-    console.log(`     ${error.trim().split('\n').slice(-3).join('\n     ')}`);
+    // Wrangler puede incluir datos de la solicitud en un error. No reenviarlos.
+    process.exitCode = 1;
   }
 }
 

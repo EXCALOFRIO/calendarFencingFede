@@ -59,6 +59,8 @@ export type DepsPersistenciaSkermo = {
   categoriasHistoricas?: () => Promise<boolean>;
   evidencia: DepsEvidencia;
   guard: DepsGuardConfirmacion;
+  /** Preserve unresolved facts without unbounded per-person writes in a short invocation. */
+  crearIdentidades?: boolean;
   upsertPrueba: (prueba: PruebaSkermo) => Promise<string>;
   upsertResultados: (
     source: string,
@@ -137,6 +139,11 @@ async function resolverPersonas(
       continue;
     }
 
+    if (deps.crearIdentidades === false) {
+      personas.set(p.sourceFactKey, null);
+      resumen.enRevision += 1;
+      continue;
+    }
     const id = deps.nuevoId?.() ?? crypto.randomUUID();
     const candidato: IdExternoCandidato = {
       personId: id,

@@ -1,4 +1,5 @@
 import { motivoHttp, parsearRetryAfter } from '../../http-retry';
+import { createHash } from 'node:crypto';
 import { leerResultadosPdf } from './resultados';
 import type { ItemTexto, LecturaPdf, PaginaTexto, PerfilLectura } from './tipos';
 
@@ -25,6 +26,14 @@ export type DepsLecturaPdf = {
 };
 
 export function docIdDeUrl(url: string): string {
+  const original = new URL(url);
+  if (original.protocol !== 'https:' || original.username || original.password) throw new Error('pdf_document_url_invalid');
+  original.hash = '';
+  return `url-${createHash('sha256').update(original.href).digest('hex')}`;
+}
+
+/** Compatibility lookup only. Never use a filename alone to assign a new namespace. */
+export function docIdLegadoDeUrl(url: string): string {
   try {
     const ultimo = new URL(url).pathname.split('/').filter(Boolean).pop() ?? '';
     return ultimo.replace(/\.pdf$/i, '').slice(0, 40) || 'doc';
@@ -51,7 +60,7 @@ const heapMb = (): number | null =>
 /** Texto posicionado de cada página, con límites de tamaño, páginas y elementos. */
 export async function extraerPaginas(
   bytes: Uint8Array,
-  limites: { [K in keyof typeof LIMITES_PDF]?: number } = {},
+  limites: { [K in keyof typeof LIMITES_PDF]?: number } & { comprobar?: () => void } = {},
 ): Promise<{ paginas: PaginaTexto[]; perfil: PerfilLectura }> {
   const { maxBytes, maxPaginas, maxItemsPagina } = { ...LIMITES_PDF, ...limites };
   if (bytes.length > maxBytes) throw new PdfNoLeible(`El PDF pesa ${bytes.length} bytes y el límite es ${maxBytes}`);
@@ -71,6 +80,7 @@ export async function extraerPaginas(
       throw new PdfNoLeible(`El PDF tiene ${documento.numPages} páginas y el límite es ${maxPaginas}`);
     }
     for (let n = 1; n <= documento.numPages; n += 1) {
+      limites.comprobar?.();
       const pagina = await documento.getPage(n);
       const [, , ancho, alto] = pagina.view;
       const contenido = await pagina.getTextContent();
@@ -174,8 +184,9 @@ export async function leerPdfRfee(url: string, deps: DepsLecturaPdf = depsLectur
   }
 }
 
-export async function leerBytesPdf(bytes: Uint8Array, contexto: { url: string; docId: string }): Promise<LecturaPdf> {
+export async function leerBytesPdf(bytes: Uint8Array, contexto: { url: string; docId: string },
+  limites: { [K in keyof typeof LIMITES_PDF]?: number } & { comprobar?: () => void } = {}): Promise<LecturaPdf> {
   const huella = await sha256Hex(bytes);
-  const { paginas, perfil } = await extraerPaginas(bytes);
+  const { paginas, perfil } = await extraerPaginas(bytes, limites);
   return { ...leerResultadosPdf(paginas, contexto), sha256: huella, perfil };
 }

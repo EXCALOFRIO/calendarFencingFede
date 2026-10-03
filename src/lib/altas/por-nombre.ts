@@ -1,8 +1,9 @@
-import { and, eq, inArray, or, sql } from 'drizzle-orm';
-import { db } from '@/db';
+import { and, eq, or, sql } from 'drizzle-orm';
+import { enLista as inArray } from '@/lib/sqlite';
+import { db, type Db } from '@/db';
+import { nowMilliseconds } from '@/db/d1/columns';
 import {
   athlete,
-  athleteWeapon,
   fieClasificacion,
   fieFencer,
   officialRankingEntry,
@@ -23,6 +24,18 @@ import type {
   ResultadoAlta,
 } from './desde-ranking';
 import { vincularFichaDesdeRanking } from './desde-ranking';
+import { solicitarVinculo } from './solicitudes';
+import { athleteLinkRequest } from './solicitudes-schema';
+import { requiresGuardianAccount } from '@/lib/categories';
+import {
+  type AprobacionVinculo,
+  aprobacionVigente,
+  cierreAprobacion,
+  cuentaSinFicha,
+  escribirVinculoAtomico,
+  evidenciaValida,
+  exigirUnCambio,
+} from './vinculo-atomico';
 
 /**
  * «¿Cómo te llamas?»: encontrarse por el nombre y decir «sí, soy yo».
@@ -37,24 +50,11 @@ import { vincularFichaDesdeRanking } from './desde-ranking';
  * BLANCO» y «PAULA GARCIA GONZALEZ-ESTEFANI») y porque los acentos van a su
  * aire entre fuentes.
  *
- * Lo de aquí no es una excepción a esa regla: es su versión segura, y la
- * diferencia es quién decide. Ahí decidía la máquina y por eso estaba
- * prohibido. Aquí la máquina solo **propone** hasta cinco filas y quien decide
- * es la persona diciendo cuál es la suya, que es la confirmación más fuerte que
- * existe para la identidad de uno mismo: nadie tiene mejor información sobre
- * quién es Jorge Casaus que Jorge Casaus.
- *
- * Alguien va a cuestionar esto dentro de seis meses, así que las dos
- * condiciones que lo hacen legítimo están puestas en el código y no solo en
- * este comentario:
- *
- *   1. **No se escribe ningún enlace sin un clic humano**: buscar no vincula
- *      nada, ni cuando hay un único candidato con puntuación 1,00. La
- *      propuesta se enseña y la persona pulsa «Sí, soy yo».
- *   2. **Queda escrito quién lo confirmó y cuándo**: `athlete.linked_via =
- *      'persona'`, `linked_by_profile_id` con su cuenta, `linked_at` y
- *      `linked_evidence` con lo que escribió y qué fila reclamó. Si mañana
- *      resulta que se equivocó —o que mintió—, se sabe exactamente qué pasó.
+ * El buscador solo propone hasta cinco filas. «Soy yo» guarda una solicitud,
+ * no un enlace ni permisos: un nombre publicado no verifica la identidad de
+ * la cuenta. La dirección técnica comprueba la identidad por una vía
+ * independiente y registra su evidencia al aprobar o rechazar la solicitud.
+ * La aprobación y todos los enlaces se escriben en un único batch con CAS.
  *
  * -------------------------------------------------------------------------
  * UN BUSCADOR DE NOMBRES ES UNA SUPERFICIE DE FUGA
@@ -108,8 +108,15 @@ export const MENSAJE_RECHAZO: Record<MotivoRechazo, string> = {
     'tuya, entra con ella; si no, escribe a la dirección técnica para que lo ' +
     'revise. Desde aquí no se le quita una ficha a nadie.',
   DEMASIADOS_INTENTOS:
-    'Demasiados intentos seguidos. Espera diez minutos o pide a la dirección ' +
-    'técnica que te vincule la ficha.',
+    'Has alcanzado el límite de solicitudes. Espera un día o consulta a la dirección técnica.',
+  REVISION_PENDIENTE:
+    'Solicitud guardada. La dirección técnica debe verificar tu identidad antes de vincular la ficha.',
+  SOLICITUD_PENDIENTE:
+    'Ya tienes otra solicitud pendiente. Espera su revisión o cancélala antes de elegir otra ficha.',
+  CUENTA_NO_ELEGIBLE:
+    'Esta cuenta no puede recibir una ficha de tirador. Consulta a la dirección técnica.',
+  VINCULO_CAMBIO:
+    'La ficha, la cuenta o la solicitud ha cambiado. No se ha vinculado nada; vuelve a revisarlo.',
 };
 
 export type FuenteCandidato = 'RANKING_RFEE' | 'FIE';
@@ -180,6 +187,7 @@ export type ResultadoNombres =
  * gente que no se va a pintar.
  */
 export async function buscarPorNombre(texto: string): Promise<ResultadoNombres> {
+  if (texto.length > 160) return { ok: false, error: 'Escribe un nombre de hasta 160 caracteres.' };
   if (!bastanteParaBuscar(texto)) {
     return {
       ok: false,
@@ -437,8 +445,8 @@ async function detallar(
  * candidatos y elige la persona, que es de lo que va esta pantalla.
  *
  * Y ojo: unificar aquí es una decisión de PRESENTACIÓN. No escribe ningún
- * enlace entre las dos fuentes; lo que se vincula al confirmar sigue siendo una
- * fila concreta de una fuente concreta.
+ * enlace entre las dos fuentes; lo que se solicita sigue siendo una fila
+ * concreta de una fuente concreta, pendiente de verificación independiente.
  */
 function unificar(candidatos: CandidatoNombre[]): CandidatoNombre[] {
   const salida: CandidatoNombre[] = [];
@@ -492,10 +500,8 @@ function enTitular(fila: {
 /**
  * «Sí, soy yo»: la persona reclama una de las filas propuestas.
  *
- * `nombreEscrito` no se usa para buscar nada aquí: se guarda en
- * `athlete.linked_evidence`. Es lo que permite reconstruir dentro de un año qué
- * escribió y qué se le propuso, y sin eso un enlace confirmado por la persona
- * tendría fecha pero no evidencia.
+ * `nombreEscrito` queda en la solicitud, no en un enlace confirmado.
+ * No se modifica athlete, ninguna fuente, armas, club ni permisos.
  */
 export async function confirmarSoyYo({
   profileId,
@@ -505,37 +511,38 @@ export async function confirmarSoyYo({
   profileId: string;
   clave: string;
   nombreEscrito: string;
-}): Promise<ResultadoAlta> {
-  if (clave.startsWith('rfee:')) {
+}, database: Db = db): Promise<ResultadoAlta> {
+  const resultado = await solicitarVinculo({ profileId, clave, nombreEscrito }, database);
+  return rechazo(resultado.ok ? 'REVISION_PENDIENTE' : resultado.motivo);
+}
+
+/** Called only after a writable admin-session check in the action. */
+export async function aprobarVinculoPorNombre(
+  aprobacion: AprobacionVinculo,
+  database: Db = db,
+): Promise<ResultadoAlta> {
+  if (!evidenciaValida(aprobacion)) return rechazo('CUENTA_NO_ELEGIBLE');
+  const [solicitud] = await database.select({
+    profileId: athleteLinkRequest.profileId, clave: athleteLinkRequest.sourceKey,
+  }).from(athleteLinkRequest).where(and(eq(athleteLinkRequest.id, aprobacion.solicitudId),
+    eq(athleteLinkRequest.state, 'PENDIENTE'))).limit(1);
+  if (!solicitud) return rechazo('VINCULO_CAMBIO');
+  if (solicitud.clave.startsWith('rfee:')) {
     return vincularFichaDesdeRanking({
-      profileId,
-      clave: clave.slice('rfee:'.length),
-      origen: 'nombre',
-      evidencia: evidencia(nombreEscrito, clave),
-    });
+      profileId: solicitud.profileId, clave: solicitud.clave.slice(5),
+      origen: 'direccion', aprobacion,
+    }, database);
   }
-
-  if (clave.startsWith('fie:')) {
+  if (solicitud.clave.startsWith('fie:')) {
     return vincularFichaDeLaFie({
-      profileId,
-      fieId: Number.parseInt(clave.slice('fie:'.length), 10),
-      evidencia: evidencia(nombreEscrito, clave),
-    });
+      profileId: solicitud.profileId, fieId: Number(solicitud.clave.slice(4)), aprobacion,
+    }, database);
   }
-
   return rechazo('NO_ENCONTRADO');
 }
 
-function evidencia(nombreEscrito: string, clave: string): string {
-  return (
-    `La persona escribió «${nombreEscrito.trim()}» en /alta, se reconoció en ` +
-    `${clave} y pulsó «Sí, soy yo».`
-  );
-}
-
 /**
- * Crear la ficha a partir de la FIE, para quien no está en el ranking de la
- * RFEE.
+ * Crear o adoptar la ficha FIE solo tras aprobar una solicitud de identidad.
  *
  * Hace falta y no es un extra: Jorge Casaus, sable, 61.º del mundo absoluto,
  * **no aparece en el ranking oficial de la RFEE** de esta temporada. Con solo
@@ -551,17 +558,17 @@ function evidencia(nombreEscrito: string, clave: string): string {
 async function vincularFichaDeLaFie({
   profileId,
   fieId,
-  evidencia: notaEvidencia,
+  aprobacion,
 }: {
   profileId: string;
   fieId: number;
-  evidencia: string;
-}): Promise<ResultadoAlta> {
-  if (!Number.isFinite(fieId)) {
+  aprobacion: AprobacionVinculo;
+}, database: Db): Promise<ResultadoAlta> {
+  if (!Number.isSafeInteger(fieId) || fieId <= 0 || fieId > 2_147_483_647) {
     return rechazo('NO_ENCONTRADO');
   }
 
-  const [suya] = await db
+  const [suya] = await database
     .select({ id: athlete.id })
     .from(athlete)
     .where(
@@ -577,7 +584,7 @@ async function vincularFichaDeLaFie({
 
   if (suya) return rechazo('YA_TIENES_FICHA');
 
-  const [ficha] = await db
+  const [ficha] = await database
     .select({
       nombre: fieFencer.sourceName,
       nombrePila: fieFencer.sourceFirstName,
@@ -596,7 +603,7 @@ async function vincularFichaDeLaFie({
   }
 
   if (ficha.atletaId) {
-    const [dueno] = await db
+    const [dueno] = await database
       .select({
         userProfileId: athlete.userProfileId,
         guardianProfileId: athlete.guardianProfileId,
@@ -612,8 +619,9 @@ async function vincularFichaDeLaFie({
   if (!ficha.nacimiento) {
     return rechazo('SIN_LICENCIA_EN_LA_FUENTE');
   }
+  if (requiresGuardianAccount(ficha.nacimiento)) return rechazo('CUENTA_NO_ELEGIBLE');
 
-  const suyas = await db
+  const suyas = await database
     .selectDistinct({
       arma: fieClasificacion.weapon,
       genero: fieClasificacion.gender,
@@ -633,73 +641,41 @@ async function vincularFichaDeLaFie({
 
   const nombrePila = titular(ficha.nombrePila?.trim() || '');
   const apellidos = titular(ficha.apellidos?.trim() || '');
-  const nota =
-    'Alta de autoservicio por nombre: la persona se reconoció en la ficha de ' +
-    'la FIE y lo confirmó ella misma. No aparece en el ranking oficial de la ' +
-    'RFEE, así que no hay licencia RFEE que comprobar.';
-
-  const atletaId =
-    ficha.atletaId ??
-    (
-      await db
-        .insert(athlete)
-        .values({
-          firstName: nombrePila || titular(ficha.nombre ?? ''),
-          lastName: apellidos,
-          birthDate: ficha.nacimiento,
-          gender: genero,
-          /** La FIE no publica el club. Vacío, no inventado. */
-          clubId: null,
-          fieLicense: ficha.licenciaFie,
-          userProfileId: profileId,
-          notes: nota,
-          linkedVia: 'persona',
-          linkedAt: new Date(),
-          linkedByProfileId: profileId,
-          linkedEvidence: notaEvidencia,
-        })
-        .returning({ id: athlete.id })
-    )[0].id;
-
-  if (ficha.atletaId) {
-    await db
-      .update(athlete)
-      .set({
-        userProfileId: profileId,
-        linkedVia: 'persona',
-        linkedAt: new Date(),
-        linkedByProfileId: profileId,
-        linkedEvidence: notaEvidencia,
-        updatedAt: new Date(),
-      })
-      .where(eq(athlete.id, atletaId));
-  }
-
+  const nota = 'Vinculación a la ficha oficial FIE aprobada por la dirección técnica.';
+  const atletaId = ficha.atletaId ?? crypto.randomUUID();
+  const claveFuente = `fie:${fieId}`;
+  const prueba = aprobacion.evidencia.trim();
+  const condicion = sql`${cuentaSinFicha(profileId)}
+    and ${aprobacionVigente(aprobacion, profileId, claveFuente)}
+    and exists (select 1 from fie_fencer where fie_id = ${fieId}
+      and country_code = 'ESP' and source_birth_date = ${ficha.nacimiento}
+      and fie_license is ${ficha.licenciaFie}
+      and athlete_id is ${ficha.atletaId})`;
+  const propiedad = ficha.atletaId ? sql`update athlete set user_profile_id = ${profileId},
+    linked_via = 'direccion_tecnica', linked_at = ${nowMilliseconds},
+    linked_by_profile_id = ${aprobacion.adminProfileId}, linked_evidence = ${prueba},
+    updated_at = ${nowMilliseconds}
+    where id = ${atletaId} and active = 1 and user_profile_id is null
+      and guardian_profile_id is null and ${condicion}`
+    : sql`insert into athlete(id,first_name,last_name,birth_date,gender,fie_license,
+        user_profile_id,notes,linked_via,linked_at,linked_by_profile_id,linked_evidence)
+      select ${atletaId},${nombrePila || titular(ficha.nombre ?? '')},${apellidos},
+        ${ficha.nacimiento},${genero},${ficha.licenciaFie},${profileId},${nota},
+        'direccion_tecnica',${nowMilliseconds},${aprobacion.adminProfileId},${prueba}
+      where ${condicion}`;
   const armas = [...new Set(suyas.map((s) => s.arma))];
-  if (armas.length > 0) {
-    await db
-      .insert(athleteWeapon)
-      .values(armas.map((arma) => ({ athleteId: atletaId, weapon: arma })))
-      .onConflictDoNothing();
-  }
-
-  /**
-   * Y se cierra el enlace con la FIE con el vocabulario que ya existía en esa
-   * tabla: `linked_via = 'persona'`, que es precisamente lo que su cabecera
-   * decía que era la otra forma legítima de enlazar («o lo confirma una
-   * persona»). Aquí la persona es el propio tirador.
-   */
-  await db
-    .update(fieFencer)
-    .set({
-      athleteId: atletaId,
-      linkStatus: 'CONFIRMADO',
-      linkedVia: 'persona',
-      linkedAt: new Date(),
-      matchEvidence: notaEvidencia,
-      updatedAt: new Date(),
-    })
-    .where(eq(fieFencer.fieId, fieId));
+  const guardada = await escribirVinculoAtomico([
+    propiedad, exigirUnCambio,
+    ...armas.map((arma) => sql`insert into athlete_weapon(athlete_id,weapon)
+      values(${atletaId},${arma}) on conflict do nothing`),
+    sql`update fie_fencer set athlete_id = ${atletaId}, link_status = 'CONFIRMADO',
+      linked_via = 'direccion_tecnica', linked_at = ${nowMilliseconds},
+      match_evidence = ${prueba}, updated_at = ${nowMilliseconds}
+      where fie_id = ${fieId} and athlete_id is ${ficha.atletaId}`,
+    exigirUnCambio,
+    ...cierreAprobacion(aprobacion, profileId, claveFuente, atletaId),
+  ], database);
+  if (!guardada) return rechazo('VINCULO_CAMBIO');
 
   return {
     ok: true,

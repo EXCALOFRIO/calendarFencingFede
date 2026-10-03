@@ -2,6 +2,7 @@
 
 import { CalendarOff } from 'lucide-react';
 import * as React from 'react';
+import { Button } from '@/components/ui/button';
 import {
   itemsDelMes,
   nombreDeMes,
@@ -88,13 +89,13 @@ export function ColumnaMes({
       className="flex min-h-0 min-w-0 flex-1 flex-col"
     >
       {conTitulo ? (
-        <h2 className="shrink-0 pb-1.5 text-lg">{nombreDeMes(anio, mes, false)}</h2>
+        <h2 className="mb-2 shrink-0 border-b border-filete-alto pb-2 text-2xl">{nombreDeMes(anio, mes, false)}</h2>
       ) : null}
 
       {items.length === 0 ? (
         <MesVacioEscritorio anio={anio} mes={mes} />
       ) : (
-        <ul className="flex min-w-0 flex-col">
+        <ul className="flex min-w-0 flex-col border-t border-filete-alto">
           {items.map((item) => (
             <ItemDeLista key={claveDeItem(item)} item={item} variante="zonas" {...comun} />
           ))}
@@ -127,7 +128,7 @@ function ItemDeLista({
     );
   }
   return (
-    <li className="pb-2">
+    <li>
       <TarjetaBloque bloque={item.bloque} variante={variante} {...comun} />
     </li>
   );
@@ -165,7 +166,8 @@ function MesVacioEscritorio({ anio, mes }: { anio: number; mes: number }) {
     <div className="flex min-h-[10rem] flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-6 text-center">
       <CalendarOff className="size-8 opacity-20" aria-hidden />
       <p className="medida text-xs text-muted-foreground">
-        Nada cargado en {nombre.toLowerCase()}.
+        Sin competiciones cargadas en {nombre.toLowerCase()}. Consulta otro mes
+        o cambia los filtros.
       </p>
     </div>
   );
@@ -239,7 +241,7 @@ export function FeedMovil({
           /* `no-scrollbar`: con tres meses cabe de sobra, pero si algún día son
              seis la fila se desplaza en horizontal DENTRO de su caja, que es lo
              único que puede desplazarse a lo ancho en esta pantalla. */
-          className="no-scrollbar mb-2 flex shrink-0 gap-1.5 overflow-x-auto"
+          className="mb-2 flex shrink-0 flex-wrap gap-2"
         >
           {porMes.map((m) => {
             const cuantos = m.items.filter((i) => i.tipo === 'bloque').length;
@@ -248,7 +250,8 @@ export function FeedMovil({
               0,
             );
             return (
-              <button
+              <Button
+                variant="outline"
                 key={`${m.anio}-${m.mes}`}
                 type="button"
                 onClick={() => {
@@ -263,24 +266,24 @@ export function FeedMovil({
                     });
                 }}
                 className={cn(
-                  'objetivo-libre flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors',
+                  'flex h-11 min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2 text-xs font-medium transition-colors',
                   cuantos === 0
                     ? 'border-border text-muted-foreground'
                     : 'border-input bg-card text-foreground',
                 )}
-                aria-label={`Ir a ${nombreDeMes(m.anio, m.mes)}, ${
+                aria-label={`Ir a ${nombreDeMes(m.anio, m.mes).toLocaleLowerCase('es-ES')}, ${
                   torneos === 0
-                    ? 'sin competiciones'
+                    ? 'sin competiciones cargadas'
                     : `${torneos} ${torneos === 1 ? 'torneo' : 'torneos'}`
                 }`}
               >
                 {nombreDeMes(m.anio, m.mes, false).slice(0, 3)}
                 {torneos > 0 ? (
                   <span className="cifra text-[0.7rem] text-muted-foreground">
-                    · {torneos}
+                    {torneos}
                   </span>
                 ) : null}
-              </button>
+              </Button>
             );
           })}
         </nav>
@@ -297,7 +300,7 @@ export function FeedMovil({
             */}
             <h2
               className={cn(
-                'sticky top-0 z-10 -mx-0.5 mb-1.5 bg-background px-0.5 py-1 text-base leading-none',
+                'sticky top-0 z-10 mb-2 border-b border-filete-alto bg-background py-2 text-2xl leading-none',
                 /*
                   Con UN mes en pantalla el título sobra: el `<h1>` de la
                   cabecera ya dice «Octubre» a 30 px de aquí, y en un iPhone
@@ -314,7 +317,7 @@ export function FeedMovil({
             {m.items.length === 0 ? (
               <MesVacioMovil anio={m.anio} mes={m.mes} />
             ) : (
-              <ul className="flex min-w-0 flex-col">
+              <ul className="flex min-w-0 flex-col border-t border-filete-alto">
                 {m.items.map((item) => (
                   <ItemDeLista
                     key={claveDeItem(item)}
@@ -351,8 +354,9 @@ function MesVacioMovil({ anio, mes }: { anio: number; mes: number }) {
     <div className="mb-2 flex items-center gap-2.5 rounded-lg border border-dashed px-3 py-3">
       <CalendarOff className="size-5 shrink-0 opacity-20" aria-hidden />
       <p className="min-w-0 text-xs">
-        <span className="font-semibold">{nombre}</span>{' '}
-        <span className="text-muted-foreground">· nada cargado.</span>
+        <span className="text-muted-foreground">
+          Sin competiciones cargadas en {nombre.toLowerCase()}.
+        </span>
       </p>
     </div>
   );

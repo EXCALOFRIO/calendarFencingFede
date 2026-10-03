@@ -1,31 +1,30 @@
-import { drizzle } from 'drizzle-orm/neon-http';
-import { describe, expect, it, vi } from 'vitest';
-import * as schema from '@/db/schema';
-import type { Db } from '@/db';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { sportPerson } from '@/db/schema';
+import { crearDepsPersistenciaFieDb } from '@/lib/ingest/fie-resultados-db';
+import type { FilaResultado } from '@/lib/ingest/fie-resultados-persist';
+import { dbConSportLease, reclamarSportLease } from '@/lib/ingest/sport-incremental/lease';
+import { fixtureDeportivaD1 } from './helpers/d1-deporte';
 
-vi.mock('@/db', () => ({ db: {} }));
+const abiertos: ReturnType<typeof fixtureDeportivaD1>[] = [];
+afterEach(() => abiertos.splice(0).forEach((local) => local.close()));
 
-const { crearDepsPersistenciaFieDb } = await import('@/lib/ingest/fie-resultados-db');
-
-/**
- * Cliente Neon falso que sólo registra el SQL que Drizzle genera. No hay base
- * ni red: se comprueba la forma de las sentencias, no su efecto en Postgres.
- */
-function dbRegistradora(devolver: (sql: string) => unknown[] = () => []) {
-  const consultas: { sql: string; params: unknown[] }[] = [];
-  const cliente = Object.assign(
-    async (sql: string, params: unknown[], opciones?: { arrayMode?: boolean }) => {
-      consultas.push({ sql, params });
-      const filas = devolver(sql);
-      return opciones?.arrayMode ? { rows: filas.map((f) => Object.values(f as object)), fields: [] } : { rows: filas, fields: [] };
-    },
-    { transaction: async () => [] },
-  );
-  const db = drizzle(cliente as never, { schema }) as unknown as Db;
-  return { db, consultas };
+async function database() {
+  const local = fixtureDeportivaD1();
+  abiertos.push(local);
+  const lease = await reclamarSportLease(local.db);
+  const owned = dbConSportLease(local.db, lease!);
+  const deps = crearDepsPersistenciaFieDb(owned);
+  const competitionId = await deps.upsertPrueba({
+    season: 2027, competitionId: 1478, tournamentId: 1,
+    nombre: 'Prueba sintética', ciudad: 'Madrid', federacion: 'ESP',
+    inicio: '2026-09-25', fin: '2026-09-25', fecha: '2026-09-25',
+    arma: 'ESPADA', genero: 'M', categoria: 'ABS', categoriaOriginal: 'S',
+    formato: 'INDIVIDUAL', url: 'https://fie.org/competitions/2027/1478',
+  });
+  return { ...local, lease, owned, deps, competitionId };
 }
 
-const resultado = {
+const resultado: FilaResultado = {
   sourceFactKey: '70490',
   personId: null,
   sourceName: 'FIE 70490',
@@ -38,70 +37,63 @@ const resultado = {
   contentHash: 'h',
 };
 
-describe('SQL de la persistencia FIE (cliente Neon registrador, sin base)', () => {
+describe('persistencia FIE con SQLite real y guardia D1, sin red', () => {
   it('los puestos van por la clave natural y sólo se reescriben si cambia el contenido o llega la persona', async () => {
-    const { db, consultas } = dbRegistradora(() => [{ insertado: true }]);
-    const r = await crearDepsPersistenciaFieDb(db).upsertResultados('comp-1', [resultado]);
-    expect(r).toEqual({ nuevos: 1, revisados: 0, sinCambios: 0 });
-    const { sql } = consultas[0];
-    expect(sql).toMatch(/insert into "sport_result"/i);
-    expect(sql).toMatch(/on conflict \("competition_id",\s*"source",\s*"source_fact_key"\) do update/i);
-    expect(sql).toMatch(/where .*content_hash.* <> excluded\.content_hash or/i);
-    expect(sql).toMatch(/coalesce\(excluded\.person_id/i);
-    expect(sql).toMatch(/xmax = 0/);
-    expect(sql).not.toMatch(/delete/i);
+    const local = await database();
+    const write = (row = resultado) => local.deps.upsertResultados(local.competitionId, [row]);
+    expect(await write()).toEqual({ nuevos: 1, revisados: 0, sinCambios: 0 });
+    const original = local.sqlite.prepare('SELECT id,revision,revised_at FROM sport_result').get()!;
+    expect(await write()).toEqual({ nuevos: 0, revisados: 0, sinCambios: 1 });
+    expect(await write({ ...resultado, position: 2, contentHash: 'corregido' }))
+      .toEqual({ nuevos: 0, revisados: 1, sinCambios: 0 });
+    const corrected = local.sqlite.prepare('SELECT id,revision,revised_at,position FROM sport_result').get()!;
+    expect(corrected).toMatchObject({ id: original.id, revision: Number(original.revision) + 1, position: 2 });
+    expect(Number(corrected.revised_at)).toBeGreaterThan(1_700_000_000_000);
+    await local.owned.insert(sportPerson).values({ id: 'persona', displayName: 'Sintética', nameNormalized: 'sintetica' });
+    expect(await write({ ...resultado, position: 2, contentHash: 'corregido', personId: 'persona' }))
+      .toEqual({ nuevos: 0, revisados: 1, sinCambios: 0 });
+    expect(local.sqlite.prepare('SELECT id,revision,revised_at,person_id FROM sport_result').get())
+      .toMatchObject({ id: original.id, revision: corrected.revision, revised_at: corrected.revised_at, person_id: 'persona' });
+    await write({ ...resultado, position: 2, contentHash: 'corregido' });
+    expect(local.sqlite.prepare('SELECT person_id FROM sport_result').get()!.person_id).toBe('persona');
+    expect(local.calls.some(({ sql }) => /\bxmax\b|pg_|::uuid/.test(sql))).toBe(false);
+    await local.lease!.liberar();
   });
 
   it('cuenta como sin cambios las filas que el upsert no devuelve', async () => {
-    const { db } = dbRegistradora(() => []);
-    const r = await crearDepsPersistenciaFieDb(db).upsertResultados('comp-1', [resultado, { ...resultado, sourceFactKey: '2' }]);
-    expect(r).toEqual({ nuevos: 0, revisados: 0, sinCambios: 2 });
+    const local = await database();
+    const rows = [resultado, { ...resultado, sourceFactKey: '2' }];
+    expect(await local.deps.upsertResultados(local.competitionId, rows)).toEqual({ nuevos: 2, revisados: 0, sinCambios: 0 });
+    expect(await local.deps.upsertResultados(local.competitionId, rows)).toEqual({ nuevos: 0, revisados: 0, sinCambios: 2 });
+    expect(await local.deps.contarResultados!(local.competitionId)).toEqual({ total: 2, sinPersona: 2 });
+    await local.lease!.liberar();
   });
 
   it('los asaltos van por prueba, fase, ronda y el par canónico', async () => {
-    const { db, consultas } = dbRegistradora(() => [{ insertado: false }]);
-    const r = await crearDepsPersistenciaFieDb(db).upsertAsaltos('comp-1', [
-      {
-        phase: 'TABLEAU',
-        roundKey: 'A2',
-        fencerARef: '3',
-        fencerBRef: '5',
-        fencerAPersonId: null,
-        fencerBPersonId: null,
-        fencerAName: 'FIE 3',
-        fencerBName: 'FIE 5',
-        scoreA: 11,
-        scoreB: 15,
-        occurredOn: '2026-09-25',
-        sourceUrl: 'u',
-        contentHash: 'h',
-      },
-    ]);
-    expect(r).toEqual({ nuevos: 0, revisados: 1, sinCambios: 0 });
-    expect(consultas[0].sql).toMatch(
-      /on conflict \("competition_id",\s*"source",\s*"phase",\s*"round_key",\s*"fencer_a_ref",\s*"fencer_b_ref"\) do update/i,
-    );
+    const local = await database();
+    const row = {
+      phase: 'TABLEAU' as const, roundKey: 'A2', fencerARef: '3', fencerBRef: '5',
+      fencerAPersonId: null, fencerBPersonId: null, fencerAName: 'FIE 3', fencerBName: 'FIE 5',
+      scoreA: 11, scoreB: 15, occurredOn: '2026-09-25', sourceUrl: 'u', contentHash: 'h',
+    };
+    const write = (rows = [row]) => local.deps.upsertAsaltos(local.competitionId, rows);
+    expect(await write()).toEqual({ nuevos: 1, revisados: 0, sinCambios: 0 });
+    expect(await write()).toEqual({ nuevos: 0, revisados: 0, sinCambios: 1 });
+    expect(await write([{ ...row, scoreA: 12, contentHash: 'corregido' }]))
+      .toEqual({ nuevos: 0, revisados: 1, sinCambios: 0 });
+    expect(local.sqlite.prepare('SELECT count(*) AS n,max(revision) AS revision,max(score_a) AS score FROM sport_bout').get())
+      .toEqual({ n: 1, revision: 2, score: 12 });
+    expect(await write([{ ...row, roundKey: 'A4' }])).toEqual({ nuevos: 1, revisados: 0, sinCambios: 0 });
+    expect(local.calls.every(({ parameters }) => parameters <= 100)).toBe(true);
+    await local.lease!.liberar();
   });
 
-  it('el guard va por db.batch real de Drizzle: cerrojo y escritura en una misma transacción', async () => {
-    const consultas: string[] = [];
-    let transacciones = 0;
-    const cliente = Object.assign(
-      async (sql: string) => {
-        consultas.push(sql);
-        return { rows: [], fields: [] };
-      },
-      {
-        transaction: async (lote: unknown[]) => {
-          transacciones += 1;
-          return lote.map((_, i) => ({ rows: i === 1 ? [{ id: 'nuevo' }] : [], fields: [] }));
-        },
-      },
-    );
-    const db = drizzle(cliente as never, { schema }) as unknown as Db;
-    const guard = crearDepsPersistenciaFieDb(db).guard;
-    const ok = await guard.confirmar({
-      personId: '00000000-0000-4000-8000-000000000001',
+  it('confirma identidad en un batch owner-bound y un fallo revierte también el contexto', async () => {
+    const local = await database();
+    await local.owned.insert(sportPerson).values({ id: 'persona', displayName: 'Sintética', nameNormalized: 'sintetica' });
+    const batch = vi.spyOn(local.binding, 'batch');
+    const candidate = {
+      personId: 'persona',
       scheme: 'fie_addr_id',
       value: '70490',
       scopeSource: 'fie',
@@ -112,29 +104,36 @@ describe('SQL de la persistencia FIE (cliente Neon registrador, sin base)', () =
       validTo: null,
       linkedVia: 'fie_resultados',
       evidence: 'prueba',
-    });
-    expect(ok).toBe(true);
-    expect(transacciones).toBe(1);
-    expect(consultas[0]).toMatch(/pg_advisory_xact_lock/);
-    expect(consultas[1]).toMatch(/INSERT INTO sport_external_id/);
+    };
+    expect(await local.deps.guard.confirmar(candidate)).toBe(true);
+    expect(batch).toHaveBeenCalledTimes(2); // one read batch, then one fenced mutation batch
+    expect(batch.mock.calls.at(-1)![0].length).toBeGreaterThanOrEqual(3);
+    expect(local.sqlite.prepare('SELECT person_id,link_status FROM sport_external_id').get())
+      .toEqual({ person_id: 'persona', link_status: 'CONFIRMADO' });
+    local.sqlite.exec(`CREATE TEMP TRIGGER fallo_identidad BEFORE INSERT ON sport_external_id
+      BEGIN SELECT RAISE(ABORT, 'FALLO_SINTETICO'); END`);
+    await expect(local.deps.guard.confirmar({ ...candidate, value: 'otro' })).rejects.toThrow('FALLO_SINTETICO');
+    expect(local.sqlite.prepare('SELECT count(*) AS n FROM sport_external_id').get()!.n).toBe(1);
+    expect(local.sqlite.prepare('SELECT count(*) AS n FROM sport_write_context').get()!.n).toBe(0);
+    await local.lease!.liberar();
   });
 
   it('una lectura fallida no pisa las cifras de cobertura; una buena sí', async () => {
-    const { db, consultas } = dbRegistradora();
-    const deps = crearDepsPersistenciaFieDb(db);
+    const local = await database();
     const base = {
       season: '2027',
       factKind: 'ranking' as const,
       competitionKey: '1478',
-      competitionId: 'comp-1',
+      competitionId: local.competitionId,
       sourceUrl: 'u',
     };
-    await deps.upsertCobertura({ ...base, status: 'error', lastError: 'HTTP 503' });
-    await deps.upsertCobertura({ ...base, status: 'completo', publishedTotal: 28, importedTotal: 28, lastError: null });
-    const [fallo, bueno] = consultas.map((c) => c.sql);
-    expect(fallo).not.toMatch(/"published_total" = excluded/);
-    expect(fallo).toMatch(/"attempts" = "sport_import_coverage"\."attempts" \+ 1/);
-    expect(bueno).toMatch(/"published_total" = excluded\.published_total/);
-    expect(bueno).toMatch(/"imported_total" = excluded\.imported_total/);
+    await local.deps.upsertCobertura({ ...base, status: 'completo', publishedTotal: 28, importedTotal: 28, lastError: null });
+    await local.deps.upsertCobertura({ ...base, status: 'error', lastError: 'HTTP 503' });
+    expect(local.sqlite.prepare('SELECT status,published_total,imported_total,attempts FROM sport_import_coverage').get())
+      .toEqual({ status: 'error', published_total: 28, imported_total: 28, attempts: 2 });
+    await local.deps.upsertCobertura({ ...base, status: 'completo', publishedTotal: 27, importedTotal: 27, lastError: null });
+    expect(local.sqlite.prepare('SELECT status,published_total,imported_total,attempts FROM sport_import_coverage').get())
+      .toEqual({ status: 'completo', published_total: 27, imported_total: 27, attempts: 3 });
+    await local.lease!.liberar();
   });
 });

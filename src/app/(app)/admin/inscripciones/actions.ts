@@ -1,9 +1,11 @@
 'use server';
 
-import { eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
+import { enLista as inArray } from '@/lib/sqlite';
 import { db } from '@/db';
 import { athlete, club, entry, event, eventCompetition } from '@/db/schema';
-import { requireRole } from '@/lib/auth/session';
+import { requireRole, requireWritableRole } from '@/lib/auth/session';
+import { escaparCeldaCsv } from '@/lib/csv';
 import { transitionEntries } from '@/lib/entries/actions';
 import type { EntryStatus } from '@/lib/entries/state-machine';
 import { competitionLabel } from '@/lib/queries/callups';
@@ -25,7 +27,7 @@ export async function moverInscripciones(
   destino: EntryStatus,
   motivo?: string,
 ): Promise<ResultadoAccion> {
-  await requireRole('admin');
+  await requireWritableRole('admin');
   return transitionEntries(entryIds, destino, motivo);
 }
 
@@ -144,7 +146,7 @@ export async function exportarInscripcionesCsv(
   const content =
     BOM +
     [cabecera, ...cuerpo]
-      .map((fila) => fila.map(escaparCelda).join(';'))
+      .map((fila) => fila.map(escaparCeldaCsv).join(';'))
       .join('\r\n') +
     '\r\n';
 
@@ -158,11 +160,4 @@ export async function exportarInscripcionesCsv(
       filas: cuerpo.length,
     },
   };
-}
-
-/** Comillas dobles si hay separador, comillas o saltos de línea dentro. */
-function escaparCelda(valor: string): string {
-  const texto = String(valor ?? '');
-  if (/[";\r\n]/.test(texto)) return `"${texto.replace(/"/g, '""')}"`;
-  return texto;
 }

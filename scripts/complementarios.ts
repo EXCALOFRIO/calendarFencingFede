@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { rechazarEscrituraNoCoordinada } from '../src/lib/ingest/cli-obsoleto';
 import { conciliarTorneoEngarde } from '../src/lib/ingest/conciliar-torneo-engarde';
 import { descubrirEnlacesFie, vistaEnlace } from '../src/lib/ingest/enlaces-resultados';
 import { clasificarSerie, ETIQUETA_SERIE } from '../src/lib/ingest/series-complementarias';
@@ -18,6 +19,7 @@ import { depsEngardeReales, leerTorneoEngarde } from '../src/lib/ingest/sources/
  */
 
 const args = process.argv.slice(2);
+rechazarEscrituraNoCoordinada(args);
 const aplicar = args.includes('--aplicar');
 const [modo, a, b] = args.filter((x) => !x.startsWith('--'));
 

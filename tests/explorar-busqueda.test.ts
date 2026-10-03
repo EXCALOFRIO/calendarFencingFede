@@ -1,4 +1,4 @@
-import { PgDialect } from 'drizzle-orm/pg-core';
+import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buscarDeportistas, sqlBusqueda } from '@/lib/sport/explorar/busqueda';
 import { codificarCursor } from '@/lib/sport/explorar/cursor';
@@ -14,7 +14,7 @@ import {
 
 /**
  * Búsqueda de deportistas con contexto controlado: SQL registrado y filas
- * fijadas por el caso. No prueba el resultado de ejecutar el SQL en Neon ni
+ * fijadas por el caso. No prueba el resultado de ejecutar el SQL en D1 ni
  * una sesión real; sí guardas previas, forma de las consultas, cursores y DTO.
  */
 
@@ -139,8 +139,8 @@ describe('lectura y forma del DTO', () => {
     const r = await buscarDeportistas(ctx, { categoria: 'M10', categoriaRaw: 'M-10', arma: 'ESPADA' });
     expect(r.estado).toBe('ok');
     const main = sentencias[0];
-    expect(main.text).toMatch(/c\.category::text = \$\d+/);
-    expect(main.text).toMatch(/c\.category_raw = \$\d+/);
+    expect(main.text).toMatch(/c\.category = \?/);
+    expect(main.text).toMatch(/c\.category_raw = \?/);
     expect(main.params).toEqual(expect.arrayContaining(['M10', 'M-10', 'ESPADA']));
     // Sin torneo ni fechas, el ranking oficial también documenta la participación.
     expect(main.text).toMatch(/sport_ranking_entry en2/);
@@ -157,13 +157,14 @@ describe('filtros combinados sobre el mismo hecho', () => {
       hasta: '2026-05-31',
     });
     const { text, params } = sentencias[0];
-    const existe = text.match(/EXISTS \(\s*SELECT 1 FROM sport_result r[\s\S]*?\n {2}\)/);
+    expect(text.match(/\bEXISTS\s*\(/g)).toHaveLength(1);
+    const existe = text.match(/EXISTS \(\s*SELECT 1 FROM sport_result r[\s\S]*\n {2}\)/);
     expect(existe).not.toBeNull();
     const bloque = existe![0];
     expect(bloque).toMatch(/c\.season = /);
     expect(bloque).toMatch(/LIKE/);
-    expect(bloque).toMatch(/>= \$\d+::date/);
-    expect(bloque).toMatch(/<= \$\d+::date/);
+    expect(bloque).toMatch(/>= \?/);
+    expect(bloque).toMatch(/<= \?/);
     expect(params).toEqual(expect.arrayContaining(['2025-2026', '%open madrid%', '2025-10-01', '2026-05-31']));
     // Con torneo/fechas el ranking oficial no sustituye a un resultado de torneo.
     expect(text).not.toMatch(/sport_ranking_entry en2/);
@@ -172,14 +173,14 @@ describe('filtros combinados sobre el mismo hecho', () => {
   it('edicionId identifica una edición concreta, no todas las del mismo nombre', async () => {
     const { ctx, sentencias } = crearContexto();
     await buscarDeportistas(ctx, { edicionId: UUID_C });
-    expect(sentencias[0].text).toMatch(/e\.id = \$\d+::uuid/);
+    expect(sentencias[0].text).toMatch(/e\.id = \?/);
     expect(sentencias[0].params).toContain(UUID_C);
   });
 
   it('el ámbito usa el evento vinculado y trata FIE sin vínculo como internacional', async () => {
     const { ctx, sentencias } = crearContexto();
     await buscarDeportistas(ctx, { ambito: 'NACIONAL' });
-    expect(sentencias[0].text).toMatch(/coalesce\(ev0\.scope::text, CASE WHEN e\.source = 'fie' THEN 'INTERNACIONAL' END\)/);
+    expect(sentencias[0].text).toMatch(/coalesce\(ev0\.scope, CASE WHEN e\.source = 'fie' THEN 'INTERNACIONAL' END\)/);
   });
 });
 
@@ -200,14 +201,14 @@ describe('España para el seleccionador, sin privilegio sobre el ranking interno
     const sql = texto();
     expect(sql).not.toMatch(/ranking_snapshot|ranking_point|profile_weapon/);
     // Español documentado: país declarado, hechos con país o licencia RFEE confirmada.
-    expect(sql).toMatch(/p\.country_code = \$\d+/);
+    expect(sql).toMatch(/p\.country_code = \?/);
     expect(sql).toMatch(/rn\.source_country_code/);
     expect(sql).toMatch(/scheme = 'rfee_license'/);
     for (const privada of CLAVES_PRIVADAS) expect(clavesDe(r).has(privada)).toBe(false);
   });
 
   it('una nacionalidad distinta de ESP no usa la licencia RFEE como prueba', () => {
-    const dialecto = new PgDialect();
+    const dialecto = new SQLiteSyncDialect();
     const fra = dialecto.sqlToQuery(sqlBusqueda({ nacionalidad: 'FRA' }, 25, null));
     const esp = dialecto.sqlToQuery(sqlBusqueda({ nacionalidad: 'ESP' }, 25, null));
     expect(fra.sql).not.toMatch(/rfee_license/);
@@ -224,7 +225,7 @@ describe('paginación estable', () => {
     const r = await buscarDeportistas(ctx, { q: 'ana', limite: 2 });
     if (r.estado !== 'ok') throw new Error(r.estado);
 
-    expect(sentencias[0].text).toMatch(/ORDER BY p\.name_normalized ASC, p\.id ASC\s+LIMIT \$\d+/);
+    expect(sentencias[0].text).toMatch(/ORDER BY p\.name_normalized ASC, p\.id ASC\s+LIMIT \?/);
     expect(sentencias[0].params.at(-1)).toBe(3);
     expect(r.items.map((i) => i.id)).toEqual([UUID_A, UUID_B]);
     expect(r.siguiente).toBeTypeOf('string');
@@ -244,7 +245,7 @@ describe('paginación estable', () => {
     const p2 = await buscarDeportistas(segunda.ctx, { q: 'ana', limite: 2, cursor: p1.siguiente });
     expect(p2).toMatchObject({ estado: 'ok', siguiente: null });
     const s = segunda.sentencias[0];
-    expect(s.text).toMatch(/\(p\.name_normalized, p\.id\) > \(\$\d+, \$\d+::uuid\)/);
+    expect(s.text).toMatch(/\(p\.name_normalized, p\.id\) > \(\?, \?\)/);
     expect(s.params).toEqual(expect.arrayContaining(['ana bb', UUID_B]));
   });
 

@@ -1,6 +1,8 @@
-import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, sql } from 'drizzle-orm';
+import { enLista as inArray, lotesDeInsercion } from '@/lib/sqlite';
 import { z } from 'zod';
-import { db } from '@/db';
+import { db, type Db } from '@/db';
+import type { BatchItem } from 'drizzle-orm/batch';
 import {
   athlete as athleteTable,
   eventCompetition as eventCompetitionTable,
@@ -467,7 +469,7 @@ export async function computeSeasonRanking(
     const filas = await db
       .select({
         eventCompetitionId: resultTable.eventCompetitionId,
-        participantes: sql<number>`greatest(max(${resultTable.position}), count(*))::int`,
+        participantes: sql<number>`max(coalesce(max(${resultTable.position}), 0), count(*))`,
       })
       .from(resultTable)
       .where(isNotNull(resultTable.eventCompetitionId))
@@ -788,9 +790,10 @@ export async function computeSeasonRanking(
  * borra es el snapshot del mismo día, para que recalcular tres veces una tarde
  * no llene la tabla de copias idénticas.
  */
-async function persistRanking(
+export async function persistRanking(
   seasonId: string,
   groups: RankingGroupResult[],
+  database: Db = db,
 ): Promise<{ points: number; snapshots: number }> {
   const now = new Date();
 
@@ -829,24 +832,30 @@ async function persistRanking(
     }
   }
 
-  // Puntos: fuera los de la temporada y dentro los recién calculados.
-  await db.delete(rankingPointTable).where(eq(rankingPointTable.seasonId, seasonId));
-  for (const batch of chunk(pointRows, 200)) {
-    await db.insert(rankingPointTable).values(batch);
+  // Las dos sustituciones se confirman juntas. Nunca borrar primero y dejar
+  // el ranking vacío o a medias si una inserción posterior falla.
+  const writes: [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]] = [
+    database.delete(rankingPointTable).where(eq(rankingPointTable.seasonId, seasonId)),
+  ];
+  for (const batch of lotesDeInsercion(pointRows, rankingPointTable)) {
+    writes.push(database.insert(rankingPointTable).values(batch));
   }
 
   // Snapshots: solo se pisa el de hoy.
-  await db
+  writes.push(database
     .delete(rankingSnapshotTable)
     .where(
       and(
         eq(rankingSnapshotTable.seasonId, seasonId),
-        sql`${rankingSnapshotTable.computedAt}::date = ${now.toISOString().slice(0, 10)}::date`,
+        sql`date(${rankingSnapshotTable.computedAt} / 1000, 'unixepoch') = ${now.toISOString().slice(0, 10)}`,
       ),
-    );
-  for (const batch of chunk(snapshotRows, 200)) {
-    await db.insert(rankingSnapshotTable).values(batch);
+    ));
+  for (const batch of lotesDeInsercion(snapshotRows, rankingSnapshotTable)) {
+    writes.push(database.insert(rankingSnapshotTable).values(batch));
   }
+  // El binding rechaza un batch demasiado grande antes de escribir; no se
+  // divide una sustitución completa en commits independientes.
+  await database.batch(writes);
 
   return { points: pointRows.length, snapshots: snapshotRows.length };
 }

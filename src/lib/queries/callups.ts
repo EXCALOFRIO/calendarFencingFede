@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { enLista as inArray } from '@/lib/sqlite';
 import { db } from '@/db';
 import {
   athlete,
@@ -177,7 +178,7 @@ export async function listCallUpsForAdmin(): Promise<CallUpSummary[]> {
     .select({
       callUpId: callUpAthlete.callUpId,
       status: callUpAthlete.status,
-      n: sql<number>`count(*)::int`,
+      n: sql<number>`count(*)`,
     })
     .from(callUpAthlete)
     .where(

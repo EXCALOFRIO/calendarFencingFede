@@ -1,4 +1,4 @@
-import { requireRole } from '@/lib/auth/session';
+import { requireWritableRole } from '@/lib/auth/session';
 import {
   INGEST_SOURCES,
   SOURCE_DESCRIPTION,
@@ -20,9 +20,9 @@ export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
-  let perfil: Awaited<ReturnType<typeof requireRole>>;
+  let perfil: Awaited<ReturnType<typeof requireWritableRole>>;
   try {
-    perfil = await requireRole('admin');
+    perfil = await requireWritableRole('admin');
   } catch (error) {
     const mensaje = error instanceof Error ? error.message : String(error);
     // NO_AUTENTICADO es "no has entrado" (401); el resto es "has entrado pero

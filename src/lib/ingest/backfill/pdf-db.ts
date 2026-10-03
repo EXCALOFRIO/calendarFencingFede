@@ -1,23 +1,59 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '@/db';
 import { sportBout, sportCompetition, sportEdition, sportImportCoverage, sportResult } from '@/db/schema';
-import { categoriasHistoricasAplicadas, esquemaDeportivo } from '@/lib/sport/esquema-db';
+import { categoriasD1, esquemaD1 } from './identidad-db';
+import { DB_NOW } from '../sport-incremental/lease';
 import { escribirAsaltos, escribirCobertura, escribirResultados } from '../fie-resultados-db';
 import { FUENTE_PDF, type DepsPersistenciaPdf } from './pdf-persist';
+import { docIdLegadoDeUrl } from '../sources/rfee-pdf/lectura';
 
 /**
- * Implementación Neon de la persistencia de PDFs. Sólo guarda hechos y el
+ * Implementación D1 de la persistencia de PDFs. Sólo guarda hechos y el
  * checkpoint (URL, SHA-256, motivos): nunca el binario. Reutiliza los
  * escritores de resultados, asaltos y cobertura compartidos; el único borrado
  * es el de `reconciliar`, acotado al documento.
  */
 
-const LOTE_BORRADO = 200;
+const LOTE_BORRADO = 90;
 
 export function crearDepsPersistenciaPdfDb(db: Db): DepsPersistenciaPdf {
   return {
-    esquema: esquemaDeportivo,
-    categoriasHistoricas: categoriasHistoricasAplicadas,
+    esquema: esquemaD1(db),
+    categoriasHistoricas: categoriasD1(db),
+
+    async resolverDocumento(season, sourceUrl, suggestedDocId) {
+      async function namespace(docId: string) {
+        const docKey = `doc:${docId}`, editionKey = `pdf:${docId}`, prefix = `${editionKey}:`;
+        const result = await db.execute(sql`
+          select count(*) as found, coalesce(sum(case when source_url = ${sourceUrl}
+            or substr(source_url,1,length(${sourceUrl})+1) = ${`${sourceUrl}#`} then 0 else 1 end),0) as conflicts
+          from (
+            select ${sportImportCoverage.sourceUrl} as source_url from ${sportImportCoverage}
+              where ${sportImportCoverage.source} = ${FUENTE_PDF} and ${sportImportCoverage.season} = ${season}
+                and ${sportImportCoverage.factKind} = 'pdf' and ${sportImportCoverage.competitionKey} = ${docKey}
+            union all
+            select ${sportCompetition.sourceUrl} as source_url from ${sportCompetition}
+              where ${sportCompetition.source} = ${FUENTE_PDF} and ${sportCompetition.season} = ${season}
+                and substr(${sportCompetition.competitionKey},1,length(${prefix})) = ${prefix}
+            union all
+            select ${sportEdition.sourceUrl} as source_url from ${sportEdition}
+              where ${sportEdition.source} = ${FUENTE_PDF} and ${sportEdition.season} = ${season}
+                and ${sportEdition.tournamentKey} = ${editionKey}
+          )`);
+        return result.rows[0] as { found: number; conflicts: number };
+      }
+      const current = await namespace(suggestedDocId);
+      if (Number(current.conflicts) > 0) throw new Error('pdf_document_namespace_conflict');
+      if (Number(current.found) > 0) return suggestedDocId;
+      const legacyDocId = docIdLegadoDeUrl(sourceUrl);
+      if (legacyDocId !== suggestedDocId) {
+        const legacy = await namespace(legacyDocId);
+        // A filename collision is not evidence of ownership. Leave those rows
+        // untouched and assign this new document its full-URL namespace.
+        if (Number(legacy.found) > 0 && Number(legacy.conflicts) === 0) return legacyDocId;
+      }
+      return suggestedDocId;
+    },
 
     async leerCheckpoint(season, docKey) {
       const [fila] = await db
@@ -58,7 +94,7 @@ export function crearDepsPersistenciaPdfDb(db: Db): DepsPersistenciaPdf {
             startDate: sql`excluded.start_date`,
             endDate: sql`excluded.end_date`,
             sourceUrl: sql`excluded.source_url`,
-            updatedAt: sql`now()`,
+            updatedAt: DB_NOW,
           },
         })
         .returning({ id: sportEdition.id });
@@ -89,7 +125,7 @@ export function crearDepsPersistenciaPdfDb(db: Db): DepsPersistenciaPdf {
             format: sql`excluded.format`,
             competitionDate: sql`excluded.competition_date`,
             sourceUrl: sql`excluded.source_url`,
-            updatedAt: sql`now()`,
+            updatedAt: DB_NOW,
           },
         })
         .returning({ id: sportCompetition.id });
@@ -115,10 +151,22 @@ export function crearDepsPersistenciaPdfDb(db: Db): DepsPersistenciaPdf {
           and(
             eq(sportCompetition.source, FUENTE_PDF),
             eq(sportCompetition.season, season),
-            sql`starts_with(${sportCompetition.competitionKey}, ${prefijo})`,
+            sql`substr(${sportCompetition.competitionKey},1,length(${prefijo})) = ${prefijo}`,
           ),
         );
       const vigentePorId = new Map(vigentes.map((v) => [v.competitionId, v]));
+      // Validate every exact competition before deleting ANY fact. An empty
+      // corrected list after published facts is a conflict, not a retirement.
+      for (const p of pruebas) {
+        const v = vigentePorId.get(p.id);
+        if (!v) continue;
+        for (const [table, empty] of [[sportResult, !v.resultados.length], [sportBout, !v.asaltos.length]] as const) {
+          if (!empty) continue;
+          const [old] = await db.select({ id: table.id }).from(table)
+            .where(and(eq(table.competitionId, p.id), eq(table.source, FUENTE_PDF))).limit(1);
+          if (old) throw new Error('sport_empty_after_published');
+        }
+      }
       const claveAsalto = (k: { phase: string; roundKey: string; fencerARef: string; fencerBRef: string }) =>
         JSON.stringify([k.phase, k.roundKey, k.fencerARef, k.fencerBRef]);
 
@@ -128,7 +176,9 @@ export function crearDepsPersistenciaPdfDb(db: Db): DepsPersistenciaPdf {
 
       for (const prueba of pruebas) {
         const vigente = vigentePorId.get(prueba.id);
-        if (!vigente) pruebasRetiradas.push({ competitionKey: prueba.competitionKey, competitionId: prueba.id });
+        // An absent competition was not read exactly. Never retire its facts
+        // merely because a corrected document/index stopped mentioning it.
+        if (!vigente) continue;
 
         const puestos = await db
           .select({ id: sportResult.id, clave: sportResult.sourceFactKey })

@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
 import { userProfile } from '@/db/schema';
-import { newIcalToken, requireProfile } from '@/lib/auth/session';
+import { newIcalToken, requireWritableProfile } from '@/lib/auth/session';
 
 export type ResultadoPerfil =
   | { ok: true; message: string }
@@ -22,7 +22,7 @@ export type ResultadoPerfil =
  * fuera, así que no hay nada que suplantar.
  */
 export async function revocarCalendario(): Promise<ResultadoPerfil> {
-  const perfil = await requireProfile();
+  const perfil = await requireWritableProfile();
 
   await db
     .update(userProfile)

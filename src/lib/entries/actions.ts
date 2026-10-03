@@ -12,7 +12,8 @@ import {
   notification,
   userProfile,
 } from '@/db/schema';
-import { getManagedAthletes, requireProfile } from '@/lib/auth/session';
+import { getManagedAthletes, requireProfile, requireWritableProfile } from '@/lib/auth/session';
+import { lotesDeInsercion } from '@/lib/sqlite';
 import { canTransition, type EntryStatus } from './state-machine';
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
@@ -27,7 +28,7 @@ export async function requestEntry(
   competitionId: string,
   athleteId: string,
 ): Promise<ActionResult> {
-  const profile = await requireProfile();
+  const profile = await requireWritableProfile();
 
   // Comprobación de permiso: solo se puede inscribir a un tirador propio.
   const managed = await getManagedAthletes(profile.profileId);
@@ -127,7 +128,7 @@ export async function transitionEntry(
   to: EntryStatus,
   reason?: string,
 ): Promise<ActionResult> {
-  const profile = await requireProfile();
+  const profile = await requireWritableProfile();
 
   const [row] = await db
     .select({
@@ -235,10 +236,7 @@ async function notifyClub(athleteId: string, eventName: string, requesterName: s
   const nombre = `${row.athleteName} ${row.athleteSurname}`;
   const stamp = new Date().toISOString().slice(0, 16);
 
-  await db
-    .insert(notification)
-    .values(
-      responsables.map((r) => ({
+  const avisos = responsables.map((r) => ({
         dedupeKey: `entry-request:${athleteId}:${eventName}:${r.email}:${stamp}`,
         toEmail: r.email,
         kind: 'solicitud_inscripcion',
@@ -247,9 +245,13 @@ async function notifyClub(athleteId: string, eventName: string, requesterName: s
           `${requesterName} ha solicitado la inscripción de ${nombre} en ` +
           `"${eventName}".\n\nEntra en la bandeja de tu club para validarla o ` +
           'rechazarla.\n',
-      })),
-    )
-    .onConflictDoNothing({ target: notification.dedupeKey });
+      }));
+  for (const lote of lotesDeInsercion(avisos, notification)) {
+    await db
+      .insert(notification)
+      .values(lote)
+      .onConflictDoNothing({ target: notification.dedupeKey });
+  }
 }
 
 async function notifyAthlete(entryId: string, to: EntryStatus, reason?: string) {
@@ -303,6 +305,7 @@ export async function transitionEntries(
   to: EntryStatus,
   reason?: string,
 ): Promise<ActionResult> {
+  await requireWritableProfile();
   if (entryIds.length === 0) return { ok: false, error: 'No has seleccionado ninguna.' };
 
   let ok = 0;

@@ -1,4 +1,5 @@
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, isNotNull, isNull, or } from 'drizzle-orm';
+import { enLista as inArray } from '@/lib/sqlite';
 import { db } from '@/db';
 import {
   athlete,

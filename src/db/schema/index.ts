@@ -1,11 +1,4 @@
-export * from './enums';
-export * from './core';
-export * from './calendar';
-export * from './rules';
-export * from './flow';
-export * from './live';
-export * from './results';
-export * from './extraccion';
-export * from './vigencia';
-export * from './fie';
-export * from './sport';
+// Application schema is SQLite/D1. Original PostgreSQL modules are retained
+// unchanged behind ../legacy-postgres/schema for isolated source export tooling.
+export * from '../d1/enums';
+export * from '../d1/schema';

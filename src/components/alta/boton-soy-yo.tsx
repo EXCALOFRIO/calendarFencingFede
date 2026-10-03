@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
  * El botón con el que una persona dice que una ficha es la suya.
  *
  * Es lo único de esta pantalla que lleva JavaScript, y solo para una cosa:
- * quedarse en «Vinculando…» mientras el servidor trabaja. Sin eso, en una
+ * quedarse en «Enviando solicitud…» mientras el servidor trabaja. Sin eso, en una
  * conexión de móvil en un pabellón se pulsa tres veces —y esto es una acción
  * que escribe—. El formulario funciona igual sin JavaScript: `useFormStatus`
  * solo cambia lo que se pinta.
@@ -23,7 +23,7 @@ export function BotonSoyYo() {
       ) : (
         <UserCheck aria-hidden />
       )}
-      {pending ? 'Vinculando…' : 'Sí, soy yo'}
+      {pending ? 'Enviando solicitud…' : 'Soy yo, solicitar revisión'}
     </Button>
   );
 }

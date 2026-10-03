@@ -1,10 +1,13 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
 import type { SQL } from 'drizzle-orm';
 import { z } from 'zod';
+import { lotesDeInsercion } from '@/lib/sqlite';
 import { etiquetaDeCampo } from './campos';
 import {
   FormatoNoLeible,
+  LimiteDocumentoExcedido,
   MAX_BYTES_DOCUMENTO,
+  leerBytesAcotados,
   type TextoDeDocumento,
   textoDeDocumento,
 } from './documento';
@@ -3401,16 +3404,17 @@ export async function extraerDeDossierPdf(opciones: {
     });
   } catch (error) {
     /**
-     * UN FORMATO QUE NO SE SABE LEER NO ES UN ERROR, ES UNA CONCLUSIÓN.
+     * UN FORMATO NO LEÍBLE O UN EXCESO DE TAMAÑO ES UNA CONCLUSIÓN.
      *
      * La diferencia importa para la idempotencia: 'error' se reintenta cada
      * noche (ver `extraccionYaRegistrada`) y 'sin_texto' no. Un `.doc` binario
      * de 1997 va a seguir siendo un `.doc` binario mañana, así que
      * reintentarlo es descargar 2 MB para nada, todas las noches, para
      * siempre. Se registra como 'sin_texto' con el motivo escrito, que es lo
-     * mismo que se hace con un PDF escaneado.
+     * mismo que se hace con un PDF escaneado. Un XML sobredimensionado tampoco
+     * debe volver a descomprimirse cada noche.
      */
-    if (error instanceof FormatoNoLeible) {
+    if (error instanceof FormatoNoLeible || error instanceof LimiteDocumentoExcedido) {
       return { estado: 'sin_texto', documentHash, motivo: error.message };
     }
     return {
@@ -3529,31 +3533,37 @@ const ACEPTA_DOCUMENTOS = [
 ].join(', ');
 
 export async function descargarPdf(url: string): Promise<Uint8Array> {
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': process.env.INGEST_USER_AGENT || 'CalendarioEsgrima/1.0 (+contacto)',
-      Accept: ACEPTA_DOCUMENTOS,
-    },
-    signal: AbortSignal.timeout(60_000),
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status} al descargar ${url}`);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: {
+        'User-Agent': process.env.INGEST_USER_AGENT || 'CalendarioEsgrima/1.0 (+contacto)',
+        Accept: ACEPTA_DOCUMENTOS,
+      },
+      signal: AbortSignal.timeout(60_000),
+      cache: 'no-store',
+    });
+  } catch {
+    throw new Error('No se pudo descargar el documento.');
+  }
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => {});
+    throw new Error(`HTTP ${res.status} al descargar el documento.`);
+  }
 
   const declarado = Number(res.headers.get('content-length') ?? '0');
   if (declarado > MAX_BYTES_DOCUMENTO) {
-    throw new Error(
-      `El documento pesa ${Math.round(declarado / 1_048_576)} MB y el tope son ` +
-        `${Math.round(MAX_BYTES_DOCUMENTO / 1_048_576)} MB: no se descarga.`,
-    );
+    await res.body?.cancel().catch(() => {});
+    throw new LimiteDocumentoExcedido('documento');
   }
 
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  if (bytes.length > MAX_BYTES_DOCUMENTO) {
-    throw new Error(
-      `El documento pesa ${Math.round(bytes.length / 1_048_576)} MB, por encima del tope.`,
-    );
+  if (!res.body) throw new Error('El documento no tiene un cuerpo que se pueda leer.');
+  try {
+    return await leerBytesAcotados(res.body, MAX_BYTES_DOCUMENTO, 'documento');
+  } catch (error) {
+    if (error instanceof LimiteDocumentoExcedido) throw error;
+    throw new Error('No se pudo leer la descarga del documento.');
   }
-  return bytes;
 }
 
 /** El mismo nombre que dice lo que hace. `descargarPdf` se queda por compatibilidad. */
@@ -3567,6 +3577,7 @@ export const descargarDocumento = descargarPdf;
  * piezas de la clave están explicadas en `src/db/schema/extraccion.ts`.
  */
 export async function extraccionYaRegistrada(clave: {
+  /** Hash del contenido, o clave etiquetada de rechazo si se canceló la descarga. */
   hashDocumento: string;
   hashPrompt: string;
   versionEsquema: number;
@@ -4090,6 +4101,7 @@ export type ContextoRegistro = {
   eventoDocumentoId?: string | null;
   documentoUrl: string;
   documentoTitulo: string | null;
+  /** Hash del contenido, o clave etiquetada de rechazo si se canceló la descarga. */
   hashDocumento: string;
   hashPrompt: string;
   versionEsquema: number;
@@ -4193,10 +4205,7 @@ export async function registrarExtraccion(
   if (propuestas.length === 0) return { extraccionId: fila.id, encoladas: 0 };
 
   try {
-    const insertadas = await db
-      .insert(extraccionPropuesta)
-      .values(
-        propuestas.map((p) => ({
+    const filasPropuestas = propuestas.map((p) => ({
           extraccionId: fila.id,
           documentoId: contexto.documentoId,
           hashDocumento: contexto.hashDocumento,
@@ -4220,20 +4229,24 @@ export async function registrarExtraccion(
           citaVerificada: p.quoteVerified,
           contexto: p.contexto ?? null,
           estado: 'pendiente' as const,
-        })),
-      )
-      // Un campo una vez por extracción: una propuesta ya revisada no puede
-      // volver sola a 'pendiente'.
-      .onConflictDoNothing({
-        target: [extraccionPropuesta.extraccionId, extraccionPropuesta.campo],
-      })
-      .returning({ id: extraccionPropuesta.id });
+        }));
+    let insertadas = 0;
+    for (const lote of lotesDeInsercion(filasPropuestas, extraccionPropuesta)) {
+      const filasInsertadas = await db
+        .insert(extraccionPropuesta)
+        .values(lote)
+        // Una propuesta ya revisada no puede volver sola a 'pendiente'.
+        .onConflictDoNothing({
+          target: [extraccionPropuesta.extraccionId, extraccionPropuesta.campo],
+        })
+        .returning({ id: extraccionPropuesta.id });
+      insertadas += filasInsertadas.length;
+    }
 
-    return { extraccionId: fila.id, encoladas: insertadas.length };
+    return { extraccionId: fila.id, encoladas: insertadas };
   } catch (error) {
     /**
-     * El driver HTTP de Neon no tiene transacciones, así que la atomicidad se
-     * consigue deshaciendo: si la cola no se pudo escribir, se borra también
+     * Si no se pudo completar la cola por lotes, se borra también
      * la fila de registro. Si no, el documento quedaría marcado como
      * "procesado, cero campos" y nadie volvería a mirarlo nunca.
      */
@@ -4319,6 +4332,33 @@ export async function procesarDocumentoOficial(opciones: {
   try {
     pdf = await descargarPdf(opciones.documentoUrl);
   } catch (error) {
+    if (error instanceof LimiteDocumentoExcedido) {
+      /**
+       * No se termina de descargar un cuerpo hostil para calcular su hash.
+       * El registro requiere una clave: ésta está ETIQUETADA como rechazo y
+       * identifica origen/fila/URL, NO simula un hash del contenido ni se copia
+       * a file_hash. El enlace a la fila y `sin_texto` la sacan de pendientes
+       * con las condiciones existentes, para este prompt/esquema.
+       */
+      const claveRechazo = 'rechazo_tamano:' + await hashDocumento(
+        new TextEncoder().encode(JSON.stringify([
+          origen, opciones.documentoId, opciones.documentoUrl,
+        ])),
+      );
+      await registrarExtraccion(
+        { estado: 'sin_texto', documentHash: claveRechazo, motivo: error.message },
+        {
+          documentoId: esDossier ? null : opciones.documentoId,
+          eventoDocumentoId: esDossier ? opciones.documentoId : null,
+          documentoUrl: opciones.documentoUrl,
+          documentoTitulo: opciones.documentoTitulo ?? null,
+          hashDocumento: claveRechazo,
+          ...huella,
+          modelo: config.modelo,
+        },
+      );
+      return { ...base, estado: 'sin_texto', motivo: error.message };
+    }
     return { ...base, estado: 'error', motivo: mensajeDeError(error) };
   }
 

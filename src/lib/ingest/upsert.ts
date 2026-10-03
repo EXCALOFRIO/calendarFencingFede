@@ -1,4 +1,5 @@
-import { and, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
+import { enLista as inArray, fueraDeLista as notInArray, lotesDeInsercion } from '@/lib/sqlite';
 import { db } from '@/db';
 import {
   competitionRegistration,
@@ -267,7 +268,7 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
 
   // Altas en lote.
   const insertedIds = new Map<string, string>();
-  for (const batch of chunk(toInsert, 100)) {
+  for (const batch of lotesDeInsercion(toInsert, event)) {
     const rows = await db
       .insert(event)
       .values(batch)
@@ -439,7 +440,7 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
     }),
   );
 
-  for (const batch of chunk(dedupedCompetitions, 150)) {
+  for (const batch of lotesDeInsercion(dedupedCompetitions, eventCompetition)) {
     const rows = await db
       .insert(eventCompetition)
       .values(batch)
@@ -495,14 +496,14 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
     }
   }
 
-  for (const batch of chunk(documentInserts, 200)) {
+  for (const batch of lotesDeInsercion(documentInserts, eventDocument)) {
     await db
       .insert(eventDocument)
       .values(batch)
       .onConflictDoNothing({ target: [eventDocument.eventId, eventDocument.url] });
   }
 
-  for (const batch of chunk(liveInserts, 200)) {
+  for (const batch of lotesDeInsercion(liveInserts, liveSource)) {
     await db
       .insert(liveSource)
       .values(batch)
@@ -610,7 +611,7 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
     (d) => `${d.eventId}|${d.eventCompetitionId}|${d.type}`,
   );
 
-  for (const batch of chunk(dedupedDeadlines, 200)) {
+  for (const batch of lotesDeInsercion(dedupedDeadlines, eventDeadline)) {
     await db
       .insert(eventDeadline)
       .values(batch)
@@ -829,7 +830,7 @@ export async function upsertListasDeInscritos(
   }
   const guardarReferencias = (await esquemaDeportivo()).referencias;
 
-  for (const lote of chunk(deduped, 300)) {
+  for (const lote of lotesDeInsercion(deduped, competitionRegistration)) {
     const guardadas = await db
       .insert(competitionRegistration)
       .values(lote)
@@ -901,7 +902,7 @@ export async function upsertListasDeInscritos(
           lastSeenAt: now,
         })),
       );
-      for (const parte of chunk(refs, 300)) {
+      for (const parte of lotesDeInsercion(refs, sportRegistrationRef)) {
         if (parte.length === 0) continue;
         await db
           .insert(sportRegistrationRef)
@@ -958,7 +959,7 @@ export async function upsertListasDeInscritos(
             inArray(competitionRegistration.eventCompetitionId, lote),
             eq(competitionRegistration.source, fuente),
             isNull(competitionRegistration.withdrawnAt),
-            sql`${competitionRegistration.lastSeenAt} < ${now}`,
+            sql`${competitionRegistration.lastSeenAt} < ${now.getTime()}`,
           ),
         )
         .returning({ id: competitionRegistration.id });
@@ -1045,13 +1046,16 @@ async function queueChangeNotifications(changes: ChangeRecord[]): Promise<number
 
   if (rows.length === 0) return 0;
 
-  const inserted = await db
-    .insert(notification)
-    .values(rows)
-    .onConflictDoNothing({ target: notification.dedupeKey })
-    .returning({ id: notification.id });
-
-  return inserted.length;
+  let total = 0;
+  for (const lote of lotesDeInsercion(rows, notification)) {
+    const inserted = await db
+      .insert(notification)
+      .values(lote)
+      .onConflictDoNothing({ target: notification.dedupeKey })
+      .returning({ id: notification.id });
+    total += inserted.length;
+  }
+  return total;
 }
 
 /**

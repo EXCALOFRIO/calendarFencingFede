@@ -86,7 +86,7 @@ export function PanelRanking({
   const cual = hayMundial ? federacion : 'RFEE';
 
   return (
-    <>
+    <div className="ranking min-w-0">
       {fichas.length > 0 ? (
         <div className="mb-6 flex flex-col gap-4">
           {fichas.map((f) => (
@@ -137,6 +137,6 @@ export function PanelRanking({
           cargar={fie.cargar}
         />
       )}
-    </>
+    </div>
   );
 }

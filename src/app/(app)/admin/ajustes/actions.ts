@@ -4,7 +4,7 @@ import { count, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
 import { configChangeLog, profileWeapon, userProfile } from '@/db/schema';
-import { newIcalToken, requireRole } from '@/lib/auth/session';
+import { newIcalToken, requireWritableRole } from '@/lib/auth/session';
 
 /**
  * EQUIPO: quién entra al panel y con qué alcance.
@@ -176,7 +176,7 @@ function validarRolYArmas(
 export async function crearMiembroEquipo(
   formData: FormData,
 ): Promise<ResultadoEquipo> {
-  const perfil = await requireRole('admin');
+  const perfil = await requireWritableRole('admin');
 
   const email = limpiar(formData.get('email')).toLowerCase();
   const fullName = limpiar(formData.get('fullName'));
@@ -272,7 +272,7 @@ export async function crearMiembroEquipo(
 export async function actualizarMiembroEquipo(
   formData: FormData,
 ): Promise<ResultadoEquipo> {
-  const perfil = await requireRole('admin');
+  const perfil = await requireWritableRole('admin');
 
   const profileId = limpiar(formData.get('profileId'));
   const rol = limpiar(formData.get('role'));
@@ -351,7 +351,7 @@ export async function actualizarMiembroEquipo(
  * justo la trazabilidad por la que existe este registro.
  */
 export async function quitarDelEquipo(profileId: string): Promise<ResultadoEquipo> {
-  const perfil = await requireRole('admin');
+  const perfil = await requireWritableRole('admin');
 
   const [antes] = await db
     .select({ fullName: userProfile.fullName, role: userProfile.role })
@@ -423,7 +423,7 @@ export async function quitarDelEquipo(profileId: string): Promise<ResultadoEquip
  * cambios y para sus fichas de tirador— y se puede deshacer cuando se quiera.
  */
 export async function revocarAcceso(profileId: string): Promise<ResultadoEquipo> {
-  const perfil = await requireRole('admin');
+  const perfil = await requireWritableRole('admin');
 
   const [antes] = await db
     .select({
@@ -473,7 +473,7 @@ export async function revocarAcceso(profileId: string): Promise<ResultadoEquipo>
 
 /** Vuelve a abrir la puerta. Revocar sin vuelta atrás sería una trampa. */
 export async function restaurarAcceso(profileId: string): Promise<ResultadoEquipo> {
-  const perfil = await requireRole('admin');
+  const perfil = await requireWritableRole('admin');
 
   const [antes] = await db
     .select({

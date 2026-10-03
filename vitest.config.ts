@@ -5,6 +5,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    // The SDK's extensionless Next imports must use Vite's resolver in offline tests.
+    server: { deps: { inline: ['@neondatabase/auth'] } },
   },
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },

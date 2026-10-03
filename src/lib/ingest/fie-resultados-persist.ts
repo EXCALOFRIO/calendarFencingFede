@@ -117,6 +117,8 @@ export type DepsPersistenciaFie = {
   esquema: () => Promise<EstadoEsquema>;
   evidencia: DepsEvidencia;
   guard: DepsGuardConfirmacion;
+  /** Short serverless increments may store unresolved facts without a per-person write loop. */
+  crearIdentidades?: boolean;
   upsertPrueba: (prueba: PruebaFie) => Promise<string>;
   upsertResultados: (competitionId: string, filas: FilaResultado[]) => Promise<ResumenEscritura>;
   upsertAsaltos: (competitionId: string, filas: FilaAsalto[]) => Promise<ResumenEscritura>;
@@ -244,6 +246,11 @@ async function resolverPersonas(
       continue;
     }
 
+    if (deps.crearIdentidades === false) {
+      personas.set(fieId, null);
+      resumen.enRevision += 1;
+      continue;
+    }
     const datos = participantes.get(fieId)!;
     const id = deps.nuevoId?.() ?? crypto.randomUUID();
     const candidato: IdExternoCandidato = {

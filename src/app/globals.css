@@ -754,17 +754,12 @@
    * tienen forma propia y se les da área con un pseudoelemento en vez de
    * deformarlos.
    *
-   * Y se excluye `.objetivo-libre`, que son las barras del calendario: su
-   * alto lo calcula el propio calendario a partir del hueco que hay en
-   * pantalla, y forzarlas a 44 px hace que una semana con cuatro torneos se
-   * salga de su fila. Se aceptan más pequeñas a propósito: van pegadas unas
-   * a otras formando una superficie continua, que es como se tocan en
-   * cualquier aplicación de calendario del móvil.
+   * El mínimo también se aplica con ratón: un portátil táctil no tiene por
+   * qué declarar un puntero grueso. El calendario ya usa filas de altura
+   * natural, así que tampoco necesita excepciones para sus controles.
    */
-  @media (pointer: coarse) {
-    button:not([role='switch']):not([role='checkbox']):not(.objetivo-libre),
-    a[role='button'],
-    [role='tab'] {
+    [data-slot='input'],
+    [data-slot='command-input'] {
       min-height: 44px;
     }
 
@@ -799,6 +794,47 @@
     .cerrar-hoja {
       min-width: 44px;
     }
+
+  a[href]:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 3px;
+  }
+
+  /* Las fuentes y los nombres enlazados se pueden tocar sin precisión. */
+  .calendario a[href],
+  .ranking a[href] {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    min-width: 44px;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  /* Una tabla nacional o mundial cabe sin recortar nombres en 320 px. */
+  .ranking table {
+    table-layout: fixed;
+    width: 100%;
+    background-color: var(--card);
+  }
+
+  .ranking thead {
+    background-color: var(--secondary);
+  }
+
+  .ranking td {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .ranking tr[tabindex]:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
+  }
+
+  /* min-height no se aplica a filas de tabla; height actúa como su mínimo. */
+  .ranking tr[tabindex] {
+    height: 44px;
   }
 
   /**
@@ -895,6 +931,20 @@
       scroll-padding-bottom: 1rem;
     }
   }
+}
+
+/* Fuera de las capas: ni h-8 ni min-w-0 pueden reducir el área interactiva. */
+:where(
+  button:not([role='switch']):not([role='checkbox']),
+  a[role='button'],
+  [role='tab'],
+  [role='option'],
+  [data-slot='input'],
+  [data-slot='command-input'],
+  [data-slot='command-item']
+) {
+  min-height: 44px;
+  min-width: 44px;
 }
 
 @layer utilities {

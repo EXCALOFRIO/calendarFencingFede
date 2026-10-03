@@ -1,36 +1,66 @@
 import 'dotenv/config';
 import { ejecutarBackfillCli, parsearArgsBackfill, USO_BACKFILL, type DepsBackfillCli } from '../src/lib/ingest/backfill/cli';
+import { abrirD1Local, destinoD1Local } from '../src/lib/ingest/sport-incremental/local';
+import { comprobarCooldownD1, guardarCooldownD1 } from '../src/lib/ingest/sport-incremental/cooldown';
+import { clasificarFalloTecnico } from '../src/lib/ingest/backfill/orquestador';
 
 /**
  * Backfill histórico acotado y reanudable (FIE, Skermo, PDF RFEE, Engarde, FWW):
  *
- *   npm run backfill                        -> SIMULACIÓN: lee la base (sólo SELECT), planifica y mide capacidad
- *   npm run backfill -- --aplicar           -> ejecuta un lote acotado y escribe en la base
+ *   npm run backfill -- --d1-local C:\datos\app.sqlite             -> simulación, sólo lecturas locales
+ *   npm run backfill -- --d1-local C:\datos\app.sqlite --aplicar   -> lote local acotado
  *
  * La simulación no hace ninguna petición a proveedores ni descubre el inventario por red; con
  * --aplicar el descubrimiento, las lecturas y los reintentos comparten un único
  * presupuesto de peticiones y de tiempo. No hay cron ni trigger
- * que lo lance: lo ejecuta una persona, de una instancia cada vez (un único
- * importador por clave de ranking es el límite operativo). Ver
+ * que lo lance: lo ejecuta una persona. SQL0002 se exige DESPUÉS del import
+ * verificado; toda escritura reclama el lease global. Simulación sin escribir. Ver
  * docs/backfill-historico.md.
  */
 
-const parseado = parsearArgsBackfill(process.argv.slice(2));
+let target: ReturnType<typeof destinoD1Local>;
+try {
+  target = destinoD1Local(process.argv.slice(2), process.argv.includes('--aplicar'));
+} catch {
+  console.error('Se exige --d1-local <ruta absoluta de SQLite existente>. Sin destino remoto ni DATABASE_URL para --aplicar.');
+  process.exit(2);
+}
+const parseado = parsearArgsBackfill(target.args);
 if (!parseado.ok) {
   console.error(`${parseado.error}\n\n${USO_BACKFILL}`);
   process.exit(1);
 }
 const opciones = parseado.opciones;
-
-const { db } = await import('../src/db');
-const { consultaSqlDb, medirOcupacion } = await import('../src/lib/ingest/backfill/capacidad-db');
+const local = abrirD1Local(target.path, opciones.aplicar);
+const rawDb = local.db;
+let db = rawDb;
+const { consultaSqlDb, medirOcupacion, planCapacidadD1 } = await import('../src/lib/ingest/backfill/capacidad-db');
+opciones.planNeon = planCapacidadD1();
 const { contarReferenciasHistoricas, leerCoberturaAgregada, leerFilasPlan, leerIndicesPersistidos } = await import(
   '../src/lib/ingest/backfill/cobertura-db'
 );
-const { categoriasHistoricasAplicadas, esquemaDeportivo } = await import('../src/lib/sport/esquema-db');
+const { categoriasD1, esquemaD1 } = await import('../src/lib/ingest/backfill/identidad-db');
 
-const consultar = consultaSqlDb(db);
+const consultar = consultaSqlDb(rawDb);
 const dormir = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const estadoRed: { fallo: { status: number | null; retryAfterMs: number | null } | null } = { fallo: null };
+async function vigilar<T>(fn: () => Promise<T>): Promise<T> {
+  if (estadoRed.fallo) throw new Error('sport_source_cooldown');
+  await dormir(400);
+  try { return await fn(); }
+  catch (e) {
+    estadoRed.fallo ??= clasificarFalloTecnico(e) ?? { status: null, retryAfterMs: null };
+    throw e;
+  }
+}
+async function vigilarHttp<T extends { status: number; retryAfterMs?: number | null }>(fn: () => Promise<T>): Promise<T> {
+  const r = await vigilar(fn);
+  if (r.status === 429 || r.status >= 500) {
+    estadoRed.fallo = { status: r.status, retryAfterMs: r.retryAfterMs ?? null };
+    throw new Error('sport_source_cooldown');
+  }
+  return r;
+}
 
 /**
  * Red base: una petición por llamada y sin reintentos internos (`retries: 0`).
@@ -44,13 +74,17 @@ async function redBase() {
   const { descargarPdf } = await import('../src/lib/ingest/sources/rfee-pdf/lectura');
   const inventarioSkermo = crearDepsInventarioSkermoRed({ retries: 0 });
   return {
-    fetchJson: (url: string) => fetchJson<unknown>(url, { timeoutMs: 60_000, retries: 0 }),
-    skermoIndice: inventarioSkermo.indice,
+    fetchJson: (url: string) => vigilar(() => fetchJson<unknown>(url, { timeoutMs: 60_000, retries: 0 })),
+    skermoIndice: (...args: Parameters<typeof inventarioSkermo.indice>) => vigilar(() => inventarioSkermo.indice(...args)),
     skermoTemporadas: inventarioSkermo.temporadas,
     skermoParsear: inventarioSkermo.parsear,
-    skermoHtml: crearDepsLecturaSkermoRed({ retries: 0 }).html,
-    engarde: depsEngardeReales,
-    bytesPdf: (url: string) => descargarPdf(url),
+    skermoHtml: (url: string) => vigilar(() => crearDepsLecturaSkermoRed({ retries: 0 }).html(url)),
+    engarde: {
+      get: (...args: Parameters<typeof depsEngardeReales.get>) => vigilarHttp(() => depsEngardeReales.get(...args)),
+      post: (...args: Parameters<typeof depsEngardeReales.post>) => vigilarHttp(() => depsEngardeReales.post(...args)),
+      esperar: dormir,
+    },
+    bytesPdf: (url: string) => vigilar(() => descargarPdf(url)),
   };
 }
 
@@ -157,8 +191,8 @@ const deps: DepsBackfillCli = {
   leerAgregada: () => leerCoberturaAgregada(consultar),
   leerReferencias: () => contarReferenciasHistoricas(consultar),
   leerIndices: () => leerIndicesPersistidos(consultar),
-  esquema: esquemaDeportivo,
-  categoriasAmpliadas: () => categoriasHistoricasAplicadas(),
+  esquema: esquemaD1(rawDb),
+  categoriasAmpliadas: categoriasD1(rawDb),
   medir: () => medirOcupacion(consultar),
   descubrir,
   crearEjecutor,
@@ -166,7 +200,44 @@ const deps: DepsBackfillCli = {
   dormir,
 };
 
-const resultado = await ejecutarBackfillCli(deps, opciones);
-for (const linea of resultado.lineas) console.log(linea);
-if (!opciones.aplicar) console.log('Modo simulación: no se ha escrito nada. Añade --aplicar para ejecutar el lote.');
-process.exitCode = resultado.codigo;
+let lease: import('../src/lib/ingest/sport-incremental/lease').SportLease | null = null;
+try {
+  if (opciones.aplicar) {
+    const { reclamarSportLease, dbConSportLease } = await import('../src/lib/ingest/sport-incremental/lease');
+    const { crearGuardaCapacidad } = await import('../src/lib/ingest/backfill/guarda-capacidad');
+    lease = await reclamarSportLease(rawDb);
+    if (!lease) throw new Error('sport_busy');
+    await comprobarCooldownD1(rawDb);
+    // Discovery writes seeds too: capacity must pass BEFORE discovery, not just facts.
+    const guard = crearGuardaCapacidad({ plan: planCapacidadD1(), medir: () => medirOcupacion(consultar) });
+    if (!(await guard({ puestos: 0, asaltos: 0, documentos: 0, unidades: opciones.maxPeticiones * 100 })).continuar) {
+      throw new Error('sport_capacity');
+    }
+    db = dbConSportLease(rawDb, lease, () => { if (estadoRed.fallo) throw new Error('sport_source_cooldown'); });
+  }
+  const resultado = await ejecutarBackfillCli(deps, opciones);
+  for (const linea of resultado.lineas) {
+    // Legacy pure CLI messages may append a caught driver/source exception.
+    // Keep aggregate states, never SQL params, athlete data or raw errors.
+    if (/índice con error:|Descubrimiento fallido:/i.test(linea)) console.log('Lectura detenida: detalle técnico omitido.');
+    else console.log(linea.startsWith('  ') ? linea.split(' · ')[0] : linea);
+  }
+  if (!opciones.aplicar) console.log('Modo simulación: no se ha escrito nada. Añade --aplicar para ejecutar el lote.');
+  process.exitCode = estadoRed.fallo ? 4 : resultado.codigo;
+} catch {
+  console.error('Backfill D1 detenido: revisar SQL0002 posterior al import, lease global y presupuesto de almacenamiento.');
+  process.exitCode = 2;
+} finally {
+  if (lease) {
+    if (estadoRed.fallo) {
+      try {
+        const { dbConSportLease } = await import('../src/lib/ingest/sport-incremental/lease');
+        await guardarCooldownD1(dbConSportLease(rawDb, lease),
+          new Date(Date.now() + Math.max(60_000, estadoRed.fallo.retryAfterMs ?? 3_600_000)));
+      } catch { console.error('No se pudo guardar el cooldown; requiere revisión antes de reintentar.'); process.exitCode = 2; }
+    }
+    try { await lease.liberar(); }
+    catch { console.error('No se pudo liberar el lease deportivo; se conserva hasta su caducidad.'); process.exitCode = 2; }
+  }
+  local.close();
+}

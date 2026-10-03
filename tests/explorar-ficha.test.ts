@@ -255,7 +255,7 @@ describe('ficha ajena: sólo hechos deportivos', () => {
     if (r.estado !== 'ok') throw new Error(r.estado);
     expect(r.ficha.id).toBe(UUID_B);
     const stats = sentencias.find((s) => /una_por_prueba/.test(s.text))!;
-    expect(stats.params).toEqual(expect.arrayContaining([UUID_B, UUID_C]));
+    expect(stats.params).toContain(JSON.stringify([UUID_B, UUID_C]));
   });
 });
 
@@ -279,8 +279,8 @@ describe('estadísticas por tipo documentado', () => {
         {
           cuando: /una_por_prueba/,
           filas: [
-            { tipo: 'SEN_WC', clasificaciones: 2, mejorPuesto: 3, podios: 1, victorias: 0, sinPuesto: 0 },
-            { tipo: null, clasificaciones: 1, mejorPuesto: 12, podios: 0, victorias: 0, sinPuesto: 1 },
+            { clase: 'tipo', tipo: 'SEN_WC', clasificaciones: 2, mejorPuesto: 3, podios: 1, victorias: 0, sinPuesto: 0 },
+            { clase: 'tipo', tipo: null, clasificaciones: 1, mejorPuesto: 12, podios: 0, victorias: 0, sinPuesto: 1 },
           ],
         },
       ],
@@ -291,11 +291,14 @@ describe('estadísticas por tipo documentado', () => {
     expect(r.ficha.estadisticas.porTipo).toHaveLength(2);
 
     const sql = sentencias.find((s) => /una_por_prueba/.test(s.text))!.text;
-    expect(sql).toMatch(/DISTINCT ON \(r\.competition_id\)/);
-    expect(sql).toMatch(/c\.format::text = 'INDIVIDUAL'/);
+    expect(sql).toMatch(/SELECT DISTINCT equivalencia/);
+    expect(sql).toMatch(/c\.event_competition_id/);
+    expect(sql).toMatch(/c\.format = 'INDIVIDUAL'/);
     expect(sql).not.toMatch(/competition_registration|e\.name|ILIKE|LIKE/);
-    // Sólo el circuito del calendario vinculado documenta el tipo.
-    expect(sql).toMatch(/NOT IN \('FIE_CIRCUITO', 'OTRO'\)/);
+    expect(sql).not.toMatch(/::|DISTINCT ON/);
+    // El circuito exige procedencia que no pueda salir de un título refinado.
+    expect(sql).toMatch(/ev0\.source = 'fie'/);
+    expect(sql).toMatch(/ev0\.source IN \('skermo_rfee', 'skermo_regional'\)/);
   });
 });
 
@@ -308,7 +311,7 @@ describe('ranking oficial con temporada y modalidad explícitas', () => {
         ...resumenVacio.filter((x) => !/GROUP BY p\\\.season/.test(String(x.cuando))),
         { cuando: /GROUP BY p\.season/, filas: [{ temporada: '2025-2026' }, { temporada: '2024-2025' }] },
         {
-          cuando: /WITH elegidas/,
+          cuando: /WITH ordenadas/,
           filas: (s) =>
             s.params.includes('2024-2025')
               ? [filaRanking('2024-2025', 9)]
@@ -329,12 +332,12 @@ describe('ranking oficial con temporada y modalidad explícitas', () => {
     expect(actual.ficha.rankingOficial.entradas[0]).toMatchObject({ puesto: null, puntos: null });
     expect(anterior.ficha.rankingOficial.entradas[0]).toMatchObject({ temporada: '2024-2025', puesto: 9 });
 
-    const lecturas = sentencias.filter((s) => /WITH elegidas/.test(s.text));
+    const lecturas = sentencias.filter((s) => /WITH ordenadas/.test(s.text));
     expect(lecturas).toHaveLength(2);
     expect(lecturas[0].params).toEqual(expect.arrayContaining(['2025-2026', 'INDIVIDUAL']));
     expect(lecturas[1].params).toEqual(expect.arrayContaining(['2024-2025', 'INDIVIDUAL']));
     // Una sola sentencia por snapshot, con la misma elección que el lector de listas.
-    expect(lecturas[0].text).toMatch(/ORDER BY p\.source, p\.weapon, p\.gender, p\.category_raw, p\.format,\s+p\.published_on DESC, p\.fetched_at DESC, p\.id DESC/);
+    expect(lecturas[0].text).toMatch(/PARTITION BY p\.source, p\.weapon, p\.gender, p\.category_raw, p\.format\s+ORDER BY p\.published_on DESC, p\.fetched_at DESC, p\.id DESC/);
     expect(sentencias.map((s) => s.text).join('\n')).not.toMatch(/ranking_snapshot|ranking_point/);
   });
 
@@ -373,7 +376,7 @@ describe('ranking oficial con temporada y modalidad explícitas', () => {
     const r = await leerFicha(ctx, { personaId: UUID_A });
     if (r.estado !== 'ok') throw new Error(r.estado);
     expect(r.ficha.rankingOficial).toMatchObject({ temporada: null, entradas: [] });
-    expect(sentencias.some((s) => /WITH elegidas/.test(s.text))).toBe(false);
+    expect(sentencias.some((s) => /WITH ordenadas/.test(s.text))).toBe(false);
   });
 });
 
@@ -435,8 +438,8 @@ describe('historial paginado', () => {
     const { ctx, sentencias } = crearContexto({ respuestas: personaSimple(UUID_A) });
     await leerHistorial(ctx, { personaId: UUID_A, torneo: 'Open Madrid', temporada: '2025-2026' });
     const s = sentencias.find((x) => /FROM sport_result r/.test(x.text))!;
-    expect(s.text).toMatch(/c\.season = \$\d+/);
-    expect(s.text).toMatch(/LIKE \$\d+/);
+    expect(s.text).toMatch(/c\.season = \?/);
+    expect(s.text).toMatch(/LIKE \?/);
     expect(s.params).toEqual(expect.arrayContaining(['2025-2026', '%open madrid%']));
     expect(s.text).not.toMatch(/competition_registration/);
   });
@@ -460,7 +463,8 @@ describe('historial paginado', () => {
     const p2 = await leerHistorial(siguiente.ctx, { personaId: UUID_A, limite: 2, cursor: p1.siguiente });
     expect(p2).toMatchObject({ estado: 'ok', siguiente: null });
     const s = siguiente.sentencias.find((x) => /FROM sport_result r/.test(x.text))!;
-    expect(s.text).toMatch(/\(coalesce\(r\.occurred_on.*\), r\.id\) < \(\$\d+::date, \$\d+::uuid\)/s);
+    expect(s.text).toMatch(/\(coalesce\(r\.occurred_on.*\), r\.id\) < \(\?, \?\)/s);
+    expect(s.text).not.toMatch(/::date|::uuid/);
     expect(s.params).toEqual(
       expect.arrayContaining(['2026-02-01', '00000000-0000-4000-8000-000000000002']),
     );

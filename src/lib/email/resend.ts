@@ -77,7 +77,7 @@ function inicioDelDiaUtc(now: Date): Date {
 
 async function contarPendientes(): Promise<number> {
   const [row] = await db
-    .select({ count: sql<number>`count(*)::int` })
+    .select({ count: sql<number>`count(*)` })
     .from(notification)
     .where(and(isNull(notification.sentAt), lt(notification.attempts, MAX_INTENTOS)));
   return row?.count ?? 0;
@@ -126,7 +126,7 @@ export async function sendPendingNotifications(
    * función, que en serverless son constantes.
    */
   const [enviadosHoy] = await db
-    .select({ count: sql<number>`count(*)::int` })
+    .select({ count: sql<number>`count(*)` })
     .from(notification)
     .where(gte(notification.sentAt, inicioDelDiaUtc(now)));
 
@@ -205,7 +205,7 @@ export async function sendPendingNotifications(
        * fila en `notification` y ahí está el destinatario, con el control de
        * acceso de la base de datos delante.
        */
-      console.error(`[email] Fallo al enviar el aviso ${aviso.id}: ${error}`);
+      console.error('[email] Fallo al enviar un aviso; detalles disponibles en la cola privada.');
       continue;
     }
 

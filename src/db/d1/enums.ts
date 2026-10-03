@@ -1,0 +1,29 @@
+// Offline-generated domain values. No PostgreSQL runtime dependency.
+import { sqliteEnum } from './columns';
+
+export const callUpStatusEnum = sqliteEnum("call_up_athlete_status", ["pendiente","confirmado","rechazado"]);
+export const categoryEnum = sqliteEnum("category_code", ["M7","M9","M10","M11","M12","M13","M14","M15","M17","M20","M23","ABS","VET"]);
+export const certezaEventoEnum = sqliteEnum("certeza_evento_extraccion", ["seguro","dudoso","desconocido"]);
+export const circuitEnum = sqliteEnum("circuit", ["TNR","LIGA_ORO","LIGA_PLATA","LIGA_IBERDROLA","LIGA_BRONCE","LIGA_CLUBES","CTO_ESPANA","CONCENTRACION","SATELITE","FIE_CIRCUITO","ECC","EUR_CLUBES","U14_EFC","SUB23_EFC","EFC_LEAGUE","EUV","CAD_WC","JUN_WC","SEN_WC","SEN_GP","CTO_EUROPA","CTO_MUNDO","TLM","OTRO"]);
+export const deadlineOriginEnum = sqliteEnum("deadline_origin", ["PUBLICADO","CALCULADO"]);
+export const deadlineTypeEnum = sqliteEnum("deadline_type", ["L1","L2","L3","FIE_D7"]);
+export const entryStatusEnum = sqliteEnum("entry_status", ["draft","pending_club","club_approved","federation_approved","submitted","rejected","withdrawn"]);
+export const estadoExtraccionEnum = sqliteEnum("estado_extraccion", ["ok","sin_texto","bloqueado_datos_personales","sin_modelo","error"]);
+export const estadoPropuestaIaEnum = sqliteEnum("estado_propuesta_ia", ["pendiente","aprobada","rechazada"]);
+export const estadoVigenciaEnum = sqliteEnum("estado_vigencia_documento", ["vigente","superada","cancelada","duplicada"]);
+export const eventLinkStatusEnum = sqliteEnum("event_link_status", ["AUTOMATICO","DUDOSO","CONFIRMADO","RECHAZADO"]);
+export const eventTypeEnum = sqliteEnum("competition_format", ["INDIVIDUAL","EQUIPOS"]);
+export const fieLinkStatusEnum = sqliteEnum("fie_link_status", ["PROPUESTO","CONFIRMADO","RECHAZADO"]);
+export const genderEnum = sqliteEnum("gender", ["M","F","MIXTO"]);
+export const ingestStatusEnum = sqliteEnum("ingest_status", ["ok","parcial","error"]);
+export const inviteStatusEnum = sqliteEnum("invite_status", ["pendiente","aceptada","revocada"]);
+export const origenTextoEnum = sqliteEnum("origen_texto_extraccion", ["unpdf","ocr_modelo","ooxml"]);
+export const placeTypeEnum = sqliteEnum("place_type", ["ranking","tecnica"]);
+export const proposalStatusEnum = sqliteEnum("proposal_status", ["pendiente","aprobada","descartada"]);
+export const roleEnum = sqliteEnum("user_role", ["admin","coach","club","athlete","guardian"]);
+export const scopeEnum = sqliteEnum("competition_scope", ["NACIONAL","INTERNACIONAL","AUTONOMICO"]);
+export const sourceEnum = sqliteEnum("event_source", ["skermo_rfee","skermo_regional","fie","efc","rfee_wp","skermo_ranking","fie_tiradores"]);
+export const sportCoverageStatusEnum = sqliteEnum("sport_coverage_status", ["pendiente","completo","parcial","sin_resultados","error","conflicto"]);
+export const sportLinkStatusEnum = sqliteEnum("sport_link_status", ["PROPUESTO","CONFIRMADO","RECHAZADO"]);
+export const submissionStatusEnum = sqliteEnum("submission_status", ["dry_run","sent","verified","failed"]);
+export const weaponEnum = sqliteEnum("weapon", ["FLORETE","ESPADA","SABLE"]);

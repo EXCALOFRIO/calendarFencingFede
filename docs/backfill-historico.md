@@ -3,17 +3,153 @@
 Comando: `npm run backfill`. Importa de forma gradual y reanudable resultados
 históricos (FIE, Skermo, PDF de la RFEE, y Engarde/FWW como complemento).
 
+El runtime se está migrando a D1. Los apartados que identifican explícitamente
+Neon o el piloto del 02/10 son evidencia histórica, no instrucciones para
+escribir ahora en esa base. El destino remoto D1 aún no tiene el esquema ni
+las filas de aplicación. Ver [`migracion-cloudflare.md`](migracion-cloudflare.md).
+
+## Estado acumulado verificado el 03/10/2026
+
+El snapshot base privado contiene 1.585 competiciones, 50.482 resultados,
+32.955 asaltos y 107 publicaciones de ranking con 36.126 entradas.
+Después de la importación real FIE/RFEE, la copia local verificada contiene
+**5.256 competiciones, 248.694 resultados y 668.128 asaltos**:
+3.671, 198.212 y 635.173 más, respectivamente. Conserva 13.299 registros
+de persona/ID externo, sin altas ni fusiones por nombre. Pasan FKs,
+`quick_check`, procedencia y cierre de contexto/lease; el ledger está
+desbloqueado, 2.687.373.604 bytes, y SQLite ocupa 637.751.296 bytes.
+No es un tope físico perfecto ni una medida de gasto.
+
+Producción todavía utiliza Neon y D1 remoto sigue sin aplicación. El
+histórico local es staging previo al corte, no un sustituto del export final.
+
+El propietario autorizó una segunda vuelta finita de fuentes:
+
+- FIE: 3.154 unidades evaluadas, 3.137 cerradas, 11 parciales y seis errores.
+  La nueva ventana terminó en `inventory_exhausted`, con 212 reservas GET
+  adicionales. Los fallos Windows de ventanas anteriores se conservan
+  como evidencia; no se atribuye retrospectivamente su operación concreta.
+- RFEE: **2.350 de 2.353 documentos guardados** (99,9 %): 942 HTML y 1.408
+  PDF. Tres respuestas HTTP 200 no contienen el tipo publicado y quedan
+  como `invalid_payload`, no como resultados vacíos o descargados válidos.
+  No quedan documentos `pending` en ese inventario; la ejecución terminó.
+- La primera reanudación nacional se detuvo tras 15 documentos por `EPERM`.
+  Se amplió únicamente el retry de reemplazo **local** del checkpoint
+  (máximo 4,55 s, sin borrar el anterior ni repetir GETs). La continuación
+  posterior conservó contadores, campaña anterior, blobs y cooldown.
+- RFEE: 2.362 reservas GET acumuladas y 276.122.872 bytes de payload local.
+  Estos bytes no representan almacenamiento R2 ni filas importadas.
+
+Los porcentajes solo describen esos inventarios 2018/2019+, no todo el
+histórico disponible ni el porcentaje importado. No hay escrituras deportivas
+nuevas en Neon. Las aprobaciones anteriores no se reabren ni reinician.
+
+La campaña FIE procesó 3.154 unidades, con 205.443 puestos y 662.963 asaltos
+leídos, 364.323 sentencias reservadas y sin flag de escritura incompleta.
+Los seis errores y 650 unidades con fuente parcial se conservan. «Persistida»
+en el resumen puede significar cobertura, no competición válida.
+
+La campaña HTML terminó con 942 unidades, código 0: releyó 31.151 puestos
+que ya existían. La campaña PDF final procesó 1.411 entradas, código 0:
+1.408 con persistencia, tres malformadas, 15.443 puestos/5.850 asaltos leídos
+y 20.487 sentencias reservadas, sin escritura incompleta. Añadió realmente
+2.194 resultados y 1.599 asaltos; no todos los hechos leídos son aceptados.
+La cobertura documental final es: 13 completos, 836 parciales, 553 pendientes,
+dos conflictos, un error y seis sin resultados. OCR/revisión no se ejecutó.
+
+El primer lote PDF se detuvo por una reserva agotada al volver a cargar el
+cursor antiguo no modificado. Se preservaron base y recibos, se reprodujo en
+SQLite nativo y se corrigió la carga UPDATE por columnas cambiadas completas.
+Se mantienen 4 GiB, admisión atómica, overhead por fila, control de amplificación
+SQL y bloqueo durable poscommit. Una revisión posterior detectó correcciones
+con asaltos contradictorios y una importación inicial sin marcador previo:
+ambas se corrigieron y se repitió todo el PDF desde una copia anterior preservada.
+
+La caché nacional ampliada quedó **archivada y verificada**: 2.109 blobs y
+su manifiesto, 278.467.814 bytes; 971 blobs nuevos y 1.138 reutilizados,
+código 0 en 992,17 s. Son bytes de originales y evidencia, no resultados
+deportivos. FIE quedó archivado y verificado con 9.614 blobs, tres particiones,
+7.759 nuevos/1.855 reutilizados y 216.577.918 bytes incluyendo metadatos.
+El índice, sus tres particiones y el manifiesto original se releen y verifican
+por hash, código 0. La partición mantiene ≤3.500 blobs y ≤4 MiB por manifiesto;
+el replay selecciona ≤10 unidades/64 MiB. No se elevan a ciegas esos límites.
+
+El inventario anterior conserva 6.063 coberturas FIE pendientes,
+mayoritariamente 1958–2017. Un inventario agotado no equivale a histórico completo.
+
+**Identidad nacional/internacional pendiente:** el mismo snapshot contiene
+4.474 personas con ID FIE confirmado y 8.825 con licencia RFEE confirmada,
+sin fusiones aplicadas. No se presentan como 13.299 deportistas globalmente
+distintos ni como fichas ya unificadas. Los IDs/licencias con ámbito y
+vigencia permiten confirmar enlaces; el nombre solo propone candidatos.
+La conciliación masiva requiere evidencia y revisión antes de escribir.
+
 ## Cómo se usa
+
+### Campaña offline con caché verificada
+
+```powershell
+node node_modules/tsx/dist/cli.mjs scripts/importar-campana-historica-local.ts --d1-local 'C:\datos\historico.sqlite' --fuente pdf --cache-nacional 'C:\datos\cache-rfee' --aplicar --solo-hechos --offset 0 --max-unidades 1411 --max-segundos 1800 --max-sentencias 500000
+```
+
+El destino es un SQLite existente con `0002` exactamente verificado y sin
+`DATABASE_URL` en ese proceso. La campaña fija el SHA de origen en cada unidad,
+crea un lock exclusivo y recibos privados, nunca descarga ni escribe remoto.
+Máximo 6.000 unidades/30 minutos/500.000 sentencias, cada unidad ≤300 s/1.000
+sentencias. Un fallo de escritura detiene y conserva el posible estado parcial;
+un parcial de fuente continúa como cobertura honesta. Al reanudar se incluye
+la unidad fallida, no se presume rollback ni se borra el ledger.
+
+Los PDF usan SHA-256 de URL completa como namespace. Un namespace de filename
+antiguo solo se adopta tras comprobar URL exacta de edición, competición y
+checkpoint. Toda importación marca incompleto antes de hechos; una corrección
+con poules/cuadro parcial o contradictorio no retira hechos previos.
+
+### Continuación de descargas, sin base de datos
+
+`scripts/continuar-descargas-acotadas.ts` requiere una aprobación explícita
+con UUID y una duración finita. Sin `--apply` solo lee recuentos locales;
+no hace red ni escribe. Un mismo UUID reanuda **su** plazo y límites
+originales. Una aprobación terminada no se reabre. Cada ventana tiene
+≤2.000 GETs, ≤30 minutos y ≤512 MiB de crecimiento, con ≥350 ms entre
+inicios, una petición simultánea por fuente y ≥5 GiB libres. Los dos
+procesos de fuente pueden trabajar en paralelo con raíces y locks distintos.
+
+No se reinician contadores, no se borra la campaña anterior y no se saltan
+robots o cooldown. La autorización completa se conserva en registros
+inmutables separados; el programa no renueva ventanas tras errores de
+fuente, integridad, disco o señales. El reemplazo local bloqueado temporalmente
+puede reintentarse de forma acotada, no la petición HTTP.
+
+```powershell
+# Sustituir raíz e inventario por rutas absolutas de la caché ya existente.
+# Ejecutar con --apply solo después de autorizar esa continuación acotada.
+node --import tsx scripts/continuar-descargas-acotadas.ts --source fie --root C:\datos\cache-fie --approval '<UUID-v4>' --minutes 180
+node --import tsx scripts/continuar-descargas-acotadas.ts --source rfee --root C:\datos\cache-rfee --inventory C:\datos\national-inventory.json --approval '<UUID-v4>' --minutes 60
+```
+
+Las 83 pruebas focalizadas de caché, ventanas y reemplazo pasaron offline.
+La continuación descarga originales, no extrae PDF, no usa OCR/IA, no sube
+R2 y no crea hechos deportivos o enlaces de identidad.
+
+### Ingesta deportiva acotada
 
 | Comando | Qué hace |
 | --- | --- |
-| `npm run backfill` | **Simulación.** Lee la base con `SELECT`, planifica, mide la ocupación y proyecta el crecimiento. No hace ninguna petición a proveedores y no escribe. |
-| `npm run backfill -- --aplicar` | Ejecuta **un lote acotado** y escribe. Exige la migración 0017, que ya está aplicada (ver «Estado real tras la integración»). Primero recorre los índices FIE/Skermo (como mucho la mitad de `--max-peticiones`) y luego lee las unidades. |
-| `npm run backfill -- --aplicar --sin-descubrir` | Igual, pero sin recorrer índices: sólo retoma lo ya conocido. |
+| `npm run backfill -- --d1-local C:\datos\app.sqlite` | **Simulación.** Lee un SQLite existente, planifica, mide y proyecta. No pide datos a proveedores ni escribe. |
+| `npm run backfill -- --d1-local C:\datos\app.sqlite --aplicar` | Escribe **un lote local acotado**. Exige `0000` y `0002` ya verificados, lease global y proceso sin `DATABASE_URL`. Descubrimiento y lectura comparten el presupuesto. |
+| `npm run backfill -- --d1-local C:\datos\app.sqlite --aplicar --sin-descubrir` | Igual, sin recorrer índices: retoma unidades conocidas, pero sus lectores sí pueden hacer GETs. No es un modo offline de caché. |
+
+Sin `--d1-local` el comando se niega antes de abrir la base. No acepta destinos
+remotos ni parámetros de Neon y no aplica migraciones. Instalar `0002` solo
+después del import verificado. Los cuatro CLI antiguos de resultados,
+inventario y complementos deniegan `--aplicar` antes de cualquier I/O.
+Una campaña agotada no se reinicia por ejecutar otra vez el comando: hace
+falta aprobar otra ventana acotada de fuentes.
 
 Opciones útiles: `--fuentes`, `--temporadas`, `--max-tareas`, `--max-peticiones`,
 `--max-minutos`, `--releer`, `--releer-temporadas`, `--max-releer`,
-`--unidad fuente:temporada:clave`, `--sin-descubrir` y `--plan-neon`. No hay `--help`: un
+`--unidad fuente:temporada:clave` y `--sin-descubrir`. No hay `--help`: un
 argumento no válido imprime el uso. Los límites tienen tope
 (200 tareas, 2000 peticiones, 30 minutos, 50 relecturas): no hay un modo
 «todo el corpus».
@@ -174,14 +310,31 @@ Sólo se marca `completo` con el SHA nuevo al terminar. Limitación: no hay
 transacción global ni columna de «vigente», la reconciliación borra filas, y
 los fallos tardíos sólo se han probado con un almacén simulado, no con SQL real.
 
-## Un solo importador por clave
+## Un solo propietario deportivo D1
 
 Dentro de una ejecución, lectura, comparación, escritura y checkpoint de una
 misma clave de ranking van en secuencia y no se planifican duplicados. Entre
-ejecuciones no hay locks distribuidos ni CAS: el límite operativo es **un solo
-importador por clave a la vez**. No lances dos `--aplicar` solapados.
+ejecuciones D1 usa un lease global de 120 segundos, CAS con reloj de la base
+y una versión creciente al reclamar. Cada mutación comprueba propietario y
+versión dentro del mismo batch atómico, con contexto efímero vacío al terminar
+o revertir. No lances dos `--aplicar` solapados.
 
-## Capacidad
+## Capacidad D1 actual
+
+El runtime mide almacenamiento total con `meta.size_after` de un `SELECT 1`
+y cuenta hechos sin leer sus cuerpos. No usa PRAGMAs de tamaño, que el D1
+remoto deniega, ni inventa tamaños de tablas o índices. La asignación propia
+máxima es 4 GiB; puede reducirse con `D1_STORAGE_BUDGET_BYTES`. No es un
+límite de gasto ni una cuota exclusiva de esta aplicación.
+
+Antes de cada escritura se reserva crecimiento conservador en un ledger
+atómico. Si falta medición, esquema o margen, no se inicia ese batch.
+El tamaño definitivo se comprueba después del commit: un crecimiento mayor
+del previsto o una escritura ajena puede dejar un error poscommit y bloqueo
+durable, no rollback retroactivo. El incremental sigue apagado y aún requiere
+validación sobre el runtime D1 remoto.
+
+### Mediciones y política de Neon del piloto, solo como historial
 
 Antes de cada tarea se mide la ocupación lógica (tablas + índices, sólo
 `SELECT` sobre el catálogo) y se proyecta el crecimiento con tasas
@@ -294,13 +447,16 @@ atribución confirmada.
 
 ## Pendiente del propietario
 
-Las migraciones y el piloto acotado ya están hechos (ver arriba); no queda SQL
-pendiente. Lo que sigue pendiente es:
+El piloto y las migraciones PostgreSQL descritos arriba ya están hechos.
+Eso no significa que el corte D1 esté terminado. Sigue pendiente:
 
-- Confirmar el plan de Neon (el umbral conservador de 0,4 GiB sigue vigente
-  mientras no se verifique).
-- Decidir si el backfill sigue por lotes acotados (`--aplicar`), fuente por
-  fuente. Nada lo lanza solo y no existe un lote «todo el corpus».
+- Validar Neon Auth gestionado y el secreto existente, coordinar mantenimiento y snapshot final,
+  importar D1, verificar y publicar. No borrar Neon ni aplicar allí 0021.
+- Verificar las cuotas compartidas y la facturación Cloudflare antes de
+  ampliar almacenamiento o activar extracción incremental.
+- La continuación de descargas locales ya está autorizada y se reanudó.
+  La extracción/importación sigue separada y requiere un destino validado
+  y lotes acotados; no existe un lote ilimitado «todo el corpus».
 - Piloto de IA: el permiso de presupuesto (hasta diez PDF y 1 €) **ya lo dio el
   usuario**; no falta permiso. Lo que no está verificado es la vía de
   inferencia, el coste y la cuota de esta cuenta, el modelo y el tratamiento de
@@ -312,7 +468,29 @@ pendiente. Lo que sigue pendiente es:
 
 ## Códigos de salida
 
-`0` correcto · `1` argumentos no válidos · `2` esquema 0017 no aplicado (hoy ya
-está aplicado; el código 2 del preflight de `aplicar-migraciones-deportivas.ts`
-es otro comando y significa «ya aplicado») · `3` parada por capacidad · `4`
-límite remoto (429 persistente).
+### Replay estricto de originales locales
+
+`scripts/replay-historico-d1.ts` lee exclusivamente las cachés verificadas.
+No hace descubrimiento, HTTP, fallback a fuentes ni OCR. Exige un destino
+SQLite local absoluto y selecciones explícitas: `--fie <año>:<id>`,
+`--html <id-cache>` o `--pdf <id-cache>`. Por defecto simula; `--aplicar`
+requiere un entorno sin `DATABASE_URL` y las guardias D1 ya aplicadas.
+
+Comprueba todos los hashes antes de abrir el destino. Máximo diez unidades,
+300 segundos cooperativos y 1.000 sentencias de contexto/aplicación; cada
+unidad admite como máximo 1.056 puestos y 2.000 asaltos. Las unidades con
+contexto ambiguo se rechazan. Los parciales siguen siendo parciales. Una
+parada puede dejar unidades anteriores comprometidas: no es una transacción
+del corpus y el resumen lo indica. La pasada tiene 41 pruebas offline;
+todavía no se ha ejecutado con los históricos reales.
+
+Este comando usa `0` si terminó sin incidencias y `2` para una selección,
+destino, esquema, límite o lectura incompleta. No comparte los códigos del
+planificador descrito a continuación.
+
+### Planificador
+
+`0` correcto · `1` argumentos no válidos · `2` destino local o esquema D1
+ausente/inválido · `3` parada por capacidad · `4` límite remoto (429 persistente).
+El código 2 del preflight antiguo de migraciones PostgreSQL es de otro
+comando y significa «ya aplicado».

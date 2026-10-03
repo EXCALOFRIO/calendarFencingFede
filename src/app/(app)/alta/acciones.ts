@@ -9,7 +9,10 @@ import {
   vincularFichaDesdeRanking,
 } from '@/lib/altas/desde-ranking';
 import { confirmarSoyYo } from '@/lib/altas/por-nombre';
-import { requireProfile } from '@/lib/auth/session';
+import { requireProfile, requireWritableProfile } from '@/lib/auth/session';
+import { db } from '@/db';
+import { sql } from 'drizzle-orm';
+import { nowMilliseconds } from '@/db/d1/columns';
 
 /**
  * Las dos acciones de `/alta`: buscarse y confirmar.
@@ -43,7 +46,7 @@ export async function buscarEnRanking(texto: string): Promise<ResultadoBusqueda>
 }
 
 export type ResultadoVinculo =
-  | { ok: true }
+  | { ok: true; pendiente?: true }
   | { ok: false; motivo: MotivoRechazo; error: string };
 
 /**
@@ -57,7 +60,7 @@ export async function vincularFicha(
   clave: string,
   licencia: string,
 ): Promise<ResultadoVinculo> {
-  const perfil = await requireProfile();
+  const perfil = await requireWritableProfile();
 
   const resultado = await vincularFichaDesdeRanking({
     profileId: perfil.profileId,
@@ -67,6 +70,11 @@ export async function vincularFicha(
   });
 
   if (!resultado.ok) {
+    if (resultado.motivo === 'REVISION_PENDIENTE') {
+      revalidatePath('/alta');
+      revalidatePath('/admin/usuarios');
+      return { ok: true, pendiente: true };
+    }
     return { ok: false, motivo: resultado.motivo, error: resultado.error };
   }
 
@@ -98,7 +106,7 @@ export async function vincularFicha(
  */
 
 /**
- * «Sí, soy yo»: se escribe el enlace.
+ * «Soy yo»: se guarda una solicitud pendiente, sin conceder propiedad.
  *
  * Del navegador solo llega **qué fila se reclama** y lo que se escribió para
  * encontrarla; la cuenta sale de la sesión, nunca de un campo del formulario.
@@ -113,7 +121,7 @@ export async function vincularFicha(
  * escribirle a otro el mensaje que quiera en una pantalla de su cuenta.
  */
 export async function confirmarQueSoyYo(datos: FormData): Promise<void> {
-  const perfil = await requireProfile();
+  const perfil = await requireWritableProfile();
 
   const clave = String(datos.get('clave') ?? '');
   const escrito = String(datos.get('escrito') ?? '');
@@ -125,6 +133,11 @@ export async function confirmarQueSoyYo(datos: FormData): Promise<void> {
   });
 
   if (!resultado.ok) {
+    if (resultado.motivo === 'REVISION_PENDIENTE') {
+      revalidatePath('/alta');
+      revalidatePath('/admin/usuarios');
+      redirect(`/alta?q=${encodeURIComponent(escrito)}&pendiente=1`);
+    }
     redirect(
       `/alta?q=${encodeURIComponent(escrito)}&fallo=${resultado.motivo}`,
     );
@@ -137,4 +150,17 @@ export async function confirmarQueSoyYo(datos: FormData): Promise<void> {
   }
 
   redirect('/alta?hecha=1');
+}
+
+export async function cancelarSolicitudVinculo(): Promise<void> {
+  const perfil = await requireWritableProfile();
+  await db.execute(sql`update athlete_link_request set state = 'RECHAZADA',
+    reviewed_at = ${nowMilliseconds}, reviewed_by_profile_id = ${perfil.profileId},
+    evidence = 'Cancelada por la propia cuenta antes de la revisión de identidad.'
+    where profile_id = ${perfil.profileId} and state = 'PENDIENTE'
+      and exists (select 1 from user_profile where id = ${perfil.profileId}
+        and role = 'athlete' and invite_status in ('pendiente','aceptada'))`);
+  revalidatePath('/alta');
+  revalidatePath('/admin/usuarios');
+  redirect('/alta');
 }

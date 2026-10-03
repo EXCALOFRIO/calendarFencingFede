@@ -20,7 +20,7 @@ import { listaUuid, plegarSql } from './filtros-sql';
 import type { Arma, Formato, Genero } from './tipos';
 
 /**
- * Lecturas de ediciones y de la clasificación de sus pruebas. Sólo leen Neon:
+ * Lecturas de ediciones y de la clasificación de sus pruebas. Sólo leen D1:
  * ni llaman a una fuente externa ni dependen de que la edición esté vinculada
  * al calendario. Cada lectura exige sesión antes de validar o consultar nada.
  */
@@ -58,7 +58,7 @@ type FilaEdicion = {
 };
 
 function lista<T extends string>(texto: string | null): T[] {
-  return texto ? (texto.split(',').filter(Boolean) as T[]) : [];
+  return texto ? (texto.split(',').filter(Boolean).sort() as T[]) : [];
 }
 
 export function aResumen(f: FilaEdicion): EdicionResumen {
@@ -80,11 +80,11 @@ export function aResumen(f: FilaEdicion): EdicionResumen {
 
 /** Columnas de una edición con el resumen de sus pruebas (alias `e`). */
 const COLUMNAS_EDICION = sql`
-  e.id::text AS id, e.name AS nombre, e.season AS temporada, e.source AS fuente,
-  e.city AS ciudad, e.country_code AS pais, e.start_date::text AS inicio, e.end_date::text AS fin,
-  (SELECT count(*)::int FROM sport_competition c WHERE c.edition_id = e.id) AS pruebas,
-  (SELECT string_agg(DISTINCT c.weapon::text, ',') FROM sport_competition c WHERE c.edition_id = e.id) AS armas,
-  (SELECT string_agg(DISTINCT c.format::text, ',') FROM sport_competition c WHERE c.edition_id = e.id) AS formatos`;
+  e.id AS id, e.name AS nombre, e.season AS temporada, e.source AS fuente,
+  e.city AS ciudad, e.country_code AS pais, e.start_date AS inicio, e.end_date AS fin,
+  (SELECT count(*) FROM sport_competition c WHERE c.edition_id = e.id) AS pruebas,
+  (SELECT group_concat(DISTINCT c.weapon) FROM sport_competition c WHERE c.edition_id = e.id) AS armas,
+  (SELECT group_concat(DISTINCT c.format) FROM sport_competition c WHERE c.edition_id = e.id) AS formatos`;
 
 export type ResultadoSeries =
   | { estado: 'ok'; series: { serie: SerieComplementaria; ediciones: EdicionResumen[] }[] }
@@ -104,7 +104,9 @@ export async function leerSeries(ctx: ContextoExplorador): Promise<ResultadoSeri
     await ctx.db.execute(sql`
       SELECT ${COLUMNAS_EDICION}
       FROM sport_edition e
-      WHERE ${plegarSql(sql`e.name`)} ~ 'olymp|olimp|mediterr'
+      WHERE ${plegarSql(sql`e.name`)} LIKE '%olymp%'
+         OR ${plegarSql(sql`e.name`)} LIKE '%olimp%'
+         OR ${plegarSql(sql`e.name`)} LIKE '%mediterr%'
       ORDER BY e.start_date DESC NULLS LAST, e.id DESC
       LIMIT ${LIMITE_EDICIONES_SERIE}`),
   );
@@ -181,15 +183,15 @@ async function leerPruebas(
 
   const pruebas = filas<FilaPrueba>(
     await ctx.db.execute(sql`
-      SELECT c.id::text AS id, c.edition_id::text AS "edicionId", c.weapon::text AS arma,
-             c.gender::text AS genero, c.category::text AS categoria, c.category_raw AS "categoriaRaw",
-             c.format::text AS formato, c.competition_date::text AS fecha, c.source AS fuente,
-             c.event_competition_id::text AS "pruebaCalendarioId",
-             (SELECT count(*)::int FROM sport_result r WHERE r.competition_id = c.id) AS importados
+      SELECT c.id AS id, c.edition_id AS "edicionId", c.weapon AS arma,
+             c.gender AS genero, c.category AS categoria, c.category_raw AS "categoriaRaw",
+             c.format AS formato, c.competition_date AS fecha, c.source AS fuente,
+             c.event_competition_id AS "pruebaCalendarioId",
+             (SELECT count(*) FROM sport_result r WHERE r.competition_id = c.id) AS importados
       FROM sport_competition c
       WHERE c.edition_id IN (${ids})
-      ORDER BY c.edition_id, c.competition_date NULLS LAST, c.format::text, c.weapon::text,
-               c.gender::text, c.category::text, c.id
+      ORDER BY c.edition_id, c.competition_date NULLS LAST, c.format, c.weapon,
+               c.gender, c.category, c.id
       LIMIT ${LIMITE_PRUEBAS}`),
   );
   if (pruebas.length === 0) return porEdicion;
@@ -199,13 +201,13 @@ async function leerPruebas(
   // es como se guardan.
   const lecturas = filas<FilaLectura>(
     await ctx.db.execute(sql`
-      SELECT cov.competition_id::text AS "pruebaId", cov.fact_kind AS hecho, cov.source AS fuente,
-             cov.status::text AS estado, cov.cursor AS cursor, cov.source_url AS url
+      SELECT cov.competition_id AS "pruebaId", cov.fact_kind AS hecho, cov.source AS fuente,
+             cov.status AS estado, cov.cursor AS cursor, cov.source_url AS url
       FROM sport_import_coverage cov
       WHERE (cov.fact_kind = 'results' OR (cov.fact_kind = 'ranking' AND cov.source = ${FUENTE_FIE}))
         AND cov.competition_id IN (SELECT c.id FROM sport_competition c WHERE c.edition_id IN (${ids}))
       UNION ALL
-      SELECT c.id::text, cov.fact_kind, cov.source, cov.status::text, cov.cursor, cov.source_url
+      SELECT c.id, cov.fact_kind, cov.source, cov.status, cov.cursor, cov.source_url
       FROM sport_competition c
       JOIN sport_import_coverage cov
         ON cov.fact_kind = 'link' AND cov.season = c.season
@@ -247,7 +249,7 @@ export async function leerEdicionesDeEvento(
       SELECT ${COLUMNAS_EDICION}
       FROM sport_edition e
       JOIN event ev ON ev.id = e.event_id
-      WHERE ev.id = ${eventoId}::uuid OR ev.canonical_event_id = ${eventoId}::uuid
+      WHERE ev.id = ${eventoId} OR ev.canonical_event_id = ${eventoId}
       ORDER BY e.start_date NULLS LAST, e.id
       LIMIT ${LIMITE_EDICIONES_EVENTO}`),
   );
@@ -305,7 +307,7 @@ export async function leerEdicion(ctx: ContextoExplorador, entrada: unknown): Pr
     await ctx.db.execute(sql`
       SELECT ${COLUMNAS_EDICION}
       FROM sport_edition e
-      WHERE e.id = ${edicionId}::uuid`),
+      WHERE e.id = ${edicionId}`),
   );
   if (!cabecera) return { estado: 'no_encontrada' };
 
@@ -337,26 +339,26 @@ async function leerClasificacion(
 ): Promise<Clasificacion> {
   const fuentes = filas<{ fuente: string; n: number }>(
     await ctx.db.execute(sql`
-      SELECT r.source AS fuente, count(*)::int AS n
+      SELECT r.source AS fuente, count(*) AS n
       FROM sport_result r
-      WHERE r.competition_id = ${pruebaId}::uuid
+      WHERE r.competition_id = ${pruebaId}
       GROUP BY r.source
       ORDER BY count(*) DESC, r.source`),
   );
   const principal = fuentes[0];
   if (!principal) return { pruebaId, fuente: '', filas: [], siguiente: null, otrasFuentes: [] };
 
-  const posicion = sql`(r.position IS NULL)::int, coalesce(r.position, 0), r.id`;
+  const posicion = sql`(r.position IS NULL), coalesce(r.position, 0), r.id`;
   const condicion = clave
-    ? sql`AND ((r.position IS NULL)::int, coalesce(r.position, 0), r.id) > (${Number(clave[0])}::int, ${Number(clave[1])}::int, ${String(clave[2])}::uuid)`
+    ? sql`AND ((r.position IS NULL), coalesce(r.position, 0), r.id) > (${Number(clave[0])}, ${Number(clave[1])}, ${String(clave[2])})`
     : sql``;
   const rows = filas<FilaPuesto>(
     await ctx.db.execute(sql`
-      SELECT r.id::text AS id, r.position AS puesto, r.position_raw AS "puestoPublicado",
+      SELECT r.id AS id, r.position AS puesto, r.position_raw AS "puestoPublicado",
              r.source_name AS nombre, r.source_country_code AS pais, r.source_club AS club,
-             r.person_id::text AS "personaId"
+             r.person_id AS "personaId"
       FROM sport_result r
-      WHERE r.competition_id = ${pruebaId}::uuid AND r.source = ${principal.fuente} ${condicion}
+      WHERE r.competition_id = ${pruebaId} AND r.source = ${principal.fuente} ${condicion}
       ORDER BY ${posicion}
       LIMIT ${limite + 1}`),
   );

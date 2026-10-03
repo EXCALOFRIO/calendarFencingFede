@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import { enLista as inArray, lotesDeInsercion } from '@/lib/sqlite';
 import type { AnyNode, Element } from 'domhandler';
 import { z } from 'zod';
 import {
@@ -894,7 +895,7 @@ export async function ingestSkermoResults(
   } = options;
 
   const { db } = await import('@/db');
-  const { eq, inArray, isNotNull, sql } = await import('drizzle-orm');
+  const { eq, isNotNull, sql } = await import('drizzle-orm');
 
   const stats: SkermoResultsIngestStats = {
     itemsSeen: 0,
@@ -1020,10 +1021,7 @@ export async function ingestSkermoResults(
       // Se busca por la fecha de la prueba o, si no la hay, por la de inicio
       // del evento: Skermo no siempre rellena la fecha de cada prueba. Se
       // compara en texto para no depender de cómo case Postgres date/text.
-      sql`to_char(coalesce(${eventCompetitionTable.competitionDate}, ${eventTable.startDate}), 'YYYY-MM-DD') in (${sql.join(
-        dates.map((d) => sql`${d}`),
-        sql`, `,
-      )})`,
+      inArray(sql`coalesce(${eventCompetitionTable.competitionDate}, ${eventTable.startDate})`, dates),
     );
 
   const byKey = new Map<string, typeof calendarRows>();
@@ -1229,7 +1227,7 @@ export async function ingestSkermoResults(
     return true;
   });
 
-  for (const batch of chunk(changed, 150)) {
+  for (const batch of lotesDeInsercion(changed, resultTable)) {
     await db
       .insert(resultTable)
       .values(batch)
@@ -1368,10 +1366,7 @@ async function enlazarDocumentosYDirectos(
     .from(eventCompetitionTable)
     .innerJoin(eventTable, eq(eventTable.id, eventCompetitionTable.eventId))
     .where(
-      sql`to_char(coalesce(${eventCompetitionTable.competitionDate}, ${eventTable.startDate}), 'YYYY-MM-DD') in (${sql.join(
-        fechas.map((f) => sql`${f}`),
-        sql`, `,
-      )})`,
+      inArray(sql`coalesce(${eventCompetitionTable.competitionDate}, ${eventTable.startDate})`, fechas),
     );
 
   const porClave = new Map<string, typeof calendario>();
@@ -1447,7 +1442,7 @@ async function enlazarDocumentosYDirectos(
   }
 
   let escritosDoc = 0;
-  for (const lote of chunk(documentos, 200)) {
+  for (const lote of lotesDeInsercion(documentos, eventDocumentTable)) {
     const filasNuevas = await db
       .insert(eventDocumentTable)
       .values(lote)
@@ -1459,7 +1454,7 @@ async function enlazarDocumentosYDirectos(
   }
 
   let escritosDirecto = 0;
-  for (const lote of chunk(directos, 200)) {
+  for (const lote of lotesDeInsercion(directos, liveSourceTable)) {
     const filasNuevas = await db
       .insert(liveSourceTable)
       .values(lote)

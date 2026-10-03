@@ -100,11 +100,11 @@ function condicionPrueba(f: FiltrosBusqueda): SQL | null {
 
   const rankingCond: SQL[] = [];
   if (f.temporada) rankingCond.push(sql`pub.season = ${f.temporada}`);
-  if (f.arma) rankingCond.push(sql`pub.weapon::text = ${f.arma}`);
-  if (f.genero) rankingCond.push(sql`pub.gender::text = ${f.genero}`);
-  if (f.categoria) rankingCond.push(sql`pub.category::text = ${f.categoria}`);
+  if (f.arma) rankingCond.push(sql`pub.weapon = ${f.arma}`);
+  if (f.genero) rankingCond.push(sql`pub.gender = ${f.genero}`);
+  if (f.categoria) rankingCond.push(sql`pub.category = ${f.categoria}`);
   if (f.categoriaRaw) rankingCond.push(sql`pub.category_raw = ${f.categoriaRaw}`);
-  if (f.formato) rankingCond.push(sql`pub.format::text = ${f.formato}`);
+  if (f.formato) rankingCond.push(sql`pub.format = ${f.formato}`);
 
   return sql`(${porResultado} OR EXISTS (
     SELECT 1 FROM sport_ranking_entry en2
@@ -129,7 +129,7 @@ export function sqlBusqueda(
   clave: readonly (string | number)[] | null,
 ): SQL {
   const condiciones: SQL[] = [sql`p.merged_into_person_id IS NULL`];
-  let aliasSql: SQL = sql`NULL::text`;
+  let aliasSql: SQL = sql`NULL`;
 
   if (f.q) {
     const { nombre, alias } = condicionNombre(f.q);
@@ -144,12 +144,12 @@ export function sqlBusqueda(
   const prueba = condicionPrueba(f);
   if (prueba) condiciones.push(prueba);
   if (clave) {
-    condiciones.push(sql`(p.name_normalized, p.id) > (${String(clave[0])}, ${String(clave[1])}::uuid)`);
+    condiciones.push(sql`(p.name_normalized, p.id) > (${String(clave[0])}, ${String(clave[1])})`);
   }
 
   return sql`
-    SELECT p.id::text AS id, p.display_name AS nombre, p.name_normalized AS "claveNombre",
-           ${aliasSql} AS alias, p.country_code AS pais, p.gender::text AS genero,
+    SELECT p.id AS id, p.display_name AS nombre, p.name_normalized AS "claveNombre",
+           ${aliasSql} AS alias, p.country_code AS pais, p.gender AS genero,
            p.birth_year AS "anioNacimiento"
     FROM sport_person p
     WHERE ${y(condiciones)}
@@ -173,8 +173,8 @@ export async function complementos(
             FROM sport_person mp JOIN miembros_grupo mg ON mp.merged_into_person_id = mg.id
             WHERE mg.salto < ${SALTOS}
           )
-          SELECT g.canonica::text AS id, count(*)::int AS resultados,
-                 string_agg(DISTINCT c.weapon::text, ',') AS armas
+          SELECT g.canonica AS id, count(*) AS resultados,
+                 group_concat(DISTINCT c.weapon) AS armas
           FROM miembros_grupo g
           JOIN sport_result r ON r.person_id = g.id
           JOIN sport_competition c ON c.id = r.competition_id
@@ -182,10 +182,10 @@ export async function complementos(
     claves.length === 0
       ? []
       : db.execute(sql`
-          SELECT name_normalized AS clave, count(*)::int AS personas
+          SELECT name_normalized AS clave, count(*) AS personas
           FROM sport_person
           WHERE merged_into_person_id IS NULL
-            AND name_normalized IN (${sql.join(claves.map((c) => sql`${c}`), sql`, `)})
+            AND name_normalized IN (SELECT value FROM json_each(${JSON.stringify(claves)}))
           GROUP BY name_normalized`),
   ]);
   return {

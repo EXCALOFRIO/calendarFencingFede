@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { rechazarEscrituraNoCoordinada } from '../src/lib/ingest/cli-obsoleto';
 import { depsInventarioSkermoRed, depsLecturaSkermoRed } from '../src/lib/ingest/historico-red';
 import { clavePruebaSkermo, claveImportacion, fuenteDeFederacionSkermo } from '../src/lib/ingest/sources/historico-indice';
 import { leerFinalSkermo, type LecturaSkermo } from '../src/lib/ingest/sources/skermo-finales';
@@ -16,6 +17,7 @@ import { leerFinalSkermo, type LecturaSkermo } from '../src/lib/ingest/sources/s
  */
 
 const args = process.argv.slice(2);
+rechazarEscrituraNoCoordinada(args);
 const [federacion, temporada] = args.filter((a) => !a.startsWith('--') && Number.isNaN(Number(a)));
 const maxArg = args.indexOf('--max');
 const max = maxArg >= 0 ? Number(args[maxArg + 1]) : 10;

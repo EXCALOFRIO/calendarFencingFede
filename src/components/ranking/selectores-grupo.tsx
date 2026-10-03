@@ -9,7 +9,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { RankingGroupKey } from '@/lib/queries/ranking';
 import { CATEGORY_LABEL, GENDER_LABEL, WEAPON_LABEL } from '@/lib/utils';
 
@@ -57,50 +56,59 @@ export function SelectoresGrupo({
   ];
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <ToggleGroup
-        type="single"
-        variant="outline"
-        value={grupo.weapon}
-        onValueChange={(v) => v && onElegir({ weapon: v as RankingGroupKey['weapon'] })}
-        aria-label="Arma"
-      >
-        {armas.map((a) => (
-          <ToggleGroupItem key={a} value={a}>
-            {WEAPON_LABEL[a]}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+    <div className="flex min-w-0 flex-wrap items-end gap-2">
+      <label className="min-w-0 flex-[1_1_7rem] sm:max-w-44">
+        <span className="mb-1 block text-xs text-muted-foreground">Arma</span>
+        <Select
+          value={grupo.weapon}
+          onValueChange={(v) => onElegir({ weapon: v as RankingGroupKey['weapon'] })}
+        >
+          <SelectTrigger className="w-full" aria-label="Arma">
+            <SelectValue>{WEAPON_LABEL[grupo.weapon]}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {armas.map((a) => (
+              <SelectItem key={a} value={a}>{WEAPON_LABEL[a]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </label>
 
-      <ToggleGroup
-        type="single"
-        variant="outline"
-        value={grupo.gender}
-        onValueChange={(v) => v && onElegir({ gender: v as RankingGroupKey['gender'] })}
-        aria-label="Género"
-      >
-        {generos.map((g) => (
-          <ToggleGroupItem key={g} value={g}>
-            {GENDER_LABEL[g]}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+      <label className="min-w-0 flex-[1_1_7rem] sm:max-w-44">
+        <span className="mb-1 block text-xs text-muted-foreground">Género</span>
+        <Select
+          value={grupo.gender}
+          onValueChange={(v) => onElegir({ gender: v as RankingGroupKey['gender'] })}
+        >
+          <SelectTrigger className="w-full" aria-label="Género">
+            <SelectValue>{GENDER_LABEL[grupo.gender]}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {generos.map((g) => (
+              <SelectItem key={g} value={g}>{GENDER_LABEL[g]}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </label>
 
-      <Select
-        value={grupo.category}
-        onValueChange={(v) => onElegir({ category: v as RankingGroupKey['category'] })}
-      >
-        <SelectTrigger className="w-40" aria-label="Categoría">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {categorias.map((c) => (
-            <SelectItem key={c} value={c}>
-              {CATEGORY_LABEL[c as keyof typeof CATEGORY_LABEL] ?? c}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <label className="min-w-0 flex-[1_1_7rem] sm:max-w-44">
+        <span className="mb-1 block text-xs text-muted-foreground">Categoría</span>
+        <Select
+          value={grupo.category}
+          onValueChange={(v) => onElegir({ category: v as RankingGroupKey['category'] })}
+        >
+          <SelectTrigger className="w-full" aria-label="Categoría">
+            <SelectValue>{CATEGORY_LABEL[grupo.category]}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {categorias.map((c) => (
+              <SelectItem key={c} value={c}>
+                {CATEGORY_LABEL[c as keyof typeof CATEGORY_LABEL] ?? c}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </label>
 
       {onBuscar ? (
         /*
@@ -109,20 +117,23 @@ export function SelectoresGrupo({
           envuelve y el campo se queda a lo ancho, que es donde teclear con el
           pulgar tiene sentido.
         */
-        <div className="relative min-w-40 flex-1 sm:max-w-56">
-          <Search
-            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden
-          />
-          <Input
-            type="search"
-            value={busqueda ?? ''}
-            onChange={(e) => onBuscar(e.target.value)}
-            placeholder={etiquetaBusqueda}
-            aria-label={etiquetaBusqueda}
-            className="pl-8"
-          />
-        </div>
+        <label className="min-w-0 flex-[1_1_7rem] sm:max-w-56">
+          <span className="mb-1 block text-xs text-muted-foreground">Buscar</span>
+          <span className="relative block">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              type="search"
+              value={busqueda ?? ''}
+              onChange={(e) => onBuscar(e.target.value)}
+              placeholder={etiquetaBusqueda}
+              aria-label={etiquetaBusqueda}
+              className="pl-8"
+            />
+          </span>
+        </label>
       ) : null}
     </div>
   );

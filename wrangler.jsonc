@@ -113,9 +113,9 @@
   /**
    * Almacenamiento de PDFs de convocatoria y snapshots del scraper.
    *
-   * Es el sustituto de Vercel Blob. src/lib/storage.ts lo usa si el binding
-   * existe; si no, cae a Neon Object Storage (AWS_*), que también funciona en
-   * Workers. Crea el cubo antes de desplegar:
+   * R2 es obligatorio: no se usa almacenamiento externo como respaldo ni una
+   * URL pública para saltarse el control de sesión. El cubo ya existe, es
+   * privado y no tiene dominio público habilitado. Para una instalación nueva:
    *
    *   npx wrangler r2 bucket create calendario-esgrima-archivos
    */
@@ -123,6 +123,20 @@
     {
       "binding": "ARCHIVOS",
       "bucket_name": "calendario-esgrima-archivos"
+    }
+  ],
+
+  /**
+   * Datos consultables de la aplicación. Base nueva e independiente de las
+   * otras aplicaciones, con jurisdicción UE. El código no vuelve a Neon si
+   * falta este binding.
+   */
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "calendario-fie-fede-db",
+      "database_id": "e1c28f19-278c-4d8f-9c7c-9b9d1c45653e",
+      "migrations_dir": "drizzle-d1"
     }
   ],
 
@@ -135,6 +149,12 @@
     "INGEST_SNAPSHOT_HTML": "true",
     "INGEST_USER_AGENT": "CalendarioEsgrima/1.0 (+https://calendario-fie-fede.excalofrio.workers.dev)",
     "RESEND_DAILY_LIMIT": "100",
+    // Presupuesto propio, inferior a los 5 GB incluidos y compartidos por cuenta.
+    // No activa por sí solo el incremental ni modifica el plan de facturación.
+    "D1_STORAGE_BUDGET_BYTES": "4294967296",
+    "SPORT_INCREMENTAL_ENABLED": "false",
+    // Solo se activa deliberadamente para congelar escrituras durante el corte.
+    "MIGRATION_MAINTENANCE": "false",
     // Encendida. Con el interruptor en "false" el cron de extracción responde
     // 200 explicando que no hizo nada, y el resto de la aplicación no se
     // entera: la IA es opcional en este proyecto.

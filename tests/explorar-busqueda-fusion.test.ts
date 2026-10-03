@@ -82,8 +82,8 @@ describe('hechos que permanecen en la persona fundida', () => {
     expect(text).toMatch(/WHERE en2\.person_id IN \(\(?WITH RECURSIVE miembros_grupo/);
     expect(sinGrupo(text, 'r', 'person_id')).toBe(true);
     expect(sinGrupo(text, 'en2', 'person_id')).toBe(true);
-    expect(text).toMatch(/c\.season = \$\d+/);
-    expect(text).toMatch(/c\.weapon::text = \$\d+/);
+    expect(text).toMatch(/c\.season = \?/);
+    expect(text).toMatch(/c\.weapon = \?/);
   });
 
   it('torneo y fechas siguen exigiendo un resultado del grupo en la misma prueba', async () => {
@@ -126,7 +126,8 @@ describe('hechos que permanecen en la persona fundida', () => {
     const complemento = sentencias.find((s) => conteos.test(s.text));
     expect(complemento?.text).toMatch(/WITH RECURSIVE miembros_grupo/);
     expect(complemento?.text).toMatch(/JOIN sport_result r ON r\.person_id = g\.id/);
-    expect(complemento?.params).toContain(UUID_B);
+    expect(complemento?.text).toContain('json_each');
+    expect(complemento?.params).toContain(JSON.stringify([UUID_B]));
   });
 });
 
@@ -142,7 +143,7 @@ describe('paginación con varias evidencias en el grupo', () => {
     const p2 = await buscarDeportistas(segunda.ctx, { q: 'ana', limite: 2, cursor: p1.siguiente });
     expect(p2).toMatchObject({ estado: 'ok', siguiente: null });
     expect(segunda.sentencias[0].params).toEqual(expect.arrayContaining(['ana bb', UUID_C]));
-    expect(segunda.sentencias[0].text).toMatch(/\(p\.name_normalized, p\.id\) > \(\$\d+, \$\d+::uuid\)/);
+    expect(segunda.sentencias[0].text).toMatch(/\(p\.name_normalized, p\.id\) > \(\?, \?\)/);
 
     const otrosFiltros = crearContexto();
     expect(await buscarDeportistas(otrosFiltros.ctx, { q: 'ana', arma: 'ESPADA', cursor: p1.siguiente })).toEqual({

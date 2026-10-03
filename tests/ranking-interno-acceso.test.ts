@@ -1,4 +1,4 @@
-import { PgDialect } from 'drizzle-orm/pg-core';
+import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -16,7 +16,7 @@ const h = vi.hoisted(() => {
     queue: [] as unknown[][],
     froms: [] as unknown[],
     wheres: [] as unknown[],
-    session: null as null | { id: string; email: string },
+    session: null as null | { id: string; email: string; emailVerified?: boolean },
   };
   const cadena: unknown = new Proxy(
     {},
@@ -51,11 +51,17 @@ vi.mock('@/db', () => ({
   },
 }));
 vi.mock('@/lib/auth/server', () => ({
-  auth: {
-    getSession: async () => ({
-      data: h.state.session ? { user: h.state.session } : null,
-    }),
-  },
+  getAuth: () => ({
+    api: {
+      getSession: async () => h.state.session
+        ? { user: { ...h.state.session, emailVerified: h.state.session.emailVerified ?? true } }
+        : null,
+    },
+  }),
+}));
+vi.mock('next/headers', () => ({
+  cookies: async () => ({ get: () => undefined }),
+  headers: async () => new Headers(),
 }));
 
 import { rankingPoint, rankingSnapshot } from '@/db/schema';
@@ -75,7 +81,7 @@ import {
 } from '@/lib/queries/ranking';
 import { armasInternas, puedeVerInterno } from '@/lib/ranking/acceso-interno';
 
-const dialect = new PgDialect();
+const dialect = new SQLiteSyncDialect();
 const grupo = { weapon: 'ESPADA', gender: 'M', category: 'ABS' } as const;
 
 function tocaInterno() {
@@ -159,7 +165,11 @@ describe('filtro por arma antes de leer', () => {
     return h.state.wheres.flatMap((w) =>
       dialect
         .sqlToQuery(w as never)
-        .params.filter((p) => ['FLORETE', 'ESPADA', 'SABLE'].includes(String(p)))
+        .params.flatMap((p) => {
+          if (typeof p !== 'string' || !p.startsWith('[')) return [p];
+          return JSON.parse(p) as unknown[];
+        })
+        .filter((p) => ['FLORETE', 'ESPADA', 'SABLE'].includes(String(p)))
         .map(String),
     );
   }
@@ -204,6 +214,13 @@ describe('identidad: rol verificado y revocación por petición', () => {
     authUserId: 'u1',
     inviteStatus: 'aceptada',
     ...extra,
+  });
+
+  it('un correo no verificado no puede reclamar ni leer un perfil administrador', async () => {
+    h.state.session = { id: 'u1', email: 'cuenta@example.test', emailVerified: false };
+    h.state.queue = [[fila({ role: 'admin' })]];
+    expect(await getSessionProfile()).toBeNull();
+    expect(h.state.froms).toHaveLength(0);
   });
 
   it('cuenta revocada: sin perfil y sin armas, aunque la sesión siga viva', async () => {

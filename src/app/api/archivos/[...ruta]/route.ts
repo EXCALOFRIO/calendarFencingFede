@@ -62,12 +62,22 @@ export async function GET(
   }
 
   const { ruta } = await params;
-  const clave = ruta.map((tramo) => decodeURIComponent(tramo)).join('/');
+  let clave: string;
+  try {
+    clave = ruta.map((tramo) => decodeURIComponent(tramo)).join('/');
+  } catch {
+    return respuesta({ ok: false, error: 'Ruta no válida.' }, 400);
+  }
 
   // Cortafuegos para rutas con "..": R2 no tiene directorios de verdad, pero
   // una clave así solo puede venir de alguien trasteando.
-  if (clave.includes('..')) {
+  if (!clave || clave.length > 512 || clave.includes('..') || /[\\\u0000-\u001f]/u.test(clave)) {
     return respuesta({ ok: false, error: 'Ruta no válida.' }, 400);
+  }
+  // Las fuentes y copias masivas solo las leen adaptadores del servidor.
+  // Una sesión normal no concede acceso a un archivo interno por conocer su hash.
+  if (/^(?:historico-interno|migracion-interna|backup-interno)(?:\/|$)/.test(clave)) {
+    return respuesta({ ok: false, error: 'Ese fichero ya no está.' }, 404);
   }
 
   const objeto = await cubo.get(clave);
@@ -81,6 +91,11 @@ export async function GET(
       'Content-Type': objeto.httpMetadata?.contentType ?? 'application/octet-stream',
       'Content-Length': String(objeto.size),
       ETag: objeto.httpEtag,
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "sandbox; default-src 'none'; frame-ancestors 'none'; form-action 'none'; base-uri 'none'",
+      ...(objeto.httpMetadata?.contentType?.includes('html')
+        ? { 'Content-Disposition': 'attachment' }
+        : {}),
       ...PRIVADO,
     },
   });

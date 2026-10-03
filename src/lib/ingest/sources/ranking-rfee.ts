@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import { enLista as inArray, lotesDeInsercion } from '@/lib/sqlite';
 import { z } from 'zod';
 import { mapCategory } from '../mappers';
 import { formatZodIssues } from '../types';
@@ -310,7 +311,7 @@ export async function ingestRankingRfee(
   const { athlete, ingestQuarantine, officialRankingEntry } = await import(
     '@/db/schema'
   );
-  const { and, eq, inArray, sql } = await import('drizzle-orm');
+  const { and, eq, sql } = await import('drizzle-orm');
 
   const stats: RankingIngestStats = {
     itemsSeen: 0,
@@ -576,7 +577,7 @@ export async function ingestRankingRfee(
     return true;
   });
 
-  for (const lote of trocear(sinDuplicados, 300)) {
+  for (const lote of lotesDeInsercion(sinDuplicados, officialRankingEntry)) {
     await db
       .insert(officialRankingEntry)
       .values(lote)
@@ -609,7 +610,7 @@ export async function ingestRankingRfee(
   }
 
   // --- 7. Cuarentena ---
-  for (const lote of trocear(cuarentena, 100)) {
+  for (const lote of lotesDeInsercion(cuarentena, ingestQuarantine)) {
     if (lote.length === 0) continue;
     await db.insert(ingestQuarantine).values(
       lote.map((item) => ({

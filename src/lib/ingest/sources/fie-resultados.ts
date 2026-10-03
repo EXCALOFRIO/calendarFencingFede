@@ -44,9 +44,9 @@ export const MAX_PAGINAS = 100;
 export function urlPrueba(season: number, competitionId: number): string {
   return `${FIE_API}/competition/${season}/${competitionId}`;
 }
-export function urlRanking(season: number, competitionId: number, pagina?: number): string {
+export function urlRanking(season: number, competitionId: number, pagina?: number, tamanoPagina = TAMANO_PAGINA_RANKING): string {
   const base = `${urlPrueba(season, competitionId)}/results/ranking`;
-  return pagina ? `${base}?page=${pagina}&pageSize=${TAMANO_PAGINA_RANKING}` : base;
+  return pagina ? `${base}?page=${pagina}&pageSize=${tamanoPagina}` : base;
 }
 export function urlPoules(season: number, competitionId: number): string {
   return `${urlPrueba(season, competitionId)}/results/pools`;
@@ -609,6 +609,8 @@ function mensajeDeError(e: unknown): string {
 }
 
 export type OpcionesRanking = {
+  /** Explicit short-run pages, bounded at 200; historical default stays 24. */
+  tamanoPagina?: number;
   /** Página por la que seguir (checkpoint). Por defecto, la primera. */
   desdePagina?: number;
   /** Tope de páginas de ESTA lectura; agotarlo deja la lectura parcial, no cerrada. */
@@ -633,6 +635,7 @@ export async function leerRanking(
 ): Promise<ParteRanking> {
   const url = urlRanking(season, competitionId);
   const desde = Math.max(1, Math.trunc(opciones.desdePagina ?? 1));
+  const tamanoPagina = Math.max(1, Math.min(200, Math.trunc(opciones.tamanoPagina ?? TAMANO_PAGINA_RANKING)));
   const maxPaginas = Math.max(1, Math.trunc(opciones.maxPaginas ?? MAX_PAGINAS));
   const porId = new Map<number, PuestoFie>();
   let total: number | null = null;
@@ -643,7 +646,7 @@ export async function leerRanking(
   for (let pagina = desde; pagina < desde + maxPaginas; pagina += 1) {
     let cuerpo: unknown;
     try {
-      cuerpo = await deps.fetchJson(urlRanking(season, competitionId, pagina));
+      cuerpo = await deps.fetchJson(urlRanking(season, competitionId, pagina, tamanoPagina));
     } catch (e) {
       errorTardio = mensajeDeError(e);
       siguiente = pagina;
@@ -666,7 +669,7 @@ export async function leerRanking(
     const antes = porId.size;
     for (const p of n.puestos) if (!porId.has(p.fieId)) porId.set(p.fieId, p);
     if (errorTardio !== null) break;
-    if (n.puestos.length === 0 || pagina * TAMANO_PAGINA_RANKING >= n.total) break;
+    if (n.puestos.length === 0 || pagina * tamanoPagina >= n.total) break;
     if (porId.size >= n.total && desde === 1) break;
     if (porId.size === antes) {
       errorTardio = `La página ${pagina} no aporta puestos nuevos: no se puede continuar`;
@@ -685,7 +688,7 @@ export async function leerRanking(
     paginasLeidas: paginas,
     paginaDesde: desde,
     siguientePagina: siguiente,
-    tamanoPagina: TAMANO_PAGINA_RANKING,
+    tamanoPagina,
     cobertura: coberturaDeRanking(total, puestos.length, errorTardio),
   };
 }

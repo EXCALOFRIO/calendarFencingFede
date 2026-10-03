@@ -1,6 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { filas, type ContextoExplorador } from './contexto';
 import type { Genero } from './tipos';
+import { listaUuid } from './filtros-sql';
 
 /** Cuántas fusiones A→B→C se siguen antes de dar la cadena por rota. */
 export const SALTOS = 3;
@@ -42,26 +43,26 @@ export async function resolverPersona(
     await db.execute(sql`
       WITH RECURSIVE cadena AS (
         SELECT id, merged_into_person_id, 0 AS salto
-        FROM sport_person WHERE id = ${personaId}::uuid
+        FROM sport_person WHERE id = ${personaId}
         UNION ALL
         SELECT p.id, p.merged_into_person_id, c.salto + 1
         FROM sport_person p JOIN cadena c ON p.id = c.merged_into_person_id
         WHERE c.salto < ${SALTOS}
       )
-      SELECT id::text AS id FROM cadena WHERE merged_into_person_id IS NULL LIMIT 1`),
+      SELECT id AS id FROM cadena WHERE merged_into_person_id IS NULL LIMIT 1`),
   );
   if (!canonica) return null;
 
   const grupo = filas<{ id: string }>(
     await db.execute(sql`
       WITH RECURSIVE grupo AS (
-        SELECT id, 0 AS salto FROM sport_person WHERE id = ${canonica.id}::uuid
+        SELECT id, 0 AS salto FROM sport_person WHERE id = ${canonica.id}
         UNION ALL
         SELECT p.id, g.salto + 1
         FROM sport_person p JOIN grupo g ON p.merged_into_person_id = g.id
         WHERE g.salto < ${SALTOS}
       )
-      SELECT DISTINCT id::text AS id FROM grupo`),
+      SELECT DISTINCT id AS id FROM grupo`),
   );
   const ids = [...new Set([canonica.id, ...grupo.map((g) => g.id)])];
   return { canonicaId: canonica.id, ids };
@@ -82,10 +83,7 @@ export async function leerCabeceras(
 ): Promise<Map<string, CabeceraPersona>> {
   const mapa = new Map<string, CabeceraPersona>();
   if (ids.length === 0) return mapa;
-  const lista = sql.join(
-    ids.map((i) => sql`${i}::uuid`),
-    sql`, `,
-  );
+  const lista = listaUuid(ids);
   const rows = filas<{
     id: string;
     nombre: string;
@@ -94,8 +92,8 @@ export async function leerCabeceras(
     anioNacimiento: number | null;
   }>(
     await db.execute(sql`
-      SELECT id::text AS id, display_name AS nombre, country_code AS pais,
-             gender::text AS genero, birth_year AS "anioNacimiento"
+      SELECT id AS id, display_name AS nombre, country_code AS pais,
+             gender AS genero, birth_year AS "anioNacimiento"
       FROM sport_person WHERE id IN (${lista})`),
   );
   for (const r of rows) {

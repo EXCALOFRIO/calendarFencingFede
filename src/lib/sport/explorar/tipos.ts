@@ -110,6 +110,35 @@ export type EstadisticaPorTipo = {
   sinPuestoNumerico: number;
 };
 
+export type ResumenEstadistico = {
+  pruebas: number;
+  conPuesto: number;
+  sinPuesto: number;
+  podios: number;
+  victorias: number;
+  mejorPuesto: number | null;
+  /** Pruebas con clasificaciones diferentes: no se escoge una fuente como ganadora. */
+  conflictos: number;
+  sinFecha: number;
+  desde: string | null;
+  hasta: string | null;
+};
+
+export type EstadisticasDeportista = {
+  resumen: ResumenEstadistico;
+  porCategoria: (ResumenEstadistico & {
+    tipo: string | null;
+    categoria: CategoriaPublicada;
+    arma: Arma;
+    genero: Genero;
+  })[];
+  porTemporada: (ResumenEstadistico & { temporada: string })[];
+  categoriasRecortadas: boolean;
+  temporadasRecortadas: boolean;
+  /** Los controles actuales sólo eligen el ranking, no filtran las estadísticas. */
+  alcance: 'historial_individual_importado';
+};
+
 export type EstadoCoberturaDto =
   | 'pendiente'
   | 'completo'
@@ -139,7 +168,12 @@ export type FichaDeportiva = {
   /** Posible menor (sólo se conoce el año de nacimiento): la pantalla minimiza lo que enseña. */
   esMenor: boolean;
   esPropia: boolean;
-  estadisticas: { conjunto: 'clasificaciones_individuales'; porTipo: EstadisticaPorTipo[] };
+  estadisticas: {
+    conjunto: 'clasificaciones_individuales';
+    porTipo: EstadisticaPorTipo[];
+    /** Presente en el lector actual; opcional para consumidores anteriores del DTO. */
+    detalle?: EstadisticasDeportista;
+  };
   cobertura: CoberturaFicha;
   rankingOficial: {
     temporada: string | null;

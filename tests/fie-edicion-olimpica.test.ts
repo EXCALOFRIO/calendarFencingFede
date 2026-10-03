@@ -1,23 +1,19 @@
 import { readFileSync } from 'node:fs';
-import { drizzle } from 'drizzle-orm/neon-http';
-import { describe, expect, it, vi } from 'vitest';
-import * as schema from '@/db/schema';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { Db } from '@/db';
-import type { DepsEvidencia } from '@/lib/entries/evidencia';
-import { claveEdicionFie, persistirLecturaFie, type DepsPersistenciaFie } from '@/lib/ingest/fie-resultados-persist';
+import { crearDepsPersistenciaFieDb } from '@/lib/ingest/fie-resultados-db';
+import { claveEdicionFie, persistirLecturaFie } from '@/lib/ingest/fie-resultados-persist';
+import { dbConSportLease, reclamarSportLease } from '@/lib/ingest/sport-incremental/lease';
 import { claveEdicionSerieSinTorneo } from '@/lib/ingest/series-complementarias';
 import { leerPruebaFie, type DepsLecturaFie, type PruebaFie } from '@/lib/ingest/sources/fie-resultados';
 import { leerEdicion, leerSeries } from '@/lib/sport/explorar/ediciones';
 import { crearContexto } from './helpers/explorar';
-
-vi.mock('@/db', () => ({ db: {} }));
-const { crearDepsPersistenciaFieDb } = await import('@/lib/ingest/fie-resultados-db');
+import { fixtureDeportivaD1 } from './helpers/d1-deporte';
 
 /**
  * Los Juegos de París publican `tournamentId: null`. Individual (246) y equipos
- * (250) deben acabar en UNA edición olímpica 2024. El almacén es una simulación
- * del contrato de claves de `sport_edition`/`sport_competition`: demuestra el
- * SQL generado y la orquestación, no su ejecución en Neon.
+ * (250) deben acabar en UNA edición olímpica 2024. Se ejecuta el contrato nativo
+ * de `sport_edition`/`sport_competition` en SQLite efímero con la guardia D1 real.
  */
 
 type Fixture = { respuestas: Record<string, unknown> };
@@ -39,90 +35,32 @@ type Edicion = {
   inicio: string | null;
   fin: string | null;
   ciudad: string | null;
-  sentencias: number;
 };
 type Prueba = { id: string; edicionId: string; clave: string; formato: string; fecha: string | null };
 
-/** Cliente Neon falso que aplica las claves únicas de `sport_edition` y `sport_competition`. */
-const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-
-function almacenSql() {
-  const ediciones = new Map<string, Edicion>();
-  const pruebas = new Map<string, Prueba>();
-  let n = 0;
-  const cliente = Object.assign(
-    async (sql: string, params: unknown[], opciones?: { arrayMode?: boolean }) => {
-      let filas: unknown[] = [];
-      if (/insert into "sport_edition"/i.test(sql)) {
-        const [source, season, clave, nombre, inicio, fin, ciudad] = params as string[];
-        const k = `${source}|${season}|${clave}`;
-        const previa = ediciones.get(k);
-        const agrupa = /least\(/i.test(sql) && /greatest\(/i.test(sql);
-        const menor = (a: string | null, b: string | null) => (a === null ? b : b === null ? a : a < b ? a : b);
-        const mayor = (a: string | null, b: string | null) => (a === null ? b : b === null ? a : a > b ? a : b);
-        const fila: Edicion = {
-          id: previa?.id ?? uuid(n += 1),
-          clave,
-          season,
-          nombre,
-          inicio: previa && agrupa ? menor(previa.inicio, inicio) : inicio,
-          fin: previa && agrupa ? mayor(previa.fin, fin) : fin,
-          ciudad,
-          sentencias: (previa?.sentencias ?? 0) + 1,
-        };
-        ediciones.set(k, fila);
-        filas = [{ id: fila.id }];
-      } else if (/insert into "sport_competition"/i.test(sql)) {
-        const [edicionId, source, season, clave] = params as string[];
-        const k = `${source}|${season}|${clave}`;
-        // Parámetros: edition_id, source, season, competition_key, weapon, gender, category,
-        // category_raw, format, competition_date, source_url (id/event_competition_id van `default`).
-        const formato = params[8] as string;
-        const fecha = params[9] as string | null;
-        const previa = pruebas.get(k);
-        pruebas.set(k, { id: previa?.id ?? uuid(n += 1), edicionId, clave, formato, fecha });
-        filas = [{ id: pruebas.get(k)!.id }];
-      }
-      return opciones?.arrayMode ? { rows: filas.map((f) => Object.values(f as object)), fields: [] } : { rows: filas, fields: [] };
+const abiertos: ReturnType<typeof fixtureDeportivaD1>[] = [];
+afterEach(() => abiertos.splice(0).forEach((local) => local.close()));
+async function almacenSql() {
+  const local = fixtureDeportivaD1();
+  abiertos.push(local);
+  const lease = await reclamarSportLease(local.db);
+  const db = dbConSportLease(local.db, lease!);
+  return {
+    ...local, db, lease,
+    get ediciones() {
+      const rows = local.sqlite.prepare(`SELECT id,tournament_key AS clave,season,name AS nombre,
+        start_date AS inicio,end_date AS fin,city AS ciudad FROM sport_edition`).all() as Edicion[];
+      return new Map(rows.map((row) => [row.id, row]));
     },
-    { transaction: async () => [] },
-  );
-  const db = drizzle(cliente as never, { schema }) as unknown as Db;
-  return { db, ediciones, pruebas };
-}
-
-function depsSimuladas(db: Db) {
-  const resultados = new Map<string, { source_name: string; position: number | null; person_id: string | null; competitionId: string }[]>();
-  const asaltos = new Map<string, number>();
-  const evidencia: DepsEvidencia = {
-    esquema: async () => ({ identidad: true, referencias: true }),
-    atletasPorLicencia: async () => [],
-    fichasFie: async () => [],
-    externos: async () => [],
-    personas: async (ids) => new Map(ids.map((id) => [id, { athleteId: null, mergedIntoPersonId: null }])),
+    get pruebas() {
+      const rows = local.sqlite.prepare(`SELECT id,edition_id AS edicionId,competition_key AS clave,
+        format AS formato,competition_date AS fecha FROM sport_competition
+        ORDER BY competition_date,competition_key`).all() as Prueba[];
+      return new Map(rows.map((row) => [row.id, row]));
+    },
   };
-  let personas = 0;
-  const deps: DepsPersistenciaFie = {
-    esquema: async () => ({ identidad: true, referencias: true }),
-    evidencia,
-    guard: { confirmar: async () => true, conflictos: async () => [] },
-    nuevoId: () => `persona-${(personas += 1)}`,
-    upsertPrueba: crearDepsPersistenciaFieDb(db).upsertPrueba,
-    async upsertResultados(competitionId, filas) {
-      resultados.set(
-        competitionId,
-        filas.map((f) => ({ source_name: f.sourceName, position: f.position, person_id: f.personId, competitionId })),
-      );
-      return { nuevos: filas.length, revisados: 0, sinCambios: 0 };
-    },
-    async upsertAsaltos(competitionId, filas) {
-      asaltos.set(competitionId, (asaltos.get(competitionId) ?? 0) + filas.length);
-      return { nuevos: filas.length, revisados: 0, sinCambios: 0 };
-    },
-    async upsertCobertura() {},
-  };
-  return { deps, resultados, asaltos };
 }
+const depsReales = (db: Db) => ({ deps: crearDepsPersistenciaFieDb(db) });
 
 const prueba = (extra: Partial<PruebaFie> = {}): PruebaFie => ({
   season: 2024,
@@ -183,8 +121,8 @@ describe('clave de edición de las pruebas FIE sin tournamentId', () => {
 
 describe('París 2024: persistir individual y equipos → una edición → clasificación', () => {
   async function persistirAmbas() {
-    const sql = almacenSql();
-    const s = depsSimuladas(sql.db);
+    const sql = await almacenSql();
+    const s = depsReales(sql.db);
     const individual = await persistirLecturaFie(s.deps, await leerPruebaFie(2024, 246, lector(cargar('paris-2024-246'))));
     const equipos = await persistirLecturaFie(s.deps, await leerPruebaFie(2024, 250, lector(cargar('paris-2024-250-equipos'))));
     return { sql, s, individual, equipos };
@@ -209,8 +147,8 @@ describe('París 2024: persistir individual y equipos → una edición → clasi
   });
 
   it('el orden de lectura no cambia la edición ni sus fechas, y repetir no duplica', async () => {
-    const sql = almacenSql();
-    const s = depsSimuladas(sql.db);
+    const sql = await almacenSql();
+    const s = depsReales(sql.db);
     for (const [id, fx] of [[250, 'paris-2024-250-equipos'], [246, 'paris-2024-246'], [250, 'paris-2024-250-equipos']] as const) {
       await persistirLecturaFie(s.deps, await leerPruebaFie(2024, id, lector(cargar(fx))));
     }
@@ -220,82 +158,29 @@ describe('París 2024: persistir individual y equipos → una edición → clasi
   });
 
   it('el SQL sólo ensancha fechas en ediciones compartidas y no cambia las claves de competencia ni hechos', async () => {
-    const consultas: string[] = [];
-    const cliente = Object.assign(
-      async (sql: string, _p: unknown[], o?: { arrayMode?: boolean }) => {
-        consultas.push(sql);
-        return o?.arrayMode ? { rows: [['id-1']], fields: [] } : { rows: [{ id: 'id-1' }], fields: [] };
-      },
-      { transaction: async () => [] },
-    );
-    const db = drizzle(cliente as never, { schema }) as unknown as Db;
-    const deps = crearDepsPersistenciaFieDb(db);
+    const local = await almacenSql();
+    const deps = crearDepsPersistenciaFieDb(local.db);
     await deps.upsertPrueba(prueba());
     await deps.upsertPrueba(prueba({ tournamentId: 107 }));
+    const consultas = local.calls.map((c) => c.sql);
     const [olimpica, torneo] = consultas.filter((c) => /insert into "sport_edition"/i.test(c));
-    expect(olimpica).toMatch(/"start_date" = least\(/i);
-    expect(olimpica).toMatch(/"end_date" = greatest\(/i);
+    expect(olimpica).toMatch(/"start_date" = coalesce\(min\(/i);
+    expect(olimpica).toMatch(/"end_date" = coalesce\(max\(/i);
     expect(torneo).toMatch(/"start_date" = excluded\.start_date/i);
-    expect(torneo).not.toMatch(/least\(|greatest\(/i);
+    expect(torneo).not.toMatch(/\bmin\(|\bmax\(/i);
     for (const c of consultas.filter((c) => /insert into "sport_competition"/i.test(c))) {
-      expect(c).toMatch(/on conflict \("source",\s*"season",\s*"competition_key"\)/i);
+      expect(c).toMatch(/on conflict \("sport_competition"\."source",\s*"sport_competition"\."season",\s*"sport_competition"\."competition_key"\)/i);
     }
   });
 
   it('el lector devuelve ambas pruebas en la edición y conserva puestos individuales y de equipo', async () => {
-    const { sql, s } = await persistirAmbas();
+    const { sql } = await persistirAmbas();
     const [edicion] = [...sql.ediciones.values()];
     const del = [...sql.pruebas.values()].filter((p) => p.edicionId === edicion.id);
     const [individual, equipos] = del;
 
-    const filaEdicion = {
-      id: edicion.id,
-      nombre: edicion.nombre,
-      temporada: edicion.season,
-      fuente: 'fie',
-      ciudad: edicion.ciudad,
-      pais: 'FRA',
-      inicio: edicion.inicio,
-      fin: edicion.fin,
-      pruebas: del.length,
-      armas: 'FLORETE,SABLE',
-      formatos: 'EQUIPOS,INDIVIDUAL',
-    };
-    const filasPrueba = del.map((p) => ({
-      id: p.id,
-      edicionId: p.edicionId,
-      arma: p.formato === 'EQUIPOS' ? 'FLORETE' : 'SABLE',
-      genero: 'M',
-      categoria: 'ABS',
-      categoriaRaw: 'S',
-      formato: p.formato,
-      fecha: p.fecha,
-      fuente: 'fie',
-      pruebaCalendarioId: null,
-      importados: s.resultados.get(p.id)?.length ?? 0,
-    }));
-    const puestos = (id: string) =>
-      (s.resultados.get(id) ?? [])
-        .slice()
-        .sort((a, b) => (a.position ?? 999) - (b.position ?? 999))
-        .map((r, i) => ({
-          id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
-          puesto: r.position,
-          puestoPublicado: r.position === null ? null : String(r.position),
-          nombre: r.source_name,
-          pais: null,
-          club: null,
-          personaId: r.person_id,
-        }));
     const leer = async (prueba: string) => {
-      const { ctx } = crearContexto({
-        respuestas: [
-          { cuando: /WHERE e\.id = /, filas: [filaEdicion] },
-          { cuando: /c\.format::text AS formato/, filas: filasPrueba },
-          { cuando: /GROUP BY r\.source/, filas: [{ fuente: 'fie', n: s.resultados.get(prueba)?.length ?? 0 }] },
-          { cuando: /FROM sport_result r\s+WHERE r\.competition_id/, filas: puestos(prueba) },
-        ],
-      });
+      const ctx = { ...crearContexto().ctx, db: sql.db };
       const r = await leerEdicion(ctx, { edicionId: edicion.id, prueba });
       if (r.estado !== 'ok') throw new Error('se esperaba ok');
       return r.edicion;
@@ -315,28 +200,16 @@ describe('París 2024: persistir individual y equipos → una edición → clasi
   });
 
   it('equipos no generan asaltos ni personas; el individual conserva sus 34 duelos de cuadro', async () => {
-    const { s, individual, equipos } = await persistirAmbas();
-    expect(s.asaltos.get(individual.competitionId!)).toBe(34);
-    expect(s.asaltos.has(equipos.competitionId!)).toBe(false);
+    const { sql, individual, equipos } = await persistirAmbas();
+    const count = sql.sqlite.prepare('SELECT count(*) AS n FROM sport_bout WHERE competition_id=?');
+    expect(count.get(individual.competitionId!)!.n).toBe(34);
+    expect(count.get(equipos.competitionId!)!.n).toBe(0);
     expect(equipos.personas).toEqual({ confirmadas: 0, creadas: 0, enRevision: 0, conflictos: 0 });
   });
 
   it('la serie lista una sola edición olímpica para París con sus dos pruebas', async () => {
     const { sql } = await persistirAmbas();
-    const filas = [...sql.ediciones.values()].map((e) => ({
-      id: e.id,
-      nombre: e.nombre,
-      temporada: e.season,
-      fuente: 'fie',
-      ciudad: e.ciudad,
-      pais: 'FRA',
-      inicio: e.inicio,
-      fin: e.fin,
-      pruebas: sql.pruebas.size,
-      armas: 'FLORETE,SABLE',
-      formatos: 'EQUIPOS,INDIVIDUAL',
-    }));
-    const { ctx } = crearContexto({ respuestas: [{ cuando: /FROM sport_edition e\s+WHERE/, filas }] });
+    const ctx = { ...crearContexto().ctx, db: sql.db };
     const r = await leerSeries(ctx);
     if (r.estado !== 'ok') throw new Error('se esperaba ok');
     expect(r.series[0]?.ediciones).toHaveLength(1);

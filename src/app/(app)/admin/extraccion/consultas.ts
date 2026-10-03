@@ -1,4 +1,5 @@
-import { and, count, desc, eq, inArray, notExists, sql } from 'drizzle-orm';
+import { and, count, desc, eq, notExists, sql } from 'drizzle-orm';
+import { enLista as inArray } from '@/lib/sqlite';
 import { db } from '@/db';
 import {
   event,
@@ -129,7 +130,7 @@ export async function resumenExtraccion(): Promise<ResumenExtraccion> {
       .where(eq(extraccionDocumento.camposPropuestos, 0)),
     db
       .select({
-        n: sql<number>`coalesce(sum(${extraccionDocumento.camposDescartados}), 0)::int`,
+        n: sql<number>`coalesce(sum(${extraccionDocumento.camposDescartados}), 0)`,
       })
       .from(extraccionDocumento),
   ]);

@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { rechazarEscrituraNoCoordinada } from '../src/lib/ingest/cli-obsoleto';
 import {
   depsInventarioFieRed,
   depsInventarioSkermoRed,
@@ -28,6 +29,7 @@ import {
  */
 
 const args = process.argv.slice(2);
+rechazarEscrituraNoCoordinada(args);
 const valor = (nombre: string) => {
   const i = args.indexOf(`--${nombre}`);
   return i >= 0 ? args[i + 1] : undefined;

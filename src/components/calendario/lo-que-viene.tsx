@@ -110,7 +110,7 @@ export function LoQueViene({
         )}
       >
         {bloques.map((bloque) => (
-          <li key={bloque.clave} className="pb-2">
+          <li key={bloque.clave}>
             <TarjetaBloque
               bloque={bloque}
               variante={variante}

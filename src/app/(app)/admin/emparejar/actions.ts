@@ -4,7 +4,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
 import { athlete, result } from '@/db/schema';
-import { requireRole } from '@/lib/auth/session';
+import { requireWritableRole } from '@/lib/auth/session';
 
 export type ResultadoAccion =
   | { ok: true; message: string }
@@ -23,7 +23,7 @@ export async function asignarResultado(
   athleteId: string,
   opciones: { guardarLicencia?: boolean } = {},
 ): Promise<ResultadoAccion> {
-  await requireRole('admin');
+  await requireWritableRole('admin');
 
   const [fila] = await db
     .select({
@@ -101,7 +101,7 @@ export async function asignarTodosConEseNombre(
   sourceAthleteName: string,
   athleteId: string,
 ): Promise<ResultadoAccion> {
-  await requireRole('admin');
+  await requireWritableRole('admin');
 
   const filas = await db
     .update(result)
@@ -125,7 +125,7 @@ export async function asignarTodosConEseNombre(
 
 /** Deshace una asignación equivocada. */
 export async function desasignarResultado(resultId: string): Promise<ResultadoAccion> {
-  await requireRole('admin');
+  await requireWritableRole('admin');
   await db.update(result).set({ athleteId: null }).where(eq(result.id, resultId));
   revalidatePath('/admin/emparejar');
   return { ok: true, message: 'Resultado devuelto a la cola de sin emparejar.' };

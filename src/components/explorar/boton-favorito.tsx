@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 export const ID_ENCABEZADO_FAVORITOS = 'favoritos-resultados';
 
 /**
- * Guardar/Quitar un favorito. El estado cambia al instante y se confirma (o se
+ * Estrella de favorito. El estado cambia al instante y se confirma (o se
  * deshace con un mensaje) cuando responde el servidor. Un favorito es sólo un
  * acceso rápido privado: ni este control ni sus textos prometen avisos.
  *
@@ -71,47 +71,39 @@ export function BotonFavorito({
   }
 
   const accion = optimista ? 'Quitar de favoritos' : 'Guardar en favoritos';
-  const enLista = variante === 'lista';
-
   return (
     <div className="flex min-w-0 flex-col items-start gap-1.5">
-      <div className="flex flex-wrap items-center gap-2">
-        <span
-          data-estado={optimista ? 'favorito' : 'sin-guardar'}
-          className={cn(
-            'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium',
-            optimista ? 'border-primary-text bg-marcado text-primary-text' : 'text-muted-foreground',
-          )}
-        >
-          <Star className={cn('size-3.5', optimista && 'fill-current')} aria-hidden />
-          {optimista ? 'Favorito' : 'Sin guardar'}
-        </span>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={alternar}
-          aria-disabled={pendiente}
-          aria-label={`${accion}: ${nombre}`}
-          className={cn('min-h-11', pendiente && 'opacity-70')}
-        >
-          {accion}
-        </Button>
-      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        onClick={alternar}
+        aria-disabled={pendiente}
+        aria-busy={pendiente}
+        aria-pressed={optimista}
+        aria-label={`${accion}: ${nombre}`}
+        title={accion}
+        data-estado={optimista ? 'favorito' : 'sin-guardar'}
+        className={cn(
+          'min-h-11 min-w-11 shrink-0 cursor-pointer bg-transparent hover:bg-transparent',
+          'transition-colors hover:text-primary-text focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+          'aria-disabled:cursor-wait motion-reduce:transition-none',
+          optimista ? 'text-primary-text' : 'text-muted-foreground',
+          pendiente && 'opacity-70',
+        )}
+      >
+        <Star className={cn('size-5', optimista && 'fill-current')} aria-hidden />
+      </Button>
 
       {/* Siempre presente para que el lector de pantalla anuncie el cambio. */}
-      <p role="status" className={cn('medida text-xs text-muted-foreground', enLista && 'sr-only')}>
-        {cambio && cambio.resultado !== 'error' ? cambio.mensaje : ''}
+      <p role="status" className="sr-only">
+        {pendiente ? 'Guardando cambio de favorito…' : cambio && cambio.resultado !== 'error' ? cambio.mensaje : ''}
       </p>
       {cambio?.resultado === 'error' ? (
         <p role="alert" className="medida text-sm text-danger">
           {cambio.mensaje}
         </p>
       ) : null}
-      {enLista ? null : (
-        <p className="medida text-xs text-muted-foreground">
-          Acceso rápido privado a esta ficha. No envía avisos ni notificaciones.
-        </p>
-      )}
     </div>
   );
 }

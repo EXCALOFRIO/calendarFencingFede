@@ -40,12 +40,18 @@ vi.mock('@/db', () => {
     schema: {},
   };
 });
-vi.mock('@/lib/auth/server', () => ({ auth: { getSession: async () => ({ data: null }) } }));
+vi.mock('@/lib/auth/server', () => ({
+  getAuth: () => ({ api: { getSession: async () => null } }),
+}));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn(), unstable_cache: (f: unknown) => f }));
 vi.mock('next/headers', () => ({
   headers: async () => new Headers(),
   cookies: async () => ({ get: () => undefined, getAll: () => [] }),
 }));
+// Esta matriz comprueba las guardas reales, no renderiza paneles. Evita cargar
+// gráficos y controles cliente antes de comprobar una redirección anónima.
+vi.mock('@/components/ranking/panel-ranking', () => ({ PanelRanking: () => null }));
+vi.mock('@/components/ranking/tabla-oficial', () => ({ TablaRankingOficial: () => null }));
 
 const raiz = path.resolve(__dirname, '..');
 const leer = (relativa: string) => readFileSync(path.join(raiz, relativa), 'utf8');

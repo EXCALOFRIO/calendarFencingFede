@@ -243,7 +243,7 @@ describe('relectura de un documento con otra huella (almacén acumulativo)', () 
     expect(bouts.every((b) => b.revision === 2 && b.occurredOn === '2019-01-21')).toBe(true);
   });
 
-  it('un asalto que pasa a estar en conflicto deja de estar vigente', async () => {
+  it('un asalto contradictorio en la corrección conserva los hechos anteriores hasta revisión', async () => {
     const a = almacen();
     await persistirLecturaPdf(a.d, lectura(), ctx);
     const enConflicto = prueba({
@@ -258,10 +258,13 @@ describe('relectura de un documento con otra huella (almacén acumulativo)', () 
     });
     const r = await persistirLecturaPdf(a.d, lectura({ sha256: SHA_B, estado: 'conflicto', pruebas: [enConflicto] }), ctx);
 
-    expect(a.asaltosDe(ID).map((b) => b.fencerBRef.slice(-5))).toEqual(['p0003', 'p0003']);
-    expect(a.asaltosDe(ID).some((b) => b.fencerARef.endsWith('p0001') && b.fencerBRef.endsWith('p0002'))).toBe(false);
-    expect(r.retirados?.asaltos).toBe(1);
+    expect(a.asaltosDe(ID).map((b) => b.fencerBRef.slice(-5))).toEqual(['p0002', 'p0003', 'p0003']);
+    expect(r.estado).toBe('correccion_en_revision');
+    expect(r.retirados?.asaltos).toBe(0);
     expect(a.doc()?.status).toBe('conflicto');
+    expect(decodificarCheckpointPdf(a.doc()?.cursor)).toMatchObject({
+      sha256: null, correccion: { shaPrevio: SHA_A, shaNuevo: SHA_B },
+    });
   });
 
   it('un error técnico conserva los últimos hechos y el checkpoint válidos', async () => {

@@ -1,6 +1,6 @@
 'use server';
 
-import { asc, eq, inArray, isNotNull, or } from 'drizzle-orm';
+import { asc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
 import { athlete, athleteWeapon, club, profileWeapon, userProfile } from '@/db/schema';
@@ -10,8 +10,10 @@ import {
   nacimientoDeLaFila,
   vincularFichaDesdeRanking,
 } from '@/lib/altas/desde-ranking';
-import { newIcalToken, requireRole } from '@/lib/auth/session';
+import { newIcalToken, requireRole, requireWritableRole } from '@/lib/auth/session';
 import { ageOn, requiresGuardianAccount } from '@/lib/categories';
+import { aprobarVinculoPorNombre } from '@/lib/altas/por-nombre';
+import { nowMilliseconds } from '@/db/d1/columns';
 
 export type ResultadoAccion =
   | { ok: true; message: string }
@@ -150,7 +152,7 @@ export async function listarClubes() {
 
 /** Alta rápida de club: sin clubes no se puede dar de alta a casi nadie. */
 export async function crearClub(formData: FormData): Promise<ResultadoAccion> {
-  await requireRole('admin');
+  await requireWritableRole('admin');
 
   const name = limpiar(formData.get('name'));
   const regionalFederation = limpiar(formData.get('regionalFederation'));
@@ -228,7 +230,7 @@ export async function buscarTiradorEnRanking(
 export async function crearTiradorDesdeRanking(
   formData: FormData,
 ): Promise<ResultadoAccion> {
-  await requireRole('admin');
+  const admin = await requireWritableRole('admin');
 
   const clave = limpiar(formData.get('clave'));
   const email = limpiar(formData.get('email')).toLowerCase();
@@ -297,6 +299,7 @@ export async function crearTiradorDesdeRanking(
     profileId: perfil.id,
     clave,
     origen: 'direccion',
+    adminProfileId: admin.profileId,
   });
 
   if (!resultado.ok) {
@@ -334,6 +337,43 @@ export async function crearTiradorDesdeRanking(
   };
 }
 
+/** No browser-supplied account or source key can change the requested binding. */
+export async function resolverSolicitudVinculo(formData: FormData): Promise<ResultadoAccion> {
+  const admin = await requireWritableRole('admin');
+  const solicitudId = limpiar(formData.get('solicitudId'));
+  const decision = limpiar(formData.get('decision'));
+  const evidencia = limpiar(formData.get('evidencia'));
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(solicitudId)
+    || !['aprobar', 'rechazar'].includes(decision)) {
+    return { ok: false, error: 'La solicitud no es válida. Recarga la bandeja.' };
+  }
+  if (evidencia.length < 20 || evidencia.length > 1000) {
+    return { ok: false, error: 'Explica la verificación o el rechazo con entre 20 y 1.000 caracteres, sin documentos ni secretos.' };
+  }
+  if (decision === 'aprobar') {
+    if (formData.get('verificada') !== 'si') {
+      return { ok: false, error: 'Debes verificar la identidad por una vía independiente del nombre o la licencia publicados.' };
+    }
+    const resultado = await aprobarVinculoPorNombre({ solicitudId, adminProfileId: admin.profileId, evidencia });
+    if (!resultado.ok) return { ok: false, error: resultado.error };
+  } else {
+    const resultado = await db.execute<{ id: string }>(sql`update athlete_link_request
+      set state = 'RECHAZADA', reviewed_at = ${nowMilliseconds},
+        reviewed_by_profile_id = ${admin.profileId}, evidence = ${evidencia}
+      where id = ${solicitudId} and state = 'PENDIENTE'
+        and exists (select 1 from user_profile where id = ${admin.profileId}
+          and role = 'admin' and invite_status in ('pendiente','aceptada'))
+      returning id`);
+    if (resultado.rows.length !== 1) {
+      return { ok: false, error: 'La solicitud ya se ha revisado o tu acceso ha cambiado. Recarga la bandeja.' };
+    }
+  }
+  for (const ruta of ['/admin/usuarios', '/alta', '/', '/estado', '/ranking', '/perfil', '/tiradores']) {
+    revalidatePath(ruta);
+  }
+  return { ok: true, message: decision === 'aprobar' ? 'Identidad revisada y ficha vinculada.' : 'Solicitud rechazada. No se ha concedido acceso a la ficha.' };
+}
+
 /**
  * Alta de una persona.
  *
@@ -341,7 +381,7 @@ export async function crearTiradorDesdeRanking(
  * consentimiento del tutor y esta aplicación ya no gestiona esas cuentas.
  */
 export async function crearUsuario(formData: FormData): Promise<ResultadoAccion> {
-  await requireRole('admin');
+  await requireWritableRole('admin');
 
   const firstName = limpiar(formData.get('firstName'));
   const lastName = limpiar(formData.get('lastName'));
@@ -867,7 +907,7 @@ async function analizarCsv(texto: string): Promise<PrevisualizacionCsv | ErrorCs
 export async function importarUsuarios(
   texto: string,
 ): Promise<ResultadoAccion & { detalle?: string[] }> {
-  await requireRole('admin');
+  await requireWritableRole('admin');
 
   const analisis = await analizarCsv(texto);
   if (!analisis.ok) return { ok: false, error: analisis.error };

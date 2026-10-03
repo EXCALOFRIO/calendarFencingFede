@@ -194,7 +194,7 @@ export function TablaRankingFie({
   const conBandera = !soloEspana;
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="ranking flex min-w-0 flex-col gap-4">
       {/* Individual o selecciones. Las dos clasificaciones de la FIE. */}
       <ToggleGroup
         type="single"
@@ -205,10 +205,10 @@ export function TablaRankingFie({
         spacing={1}
         className="w-full sm:w-auto"
       >
-        <ToggleGroupItem value="INDIVIDUAL" className="h-10 flex-1 sm:flex-none">
+        <ToggleGroupItem value="INDIVIDUAL" className="h-11 flex-1 sm:flex-none">
           Individual
         </ToggleGroupItem>
-        <ToggleGroupItem value="EQUIPOS" className="h-10 flex-1 sm:flex-none">
+        <ToggleGroupItem value="EQUIPOS" className="h-11 flex-1 sm:flex-none">
           Selecciones
         </ToggleGroupItem>
       </ToggleGroup>
@@ -230,7 +230,7 @@ export function TablaRankingFie({
         de arma haría dudar de si «España» es una categoría más.
       */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+        <label className="flex min-h-[44px] cursor-pointer items-center gap-2.5 text-sm">
           <Switch
             checked={soloEspana}
             onCheckedChange={setSoloEspana}
@@ -255,28 +255,36 @@ export function TablaRankingFie({
       </div>
 
       {tabla ? (
-        <p className="medida text-xs text-muted-foreground">
-          {porEquipos
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-filete-alto pt-2 text-xs text-muted-foreground">
+          <span>{porEquipos
             ? 'Ranking mundial de selecciones de la FIE'
-            : 'Ranking mundial individual de la FIE'}
-          , temporada {tabla.season}
-          {tabla.actualizadoEl ? ` · leído el ${formatDateEs(tabla.actualizadoEl)}` : ''}
-        </p>
+            : 'Ranking mundial individual de la FIE'}</span>
+          <span>Temporada {tabla.season}</span>
+          {tabla.actualizadoEl ? <span>Leído {formatDateEs(tabla.actualizadoEl)}</span> : null}
+          {tabla.sourceUrl ? (
+            <Button variant="link" size="sm" className="px-0 text-xs text-primary-text" asChild>
+              <a href={tabla.sourceUrl} target="_blank" rel="noreferrer">
+                Ver la fuente
+                <ExternalLink className="size-3 shrink-0" aria-hidden />
+              </a>
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
       <Table>
         <TableHeader>
           <TableRow>
             {/* «Mundial» y no «#»: el número no es el puesto en esta lista. */}
-            <TableHead className="w-16 pl-0 text-right">Mundial</TableHead>
-            {conBandera ? <TableHead className="w-14">País</TableHead> : null}
+            <TableHead className="w-14 pl-0 text-right text-xs sm:w-16 sm:text-sm">Mundial</TableHead>
+            {conBandera ? <TableHead className="hidden w-20 sm:table-cell">País</TableHead> : null}
             <TableHead>{porEquipos ? 'Selección' : 'Tirador'}</TableHead>
             {hayPruebas && !porEquipos ? (
               <TableHead className="hidden w-20 text-right sm:table-cell">
                 Pruebas
               </TableHead>
             ) : null}
-            <TableHead className="w-20 pr-0 text-right">Puntos</TableHead>
+            <TableHead className="w-14 pr-0 text-right text-xs sm:w-20 sm:text-sm">Puntos</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -296,7 +304,7 @@ export function TablaRankingFie({
       {filtradas.length === 0 && !cargando ? (
         <p className="medida text-sm text-muted-foreground">
           {busqueda
-            ? `Nadie con ese nombre en ${tabla?.rows.length ?? 0} filas de esta clasificación. La FIE los publica al revés y en mayúsculas («CASAUS PIELAGO Jorge»), pero aquí da igual el orden.`
+            ? 'Ningún nombre coincide. Prueba otro nombre o país.'
             : soloEspana
               ? 'España no tiene a nadie clasificado en esta prueba. Apaga «solo España» para ver el resto del mundo.'
               : 'La FIE no publica clasificación de esta prueba.'}
@@ -355,11 +363,11 @@ function Fila({
   porEquipos: boolean;
 }) {
   return (
-    <TableRow className={cn(marca.espanol && 'bg-primary/10 hover:bg-primary/15')}>
+    <TableRow className={cn(marca.espanol && 'bg-marcado hover:bg-accent')}>
       <TableCell className="pl-0 text-right align-top">
         <span
           className={cn(
-            'cifra text-xl',
+            'cifra text-2xl',
             marca.nuestro ? 'text-primary-text' : 'text-foreground',
           )}
         >
@@ -368,12 +376,12 @@ function Fila({
       </TableCell>
 
       {conBandera ? (
-        <TableCell className="align-top">
+        <TableCell className="hidden align-top sm:table-cell">
           <BanderaPais pais={fila.pais} tamaño="fila" />
         </TableCell>
       ) : null}
 
-      <TableCell className="align-top">
+      <TableCell className="whitespace-normal align-top">
         {porEquipos ? (
           /*
             En selecciones la fila ES el país, y la FIE lo publica en inglés y
@@ -389,11 +397,11 @@ function Fila({
             target="_blank"
             rel="noreferrer"
             className={cn(
-              'inline-flex items-center gap-1.5 hover:underline',
+              'inline-flex min-h-[44px] min-w-0 items-center gap-1.5 whitespace-normal hover:underline',
               marca.mio && 'font-semibold',
             )}
           >
-            {fila.nombre ?? `FIE ${fila.fieId}`}
+            <span className="min-w-0 break-words">{fila.nombre ?? `FIE ${fila.fieId}`}</span>
             <ExternalLink
               className="size-3 shrink-0 text-muted-foreground"
               aria-hidden
@@ -411,6 +419,12 @@ function Fila({
           >
             Tú
           </Badge>
+        ) : null}
+        {conBandera ? (
+          <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground sm:hidden">
+            <BanderaPais pais={fila.pais} tamaño="fila" />
+            <span className="min-w-0 break-words">{fila.paisNombre ?? fila.pais ?? 'País no publicado'}</span>
+          </span>
         ) : null}
         {/* Las pruebas, cuando la columna está escondida en el móvil. */}
         {conPruebas && fila.eventCount !== null ? (

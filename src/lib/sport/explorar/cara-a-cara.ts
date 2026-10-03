@@ -9,7 +9,7 @@ import {
   normalizarConsulta,
 } from './entrada';
 import { condicionesPrueba, listaUuid, unionesPrueba, y } from './filtros-sql';
-import { leerCabeceras, resolverPersona } from './personas';
+import { leerCabeceras, resolverPersona, SALTOS } from './personas';
 import type {
   Arma,
   AsaltoDto,
@@ -118,7 +118,7 @@ export function resumirCobertura(
 
 const FECHA_ASALTO = sql.raw('coalesce(b.occurred_on, c.competition_date, e.start_date)');
 const FECHA_ORDEN_ASALTO = sql.raw(
-  "coalesce(b.occurred_on, c.competition_date, e.start_date, DATE '0001-01-01')",
+  "coalesce(b.occurred_on, c.competition_date, e.start_date, '0001-01-01')",
 );
 
 /** Pareja en cualquiera de los dos órdenes en que `sport_bout` guarda las referencias. */
@@ -140,7 +140,7 @@ function condicionesH2h(
   f: FiltrosH2h,
 ): SQL[] {
   const condiciones = [
-    sql`c.format::text = 'INDIVIDUAL'`,
+    sql`c.format = 'INDIVIDUAL'`,
     parejaDe(yo, rival),
     ...condicionesPrueba(f, FECHA_ASALTO),
   ];
@@ -150,11 +150,11 @@ function condicionesH2h(
 
 export function sqlResumenAsaltos(yo: readonly string[], rival: readonly string[], f: FiltrosH2h) {
   return sql`
-    SELECT count(*)::int AS asaltos,
-           count(*) FILTER (WHERE mios > rival)::int AS victorias,
-           count(*) FILTER (WHERE mios < rival)::int AS derrotas,
-           count(*) FILTER (WHERE mios = rival)::int AS "sinDecidir",
-           coalesce(sum(mios), 0)::int AS "tantosFavor", coalesce(sum(rival), 0)::int AS "tantosContra"
+    SELECT count(*) AS asaltos,
+           count(*) FILTER (WHERE mios > rival) AS victorias,
+           count(*) FILTER (WHERE mios < rival) AS derrotas,
+           count(*) FILTER (WHERE mios = rival) AS "sinDecidir",
+           coalesce(sum(mios), 0) AS "tantosFavor", coalesce(sum(rival), 0) AS "tantosContra"
     FROM (
       SELECT ${MIOS(yo)} AS mios, ${RIVAL(yo)} AS rival
       FROM sport_bout b ${unionesPrueba('b')}
@@ -174,16 +174,16 @@ export function sqlAsaltos(
   const condiciones = [...condicionesH2h(yo, rival, f), sql`b.score_a <> b.score_b`];
   if (clave) {
     condiciones.push(
-      sql`(${FECHA_ORDEN_ASALTO}, b.id) < (${String(clave[0])}::date, ${String(clave[1])}::uuid)`,
+      sql`(${FECHA_ORDEN_ASALTO}, b.id) < (${String(clave[0])}, ${String(clave[1])})`,
     );
   }
   return sql`
-    SELECT b.id::text AS id, ${MIOS(yo)} AS mios, ${RIVAL(yo)} AS rival,
-           e.id::text AS "torneoId", e.name AS torneo,
-           c.id::text AS "pruebaId", c.weapon::text AS arma, c.gender::text AS genero,
-           c.category::text AS categoria, c.category_raw AS "categoriaRaw", c.format::text AS formato,
-           c.season AS temporada, (${FECHA_ASALTO})::text AS fecha,
-           (${FECHA_ORDEN_ASALTO})::text AS "fechaOrden",
+    SELECT b.id AS id, ${MIOS(yo)} AS mios, ${RIVAL(yo)} AS rival,
+           e.id AS "torneoId", e.name AS torneo,
+           c.id AS "pruebaId", c.weapon AS arma, c.gender AS genero,
+           c.category AS categoria, c.category_raw AS "categoriaRaw", c.format AS formato,
+           c.season AS temporada, (${FECHA_ASALTO}) AS fecha,
+           (${FECHA_ORDEN_ASALTO}) AS "fechaOrden",
            b.phase AS fase, b.round_key AS ronda, coalesce(b.source_url, c.source_url) AS enlace
     FROM sport_bout b ${unionesPrueba('b')}
     WHERE ${y(condiciones)}
@@ -197,7 +197,7 @@ export function sqlPruebasComunes(
   f: FiltrosH2h,
 ) {
   const condiciones = [
-    sql`c.format::text = 'INDIVIDUAL'`,
+    sql`c.format = 'INDIVIDUAL'`,
     ...condicionesPrueba(f, sql.raw('coalesce(c.competition_date, e.start_date)')),
   ];
   return sql`
@@ -208,12 +208,12 @@ export function sqlPruebasComunes(
       UNION
       SELECT b.competition_id FROM sport_bout b WHERE ${parejaDe(yo, rival)}
     )
-    SELECT c.id::text AS id, c.source AS fuente, e.name AS torneo, c.weapon::text AS arma,
-           c.gender::text AS genero, c.category::text AS categoria, c.category_raw AS "categoriaRaw",
+    SELECT c.id AS id, c.source AS fuente, e.name AS torneo, c.weapon AS arma,
+           c.gender AS genero, c.category AS categoria, c.category_raw AS "categoriaRaw",
            c.season AS temporada,
-           (SELECT count(*)::int FROM sport_bout b
+           (SELECT count(*) FROM sport_bout b
             WHERE b.competition_id = c.id AND ${parejaDe(yo, rival)}) AS asaltos,
-           (SELECT coalesce(string_agg(cov.fact_kind || ':' || cov.status::text, ','), '')
+           (SELECT coalesce(group_concat(cov.fact_kind || ':' || cov.status, ','), '')
             FROM sport_import_coverage cov
             WHERE cov.competition_id = c.id AND cov.fact_kind IN ('pools', 'tableau', 'pdf')) AS lecturas
     FROM comunes cm
@@ -423,33 +423,40 @@ export async function listarRivales(
   const limite = pedido ?? LIMITE_POR_DEFECTO;
   const lista = listaUuid(persona.ids);
   const condiciones: SQL[] = [
-    sql`c.format::text = 'INDIVIDUAL'`,
+    sql`c.format = 'INDIVIDUAL'`,
     sql`(b.fencer_a_person_id IN (${lista}) OR b.fencer_b_person_id IN (${lista}))`,
     sql`b.fencer_a_person_id IS NOT NULL AND b.fencer_b_person_id IS NOT NULL`,
     ...(filtros.temporada ? [sql`c.season = ${filtros.temporada}`] : []),
   ];
-  const externas: SQL[] = [sql`cp.id <> ${persona.canonicaId}::uuid`];
+  const externas: SQL[] = [sql`cp.id <> ${persona.canonicaId}`];
   for (const w of (filtros.q ?? '').split(' ').filter(Boolean)) {
     externas.push(
       sql`(cp.name_normalized LIKE ${`${w}%`} OR cp.name_normalized LIKE ${`% ${w}%`})`,
     );
   }
   if (clave) {
-    externas.push(sql`(cp.name_normalized, cp.id) > (${String(clave[0])}, ${String(clave[1])}::uuid)`);
+    externas.push(sql`(cp.name_normalized, cp.id) > (${String(clave[0])}, ${String(clave[1])})`);
   }
 
   const rows = filas<{ id: string; clave: string; nombre: string; pais: string | null; asaltos: number }>(
     await ctx.db.execute(sql`
-      SELECT cp.id::text AS id, cp.name_normalized AS clave, cp.display_name AS nombre,
-             cp.country_code AS pais, sum(x.n)::int AS asaltos
-      FROM (
+      WITH RECURSIVE orientados AS (
         SELECT CASE WHEN b.fencer_a_person_id IN (${lista}) THEN b.fencer_b_person_id ELSE b.fencer_a_person_id END AS rival_id,
                1 AS n
         FROM sport_bout b ${unionesPrueba('b')}
         WHERE ${y(condiciones)}
-      ) x
-      JOIN sport_person op ON op.id = x.rival_id
-      JOIN sport_person cp ON cp.id = coalesce(op.merged_into_person_id, op.id)
+      ), ruta(rival_id, id, destino, salto) AS (
+        SELECT DISTINCT x.rival_id, p.id, p.merged_into_person_id, 0
+        FROM orientados x JOIN sport_person p ON p.id = x.rival_id
+        UNION ALL
+        SELECT r.rival_id, p.id, p.merged_into_person_id, r.salto + 1
+        FROM ruta r JOIN sport_person p ON p.id = r.destino WHERE r.salto < ${SALTOS}
+      )
+      SELECT cp.id AS id, cp.name_normalized AS clave, cp.display_name AS nombre,
+             cp.country_code AS pais, sum(x.n) AS asaltos
+      FROM orientados x
+      JOIN ruta r ON r.rival_id = x.rival_id AND r.destino IS NULL
+      JOIN sport_person cp ON cp.id = r.id
       WHERE ${y(externas)}
       GROUP BY cp.id, cp.name_normalized, cp.display_name, cp.country_code
       ORDER BY cp.name_normalized ASC, cp.id ASC

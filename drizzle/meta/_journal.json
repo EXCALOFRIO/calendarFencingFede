@@ -134,6 +134,20 @@
       "when": 1790600000000,
       "tag": "0019_categorias_m10_m12",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790610000000,
+      "tag": "0020_guardia_crons",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790620000000,
+      "tag": "0021_incremento_deportivo",
+      "breakpoints": true
     }
   ]
 }

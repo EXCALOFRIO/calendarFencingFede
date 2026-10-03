@@ -48,7 +48,6 @@ import {
   MarcaConvocatoria,
   contradiccion,
   enlacesDeConvocatoria,
-  esImporte,
   huecoDe,
   nombreDeEnlace,
   plazosDeConvocatoria,
@@ -218,7 +217,7 @@ function Banda({
 }) {
   return (
     <section className="flex flex-col gap-3 border-t border-t-filete pt-4 pb-1 first:border-t-0 first:pt-0">
-      <header className="flex items-end justify-between gap-3">
+      <header className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
         <h3 className="text-xl leading-none sm:text-lg">{titulo}</h3>
         {cifra !== undefined || rotulo ? (
           <p className={cn('flex shrink-0 items-baseline gap-1.5', tono)}>
@@ -436,7 +435,7 @@ export function FichaEvento({
                 {CATEGORY_SHORT[c.category] ??
                   CATEGORY_LABEL[c.category as keyof typeof CATEGORY_LABEL] ??
                   c.category}
-                {c.format === 'EQUIPOS' ? ' · equipos' : ''}
+                {c.format === 'EQUIPOS' ? ', equipos' : ''}
               </span>
             </ToggleGroupItem>
           ))}
@@ -505,7 +504,7 @@ function BandaPlazo({
       titulo="Plazo de inscripción"
       cifra={hayCuenta ? dias : undefined}
       rotulo={
-        hayCuenta ? `${dias === 1 ? 'día' : 'días'} · ${tono.palabra}` : undefined
+        hayCuenta ? `${dias === 1 ? 'día' : 'días'}, ${tono.palabra}` : undefined
       }
       tono={tono.texto}
     >
@@ -522,23 +521,14 @@ function BandaPlazo({
         conEstado={!hayCuenta}
       />
 
-      {/*
-        AQUÍ IBA LA CUOTA Y SE HA IDO DE LA TARJETA.
-
-        Estaban la cuota de inscripción de marcador, las pastillas de los otros
-        importes (equipos, cadete, júnior, extranjeros) y, en la lista de lo
-        leído del PDF, la multa por árbitro que falte y los tramos de árbitros
-        obligatorios. Petición literal del usuario, sobre la ficha de Lima:
-        *«lo del precio porfa quítalo que no lo quiero mostrar, lo de la
-        inscripción y lo de los equipos cuánto cuesta, ni el árbitro; lo de
-        cuotas ocúltalo de las tarjetas»*.
-
-        NO se deja de extraer ni se borra nada: los importes siguen leyéndose,
-        guardados con su cita y visibles en Gestión › Extracción, que es donde
-        los mira quien tramita. Lo que se quita es enseñárselos al tirador.
-        El filtro está en `esImporte`, un sitio, para que valga igual aquí y en
-        la lista de frases del PDF.
-      */}
+      <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="text-sm text-muted-foreground">Cuota de inscripción</span>
+        {prueba.feeEur !== null ? (
+          <span className="cifra text-3xl">{formatEur(prueba.feeEur)}</span>
+        ) : (
+          <span className="text-sm text-muted-foreground">no publicada</span>
+        )}
+      </p>
 
       {/*
         Un plazo que aparece en la convocatoria y no en el calendario. No entra
@@ -970,12 +960,12 @@ export function BandaEstasDentro({
                 size="sm"
                 className={cn(
                   'rounded-none px-3 py-1.5',
-                  i.esMio && 'bg-primary/10',
+                  i.esMio && 'bg-marcado',
                 )}
               >
-                <ItemContent>
-                  <ItemTitle className="text-base sm:text-sm">
-                    {titular(i.nombre)}
+                <ItemContent className="min-w-0">
+                  <ItemTitle className="w-full min-w-0 flex-wrap text-base sm:text-sm">
+                    <span className="min-w-0 break-words">{titular(i.nombre)}</span>
                     {i.esMio ? (
                       <Badge variant="secondary" className="ml-1">
                         tú
@@ -984,7 +974,7 @@ export function BandaEstasDentro({
                   </ItemTitle>
                 </ItemContent>
                 {i.club ? (
-                  <ItemActions className="text-sm text-muted-foreground sm:text-xs">
+                  <ItemActions className="min-w-0 basis-full break-words text-sm text-muted-foreground sm:basis-auto sm:text-xs">
                     {titular(i.club)}
                   </ItemActions>
                 ) : null}
@@ -1040,19 +1030,12 @@ function BandaConvocatoria({
   evento: EventView;
   prueba: CompetitionView | null;
 }) {
-  /**
-   * Todo lo leído del PDF **menos el dinero**.
-   *
-   * Aquí salían la cuota de equipos, las de cadete y júnior, la multa de mil
-   * euros por árbitro que falte y los tramos de árbitros obligatorios, que es
-   * lo que el usuario señaló en la ficha de Lima y pidió ocultar. Se siguen
-   * extrayendo y se ven en Gestión › Extracción; lo que no hacen es ocupar la
-   * ficha del tirador.
-   */
+  // Las cifras extraídas conservan su cita y su estado, también los importes:
+  // nunca se presentan como cuota oficial sin confirmación.
   const leidos = [
     ...evento.datosExtraidos,
     ...(prueba?.datosExtraidos ?? []),
-  ].filter((d) => !esImporte(d.campo));
+  ];
   const enlaces = enlacesDeConvocatoria(evento.datosExtraidos);
   const fuentes = enlacesDeFuente(evento);
 

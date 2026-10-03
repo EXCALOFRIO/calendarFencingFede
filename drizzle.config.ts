@@ -1,11 +1,11 @@
 import { defineConfig } from 'drizzle-kit';
-import 'dotenv/config';
 
 export default defineConfig({
-  schema: './src/db/schema/index.ts',
+  // Offline legacy schema generation only. Never supply Neon credentials here:
+  // migrate/push/studio are retired; the dedicated exporter is read-only.
+  schema: './src/db/legacy-postgres/schema.ts',
   out: './drizzle',
   dialect: 'postgresql',
-  dbCredentials: { url: process.env.DATABASE_URL! },
   verbose: true,
   strict: true,
 });

@@ -1,89 +1,67 @@
 import { sql } from 'drizzle-orm';
 import type { Db } from '@/db';
-import type { ConteosOcupacion, Ocupacion, TablaOcupacion } from './capacidad';
+import { evaluarCapacidad, proyectarCrecimiento, TASAS_CONSERVADORAS,
+  type ConteosOcupacion, type EstimacionLote, type Ocupacion, type PlanNeon } from './capacidad';
 
-/**
- * Medición de ocupación lógica con SELECT de sólo lectura sobre el catálogo y
- * recuentos de las tablas deportivas. Nunca lee filas de datos, PDF ni
- * credenciales. Los errores se propagan: una base que no contesta no es una
- * base vacía.
- */
-
-export type ConsultaSql = (texto: string) => Promise<Record<string, unknown>[]>;
-
-const SQL_TABLAS = `
-  select c.relname as tabla,
-         pg_table_size(c.oid)::bigint as tabla_bytes,
-         pg_indexes_size(c.oid)::bigint as indices_bytes,
-         pg_total_relation_size(c.oid)::bigint as total_bytes,
-         greatest(c.reltuples, 0)::bigint as filas
-  from pg_class c
-  join pg_namespace n on n.oid = c.relnamespace
-  where n.nspname = 'public' and c.relkind in ('r', 'p')
-  order by total_bytes desc`;
-
-const SQL_BASE = 'select pg_database_size(current_database())::bigint as bytes';
-
-/** Tablas contadas con exactitud (pequeñas) y qué mide cada una. */
+export type ConsultaSql = ((texto: string) => Promise<Record<string, unknown>[]>) & {
+  storageSize?: () => Promise<number>;
+};
+/** Application allocation, NOT a claim that the shared 5 GB account allowance is free. */
+export const D1_DEFAULT_BUDGET_BYTES = 4 * 1024 ** 3;
+export function presupuestoD1(value = process.env.D1_STORAGE_BUDGET_BYTES): number {
+  if (value === undefined) return D1_DEFAULT_BUDGET_BYTES;
+  const n = Number(value);
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(n) || n <= 0 || n > D1_DEFAULT_BUDGET_BYTES) {
+    throw new Error('sport_capacity_budget_invalid');
+  }
+  return n;
+}
+/** Compatibility DTO for the legacy pure planning core, never a Neon policy. */
+export function planCapacidadD1(bytes = presupuestoD1()): PlanNeon {
+  if (!Number.isSafeInteger(bytes) || bytes <= 0 || bytes > D1_DEFAULT_BUDGET_BYTES) throw new Error('sport_capacity_budget_invalid');
+  return { tipo: 'otro', umbralVerificadoBytes: bytes, verificadoEn: 'D1 application allocation (account storage unverified)' };
+}
 const CONTEOS: { clave: keyof ConteosOcupacion; tabla: string; donde?: string }[] = [
-  { clave: 'personas', tabla: 'sport_person' },
-  { clave: 'pruebas', tabla: 'sport_competition' },
-  { clave: 'puestos', tabla: 'sport_result' },
-  { clave: 'asaltos', tabla: 'sport_bout' },
+  { clave: 'personas', tabla: 'sport_person' }, { clave: 'pruebas', tabla: 'sport_competition' },
+  { clave: 'puestos', tabla: 'sport_result' }, { clave: 'asaltos', tabla: 'sport_bout' },
   { clave: 'documentos', tabla: 'sport_import_coverage', donde: "fact_kind = 'pdf'" },
   { clave: 'coberturas', tabla: 'sport_import_coverage' },
 ];
-
-const numero = (v: unknown): number => {
+function entero(v: unknown, positive = false) {
   const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-};
-
-export async function medirOcupacion(
-  consultar: ConsultaSql,
-  ahora: () => Date = () => new Date(),
-): Promise<Ocupacion> {
-  const filas = await consultar(SQL_TABLAS);
-  const tablas: TablaOcupacion[] = filas.map((f) => ({
-    tabla: String(f.tabla),
-    tablaBytes: numero(f.tabla_bytes),
-    indicesBytes: numero(f.indices_bytes),
-    totalBytes: numero(f.total_bytes),
-    filas: numero(f.filas),
-  }));
-  const [base] = await consultar(SQL_BASE);
-  const existentes = new Set(tablas.map((t) => t.tabla));
-
-  const conteos: ConteosOcupacion = {
-    personas: 0,
-    pruebas: 0,
-    puestos: 0,
-    asaltos: 0,
-    documentos: 0,
-    coberturas: 0,
-  };
-  for (const c of CONTEOS) {
-    // Identificadores fijos de esta lista: nada que venga de fuera llega al SQL.
-    if (!existentes.has(c.tabla)) continue;
-    const [r] = await consultar(
-      `select count(*)::int as n from "${c.tabla}"${c.donde ? ` where ${c.donde}` : ''}`,
-    );
-    conteos[c.clave] = numero(r?.n);
+  if (v === null || v === undefined || !Number.isSafeInteger(n) || n < (positive ? 1 : 0)) {
+    throw new Error('sport_capacity_measurement_unknown');
   }
-
-  return {
-    medidoEn: ahora().toISOString(),
-    logicoBytes: tablas.reduce((s, t) => s + t.totalBytes, 0),
-    baseDatosBytes: base ? numero(base.bytes) : null,
-    tablas,
-    conteos,
-  };
+  return n;
 }
-
-/** Consulta real: SELECT de texto fijo sobre la conexión Neon existente. */
+export async function medirOcupacion(consultar: ConsultaSql, ahora = () => new Date()): Promise<Ocupacion> {
+  let bytes: number;
+  try {
+    if (!consultar.storageSize) throw new Error();
+    bytes = entero(await consultar.storageSize(), true);
+  } catch { throw new Error('sport_capacity_measurement_unknown'); }
+  const tables = await consultar("select name as tabla from sqlite_master where type='table'");
+  const names = new Set(tables.map((r) => String(r.tabla)));
+  const conteos: ConteosOcupacion = { personas: 0, pruebas: 0, puestos: 0, asaltos: 0, documentos: 0, coberturas: 0 };
+  for (const c of CONTEOS) {
+    if (!names.has(c.tabla)) throw new Error('sport_capacity_schema_missing');
+    const [row] = await consultar(`select count(*) as n from "${c.tabla}"${c.donde ? ` where ${c.donde}` : ''}`);
+    conteos[c.clave] = entero(row?.n);
+  }
+  return { medidoEn: ahora().toISOString(), logicoBytes: bytes, baseDatosBytes: bytes,
+    // D1 metadata exposes total storage, not trustworthy per-table byte sizes.
+    tablas: [{ tabla: 'd1_reported_storage', tablaBytes: bytes, indicesBytes: 0, totalBytes: bytes, filas: 0 }],
+    conteos };
+}
 export function consultaSqlDb(db: Db): ConsultaSql {
-  return async (texto) => {
-    const r = await db.execute(sql.raw(texto));
-    return (r as unknown as { rows: Record<string, unknown>[] }).rows;
-  };
+  return Object.assign(async (texto: string) => (await db.execute(sql.raw(texto))).rows,
+    { storageSize: () => db.storageSize() });
+}
+export async function comprobarCapacidadD1(db: Db, estimate: EstimacionLote, bytes = presupuestoD1()) {
+  const counts = Object.values(estimate);
+  if (counts.some((n) => !Number.isSafeInteger(n) || n < 0)) throw new Error('sport_capacity_projection_unknown');
+  const occupied = await medirOcupacion(consultaSqlDb(db));
+  const projected = proyectarCrecimiento(TASAS_CONSERVADORAS, estimate);
+  if (!Number.isSafeInteger(projected)) throw new Error('sport_capacity_projection_unknown');
+  return evaluarCapacidad({ actualBytes: occupied.logicoBytes, proyectadoBytes: projected, plan: planCapacidadD1(bytes) });
 }

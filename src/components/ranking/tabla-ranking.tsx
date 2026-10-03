@@ -3,13 +3,7 @@
 import { ChevronRight, Scissors, TrendingDown, TrendingUp } from 'lucide-react';
 import * as React from 'react';
 import { Badge } from '@/components/ui/badge';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import {
   Sheet,
   SheetContent,
@@ -25,7 +19,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type {
   BreakdownEntry,
   RankingGroupKey,
@@ -33,8 +26,9 @@ import type {
   RankingTableView,
 } from '@/lib/queries/ranking';
 import type { CutoffStatus } from '@/lib/ranking/compute';
-import { CATEGORY_LABEL, GENDER_LABEL, WEAPON_LABEL, cn, formatDateEs } from '@/lib/utils';
+import { cn, formatDateEs } from '@/lib/utils';
 import { Desglose } from './desglose';
+import { SelectoresGrupo } from './selectores-grupo';
 import { clave, etiquetaGrupo, puntos } from './formato';
 
 type Grupo = RankingGroupKey & { athletes: number };
@@ -73,12 +67,6 @@ export function TablaRanking({
   const tabla = tablas[clave(grupo)];
   const corteDelGrupo = cortes[clave(grupo)] ?? {};
 
-  const armas = [...new Set(grupos.map((g) => g.weapon))];
-  const generos = [...new Set(grupos.filter((g) => g.weapon === grupo.weapon).map((g) => g.gender))];
-  const categorias = grupos
-    .filter((g) => g.weapon === grupo.weapon && g.gender === grupo.gender)
-    .map((g) => g.category);
-
   /**
    * Al cambiar de arma se conservan género y categoría SI existen para la
    * nueva arma. Si no, se cae al primer grupo que sí exista: nunca se deja al
@@ -107,53 +95,9 @@ export function TablaRanking({
   const hayCorte = plazas > 0 && tabla.rows.length > plazas;
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="ranking flex min-w-0 flex-col gap-5">
       {/* Controles: una sola fila que envuelve. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          value={grupo.weapon}
-          onValueChange={(v) => v && elegir({ weapon: v as RankingGroupKey['weapon'] })}
-          aria-label="Arma"
-        >
-          {armas.map((a) => (
-            <ToggleGroupItem key={a} value={a}>
-              {WEAPON_LABEL[a]}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          value={grupo.gender}
-          onValueChange={(v) => v && elegir({ gender: v as RankingGroupKey['gender'] })}
-          aria-label="Género"
-        >
-          {generos.map((g) => (
-            <ToggleGroupItem key={g} value={g}>
-              {GENDER_LABEL[g]}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-
-        <Select
-          value={grupo.category}
-          onValueChange={(v) => elegir({ category: v as RankingGroupKey['category'] })}
-        >
-          <SelectTrigger className="w-40" aria-label="Categoría">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {categorias.map((c) => (
-              <SelectItem key={c} value={c}>
-                {CATEGORY_LABEL[c as keyof typeof CATEGORY_LABEL] ?? c}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <SelectoresGrupo grupos={grupos} grupo={grupo} onElegir={elegir} />
 
       {/*
         Dónde estás tú, y a cuánto del corte.
@@ -164,11 +108,12 @@ export function TablaRanking({
         contraste, el tuyo se pierde entre ellos.
       */}
       {misFilas.map((fila) => (
-        <button
+        <Button
+          variant="ghost"
           key={fila.athleteId}
           type="button"
           onClick={() => setAbierto(fila.athleteId)}
-          className="flex cursor-pointer items-start gap-4 rounded-lg border-t border-filete bg-card px-4 py-4 text-left transition-colors hover:bg-accent"
+          className="flex h-auto min-w-0 cursor-pointer items-start justify-start gap-4 rounded-none border-y border-filete-alto bg-card px-4 py-4 text-left whitespace-normal transition-colors hover:bg-accent"
         >
           <span className="flex w-16 shrink-0 flex-col">
             <span className="cifra text-5xl text-primary-text sm:text-6xl">
@@ -191,7 +136,7 @@ export function TablaRanking({
               <ChevronRight className="size-4 shrink-0" aria-hidden />
             </span>
           </span>
-        </button>
+        </Button>
       ))}
 
       {/* Cuándo se calculó y con qué normativa. */}
@@ -363,7 +308,7 @@ function Fila({
         }
       }}
       aria-label={`Ver el cálculo de ${fila.athleteName}`}
-      className={cn('cursor-pointer', esMia && 'bg-primary/10 hover:bg-primary/15')}
+      className={cn('cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring', esMia && 'bg-marcado hover:bg-accent')}
     >
       <TableCell className="pl-0 text-right align-top">
         <span
@@ -374,8 +319,8 @@ function Fila({
       </TableCell>
 
       <TableCell className="whitespace-normal align-top">
-        <span className="flex items-center gap-2">
-          <span className="font-medium text-foreground">{fila.athleteName}</span>
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="min-w-0 break-words font-medium text-foreground">{fila.athleteName}</span>
           {esMia ? (
             <Badge variant="outline" className="border-primary/50 text-primary-text">
               Tú
@@ -389,7 +334,7 @@ function Fila({
           si son pruebas, puestos o puntos.
         */}
         <span className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground md:hidden">
-          <span className="min-w-0 basis-full truncate">
+          <span className="min-w-0 basis-full break-words">
             {fila.clubName ?? 'Sin club'}
           </span>
           <span>
@@ -406,7 +351,7 @@ function Fila({
         </span>
       </TableCell>
 
-      <TableCell className="hidden max-w-48 truncate align-top text-muted-foreground md:table-cell">
+      <TableCell className="hidden whitespace-normal align-top text-muted-foreground md:table-cell">
         {fila.clubName ?? 'sin club'}
       </TableCell>
 

@@ -1,12 +1,12 @@
-import { PgDialect } from 'drizzle-orm/pg-core';
+import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core';
 import type { SessionProfile } from '@/lib/auth/session';
 import type { ContextoExplorador } from '@/lib/sport/explorar/contexto';
 
 /**
  * Contexto CONTROLADO del explorador: registra el SQL y los parámetros que
- * genera Drizzle y responde con filas fijadas por el caso. No hay PostgreSQL,
- * Neon ni sesión reales: demuestra guardas, forma de las consultas, cursores y
- * DTO, no el resultado de ejecutar el SQL en la base.
+ * genera Drizzle con el dialecto D1 nativo y responde con filas fijadas por el
+ * caso. No hay base ni sesión reales: demuestra guardas, forma de las consultas,
+ * cursores y DTO, no el resultado de ejecutar el SQL en la base.
  */
 export type Sentencia = { text: string; params: unknown[] };
 
@@ -36,7 +36,7 @@ export function crearContexto(
   } = {},
 ) {
   const sentencias: Sentencia[] = [];
-  const dialecto = new PgDialect();
+  const dialecto = new SQLiteSyncDialect();
   const respuestas = opciones.respuestas ?? [];
 
   const ctx: ContextoExplorador = {

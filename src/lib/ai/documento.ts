@@ -75,6 +75,64 @@ export type FormatoDocumento = 'pdf' | 'docx' | 'odt' | 'doc' | 'rtf' | 'texto' 
 /** Cuánto se lee de un fichero. Un `.docx` con fotos son 11 MB de fotos. */
 export const MAX_BYTES_DOCUMENTO = 40 * 1024 * 1024;
 
+/**
+ * Tope de salida de UNA entrada XML, tanto almacenada como descomprimida.
+ * 4 MiB deja margen frente a un dossier de 138 KB sin permitir que un ZIP
+ * pequeño infle cientos de MB. Se mide en bytes, ANTES de decodificar/parsear.
+ */
+export const MAX_BYTES_XML_DOCUMENTO = 4 * 1024 * 1024;
+
+/** Rechazo definitivo, sin URL, contenido ni detalles del servidor en el motivo. */
+export class LimiteDocumentoExcedido extends Error {
+  constructor(alcance: 'documento' | 'xml') {
+    super(
+      alcance === 'xml'
+        ? 'El XML del documento supera el tope de 4 MiB: no se lee. El enlace se conserva.'
+        : 'El documento supera el tope de 40 MiB: no se descarga. El enlace se conserva.',
+    );
+    this.name = 'LimiteDocumentoExcedido';
+  }
+}
+
+/**
+ * Cuenta cada bloque antes de retenerlo; sólo reúne la salida al llegar a EOF
+ * dentro del presupuesto. No confía en tamaños declarados por ZIP/HTTP.
+ * Cancelar corta también la descompresión aguas arriba; un fallo al cancelar
+ * nunca sustituye al motivo original del rechazo.
+ */
+export async function leerBytesAcotados(
+  flujo: ReadableStream<Uint8Array>,
+  maxBytes: number,
+  alcance: 'documento' | 'xml',
+): Promise<Uint8Array> {
+  const lector = flujo.getReader();
+  const bloques: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await lector.read();
+      if (done) break;
+      if (value.byteLength > maxBytes - total) throw new LimiteDocumentoExcedido(alcance);
+      if (value.byteLength === 0) continue;
+      total += value.byteLength;
+      bloques.push(value);
+    }
+  } catch (error) {
+    await lector.cancel().catch(() => {});
+    throw error;
+  } finally {
+    lector.releaseLock();
+  }
+
+  const salida = new Uint8Array(total);
+  let posicion = 0;
+  for (const bloque of bloques) {
+    salida.set(bloque, posicion);
+    posicion += bloque.byteLength;
+  }
+  return salida;
+}
+
 const FIRMAS: [number[], FormatoDocumento][] = [
   [[0x25, 0x50, 0x44, 0x46], 'pdf'], // %PDF
   [[0x50, 0x4b, 0x03, 0x04], 'docx'], // PK.. -> ZIP; se afina con la extensión
@@ -218,7 +276,10 @@ export async function entradaZipComoTexto(
   const inicio = entrada.desplazamiento + 30 + largoNombre + largoExtra;
   const crudo = bytes.subarray(inicio, inicio + entrada.comprimido);
 
-  if (entrada.metodo === 0) return new TextDecoder('utf-8').decode(crudo);
+  if (entrada.metodo === 0) {
+    if (crudo.byteLength > MAX_BYTES_XML_DOCUMENTO) throw new LimiteDocumentoExcedido('xml');
+    return new TextDecoder('utf-8').decode(crudo);
+  }
   if (entrada.metodo !== 8) {
     throw new Error(`el ZIP usa el método de compresión ${entrada.metodo}, que no se lee`);
   }
@@ -231,8 +292,8 @@ export async function entradaZipComoTexto(
   const descomprimido = new Blob([crudo as BlobPart])
     .stream()
     .pipeThrough(new DecompressionStream('deflate-raw'));
-  const buffer = await new Response(descomprimido).arrayBuffer();
-  return new TextDecoder('utf-8').decode(buffer);
+  const contenido = await leerBytesAcotados(descomprimido, MAX_BYTES_XML_DOCUMENTO, 'xml');
+  return new TextDecoder('utf-8').decode(contenido);
 }
 
 // ---------------------------------------------------------------------------

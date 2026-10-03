@@ -172,7 +172,12 @@ export default async function Pagina({
 
       <Seccion titulo="El calendario en tu móvil">
         <div className="pt-3">
-          <Calendarios feeds={feeds} revocar={revocarCalendario} />
+          {perfil.preview ? (
+            <p className="text-sm text-muted-foreground">
+              Las direcciones privadas del calendario y su renovación no están
+              disponibles en la vista previa. Sal de ella para usar tu calendario.
+            </p>
+          ) : <Calendarios feeds={feeds} revocar={revocarCalendario} />}
         </div>
       </Seccion>
 

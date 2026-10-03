@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Deploy only for the verified cutover, after recording the Neon rollback.
+  // No application bindings or static-asset bypass. Secrets are not read.
+  "name": "calendario-fie-fede",
+  "account_id": "52d39cf14bc17b94754729436036124d",
+  "main": "worker/mantenimiento-corte.ts",
+  "compatibility_date": "2026-09-15",
+  "workers_dev": true,
+  "keep_vars": true,
+  "triggers": { "crons": [] },
+  "observability": { "enabled": true }
+}

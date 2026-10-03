@@ -14,6 +14,7 @@ import {
   type CriteriosExplorar,
 } from '@/lib/sport/explorar/url';
 import { GENDER_LABEL, WEAPON_LABEL, cn } from '@/lib/utils';
+import { Aclaracion, Celda, Nota } from './piezas';
 
 /** Filtros activos como enlaces que los quitan uno a uno. */
 export function ChipsActivos({ criterios }: { criterios: CriteriosExplorar }) {
@@ -22,33 +23,24 @@ export function ChipsActivos({ criterios }: { criterios: CriteriosExplorar }) {
   return (
     <ul aria-label="Filtros activos" className="flex flex-wrap gap-2">
       {chips.map((chip) => (
-        <li key={chip.clave}>
+        <li key={chip.clave} className="min-w-0 max-w-full">
           <Link
             href={chip.quitar}
             prefetch={false}
             aria-label={`Quitar filtro ${chip.etiqueta}: ${chip.valor}${chip.fechaInvalida ? ' (fecha no válida)' : ''}`}
             className={cn(
-              'inline-flex min-h-11 items-center gap-1.5 rounded-full border bg-secondary px-3 text-sm hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+              'inline-flex min-h-11 max-w-full flex-wrap items-center gap-1.5 rounded-full border bg-secondary px-3 text-sm hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
               chip.fechaInvalida && 'border-danger/40',
             )}
           >
             <span className="text-muted-foreground">{chip.etiqueta}</span>
             <span className="max-w-48 min-w-0 py-1 font-medium break-words">{chip.valor}</span>
             {chip.fechaInvalida ? <span className="text-xs text-danger">no válida</span> : null}
-            <X className="size-3.5" aria-hidden />
+            <X className="size-3.5 shrink-0" aria-hidden />
           </Link>
         </li>
       ))}
     </ul>
-  );
-}
-
-function Celda({ etiqueta, children }: { etiqueta: string; children: React.ReactNode }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="text-xs text-muted-foreground md:sr-only">{etiqueta}</span>
-      {children}
-    </div>
   );
 }
 
@@ -59,10 +51,10 @@ function FilaDeportista({ d, volver }: { d: DeportistaResumen; volver: string })
       <Link
         href={rutaFichaConRetorno(d.id, volver)}
         prefetch={false}
-        className="grid min-h-11 gap-x-4 gap-y-2 px-3 py-3 hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] md:items-center"
+        className="grid min-h-11 grid-cols-2 gap-x-4 gap-y-3 px-4 py-4 hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] md:items-center"
       >
-        <span className="flex min-w-0 flex-col gap-1">
-          <span className="font-medium break-words">{d.nombre}</span>
+        <span className="col-span-2 flex min-w-0 flex-col gap-1 md:col-span-1">
+          <span className="text-base font-semibold break-words">{d.nombre}</span>
           {d.alias ? (
             <span className="text-xs text-muted-foreground">
               Coincide con el alias «{d.alias}»
@@ -98,10 +90,10 @@ function FilaDeportista({ d, volver }: { d: DeportistaResumen; volver: string })
           )}
         </Celda>
 
-        <Celda etiqueta="Resultados importados">
+        <Celda etiqueta="Resultados importados" className="col-span-2 md:col-span-1">
           {d.resultadosImportados > 0 ? (
             <span className="flex items-baseline gap-1.5">
-              <span className="cifra text-2xl leading-none">{d.resultadosImportados}</span>
+              <span className="cifra text-3xl leading-none">{d.resultadosImportados}</span>
               <span className="text-xs text-muted-foreground">
                 {d.resultadosImportados === 1 ? 'clasificación' : 'clasificaciones'}
               </span>
@@ -130,13 +122,13 @@ export function ListaDeportistas({
   const volver = construirUrl(criterios, cursorActual);
   return (
     <section aria-labelledby="explorar-resultados" className="flex flex-col gap-3">
-      <h2 id="explorar-resultados" className="text-xl">
-        Resultados
-      </h2>
-      <p role="status" className="text-sm text-muted-foreground">
-        {items.length === 1 ? '1 deportista' : `${items.length} deportistas`} en esta página
-        {siguiente ? ', hay más' : ''}.
-      </p>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b pb-3">
+        <h2 id="explorar-resultados" className="text-2xl sm:text-3xl">Deportistas</h2>
+        <p role="status" className="text-sm text-muted-foreground">
+          {items.length === 1 ? '1 deportista' : `${items.length} deportistas`} en esta página
+          {siguiente ? ', hay más' : ''}.
+        </p>
+      </div>
 
       <ul className="divide-y rounded-md border bg-card" aria-label="Deportistas encontrados">
         {items.map((d) => (
@@ -163,10 +155,12 @@ export function ListaDeportistas({
         )}
       </nav>
 
-      <p className="text-xs text-muted-foreground medida">
-        Los resultados importados son las clasificaciones finales ya cargadas de las fuentes oficiales.
-        Que una persona tenga cero no significa que no haya competido: puede faltar por importar.
-      </p>
+      <Aclaracion titulo="Sobre las clasificaciones importadas">
+        <Nota>
+          Los resultados importados son las clasificaciones finales ya cargadas de las fuentes oficiales.
+          Que una persona tenga cero no significa que no haya competido: puede faltar por importar.
+        </Nota>
+      </Aclaracion>
     </section>
   );
 }
@@ -211,7 +205,7 @@ export function EstadoSinLista({
           <p>
             {criterios.q
               ? 'Con una sola letra no hay búsqueda posible. Escribe al menos dos letras del nombre, o elige un arma, un torneo o una temporada.'
-              : 'Escribe el nombre o el alias de una persona, o elige arma, categoría, torneo, fechas o país. Aparecen también quienes ya no compiten o no tienen cuenta.'}
+              : 'Busca por nombre o alias, o elige un filtro. Puedes consultar también a deportistas sin cuenta o retirados.'}
           </p>
         </Aviso>
       );

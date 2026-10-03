@@ -1,4 +1,5 @@
-import { and, eq, inArray, isNotNull, ne, or, sql, type AnyColumn } from 'drizzle-orm';
+import { and, eq, isNotNull, ne, or, sql, type AnyColumn } from 'drizzle-orm';
+import { enLista as inArray } from '@/lib/sqlite';
 import { db } from '@/db';
 import { athlete, fieFencer, sportExternalId, sportPerson } from '@/db/schema';
 import type { ExternalIdRow } from '@/lib/identity/resolver';

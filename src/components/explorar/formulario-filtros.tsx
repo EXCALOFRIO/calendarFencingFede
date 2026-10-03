@@ -1,10 +1,11 @@
 'use client';
 
-import { ChevronDown, Search } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { CampoFecha } from '@/components/admin/campo-fecha';
+import { BuscadorPersonas } from './buscador-personas';
 import { ACTIVO } from '@/components/nav';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,6 +26,7 @@ import {
 } from '@/components/ui/select';
 import {
   RUTA_EXPLORAR,
+  CLAVES_CRITERIO,
   alternarEspana,
   construirUrl,
   etiquetaTemporada,
@@ -88,7 +90,7 @@ export function CampoSelect({
         value={valor === '' ? CUALQUIERA : valor}
         onValueChange={(v) => onChange(v === CUALQUIERA ? '' : v)}
       >
-        <SelectTrigger id={id} className="w-full">
+        <SelectTrigger id={id} className="min-h-11 w-full bg-secondary">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -222,35 +224,22 @@ export function FormularioFiltros({
 
   return (
     <form
+      action={RUTA_EXPLORAR}
+      method="get"
       role="search"
       aria-label="Buscar deportistas"
       aria-busy={pendiente}
-      className="flex flex-col gap-3"
+      className="flex min-w-0 flex-col gap-3 border-y bg-card p-4 sm:p-5"
       onSubmit={(e) => {
         e.preventDefault();
         buscar(borrador);
       }}
     >
+      {CLAVES_CRITERIO.filter((k) => k !== 'q').map((clave) => (
+        <input key={clave} type="hidden" name={clave} value={borrador[clave]} />
+      ))}
       <div className="grid grid-cols-2 items-end gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
-        <div className="col-span-2 flex min-w-0 flex-col gap-1.5 md:col-span-1">
-          <Label htmlFor="explorar-q">Nombre o alias</Label>
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
-            />
-            <Input
-              id="explorar-q"
-              type="search"
-              value={borrador.q}
-              maxLength={80}
-              autoComplete="off"
-              placeholder="Apellido, nombre o alias"
-              className="pl-8"
-              onChange={(e) => poner({ q: e.target.value })}
-            />
-          </div>
-        </div>
+        <BuscadorPersonas valor={borrador.q} onChange={(q) => poner({ q })} />
 
         <CampoSelect
           id="explorar-arma"
@@ -269,47 +258,53 @@ export function FormularioFiltros({
           onChange={(genero) => poner({ genero })}
         />
 
-        <Button type="submit" disabled={pendiente} className="col-span-2 md:col-span-1">
+        <Button type="submit" disabled={pendiente} className="col-span-2 min-h-11 md:col-span-1">
           {pendiente ? 'Buscando…' : 'Buscar'}
         </Button>
       </div>
 
-      {atajoEspana ? (
-        <div className="flex flex-col gap-1">
-          <div>
-            <Button
-              type="button"
-              variant="outline"
-              aria-pressed={espanaActiva}
-              aria-describedby="explorar-espana-ayuda"
-              disabled={pendiente}
-              className={espanaActiva ? ACTIVO : undefined}
-              onClick={() => {
-                const siguiente = alternarEspana(borrador);
-                setBorrador(siguiente);
-                buscar(siguiente);
-              }}
-            >
-              Solo España
-            </Button>
-          </div>
-          <p id="explorar-espana-ayuda" className="text-xs text-muted-foreground">
-            Todas las personas españolas indexadas, tengan cuenta o no, estén activas o retiradas. Combínalo con arma o categoría.
-          </p>
-        </div>
-      ) : null}
-
       <Collapsible open={abierto} onOpenChange={setAbierto}>
-        <CollapsibleTrigger asChild>
-          <Button type="button" variant="ghost" size="sm" className="-ml-2 min-h-11">
-            <ChevronDown
-              className={abierto ? 'rotate-180 transition-transform' : 'transition-transform'}
-              aria-hidden
-            />
-            Más filtros{avanzadosActivos > 0 ? ` (${avanzadosActivos} activos)` : ''}
-          </Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent className="pt-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          {atajoEspana ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                aria-pressed={espanaActiva}
+                aria-describedby="explorar-espana-ayuda"
+                disabled={pendiente}
+                className={espanaActiva ? ACTIVO : undefined}
+                onClick={() => {
+                  const siguiente = alternarEspana(borrador);
+                  setBorrador(siguiente);
+                  buscar(siguiente);
+                }}
+              >
+                Solo España
+              </Button>
+              <p id="explorar-espana-ayuda" className="sr-only">
+                Todas las personas españolas indexadas, tengan cuenta o no, estén activas o retiradas. Combínalo con arma o categoría.
+              </p>
+            </>
+          ) : null}
+          <CollapsibleTrigger asChild>
+            <Button type="button" variant="ghost" size="sm" className="min-h-11">
+              <ChevronDown
+                className={abierto ? 'rotate-180 transition-transform motion-reduce:transition-none' : 'transition-transform motion-reduce:transition-none'}
+                aria-hidden
+              />
+              Más filtros{avanzadosActivos > 0 ? ` (${avanzadosActivos} activos)` : ''}
+            </Button>
+          </CollapsibleTrigger>
+          {hayCriterios(criterios) ? (
+            <Button asChild variant="ghost" size="sm" className="min-h-11 sm:ml-auto">
+              <Link href={RUTA_EXPLORAR} prefetch={false}>
+                Quitar todos los filtros
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+        <CollapsibleContent className="mt-3 border-t pt-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <CampoSelect
               id="explorar-categoria"
@@ -401,16 +396,6 @@ export function FormularioFiltros({
         </p>
       ) : errores.intervalo ? (
         <p className="text-sm text-danger">{errores.intervalo}</p>
-      ) : null}
-
-      {hayCriterios(criterios) ? (
-        <div>
-          <Button asChild variant="ghost" size="sm" className="-ml-2 min-h-11">
-            <Link href={RUTA_EXPLORAR} prefetch={false}>
-              Quitar todos los filtros
-            </Link>
-          </Button>
-        </div>
       ) : null}
     </form>
   );

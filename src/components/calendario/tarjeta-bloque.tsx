@@ -4,6 +4,7 @@ import { CalendarClock, Check, MapPin } from 'lucide-react';
 import * as React from 'react';
 import { BanderaPais } from '@/components/bandera';
 import { EtiquetaArma } from '@/components/calendario/iconos-arma';
+import { Button } from '@/components/ui/button';
 import {
   LETRAS_SEMANA,
   capsulaDeFecha,
@@ -134,7 +135,7 @@ export function TarjetaBloque({
       data-bloque={bloque.clave}
       data-multiple={multiple || undefined}
       className={cn(
-        'relative overflow-hidden rounded-lg border bg-card transition-colors',
+        'relative overflow-hidden border-b border-filete-alto bg-card transition-colors',
         // El resaltado de la búsqueda: el mismo aro blanco de siempre, para
         // que el guion de capturas (`tests/ui/ficha.mts`) siga reconociéndolo.
         resaltado && 'ring-2 ring-foreground',
@@ -248,11 +249,11 @@ function Capsula({
 }) {
   return (
     <div className="flex w-[6.75rem] shrink-0 flex-col items-center justify-center gap-1 px-1.5 py-2">
-      <span className="cifra text-2xl leading-none text-foreground">
+      <span className="cifra text-4xl leading-none text-foreground">
         {capsula.dias}
       </span>
-      <span className="cifra text-[0.7rem] font-semibold leading-none tracking-widest text-muted-foreground">
-        {capsula.mes}
+      <span className="text-xs font-medium leading-none text-muted-foreground">
+        {capsula.mes.toLocaleLowerCase('es-ES')}
       </span>
       <span className="cifra text-[0.62rem] leading-none tracking-wide text-muted-foreground">
         {capsula.semana}
@@ -361,13 +362,13 @@ function PastillaCircuito({ evento }: { evento: EventView }) {
   return (
     <span
       className={cn(
-        'cifra shrink-0 rounded-[3px] px-1.5 py-px text-[0.65rem] font-medium leading-[1.3] tracking-tight',
+        'inline-flex min-w-0 flex-wrap items-center gap-x-1.5 rounded-sm px-1.5 py-1 text-xs font-medium leading-tight',
         color.tintePastilla,
         color.texto,
       )}
     >
-      {color.corto}
-      {circuito ? ` · ${circuito}` : ''}
+      <span>{color.corto}</span>
+      {circuito ? <span>{circuito}</span> : null}
     </span>
   );
 }
@@ -454,11 +455,11 @@ function Sede({ evento, clase }: { evento: EventView; clase?: string }) {
       )}
     >
       {evento.country ? (
-        <BanderaPais pais={evento.country} className="shrink-0" />
+        <BanderaPais pais={evento.country} className="shrink-0 normal-case tracking-tight" />
       ) : (
         <MapPin className="size-3 shrink-0 opacity-60" aria-hidden />
       )}
-      <span className={cn('min-w-0 truncate', !hay && 'italic')}>
+      <span className={cn('min-w-0 break-words', !hay && 'italic')}>
         {sedeDe(evento, false)}
       </span>
     </span>
@@ -479,7 +480,7 @@ function Plazo({ evento, clase }: { evento: EventView; clase?: string }) {
   const plazo = plazoDe(evento);
   if (!plazo) return null;
   return (
-    <span className={cn('shrink-0 text-[0.68rem] font-medium', plazo.tono, clase)}>
+    <span className={cn('min-w-0 text-xs font-semibold', plazo.tono, clase)}>
       {plazo.texto}
     </span>
   );
@@ -513,11 +514,12 @@ function CuerpoUnico({
 }: { evento: EventView } & Comun) {
   const inscrito = estaInscrito(evento, inscripciones);
   return (
-    <button
+    <Button
+      variant="ghost"
       type="button"
       data-barra="torneo"
       onClick={() => onAbrir(evento)}
-      className="flex w-full min-w-0 cursor-pointer flex-col gap-1 px-2.5 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className="flex h-auto w-full min-w-0 cursor-pointer flex-col items-stretch gap-2 rounded-none px-3 py-3 text-left whitespace-normal transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       aria-label={`${titularTorneo(evento.name)}. Abrir la ficha.`}
     >
       <span className="flex w-full min-w-0 items-start gap-2">
@@ -539,7 +541,7 @@ function CuerpoUnico({
         />
         <Plazo evento={evento} />
       </span>
-    </button>
+    </Button>
   );
 }
 
@@ -613,8 +615,8 @@ function CuerpoMultiple({
 
   return (
     <div className="flex min-w-0 flex-col px-2.5 py-2">
-      <span className="cifra pb-1 text-[0.6rem] uppercase leading-none tracking-widest text-muted-foreground">
-        Competición múltiple · {bloque.eventos.length} torneos
+      <span className="flex items-baseline gap-1.5 pb-2 text-xs text-muted-foreground">
+        <span className="cifra text-2xl text-foreground">{bloque.eventos.length}</span> torneos coinciden
       </span>
 
       {visibles.map((evento, i) => (
@@ -631,13 +633,14 @@ function CuerpoMultiple({
       ))}
 
       {ocultos > 0 ? (
-        <button
+        <Button
+          variant="ghost"
           type="button"
           onClick={() => setTodos(true)}
-          className="objetivo-libre mt-1.5 w-full border-t border-filete pt-1.5 text-left text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          className="mt-2 h-auto w-full justify-start border-t border-filete px-1 py-2 text-left text-xs whitespace-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
           Ver {ocultos === 1 ? 'el otro torneo' : `los otros ${ocultos} torneos`}
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -668,13 +671,14 @@ function FilaEvento({
   onAbrir: (e: EventView) => void;
 }) {
   return (
-    <button
+    <Button
+      variant="ghost"
       type="button"
       data-barra="torneo"
       onClick={() => onAbrir(evento)}
       className={cn(
-        'flex w-full min-w-0 cursor-pointer flex-col gap-0.5 rounded-sm px-1 py-1 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-        conFilete && 'mt-1 border-t border-filete pt-1.5',
+        'flex h-auto w-full min-w-0 cursor-pointer flex-col items-stretch gap-1.5 rounded-none px-1 py-2 text-left whitespace-normal transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+        conFilete && 'border-t border-filete',
       )}
       aria-label={`${titularTorneo(evento.name)}. Abrir la ficha.`}
     >
@@ -695,7 +699,7 @@ function FilaEvento({
         />
         <Plazo evento={evento} />
       </span>
-    </button>
+    </Button>
   );
 }
 
@@ -729,19 +733,19 @@ function FilaFecha({
   children?: React.ReactNode;
 }) {
   return (
-    <span className={cn('flex w-full min-w-0 items-center gap-2', clase)}>
-      <span className="flex min-w-0 shrink items-baseline gap-1.5">
-        <span className="cifra text-lg leading-none text-foreground">
+    <span className={cn('flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-2', clase)}>
+      <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-1">
+        <span className="cifra text-4xl leading-none text-foreground">
           {capsula.dias}
         </span>
-        <span className="cifra text-[0.7rem] font-semibold leading-none tracking-widest text-muted-foreground">
-          {capsula.mes}
+        <span className="text-xs font-medium leading-none text-muted-foreground">
+          {capsula.mes.toLocaleLowerCase('es-ES')}
         </span>
-        <span className="cifra truncate text-[0.62rem] leading-none tracking-wide text-muted-foreground">
-          · {capsula.semana}
+        <span className="text-xs leading-none text-muted-foreground">
+          {capsula.semana.toLocaleLowerCase('es-ES')}
         </span>
       </span>
-      <span className="ml-auto flex shrink-0 items-center gap-1.5">{children}</span>
+      <span className="flex min-w-0 flex-wrap items-center gap-2">{children}</span>
     </span>
   );
 }
@@ -766,12 +770,13 @@ function ApiladaUnica({
 } & Comun) {
   const inscrito = estaInscrito(evento, inscripciones);
   return (
-    <button
+    <Button
+      variant="ghost"
       type="button"
       data-agenda="tarjeta"
       data-barra="torneo"
       onClick={() => onAbrir(evento)}
-      className="flex w-full min-w-0 cursor-pointer flex-col gap-1.5 px-2.5 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className="flex h-auto w-full min-w-0 cursor-pointer flex-col items-stretch gap-2 rounded-none px-3 py-3 text-left whitespace-normal transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       aria-label={`${titularTorneo(evento.name)}. Abrir la ficha.`}
     >
       <FilaFecha capsula={capsula}>
@@ -797,7 +802,7 @@ function ApiladaUnica({
           <PildorasSemana ocupa={ocupa} color={color} />
         </span>
       </span>
-    </button>
+    </Button>
   );
 }
 
@@ -842,20 +847,21 @@ function ApiladaMultiple({
         <PildorasSemana ocupa={ocupa} color={color} />
       </FilaFecha>
 
-      <span className="cifra text-[0.6rem] uppercase leading-none tracking-widest text-muted-foreground">
-        Competición múltiple · {bloque.eventos.length} torneos
+      <span className="flex items-baseline gap-1.5 text-xs text-muted-foreground">
+        <span className="cifra text-2xl text-foreground">{bloque.eventos.length}</span> torneos coinciden
       </span>
 
       {visibles.map((evento, k) => (
-        <button
+        <Button
+          variant="ghost"
           key={evento.id}
           type="button"
           data-agenda="tarjeta"
           data-barra="torneo"
           onClick={() => onAbrir(evento)}
           className={cn(
-            'flex w-full min-w-0 cursor-pointer flex-col gap-1 rounded-sm text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-            k > 0 && 'border-t border-filete pt-1.5',
+            'flex h-auto w-full min-w-0 cursor-pointer flex-col items-stretch gap-2 rounded-none px-1 py-2 text-left whitespace-normal transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+            k > 0 && 'border-t border-filete',
           )}
           aria-label={`${titularTorneo(evento.name)}. Abrir la ficha.`}
         >
@@ -876,17 +882,18 @@ function ApiladaMultiple({
             />
             <Plazo evento={evento} />
           </span>
-        </button>
+        </Button>
       ))}
 
       {ocultos > 0 ? (
-        <button
+        <Button
+          variant="ghost"
           type="button"
           onClick={() => setTodos(true)}
-          className="objetivo-libre w-full border-t border-filete pt-1.5 text-left text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          className="h-auto w-full justify-start border-t border-filete px-1 py-2 text-left text-xs whitespace-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
           Ver {ocultos === 1 ? 'el otro torneo' : `los otros ${ocultos} torneos`}
-        </button>
+        </Button>
       ) : null}
     </div>
   );

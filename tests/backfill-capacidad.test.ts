@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createD1Database } from '@/db/d1/runtime';
+import { localD1 } from '@/db/d1/testing';
 import {
   BASE_LOGICA_OBSERVADA_BYTES,
   evaluarCapacidad,
@@ -11,9 +13,9 @@ import {
   diferenciaOcupacion,
   type Ocupacion,
 } from '@/lib/ingest/backfill/capacidad';
-import { medirOcupacion, type ConsultaSql } from '@/lib/ingest/backfill/capacidad-db';
+import { consultaSqlDb, medirOcupacion, type ConsultaSql } from '@/lib/ingest/backfill/capacidad-db';
 
-describe('umbral de capacidad (VAL-CAPACITY-002)', () => {
+describe('planificador histórico puro de Neon, sin conexión ni política D1 (VAL-CAPACITY-002)', () => {
   it('con plan desconocido usa 0,4 GiB y lo declara no confirmado', () => {
     const u = umbralDePlan({ tipo: 'desconocido' });
     expect(u.umbralBytes).toBe(Math.round(0.4 * GIB));
@@ -160,50 +162,71 @@ describe('proyección y medición antes/después', () => {
   });
 });
 
-describe('medición real de ocupación con una consulta SELECT de sólo lectura (VAL-CAPACITY-001)', () => {
-  it('lee tamaños de tabla e índices y cuenta hechos sin leer filas ni PDF; sólo emite SELECT', async () => {
-    const consultas: string[] = [];
-    const consultar: ConsultaSql = async (texto) => {
-      consultas.push(texto);
-      if (/pg_total_relation_size/.test(texto)) {
-        return [
-          { tabla: 'sport_result', tabla_bytes: '8192', indices_bytes: '16384', total_bytes: '24576', filas: '3' },
-          { tabla: 'sport_bout', tabla_bytes: '8192', indices_bytes: '8192', total_bytes: '16384', filas: '2' },
-          { tabla: 'event', tabla_bytes: '100000', indices_bytes: '50000', total_bytes: '150000', filas: '400' },
-        ];
-      }
-      if (/pg_database_size/.test(texto)) return [{ bytes: '2000000' }];
-      if (/"sport_result"/.test(texto)) return [{ n: 3 }];
-      if (/"sport_bout"/.test(texto)) return [{ n: 2 }];
-      return [{ n: 0 }];
-    };
-    const o = await medirOcupacion(consultar, () => new Date('2026-10-01T10:00:00Z'));
-    expect(o.logicoBytes).toBe(24576 + 16384 + 150000);
-    expect(o.baseDatosBytes).toBe(2_000_000);
-    expect(o.tablas.find((t) => t.tabla === 'sport_result')).toEqual({
-      tabla: 'sport_result',
-      tablaBytes: 8192,
-      indicesBytes: 16384,
-      totalBytes: 24576,
-      filas: 3,
-    });
-    expect(o.conteos).toMatchObject({ puestos: 3, asaltos: 2 });
+describe('medición D1 por metadata y conteos de sólo lectura (VAL-CAPACITY-001)', () => {
+  const abiertos: ReturnType<typeof localD1>[] = [];
+  function database() {
+    const local = localD1();
+    abiertos.push(local);
+    return { ...local, db: createD1Database(local.binding) };
+  }
+  afterEach(() => abiertos.splice(0).forEach((local) => local.close()));
+
+  it('usa el tamaño total reportado sin inventar tamaños por tabla ni leer los cuerpos de los hechos', async () => {
+    const local = database();
+    local.sqlite.exec(`
+      INSERT INTO sport_person(id,display_name,name_normalized) VALUES ('persona','Sintética','sintetica');
+      INSERT INTO sport_edition(id,source,season,tournament_key,name) VALUES ('edicion','fie','2026','1','Sintética');
+      INSERT INTO sport_competition(id,edition_id,source,season,competition_key,weapon,gender,category,format)
+        VALUES ('prueba','edicion','fie','2026','1','ESPADA','M','ABS','INDIVIDUAL');
+      INSERT INTO sport_import_coverage(source,season,fact_kind,competition_key,status)
+        VALUES ('rfee','2026','pdf','documento','completo');
+    `);
+    for (let n = 0; n < 3; n++) {
+      local.sqlite.prepare(`INSERT INTO sport_result(competition_id,source,source_fact_key,source_name,content_hash)
+        VALUES ('prueba','fie',?,'Sintética','hash')`).run(String(n));
+    }
+    for (let n = 0; n < 2; n++) {
+      local.sqlite.prepare(`INSERT INTO sport_bout(competition_id,source,phase,round_key,fencer_a_ref,fencer_b_ref,
+        fencer_a_name,fencer_b_name,score_a,score_b,content_hash)
+        VALUES ('prueba','fie','TABLEAU',?,'a','b','Sintética A','Sintética B',11,15,'hash')`).run(String(n));
+    }
+    const bytes = await local.db.storageSize();
+    local.calls.length = 0;
+    const o = await medirOcupacion(consultaSqlDb(local.db), () => new Date('2026-10-01T10:00:00Z'));
+    expect(o.logicoBytes).toBe(bytes);
+    expect(o.baseDatosBytes).toBe(bytes);
+    expect(o.tablas).toEqual([
+      { tabla: 'd1_reported_storage', tablaBytes: bytes, indicesBytes: 0, totalBytes: bytes, filas: 0 },
+    ]);
+    expect(o.conteos).toEqual({ personas: 1, pruebas: 1, puestos: 3, asaltos: 2, documentos: 1, coberturas: 1 });
     expect(o.medidoEn).toBe('2026-10-01T10:00:00.000Z');
-    expect(consultas.length).toBeGreaterThan(0);
-    for (const c of consultas) expect(c.trim().toLowerCase()).toMatch(/^(select|with)\b/);
-    for (const c of consultas) expect(c).not.toMatch(/\b(insert|update|delete|drop|alter|truncate)\b/i);
+    expect(local.calls).toHaveLength(8);
+    for (const { sql } of local.calls) {
+      expect(sql.trim()).toMatch(/^select\b/i);
+      expect(sql).not.toMatch(/\b(insert|update|delete|drop|alter|truncate|pragma)\b|pg_/i);
+    }
+    expect(local.calls.slice(2).every(({ sql }) => /^select count\(\*\) as n /i.test(sql))).toBe(true);
   });
 
-  it('una tabla deportiva que aún no existe (0017 sin aplicar) cuenta cero y no rompe la medición', async () => {
-    const consultar: ConsultaSql = async (texto) => {
-      if (/pg_total_relation_size/.test(texto)) {
-        return [{ tabla: 'event', tabla_bytes: '100', indices_bytes: '50', total_bytes: '150', filas: '4' }];
-      }
-      if (/pg_database_size/.test(texto)) return [{ bytes: '1000' }];
-      throw new Error('relation does not exist');
-    };
-    const o = await medirOcupacion(consultar);
-    expect(o.logicoBytes).toBe(150);
-    expect(o.conteos).toEqual({ personas: 0, pruebas: 0, puestos: 0, asaltos: 0, documentos: 0, coberturas: 0 });
+  it('una tabla deportiva ausente bloquea la medición en vez de inventar un conteo cero', async () => {
+    const local = database();
+    local.sqlite.exec('DROP TABLE sport_result');
+    await expect(medirOcupacion(consultaSqlDb(local.db))).rejects.toThrow('sport_capacity_schema_missing');
+  });
+
+  it.each([undefined, 0, -1, Number.NaN, Number.MAX_SAFE_INTEGER + 1])(
+    'falla antes de consultar hechos si no hay un tamaño válido (%s)', async (bytes) => {
+      const consultar = Object.assign(vi.fn<ConsultaSql>().mockResolvedValue([]),
+        bytes === undefined ? {} : { storageSize: async () => bytes });
+      await expect(medirOcupacion(consultar)).rejects.toThrow('sport_capacity_measurement_unknown');
+      expect(consultar).not.toHaveBeenCalled();
+    });
+
+  it('sanitiza un fallo de metadata sin divulgar su excepción', async () => {
+    const consultar = Object.assign(vi.fn<ConsultaSql>().mockResolvedValue([]), {
+      storageSize: async () => { throw new Error('DETALLE_PRIVADO_SINTETICO'); },
+    });
+    await expect(medirOcupacion(consultar)).rejects.toThrow(/^sport_capacity_measurement_unknown$/);
+    expect(consultar).not.toHaveBeenCalled();
   });
 });

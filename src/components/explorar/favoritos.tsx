@@ -9,6 +9,7 @@ import type { EstadoFavoritoVista, VistaFavoritos } from '@/lib/sport/explorar/f
 import { RUTA_EXPLORAR } from '@/lib/sport/explorar/url';
 import { GENDER_LABEL, WEAPON_LABEL, cn } from '@/lib/utils';
 import { BotonFavorito, ID_ENCABEZADO_FAVORITOS } from './boton-favorito';
+import { Aclaracion, Nota } from './piezas';
 
 /**
  * Lista propia de favoritos y piezas de acceso. Un favorito es sólo un acceso
@@ -32,23 +33,23 @@ export function EnlaceFavoritos({ className }: { className?: string }) {
 function FilaFavorito({ d, volver }: { d: FavoritoResumen; volver: string }) {
   const homonimo = d.mismoNombre > 1;
   return (
-    <li className="flex flex-col gap-3 px-3 py-3 md:flex-row md:items-center md:justify-between md:gap-6">
+    <li className="flex min-w-0 items-start justify-between gap-3 px-4 py-4 md:items-center md:gap-6">
       <Link
         href={rutaFichaConRetorno(d.id, volver)}
         prefetch={false}
-        className="flex min-h-11 min-w-0 flex-1 flex-col gap-1 rounded-md hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+        className="flex min-h-11 min-w-0 flex-1 flex-col gap-2 rounded-sm hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
       >
-        <span className="font-medium break-words">{d.nombre}</span>
-        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          {d.pais ? <BanderaPais pais={d.pais} conNombre /> : <span>País no publicado</span>}
-          <span>
+        <span className="text-base font-semibold break-words">{d.nombre}</span>
+        <span className="grid min-w-0 gap-x-6 gap-y-1 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)]">
+          <span className="min-w-0">{d.pais ? <BanderaPais pais={d.pais} conNombre /> : <span>País no publicado</span>}</span>
+          <span className="min-w-0 break-words">
             {d.genero ? GENDER_LABEL[d.genero] : 'Género no publicado'}
             {homonimo && d.anioNacimiento !== null ? `, nacimiento ${d.anioNacimiento}` : ''}
           </span>
-          <span>
+          <span className="min-w-0 break-words">
             {d.armas.length > 0 ? d.armas.map((a) => WEAPON_LABEL[a]).join(', ') : 'Sin pruebas importadas'}
           </span>
-          <span>
+          <span className="min-w-0 break-words">
             {d.resultadosImportados > 0
               ? `${d.resultadosImportados} ${d.resultadosImportados === 1 ? 'clasificación' : 'clasificaciones'}`
               : 'Ninguna clasificación importada'}
@@ -79,13 +80,15 @@ export function ListaFavoritos({
   const volver = construirUrlFavoritos(cursorActual);
   return (
     <section aria-labelledby={ID_ENCABEZADO_FAVORITOS} className="flex flex-col gap-3">
-      <h2 id={ID_ENCABEZADO_FAVORITOS} tabIndex={-1} className="text-xl focus:outline-none">
-        Guardados
-      </h2>
-      <p role="status" className="text-sm text-muted-foreground">
-        {items.length === 1 ? '1 deportista' : `${items.length} deportistas`} en esta página
-        {siguiente ? ', hay más' : ''}.
-      </p>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b pb-3">
+        <h2 id={ID_ENCABEZADO_FAVORITOS} tabIndex={-1} className="text-2xl focus:outline-none sm:text-3xl">
+          Guardados
+        </h2>
+        <p role="status" className="text-sm text-muted-foreground">
+          {items.length === 1 ? '1 deportista' : `${items.length} deportistas`} en esta página
+          {siguiente ? ', hay más' : ''}.
+        </p>
+      </div>
 
       <ul className="divide-y rounded-md border bg-card" aria-label="Deportistas guardados">
         {items.map((d) => (
@@ -112,10 +115,12 @@ export function ListaFavoritos({
         )}
       </nav>
 
-      <p className="medida text-xs text-muted-foreground">
-        La lista es privada y sólo la ves tú. Guardar a alguien no le avisa ni te avisa de lo que haga:
-        es un acceso rápido a su ficha.
-      </p>
+      <Aclaracion titulo="Privacidad de tus favoritos">
+        <Nota>
+          La lista es privada y sólo la ves tú. Guardar a alguien no le avisa ni te avisa de lo que haga:
+          es un acceso rápido a su ficha.
+        </Nota>
+      </Aclaracion>
     </section>
   );
 }
@@ -178,8 +183,7 @@ export function EstadoFavoritos({
       ) : (
         <Aviso icono={<Star className="size-5 text-muted-foreground" aria-hidden />} titulo="Aún no has guardado a nadie">
           <p>
-            Abre la ficha de un deportista, con o sin cuenta, activo o retirado, y pulsa «Guardar en
-            favoritos» para volver a ella desde aquí. Es un acceso rápido privado: no envía avisos.
+            Abre una ficha y marca la estrella para tenerla a mano aquí. Tu lista es privada y no envía avisos.
           </p>
           {IR_A_EXPLORAR}
         </Aviso>

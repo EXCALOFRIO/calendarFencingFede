@@ -147,7 +147,7 @@ describe('promesa «Ver tus datos y el cálculo» por arma seleccionada', () => 
       }),
     );
     expect(enEspada).not.toContain('y el cálculo');
-    expect(enEspada).not.toContain('ni el cálculo abierto');
+    expect(enEspada).not.toContain('su cálculo interno');
   });
 
   it('la nota de filas sin ficha no promete cálculo cuando el arma no está autorizada', () => {
@@ -165,8 +165,9 @@ describe('promesa «Ver tus datos y el cálculo» por arma seleccionada', () => 
         armasAutorizadas: [],
       }),
     );
-    expect(sinPermiso).toContain('no tienen ficha en la aplicación');
-    expect(sinPermiso).not.toContain('el cálculo abierto');
+    expect(sinPermiso).toContain('sin ficha vinculada');
+    expect(sinPermiso).toContain('Solo se muestran sus datos publicados por la RFEE');
+    expect(sinPermiso).not.toContain('su cálculo interno');
   });
 });
 
