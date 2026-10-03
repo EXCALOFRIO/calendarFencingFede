@@ -301,7 +301,11 @@ snapshot inicial incorpora 3.671 competiciones, 198.212 resultados y
 635.173 asaltos. Pasan `foreign_key_check`, `quick_check` y las comprobaciones
 de procedencia; no faltan URL ni hash en resultados/asaltos. No crea personas
 ni fusiona homónimos: conserva 13.299 registros de persona e ID externo.
-**No es todavía una importación en D1 remoto ni un snapshot de corte.**
+La exportación final congelada y la composición histórica ya pasaron la
+importación y doble verificación local: 1.045.210 filas de 54 tablas.
+**La carga D1 remota está en curso; la web permanece en mantenimiento.**
+Cantidades, porcentajes con sus denominadores, identidad y acceso real:
+[`docs/cobertura-historica-2026-10-03.md`](docs/cobertura-historica-2026-10-03.md).
 
 - La segunda vuelta FIE evaluó las 3.154 unidades del inventario: 3.137
   cerradas, 11 parciales y seis errores de fuente. Se procesó el inventario

@@ -11,11 +11,15 @@ independiente; exportar filas con referencias a archivos no mueve sus objetos.
 
 ## Estado comprobado el 03/10/2026
 
-- Producción sigue en su despliegue Neon. No se ha publicado el runtime D1.
+- Código `97458b6` subido a `main`. Producción está en mantenimiento independiente
+  `64805183-87b1-421a-8c17-dbdcf7b62a74`, con 16 verificaciones HTTP aprobadas
+  y secretos conservados. No se ha publicado el runtime D1; Neon y `b0da2841`
+  se conservan para recuperación.
 - Destino dedicado: `calendario-fie-fede-db`,
-  `e1c28f19-278c-4d8f-9c7c-9b9d1c45653e`, creado en la UE. La lectura remota
-  confirmó que solo contiene `_cf_KV` y ocupa 12.288 bytes. No se han aplicado
-  las migraciones D1 ni importado filas.
+  `e1c28f19-278c-4d8f-9c7c-9b9d1c45653e`, creado en la UE. Primero solo
+  contenía `_cf_KV`, 12.288 bytes. Después del corte/ensayo se instaló solo
+  `0000`; la carga remota está en curso, marcador `importing`. No se aplican
+  `0001`/`0002`/`0003` ni se sirve la aplicación antes de verificar el import.
 - Snapshot de ensayo: 199.027 filas de 54 tablas, exportado en una transacción
   consistente el 03/10 a las 11:06:41 UTC. Se importó y verificó dos veces en
   SQLite privado (107.950.080 bytes). No acredita los cambios de producción
@@ -34,6 +38,14 @@ independiente; exportar filas con referencias a archivos no mueve sus objetos.
   contiene 5.256 competiciones, 248.694 resultados y 668.128 asaltos.
   Pasan FKs, integridad y procedencia, sin nuevas personas ni merges.
   Es staging previo al corte, no un D1 remoto ni un snapshot final.
+- El ensayo de composición previo al corte pasó: 1.045.210 filas de 54 tablas,
+  618.963.920 bytes JSONL, importados y verificados dos veces, código 0.
+  SQLite ocupa 631.074.816 bytes. Usar el base dos veces no acredita un corte.
+- El snapshot congelado final terminó y la composición no encontró deriva en
+  hechos/identidades protegidas. El ensayo final de 1.045.210 filas/54 tablas
+  importó y verificó dos veces, código 0, 631.074.816 bytes de SQLite.
+  Manifiesto `4e0fa7df665bccf2ccb2305a75da533c49d3a90b868290841817d71093056944`.
+  Se conserva el export base, el final crudo y la copia histórica original.
 - El acceso conserva `NEON_AUTH_URL` y `NEON_AUTH_COOKIE_SECRET`, cuyos nombres
   ya constan en producción. Debe verificarse el proveedor antes de reabrir.
   No requiere Resend ni un remitente nuevo para enviar códigos. No hay

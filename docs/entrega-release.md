@@ -4,21 +4,26 @@ Fecha: 02/10/2026. Este documento dice qué se publicó, qué se comprobó y qu�
 **no** se comprobó. La revisión privada (con cuenta real) es del propietario y
 queda **pendiente**.
 
-## Trabajo posterior del 03/10/2026, todavía sin publicar
+## Trabajo posterior del 03/10/2026, corte en mantenimiento
 
-Producción continúa en `b0da2841`, con Neon. El código pendiente migra datos
-y almacenamiento a D1/R2, conservando Neon Auth gestionado solo para cuentas,
-sesiones y códigos, por elección del propietario. No se ha hecho el corte, desplegado
-esa versión, confirmado los cambios ni hecho `git push`.
+El código se confirmó en `97458b6` y se subió a `main`. Migra datos y
+almacenamiento a D1/R2, conservando Neon Auth gestionado solo para cuentas,
+sesiones y códigos. Producción está en mantenimiento
+`64805183-87b1-421a-8c17-dbdcf7b62a74`, publicado a las 20:57 UTC.
+El runtime D1 sigue pendiente y la importación remota está en curso. Neon y la versión
+`b0da2841` se conservan para recuperación.
 
 - Se aplicó únicamente la guarda PostgreSQL `0020` (ledger 19 → 20) y se
-  desactivaron escritores antiguos. El Worker de producción no está congelado.
+  desactivaron escritores antiguos. El corte independiente ahora congela el Worker.
   No se aplica `0021` a Neon; su CLI está retirado antes de cualquier I/O.
 - Se creó una D1 UE independiente y se confirmó su acceso de solo lectura:
-  `_cf_KV`, 12.288 bytes, sin esquema de aplicación ni importación.
+  inicialmente `_cf_KV`, 12.288 bytes. Se instaló solo `0000` después del
+  snapshot/ensayo final. El marcador remoto está en `importing`, no `complete`;
+  faltan la verificación remota y las guardias posteriores.
 - El snapshot consistente de 199.027 filas se ensayó y verificó dos veces
-  localmente. Producción aún puede escribir en Neon; hace falta un corte
-  real y otro snapshot final.
+  localmente. La exportación final congelada nueva también terminó, código 0,
+  con 199.027 filas de 54 tablas; la composición pasó sin deriva de los hechos
+  o identidades protegidas.
 - R2 conserva verificados 9.614 blobs FIE, tres particiones e índice
   (216.577.918 bytes con metadatos), y 2.109 blobs nacionales y manifiesto
   (278.467.814 bytes). La relectura de índice/particiones/manifiesto FIE
@@ -35,8 +40,22 @@ esa versión, confirmado los cambios ni hecho `git push`.
   snapshot actual de perfiles/AuthIDs/permisos/demás datos y aborta ante deriva
   de identidades o hechos. Requiere fuente cerrada en DELETE, hashes explícitos
   y el mismo importador estricto; no carga el SQLite de staging a ciegas.
+- La composición previa al corte produjo 1.045.210 filas de 54 tablas,
+  618.963.920 bytes JSONL. Su importación y doble verificación local pasaron,
+  código 0 en 717,99 s; SQLite ocupa 631.074.816 bytes. Usó el base también
+  como snapshot actual y no sustituye la exportación final congelada.
+- La composición **del corte** también produjo 1.045.210 filas/54 tablas.
+  Se importó y verificó dos veces en SQLite privado, código 0,
+  631.074.816 bytes. SHA del manifiesto:
+  `4e0fa7df665bccf2ccb2305a75da533c49d3a90b868290841817d71093056944`.
+  El ensayo tardó 6.181,84 s de reloj; la causa de esa demora no se ha
+  verificado y no se presenta como tiempo típico de importación.
 - El Worker independiente de mantenimiento tiene dry-run y 13 casos probados,
-  sin código de aplicación o bindings. No se ha desplegado ni congelado tráfico.
+  sin código de aplicación, assets, bindings o crons. El corte desplegado pasó
+  16 comprobaciones HTTP: 503, privado/no-store, Retry-After y HEAD vacío,
+  incluidas rutas de auth, archivos, cron y recursos. Los nueve nombres de
+  secretos se conservan. La lectura Neon encontró cero escritores activos
+  y cero transacciones ajenas abiertas; no se hizo ninguna escritura Neon.
 - El diseño pasó 92 pruebas focalizadas, con 36 renders sintéticos a 320,
   393, 768 y 1440 px. No son QA autenticada de producción ni métricas reales
   de rendimiento.
@@ -117,16 +136,21 @@ esa versión, confirmado los cambios ni hecho `git push`.
   El primer chequeo de esos exports usó un patrón incorrecto y salió con 1;
   la comprobación corregida verificó su formato real y salió con 0. No hubo
   coincidencias sensibles ni cambios del paquete entre ambos chequeos.
+- La lectura real de ediciones/clasificaciones sobre la copia histórica pasó
+  para FIE, PDF y HTML: dos páginas de 20 filas por fuente, sin duplicados;
+  sin sesión se denegó antes de consultar. Fueron 30 consultas de solo lectura
+  con un perfil sintético de test, no acceso autenticado de producción.
+  [Tabla de cobertura y acceso](./cobertura-historica-2026-10-03.md).
 
 Orden de corte, importación, capacidad y recuperación:
 [`migracion-cloudflare.md`](migracion-cloudflare.md).
 
-Hubo **dos** publicaciones ese día en el mismo Worker. La **última** es la
+Hubo **dos** publicaciones el 02/10 en el mismo Worker. La **última de ese día** fue la
 versión `b0da2841-1b10-4ba7-8d7b-ee9401fbbd7b` (sección siguiente); la primera,
 `3fb282b6`, se conserva más abajo como registro histórico y **no** es la
-vigente.
+de recuperación elegida. El mantenimiento del 03/10 sustituye ambas.
 
-## Publicación vigente: `b0da2841` (corrección de `/api/archivos/*`)
+## Última aplicación Neon: `b0da2841` (anterior al corte)
 
 | Dato | Valor |
 |---|---|

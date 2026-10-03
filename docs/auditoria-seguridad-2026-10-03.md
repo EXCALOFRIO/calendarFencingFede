@@ -8,9 +8,11 @@ commits. No repository threat model was found. Runtime airgap mode is false.
 During the audit, no review, source code or private artifact was submitted to
 an outside service.
 
-Four high-confidence findings were validated and corrected locally.
-**The corrections are not deployed.** Production remains on the previous
-Neon-backed Worker. A local pass does not approve a production cutover.
+Four high-confidence findings were validated and corrected locally, committed
+in `97458b6` and pushed to `main`. **The D1 runtime is not deployed.**
+Production is on the independent maintenance Worker `64805183`, with the
+previous Neon deployment retained for recovery. Local checks do not establish
+authenticated production behavior.
 
 The original review used six disjoint source groups:
 
@@ -109,6 +111,31 @@ budgets, not a proof of the Worker's total peak heap.
   empty. The first environment-format assertion failed because it expected
   a different export format, not because of a secret match. The corrected
   assertion passed without changing the package.
+- Actual pre-cutover composition rehearsal: **exit 0, 717.99 seconds**,
+  1,045,210 rows across 54 tables, imported and verified twice. It preserves
+  managed AuthIDs but used the baseline as both exports; it is not the frozen
+  cutover snapshot. SQLite size: 631,074,816 bytes.
+- Reviewed publication candidates: 354 source/config/test/doc files, zero
+  current secret-literal matches and no private export/database/log artifacts.
+  The 422 untracked captures were not staged. The 911 unpublished blobs/commit
+  objects also matched zero current secret values/components before push.
+- Independent production maintenance deployed at 20:57 UTC, with sixteen HTTP
+  checks passed and the nine secret names preserved. Read-only source inspection
+  found no active writers or other idle transactions. No Neon write was made.
+- The final frozen snapshot completed in read-only mode, preserving managed
+  AuthIDs. Its historical composition passed the protected drift checks.
+  The actual frozen 1,045,210-row/54-table export was imported and verified
+  twice locally, exit 0; SQLite size 631,074,816 bytes. Wall-clock time was
+  6,181.84 seconds; the delay's cause was not independently established.
+- Actual edition/classification DAL reads passed against accepted local
+  history for FIE, PDF and HTML: two twenty-row pages per source without
+  duplicate rows, thirty read-only queries. Missing authentication was rejected
+  before querying. This used a synthetic test profile, not live Neon login.
+- Remote D1 now has only the `0000` application foundation. The strict final
+  import is running with its exact manifest hash and dedicated database ID;
+  its marker is `importing`, not `complete`. The first DDL wrapper reported
+  failure parsing the CLI response after the schema had committed; subsequent
+  read-only inspection confirmed the foundation. It was not reapplied.
 - Actual national PDF replay after both integrity corrections: **exit 0**,
   1,411 processed, 1,408 with persistence, three malformed, 20,487 reserved
   statements, no incomplete-write flag. Actual accepted totals are 5,256
@@ -161,8 +188,8 @@ The following earlier checks are retained as history, not the current gate:
   zero matches in 2,228 `.open-next` files and three dry-run files; zero
   `.env` files. Only names/counts were reported, never secret values.
 - Those earlier build/dry-run/scan results predate the latest import/runtime
-  changes and are superseded by the current checks above. No deployment or
-  cutover has occurred.
+  changes and are superseded by the current checks above. They did not deploy
+  the D1 runtime or import remote application data.
 
 The previous 2,555-test gate and earlier build predate the audit fixes.
 They are historical evidence, not approval of this release. Production OTP,
