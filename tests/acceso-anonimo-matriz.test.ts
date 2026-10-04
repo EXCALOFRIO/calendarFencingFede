@@ -76,7 +76,7 @@ describe('páginas sin sesión', () => {
     [
       '/explorar/ediciones',
       '@/app/(app)/explorar/ediciones/page',
-      async () => (await import('@/app/(app)/explorar/ediciones/page')).default(),
+      async () => (await import('@/app/(app)/explorar/ediciones/page')).default({ searchParams: sinConsulta }),
     ],
     [
       '/explorar/ediciones/[edicionId]',

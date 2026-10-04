@@ -71,6 +71,11 @@ envían avisos ni piden permisos del navegador.
   solo hay lo que se ha importado de forma acotada (ver «Estado real de los
   datos históricos»). Una prueba sin resultados importados se muestra como «sin
   datos», nunca como «no hay resultados».
+- `/explorar/ediciones` incluye un catálogo paginado de todas las ediciones
+  importadas, aunque no estén vinculadas al calendario o a una persona.
+  Busca por nombre o ciudad y filtra por fuente y temporada. El retorno desde
+  una edición o una ficha conserva los filtros y la página del catálogo.
+  Esta mejora local aún no acredita acceso en producción durante el corte.
 - Una persona deportiva no es una cuenta. Un ID externo (FIE, RFEE) tiene
   ámbito y vigencia, y los homónimos no se fusionan por nombre. El
   `athlete_id` antiguo de una inscripción no basta como prueba de identidad.

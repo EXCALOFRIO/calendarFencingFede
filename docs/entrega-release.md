@@ -6,6 +6,37 @@ queda **pendiente**.
 
 ## Trabajo posterior del 03/10/2026, corte en mantenimiento
 
+### Actualización del 04/10: catálogo, lotes y presentación
+
+- El catálogo completo conserva búsqueda literal, fuente, temporada y página
+  al abrir una edición, su clasificación y una ficha deportiva. No requiere
+  vínculos al calendario y no muestra datos de cuenta.
+- Se mejoraron la jerarquía de filtros, los recuentos, las tarjetas de edición,
+  los estados vacíos, las cabeceras de clasificación y los controles móviles.
+  Los puestos usan texto accesible en lugar de `aria-label` sobre un span genérico.
+- El gate offline pasó **2.876 pruebas en 174 archivos**, código 0, 343,37 s,
+  dos workers, límites de pruebas/hooks de 30 s y las cinco exclusiones
+  habituales de acceso vivo. Después, la última corrección ARIA pasó las
+  **91 pruebas** focalizadas de catálogo, ediciones, modelo y acceso anónimo.
+  TypeScript sin incremental pasó antes de esa corrección; el build canónico
+  posterior también pasó su control TypeScript y terminó con código 0.
+- Las fixtures sintéticas con CSS compilado no desbordan a 320/393/768/1440 px
+  y no tienen controles menores de 44 px, con tolerancia de redondeo de 0,1 px.
+  Axe no encontró violaciones; queda contraste manual sobre la textura.
+  La captura de escritorio repite regiones, pese a existir una sola instancia
+  en el DOM. Tab no avanza en el pane integrado. No son QA visual completa,
+  verificación de teclado ni acceso autenticado real.
+- El coordinador Factory fija todo el inventario, conserva semillas validadas
+  y procesa pasos finitos de diez unidades con concurrencia dos. La preparación
+  completa se inició offline; la campaña masiva aún no se acredita. Cuota/auth,
+  código de salida no cero, envelope inválido y errores de seguridad abortan
+  globalmente. Ningún candidato se acepta como hecho deportivo ni se mezcla
+  con el manifiesto congelado.
+- Producción continúa en mantenimiento. La observación remota de solo lectura
+  confirmó `importing` y 163.200 combates, cero filas escritas. Esa observación
+  no acredita el final de la importación, sus hashes, las guardias posteriores
+  ni el despliegue del nuevo runtime.
+
 El código se confirmó en `97458b6` y se subió a `main`. Migra datos y
 almacenamiento a D1/R2, conservando Neon Auth gestionado solo para cuentas,
 sesiones y códigos. Producción está en mantenimiento
@@ -34,7 +65,7 @@ El runtime D1 sigue pendiente y la importación remota está en curso. Neon y la
   los PDF añadieron 2.194 puestos y 1.599 asaltos, no todos los hechos leídos.
   FKs/procedencia/cierre de contexto e integridad pasan, sin altas de personas
   o fusiones. Staging local no es D1 remoto ni el snapshot de corte.
-- Quedan parciales, OCR/revisión, tres respuestas nacionales malformadas,
+- Quedan parciales y revisión documental, tres respuestas nacionales malformadas,
   identidades aplazadas y 6.063 coberturas FIE antiguas pendientes.
 - El traslado local incorpora solo cinco tablas de hechos, conserva el
   snapshot actual de perfiles/AuthIDs/permisos/demás datos y aborta ante deriva
@@ -141,6 +172,31 @@ El runtime D1 sigue pendiente y la importación remota está en curso. Neon y la
   sin sesión se denegó antes de consultar. Fueron 30 consultas de solo lectura
   con un perfil sintético de test, no acceso autenticado de producción.
   [Tabla de cobertura y acceso](./cobertura-historica-2026-10-03.md).
+
+### Continuación del 04/10: catálogo y sesiones Factory
+
+El catálogo paginado nuevo pasó 91 pruebas focalizadas y lectura real de la
+copia histórica: 4.407 ediciones/5.256 pruebas, 16 consultas de solo lectura,
+sin duplicados ni cambio de hash. Conserva filtros y página en los retornos.
+Las mediciones de DOM sintético cubrieron cuatro anchos CSS efectivos; la
+comprobación de contraste del degradado quedó incompleta y las capturas del
+panel repetían regiones. No se cuenta como QA autenticada ni prueba visual
+completa. Tab no avanzó el foco en ese panel, así que la comprobación por
+teclado también queda pendiente. El nuevo gate completo, build y despliegue
+siguen pendientes.
+
+Se verificaron controles reales de lectura de `droid exec`, con CLI 0.230.0
+y `gpt-6-sol`, antes de leer PDF/JSON oficiales. Los pilotos de fuente
+produjeron candidatos, sin OCR, API propia ni escrituras deportivas. Las 26
+citas PDF pasaron el contraste; dos de 28 citas FIE no coinciden con la
+fuente y quedan en revisión. Validar sesión/esquema no acepta hechos.
+El propietario autorizó todo el inventario en lotes finitos; esa campaña
+queda independiente del corte actual.
+
+La comprobación D1 del 04/10 a las 00:04:41 UTC observó `importing` y
+`insert:sport_bout:44400`: todas las competiciones/resultados esperados,
+pero solo 44.400 asaltos. Cero escrituras de la comprobación. No se aplicaron
+las guardias posteriores, no se publicó el runtime y no se reabrió la web.
 
 Orden de corte, importación, capacidad y recuperación:
 [`migracion-cloudflare.md`](migracion-cloudflare.md).

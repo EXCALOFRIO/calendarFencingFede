@@ -79,7 +79,7 @@ export function aResumen(f: FilaEdicion): EdicionResumen {
 }
 
 /** Columnas de una edición con el resumen de sus pruebas (alias `e`). */
-const COLUMNAS_EDICION = sql`
+export const COLUMNAS_EDICION = sql`
   e.id AS id, e.name AS nombre, e.season AS temporada, e.source AS fuente,
   e.city AS ciudad, e.country_code AS pais, e.start_date AS inicio, e.end_date AS fin,
   (SELECT count(*) FROM sport_competition c WHERE c.edition_id = e.id) AS pruebas,

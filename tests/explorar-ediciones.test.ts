@@ -489,6 +489,8 @@ describe('pantallas de ediciones', () => {
     expect(marcado).not.toContain('/perfil');
     expect(marcado.match(/<a /g)).toHaveLength(1);
     expect(marcado).toContain('Sin ficha deportiva vinculada');
+    expect(marcado).toContain('<span class="sr-only">Puesto </span>');
+    expect(marcado).not.toContain('aria-label="Puesto');
   });
 
   it('la página siguiente conserva edición y prueba, y la última dice que no hay más', () => {

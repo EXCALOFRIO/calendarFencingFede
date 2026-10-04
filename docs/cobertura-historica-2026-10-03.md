@@ -40,7 +40,8 @@ convierte en resultados nuevos.
   En el nivel documental hay 13 completos de 1.411 (0,92 %), 836 parciales,
   553 pendientes, dos conflictos, un error y seis sin resultados.
   La clasificación puede estar completa aunque poules o tableau no lo estén.
-  OCR y revisión manual siguen pendientes.
+  La nueva relectura usa sesiones Factory y lectura nativa de PDF, sin OCR.
+  Sus candidatos siguen separados de estos hechos aceptados.
 - **Ranking de tiradores FIE:** 145 unidades de cobertura, 107 completas,
   24 pendientes y 14 sin resultados. No son otras 145 competiciones.
 
@@ -89,6 +90,47 @@ sin repetir filas; 30 consultas de solo lectura. Sin sesión se denegó antes de
 consultar. Se usó un perfil sintético de test, no una sesión Neon real ni una
 concesión QA en producción. No se registraron nombres o filas privadas.
 
+## Catálogo y nueva extracción Factory (04/10/2026)
+
+El catálogo local de `/explorar/ediciones` ya incluye todas las fuentes, con
+búsqueda por nombre/ciudad, fuente, temporada y paginación de 25 ediciones.
+Conserva la búsqueda al abrir una edición, su clasificación y una ficha.
+La lectura sobre la copia histórica inmutable verificó:
+
+| Fuente | Ediciones | Pruebas |
+|---|---:|---:|
+| FIE | 2.770 | 3.153 |
+| RFEE / Skermo HTML | 942 | 942 |
+| RFEE PDF | 695 | 1.161 |
+| Total | 4.407 | 5.256 |
+
+Dos páginas por fuente y dos del total, 16 consultas de solo lectura, sin
+duplicados y sin cambiar el hash del SQLite. Sin sesión se denegó antes de
+consultar. Las 91 pruebas focalizadas de catálogo/edición/URL/acceso anónimo
+pasaron; TypeScript completo pasó tras corregir el entorno del hijo Factory.
+Son lecturas locales con perfil sintético, no acceso Neon autenticado.
+
+El DOM sintético se midió en el panel del navegador a 320, 393, 768 y 1440 px
+CSS efectivos: sin desborde y con etiquetas y controles táctiles. La auditoría
+automática no encontró infracciones, pero dejó incompleto el contraste sobre
+el degradado. Las capturas del panel repetían regiones aunque el DOM tenía
+un solo catálogo; no se presentan como prueba visual completa.
+El intento de Tab en el panel no avanzó el foco; el diagnóstico local del
+navegador pasó, pero no acredita navegación por teclado. Queda para QA real.
+
+Los pilotos reales de `droid exec --model gpt-6-sol` produjeron 26 filas de
+cuadro PDF (13 cruces) y 14 filas FIE (3 clasificación, 6 poule, 5 cuadro).
+No se suman a la tabla de hechos aceptados. Las 26 citas PDF coinciden con el
+texto nativo; de las 28 citas FIE, 26 coinciden y dos añadían un campo ausente
+del JSON original, por lo que siguen en revisión. Citas correctas no prueban
+por sí solas interpretación deportiva, identidad ni exhaustividad.
+
+El propietario autorizó todo el inventario, en lotes acotados: hasta 1.408 PDF
+y 3.154 unidades FIE con sesiones independientes, salida JSON y controles de
+lectura. La preparación y ejecución de ese lote no modifica el manifiesto
+congelado, D1, Neon ni las cantidades aceptadas anteriores.
+[`Extracción Factory`](./extraccion-factory.md).
+
 ## Publicación y acceso real
 
 Código confirmado y subido a `main`: `97458b6`. Originales privados archivados.
@@ -101,3 +143,8 @@ publicado todavía el runtime D1 ni se cuenta ninguna prueba como accesible en
 la web. `/entrar`, `/explorar` y `/explorar/ediciones` se comprobaron en 503.
 La verificación remota y el acceso con OTP/roles deben acreditarse por separado.
 Neon y la versión anterior se conservan para recuperación.
+
+Lectura remota a las 00:04:41 UTC del 04/10: marcador `importing`,
+`insert:sport_bout:44400`, 5.256 competiciones, 248.694 resultados y 44.400
+asaltos; cero escrituras de la comprobación. Es un avance parcial, no el
+resultado de la verificación final ni una cantidad disponible en la web.

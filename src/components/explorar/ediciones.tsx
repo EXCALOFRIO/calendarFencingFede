@@ -1,4 +1,4 @@
-import { ArrowLeft, Medal, SearchX, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CalendarDays, MapPin, Medal, SearchX, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
 import { Button } from '@/components/ui/button';
@@ -78,28 +78,30 @@ function Aviso({
 
 /* --------------------------------------------------------------------- series */
 
-function FilaEdicion({ e }: { e: EdicionResumen }) {
+export function FilaEdicion({ e, catalogo }: { e: EdicionResumen; catalogo?: string }) {
   const fechas = periodo(e.inicio, e.fin);
   return (
     <li>
       <Link
-        href={rutaEdicion(e.id)}
+        href={construirUrlEdicion(e.id, { catalogo })}
         prefetch={false}
-        className="grid min-h-11 gap-x-6 gap-y-3 px-4 py-4 hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1.5fr)] md:items-center"
+        className="group grid min-h-11 gap-x-6 gap-y-3 px-4 py-5 transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset motion-reduce:transition-none sm:px-5 md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1.5fr)] md:items-center"
       >
-        <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="flex min-w-0 flex-col gap-2">
           <span className="text-base font-semibold break-words">{titular(e.nombre)}</span>
           <span className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span className="rounded-md border bg-secondary px-2 py-0.5 font-medium text-foreground">{fuenteResultado(e.fuente)}</span>
             <span>Temporada {e.temporada}</span>
-            {e.ciudad ? <span>{e.ciudad}</span> : null}
+            {e.ciudad ? <span className="flex min-w-0 items-center gap-1.5"><MapPin aria-hidden className="size-3.5 shrink-0" /><span className="break-words">{e.ciudad}</span></span> : null}
           </span>
         </span>
-        <span className="text-sm">{fechas ?? <span className="text-muted-foreground">Fechas no publicadas</span>}</span>
-        <span className="flex flex-col gap-0.5 text-sm">
+        <span className="flex items-start gap-2 text-sm"><CalendarDays aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />{fechas ?? <span className="text-muted-foreground">Fechas no publicadas</span>}</span>
+        <span className="flex min-w-0 flex-col gap-2 text-sm">
           <span>
             <span className="cifra text-3xl leading-none">{e.pruebas}</span>{' '}
             <span className="text-xs text-muted-foreground">{e.pruebas === 1 ? 'prueba publicada' : 'pruebas publicadas'}</span>
           </span>
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary-text">Ver edición<ArrowRight aria-hidden className="size-3.5" /></span>
           <span className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span>{e.armas.length > 0 ? e.armas.map((a) => WEAPON_LABEL[a]).join(', ') : 'Sin armas indicadas'}</span>
             {e.formatos.length > 0
@@ -178,11 +180,13 @@ function FilaPrueba({
   p,
   elegida,
   origen,
+  catalogo,
 }: {
   edicion: EdicionResumen;
   p: PruebaDeEdicion;
   elegida: boolean;
   origen?: string;
+  catalogo?: string;
 }) {
   return (
     <li
@@ -198,7 +202,7 @@ function FilaPrueba({
       <div className="flex flex-col items-start">
         {p.resultados.importados > 0 ? (
           <Link
-            href={construirUrlEdicion(edicion.id, { prueba: p.id, origen })}
+            href={construirUrlEdicion(edicion.id, { prueba: p.id, origen, catalogo })}
             prefetch={false}
             aria-label={`Ver la clasificación: ${nombreDePrueba(p)}`}
             className={ENLACE}
@@ -223,11 +227,13 @@ export function PruebasDeEdicion({
   edicion,
   seleccionada,
   origen,
+  catalogo,
 }: {
   edicion: EdicionDetalle;
   seleccionada: string;
   /** Calendario del que se llegó; sus enlaces de clasificación lo conservan. */
   origen?: string;
+  catalogo?: string;
 }) {
   if (edicion.pruebasDetalle.length === 0) {
     return (
@@ -244,9 +250,9 @@ export function PruebasDeEdicion({
       {grupos.map((g) => (
         <section key={g.formato} aria-label={g.formato === 'EQUIPOS' ? 'Pruebas por equipos' : 'Pruebas individuales'}>
           <h3 className="pb-2 text-lg">{g.formato === 'EQUIPOS' ? 'Por equipos' : 'Individuales'}</h3>
-          <ul className="divide-y rounded-md border bg-card">
+          <ul className="divide-y overflow-hidden rounded-xl border bg-card">
             {g.pruebas.map((p) => (
-              <FilaPrueba key={p.id} edicion={edicion} p={p} elegida={p.id === seleccionada} origen={origen} />
+              <FilaPrueba key={p.id} edicion={edicion} p={p} elegida={p.id === seleccionada} origen={origen} catalogo={catalogo} />
             ))}
           </ul>
         </section>
@@ -264,7 +270,10 @@ function FilaPuesto({
 }) {
   const contenido = (
     <>
-      <span className="cifra self-start text-3xl leading-none md:self-center md:text-right" aria-label={fila.puesto === null ? 'Sin puesto numérico' : `Puesto ${fila.puesto}`}>{fila.puesto ?? '—'}</span>
+      <span className="cifra self-start text-3xl leading-none md:self-center md:text-right">
+        <span className="sr-only">{fila.puesto === null ? 'Sin puesto numérico: ' : 'Puesto '}</span>
+        {fila.puesto ?? '—'}
+      </span>
       <span className="flex min-w-0 flex-col gap-0.5">
         <span className="font-semibold break-words">{fila.nombre}</span>
         {fila.puesto === null && fila.puestoPublicado ? (
@@ -316,7 +325,8 @@ export function ClasificacionDePrueba({
 }) {
   // La ficha vuelve a esta misma página de esta misma clasificación.
   const origen = criterios.origen;
-  const volver = construirUrlEdicion(edicion.id, { prueba: prueba.id, cursor: criterios.cursor, origen });
+  const catalogo = criterios.catalogo;
+  const volver = construirUrlEdicion(edicion.id, { prueba: prueba.id, cursor: criterios.cursor, origen, catalogo });
   return (
     <Bloque id="edicion-clasificacion" titulo={`Clasificación: ${nombreDePrueba(prueba)}`} nivel="pagina">
       {clasificacion.filas.length === 0 ? (
@@ -329,23 +339,28 @@ export function ClasificacionDePrueba({
             {clasificacion.filas.length === 1 ? '1 puesto' : `${clasificacion.filas.length} puestos`} en esta página
             {clasificacion.siguiente ? ', hay más' : ''}. Fuente: {fuenteResultado(clasificacion.fuente)}.
           </p>
-          <ul className="divide-y rounded-md border bg-card" aria-label="Clasificación">
-            {clasificacion.filas.map((f) => (
-              <FilaPuesto key={f.id} fila={f} volver={volver} />
-            ))}
-          </ul>
+          <div className="overflow-hidden rounded-xl border bg-card">
+            <div aria-hidden className="hidden grid-cols-[3rem_minmax(0,2fr)_minmax(0,1.5fr)] gap-x-4 border-b bg-secondary px-4 py-3 text-xs font-medium text-muted-foreground md:grid">
+              <span className="text-right">Puesto</span><span>Participante</span><span>País y club</span>
+            </div>
+            <ul className="divide-y" aria-label="Clasificación">
+              {clasificacion.filas.map((f) => (
+                <FilaPuesto key={f.id} fila={f} volver={volver} />
+              ))}
+            </ul>
+          </div>
           <nav aria-label="Páginas de la clasificación" className="flex flex-wrap items-center gap-3">
             {criterios.cursor ? (
-              <Button asChild variant="outline">
-                <Link href={construirUrlEdicion(edicion.id, { prueba: prueba.id, origen })} prefetch={false}>
+              <Button asChild variant="outline" className="min-h-11">
+                <Link href={construirUrlEdicion(edicion.id, { prueba: prueba.id, origen, catalogo })} prefetch={false}>
                   Volver al principio
                 </Link>
               </Button>
             ) : null}
             {clasificacion.siguiente ? (
-              <Button asChild variant="outline">
+              <Button asChild variant="outline" className="min-h-11">
                 <Link
-                  href={construirUrlEdicion(edicion.id, { prueba: prueba.id, cursor: clasificacion.siguiente, origen })}
+                  href={construirUrlEdicion(edicion.id, { prueba: prueba.id, cursor: clasificacion.siguiente, origen, catalogo })}
                   prefetch={false}
                   rel="next"
                 >
@@ -395,13 +410,13 @@ export function EdicionCompleta({
             Volver al calendario
           </Link>
         ) : null}
-        <Link href={RUTA_EDICIONES} prefetch={false} className={ENLACE_VOLVER}>
+        <Link href={criterios.catalogo || RUTA_EDICIONES} prefetch={false} className={ENLACE_VOLVER}>
           <ArrowLeft className="size-4" aria-hidden />
           Volver a las ediciones
         </Link>
       </nav>
 
-      <header className="flex min-w-0 flex-col gap-4 border-y border-l-2 border-l-primary bg-card px-4 py-5 sm:px-6 sm:py-6">
+      <header className="flex min-w-0 flex-col gap-5 rounded-xl border border-l-2 border-l-primary bg-card px-4 py-5 sm:px-6 sm:py-6">
         <h1 className="text-3xl leading-tight break-words sm:text-4xl">{titular(edicion.nombre)}</h1>
         {edicion.serie ? <p className="text-sm text-muted-foreground">{ETIQUETA_SERIE[edicion.serie]}</p> : null}
         <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-10">
@@ -434,7 +449,7 @@ export function EdicionCompleta({
       ) : null}
 
       <Bloque id="edicion-pruebas" titulo="Pruebas publicadas" nivel="pagina">
-        <PruebasDeEdicion edicion={edicion} seleccionada={criterios.prueba} origen={criterios.origen} />
+        <PruebasDeEdicion edicion={edicion} seleccionada={criterios.prueba} origen={criterios.origen} catalogo={criterios.catalogo} />
       </Bloque>
 
       {elegida && edicion.clasificacion ? (

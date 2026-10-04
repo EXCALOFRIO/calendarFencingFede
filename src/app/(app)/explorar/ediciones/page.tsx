@@ -2,7 +2,10 @@ import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { EstadoSeries, ListaSeries } from '@/components/explorar/ediciones';
+import { CatalogoEdiciones } from '@/components/explorar/catalogo-ediciones';
 import { getSessionProfile } from '@/lib/auth/session';
+import { cargarCatalogoEdiciones } from '@/lib/sport/explorar/catalogo';
+import { leerCriteriosCatalogo } from '@/lib/sport/explorar/catalogo-url';
 import { cargarSeries } from '@/lib/sport/explorar/ediciones-pantalla';
 import { contextoReal } from '@/lib/sport/explorar/real';
 import { RUTA_EXPLORAR } from '@/lib/sport/explorar/url';
@@ -11,20 +14,27 @@ export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Ediciones y series' };
 
 /**
- * Entrada a las ediciones de los Juegos Olímpicos, los Juegos Mediterráneos y
- * el Campeonato del Mediterráneo, tal y como las publican las fuentes.
+ * Catálogo paginado de todas las ediciones importadas y series especiales.
  *
  * La guarda de sesión va aquí además de en el layout porque la ruta se puede
- * abrir escribiendo la dirección. Sólo lee lo ya indexado en Neon: no llama a
+ * abrir escribiendo la dirección. Sólo lee lo ya indexado en D1: no llama a
  * ninguna fuente externa, no inventa ediciones ni pruebas y no incluye datos de
  * cuenta ni ranking interno.
  */
-export default async function Pagina() {
+export default async function Pagina({
+  searchParams,
+}: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const perfil = await getSessionProfile();
   if (!perfil) redirect('/entrar');
 
-  const vista = await cargarSeries(contextoReal());
-  if (vista.tipo === 'sin_sesion') redirect('/entrar');
+  const { criterios, cursor } = leerCriteriosCatalogo(await searchParams);
+  const entrada = Object.fromEntries(Object.entries(criterios).filter(([, valor]) => valor));
+  const ctx = contextoReal();
+  const [vista, catalogo] = await Promise.all([
+    cargarSeries(ctx),
+    cargarCatalogoEdiciones(ctx, { ...entrada, ...(cursor ? { cursor } : {}) }),
+  ]);
+  if (vista.tipo === 'sin_sesion' || catalogo.estado === 'sin_sesion') redirect('/entrar');
 
   return (
     <div className="flex flex-col gap-6">
@@ -46,7 +56,11 @@ export default async function Pagina() {
         </p>
       </header>
 
-      {vista.tipo === 'ok' ? <ListaSeries series={vista.series} /> : <EstadoSeries vista={vista} />}
+      <CatalogoEdiciones vista={catalogo} criterios={criterios} cursor={cursor} />
+      <section aria-label="Series especiales" className="flex flex-col gap-4 border-t pt-6">
+        <h2 className="text-2xl">Series especiales</h2>
+        {vista.tipo === 'ok' ? <ListaSeries series={vista.series} /> : <EstadoSeries vista={vista} />}
+      </section>
     </div>
   );
 }

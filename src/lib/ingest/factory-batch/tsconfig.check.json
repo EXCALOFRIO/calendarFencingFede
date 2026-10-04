@@ -1,0 +1,13 @@
+{
+  "extends": "../../../../tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "plugins": []
+  },
+  "include": [
+    "./*.ts",
+    "../../../../scripts/extraer-historico-factory.ts",
+    "../../../../tests/factory-batch*.test.ts"
+  ],
+  "exclude": ["../../../../node_modules"]
+}

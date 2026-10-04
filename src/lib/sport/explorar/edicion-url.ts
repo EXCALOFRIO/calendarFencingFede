@@ -1,13 +1,14 @@
 import { sanitizarRetornoCalendario } from '@/lib/calendario/contexto-url';
+import { RUTA_EDICIONES, sanitizarRetornoCatalogo } from './catalogo-url';
 import { UUID_RE } from './cursor';
-import { CRITERIOS_VACIOS, RUTA_EXPLORAR, construirUrl, type CriteriosExplorar } from './url';
+import { CRITERIOS_VACIOS, construirUrl, type CriteriosExplorar } from './url';
 
 /**
  * Direcciones de las páginas de edición. Sin imports de servidor: las usan la
  * página, el calendario (cliente) y el saneado del retorno de la ficha.
  */
 
-export const RUTA_EDICIONES = `${RUTA_EXPLORAR}/ediciones`;
+export { RUTA_EDICIONES } from './catalogo-url';
 
 const LONGITUD_MAXIMA_CURSOR = 600;
 
@@ -26,6 +27,8 @@ export type CriteriosEdicion = {
    * está si se llegó desde el calendario; viaja por edición → persona → atrás.
    */
   origen?: string;
+  /** Búsqueda del catálogo de origen, con filtros y página ya saneados. */
+  catalogo?: string;
 };
 
 export const CRITERIOS_EDICION_VACIOS: CriteriosEdicion = { prueba: '', cursor: '' };
@@ -42,10 +45,12 @@ export function edicionDeRuta(segmento: string): string | null {
 export function leerCriteriosEdicion(params: Parametros): CriteriosEdicion {
   const prueba = primero(params.prueba);
   const origen = sanitizarRetornoCalendario(primero(params.origen));
+  const catalogo = sanitizarRetornoCatalogo(primero(params.catalogo));
   return {
     prueba: UUID_RE.test(prueba) ? prueba.toLowerCase() : '',
     cursor: primero(params.cursor).slice(0, LONGITUD_MAXIMA_CURSOR),
     ...(origen ? { origen } : {}),
+    ...(catalogo ? { catalogo } : {}),
   };
 }
 
@@ -59,6 +64,8 @@ export function construirUrlEdicion(edicionId: string, c: Partial<CriteriosEdici
   if (c.cursor) params.set('cursor', c.cursor);
   const origen = sanitizarRetornoCalendario(c.origen);
   if (origen) params.set('origen', origen);
+  const catalogo = sanitizarRetornoCatalogo(c.catalogo);
+  if (catalogo) params.set('catalogo', catalogo);
   const texto = params.toString();
   return `${rutaEdicion(edicionId)}${texto ? `?${texto}` : ''}`;
 }
@@ -69,7 +76,7 @@ export function construirUrlEdicion(edicionId: string, c: Partial<CriteriosEdici
  * cursor, reconstruidos con las claves conocidas. Otra cosa da `''`.
  */
 export function sanitizarRetornoEdicion(crudo: string): string {
-  if (crudo === RUTA_EDICIONES || crudo.startsWith(`${RUTA_EDICIONES}?`)) return RUTA_EDICIONES;
+  if (crudo === RUTA_EDICIONES || crudo.startsWith(`${RUTA_EDICIONES}?`)) return sanitizarRetornoCatalogo(crudo);
   if (!crudo.startsWith(`${RUTA_EDICIONES}/`)) return '';
   const resto = crudo.slice(RUTA_EDICIONES.length + 1);
   const corte = resto.search(/[?]/);
@@ -81,6 +88,7 @@ export function sanitizarRetornoEdicion(crudo: string): string {
     prueba: consulta.get('prueba') ?? undefined,
     cursor: consulta.get('cursor') ?? undefined,
     origen: consulta.get('origen') ?? undefined,
+    catalogo: consulta.get('catalogo') ?? undefined,
   });
   return construirUrlEdicion(edicion, criterios);
 }
