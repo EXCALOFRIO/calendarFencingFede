@@ -510,14 +510,17 @@ export async function persistirLecturaPdf(
           sourceFactKey: `${prefijo}${x.sourceFactKey}`,
           personId: null,
           sourceName: x.nombre,
-          sourceCountryCode: null,
+          sourceCountryCode: x.pais ?? null,
           sourceClub: x.club,
           position: x.posicion,
           positionRaw: x.posicionRaw,
           officialPoints: null,
           occurredOn: p.fecha,
           sourceUrl: urlPagina(lectura.url, x.region),
-          contentHash: await hashDe(x.posicion, x.posicionRaw, x.nombre, x.club, p.fecha, x.region),
+          // El país entra en la huella sólo cuando existe: las filas sin él conservan la suya.
+          contentHash: await (x.pais
+            ? hashDe(x.posicion, x.posicionRaw, x.nombre, x.club, p.fecha, x.region, x.pais)
+            : hashDe(x.posicion, x.posicionRaw, x.nombre, x.club, p.fecha, x.region)),
         })),
       );
       if (filas.length > 0) {

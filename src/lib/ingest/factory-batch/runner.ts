@@ -6,24 +6,31 @@ import { assertCapacity } from '../../migracion-cloudflare/files';
 import { readBounded, writeNew, exists, hash, serialize, jobDirectory } from './files';
 import { loadCampaign, validateJob } from './prepare';
 import { childEnvironment, spawnTransport, type Transport } from './transport';
-import { preferCampaignFailure } from './failure-policy';
+import { isOrdinarySourceFailure, preferCampaignFailure } from './failure-policy';
+import { admittedConcurrency } from './resources';
 import { auditSchema, capabilitySchema, CLI_VERSION, LIMITS, MODEL, PROMPT_VERSION,
-  parseEnvelope, parseCandidate, receiptSchema, type Job, type Plan } from './schemas';
+  parseEnvelope, parseCandidate, receiptSchema, type Job, type Plan, type Model } from './schemas';
 
 export type RunOptions = {
   directory: string; planSha256: string; executable: string;
   execute: boolean; maxSessions: number; concurrency?: number;
   timeoutSeconds?: number; wallSeconds?: number; capabilityPilot?: boolean;
   jobIds?: readonly string[]; signal?: AbortSignal;
+  protectResources?: boolean;
 };
 export type RunSummary = { launched: number; resumed: number; candidates: number; capability: boolean };
-export function invocationArguments(directory: string): string[] {
-  return ['exec', '--model', MODEL, '--only-tools', 'Read', '--disable-builtin-skills',
+export function invocationArguments(directory: string, model: Model = MODEL): string[] {
+  return ['exec', '--model', model, '--only-tools', 'Read', '--disable-builtin-skills',
     '--cwd', directory, '--settings', join(directory, '.factory', 'settings.json'),
     '--file', join(directory, 'prompt.txt'), '--output-format', 'json'];
 }
 export async function readAudit(directory: string) {
-  const bytes = await readBounded(join(directory, 'audit.jsonl'), LIMITS.auditBytes);
+  let bytes: Buffer;
+  try { bytes = await readBounded(join(directory, 'audit.jsonl'), LIMITS.auditBytes); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('factory_hook_evidence_missing');
+    throw error;
+  }
   try {
     const text = bytes.toString('utf8');
     if (!text || !text.endsWith('\n')) throw new Error();
@@ -57,7 +64,7 @@ export async function verifyCapability(root: string, planHash: string, plan: Pla
     receipt = capabilitySchema.parse(JSON.parse((await readBounded(join(root, 'capability-receipt.json'),
       16384)).toString('utf8')));
   } catch { throw new Error('factory_capability_receipt_required'); }
-  if (receipt.planSha256 !== planHash || receipt.droidExecutableSha256 !== binaryHash ||
+  if (receipt.model !== plan.model || receipt.planSha256 !== planHash || receipt.droidExecutableSha256 !== binaryHash ||
     receipt.nodeExecutableSha256 !== plan.nodeExecutableSha256 || receipt.hookSha256 !== plan.hookSha256 ||
     receipt.settingsSha256 !== plan.settingsSha256) throw new Error('factory_capability_receipt_mismatch');
   const envelopeBytes = await readBounded(join(jobDirectory(root, plan.capability.id), 'stdout.json'), LIMITS.outputBytes);
@@ -76,13 +83,13 @@ function parseCapabilityResult(result: string) {
       deniedObserved: z.literal(true) }).strict().parse(JSON.parse(result));
   } catch { throw new Error('factory_capability_result_invalid'); }
 }
-export async function validateReceipt(root: string, planHash: string, job: Job): Promise<void> {
+export async function validateReceipt(root: string, planHash: string, job: Job, model: Model = MODEL): Promise<void> {
   const directory = jobDirectory(root, job.id);
   let receipt: z.infer<typeof receiptSchema>;
   try {
     receipt = receiptSchema.parse(JSON.parse((await readBounded(join(directory, 'receipt.json'), 16384)).toString('utf8')));
   } catch { throw new Error('factory_resume_receipt_invalid'); }
-  if (receipt.planSha256 !== planHash || receipt.jobId !== job.id || receipt.sourceSha256 !== job.sourceSha256) {
+  if (receipt.model !== model || receipt.planSha256 !== planHash || receipt.jobId !== job.id || receipt.sourceSha256 !== job.sourceSha256) {
     throw new Error('factory_resume_identity_mismatch');
   }
   const result = await readBounded(join(directory, 'candidate.json'), LIMITS.outputBytes);
@@ -116,11 +123,12 @@ function validateOptions(o: RunOptions) {
   if (!isAbsolute(o.directory) || !isAbsolute(o.executable) ||
     (process.platform === 'win32' && !o.executable.toLowerCase().endsWith('.exe')) ||
     !Number.isSafeInteger(o.maxSessions) || o.maxSessions < 1 || o.maxSessions > LIMITS.jobs ||
-    !Number.isSafeInteger(o.concurrency ?? 1) || (o.concurrency ?? 1) < 1 || (o.concurrency ?? 1) > 2 ||
+    !Number.isSafeInteger(o.concurrency ?? 1) || (o.concurrency ?? 1) < 1 || (o.concurrency ?? 1) > LIMITS.concurrency ||
     !Number.isSafeInteger(o.timeoutSeconds ?? 300) || (o.timeoutSeconds ?? 300) < 1 ||
     (o.timeoutSeconds ?? 300) > LIMITS.timeoutSeconds ||
     !Number.isSafeInteger(o.wallSeconds ?? 900) || (o.wallSeconds ?? 900) < 1 ||
     (o.wallSeconds ?? 900) > LIMITS.wallSeconds ||
+    (o.protectResources !== undefined && typeof o.protectResources !== 'boolean') ||
     (o.capabilityPilot && (o.maxSessions !== 1 || (o.concurrency ?? 1) !== 1))) {
     throw new Error('factory_execution_bounds_invalid');
   }
@@ -130,8 +138,11 @@ function validateOptions(o: RunOptions) {
 export async function runCampaign(options: RunOptions, transport: Transport = spawnTransport): Promise<RunSummary> {
   validateOptions(options);
   if (options.signal?.aborted) throw new Error('factory_campaign_stopped');
-  const root = options.directory, plan = await loadCampaign(root, options.planSha256);
+  const root = options.directory, plan = await loadCampaign(root, options.planSha256,
+    options.capabilityPilot ? undefined : options.jobIds);
   const sourceJobs = selectedSourceJobs(plan, options);
+  const concurrency = options.protectResources
+    ? await admittedConcurrency(root, options.concurrency ?? 1) : options.concurrency ?? 1;
   const binaryHash = hash(await readBounded(options.executable, LIMITS.executableBytes));
   await assertCapacity(root, options.maxSessions * (2 * LIMITS.outputBytes + LIMITS.auditBytes));
   const lock = join(root, 'campaign.lock');
@@ -157,7 +168,7 @@ export async function runCampaign(options: RunOptions, transport: Transport = sp
     for (const job of sourceJobs) {
       const directory = jobDirectory(root, job.id);
       if (await exists(join(directory, 'receipt.json')) && !options.capabilityPilot) {
-        await validateReceipt(root, options.planSha256, job); summary.resumed++; continue;
+        await validateReceipt(root, options.planSha256, job, plan.model); summary.resumed++; continue;
       }
       if (await exists(join(directory, 'started.json')) || await exists(join(directory, 'audit.jsonl')) ||
         await exists(join(directory, 'stdout.json')) || await exists(join(directory, 'stderr.txt')) ||
@@ -174,17 +185,18 @@ export async function runCampaign(options: RunOptions, transport: Transport = sp
           if (abort.signal.aborted) throw new Error('factory_campaign_stopped');
           const job = selected[cursor++];
           if (!job) return;
+          if (options.protectResources) await admittedConcurrency(root, 1);
           await validateJob(root, plan, job);
           if (abort.signal.aborted) throw new Error('factory_campaign_stopped');
           const directory = jobDirectory(root, job.id);
           await writeNew(join(directory, 'started.json'), serialize({
             version: 1, jobId: job.id, planSha256: options.planSha256, sourceSha256: job.sourceSha256,
-            model: MODEL, promptVersion: PROMPT_VERSION, startedAt: new Date().toISOString(),
+            model: plan.model, promptVersion: PROMPT_VERSION, startedAt: new Date().toISOString(),
           }));
           summary.launched++;
           let output: Awaited<ReturnType<Transport>>;
           try {
-            output = await transport({ executable: options.executable, args: invocationArguments(directory),
+            output = await transport({ executable: options.executable, args: invocationArguments(directory, plan.model),
               cwd: directory, env, timeoutMs, maxBytes: LIMITS.outputBytes, signal: abort.signal });
           } catch (error) {
             const partial = error && typeof error === 'object' && 'partialOutput' in error
@@ -216,7 +228,7 @@ export async function runCampaign(options: RunOptions, transport: Transport = sp
           if (options.capabilityPilot) {
             parseCapabilityResult(envelope.result);
             await writeNew(join(root, 'capability-receipt.json'), serialize(capabilitySchema.parse({
-              version: 1, planSha256: options.planSha256, model: MODEL, cliVersion: CLI_VERSION,
+              version: 1, planSha256: options.planSha256, model: plan.model, cliVersion: CLI_VERSION,
               droidExecutableSha256: binaryHash, nodeExecutableSha256: plan.nodeExecutableSha256,
               hookSha256: plan.hookSha256, settingsSha256: plan.settingsSha256,
               sessionId: envelope.session_id, auditSha256, envelopeSha256: hash(output.stdout),
@@ -227,15 +239,21 @@ export async function runCampaign(options: RunOptions, transport: Transport = sp
             await writeNew(join(directory, 'candidate.json'), candidate);
             await writeNew(join(directory, 'receipt.json'), serialize(receiptSchema.parse({
               version: 1, jobId: job.id, planSha256: options.planSha256, sourceSha256: job.sourceSha256,
-              model: MODEL, promptVersion: PROMPT_VERSION, sessionId: envelope.session_id,
+              model: plan.model, promptVersion: PROMPT_VERSION, sessionId: envelope.session_id,
               resultSha256: hash(candidate), auditSha256, acceptance: 'requires_source_reconciliation',
             })));
             summary.candidates++;
           }
         }
-      } catch (error) { failure = preferCampaignFailure(failure, error); abort.abort(); }
+      } catch (error) {
+        failure = preferCampaignFailure(failure, error);
+        // A source-quality failure retires this worker, not the independent
+        // sibling sessions. Otherwise cancelling siblings before their first
+        // Read can turn one bad candidate into an unaudited global safety stop.
+        if (!isOrdinarySourceFailure(error instanceof Error ? error.message : '')) abort.abort();
+      }
     };
-    await Promise.all(Array.from({ length: Math.min(options.concurrency ?? 1, selected.length) }, worker));
+    await Promise.all(Array.from({ length: Math.min(concurrency, selected.length) }, worker));
     if (failure) throw failure;
     if (abort.signal.aborted) throw new Error('factory_campaign_stopped');
     return summary;

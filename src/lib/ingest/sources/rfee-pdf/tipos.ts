@@ -39,6 +39,8 @@ export type TipoPagina =
   | 'participantes'
   | 'formula'
   | 'arbitros'
+  /** Recuentos de participantes por procedencia: no publica resultados. */
+  | 'estadisticas'
   | 'desconocida';
 
 export type Formato = 'INDIVIDUAL' | 'EQUIPOS';
@@ -62,10 +64,17 @@ export type PuestoPdf = {
   posicionRaw: string | null;
   nombre: string;
   club: string | null;
+  /** Código de país de la columna «Nación», sólo si publica uno de tres letras. */
+  pais?: string;
   region: Region;
 };
 
-export type OrigenMarcador = 'explicito' | 'derivado_de_totales';
+/**
+ * `derivado_de_totales`: los totales de la matriz obligan el valor por sí
+ * solos. `derivado_de_limite`: lo obligan los totales junto con el tope de
+ * tocados que la propia vuelta demuestra (ver `poules.ts`).
+ */
+export type OrigenMarcador = 'explicito' | 'derivado_de_totales' | 'derivado_de_limite';
 
 export type AsaltoPdf = {
   fase: 'POULE' | 'TABLEAU';

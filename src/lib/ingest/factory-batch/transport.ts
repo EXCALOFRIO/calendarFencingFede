@@ -48,10 +48,13 @@ export async function stopOwnTree(pid: number): Promise<void> {
   }
 }
 export const spawnTransport: Transport = invocation => new Promise((resolve, reject) => {
-  if (!isAbsolute(invocation.executable) || invocation.signal.aborted ||
+  if (!isAbsolute(invocation.executable) ||
     invocation.timeoutMs < 1 || invocation.timeoutMs > LIMITS.timeoutSeconds * 1000 ||
     invocation.maxBytes < 1 || invocation.maxBytes > LIMITS.outputBytes) {
     reject(new Error('factory_invocation_invalid')); return;
+  }
+  if (invocation.signal.aborted) {
+    reject(new Error('factory_campaign_stopped')); return;
   }
   const child = spawn(invocation.executable, invocation.args, {
     cwd: invocation.cwd, env: invocation.env, shell: false, windowsHide: true,

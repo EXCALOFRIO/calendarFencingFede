@@ -365,7 +365,7 @@ describe('AcumuladorAsaltos', () => {
 });
 
 describe('fixtures reales minimizados (PDF públicos RFEE 2018-19, nombres cifrados)', () => {
-  it('espada masculina absoluta: 28 puestos y cuadro completo; las V sin número que los totales no determinan quedan en parcial', () => {
+  it('espada masculina absoluta: 28 puestos, 84 duelos de poule y 15 de cuadro; las V sin número salen del tope que demuestra la vuelta', () => {
     const f = fixture('abs-individual-espada-2019.json');
     expect(f.fuente.url).toMatch(/^https:\/\/app\.skermo\.org\/client\/1\/[0-9a-f]{32}\.pdf$/);
     const l = leerResultadosPdf(f.paginas, { url: f.fuente.url, docId: 'abs' });
@@ -375,18 +375,17 @@ describe('fixtures reales minimizados (PDF públicos RFEE 2018-19, nombres cifra
     expect(p.cobertura.puestos).toMatchObject({ estado: 'completo', publicado: 28, importado: 28 });
     expect(p.cobertura.cuadro).toMatchObject({ estado: 'completo', publicado: 15, importado: 15 });
 
-    // La página 3 publica cuatro poules cuyas V sin número no se determinan por los totales: no se completan con un valor común.
+    // Las 9 V que la aritmética obliga valen 5 y ningún tanteo publicado pasa de 5: las otras 68 V se fijan con ese tope.
     const poules = p.asaltos.filter((a) => a.fase === 'POULE');
-    expect(p.cobertura.poules).toMatchObject({ estado: 'parcial', publicado: 84, importado: poules.length });
-    expect(poules).toHaveLength(16);
+    expect(p.cobertura.poules).toMatchObject({ estado: 'completo', publicado: 84, importado: 84 });
     expect(poules.filter((a) => a.marcador === 'derivado_de_totales')).toHaveLength(9);
-    expect(p.excluidos).toMatchObject({ sinMarcador: 68, identidadNoConfirmada: 0, incoherente: 0, conflicto: 0, sinGanador: 0 });
-    const sinTanteo = p.rechazos.filter((r) => r.seccion === 'poules');
-    expect(sinTanteo).toHaveLength(4);
-    expect(sinTanteo.every((r) => r.region?.pagina === 3 && /no determinan/.test(r.motivo))).toBe(true);
-    expect(p.rechazos).toHaveLength(4);
-    expect(p.estado).toBe('parcial');
-    expect(l.estado).toBe('parcial');
+    expect(poules.filter((a) => a.marcador === 'derivado_de_limite')).toHaveLength(68);
+    expect(poules.filter((a) => a.marcador !== 'explicito').every((a) => Math.max(a.puntosA, a.puntosB) === 5)).toBe(true);
+    expect(poules.every((a) => Math.max(a.puntosA, a.puntosB) <= 5)).toBe(true);
+    expect(p.excluidos).toMatchObject({ sinMarcador: 0, identidadNoConfirmada: 0, incoherente: 0, conflicto: 0, sinGanador: 0 });
+    expect(p.rechazos).toEqual([]);
+    expect(p.estado).toBe('completo');
+    expect(l.estado).toBe('completo');
 
     expect(p.asaltos.filter((a) => a.fase === 'TABLEAU')).toHaveLength(15);
     const claves = new Set(p.asaltos.map((a) => `${a.fase}|${a.ronda}|${a.refA}|${a.refB}`));

@@ -291,6 +291,37 @@ describe('normalización de poules: reciprocidad y exclusiones', () => {
     }
   });
 
+  it('quien se retira sin tirar no deja asaltos publicados: la poule sigue completa', () => {
+    const nada = celda(0, false);
+    const r = normalizarPoules(
+      poule([
+        [null, celda(5, true), nada],
+        [celda(2, false), null, nada],
+        [nada, nada, null],
+      ]),
+      { individual: true },
+    );
+    expect(r.ok && r.parte.asaltos).toHaveLength(1);
+    expect(r.ok && r.parte.excluidos).toMatchObject({ retirado: 2, sinGanador: 0 });
+    expect(r.ok && r.parte.cobertura).toMatchObject({ estado: 'completo', publicado: 1, importado: 1 });
+  });
+
+  it('un 0-0 sin victoria entre dos que sí tiraron, o una poule entera a 0-0, no es retirada', () => {
+    const nada = celda(0, false);
+    const cruzado = normalizarPoules(
+      poule([
+        [null, nada, celda(5, true)],
+        [nada, null, celda(5, true)],
+        [celda(1, false), celda(2, false), null],
+      ]),
+      { individual: true },
+    );
+    expect(cruzado.ok && cruzado.parte.excluidos).toMatchObject({ retirado: 0, sinGanador: 1 });
+    expect(cruzado.ok && cruzado.parte.cobertura.estado).toBe('parcial');
+    const vacia = normalizarPoules(poule([[null, nada], [nada, null]]), { individual: true });
+    expect(vacia.ok && vacia.parte.excluidos).toMatchObject({ retirado: 0, sinGanador: 1 });
+  });
+
   it('una celda con marcador incompleto no se completa', () => {
     const r = normalizarPoules(
       poule([[null, { score: null, v: true }], [celda(3, false), null]]),
@@ -372,6 +403,24 @@ describe('normalización del cuadro: BYE, marcador y equipos', () => {
       empate: 1,
       incoherente: 1,
     });
+  });
+
+  it('un cruce ganado por retirada no es asalto publicado; un empate con perdedor normal sigue siendo empate', () => {
+    const conEstado = (id: number, score: number, isWinner: boolean, status: string | null, newStatus: string | null = null) =>
+      ({ ...t(id, score, isWinner), status, newStatus });
+    const r = normalizarCuadro(
+      cuadro([
+        { fencer1: conEstado(1, 0, true, 'V'), fencer2: conEstado(2, 0, false, 'A') },
+        { fencer1: conEstado(3, 0, false, 'N', 'MED'), fencer2: conEstado(4, 0, true, 'V', 'V') },
+        { fencer1: conEstado(5, 3, true, 'V', 'V'), fencer2: conEstado(6, 3, false, 'E', 'EXC') },
+        { fencer1: conEstado(7, 15, true, 'V'), fencer2: conEstado(8, 9, false, 'D') },
+        { fencer1: conEstado(9, 12, true, 'V'), fencer2: conEstado(10, 12, false, 'D') },
+      ]),
+      { individual: true },
+    );
+    expect(r.ok && r.parte.asaltos).toHaveLength(1);
+    expect(r.ok && r.parte.excluidos).toMatchObject({ retirado: 3, empate: 1 });
+    expect(r.ok && r.parte.cobertura).toMatchObject({ estado: 'parcial', publicado: 2, importado: 1 });
   });
 
   it('un cuadro de equipos no produce ni un asalto individual', () => {

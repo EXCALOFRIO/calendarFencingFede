@@ -1,9 +1,12 @@
 import { z } from 'zod';
 
 export const MODEL = 'gpt-6-sol' as const;
+export const modelSchema = z.enum([MODEL, 'gpt-6-luna', 'gpt-5.6-luna']);
+export type Model = z.infer<typeof modelSchema>;
 export const CLI_VERSION = '0.230.0' as const;
 export const PROMPT_VERSION = 'sport-candidate-v1' as const;
 export const LIMITS = {
+  concurrency: 8,
   jobs: 250, inputBytes: 3 * 1024 * 1024, jobBytes: 16 * 1024 * 1024,
   planBytes: 2 * 1024 * 1024, outputBytes: 4 * 1024 * 1024,
   auditBytes: 256 * 1024, timeoutSeconds: 600, wallSeconds: 3600,
@@ -32,7 +35,7 @@ export const jobSchema = z.object({
   controls: controlsSchema,
 }).strict();
 export const planSchema = z.object({
-  version: z.literal(1), model: z.literal(MODEL), cliVersion: z.literal(CLI_VERSION),
+  version: z.literal(1), model: modelSchema, cliVersion: z.literal(CLI_VERSION),
   promptVersion: z.literal(PROMPT_VERSION), sourceManifestSha256: digestSchema,
   hookSha256: digestSchema, settingsSha256: digestSchema,
   nodeExecutableSha256: digestSchema, nodeExecutable: z.string().min(1),
@@ -96,12 +99,12 @@ export const envelopeSchema = z.object({
 }).strict();
 export const receiptSchema = z.object({
   version: z.literal(1), jobId: digestSchema, planSha256: digestSchema,
-  sourceSha256: digestSchema, model: z.literal(MODEL), promptVersion: z.literal(PROMPT_VERSION),
+  sourceSha256: digestSchema, model: modelSchema, promptVersion: z.literal(PROMPT_VERSION),
   sessionId: z.string().uuid(), resultSha256: digestSchema, auditSha256: digestSchema,
   acceptance: z.literal('requires_source_reconciliation'),
 }).strict();
 export const capabilitySchema = z.object({
-  version: z.literal(1), planSha256: digestSchema, model: z.literal(MODEL),
+  version: z.literal(1), planSha256: digestSchema, model: modelSchema,
   cliVersion: z.literal(CLI_VERSION), droidExecutableSha256: digestSchema,
   nodeExecutableSha256: digestSchema, hookSha256: digestSchema, settingsSha256: digestSchema,
   sessionId: z.string().uuid(), auditSha256: digestSchema, envelopeSha256: digestSchema,

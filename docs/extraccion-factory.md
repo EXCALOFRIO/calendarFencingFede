@@ -2,7 +2,7 @@
 
 Este carril es independiente: no importa candidatos, no abre DB, no sube R2,
 no modifica cachés, catálogos, Git ni despliegues. Usa sesiones nuevas de
-`droid exec`, modelo `gpt-6-sol`, una por PDF oficial o competición FIE.
+`droid exec`, modelo `gpt-6-sol` por defecto, una por PDF oficial o competición FIE.
 No usa HTTP personalizado ni OCR. CLI revisado: `0.230.0`.
 
 ## Preparar y revisar sin red
@@ -61,7 +61,7 @@ session-id, fork, Task, Execute, Fetch ni selección MCP.
 
 ## Límites y recuperación
 
-- Concurrencia 1–2; `--max-sesiones` obligatorio (el ejemplo acota a 5).
+- Concurrencia 1–8; `--max-sesiones` obligatorio (el ejemplo acota a 5).
 - Hasta 600 segundos por proceso, 3600 por campaña; defaults 300/900.
 - Hasta 4 MiB combinados stdout/stderr por sesión; 3 MiB por input,
   16 MiB por trabajo, 250 trabajos por plan.
@@ -146,7 +146,11 @@ npx --no-install tsx scripts/lotes-historico-factory.ts --portfolio <ABS_CARPETA
 invocación**, no receipts revalidados ni pilotos capability (estos se cuentan
 aparte: máximo uno por plan). Nunca puede superar el inventario elegible.
 Defaults: pasos de 10, concurrencia 2, 300s/proceso, 900s/paso, 12h globales.
-Máximos: 250/paso, concurrencia 2, 600s/proceso, 3600s/paso, 48h globales.
+Máximos: 250/paso, concurrencia 8, 600s/proceso, 3600s/paso, 48h globales.
+El default sigue siendo 2. Aumentarlo exige elegirlo explícitamente en una nueva
+invocación, tras verificar el cierre seguro de la anterior. No se inicia otro
+coordinador sobre sesiones en curso. Las pruebas de ocho workers usan transporte
+simulado: no prueban cuotas, memoria del CLI real ni una mejora concreta de velocidad.
 La cancelación global se propaga al runner normal; el drenaje/teardown propio
 puede añadir hasta 12 segundos al plazo. No hay watcher infinito.
 
@@ -159,16 +163,19 @@ terminan procesos de importación ajenos.
 Cada unidad tiene como máximo un intento fuente dentro de este portfolio.
 Un fracaso ordinario con audit válido queda en `portfolio-failure.json`,
 `acceptance:"requires_reconciliation"`: se fija la identidad y los hashes de
-todos los artefactos existentes, no se acepta ni reintenta. Los siblings ya
-iniciados/cancelados se tratan igual; los aún no iniciados pueden avanzar.
+todos los artefactos existentes, no se acepta ni reintenta. Ese worker termina,
+pero los siblings independientes no se cancelan por un fallo de calidad.
+Cancelar antes de su primer Read puede dejar un start sin audit y provocar
+un aborto global. Los fallos fatales y los plazos globales sí cancelan y drenan
+las sesiones propias. Los aún no iniciados pueden avanzar.
 Starts ambiguos con evidencia de hook válida se separan para revisión manual.
 Audit ausente/ilegible, tool/path no autorizado, drift, errores desconocidos de
 seguridad o fallo de teardown abortan **todo**; no se saltan para continuar.
 También abortan globalmente un código de salida no cero (incluidas cuota o
 autenticación), un envelope inválido, un arranque fallido y una salida con
 codificación o estado de cierre inválidos, aunque haya lecturas auditadas.
-Con concurrencia dos, un fallo fatal de una sesión prevalece sobre el fallo de
-calidad o la cancelación de la otra. Se esperan ambos cierres antes de devolver
+Con hasta ocho sesiones, un fallo fatal prevalece sobre los fallos de
+calidad o cancelaciones de las demás. Se esperan todos los cierres antes de devolver
 el error; un cierre o drenaje fallido impide iniciar el siguiente paso.
 No borrar/reparar starts, outputs, receipts ni locks abandonados para forzar
 una repetición. Tampoco crear portfolios nuevos para esquivar la reconciliación:
@@ -180,9 +187,53 @@ no son combates deduplicados. `successful` incluye candidatos vacíos/no publica
 `partial`, `unreadable`, `failed` y `not_started` se contabilizan separadamente.
 No se certifica cobertura deportiva ni se importa nada.
 
+## Diagnóstico y alternativa local, 4 de octubre de 2026
+
+El último handoff Sol terminó `aborted`, con 63 intentos iniciados y conteos
+finales marcados como últimos validados (38 candidatos y 16 fallos). Una
+inspección posterior de solo lectura revalidó 39 candidatos y 23 estados
+fallidos; el start restante carece de `audit.jsonl` y queda en cuarentena.
+No se reescribe el terminal ni se reintenta ese trabajo. La ausencia de audit
+ahora produce el código `factory_hook_evidence_missing`, no un ENOENT bruto.
+Se reprodujo y corrigió la cancelación de siblings por errores ordinarios,
+incluido el caso anterior al primer Read. Esto no convierte el start histórico
+sin audit en seguro ni demuestra por sí solo toda la secuencia del incidente.
+
+Una muestra offline de 32 PDF (cuatro de la comparación de modelos y 28
+posiciones espaciadas del inventario ordenado por hash) mostró marca Engarde
+en 30 documentos y 44 esquemas de sección. No es una muestra estadística:
+marca común no significa columnas, cabeceras o atribución idénticas.
+`perfilarEstructuraPdf` devuelve solo indicios estructurales sin nombres ni
+texto bruto; no certifica extracción, exhaustividad ni aceptación deportiva.
+
+Se corrigieron filas con puesto y nombre unidos en un mismo bloque de texto.
+Solo se separan bajo una cabecera explícita compatible; se conservan empates,
+geometría original, clubes ausentes y rechazos de prefijos ambiguos. En los tres
+primeros documentos de comparación, la clasificación local pasó de cero
+filas a 8, 42 y 12, respectivamente. Las filas de clasificación intermedia de
+los modelos y los combates deduplicados del lector no son métricas equivalentes.
+
+Repetir la lectura/análisis de los 32 PDF tras la corrección tardó 2,281 segundos,
+sin red, OCR, llamadas a modelos ni escrituras en bases de datos. Se extrajeron
+940 puestos; el lector declaró un documento completo, 20 parciales y 11
+pendientes. Incluso 19 de los 20 documentos con todas sus secciones reconocidas
+no resultaron completos. Es un microbenchmark local, no velocidad sostenida
+de Luna ni una garantía de 50 PDF por minuto.
+
+La nueva prioridad solicitada es reducir consumo y usar Luna para la IA,
+después de validar calidad. La comparación anterior sigue mostrando omisiones
+y citas que no coinciden: no se ha superado ese gate ni iniciado una campaña
+masiva Luna. El lector local puede reducir trabajo repetido, pero no se
+descartan secciones ni se acepta su cobertura automáticamente para ahorrar.
+Los ledgers abortados, hashes, starts y artefactos originales permanecen intactos.
+
 `progress.jsonl` es append-only y contiene solo códigos/conteos/IDs de invocación.
 Los locks de portfolio forman un ledger exclusivo inmutable: una invocación
 nueva solo abre el siguiente slot tras validar el receipt final del anterior.
+Solo permiten avance los cierres `finished/finished` y
+`stopped/factory_campaign_stopped`. Un receipt `aborted`, aunque exista y tenga
+audit válido, bloquea una nueva invocación hasta reconciliación manual. No hay
+un flag para ignorarlo, y no se reescribe el receipt para habilitar el avance.
 Nunca se borran/reescriben/reclaman locks de portfolio; un slot huérfano bloquea
 hasta reconciliación manual. Máximo 10000 invocaciones, sin polling de procesos.
 Se conserva la gestión transitoria de locks propios del runner normal existente;
@@ -192,3 +243,93 @@ session UUIDs, consumo disponible, rowfacts y resumen. Ante aborto de seguridad
 los estados son los **últimos validados**, identificados explícitamente; no se
 presentan trabajos inseguros como aceptados. Los logs de consola no contienen
 nombres, URLs, texto bruto ni secretos.
+
+El preflight inicial de portfolio y el preflight normal siguen revisando todos
+los inputs y controles. Cada paso con IDs explícitos revisa solo los trabajos
+seleccionados y el piloto capability, además del plan completo fijado por hash,
+su esquema, identidades, runtime y manifest. Conserva las comprobaciones de
+fuente y controles antes y después de cada sesión. La revisión de citas de un
+candidato usa el mismo alcance acotado; no acepta hechos ni certifica exhaustividad.
+No se cachean hashes entre pasos. Estos cambios no actualizan un coordinador
+ya cargado ni modifican los prompts fijados de sus planes.
+
+## Comparación de modelos y protección de recursos
+
+La preparación de una campaña admite `--modelo gpt-6-sol`, `gpt-6-luna` o
+`gpt-5.6-luna`. El modelo queda fijado en el plan, IDs, prompts, settings y
+receipts. No se puede cambiar al ejecutar un plan existente ni reutilizar un
+receipt de otro modelo. Sol conserva sus controles originales. Los portfolios
+completos siguen siendo Sol; las comparaciones Luna son campañas independientes
+explícitas, nunca semillas para disfrazar outputs Luna como Sol.
+
+La lista estática de `exec --help` puede diferir del selector interactivo.
+El piloto real del 4 de octubre de 2026 confirmó que `gpt-6-luna` se acepta en
+`droid exec` y ejecuta los hooks permitidos/denegados.
+
+Las CLI reales comprueban recursos antes del trabajo. Reservan 4 GiB de RAM
+libre y 2 GiB de disco, y estiman 768 MiB por worker para reducir la concurrencia
+solicitada si hace falta. Se vuelve a comprobar la reserva antes de iniciar
+cada fuente. Esto no limita la memoria del proceso a nivel OS: es una estimación
+de admisión. Presión de recursos bloquea la campaña; no borra archivos,
+no cierra aplicaciones ajenas y no permite reanudar un aborto a ciegas.
+
+En cuatro PDF iguales, Luna registró 13.986 `factory_credits` frente a 290.416
+de Sol, un ahorro aproximado del 95,2 %. No se comprobó una factura ni se
+convirtió la métrica a dinero. Luna produjo 162 rowfacts frente a 217 de Sol;
+en dos PDF devolvió menos filas y en otro devolvió más. El contraste de citas
+contra texto PDF encontró seis discrepancias Luna y cuatro Sol. Estas cifras
+no certifican interpretación ni exhaustividad y no autorizan un cambio automático
+de modelo para todo el inventario. Los candidatos y la comparación permanecen
+privados, separados de cualquier importación deportiva.
+
+## Lectores locales antes que modelos (4 de octubre de 2026)
+
+Medición offline de solo lectura, sin red, OCR, modelos ni escrituras, sobre
+todo el inventario en caché. Los recuentos son de hechos leídos, no aceptación
+deportiva ni exhaustividad.
+
+RFEE (1.164 PDF únicos, 1.408 unidades): documentos completos 116 → 459,
+pendientes 432 → 201 y asaltos sin marcador 66.951 → 410. Puestos 37.367,
+asaltos de poule 90.200 y de cuadro 22.363 en unos 64 segundos. Cambios del
+lector: cabeceras en castellano, catalán e inglés; clasificación guiada por la
+cabecera de la tabla (condición DNF/DNS y nación fuera del club); identidad con
+club unido y país como afiliación; pie de Engarde reconocido por su texto, con
+la leyenda de abreviaturas, en lugar de un corte por altura que perdía la última
+fila de las páginas llenas. Cada cambio se comparó documento a documento. Las
+únicas pérdidas son cinco PDF donde la fila recuperada es un hermano con los
+mismos apellidos y club: antes sus asaltos se atribuían al otro. Ahora quedan
+sin atribuir.
+
+FIE (3.154 competiciones JSON): completas 2.086 → 2.472 y parciales 650 → 264,
+sin perder hechos. Un 0-0 sin victoria de quien no tiró ninguna celda de su poule
+y un cruce de cuadro con el mismo marcador y perdedor en abandono, baja médica,
+exclusión o incomparecencia cuentan como `retirado`, no como asaltos publicados.
+Lo que queda son sobre todo victorias por prioridad publicadas con el mismo
+marcador (337 asaltos): el modelo de asalto deduce el ganador del marcador, así
+que importarlas exige un campo de ganador explícito.
+
+Residuo para Luna: 58 PDF con páginas sin cabecera reconocible o sin texto. Los
+472 parciales restantes y los pendientes son fail-closed por diseño: nombres
+truncados ambiguos, cabeceras sin modalidad o categoría y PDF de equipos solo con
+poules. Un modelo no puede resolverlos sin inventar. Con las medias del piloto de
+cuatro PDF, que no son representativas (Luna unos 3.500 `factory_credits` por
+PDF y Sol unos 72.600), el residuo costaría unos 0,2 millones frente a 84,5
+millones con Sol o 4,1 millones con Luna para todo el inventario. El gate de
+calidad de Luna sigue sin superarse.
+
+La campaña Sol anterior cerró con `factory_tree_drain_failed`, no con un cierre
+seguro. Su receipt `aborted` bloquea el relevo. Los dos starts sin receipt final
+se conservan para reconciliación; no se sustituyen por receipts de éxito y no
+se relanza el inventario en otro portfolio para saltar el bloqueo.
+
+Un relevo posterior exige autorización y reconciliación explícitas, no solo
+volver a ejecutar el comando. La revisión conserva el receipt de aborto y
+comprueba que no hay clientes locales de sus planes activos. Los starts ambiguos
+quedan en cuarentena permanente sin reintento. Solo las selecciones demostradas
+como `not_started` pueden asignarse a campañas nuevas del mismo modelo, con
+vínculo por hash al receipt anterior, mapa de fuentes y un claim exclusivo del
+relevo. No se modifica el ledger antiguo ni se crean receipts de éxito falsos.
+El relevo aprobado para PDF usa Sol, prueba fases de 4 y 8, y continúa en pasos
+finitos con controles de recursos, límite de intentos y pared global de 12 horas.
+FIE no forma parte de ese relevo PDF. Un nuevo error de seguridad vuelve a
+bloquear el carril; el claim no se borra para relanzar una segunda copia.

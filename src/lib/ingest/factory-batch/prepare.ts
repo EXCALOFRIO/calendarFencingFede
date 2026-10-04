@@ -6,7 +6,9 @@ import { AGENTS, CAPABILITY_AGENTS, buildPrompt } from './prompt';
 import { HOOK_SOURCE, SETTINGS, hooksConfig } from './hook';
 import { hash, serialize, newDirectory, writeNew, readBounded, jobDirectory } from './files';
 import { CLI_VERSION, MODEL, PROMPT_VERSION, LIMITS, digestSchema, planSchema,
-  type Pin, type Job, type Plan } from './schemas';
+  modelSchema, type Model, type Pin, type Job, type Plan } from './schemas';
+
+export const settingsForModel = (model: Model) => model === MODEL ? SETTINGS : { ...SETTINGS, model };
 
 export function publicSourceUrl(value: unknown): string {
   if (typeof value !== 'string') throw new Error('factory_public_source_invalid');
@@ -21,14 +23,15 @@ export function publicSourceUrl(value: unknown): string {
 export async function materializeJob(
   root: string, identity: unknown, kind: Job['kind'], manifestHash: string,
   inputs: { pin: Pin; data: Uint8Array }[], unavailable: Job['unavailable'],
-  nodeExecutable: string, sentinel?: string,
+  nodeExecutable: string, sentinel?: string, model: Model = MODEL,
 ): Promise<Job> {
   if (!inputs.length || inputs.length > 100 ||
     inputs.reduce((n, i) => n + i.data.byteLength, 0) > LIMITS.jobBytes) {
     throw new Error('factory_job_input_limit');
   }
   const sourceSha256 = hash(serialize({ identity, inputs: inputs.map(i => i.pin), unavailable }));
-  const id = hash(serialize({ kind, manifestHash, sourceSha256, model: MODEL, promptVersion: PROMPT_VERSION }));
+  modelSchema.parse(model);
+  const id = hash(serialize({ kind, manifestHash, sourceSha256, model, promptVersion: PROMPT_VERSION }));
   const directory = await newDirectory(join(root, 'jobs'), id);
   await newDirectory(directory, 'inputs');
   await newDirectory(directory, '.factory');
@@ -42,8 +45,8 @@ export async function materializeJob(
     hook: HOOK_SOURCE,
     policy: serialize({ version: 1, inputs: inputs.map(i => ({ ...i.pin, path: join(directory, i.pin.file) })) }),
     hooks: serialize(hooksConfig(nodeExecutable, join(directory, 'read-hook.mjs'))),
-    settings: serialize(SETTINGS),
-    prompt: buildPrompt(base, directory, sentinel),
+    settings: serialize(settingsForModel(model)),
+    prompt: buildPrompt(base, directory, sentinel, model),
     agents: kind === 'capability' ? CAPABILITY_AGENTS : AGENTS,
   };
   const files = { hook: 'read-hook.mjs', policy: 'policy.json', hooks: '.factory/hooks.json',
@@ -57,7 +60,9 @@ export async function materializeJob(
 export async function prepareCampaign(options: {
   workspace: string; cacheRoot: string; source: 'fie' | 'rfee';
   selections: SeleccionArchivoLocal[]; sourceManifestSha256: string;
+  model?: Model;
 }): Promise<{ directory: string; planSha256: string; jobs: number }> {
+  const model = modelSchema.parse(options.model ?? MODEL);
   digestSchema.parse(options.sourceManifestSha256);
   if (!Array.isArray(options.selections)) throw new Error('factory_selection_invalid');
   if (options.selections.some(s => s.tipo === 'html')) throw new Error('factory_html_not_supported');
@@ -125,17 +130,17 @@ export async function prepareCampaign(options: {
       inputs.push({ pin: { file: `inputs/${sha256}.${kind}`, sha256, bytes: data.byteLength, kind,
         sourceUrl, sourceUrls: [sourceUrl] }, data });
     }
-    jobs.push(await materializeJob(directory, selection, options.source, archive.hash, inputs, unavailable, nodeExecutable));
+    jobs.push(await materializeJob(directory, selection, options.source, archive.hash, inputs, unavailable, nodeExecutable, undefined, model));
   }
   const data = Buffer.from('FACTORY_PUBLIC_CAPABILITY_V1\n'), sha256 = hash(data);
   const capability = await materializeJob(directory, 'factory-read-v1', 'capability', archive.hash,
     [{ pin: { file: `inputs/${sha256}.txt`, sha256, bytes: data.length, kind: 'txt',
       sourceUrl: null, sourceUrls: [] }, data }],
-    [], nodeExecutable, join(directory, 'sentinel.txt'));
+    [], nodeExecutable, join(directory, 'sentinel.txt'), model);
   const plan: Plan = planSchema.parse({
-    version: 1, model: MODEL, cliVersion: CLI_VERSION, promptVersion: PROMPT_VERSION,
+    version: 1, model, cliVersion: CLI_VERSION, promptVersion: PROMPT_VERSION,
     sourceManifestSha256: options.sourceManifestSha256,
-    hookSha256: hash(HOOK_SOURCE), settingsSha256: hash(serialize(SETTINGS)),
+    hookSha256: hash(HOOK_SOURCE), settingsSha256: hash(serialize(settingsForModel(model))),
     nodeExecutable, nodeExecutableSha256, jobs, capability,
   });
   const contents = serialize(plan);
@@ -144,14 +149,16 @@ export async function prepareCampaign(options: {
 }
 
 /** Offline integrity preflight. Does not run droid or contact a service. */
-export async function loadCampaign(directory: string, expectedHash: string): Promise<Plan> {
+export async function loadCampaign(
+  directory: string, expectedHash: string, selectedJobIds?: readonly string[],
+): Promise<Plan> {
   if (!digestSchema.safeParse(expectedHash).success) throw new Error('factory_plan_pin_required');
   const bytes = await readBounded(join(directory, 'plan.json'), LIMITS.planBytes);
   if (hash(bytes) !== expectedHash) throw new Error('factory_plan_hash_mismatch');
   let plan: Plan;
   try { plan = planSchema.parse(JSON.parse(bytes.toString('utf8'))); }
   catch { throw new Error('factory_plan_invalid'); }
-  if (plan.hookSha256 !== hash(HOOK_SOURCE) || plan.settingsSha256 !== hash(serialize(SETTINGS)) ||
+  if (plan.hookSha256 !== hash(HOOK_SOURCE) || plan.settingsSha256 !== hash(serialize(settingsForModel(plan.model))) ||
     plan.nodeExecutable !== await realpath(process.execPath) ||
     plan.nodeExecutableSha256 !== hash(await readBounded(plan.nodeExecutable, 256 * 1024 * 1024))) {
     throw new Error('factory_runtime_changed');
@@ -169,7 +176,16 @@ export async function loadCampaign(directory: string, expectedHash: string): Pro
       throw new Error('factory_job_identity_invalid');
     }
     ids.add(job.id);
-    await validateJob(directory, plan, job);
+  }
+  // Whole-plan preflight remains the default. An explicit bounded operation
+  // need not re-read every unrelated input, but always verifies pinned plan,
+  // runtime, manifest and all job identities before its selected inputs.
+  if (selectedJobIds !== undefined && (!Array.isArray(selectedJobIds) || !selectedJobIds.length ||
+    selectedJobIds.length > LIMITS.jobs || new Set(selectedJobIds).size !== selectedJobIds.length ||
+    selectedJobIds.some(id => !ids.has(id)))) throw new Error('factory_job_subset_invalid');
+  const selected = selectedJobIds === undefined ? ids : new Set(selectedJobIds);
+  for (const job of [...plan.jobs, plan.capability]) {
+    if (job === plan.capability || selected.has(job.id)) await validateJob(directory, plan, job);
   }
   return plan;
 }
@@ -179,8 +195,8 @@ export async function validateJob(root: string, plan: Plan, job: Job): Promise<v
     hook: HOOK_SOURCE,
     policy: serialize({ version: 1, inputs: job.inputs.map(p => ({ ...p, path: join(directory, p.file) })) }),
     hooks: serialize(hooksConfig(plan.nodeExecutable, join(directory, 'read-hook.mjs'))),
-    settings: serialize(SETTINGS), agents: job.kind === 'capability' ? CAPABILITY_AGENTS : AGENTS,
-    prompt: buildPrompt(job, directory, job.kind === 'capability' ? join(root, 'sentinel.txt') : undefined),
+    settings: serialize(settingsForModel(plan.model)), agents: job.kind === 'capability' ? CAPABILITY_AGENTS : AGENTS,
+    prompt: buildPrompt(job, directory, job.kind === 'capability' ? join(root, 'sentinel.txt') : undefined, plan.model),
   };
   const files = { hook: 'read-hook.mjs', policy: 'policy.json', hooks: '.factory/hooks.json',
     settings: '.factory/settings.json', prompt: 'prompt.txt', agents: 'AGENTS.md' };

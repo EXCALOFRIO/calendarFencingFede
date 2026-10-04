@@ -125,6 +125,8 @@ const tiradorCuadro = z
     nationality: texto,
     isWinner: z.boolean().nullable().optional(),
     score: z.number().int().nullable().optional(),
+    status: z.string().nullable().optional(),
+    newStatus: z.string().nullable().optional(),
   })
   .nullable()
   .optional();
@@ -206,6 +208,13 @@ export type AsaltoFie = {
 
 export type Exclusiones = {
   bye: number;
+  /**
+   * Cruce que no se disputó por retirada: una fila de poule entera sin tirar
+   * (0-0 sin victoria en ambos sentidos) o un cuadro ganado sin tocados
+   * suficientes por abandono, baja médica, exclusión o incomparecencia. Como
+   * el bye, no es un asalto publicado.
+   */
+  retirado: number;
   equipo: number;
   sinId: number;
   sinMarcador: number;
@@ -273,6 +282,7 @@ const limpio = (v: string | null | undefined): string | null => {
 export function exclusionesVacias(): Exclusiones {
   return {
     bye: 0,
+    retirado: 0,
     equipo: 0,
     sinId: 0,
     sinMarcador: 0,
@@ -366,6 +376,37 @@ function ganadorCoherente(
   return ganador.score > perdedor.score ? 'ok' : 'incoherente';
 }
 
+const sinTirar = (c: Celda | 'vacia' | 'incompleta'): boolean => typeof c === 'object' && c.score === 0 && !c.v;
+
+/**
+ * Filas de quien se retiró sin tirar: todas sus celdas, en ambos sentidos, son
+ * 0-0 sin victoria. Sólo cuenta si la poule tiene algún asalto con victoria;
+ * una poule entera a 0-0 es un dato que falta, no una retirada.
+ */
+function tiradoresRetirados(filas: readonly { matches: (z.infer<typeof celdaPoule> | undefined)[] }[]): Set<number> {
+  const retirados = new Set<number>();
+  const disputada = filas.some((f) => f.matches.some((c) => c?.v === true));
+  if (!disputada) return retirados;
+  for (let k = 0; k < filas.length; k += 1) {
+    let celdas = 0;
+    let todasSinTirar = true;
+    for (let o = 0; o < filas.length && todasSinTirar; o += 1) {
+      if (o === k) continue;
+      for (const c of [filas[k].matches[o], filas[o].matches[k]]) {
+        const v = celdaValida(c);
+        if (v === 'vacia') continue;
+        celdas += 1;
+        if (!sinTirar(v)) todasSinTirar = false;
+      }
+    }
+    if (celdas > 0 && todasSinTirar) retirados.add(k);
+  }
+  return retirados;
+}
+
+/** Estados FIE de quien pierde sin disputar: abandono, baja médica, exclusión, no presentado. */
+const ESTADO_RETIRADA = /^(A|M|N|E|F|MED|DNF|DNS|EXC)$/;
+
 export function normalizarPoules(
   entrada: unknown,
   opciones: { individual: boolean },
@@ -379,6 +420,7 @@ export function normalizarPoules(
   const vistos = new Set<string>();
   for (const poule of r.data.pools) {
     const filas = poule.rows;
+    const retirados = tiradoresRetirados(filas);
     for (let i = 0; i < filas.length; i += 1) {
       for (let j = i + 1; j < filas.length; j += 1) {
         const ij = celdaValida(filas[i].matches[j]);
@@ -386,6 +428,10 @@ export function normalizarPoules(
         if (ij === 'vacia' && ji === 'vacia') continue;
         if (!opciones.individual) {
           excluidos.equipo += 1;
+          continue;
+        }
+        if ((retirados.has(i) || retirados.has(j)) && sinTirar(ij) && sinTirar(ji)) {
+          excluidos.retirado += 1;
           continue;
         }
         publicados += 1;
@@ -457,6 +503,19 @@ export function normalizarPoules(
   };
 }
 
+/**
+ * Cruce ganado por retirada: un solo ganador, el mismo marcador para ambos (no
+ * hay tocado decisivo) y el perdedor con un estado de retirada. Un empate con
+ * perdedor normal es una victoria por prioridad: sigue excluido como empate.
+ */
+function porRetirada(f1: z.infer<typeof tiradorCuadro>, f2: z.infer<typeof tiradorCuadro>): boolean {
+  if (!f1 || !f2 || typeof f1.score !== 'number' || f1.score !== f2.score) return false;
+  const w1 = f1.isWinner === true;
+  if (w1 === (f2.isWinner === true)) return false;
+  const perdedor = w1 ? f2 : f1;
+  return [perdedor.status, perdedor.newStatus].some((s) => typeof s === 'string' && ESTADO_RETIRADA.test(s.trim().toUpperCase()));
+}
+
 export function normalizarCuadro(
   entrada: unknown,
   opciones: { individual: boolean },
@@ -479,6 +538,10 @@ export function normalizarCuadro(
         const f2 = cruce.fencer2 ?? null;
         if (cruce.isBye) {
           excluidos.bye += 1;
+          continue;
+        }
+        if (porRetirada(f1, f2)) {
+          excluidos.retirado += 1;
           continue;
         }
         publicados += 1;

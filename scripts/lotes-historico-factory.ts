@@ -16,7 +16,7 @@ const HELP = `Portfolio público completo Factory / gpt-6-sol. Preparación/pref
   --max-sesiones-total N (obligatorio, <= inventario elegible)
   [--trabajos-paso 10] [--concurrencia 2] [--timeout-segundos 300]
   [--pared-paso-segundos 900] [--pared-total-segundos 43200]
-Máximos: 250 trabajos/plan y paso; concurrencia2; proceso600s; paso3600s; total48h.
+Máximos: 250 trabajos/plan y paso; concurrencia8; proceso600s; paso3600s; total48h.
 Un piloto capability por plan nuevo, contabilizado aparte de sesiones fuente.
 Todos los candidatos requieren reconciliar fuente. Fallos no se reintentan.
 Missing/invalid hook, drift, errores seguridad/teardown: ABORT GLOBAL.

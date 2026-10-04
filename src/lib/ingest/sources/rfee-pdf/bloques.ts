@@ -1,5 +1,6 @@
 import { agruparFilas, fusionarFragmentos, limpiarItems, normalizar, textoFila, type Fila } from './geometria';
 import { RE_COLUMNA_PUESTO, RE_PUESTO_TEXTO } from './clasificacion';
+import { RE_FINAL } from './paginas';
 import type { PaginaTexto } from './tipos';
 
 /**
@@ -9,8 +10,6 @@ import type { PaginaTexto } from './tipos';
  * conservando las coordenadas originales para que las regiones citadas sigan
  * apuntando a la página real.
  */
-
-const RE_FINAL = /^(CLASIFICACI.{1,3}N GENERAL|CLASSIFICACI.{1,3} GENERAL)\b/;
 
 const esFilaDePuesto = (f: Fila): boolean => {
   if (f.items.length < 2) return false;

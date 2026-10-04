@@ -36,6 +36,33 @@ export function paginaClasificacion(numero: number, cab: FilaSintetica[], tirado
 
 export type FilaPoule = { nombre: string; club: string; celdas: string[]; vm: string; ind: number; td: number; cl: number };
 
+/**
+ * Filas de poule a partir de los tocados reales, como las escribe Engarde: la
+ * victoria que llega a `tope` sale como «V» a secas y la que no, como «V3».
+ * `coma` publica V/M con coma decimal, como los equipos en catalán.
+ */
+export function filasPoule(tocados: number[][], tiradores: readonly Tirador[], { tope = 5, coma = false } = {}): FilaPoule[] {
+  const n = tocados.length;
+  return tocados.map((fila, i) => {
+    const celdas: string[] = [];
+    let victorias = 0;
+    let td = 0;
+    let recibidos = 0;
+    for (let j = 0; j < n; j += 1) {
+      if (j === i) continue;
+      td += fila[j];
+      recibidos += tocados[j][i];
+      if (fila[j] > tocados[j][i]) {
+        victorias += 1;
+        celdas.push(fila[j] === tope ? 'V' : `V${fila[j]}`);
+      } else celdas.push(String(fila[j]));
+    }
+    const vm = (victorias / (n - 1)).toFixed(3);
+    const t = tiradores[i];
+    return { nombre: t.nombre, club: t.club, celdas, vm: coma ? vm.replace('.', ',') : vm, ind: td - recibidos, td, cl: i + 1 };
+  });
+}
+
 export function paginaPoules(numero: number, cab: FilaSintetica[], poules: FilaPoule[][], vuelta = 1): PaginaTexto {
   const filas: FilaSintetica[] = [...cab, fila(770, [11, `Poules, vuelta No ${vuelta}`])];
   let y = 740;

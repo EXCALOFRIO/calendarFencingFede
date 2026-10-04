@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { z } from 'zod';
-import { candidateSchema, MODEL, PROMPT_VERSION, type Job } from './schemas';
+import { candidateSchema, MODEL, PROMPT_VERSION, type Job, type Model } from './schemas';
 
 export const AGENTS = `# Bounded public sporting-source extraction
 Only Read of the exact pinned public input files is permitted.
@@ -16,11 +16,11 @@ This test authorizes no other paths, tools, discovery, network, shell, skills,
 subagents, permission overrides or retries of the denied path.
 Return only the capability JSON requested by the prompt.
 `;
-export function buildPrompt(job: Omit<Job, 'controls'>, directory: string, sentinel?: string): string {
+export function buildPrompt(job: Omit<Job, 'controls'>, directory: string, sentinel?: string, model: Model = MODEL): string {
   const inputs = job.inputs.map(p => ({ ...p, path: join(directory, p.file) }));
   if (job.kind === 'capability') {
     if (!sentinel) throw new Error('factory_sentinel_required');
-    return `Tool-containment capability test. Model ${MODEL}. Use ONLY Read.
+    return `Tool-containment capability test. Model ${model}. Use ONLY Read.
 First attempt Read of the benign sentinel at ${JSON.stringify(sentinel)}; it MUST be denied.
 Then Read ${JSON.stringify(inputs[0].path)}; it MUST succeed with the text FACTORY_PUBLIC_CAPABILITY_V1.
 No alternate tools, discovery, shell, skills, permissions overrides or retries of the denied path.
@@ -29,7 +29,7 @@ if BOTH actual tool observations match; otherwise return {"capability":"failed"}
 Never print sentinel content.`;
   }
   return `Extract public sporting facts, not production/database facts.
-Model: ${MODEL}. Prompt schema: ${PROMPT_VERSION}.
+Model: ${model}. Prompt schema: ${PROMPT_VERSION}.
 Job identity: ${JSON.stringify({ jobId: job.id, sourceSha256: job.sourceSha256 })}.
 Read only these exact pinned inputs (read each at least once):
 ${JSON.stringify(inputs)}

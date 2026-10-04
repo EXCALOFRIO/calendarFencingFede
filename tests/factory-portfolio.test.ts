@@ -99,7 +99,7 @@ async function fakeFor(prepared: { directory: string; portfolioSha256: string },
 }
 function options(f: Awaited<ReturnType<typeof fixture>>, more: Partial<PortfolioRunOptions> = {}): PortfolioRunOptions {
   return { directory: f.prepared!.directory, portfolioSha256: f.prepared!.portfolioSha256,
-    executable: f.executable, execute: true, maxSessionsTotal: f.units.length, ...more };
+    executable: f.executable, execute: true, maxSessionsTotal: f.units.length, protectResources: false, ...more };
 }
 async function preserveSeeds(workspace: string, root: string) {
   directories.add(root);
@@ -297,7 +297,7 @@ describe('whole-inventory Factory portfolio, fake transport only', () => {
   it('validates finite execution bounds before any transport or model call', async () => {
     const f = await fixture(1), fake = await fakeFor(f.prepared!);
     await expect(runPortfolio(options(f, { execute: false }), fake.transport)).rejects.toThrow('factory_explicit_execution_required');
-    for (const extra of [{ maxSessionsTotal: 0 }, { concurrency: 3 }, { timeoutSeconds: 601 },
+    for (const extra of [{ maxSessionsTotal: 0 }, { concurrency: 9 }, { timeoutSeconds: 601 },
       { stepWallSeconds: 3601 }, { wallSecondsTotal: 48 * 3600 + 1 }, { stepJobs: 251 }, { maxSessionsTotal: 2 }]) {
       await expect(runPortfolio(options(f, extra), fake.transport)).rejects.toThrow('factory_portfolio_execution_bounds_invalid');
     }
@@ -316,27 +316,43 @@ describe('whole-inventory Factory portfolio, fake transport only', () => {
     });
     await expect(runPortfolio(options(f, { concurrency: 1 }), fake.transport)).rejects.toThrow(failure);
     expect(fake.calls.filter(j => j.kind !== 'capability')).toHaveLength(1);
+    const files = (await readdir(f.prepared!.directory)).sort();
+    const calls = fake.invocations.length;
+    await expect(runPortfolio(options(f), fake.transport)).rejects.toThrow('factory_portfolio_lock_requires_reconciliation');
+    expect(fake.invocations).toHaveLength(calls);
+    expect((await readdir(f.prepared!.directory)).sort()).toEqual(files);
   });
-  it('bounds concurrency at two, drains cancelled siblings and never retries started siblings', async () => {
+  it('keeps independent siblings alive after a quality failure, including before their first audited Read', async () => {
     const f = await fixture(3);
-    let active = 0, peak = 0, source = 0, drained = false;
+    let active = 0, peak = 0, source = 0, cancelled = false;
+    let release!: () => void;
+    const ready = new Promise<void>(resolve => { release = resolve; });
     const fake = await fakeFor(f.prepared!, async context => {
       if (context.job.kind === 'capability') return;
       active++; peak = Math.max(peak, active);
       const number = ++source;
       if (number === 1) {
-        await new Promise(resolve => setTimeout(resolve, 25)); active--;
+        await ready; active--;
         return { stdout: envelope({}, context.sessionId), stderr: '', exitCode: 0 };
       }
-      if (number === 2) return new Promise((_, reject) => {
-        context.call.signal.addEventListener('abort', () => { drained = true; active--; reject(new Error('factory_campaign_stopped')); }, { once: true });
-      });
+      if (number === 2) {
+        await rm(join(context.call.cwd, 'audit.jsonl'));
+        release();
+        await new Promise(resolve => setTimeout(resolve, 30));
+        cancelled = context.call.signal.aborted;
+        if (cancelled) { active--; throw new Error('factory_campaign_stopped'); }
+        await audit(context.job, context.call, context.sessionId, false);
+      }
       active--;
     });
     const result = await runPortfolio(options(f, { concurrency: 2 }), fake.transport);
-    expect(peak).toBe(2); expect(drained).toBe(true); expect(active).toBe(0);
-    expect(result.summary.failed).toBe(2); expect(result.summary.successful).toBe(1);
+    expect(peak).toBe(2); expect(cancelled).toBe(false); expect(active).toBe(0);
+    expect(result.summary.failed).toBe(1); expect(result.summary.successful).toBe(2);
     expect(fake.calls.filter(j => j.kind !== 'capability')).toHaveLength(3);
+    const next = await fakeFor(f.prepared!);
+    const resumed = await runPortfolio(options(f), next.transport);
+    expect(resumed.sourceAttempts).toBe(0);
+    expect(next.calls.filter(j => j.kind !== 'capability')).toHaveLength(0);
   });
   it('enforces global finite wall time, preserves stopped attempts and no unbounded watcher', async () => {
     const f = await fixture(2);
@@ -373,16 +389,18 @@ describe('whole-inventory Factory portfolio, fake transport only', () => {
         return { stdout: envelope({}, context.sessionId), stderr: '', exitCode: 0 };
       }
       bothStarted();
-      return new Promise((resolve, reject) => {
-        context.call.signal.addEventListener('abort', () => {
-          if (failure === 'factory_child_nonzero') resolve({ ...context.defaultOutput, exitCode: 1 });
-          else if (failure === 'factory_envelope_invalid') resolve({ ...context.defaultOutput, stdout: '{}' });
-          else reject(new Error(failure));
-        }, { once: true });
-      });
+      // Independent fatal completion must still outrank the earlier ordinary
+      // failure, without requiring ordinary failures to cancel siblings.
+      await new Promise(resolve => setTimeout(resolve, 30));
+      if (failure === 'factory_child_nonzero') return { ...context.defaultOutput, exitCode: 1 };
+      if (failure === 'factory_envelope_invalid') return { ...context.defaultOutput, stdout: '{}' };
+      throw new Error(failure);
     });
     await expect(runPortfolio(options(f, { concurrency: 2 }), fake.transport)).rejects.toThrow(failure);
     expect(fake.calls.filter(j => j.kind !== 'capability')).toHaveLength(2);
+    const calls = fake.invocations.length;
+    await expect(runPortfolio(options(f), fake.transport)).rejects.toThrow('factory_portfolio_lock_requires_reconciliation');
+    expect(fake.invocations).toHaveLength(calls);
   });
   it('resume classifies ambiguous safe-audited starts without relaunch and aborts unaudited starts', async () => {
     const f = await fixture(2), fake = await fakeFor(f.prepared!), campaign = fake.portfolio.campaigns[0],
@@ -399,6 +417,55 @@ describe('whole-inventory Factory portfolio, fake transport only', () => {
     expect(fake.calls.some(j => j.id === job.id)).toBe(false);
     await rm(join(directory, 'audit.jsonl'));
     await expect(runPortfolio(options(f), fake.transport)).rejects.toThrow();
+  });
+  it.each([4, 8])('supports %i bounded simultaneous sources, with no duplicate source attempts', async (concurrency) => {
+    const f = await fixture(concurrency + 1);
+    let active = 0, peak = 0, started = 0;
+    let release!: () => void;
+    const ready = new Promise<void>(resolve => { release = resolve; });
+    const fake = await fakeFor(f.prepared!, async context => {
+      if (context.job.kind === 'capability') return;
+      active++; peak = Math.max(peak, active);
+      if (++started === concurrency) release();
+      await ready;
+      await new Promise(resolve => setTimeout(resolve, 10));
+      active--;
+    });
+    const result = await runPortfolio(options(f, { concurrency }), fake.transport);
+    expect(peak).toBe(concurrency); expect(active).toBe(0);
+    expect(result.sourceAttempts).toBe(concurrency + 1); expect(result.summary.successful).toBe(concurrency + 1);
+    expect(new Set(fake.calls.filter(j => j.kind !== 'capability').map(j => j.id)).size).toBe(concurrency + 1);
+  });
+  it.each([4, 8])('drains all %i siblings and preserves a fatal safety stop across invocations', async (concurrency) => {
+    const f = await fixture(concurrency + 1);
+    let active = 0, started = 0, drained = 0;
+    let release!: () => void;
+    const ready = new Promise<void>(resolve => { release = resolve; });
+    const fake = await fakeFor(f.prepared!, async context => {
+      if (context.job.kind === 'capability') return;
+      active++;
+      const number = ++started;
+      if (number === concurrency) release();
+      await ready;
+      if (number === 1) {
+        // Let every other sibling register its cancellation listener.
+        await new Promise(resolve => setTimeout(resolve, 10));
+        active--;
+        throw new Error('factory_hook_unexpected_denial');
+      }
+      return new Promise((_, reject) => {
+        context.call.signal.addEventListener('abort', () => {
+          active--; drained++;
+          reject(new Error(number === 2 ? 'factory_tree_drain_failed' : 'factory_campaign_stopped'));
+        }, { once: true });
+      });
+    });
+    await expect(runPortfolio(options(f, { concurrency }), fake.transport)).rejects.toThrow('factory_tree_drain_failed');
+    expect(started).toBe(concurrency); expect(drained).toBe(concurrency - 1); expect(active).toBe(0);
+    const calls = fake.invocations.length;
+    await expect(runPortfolio(options(f, { concurrency }), fake.transport))
+      .rejects.toThrow('factory_portfolio_lock_requires_reconciliation');
+    expect(fake.invocations).toHaveLength(calls);
   });
   it('progress/console summaries contain only codes/counts and private receipts retain sessions/consumption', async () => {
     const f = await fixture(1), fake = await fakeFor(f.prepared!);

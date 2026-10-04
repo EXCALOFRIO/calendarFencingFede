@@ -63,7 +63,11 @@ export function leerCuadro(paginas: readonly PaginaAnalizada[], registro: readon
   const terminales: { ronda: string; a: Entrada; b: Entrada; region: Region; pagina: number; motivo: string }[] = [];
 
   for (const pg of paginas) {
-    const regionPagina: Region = { pagina: pg.numero, yMax: redondear(pg.filas[0].y + 8), yMin: 55 };
+    const regionPagina: Region = {
+      pagina: pg.numero,
+      yMax: redondear(pg.filas[0].y + 8),
+      yMin: redondear(Math.min(...pg.filas.map((f) => f.y)) - 3),
+    };
     const rechazarPagina = (motivo: string) => rechazos.push({ seccion: 'cuadro', region: regionPagina, motivo });
 
     const encabezados = pg.filas[0].items.filter((i) => esItemRonda(i.s)).sort((a, b) => a.x - b.x);

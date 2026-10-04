@@ -86,7 +86,10 @@ function construirPrueba(
 
   const atribuible = meta.arma !== null && meta.genero !== null && formato !== null && !conflictoFormato;
   if (!atribuible && !conflictoFormato) {
-    rechazos.push({ seccion: 'prueba', region: null, motivo: meta.errores.join('; ') || 'Modalidad no declarada' });
+    // La categoría no impide atribuir: si sólo falta la modalidad, el motivo debe decirlo.
+    const motivos = [...meta.errores];
+    if (formato === null && !motivos.some((m) => /individual y equipos/.test(m))) motivos.push('Modalidad no declarada');
+    rechazos.push({ seccion: 'prueba', region: null, motivo: motivos.join('; ') });
   }
   if (atribuible && meta.categoria === null) {
     rechazos.push({ seccion: 'prueba', region: null, motivo: meta.errores.find((e) => /categor/i.test(e)) ?? 'Categoría sin equivalencia' });
@@ -115,7 +118,7 @@ function construirPrueba(
   let motivoEquipos: string | null = null;
 
   if (atribuible && formato === 'INDIVIDUAL') {
-    const registro = puestos.map((p) => ({ ref: p.ref, nombre: p.nombre, club: p.club }));
+    const registro = puestos.map((p) => ({ ref: p.ref, nombre: p.nombre, club: p.club, pais: p.pais ?? null }));
     const poules = leerPoules(paginasPoules, registro);
     const cuadro = leerCuadro(paginasCuadro, registro);
     asaltos = [...poules.asaltos, ...cuadro.asaltos];

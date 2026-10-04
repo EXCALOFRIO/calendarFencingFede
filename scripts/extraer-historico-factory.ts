@@ -7,13 +7,14 @@ import { isAbsolute, resolve } from 'node:path';
 import { prepareCampaign, loadCampaign } from '../src/lib/ingest/factory-batch/prepare';
 import { runCampaign } from '../src/lib/ingest/factory-batch/runner';
 import { readBounded } from '../src/lib/ingest/factory-batch/files';
+import { modelSchema } from '../src/lib/ingest/factory-batch/schemas';
 import type { SeleccionArchivoLocal } from '../src/lib/ingest/archivo-local';
 
 const HELP = `Extracción pública acotada con sesiones independientes Factory / gpt-6-sol.
 Sin red/modelo por defecto. Nunca importa datos ni modifica cachés/DB/despliegues.
 
 Preparar (offline; crea carpeta privada nueva fuera del repositorio):
-  --preparar --fuente rfee|fie --cache RUTA_ABSOLUTA
+  --preparar --fuente rfee|fie --cache RUTA_ABSOLUTA [--modelo gpt-6-sol|gpt-6-luna|gpt-5.6-luna]
   --seleccion JSON_ABSOLUTO --manifiesto-sha256 SHA256
 Seleccion JSON: [{"tipo":"pdf","id":"pdf-<sha256>"}] o
                [{"tipo":"fie","season":2025,"competitionId":123}]
@@ -28,7 +29,7 @@ Piloto obligatorio de contención (una sesión real; autorización explícita):
 
 Extraer (sesiones reales; solo tras receipt válido del piloto):
   --plan CARPETA --plan-sha256 SHA256 --droid EXE_ABSOLUTO
-  --ejecutar --max-sesiones N [--concurrencia 1|2]
+  --ejecutar --max-sesiones N [--concurrencia 1..8]
   [--timeout-segundos 300] [--pared-segundos 900]
 Límites: timeout <=600s, pared <=3600s, salida stdout+stderr <=4MiB/sesión.
 Resume solo receipts coincidentes; trabajos iniciados sin receipt requieren
@@ -56,6 +57,7 @@ async function main() {
     plan: { type: 'string' }, 'plan-sha256': { type: 'string' }, droid: { type: 'string' },
     'max-sesiones': { type: 'string' }, concurrencia: { type: 'string' },
     'timeout-segundos': { type: 'string' }, 'pared-segundos': { type: 'string' },
+    modelo: { type: 'string' },
   } });
   if (values.help || !Object.keys(values).length) { console.log(HELP); return; }
   if (values.preparar) {
@@ -68,11 +70,13 @@ async function main() {
       workspace: resolve(import.meta.dirname, '..'), cacheRoot: absolute(values.cache),
       source: values.fuente as 'rfee' | 'fie', selections,
       sourceManifestSha256: values['manifiesto-sha256'] ?? '',
+      model: values.modelo === undefined ? undefined : modelSchema.parse(values.modelo),
     });
     // Operational private-folder location + hashes/counts only; no names/source content.
     console.log(JSON.stringify({ status: 'prepared_offline', ...result }));
     return;
   }
+  if (values.modelo !== undefined) throw new Error('factory_model_pinned_in_plan');
   const directory = absolute(values.plan), planSha256 = values['plan-sha256'] ?? '';
   if (!values.ejecutar) {
     if (values['piloto-capacidad']) throw new Error('factory_explicit_execution_required');
@@ -85,6 +89,7 @@ async function main() {
     maxSessions: numberOption(values['max-sesiones']), concurrency: numberOption(values.concurrencia, 1),
     timeoutSeconds: numberOption(values['timeout-segundos'], 300),
     wallSeconds: numberOption(values['pared-segundos'], 900), capabilityPilot: !!values['piloto-capacidad'],
+    protectResources: true,
   });
   console.log(JSON.stringify({ status: 'candidates_only', ...summary }));
 }

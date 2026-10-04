@@ -76,6 +76,7 @@ export async function preparePortfolio(options: {
   const assigned = new Set<string>(), campaigns: Campaign[] = [], seededStates: UnitState[] = [];
   for (const seed of options.seeds ?? []) {
     const plan = await loadCampaign(seed.directory, seed.planSha256);
+    if (plan.model !== MODEL) throw new Error('factory_portfolio_seed_model_mismatch');
     const subset = JSON.parse((await readBounded(join(seed.directory, 'source-selection.json'), PL.metadataBytes)).toString('utf8'));
     const selections = z.array(selectionSchema).parse(subset.seleccion?.unidades);
     if (selections.length !== plan.jobs.length) throw new Error('factory_portfolio_seed_inventory_invalid');
@@ -162,7 +163,8 @@ export async function loadPortfolio(directory: string, expectedHash: string) {
     if (!isAbsolute(campaign.directory) || dirs.has(campaign.directory)) throw new Error('factory_portfolio_assignment_invalid');
     dirs.add(campaign.directory);
     const plan = await loadCampaign(campaign.directory, campaign.planSha256);
-    if (portfolio.sources.find(s => s.source === campaign.source)?.manifestSha256 !== plan.sourceManifestSha256 ||
+    if (plan.model !== portfolio.model ||
+      portfolio.sources.find(s => s.source === campaign.source)?.manifestSha256 !== plan.sourceManifestSha256 ||
       plan.jobs.length !== campaign.assignments.length) throw new Error('factory_portfolio_assignment_invalid');
     const usedJobs = new Set<string>();
     for (const a of campaign.assignments) {
@@ -313,10 +315,17 @@ async function acquirePortfolioLock(root: string, portfolioSha256: string, invoc
     const receipt = join(root, `invocation-${previous.invocationId}.json`);
     if (!await exists(receipt)) throw new Error('factory_portfolio_lock_requires_reconciliation');
     const final = z.object({ version: z.literal(1), invocationId: z.string().uuid(),
-      portfolioSha256: digestSchema, terminal: z.enum(['finished', 'stopped', 'aborted']) }).passthrough()
+      portfolioSha256: digestSchema, terminal: z.enum(['finished', 'stopped', 'aborted']),
+      code: z.string().regex(/^[a-z][a-z0-9_]{1,100}$/) }).passthrough()
       .parse(JSON.parse((await readBounded(receipt, PL.metadataBytes)).toString('utf8')));
     if (final.invocationId !== previous.invocationId || final.portfolioSha256 !== portfolioSha256) {
       throw new Error('factory_portfolio_lock_receipt_mismatch');
+    }
+    // A safety abort is not a completed safe drain. Do not downgrade a fatal
+    // started attempt into an ordinary ambiguous source on the next invocation.
+    if (final.terminal === 'aborted' ||
+      (final.terminal === 'finished' ? final.code !== 'finished' : final.code !== 'factory_campaign_stopped')) {
+      throw new Error('factory_portfolio_lock_requires_reconciliation');
     }
   }
   throw new Error('factory_portfolio_invocation_limit');
@@ -325,6 +334,7 @@ export type PortfolioRunOptions = {
   directory: string; portfolioSha256: string; executable: string; execute: boolean;
   maxSessionsTotal: number; stepJobs?: number; concurrency?: number; timeoutSeconds?: number;
   stepWallSeconds?: number; wallSecondsTotal?: number;
+  protectResources?: boolean;
 };
 export async function runPortfolio(options: PortfolioRunOptions, transport: Transport = spawnTransport) {
   if (!options.execute) throw new Error('factory_explicit_execution_required');
@@ -333,11 +343,14 @@ export async function runPortfolio(options: PortfolioRunOptions, transport: Tran
     wallSecondsTotal = options.wallSecondsTotal ?? 12 * 3600;
   if (!Number.isSafeInteger(options.maxSessionsTotal) || options.maxSessionsTotal < 1 ||
     options.maxSessionsTotal > PL.units || !Number.isSafeInteger(stepJobs) || stepJobs < 1 || stepJobs > 250 ||
-    !Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 2 ||
+    !Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > LIMITS.concurrency ||
     !Number.isSafeInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > LIMITS.timeoutSeconds ||
     !Number.isSafeInteger(stepWallSeconds) || stepWallSeconds < 1 || stepWallSeconds > LIMITS.wallSeconds ||
     !Number.isSafeInteger(wallSecondsTotal) || wallSecondsTotal < 1 || wallSecondsTotal > PL.wallSeconds ||
     !isAbsolute(options.executable)) throw new Error('factory_portfolio_execution_bounds_invalid');
+  if (options.protectResources !== undefined && typeof options.protectResources !== 'boolean') {
+    throw new Error('factory_portfolio_execution_bounds_invalid');
+  }
   const deadline = Date.now() + wallSecondsTotal * 1000;
   const loaded = await loadPortfolio(options.directory, options.portfolioSha256);
   const eligible = loaded.entries.filter(e => e.disposition === 'eligible').length;
@@ -395,7 +408,8 @@ export async function runPortfolio(options: PortfolioRunOptions, transport: Tran
         capabilityAttempts++;
         await runCampaign({ directory: campaign.directory, planSha256: campaign.planSha256, executable: options.executable,
           execute: true, maxSessions: 1, concurrency: 1, timeoutSeconds,
-          wallSeconds: remaining(), capabilityPilot: true, signal: abort.signal }, transport);
+          wallSeconds: remaining(), capabilityPilot: true, signal: abort.signal,
+          protectResources: options.protectResources ?? true }, transport);
       }
       while (pending.length && sourceAttempts < options.maxSessionsTotal) {
         if (abort.signal.aborted) break;
@@ -407,7 +421,8 @@ export async function runPortfolio(options: PortfolioRunOptions, transport: Tran
         try {
           await runCampaign({ directory: campaign.directory, planSha256: campaign.planSha256, executable: options.executable,
             execute: true, maxSessions: slice.length, jobIds: slice.map(a => a.jobId), concurrency,
-            timeoutSeconds, wallSeconds: remaining(), signal: abort.signal }, transport);
+            timeoutSeconds, wallSeconds: remaining(), signal: abort.signal,
+            protectResources: options.protectResources ?? true }, transport);
         } catch (error) {
           stepError = sanitized(error);
         }

@@ -25,22 +25,33 @@ export type PaginaAnalizada = {
   yEncabezado: number | null;
 };
 
-const RE_FINAL = /^(CLASIFICACI.{1,3}N GENERAL|CLASSIFICACI.{1,3} GENERAL)\b/;
-const RE_POULES = /^POULES?, (VUELTA|VOLTA)\b/;
-const RE_POULE_N = /^POULE\s*N[^\d\s]?\s*\d+/;
+// Engarde imprime los títulos en el idioma del equipo: castellano, catalán o inglés.
+export const RE_FINAL = /^(CLASIFICACI.{1,3}N GENERAL|CLASSIFICACI.{1,3} GENERAL|OVERALL RANKING)\b/;
+const RE_POULES = /^POULES?, (VUELTA|VOLTA|ROUND)\b/;
+export const RE_POULE_N = /^POULE\s*N(?:[^\d\s]{0,2}\.?)?\s*(\d+)/;
 const RE_INTERMEDIA =
-  /^(CLASIFICACI.{1,3}N (DE POULES|DESPU.S DE POULES|DE LAS? POULES)|CLASSIFICACI.{1,3} DELS? POULES|CLASSIFICACI.{1,3} DESPR?.S)/;
-const RE_PARTICIPANTES = /^(TIRADOR(ES|AS)|EQUIPOS|CLUBS?) \((PRESENT|RESPECTO|PRESENTS)/;
-const RE_FORMULA = /^F.RMULA DE LA COMPETENCI/;
-const RE_ARBITROS = /^ACTIVIDAD DE .RBITROS/;
+  /^(CLASIFICACI.{1,3}N (DE POULES|DESPU.S DE POULES|DE LAS? POULES)|CLASSIFICACI.{1,3} (DELS? POULES|DESPR?.S|AL? ACABAR)|RANKING (OF|AT THE END OF|AFTER) (THE )?POULES)/;
+const RE_PARTICIPANTES = /^(TIRADOR(ES|AS|S)|EQUIPOS|EQUIPS|CLUBS?|FENCERS|TEAMS) \((PRESENT|RESPECT|ABOUT)/;
+const RE_FORMULA = /^(F.RMULA DE LA COMPET(ENCI|ICI)|FORMULA OF THE COMPETITION)/;
+const RE_ARBITROS = /^(ACTIVIDAD DE (LOS )?.RBITROS|ACTIVITAT DELS .RBITRES|REFEREES? ACTIVIT)/;
+const RE_ESTADISTICAS = /^(NUMERO TOTAL DE (PARTICIPANT|TIRADOR|EQUIP)|OVERALL NUMBER OF)/;
 const RE_RONDA =
   /^(TABLEAU OF \d+|TABLA DE \d+|SEMI-?FINALES?|SEMIFINALS?|QUARTS DE FINAL|CUARTOS DE FINAL|FINAL|TERCER LUGAR|TERCER PUESTO)$/;
 
-const RE_CONTADOR = /^(P.GINA|PAGE) \d+ ?\/ ?\d+$/;
+// El número del contador va en la esquina que se descarta: a veces queda sólo «Página».
+const RE_CONTADOR = /^(P.GINA|PAGE)( \d+( ?\/ ?\d+)?)?$/;
 
 export const esItemRonda = (s: string): boolean => RE_RONDA.test(normalizar(s));
 
 const MIN_CARACTERES = 12;
+
+/**
+ * Franja inferior donde Engarde imprime su pie: generador, fecha y hora de
+ * impresión, página y la leyenda de abreviaturas («V/D = Victoria/Derrota = …»),
+ * que ninguna fila de datos contiene.
+ */
+const Y_PIE = 55;
+const RE_PIE = /ENGARDE|ESCRIME|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}:\d{2}\b|\b(PAGE|PAGINA|PAG\.?) ?\d+|\S = \S/;
 
 function tipoDeEncabezado(f: Fila): TipoPagina | null {
   const t = normalizar(textoFila(f));
@@ -50,6 +61,7 @@ function tipoDeEncabezado(f: Fila): TipoPagina | null {
   if (RE_PARTICIPANTES.test(t)) return 'participantes';
   if (RE_FORMULA.test(t)) return 'formula';
   if (RE_ARBITROS.test(t)) return 'arbitros';
+  if (RE_ESTADISTICAS.test(t)) return 'estadisticas';
   // Los encabezados del cuadro son las rondas, a lo ancho de la página.
   if (f.items.some((i) => esItemRonda(i.s))) return 'cuadro';
   return null;
@@ -97,7 +109,15 @@ export function analizarPagina(pagina: PaginaTexto): PaginaAnalizada {
   }
 
   // Número de página arriba a la derecha y pie del generador: ruido de maquetación.
-  const utiles = crudos.filter((i) => !(i.x > pagina.ancho * 0.85 && i.y > pagina.alto - 40) && i.y > 55);
+  // El pie se reconoce por su texto, no por la altura: en una página llena la
+  // última fila de datos queda a pocos puntos encima de él.
+  const sinContador = crudos.filter((i) => !(i.x > pagina.ancho * 0.85 && i.y > pagina.alto - 40));
+  const pie = new Set(
+    agruparFilas(sinContador.filter((i) => i.y <= Y_PIE))
+      .filter((f) => RE_PIE.test(normalizar(textoFila(f))))
+      .flatMap((f) => f.items),
+  );
+  const utiles = sinContador.filter((i) => !pie.has(i));
   const filas = agruparFilas(utiles).map((f) => {
     const items = fusionarFragmentos(f.items);
     return { y: f.y, items };

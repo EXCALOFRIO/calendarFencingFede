@@ -1,8 +1,8 @@
 import { AcumuladorAsaltos, exclusionesVacias } from './asaltos';
 import { normalizar, redondear, textoFila, type Fila } from './geometria';
 import { resolverParticipante, type Atribucion, type Participante } from './identidad';
-import type { PaginaAnalizada } from './paginas';
-import type { AsaltoPdf, ExclusionesPdf, Rechazo, Region } from './tipos';
+import { RE_POULE_N, type PaginaAnalizada } from './paginas';
+import type { AsaltoPdf, ExclusionesPdf, OrigenMarcador, Rechazo, Region } from './tipos';
 
 /**
  * Matrices de poule de un PDF de Engarde.
@@ -20,9 +20,17 @@ import type { AsaltoPdf, ExclusionesPdf, Rechazo, Region } from './tipos';
  *
  * Una `V` sin número es una incógnita por celda, no un valor común a la
  * poule: unos totales compatibles con un valor no demuestran que sea el
- * único. Sólo se fija cuando la fila (`TD` menos lo conocido) o la columna
- * (`TD − ind.` menos lo conocido) deja exactamente una incógnita; lo que
- * queda sin determinar no recibe tanteo y se rechaza como parcial.
+ * único. Se fija cuando la fila (`TD` menos lo conocido) o la columna
+ * (`TD − ind.` menos lo conocido) la obliga: deja una sola incógnita, o un
+ * resto que sólo admite el mínimo de cada una (un tocado más que el rival).
+ *
+ * Engarde escribe `V` a secas cuando el ganador llega al tope de tocados.
+ * Si todas las `V` que la aritmética obliga en una vuelta valen lo mismo y
+ * ningún tanteo publicado de esa vuelta lo supera, ese valor es el tope de
+ * la vuelta: ninguna victoria puede pasar de él, así que un resto igual a
+ * incógnitas × tope obliga a que todas lo valgan. Esas celdas salen como
+ * `derivado_de_limite`; si el tope contradice algún total de la poule, no se
+ * usa en ella. Lo que sigue sin determinar no recibe tanteo y queda parcial.
  */
 
 export type LecturaPoules = {
@@ -35,7 +43,7 @@ export type LecturaPoules = {
   publicado: number;
 };
 
-type Celda = { gana: boolean; puntos: number | null; derivada: boolean };
+type Celda = { gana: boolean; puntos: number | null; origen: OrigenMarcador };
 type FilaMatriz = {
   y: number;
   nombre: string;
@@ -46,10 +54,11 @@ type FilaMatriz = {
   td: number;
 };
 
-const RE_POULE = /^POULE\s*N[^\d\s]?\s*(\d+)/;
-const RE_VUELTA = /(?:VUELTA|VOLTA)\s*N?[^\d\s]?\s*(\d+)/;
+// «Vuelta No 1», «Volta núm. 1», «Round No 1».
+const RE_VUELTA = /(?:VUELTA|VOLTA|ROUND)\s*(?:N\.?[^\d\s]{0,2}\.?)?\s*(\d+)/;
 const RE_CELDAS = /^(V\d*|\d+|X)(\s+(V\d*|\d+|X))*$/;
-const RE_DECIMAL = /^\d\.\d{2,3}$/;
+// Engarde publica V/M con punto o con coma decimal según el idioma del equipo («0.667», «0,667»).
+const RE_DECIMAL = /^\d[.,]\d{2,3}$/;
 const RE_ENTERO = /^[+-]?\d+$/;
 
 const regionBloque = (pagina: number, desde: number, hasta: number): Region => ({
@@ -82,21 +91,26 @@ function leerFila(f: Fila): FilaMatriz | string {
     nombre: texto[0],
     club: texto[1] ?? null,
     celdas,
-    vm: Number(f.items[iDec].s),
+    vm: Number(f.items[iDec].s.replace(',', '.')),
     ind: Number(despues[0]),
     td: Number(despues[1]),
   };
 }
 
 function aCelda(t: string): Celda {
-  if (t.startsWith('V')) return { gana: true, puntos: t.length > 1 ? Number(t.slice(1)) : null, derivada: false };
-  return { gana: false, puntos: Number(t), derivada: false };
+  if (t.startsWith('V')) return { gana: true, puntos: t.length > 1 ? Number(t.slice(1)) : null, origen: 'explicito' };
+  return { gana: false, puntos: Number(t), origen: 'explicito' };
 }
 
 type Matriz = { celdas: Celda[][]; sinResolver: number };
 
-/** Valida la matriz y fija cada `V` sin número que los totales publicados determinan. Devuelve el motivo si no se sostiene. */
-function validarMatriz(filas: FilaMatriz[]): Matriz | string {
+/**
+ * Valida la matriz y fija cada `V` sin número que los totales publicados
+ * obligan. `limite` es el tope de tocados demostrado para la vuelta; sólo se
+ * usa para lo que la aritmética sola no determina. Devuelve el motivo si no
+ * se sostiene.
+ */
+function validarMatriz(filas: FilaMatriz[], limite: number | null = null): Matriz | string {
   const n = filas.length;
   const crudas: string[][] = [];
   for (let i = 0; i < n; i += 1) {
@@ -108,7 +122,7 @@ function validarMatriz(filas: FilaMatriz[]): Matriz | string {
   const celdas: Celda[][] = crudas.map((t, i) => {
     const fila: Celda[] = [];
     let c = 0;
-    for (let j = 0; j < n; j += 1) fila.push(j === i ? { gana: false, puntos: null, derivada: false } : aCelda(t[c++]));
+    for (let j = 0; j < n; j += 1) fila.push(j === i ? { gana: false, puntos: null, origen: 'explicito' } : aCelda(t[c++]));
     return fila;
   });
   if (celdas.some((fila) => fila.some((c) => c.puntos !== null && !Number.isFinite(c.puntos)))) return 'Celda de matriz ilegible';
@@ -127,34 +141,60 @@ function validarMatriz(filas: FilaMatriz[]): Matriz | string {
   const minimo = (i: number, j: number): number => (celdas[j][i].puntos ?? 0) + 1;
   const conocido = (celda: Celda): number => celda.puntos ?? 0;
 
-  const fijar = (i: number, j: number, valor: number): string | null => {
-    if (!Number.isInteger(valor) || valor < minimo(i, j)) return 'Los totales publicados dan a una victoria un tanteo imposible';
-    celdas[i][j] = { gana: true, puntos: valor, derivada: true };
+  const fijar = (i: number, j: number, valor: number, origen: OrigenMarcador): string | null => {
+    if (!Number.isInteger(valor) || valor < minimo(i, j) || (limite !== null && valor > limite)) {
+      return 'Los totales publicados dan a una victoria un tanteo imposible';
+    }
+    celdas[i][j] = { gana: true, puntos: valor, origen };
     return null;
   };
 
-  // Eliminación conservadora: una fila o columna con una única incógnita la determina; nada más.
-  let avanza = true;
-  while (avanza) {
-    avanza = false;
-    for (const i of indices) {
-      const libres = indices.filter((j) => incognita(i, j));
-      if (libres.length !== 1) continue;
-      const dados = indices.reduce((s, j) => (j === i ? s : s + conocido(celdas[i][j])), 0);
-      const error = fijar(i, libres[0], filas[i].td - dados);
+  // Incógnitas de una fila o columna y lo que les falta para su total: o el total las obliga, o no se tocan.
+  const resolverGrupo = (libres: [number, number][], resto: number, origen: OrigenMarcador): string | boolean => {
+    if (libres.length === 0) return false;
+    const minimos = libres.map(([i, j]) => minimo(i, j));
+    const valores =
+      libres.length === 1
+        ? [resto]
+        : resto === minimos.reduce((s, v) => s + v, 0)
+          ? minimos
+          : origen === 'derivado_de_limite' && limite !== null && resto === libres.length * limite
+            ? libres.map(() => limite)
+            : null;
+    if (!valores) return false;
+    for (let k = 0; k < libres.length; k += 1) {
+      const error = fijar(libres[k][0], libres[k][1], valores[k], origen);
       if (error) return error;
-      avanza = true;
     }
-    for (const j of indices) {
-      const libres = indices.filter((i) => incognita(i, j));
-      if (libres.length !== 1) continue;
-      const recibidos = indices.reduce((s, i) => (i === j ? s : s + conocido(celdas[i][j])), 0);
-      const error = fijar(libres[0], j, filas[j].td - filas[j].ind - recibidos);
-      if (error) return error;
-      avanza = true;
-    }
-  }
+    return true;
+  };
 
+  const eliminar = (origen: OrigenMarcador): string | null => {
+    let avanza = true;
+    while (avanza) {
+      avanza = false;
+      for (const i of indices) {
+        const libres = indices.filter((j) => incognita(i, j)).map((j): [number, number] => [i, j]);
+        const dados = indices.reduce((s, j) => (j === i ? s : s + conocido(celdas[i][j])), 0);
+        const r = resolverGrupo(libres, filas[i].td - dados, origen);
+        if (typeof r === 'string') return r;
+        avanza ||= r;
+      }
+      for (const j of indices) {
+        const libres = indices.filter((i) => incognita(i, j)).map((i): [number, number] => [i, j]);
+        const recibidos = indices.reduce((s, i) => (i === j ? s : s + conocido(celdas[i][j])), 0);
+        const r = resolverGrupo(libres, filas[j].td - filas[j].ind - recibidos, origen);
+        if (typeof r === 'string') return r;
+        avanza ||= r;
+      }
+    }
+    return null;
+  };
+
+  const error = eliminar('derivado_de_totales') ?? (limite !== null ? eliminar('derivado_de_limite') : null);
+  if (error) return error;
+
+  const tope = (incognitas: number): number => (limite === null ? Number.POSITIVE_INFINITY : incognitas * limite);
   let sinResolver = 0;
   for (const i of indices) {
     const enFila = indices.filter((j) => incognita(i, j));
@@ -164,10 +204,18 @@ function validarMatriz(filas: FilaMatriz[]): Matriz | string {
     const recibidos = indices.reduce((s, j) => (j === i ? s : s + conocido(celdas[j][i])), 0);
     const restoDados = filas[i].td - dados;
     const restoRecibidos = filas[i].td - filas[i].ind - recibidos;
-    if (enFila.length === 0 ? restoDados !== 0 : restoDados < enFila.reduce((s, j) => s + minimo(i, j), 0)) {
+    if (
+      enFila.length === 0
+        ? restoDados !== 0
+        : restoDados < enFila.reduce((s, j) => s + minimo(i, j), 0) || restoDados > tope(enFila.length)
+    ) {
       return 'Los tocados dados no suman el total TD de la fila';
     }
-    if (enColumna.length === 0 ? restoRecibidos !== 0 : restoRecibidos < enColumna.reduce((s, j) => s + minimo(j, i), 0)) {
+    if (
+      enColumna.length === 0
+        ? restoRecibidos !== 0
+        : restoRecibidos < enColumna.reduce((s, j) => s + minimo(j, i), 0) || restoRecibidos > tope(enColumna.length)
+    ) {
       return 'El índice no coincide con los tocados dados y recibidos';
     }
   }
@@ -184,10 +232,31 @@ function validarMatriz(filas: FilaMatriz[]): Matriz | string {
   return { celdas, sinResolver };
 }
 
+type Evidencia = { obligados: Set<number>; maximoPublicado: number };
+
+/** Tope de la vuelta: el único valor que la aritmética da a sus `V` sin número, si ningún tanteo publicado lo supera. */
+function limiteDeVuelta(e: Evidencia | undefined): number | null {
+  if (!e || e.obligados.size !== 1) return null;
+  const [valor] = e.obligados;
+  return valor >= e.maximoPublicado ? valor : null;
+}
+
+type PouleLeida = {
+  reg: Region;
+  vuelta: number;
+  ronda: string;
+  rondaOriginal: string;
+  filas: FilaMatriz[];
+  matriz: Matriz;
+};
+
 export function leerPoules(paginas: readonly PaginaAnalizada[], registro: readonly Participante[]): LecturaPoules {
   const excluidos = exclusionesVacias();
   const rechazos: Rechazo[] = [];
   const acumulador = new AcumuladorAsaltos(excluidos);
+  // En orden de página: el tope de una vuelta se decide con todas sus poules antes de emitir ninguna.
+  const lecturas: (PouleLeida | Rechazo)[] = [];
+  const evidencia = new Map<number, Evidencia>();
   let grupos = 0;
   let publicado = 0;
   let vuelta: number | null = null;
@@ -199,7 +268,7 @@ export function leerPoules(paginas: readonly PaginaAnalizada[], registro: readon
       const f = pg.filas[i];
       const t = normalizar(textoFila(f));
       if (f.items[0].x >= 45) continue;
-      if (RE_POULE.test(t)) indices.push(i);
+      if (RE_POULE_N.test(t)) indices.push(i);
       else if (/^POULES?, /.test(t)) {
         const v = t.match(RE_VUELTA);
         vuelta = v ? Number(v[1]) : null;
@@ -208,7 +277,7 @@ export function leerPoules(paginas: readonly PaginaAnalizada[], registro: readon
     }
 
     if (indices.length === 0) {
-      rechazos.push({
+      lecturas.push({
         seccion: 'poules',
         region: { pagina: pg.numero, yMax: pg.alto, yMin: 0 },
         motivo: 'Sección de poules sin ninguna poule reconocible: la página no se lee',
@@ -219,13 +288,13 @@ export function leerPoules(paginas: readonly PaginaAnalizada[], registro: readon
       const inicio = indices[b];
       const fin = b + 1 < indices.length ? indices[b + 1] : pg.filas.length;
       const cabeza = pg.filas[inicio];
-      const numero = Number(normalizar(textoFila(cabeza)).match(RE_POULE)?.[1]);
+      const numero = Number(normalizar(textoFila(cabeza)).match(RE_POULE_N)?.[1]);
       const cuerpo = pg.filas.slice(inicio + 1, fin);
       const ultima = cuerpo.length > 0 ? cuerpo[cuerpo.length - 1].y : cabeza.y;
       const reg = regionBloque(pg.numero, cabeza.y, ultima);
       grupos += 1;
 
-      const rechazar = (motivo: string) => rechazos.push({ seccion: 'poules', region: reg, motivo });
+      const rechazar = (motivo: string) => lecturas.push({ seccion: 'poules', region: reg, motivo });
 
       if (vuelta === null) {
         rechazar('La vuelta de poules no está declarada en el documento');
@@ -251,53 +320,83 @@ export function leerPoules(paginas: readonly PaginaAnalizada[], registro: readon
         continue;
       }
 
-      const atribuciones: Atribucion[] = filas.map((f) => resolverParticipante(registro, f.nombre, f.club));
-      const usadas = new Map<string, number>();
-      for (const a of atribuciones) if (a.ok) usadas.set(a.ref, (usadas.get(a.ref) ?? 0) + 1);
-      const validas = atribuciones.map((a) => (a.ok && usadas.get(a.ref) === 1 ? a : null));
-
-      const ronda = vuelta === 1 ? `P${numero}` : `V${vuelta}P${numero}`;
-      const rondaOriginal = `${tituloVuelta} / ${textoFila(cabeza)}`;
-      const n = filas.length;
-      let sinGanador = 0;
-      for (let i = 0; i < n; i += 1) {
-        for (let j = i + 1; j < n; j += 1) {
-          const a = matriz.celdas[i][j];
-          const c = matriz.celdas[j][i];
-          if (a.gana === c.gana) {
-            excluidos.sinGanador += 1;
-            sinGanador += 1;
-            continue;
-          }
-          const ganadora = a.gana ? a : c;
-          const perdedora = a.gana ? c : a;
-          if (ganadora.puntos === null || perdedora.puntos === null) {
-            excluidos.sinMarcador += 1;
-            continue;
-          }
-          const vi = validas[i];
-          const vj = validas[j];
-          if (!vi || !vj) {
-            excluidos.identidadNoConfirmada += 1;
-            continue;
-          }
-          const ganaI = a.gana;
-          acumulador.agregar({
-            fase: 'POULE',
-            ronda,
-            rondaOriginal,
-            marcador: ganadora.derivada ? 'derivado_de_totales' : 'explicito',
-            region: reg,
-            ganador: { ref: ganaI ? vi.ref : vj.ref, nombre: ganaI ? vi.nombre : vj.nombre, puntos: ganadora.puntos },
-            perdedor: { ref: ganaI ? vj.ref : vi.ref, nombre: ganaI ? vj.nombre : vi.nombre, puntos: perdedora.puntos },
-          });
-        }
+      const e = evidencia.get(vuelta) ?? { obligados: new Set<number>(), maximoPublicado: 0 };
+      for (const c of matriz.celdas.flat()) {
+        if (c.puntos === null) continue;
+        if (c.origen === 'derivado_de_totales') e.obligados.add(c.puntos);
+        else e.maximoPublicado = Math.max(e.maximoPublicado, c.puntos);
       }
-      if (matriz.sinResolver > 0) {
-        rechazar(`${matriz.sinResolver} victorias sin tanteo que los totales publicados no determinan: no se les atribuye ninguno`);
-      }
-      if (sinGanador > 0) rechazar(`${sinGanador} cruces sin ningún ganador marcado: no son un duelo con resultado`);
+      evidencia.set(vuelta, e);
+      lecturas.push({
+        reg,
+        vuelta,
+        ronda: vuelta === 1 ? `P${numero}` : `V${vuelta}P${numero}`,
+        rondaOriginal: `${tituloVuelta} / ${textoFila(cabeza)}`,
+        filas,
+        matriz,
+      });
     }
+  }
+
+  for (const lectura of lecturas) {
+    if (!('matriz' in lectura)) {
+      rechazos.push(lectura);
+      continue;
+    }
+    const { reg, ronda, rondaOriginal, filas } = lectura;
+    const rechazar = (motivo: string) => rechazos.push({ seccion: 'poules', region: reg, motivo });
+    let matriz = lectura.matriz;
+    const limite = limiteDeVuelta(evidencia.get(lectura.vuelta));
+    if (matriz.sinResolver > 0 && limite !== null) {
+      // Si el tope contradice algún total de esta poule, se queda la lectura aritmética.
+      const conLimite = validarMatriz(filas, limite);
+      if (typeof conLimite !== 'string') matriz = conLimite;
+    }
+
+    const atribuciones: Atribucion[] = filas.map((f) => resolverParticipante(registro, f.nombre, f.club));
+    const usadas = new Map<string, number>();
+    for (const a of atribuciones) if (a.ok) usadas.set(a.ref, (usadas.get(a.ref) ?? 0) + 1);
+    const validas = atribuciones.map((a) => (a.ok && usadas.get(a.ref) === 1 ? a : null));
+
+    const n = filas.length;
+    let sinGanador = 0;
+    for (let i = 0; i < n; i += 1) {
+      for (let j = i + 1; j < n; j += 1) {
+        const a = matriz.celdas[i][j];
+        const c = matriz.celdas[j][i];
+        if (a.gana === c.gana) {
+          excluidos.sinGanador += 1;
+          sinGanador += 1;
+          continue;
+        }
+        const ganadora = a.gana ? a : c;
+        const perdedora = a.gana ? c : a;
+        if (ganadora.puntos === null || perdedora.puntos === null) {
+          excluidos.sinMarcador += 1;
+          continue;
+        }
+        const vi = validas[i];
+        const vj = validas[j];
+        if (!vi || !vj) {
+          excluidos.identidadNoConfirmada += 1;
+          continue;
+        }
+        const ganaI = a.gana;
+        acumulador.agregar({
+          fase: 'POULE',
+          ronda,
+          rondaOriginal,
+          marcador: ganadora.origen,
+          region: reg,
+          ganador: { ref: ganaI ? vi.ref : vj.ref, nombre: ganaI ? vi.nombre : vj.nombre, puntos: ganadora.puntos },
+          perdedor: { ref: ganaI ? vj.ref : vi.ref, nombre: ganaI ? vj.nombre : vi.nombre, puntos: perdedora.puntos },
+        });
+      }
+    }
+    if (matriz.sinResolver > 0) {
+      rechazar(`${matriz.sinResolver} victorias sin tanteo que los totales publicados no determinan: no se les atribuye ninguno`);
+    }
+    if (sinGanador > 0) rechazar(`${sinGanador} cruces sin ningún ganador marcado: no son un duelo con resultado`);
   }
 
   return { asaltos: acumulador.asaltos, excluidos, rechazos, grupos, publicado };

@@ -8,6 +8,7 @@ import {
 } from '@/lib/ingest/backfill/pdf-persist';
 import type { FilaAsalto, FilaResultado } from '@/lib/ingest/fie-resultados-persist';
 import type { AsaltoPdf, LecturaPdf, PruebaPdf, PuestoPdf } from '@/lib/ingest/sources/rfee-pdf/tipos';
+import { sha256 } from '@/lib/utils';
 
 const region = (pagina = 1, y = 500) => ({ pagina, yMax: y + 10, yMin: y - 10 });
 
@@ -288,6 +289,19 @@ describe('persistirLecturaPdf', () => {
     await persistirLecturaPdf(d, lectura({ pruebas: [equipos] }), ctx);
     expect(e.asaltos.size).toBe(0);
     expect([...e.resultados.values()][0].every((f) => f.personId === null)).toBe(true);
+  });
+
+  it('el país de «Nación» se guarda como código de país y sólo entra en la huella de las filas que lo publican', async () => {
+    const sinPais = puesto(1);
+    const conPais = puesto(2, { club: null, pais: 'ITA' });
+    const { d, e } = deps();
+    await persistirLecturaPdf(d, lectura({ pruebas: [prueba({ puestos: [sinPais, conPais] })] }), ctx);
+    const [a, b] = [...e.resultados.values()][0];
+    expect(a).toMatchObject({ sourceCountryCode: null, sourceClub: 'CLUB' });
+    expect(b).toMatchObject({ sourceCountryCode: 'ITA', sourceClub: null });
+    // La huella de una fila sin país no cambia: releer un documento ya guardado no la cuenta como revisada.
+    expect(a.contentHash).toBe(await sha256(JSON.stringify([1, null, 'TIRADOR 1', 'CLUB', '2019-01-20', sinPais.region])));
+    expect(b.contentHash).toBe(await sha256(JSON.stringify([2, null, 'TIRADOR 2', null, '2019-01-20', conPais.region, 'ITA'])));
   });
 
   it('una prueba sin hechos publicados y sin lectura que lo acredite no se marca no_publicado', async () => {

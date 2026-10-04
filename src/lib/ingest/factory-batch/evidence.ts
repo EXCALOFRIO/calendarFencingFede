@@ -4,7 +4,7 @@ import { extraerPaginas } from '../sources/rfee-pdf/lectura';
 import { hash, readBounded, serialize, jobDirectory } from './files';
 import { loadCampaign, validateJob } from './prepare';
 import { assertHookEvidence } from './runner';
-import { LIMITS, parseCandidate, parseEnvelope, receiptSchema, type Candidate } from './schemas';
+import { LIMITS, parseCandidate, parseEnvelope, receiptSchema, type Candidate, type Plan } from './schemas';
 
 export type EvidenceInput =
   | { kind: 'json'; value: unknown }
@@ -121,14 +121,21 @@ export function checkQuotedEvidence(candidate: Candidate, inputs: ReadonlyMap<st
 export async function reviewStoredCandidate(
   root: string, planSha256: string, jobId: string,
 ): Promise<EvidenceReview & { candidateSha256: string; sessionId: string }> {
-  const plan = await loadCampaign(root, planSha256);
+  let plan: Plan;
+  try { plan = await loadCampaign(root, planSha256, [jobId]); }
+  catch (error) {
+    if (error instanceof Error && error.message === 'factory_job_subset_invalid') {
+      throw new Error('factory_evidence_job_unknown');
+    }
+    throw error;
+  }
   const job = plan.jobs.find((j) => j.id === jobId);
   if (!job) throw new Error('factory_evidence_job_unknown');
   const directory = jobDirectory(root, job.id);
   const bytes = await readBounded(join(directory, 'candidate.json'), LIMITS.outputBytes);
   const candidate = parseCandidate(bytes.toString('utf8'), job);
   const receipt = receiptSchema.parse(JSON.parse((await readBounded(join(directory, 'receipt.json'), 16384)).toString('utf8')));
-  if (receipt.jobId !== job.id || receipt.planSha256 !== planSha256 || receipt.sourceSha256 !== job.sourceSha256 ||
+  if (receipt.model !== plan.model || receipt.jobId !== job.id || receipt.planSha256 !== planSha256 || receipt.sourceSha256 !== job.sourceSha256 ||
     receipt.resultSha256 !== hash(bytes)) throw new Error('factory_evidence_receipt_mismatch');
   const envelope = parseEnvelope((await readBounded(join(directory, 'stdout.json'), LIMITS.outputBytes)).toString('utf8'));
   if (receipt.sessionId !== envelope.session_id ||

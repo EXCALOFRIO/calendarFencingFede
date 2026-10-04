@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -6,17 +6,19 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { prepareCampaign, loadCampaign } from '../src/lib/ingest/factory-batch/prepare';
 import { hash, serialize, jobDirectory } from '../src/lib/ingest/factory-batch/files';
-import { LIMITS, parseCandidate, parseEnvelope, type Job, type Plan } from '../src/lib/ingest/factory-batch/schemas';
+import { LIMITS, MODEL, modelSchema, parseCandidate, parseEnvelope, type Job, type Plan, type Model } from '../src/lib/ingest/factory-batch/schemas';
 import { childEnvironment, type Transport, type Invocation } from '../src/lib/ingest/factory-batch/transport';
-import { runCampaign, invocationArguments } from '../src/lib/ingest/factory-batch/runner';
+import { runCampaign, invocationArguments, validateReceipt } from '../src/lib/ingest/factory-batch/runner';
 import { quoteHookPath } from '../src/lib/ingest/factory-batch/hook';
+import * as resources from '../src/lib/ingest/factory-batch/resources';
 
 // All transport model calls are fake. Only the trusted local hook is executed.
 const created: string[] = [];
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const directory of created.splice(0)) await rm(directory, { recursive: true, force: true });
 });
-async function fixture(count = 1) {
+async function fixture(count = 1, model: Model = MODEL) {
   const workspace = await mkdtemp(join(tmpdir(), 'factory-batch-test-'));
   created.push(workspace);
   const cacheRoot = join(workspace, 'cache');
@@ -31,7 +33,7 @@ async function fixture(count = 1) {
   const manifest = serialize({ version: 1, tipo: 'evidencia-publica-rfee', unidades });
   await writeFile(join(cacheRoot, 'manifest.json'), manifest);
   const prepared = await prepareCampaign({ workspace, cacheRoot, source: 'rfee',
-    selections: unidades.map(u => ({ tipo: 'pdf', id: u.id })), sourceManifestSha256: hash(manifest) });
+    selections: unidades.map(u => ({ tipo: 'pdf', id: u.id })), sourceManifestSha256: hash(manifest), model });
   created.push(prepared.directory);
   const executable = join(workspace, 'fake-droid.exe');
   await writeFile(executable, 'fake executable; never executed');
@@ -89,6 +91,58 @@ function hook(jobDir: string, input: unknown): Promise<{ code: number | null; st
 }
 
 describe('Factory bounded public extraction', () => {
+  it('honours reduced resource admission in the actual worker pool', async () => {
+    const f = await fixture(3);
+    await pilot(f);
+    const admission = vi.spyOn(resources, 'admittedConcurrency').mockResolvedValue(1);
+    let active = 0, peak = 0;
+    const transport = fakeTransport(f.directory, f.plan, async () => {
+      active++; peak = Math.max(peak, active);
+      await new Promise(resolve => setTimeout(resolve, 10));
+      active--;
+    });
+    const result = await runCampaign({ ...f, execute: true, maxSessions: 3, concurrency: 3,
+      protectResources: true }, transport);
+    expect(result.candidates).toBe(3); expect(peak).toBe(1);
+    expect(admission).toHaveBeenCalledWith(f.directory, 3);
+    expect(admission).toHaveBeenCalledTimes(4);
+  }, 30000);
+  it('rejects memory pressure before creating a lock or invoking a child', async () => {
+    const f = await fixture();
+    vi.spyOn(resources, 'admittedConcurrency').mockRejectedValue(new Error('factory_resource_memory_pressure'));
+    const transport = vi.fn(fakeTransport(f.directory, f.plan));
+    await expect(runCampaign({ ...f, execute: true, maxSessions: 1, protectResources: true }, transport))
+      .rejects.toThrow('factory_resource_memory_pressure');
+    expect(transport).not.toHaveBeenCalled();
+    await expect(readFile(join(f.directory, 'campaign.lock'))).rejects.toMatchObject({ code: 'ENOENT' });
+  }, 30000);
+  it.each(['gpt-6-luna', 'gpt-5.6-luna'] as const)('pins %s in isolated controls, invocation and receipts', async model => {
+    const sol = await fixture(), luna = await fixture(1, model);
+    expect(luna.plan.jobs[0].sourceSha256).toBe(sol.plan.jobs[0].sourceSha256);
+    expect(luna.plan.jobs[0].id).not.toBe(sol.plan.jobs[0].id);
+    expect(luna.plan.model).toBe(model);
+    const inputDir = jobDirectory(luna.directory, luna.plan.jobs[0].id);
+    expect(JSON.parse(await readFile(join(inputDir, '.factory/settings.json'), 'utf8')).model).toBe(model);
+    expect(await readFile(join(inputDir, 'prompt.txt'), 'utf8')).toContain(`Model: ${model}.`);
+    const transport = fakeTransport(luna.directory, luna.plan, async (_, call) => {
+      expect(call.args[call.args.indexOf('--model') + 1]).toBe(model);
+    });
+    await runCampaign({ ...luna, execute: true, maxSessions: 1, capabilityPilot: true }, transport);
+    await runCampaign({ ...luna, execute: true, maxSessions: 1 }, transport);
+    expect(JSON.parse(await readFile(join(inputDir, 'receipt.json'), 'utf8')).model).toBe(model);
+    await expect(validateReceipt(luna.directory, luna.planSha256, luna.plan.jobs[0], model)).resolves.toBeUndefined();
+    await expect(validateReceipt(luna.directory, luna.planSha256, luna.plan.jobs[0], MODEL))
+      .rejects.toThrow('factory_resume_identity_mismatch');
+    await expect(loadCampaign(sol.directory, sol.planSha256)).resolves.toMatchObject({ model: MODEL });
+    const capFile = join(luna.directory, 'capability-receipt.json');
+    const cap = JSON.parse(await readFile(capFile, 'utf8'));
+    await writeFile(capFile, serialize({ ...cap, model: MODEL }));
+    await expect(runCampaign({ ...luna, execute: true, maxSessions: 1 }, transport))
+      .rejects.toThrow('factory_capability_receipt_mismatch');
+  }, 30000);
+  it('does not silently allow unknown models', () => {
+    expect(modelSchema.safeParse('unknown-model').success).toBe(false);
+  });
   it('prepares deterministic pinned public inputs and preflights without transport', async () => {
     const f = await fixture(2);
     expect(f.plan.jobs).toHaveLength(2);
@@ -171,7 +225,7 @@ describe('Factory bounded public extraction', () => {
   it('requires explicit execution, finite bounds, and capability receipt before source jobs', async () => {
     const f = await fixture(), transport = fakeTransport(f.directory, f.plan);
     await expect(runCampaign({ ...f, execute: false, maxSessions: 1 }, transport)).rejects.toThrow('factory_explicit_execution_required');
-    await expect(runCampaign({ ...f, execute: true, maxSessions: 1, concurrency: 3 }, transport)).rejects.toThrow('factory_execution_bounds_invalid');
+    await expect(runCampaign({ ...f, execute: true, maxSessions: 1, concurrency: 9 }, transport)).rejects.toThrow('factory_execution_bounds_invalid');
     await expect(runCampaign({ ...f, execute: true, maxSessions: 1, timeoutSeconds: 601 }, transport)).rejects.toThrow('factory_execution_bounds_invalid');
     await expect(runCampaign({ ...f, execute: true, maxSessions: 1 }, transport)).rejects.toThrow('factory_capability_receipt_required');
   });
@@ -193,7 +247,8 @@ describe('Factory bounded public extraction', () => {
     const transport: Transport = async call => ({ stdout: call.args[0] === '--version' ? '0.230.0' :
       envelope({ capability: 'factory-read-v1', allowedObserved: true, deniedObserved: true }, randomUUID()),
     stderr: '', exitCode: 0 });
-    await expect(runCampaign({ ...f, execute: true, maxSessions: 1, capabilityPilot: true }, transport)).rejects.toThrow();
+    await expect(runCampaign({ ...f, execute: true, maxSessions: 1, capabilityPilot: true }, transport))
+      .rejects.toThrow('factory_hook_evidence_missing');
     await expect(runCampaign({ ...f, execute: true, maxSessions: 1, capabilityPilot: true }, transport))
       .rejects.toThrow('factory_started_job_requires_reconciliation');
   });
