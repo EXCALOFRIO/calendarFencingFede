@@ -47,6 +47,28 @@ queda **pendiente**.
   sesión hermana ya canceló el paso. Pasaron **58 pruebas** focalizadas, incluidas
   cinco regresiones adversarias con concurrencia dos, y TypeScript completo sin
   incremental, ambos código 0. No se iniciaron llamadas masivas antes del arreglo.
+- El gate completo posterior al arreglo pasó **2.887 pruebas en 175 archivos**,
+  código 0, 285,85 s, dos workers y las mismas cinco exclusiones vivas.
+  La ejecución real del portfolio se inició con máximo 4.560 intentos nuevos,
+  pasos de diez, concurrencia dos y plazo global de doce horas. El registro
+  privado confirma el inicio del coordinador; todavía no acredita completar
+  ninguna unidad nueva ni aceptar sus hechos.
+- Una consulta D1 posterior devolvió autorización `7403`. La comprobación
+  encontró OAuth con acceso a la cuenta y permiso D1; una consulta de
+  conectividad y otra del marcador volvieron a responder, sin cambiar
+  credenciales o permisos. El marcador seguía `importing`, checkpoint
+  `insert:sport_bout:372000`, cero filas escritas por la observación. No se ha
+  demostrado la causa de aquel error ni se presenta como importación verificada.
+- El paquete de `75f1901` se reconstruyó con el origen canónico y pasó también
+  el dry-run, ambos código 0. El escaneo de ocho valores sensibles sobre 2.234
+  archivos del paquete y dry-run encontró cero coincidencias y cero `.env`;
+  las tres exportaciones de entorno están vacías. El receipt privado fija
+  además el hash del árbol completo. Esto no acredita desplegar el runtime.
+- A las 01:13 UTC, la observación de metadatos del portfolio encontró un piloto
+  capability nuevo con receipt, ocho unidades fuente nuevas iniciadas y seis
+  receipts fuente nuevos, sin receipts de fracaso. Son artefactos de candidatos,
+  no hechos aceptados ni una campaña terminada; no se leyeron sus textos para
+  ese recuento.
 
 El código se confirmó en `97458b6` y se subió a `main`. Migra datos y
 almacenamiento a D1/R2, conservando Neon Auth gestionado solo para cuentas,
