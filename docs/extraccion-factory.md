@@ -167,6 +167,9 @@ seguridad o fallo de teardown abortan **todo**; no se saltan para continuar.
 También abortan globalmente un código de salida no cero (incluidas cuota o
 autenticación), un envelope inválido, un arranque fallido y una salida con
 codificación o estado de cierre inválidos, aunque haya lecturas auditadas.
+Con concurrencia dos, un fallo fatal de una sesión prevalece sobre el fallo de
+calidad o la cancelación de la otra. Se esperan ambos cierres antes de devolver
+el error; un cierre o drenaje fallido impide iniciar el siguiente paso.
 No borrar/reparar starts, outputs, receipts ni locks abandonados para forzar
 una repetición. Tampoco crear portfolios nuevos para esquivar la reconciliación:
 no existe un ledger global fuera de estas carpetas.

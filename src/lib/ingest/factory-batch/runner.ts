@@ -6,6 +6,7 @@ import { assertCapacity } from '../../migracion-cloudflare/files';
 import { readBounded, writeNew, exists, hash, serialize, jobDirectory } from './files';
 import { loadCampaign, validateJob } from './prepare';
 import { childEnvironment, spawnTransport, type Transport } from './transport';
+import { preferCampaignFailure } from './failure-policy';
 import { auditSchema, capabilitySchema, CLI_VERSION, LIMITS, MODEL, PROMPT_VERSION,
   parseEnvelope, parseCandidate, receiptSchema, type Job, type Plan } from './schemas';
 
@@ -207,9 +208,9 @@ export async function runCampaign(options: RunOptions, transport: Transport = sp
           }
           await writeNew(join(directory, 'stdout.json'), output.stdout);
           await writeNew(join(directory, 'stderr.txt'), output.stderr);
-          if (abort.signal.aborted) throw new Error('factory_campaign_stopped');
           if (output.exitCode !== 0) throw new Error('factory_child_nonzero');
           const envelope = parseEnvelope(output.stdout);
+          if (abort.signal.aborted) throw new Error('factory_campaign_stopped');
           const auditSha256 = await assertHookEvidence(root, job, envelope.session_id, !!options.capabilityPilot);
           await validateJob(root, plan, job);
           if (options.capabilityPilot) {
@@ -232,7 +233,7 @@ export async function runCampaign(options: RunOptions, transport: Transport = sp
             summary.candidates++;
           }
         }
-      } catch (error) { failure ??= error; abort.abort(); }
+      } catch (error) { failure = preferCampaignFailure(failure, error); abort.abort(); }
     };
     await Promise.all(Array.from({ length: Math.min(options.concurrency ?? 1, selected.length) }, worker));
     if (failure) throw failure;

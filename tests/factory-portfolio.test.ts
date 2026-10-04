@@ -358,6 +358,32 @@ describe('whole-inventory Factory portfolio, fake transport only', () => {
     expect(resumed.sourceAttempts).toBe(2 - started.length); expect(resumed.summary.failed).toBe(started.length);
     expect(new Set([...started, ...next.calls.filter(j => j.kind !== 'capability')].map(j => j.id)).size).toBe(2);
   });
+  it.each([
+    'factory_tree_stop_failed', 'factory_tree_drain_failed', 'factory_child_nonzero',
+    'factory_envelope_invalid', 'factory_hook_evidence_invalid',
+  ])('does not mask a fatal sibling %s behind an ordinary candidate failure', async (failure) => {
+    const f = await fixture(3);
+    let sources = 0;
+    let bothStarted!: () => void;
+    const ready = new Promise<void>(resolve => { bothStarted = resolve; });
+    const fake = await fakeFor(f.prepared!, async context => {
+      if (context.job.kind === 'capability') return;
+      if (++sources === 1) {
+        await ready;
+        return { stdout: envelope({}, context.sessionId), stderr: '', exitCode: 0 };
+      }
+      bothStarted();
+      return new Promise((resolve, reject) => {
+        context.call.signal.addEventListener('abort', () => {
+          if (failure === 'factory_child_nonzero') resolve({ ...context.defaultOutput, exitCode: 1 });
+          else if (failure === 'factory_envelope_invalid') resolve({ ...context.defaultOutput, stdout: '{}' });
+          else reject(new Error(failure));
+        }, { once: true });
+      });
+    });
+    await expect(runPortfolio(options(f, { concurrency: 2 }), fake.transport)).rejects.toThrow(failure);
+    expect(fake.calls.filter(j => j.kind !== 'capability')).toHaveLength(2);
+  });
   it('resume classifies ambiguous safe-audited starts without relaunch and aborts unaudited starts', async () => {
     const f = await fixture(2), fake = await fakeFor(f.prepared!), campaign = fake.portfolio.campaigns[0],
       plan = fake.plans.get(campaign.directory)!;

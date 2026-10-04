@@ -36,6 +36,17 @@ queda **pendiente**.
   confirmó `importing` y 163.200 combates, cero filas escritas. Esa observación
   no acredita el final de la importación, sus hashes, las guardias posteriores
   ni el despliegue del nuevo runtime.
+- El preflight completo Factory terminó, código 0: 21 planes, dos semillas
+  validadas, 4.560 unidades sin iniciar, tres gaps de fuente y 954 exclusiones
+  (HTML/auxiliares). Las semillas siguen siendo candidatos, no hechos aceptados.
+- La revisión independiente del nuevo código no encontró hallazgos adicionales
+  en catálogo/acceso/SQL/retornos, pero detectó un bloqueo en el runner: el primer
+  fallo de calidad podía ocultar un fallo fatal al cerrar la sesión paralela.
+  Se comparte ahora una única política de fallos y se priorizan los de seguridad,
+  cierre y drenaje. Los códigos de salida/envelopes se comprueban incluso si una
+  sesión hermana ya canceló el paso. Pasaron **58 pruebas** focalizadas, incluidas
+  cinco regresiones adversarias con concurrencia dos, y TypeScript completo sin
+  incremental, ambos código 0. No se iniciaron llamadas masivas antes del arreglo.
 
 El código se confirmó en `97458b6` y se subió a `main`. Migra datos y
 almacenamiento a D1/R2, conservando Neon Auth gestionado solo para cuentas,

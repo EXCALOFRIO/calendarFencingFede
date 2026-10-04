@@ -6,6 +6,7 @@ import { createPrivateExportDirectory, assertCapacity } from '../../migracion-cl
 import { prepareCampaign, loadCampaign, validateJob } from './prepare';
 import { runCampaign, validateReceipt, verifyCapability, readAudit } from './runner';
 import { spawnTransport, type Transport } from './transport';
+import { isOrdinarySourceFailure } from './failure-policy';
 import { readBounded, writeNew, exists, hash, serialize, jobDirectory, noLinks } from './files';
 import { LIMITS, MODEL, PROMPT_VERSION, CLI_VERSION, digestSchema, parseEnvelope, parseCandidate,
   envelopeSchema, type Job, type Plan } from './schemas';
@@ -29,15 +30,6 @@ export type Portfolio = z.infer<typeof portfolioSchema>;
 type Campaign = z.infer<typeof campaignSchema>;
 export type Seed = { directory: string; planSha256: string };
 const failureFiles = ['started.json', 'audit.jsonl', 'stdout.json', 'stderr.txt', 'candidate.json'] as const;
-const ordinaryErrors = new Set([
-  'factory_candidate_invalid', 'factory_candidate_identity_mismatch', 'factory_metadata_evidence_missing',
-  'factory_evidence_source_invalid', 'factory_reviewed_source_invalid', 'factory_reviewed_source_missing',
-  'factory_evidence_page_not_reviewed', 'factory_evidence_pointer_not_reviewed', 'factory_gap_source_invalid',
-  'factory_missing_endpoint_not_partial', 'factory_missing_endpoint_gap_required', 'factory_partial_gaps_required',
-  'factory_candidate_review_incomplete', 'factory_status_facts_conflict',
-  'factory_job_timeout', 'factory_output_limit', 'factory_campaign_stopped',
-  'factory_started_job_requires_reconciliation',
-]);
 const artifactSchema = z.object({ file: z.enum(failureFiles), sha256: digestSchema, bytes: z.number().int().nonnegative() }).strict();
 const failureSchema = z.object({
   version: z.literal(1), jobId: digestSchema, planSha256: digestSchema, sourceSha256: digestSchema,
@@ -266,11 +258,11 @@ export async function inspectPortfolioUnit(campaign: Campaign, plan: Plan, assig
     const receipt = failureSchema.parse(JSON.parse((await readBounded(file, 16384)).toString('utf8')));
     if (receipt.jobId !== job.id || receipt.planSha256 !== campaign.planSha256 ||
       receipt.sourceSha256 !== job.sourceSha256 || receipt.sessionId !== sessionId ||
-      serialize(receipt.artifacts) !== serialize(evidence) || !ordinaryErrors.has(receipt.reason)) {
+      serialize(receipt.artifacts) !== serialize(evidence) || !isOrdinarySourceFailure(receipt.reason)) {
       throw new Error('factory_portfolio_failure_evidence_changed');
     }
   } else if (recordFailure) {
-    if (!ordinaryErrors.has(reason)) throw new Error('factory_portfolio_unknown_safety_error');
+    if (!isOrdinarySourceFailure(reason)) throw new Error('factory_portfolio_unknown_safety_error');
     await writeNew(file, serialize(failureSchema.parse({ version: 1, jobId: job.id, planSha256: campaign.planSha256,
       sourceSha256: job.sourceSha256, model: MODEL, promptVersion: PROMPT_VERSION,
       acceptance: 'requires_reconciliation', reason, sessionId, artifacts: evidence })));
@@ -424,7 +416,7 @@ export async function runPortfolio(options: PortfolioRunOptions, transport: Tran
             sourceAttempts++; attemptedSourceJobs.push(assignment);
           }
         }
-        if (stepError && !ordinaryErrors.has(stepError)) throw new Error(stepError);
+        if (stepError && !isOrdinarySourceFailure(stepError)) throw new Error(stepError);
         await assertManifestPins(loaded.portfolio);
         let attempted = 0;
         for (const assignment of slice) {
