@@ -12,11 +12,17 @@ import {
   fuenteRanking,
   fuenteResultado,
 } from '@/lib/sport/explorar/etiquetas';
-import { RUTA_EDICIONES } from '@/lib/sport/explorar/edicion-url';
+import { RUTA_EDICIONES, rutaEdicion } from '@/lib/sport/explorar/edicion-url';
 import { RUTA_FAVORITOS } from '@/lib/sport/explorar/favoritos-url';
+import type { FichaConPerfil } from '@/lib/sport/explorar/tipos-perfil';
+import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { Aclaracion, Bloque, Celda, Dato, EnlaceFuente, Nota, fechaLegible, type Nivel } from './piezas';
 import { EstadisticasDeportistaVista } from './estadisticas-deportista';
 import { FotoDeportista } from './foto-deportista';
+import { CifrasPerfil } from './perfil/cifras-perfil';
+import { PuestoFinal, partesFecha } from './perfil/piezas-perfil';
+import { ManoAMano } from './perfil/rivales-perfil';
+import { AnioAAnio } from './perfil/temporadas-perfil';
 import {
   construirUrlFicha,
   RUTA_EXPLORAR,
@@ -51,90 +57,133 @@ import {
 
 /* ------------------------------------------------------------------ cabecera */
 
+function DatoCabecera({
+  etiqueta,
+  children,
+  className,
+}: {
+  etiqueta: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn('flex min-w-0 flex-col gap-1 bg-card px-4 py-3 sm:px-6', className)}>
+      <dt className="text-xs text-muted-foreground">{etiqueta}</dt>
+      <dd className="min-w-0 text-sm break-words">{children}</dd>
+    </div>
+  );
+}
+
+const plegar = (texto: string) =>
+  texto.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('es').split(/\s+/).sort().join(' ');
+
+/**
+ * Cabecera tipo perfil: retrato FIE grande, nombre en formato «Nombre
+ * Apellidos», país, armas, club y las dos acciones de la ficha (cara a cara y
+ * favorito). Un posible menor no lleva retrato, año ni enlace a la FIE.
+ */
 export function CabeceraFicha({
   ficha,
   titulo = true,
   acciones,
 }: {
-  ficha: FichaDeportiva;
+  ficha: FichaConPerfil;
   titulo?: boolean;
   /** Controles propios de la cuenta que mira, como guardar en favoritos. */
   acciones?: React.ReactNode;
 }) {
+  const nombre = nombreVisible(ficha.nombre) || ficha.nombre;
+  const perfil = ficha.perfil;
+  const propio = plegar(nombre);
+  // Un alias que sólo cambia el orden o las mayúsculas del nombre no aporta nada.
+  const alias = ficha.alias.filter((a) => plegar(nombreVisible(a)) !== propio);
   return (
-    <header className="flex min-w-0 flex-col gap-4 border-y border-l-2 border-l-primary bg-card px-4 py-5 sm:px-6 sm:py-6">
-      <div className="flex items-start justify-between gap-3">
+    <header className="flex min-w-0 flex-col border-y border-t-filete-alto bg-card">
+      <div className="flex min-w-0 items-start gap-4 px-4 pt-5 pb-4 sm:gap-6 sm:px-6 sm:pt-6 sm:pb-5">
         <FotoDeportista
           personaId={ficha.id}
-          nombre={ficha.nombre}
+          nombre={nombre}
           ocultar={ficha.esMenor}
-          tamano="mini"
+          tamano="perfil"
           decorativa
-          className="shrink-0"
         />
-        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-4 gap-y-2">
+        <div className="flex min-w-0 flex-1 flex-col gap-3 sm:pt-1">
           {titulo ? (
-            <h1 className="min-w-0 text-3xl leading-tight break-words sm:text-4xl">{titular(ficha.nombre)}</h1>
+            <h1 className="min-w-0 text-4xl leading-[0.95] break-words sm:text-5xl lg:text-6xl">{nombre}</h1>
           ) : (
-            <p className="min-w-0 font-display text-3xl leading-tight break-words">{titular(ficha.nombre)}</p>
+            <p className="min-w-0 font-display text-4xl leading-[0.95] break-words sm:text-5xl">{nombre}</p>
           )}
-          {ficha.esPropia ? (
-            <Badge variant="outline">Es tu ficha deportiva</Badge>
-          ) : null}
-        </div>
-        {acciones ? <div className="min-w-0 max-w-[45%] shrink-0">{acciones}</div> : null}
-      </div>
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-10">
-        <div className="flex flex-col gap-0.5">
-          <dt className="text-xs text-muted-foreground">País</dt>
-          <dd>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             {ficha.pais ? (
-              <BanderaPais pais={ficha.pais} conNombre />
+              <BanderaPais pais={ficha.pais} tamaño="ficha" />
             ) : (
-              <span className="text-sm text-muted-foreground">No publicado</span>
+              <span className="text-sm text-muted-foreground">País no publicado</span>
             )}
-          </dd>
-        </div>
-        <div className="flex flex-col gap-0.5">
-          <dt className="text-xs text-muted-foreground">Género</dt>
-          <dd className="text-sm">
-            {ficha.genero ? GENDER_LABEL[ficha.genero] : <span className="text-muted-foreground">No publicado</span>}
-          </dd>
-        </div>
-        <div className="flex flex-col gap-0.5">
-          <dt className="text-xs text-muted-foreground">Año de nacimiento</dt>
-          <dd className="text-sm">
-            {ficha.anioNacimiento !== null ? (
-              ficha.anioNacimiento
-            ) : (
-              <span className="text-muted-foreground">
-                {ficha.esMenor ? 'No se muestra' : 'No publicado'}
-              </span>
-            )}
-          </dd>
-        </div>
-        {ficha.alias.length > 0 ? (
-          <div className="col-span-2 flex min-w-0 flex-col gap-0.5">
-            <dt className="text-xs text-muted-foreground">También publicado como</dt>
-            <dd className="text-sm break-words">{ficha.alias.join(', ')}</dd>
+            {perfil?.armas.map((arma) => (
+              <Badge key={arma} variant="outline" className="h-7 px-3 text-sm">
+                {WEAPON_LABEL[arma]}
+              </Badge>
+            ))}
+            {ficha.esPropia ? <Badge variant="secondary" className="h-7 px-3">Es tu ficha deportiva</Badge> : null}
           </div>
-        ) : null}
+        </div>
+      </div>
+
+      <dl className="grid grid-cols-2 gap-px border-t bg-border sm:grid-cols-4">
+        <DatoCabecera etiqueta="Club publicado más reciente">
+          {perfil?.club ? (
+            <>
+              {titular(perfil.club.nombre)}
+              <span className="block text-xs text-muted-foreground">{fuenteResultado(perfil.club.fuente)}</span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">No publicado</span>
+          )}
+        </DatoCabecera>
+        <DatoCabecera etiqueta="Año de nacimiento">
+          {ficha.anioNacimiento !== null ? (
+            <span className="cifra text-xl">{ficha.anioNacimiento}</span>
+          ) : (
+            <span className="text-muted-foreground">{ficha.esMenor ? 'No se muestra' : 'No publicado'}</span>
+          )}
+        </DatoCabecera>
+        <DatoCabecera etiqueta="Género">
+          {ficha.genero ? GENDER_LABEL[ficha.genero] : <span className="text-muted-foreground">No publicado</span>}
+        </DatoCabecera>
+        <DatoCabecera etiqueta="También publicado como">
+          {alias.length > 0 ? alias.join(', ') : <span className="text-muted-foreground">Sin otras formas</span>}
+        </DatoCabecera>
       </dl>
+
+      <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-3 border-t px-4 py-3 sm:px-6">
+        <Button asChild>
+          <Link href={rutaCaraACara(ficha.id)} prefetch={false}>
+            <Swords aria-hidden />
+            Cara a cara
+          </Link>
+        </Button>
+        {acciones ? <div className="min-w-0">{acciones}</div> : null}
+        {perfil?.enlaceFie ? <EnlaceFuente url={perfil.enlaceFie} etiqueta="Perfil en la FIE" /> : null}
+      </div>
+
       {ficha.esMenor ? (
-        <p className="flex max-w-prose items-start gap-2 text-sm text-muted-foreground">
+        <p className="flex items-start gap-2 border-t px-4 py-3 text-sm text-muted-foreground sm:px-6">
           <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <span>
+          <span className="medida">
             Posible menor de edad: esta ficha enseña sólo resultados deportivos publicados por las
             federaciones. No hay foto, fecha de nacimiento, contacto ni datos de tutores.
           </span>
         </p>
       ) : null}
-      <Aclaracion titulo="Sobre esta ficha">
-        <Nota>
-          La ficha no dice si la persona sigue compitiendo: sólo recoge lo que han publicado las
-          fuentes. Que no tenga cuenta en la aplicación no significa que esté retirada.
-        </Nota>
-      </Aclaracion>
+      <div className="border-t px-4 sm:px-6">
+        <Aclaracion titulo="Sobre esta ficha">
+          <Nota>
+            La ficha no dice si la persona sigue compitiendo: sólo recoge lo que han publicado las
+            fuentes. Que no tenga cuenta en la aplicación no significa que esté retirada. Junta todos
+            los resultados de las fichas fusionadas de esta persona, de la FIE, de la RFEE y de Skermo.
+          </Nota>
+        </Aclaracion>
+      </div>
     </header>
   );
 }
@@ -168,7 +217,7 @@ function FilaEstadistica({ e }: { e: EstadisticaPorTipo }) {
 export function EstadisticasFicha({ ficha, nivel }: { ficha: FichaDeportiva; nivel: Nivel }) {
   if (ficha.estadisticas.detalle) {
     return (
-      <Bloque id="ficha-estadisticas" titulo="Estadísticas del historial importado" nivel={nivel}>
+      <Bloque id="ficha-estadisticas" titulo="Desglose por torneo, categoría y arma" nivel={nivel}>
         <EstadisticasDeportistaVista detalle={ficha.estadisticas.detalle} />
       </Bloque>
     );
@@ -184,7 +233,7 @@ export function EstadisticasFicha({ ficha, nivel }: { ficha: FichaDeportiva; niv
         </p>
       ) : (
         <>
-          <ul className="divide-y rounded-md border bg-card" aria-label="Estadísticas por tipo de torneo">
+          <ul className="divide-y border-y bg-card" aria-label="Estadísticas por tipo de torneo">
             {porTipo.map((e) => (
               <FilaEstadistica key={e.tipo ?? 'sin-tipo'} e={e} />
             ))}
@@ -342,7 +391,7 @@ export function RankingOficialFicha({
           de otra temporada.
         </p>
       ) : (
-        <ul className="divide-y rounded-md border bg-card" aria-label={`Ranking oficial ${etiquetaTemporada(r.temporada)}`}>
+        <ul className="divide-y border-y bg-card" aria-label={`Ranking oficial ${etiquetaTemporada(r.temporada)}`}>
           {r.entradas.map((e) => (
             <FilaRanking key={`${e.fuente}-${e.arma}-${e.genero}-${e.categoria.raw}-${e.formato}`} e={e} />
           ))}
@@ -356,14 +405,33 @@ export function RankingOficialFicha({
 
 function FilaHistorial({ r }: { r: ResultadoHistorial }) {
   const categoria = CATEGORY_LABEL[r.prueba.categoria.codigo as keyof typeof CATEGORY_LABEL] ?? r.prueba.categoria.codigo;
+  const fecha = r.fecha ? partesFecha(r.fecha) : null;
   return (
-    <li className="grid grid-cols-2 gap-x-4 gap-y-4 px-4 py-5 md:grid-cols-[minmax(0,1fr)_minmax(0,3fr)_minmax(0,1fr)_minmax(0,1.5fr)] md:items-center">
-      <Celda etiqueta="Fecha y temporada">
-        {r.fecha ? <Dato>{fechaLegible(r.fecha)}</Dato> : <span className="text-sm text-muted-foreground">Fecha no publicada</span>}
-        <span className="text-xs text-muted-foreground">{etiquetaTemporada(r.temporada)}</span>
-      </Celda>
-      <Celda etiqueta="Torneo y prueba" className="order-first col-span-2 md:order-none md:col-span-1">
-        <span className="font-medium break-words">{titular(r.torneo.nombre)}</span>
+    <li className="grid min-w-0 grid-cols-[3.25rem_minmax(0,1fr)_auto] gap-x-3 gap-y-2 px-4 py-4 sm:grid-cols-[4.5rem_minmax(0,1fr)_auto_minmax(0,9rem)] sm:gap-x-5 sm:px-5">
+      <div className="flex flex-col items-start leading-none">
+        {fecha ? (
+          <>
+            <span className="cifra text-3xl leading-none">{fecha.dia}</span>
+            <span className="text-xs text-muted-foreground">{fecha.mes} {fecha.anio}</span>
+          </>
+        ) : r.fecha ? (
+          <span className="text-xs break-all">{r.fecha}</span>
+        ) : (
+          <span className="text-xs text-muted-foreground">Fecha no publicada</span>
+        )}
+      </div>
+      <div className="flex min-w-0 flex-col gap-1">
+        <Link
+          href={rutaEdicion(r.torneo.id)}
+          prefetch={false}
+          className="w-fit max-w-full font-medium break-words underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+        >
+          {titular(r.torneo.nombre)}
+        </Link>
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          {r.torneo.pais ? <BanderaPais pais={r.torneo.pais} /> : null}
+          <span className="break-words">{r.torneo.ciudad ? titular(r.torneo.ciudad) : 'Sede no publicada'}</span>
+        </span>
         <span className="text-xs text-muted-foreground break-words">
           {WEAPON_LABEL[r.prueba.arma]} {GENDER_LABEL[r.prueba.genero].toLowerCase()}, {categoria}
           {r.prueba.categoria.raw ? ` («${r.prueba.categoria.raw}»)` : ''}
@@ -371,20 +439,17 @@ function FilaHistorial({ r }: { r: ResultadoHistorial }) {
         </span>
         <span className="text-xs text-muted-foreground">
           {r.tipoDocumentado ? etiquetaTipo(r.tipoDocumentado) : 'Tipo de torneo sin documentar'}
+          {', '}{etiquetaTemporada(r.temporada)}
         </span>
-      </Celda>
-      <Celda etiqueta="Puesto final">
-        {r.puesto !== null ? (
-          <span className="cifra text-4xl leading-none">{r.puesto}</span>
-        ) : (
-          <span className="text-sm">{r.puestoPublicado ?? <span className="text-muted-foreground">Sin puesto publicado</span>}</span>
-        )}
+      </div>
+      <div className="flex flex-col items-end gap-1 text-right">
+        <PuestoFinal puesto={r.puesto} puestoPublicado={r.puestoPublicado} />
         {r.puntosOficiales ? <span className="text-xs text-muted-foreground">{r.puntosOficiales} puntos</span> : null}
-      </Celda>
-      <Celda etiqueta="Fuente">
-        <Dato>{fuenteResultado(r.fuente)}</Dato>
+      </div>
+      <div className="col-span-2 col-start-2 flex min-w-0 flex-col sm:col-span-1 sm:col-start-auto sm:items-end sm:text-right">
+        <span className="text-xs text-muted-foreground">{fuenteResultado(r.fuente)}</span>
         <EnlaceFuente url={r.enlace} etiqueta="Abrir en la fuente" />
-      </Celda>
+      </div>
     </li>
   );
 }
@@ -401,7 +466,7 @@ export function HistorialFicha({
   nivel: Nivel;
 }) {
   return (
-    <Bloque id="historial" titulo="Historial de resultados" nivel={nivel}>
+    <Bloque id="historial" titulo="Resultados" nivel={nivel}>
       <Aclaracion titulo="Resultados publicados, del más reciente al más antiguo">
         <Nota>
           Puestos finales publicados, del más reciente al más antiguo. Una inscripción sin final no
@@ -416,11 +481,11 @@ export function HistorialFicha({
           </p>
         ) : (
           <>
-            <ul className="divide-y rounded-md border bg-card" aria-label="Resultados">
+            <ol className="divide-y border-y bg-card" aria-label="Resultados, del más reciente al más antiguo">
               {historial.items.map((r) => (
                 <FilaHistorial key={r.id} r={r} />
               ))}
-            </ul>
+            </ol>
             <nav aria-label="Páginas del historial" className="flex flex-wrap items-center gap-3">
               {criterios.cursor ? (
                 <Button asChild variant="outline">
@@ -495,7 +560,7 @@ export function CoberturaFichaVista({ cobertura, nivel }: { cobertura: Cobertura
         )}
       </p>
       {cobertura.lecturas.length > 0 ? (
-        <ul className="divide-y rounded-md border bg-card" aria-label="Estado de lectura por tipo de dato">
+        <ul className="divide-y border-y bg-card" aria-label="Estado de lectura por tipo de dato">
           {cobertura.lecturas.map((l) => {
             const estado = estadoLectura(l.hecho, l.estado);
             return (
@@ -533,7 +598,7 @@ export function EntradaCaraACara({ ficha, nivel }: { ficha: FichaDeportiva; nive
       <Nota>Consulta los asaltos individuales publicados frente a otro deportista.</Nota>
       <Aclaracion titulo="Qué asaltos se incluyen">
         <Nota>
-          Compara a {titular(ficha.nombre)} con otra persona en asaltos individuales ya importados:
+          Compara a {nombreVisible(ficha.nombre) || ficha.nombre} con otra persona en asaltos individuales ya importados:
           poule y eliminación directa, con el marcador visto desde esta ficha. Los encuentros por
           equipos, los BYE y las finales sin marcador no cuentan.
         </Nota>
@@ -561,7 +626,7 @@ export function FichaCompleta({
   conTitulo = true,
   acciones,
 }: {
-  ficha: FichaDeportiva;
+  ficha: FichaConPerfil;
   historial: HistorialVista;
   base: string;
   criterios: CriteriosFicha;
@@ -569,12 +634,21 @@ export function FichaCompleta({
   conTitulo?: boolean;
   acciones?: React.ReactNode;
 }) {
+  const perfil = ficha.perfil;
   return (
-    <div className="flex flex-col gap-6">
-      <CabeceraFicha ficha={ficha} titulo={conTitulo} acciones={acciones} />
-      <EstadisticasFicha ficha={ficha} nivel={nivel} />
+    <div className="flex min-w-0 flex-col gap-8">
+      <div className="flex min-w-0 flex-col">
+        <CabeceraFicha ficha={ficha} titulo={conTitulo} acciones={acciones} />
+        {perfil ? <CifrasPerfil perfil={perfil} /> : null}
+      </div>
+      {perfil ? <AnioAAnio perfil={perfil} nivel={nivel} /> : null}
       <HistorialFicha historial={historial} base={base} criterios={criterios} nivel={nivel} />
-      <EntradaCaraACara ficha={ficha} nivel={nivel} />
+      {perfil ? (
+        <ManoAMano personaId={ficha.id} nombre={ficha.nombre} perfil={perfil} nivel={nivel} />
+      ) : (
+        <EntradaCaraACara ficha={ficha} nivel={nivel} />
+      )}
+      <EstadisticasFicha ficha={ficha} nivel={nivel} />
       <RankingOficialFicha ficha={ficha} base={base} criterios={criterios} nivel={nivel} />
       <CoberturaFichaVista cobertura={ficha.cobertura} nivel={nivel} />
     </div>

@@ -1,10 +1,14 @@
-import { SearchX, TriangleAlert, Users, X } from 'lucide-react';
+import { ChevronRight, Medal, SearchX, TriangleAlert, Trophy, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { rutaFichaConRetorno } from '@/lib/sport/explorar/ficha-url';
 import type { VistaExplorar } from '@/lib/sport/explorar/pantalla';
 import type { DeportistaResumen } from '@/lib/sport/explorar/tipos';
+import { TRAYECTORIA_VACIA, type TrayectoriaPersona } from '@/lib/sport/explorar/tipos-busqueda';
+import { inicialesVisibles, nombreVisible } from '@/lib/sport/nombre-visible';
 import {
   RUTA_EXPLORAR,
   chipsActivos,
@@ -13,8 +17,8 @@ import {
   rutaFicha,
   type CriteriosExplorar,
 } from '@/lib/sport/explorar/url';
-import { GENDER_LABEL, WEAPON_LABEL, cn } from '@/lib/utils';
-import { Aclaracion, Celda, Nota } from './piezas';
+import { GENDER_LABEL, WEAPON_LABEL, cn, titular } from '@/lib/utils';
+import { Aclaracion, Celda, Nota, fechaLegible } from './piezas';
 
 /** Filtros activos como enlaces que los quitan uno a uno. */
 export function ChipsActivos({ criterios }: { criterios: CriteriosExplorar }) {
@@ -44,21 +48,68 @@ export function ChipsActivos({ criterios }: { criterios: CriteriosExplorar }) {
   );
 }
 
-function FilaDeportista({ d, volver }: { d: DeportistaResumen; volver: string }) {
+const METALES = [
+  { clave: 'oros', etiqueta: 'Oro', plural: 'Oros' },
+  { clave: 'platas', etiqueta: 'Plata', plural: 'Platas' },
+  { clave: 'bronces', etiqueta: 'Bronce', plural: 'Bronces' },
+] as const;
+
+/** Medallas individuales con texto: el color de la medalla no es la única señal. */
+function Medallero({ t }: { t: TrayectoriaPersona }) {
+  const metales = METALES.filter((m) => t[m.clave] > 0);
+  if (metales.length === 0) return null;
+  return (
+    <span className="flex flex-wrap gap-1.5">
+      <span className="sr-only">Medallas individuales: </span>
+      {metales.map((m) => (
+        <Badge key={m.clave} variant="outline" className="gap-1 px-2 py-0.5 text-xs">
+          <Medal className="size-3 text-muted-foreground" aria-hidden />
+          <span className="cifra">{t[m.clave]}</span>
+          <span>{t[m.clave] === 1 ? m.etiqueta : m.plural}</span>
+        </Badge>
+      ))}
+    </span>
+  );
+}
+
+type FilaBuscada = DeportistaResumen & { trayectoria?: TrayectoriaPersona };
+
+function FilaDeportista({ d, volver }: { d: FilaBuscada; volver: string }) {
   const homonimo = d.mismoNombre > 1;
+  const t = d.trayectoria ?? TRAYECTORIA_VACIA;
   return (
     <li>
       <Link
         href={rutaFichaConRetorno(d.id, volver)}
         prefetch={false}
-        className="grid min-h-11 grid-cols-2 gap-x-4 gap-y-3 px-4 py-4 hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] md:items-center"
+        className="group grid min-h-11 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-3 px-4 py-4 hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset md:grid-cols-[auto_minmax(0,2fr)_minmax(0,1.4fr)_auto] md:items-center md:gap-x-5"
       >
-        <span className="col-span-2 flex min-w-0 flex-col gap-1 md:col-span-1">
-          <span className="text-base font-semibold break-words">{d.nombre}</span>
-          {d.alias ? (
-            <span className="text-xs text-muted-foreground">
-              Coincide con el alias «{d.alias}»
+        <Avatar size="lg" className="size-11 md:size-12">
+          <AvatarFallback>{inicialesVisibles(d.nombre)}</AvatarFallback>
+        </Avatar>
+
+        <span className="flex min-w-0 flex-col gap-1.5">
+          <span className="text-base leading-tight font-semibold break-words">{nombreVisible(d.nombre)}</span>
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            {d.pais ? <BanderaPais pais={d.pais} conNombre /> : <span>País no publicado</span>}
+            <span aria-hidden>·</span>
+            <span>
+              {d.genero ? GENDER_LABEL[d.genero] : 'Género no publicado'}
+              {homonimo && d.anioNacimiento !== null ? `, nacimiento ${d.anioNacimiento}` : ''}
             </span>
+          </span>
+          {d.armas.length > 0 ? (
+            <span className="flex flex-wrap gap-1.5">
+              <span className="sr-only">Armas: </span>
+              {d.armas.map((a) => (
+                <Badge key={a} variant="secondary">{WEAPON_LABEL[a]}</Badge>
+              ))}
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">Sin pruebas importadas</span>
+          )}
+          {d.alias ? (
+            <span className="text-xs text-muted-foreground">Coincide con el alias «{d.alias}»</span>
           ) : null}
           {homonimo ? (
             <span className="inline-flex items-start gap-1.5 text-xs text-warn">
@@ -70,38 +121,42 @@ function FilaDeportista({ d, volver }: { d: DeportistaResumen; volver: string })
           ) : null}
         </span>
 
-        <Celda etiqueta="País">
-          {d.pais ? (
-            <BanderaPais pais={d.pais} conNombre />
-          ) : (
-            <span className="text-sm text-muted-foreground">País no publicado</span>
-          )}
-          <span className="text-xs text-muted-foreground">
-            {d.genero ? GENDER_LABEL[d.genero] : 'Género no publicado'}
-            {homonimo && d.anioNacimiento !== null ? `, nacimiento ${d.anioNacimiento}` : ''}
-          </span>
-        </Celda>
+        <span className="col-span-2 flex min-w-0 flex-col gap-2 md:col-span-1">
+          {t.ultima ? (
+            <Celda etiqueta="Última competición">
+              <span className="text-sm leading-snug break-words">{titular(t.ultima.torneo)}</span>
+              {t.ultima.fecha ? (
+                <span className="text-xs text-muted-foreground">{fechaLegible(t.ultima.fecha)}</span>
+              ) : null}
+            </Celda>
+          ) : null}
+          {t.mejorPuesto !== null || t.oros + t.platas + t.bronces > 0 ? (
+            <span className="flex flex-wrap items-center gap-2">
+              {t.mejorPuesto !== null ? (
+                <span className="inline-flex items-center gap-1.5 text-sm">
+                  <Trophy className="size-3.5 text-muted-foreground" aria-hidden />
+                  <span className="text-muted-foreground">Mejor resultado</span>
+                  <span className="cifra font-semibold">{t.mejorPuesto}.º</span>
+                </span>
+              ) : null}
+              <Medallero t={t} />
+            </span>
+          ) : null}
+        </span>
 
-        <Celda etiqueta="Armas">
-          {d.armas.length > 0 ? (
-            <span className="text-sm">{d.armas.map((a) => WEAPON_LABEL[a]).join(', ')}</span>
-          ) : (
-            <span className="text-sm text-muted-foreground">Sin pruebas importadas</span>
-          )}
-        </Celda>
-
-        <Celda etiqueta="Resultados importados" className="col-span-2 md:col-span-1">
+        <span className="col-span-2 flex items-baseline gap-1.5 border-t pt-3 md:col-span-1 md:flex-col md:items-end md:gap-0.5 md:border-t-0 md:pt-0 md:text-right">
           {d.resultadosImportados > 0 ? (
-            <span className="flex items-baseline gap-1.5">
+            <>
               <span className="cifra text-3xl leading-none">{d.resultadosImportados}</span>
               <span className="text-xs text-muted-foreground">
                 {d.resultadosImportados === 1 ? 'clasificación' : 'clasificaciones'}
               </span>
-            </span>
+            </>
           ) : (
             <span className="text-sm text-muted-foreground">Ninguno importado</span>
           )}
-        </Celda>
+          <ChevronRight className="ml-auto size-4 self-center text-muted-foreground group-hover:text-foreground md:hidden" aria-hidden />
+        </span>
       </Link>
     </li>
   );
@@ -113,7 +168,7 @@ export function ListaDeportistas({
   cursorActual,
   criterios,
 }: {
-  items: DeportistaResumen[];
+  items: FilaBuscada[];
   siguiente: string | null;
   cursorActual: string | undefined;
   criterios: CriteriosExplorar;
@@ -130,7 +185,7 @@ export function ListaDeportistas({
         </p>
       </div>
 
-      <ul className="divide-y rounded-md border bg-card" aria-label="Deportistas encontrados">
+      <ul className="divide-y overflow-hidden rounded-lg border bg-card" aria-label="Deportistas encontrados">
         {items.map((d) => (
           <FilaDeportista key={d.id} d={d} volver={volver} />
         ))}

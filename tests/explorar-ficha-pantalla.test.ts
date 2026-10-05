@@ -620,8 +620,14 @@ describe('rutas y perfil', () => {
     expect(salida).toContain('Es tu ficha deportiva');
     expect(salida).toContain('Copa del Mundo Madrid');
     expect(salida).toContain('Copa del Mundo Absoluta');
-    expect(salida).toContain('Estadísticas del historial importado');
+    expect(salida).toContain('Desglose por torneo, categoría y arma');
     expect(salida).toContain('1 de 1 pruebas importadas');
+    // Cabecera tipo perfil y marcador: el nombre formateado, el año a año y el mano a mano.
+    expect(salida).toContain('Lucia Garcia');
+    expect(salida).toContain('Año a año');
+    expect(salida).toContain('Mano a mano');
+    expect(salida).toContain('Sin asaltos importados');
+    expect(salida).toContain(`href="/explorar/${UUID_A}/cara-a-cara"`);
     expect(salida).toContain('FIE 2026');
     expect(salida).toContain('>14<');
     expect(salida).not.toContain('<h1');

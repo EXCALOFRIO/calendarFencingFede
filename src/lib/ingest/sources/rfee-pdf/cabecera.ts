@@ -37,11 +37,13 @@ const CATEGORIAS: { re: RegExp; literal: (m: RegExpMatchArray) => string }[] = [
   { re: new RegExp(`\\bM-?${EDADES}\\b`), literal: (m) => `M${m[1]}` },
   // «Sub-23» es «menores de 23», igual que «M-23» (y que «U23», que ya admite el mapper).
   { re: new RegExp(`\\bSUB-? ?${EDADES}\\b`), literal: (m) => `M${m[1]}` },
+  { re: new RegExp(`\\bU-?${EDADES}\\b`), literal: (m) => `M${m[1]}` },
   { re: /\b(ABSOLUT[OA]S?|SENIOR|ABS)\b/, literal: (m) => m[1] },
   { re: /\bJUNIORS?\b/, literal: () => 'JUNIOR' },
   { re: /\bCADETES?\b/, literal: () => 'CADETE' },
   { re: /\bVETERAN[OA]S?\b/, literal: () => 'VETERANOS' },
-  { re: /\bVET\b/, literal: () => 'VET' },
+  // «VET30», «VET 40»: el tramo pegado a la etiqueta sigue siendo veteranos.
+  { re: /\bVET(?: ?\d{2})?\b/, literal: () => 'VET' },
   // Tramos de veteranos («+40», «+50 y +60»). Dos dígitos para no leer un «+1»
   // como una edad, y sin más cifras detrás para no leer un prefijo telefónico.
   { re: /(?:^|[\s(])\+ ?(\d{2})\b(?! ?\d)/, literal: (m) => `+${m[1]}` },

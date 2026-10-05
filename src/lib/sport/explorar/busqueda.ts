@@ -14,8 +14,10 @@ import {
   unionesPrueba,
   y,
 } from './filtros-sql';
+import { leerTrayectorias } from './busqueda-trayectoria';
 import { SALTOS, sqlGrupoDe } from './personas';
-import type { Arma, DeportistaResumen, FiltrosBusqueda, Genero } from './tipos';
+import type { Arma, FiltrosBusqueda, Genero } from './tipos';
+import { TRAYECTORIA_VACIA, type DeportistaBuscado } from './tipos-busqueda';
 
 const CLASE = 'busqueda';
 
@@ -23,7 +25,7 @@ export type ResultadoBusqueda =
   | {
       estado: 'ok';
       filtros: FiltrosBusqueda;
-      items: DeportistaResumen[];
+      items: DeportistaBuscado[];
       /** Cursor de la página siguiente, o `null` si ésta es la última. */
       siguiente: string | null;
       /** `true` = la consulta se hizo y no encontró a nadie (no es un fallo). */
@@ -128,7 +130,14 @@ export function sqlBusqueda(
   limite: number,
   clave: readonly (string | number)[] | null,
 ): SQL {
-  const condiciones: SQL[] = [sql`p.merged_into_person_id IS NULL`];
+  // Sin nombre, casi todas las personas cumplen los filtros de prueba: el `+`
+  // impide usar sport_person_merged_idx (casi todas tienen NULL) y deja a SQLite
+  // recorrer sport_person_name_idx en el orden pedido, parando al llenar la
+  // página en vez de evaluar y ordenar a todas. Con nombre la coincidencia es
+  // rara y el recorrido secuencial por merged_idx es más rápido.
+  const condiciones: SQL[] = [
+    f.q ? sql`p.merged_into_person_id IS NULL` : sql`+p.merged_into_person_id IS NULL`,
+  ];
   let aliasSql: SQL = sql`NULL`;
 
   if (f.q) {
@@ -176,7 +185,8 @@ export async function complementos(
           SELECT g.canonica AS id, count(*) AS resultados,
                  group_concat(DISTINCT c.weapon) AS armas
           FROM miembros_grupo g
-          JOIN sport_result r ON r.person_id = g.id
+          -- CROSS JOIN: sin él SQLite recorre todo sport_result y busca en el CTE.
+          CROSS JOIN sport_result r ON r.person_id = g.id
           JOIN sport_competition c ON c.id = r.competition_id
           GROUP BY g.canonica`),
     claves.length === 0
@@ -231,15 +241,15 @@ export async function buscarDeportistas(
   const hayMas = encontradas.length > limite;
   const pagina = encontradas.slice(0, limite);
 
-  const { conteos, nombres } = await complementos(
-    ctx.db,
-    pagina.map((p) => p.id),
-    [...new Set(pagina.map((p) => p.claveNombre))],
-  );
+  const ids = pagina.map((p) => p.id);
+  const [{ conteos, nombres }, trayectorias] = await Promise.all([
+    complementos(ctx.db, ids, [...new Set(pagina.map((p) => p.claveNombre))]),
+    leerTrayectorias(ctx.db, ids),
+  ]);
   const porId = new Map(conteos.map((c) => [c.id, c]));
   const porClave = new Map(nombres.map((n) => [n.clave, Number(n.personas)]));
 
-  const items = pagina.map<DeportistaResumen>((p) => {
+  const items = pagina.map<DeportistaBuscado>((p) => {
     const c = porId.get(p.id);
     return {
       id: p.id,
@@ -251,6 +261,7 @@ export async function buscarDeportistas(
       resultadosImportados: c ? Number(c.resultados) : 0,
       armas: c?.armas ? (c.armas.split(',').sort() as Arma[]) : [],
       mismoNombre: porClave.get(p.claveNombre) ?? 1,
+      trayectoria: trayectorias.get(p.id) ?? TRAYECTORIA_VACIA,
     };
   });
 

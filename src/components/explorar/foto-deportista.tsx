@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { fotoPublicadaValida, type FotoPublicada } from '@/lib/sport/explorar/foto-contrato';
+import { inicialesVisibles } from '@/lib/sport/nombre-visible';
 
 export type FotoDeportistaProps = {
   /** ID público de la persona deportiva, nunca athleteId/profileId. */
@@ -12,9 +13,12 @@ export type FotoDeportistaProps = {
   ocultar?: boolean;
   /** Junto a un nombre visible el retrato es decorativo. */
   decorativa?: boolean;
-  tamano?: 'mini' | 'retrato';
+  /** `perfil` es el retrato grande de la cabecera de la ficha. */
+  tamano?: 'mini' | 'retrato' | 'perfil';
   className?: string;
 };
+
+const MEDIDAS = { mini: 48, retrato: 96, perfil: 120 } as const;
 
 export function FotoDeportista({ ocultar = false, ...props }: FotoDeportistaProps) {
   // La clave descarta también una imagen anterior al cambiar de persona.
@@ -26,9 +30,8 @@ function Retrato({
 }: Omit<FotoDeportistaProps, 'ocultar'>) {
   const [foto, setFoto] = useState<FotoPublicada | null>(null);
   const [cargada, setCargada] = useState(false);
-  const medida = tamano === 'mini' ? 48 : 96;
-  const iniciales = nombre.trim().split(/\s+/u).slice(0, 2)
-    .map((p) => Array.from(p)[0] ?? '').join('').toLocaleUpperCase('es') || '—';
+  const medida = MEDIDAS[tamano];
+  const iniciales = inicialesVisibles(nombre) || '—';
 
   useEffect(() => {
     const controlador = new AbortController();
@@ -66,7 +69,7 @@ function Retrato({
         aria-label={decorativa ? undefined : cargada ? `Foto oficial de ${nombre}, FIE` : 'Foto no publicada'}
         title={cargada ? 'Foto oficial FIE' : 'Foto no publicada'}
       >
-        <AvatarFallback aria-hidden="true">{iniciales}</AvatarFallback>
+        <AvatarFallback aria-hidden="true" className={tamano === 'perfil' ? 'font-display text-4xl' : undefined}>{iniciales}</AvatarFallback>
         {foto ? (
           // Imagen nativa a propósito: Next no debe copiar ni optimizar fotos FIE.
           // eslint-disable-next-line @next/next/no-img-element

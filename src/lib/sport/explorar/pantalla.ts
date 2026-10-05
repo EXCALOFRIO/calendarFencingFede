@@ -1,7 +1,7 @@
 import { buscarDeportistas } from './busqueda';
 import { ERROR_NO_AUTENTICADO, type ContextoExplorador } from './contexto';
 import { aEntrada, type CriteriosExplorar } from './url';
-import type { DeportistaResumen } from './tipos';
+import type { DeportistaBuscado } from './tipos-busqueda';
 
 /**
  * Lo que la pantalla Explorar sabe pintar. Cada estado es distinto de los
@@ -17,7 +17,7 @@ export type VistaExplorar =
   | { tipo: 'error' }
   | {
       tipo: 'ok';
-      items: DeportistaResumen[];
+      items: DeportistaBuscado[];
       siguiente: string | null;
       sinResultados: boolean;
     };

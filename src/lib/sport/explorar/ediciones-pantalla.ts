@@ -1,7 +1,7 @@
 import { ERROR_NO_AUTENTICADO, type ContextoExplorador } from './contexto';
-import type { EdicionDetalle, EdicionResumen, PruebaDeEdicion } from './edicion-modelo';
+import type { EdicionResumen, PruebaDeEdicion } from './edicion-modelo';
 import type { CriteriosEdicion } from './edicion-url';
-import { leerEdicion, leerEdicionesDeEvento, leerSeries, type ResultadoSeries } from './ediciones';
+import { leerEdicion, leerEdicionesDeEvento, leerSeries, type EdicionConAsaltos, type ResultadoSeries } from './ediciones';
 
 /**
  * Lo que saben pintar las páginas de edición y la banda de resultados del
@@ -22,7 +22,7 @@ export type VistaEdicion =
   | { tipo: 'no_encontrada' }
   | { tipo: 'no_disponible' }
   | { tipo: 'error' }
-  | { tipo: 'ok'; edicion: EdicionDetalle };
+  | { tipo: 'ok'; edicion: EdicionConAsaltos };
 
 export type VistaResultadosEvento =
   | { tipo: 'sin_sesion' }

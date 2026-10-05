@@ -15,7 +15,9 @@ import {
   type FilaEnlace,
   type PruebaDeEdicion,
 } from './edicion-modelo';
+import { leerAsaltosDePrueba } from './ediciones-asaltos';
 import { LIMITE_MAXIMO } from './entrada';
+import type { AsaltosDePrueba } from './tipos-busqueda';
 import { listaUuid, plegarSql } from './filtros-sql';
 import type { Arma, Formato, Genero } from './tipos';
 
@@ -261,8 +263,14 @@ export async function leerEdicionesDeEvento(
   };
 }
 
+/** `null` = sin asaltos importados de la prueba (o ninguna prueba elegida); `'error'` = no se pudieron leer. */
+export type AsaltosEdicion = AsaltosDePrueba | null | 'error';
+
+/** Opcional para quien construye la edición sin leer asaltos (banda del calendario, pruebas). */
+export type EdicionConAsaltos = EdicionDetalle & { asaltos?: AsaltosEdicion };
+
 export type ResultadoEdicion =
-  | { estado: 'ok'; edicion: EdicionDetalle }
+  | { estado: 'ok'; edicion: EdicionConAsaltos }
   | { estado: 'entrada_invalida' }
   | { estado: 'cursor_invalido' }
   | { estado: 'no_encontrada' }
@@ -315,8 +323,16 @@ export async function leerEdicion(ctx: ContextoExplorador, entrada: unknown): Pr
   const elegida = prueba ? pruebasDetalle.find((p) => p.id === prueba) : undefined;
 
   let clasificacion: Clasificacion | null = null;
+  let asaltos: AsaltosEdicion = null;
   if (elegida) {
-    clasificacion = await leerClasificacion(ctx, elegida.id, huella, clave, pedido ?? LIMITE_MAXIMO);
+    [clasificacion, asaltos] = await Promise.all([
+      leerClasificacion(ctx, elegida.id, huella, clave, pedido ?? LIMITE_MAXIMO),
+      // Poules y cuadro son un extra: si fallan, la clasificación se sigue viendo.
+      leerAsaltosDePrueba(ctx, elegida.id).catch((error: unknown) => {
+        console.error('[explorar] los asaltos de la prueba no se pudieron leer:', error instanceof Error ? error.name : 'desconocido');
+        return 'error' as const;
+      }),
+    ]);
   }
 
   return {
@@ -326,6 +342,7 @@ export async function leerEdicion(ctx: ContextoExplorador, entrada: unknown): Pr
       pruebasDetalle,
       pruebaDesconocida: Boolean(prueba) && !elegida,
       clasificacion,
+      asaltos,
     },
   };
 }

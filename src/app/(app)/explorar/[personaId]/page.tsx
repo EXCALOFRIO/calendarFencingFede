@@ -7,6 +7,7 @@ import { cargarFichaPantalla } from '@/lib/sport/explorar/ficha-pantalla';
 import { construirUrlFicha, leerCriteriosFicha, personaDeRuta } from '@/lib/sport/explorar/ficha-url';
 import { contextoReal } from '@/lib/sport/explorar/real';
 import { RUTA_EXPLORAR } from '@/lib/sport/explorar/url';
+import { nombreVisible } from '@/lib/sport/nombre-visible';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Ficha deportiva' };
@@ -47,7 +48,7 @@ export default async function Pagina({
   const base = `${RUTA_EXPLORAR}/${personaId}`;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex min-w-0 flex-col gap-4">
       <VolverAExplorar volver={criterios.volver} />
 
       {vista.tipo === 'ok' && personaId ? (
@@ -60,7 +61,7 @@ export default async function Pagina({
           acciones={
             <ControlFavoritoFicha
               estado={favorito}
-              nombre={vista.ficha.nombre}
+              nombre={nombreVisible(vista.ficha.nombre) || vista.ficha.nombre}
               reintentar={construirUrlFicha(base, criterios)}
             />
           }

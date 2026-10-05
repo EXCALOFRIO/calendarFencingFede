@@ -1,7 +1,8 @@
 import { ERROR_NO_AUTENTICADO, type ContextoExplorador } from './contexto';
 import { leerFicha, leerHistorial, type ResultadoFicha } from './ficha';
 import { aEntradaFicha, type CriteriosFicha } from './ficha-url';
-import type { FichaDeportiva, ResultadoHistorial } from './tipos';
+import type { ResultadoHistorial } from './tipos';
+import type { FichaConPerfil } from './tipos-perfil';
 
 /**
  * Historial de la ficha. Es independiente de la ficha: si falla, la ficha se
@@ -23,7 +24,7 @@ export type VistaFicha =
   | { tipo: 'error' }
   /** Pidió su propia ficha y la cuenta no tiene una persona deportiva confirmada. */
   | { tipo: 'propia_no_confirmada'; motivo: Extract<ResultadoFicha, { estado: 'propia_no_confirmada' }>['motivo'] }
-  | { tipo: 'ok'; ficha: FichaDeportiva; historial: HistorialVista };
+  | { tipo: 'ok'; ficha: FichaConPerfil; historial: HistorialVista };
 
 function esNoAutenticado(error: unknown): boolean {
   return error instanceof Error && error.message === ERROR_NO_AUTENTICADO;

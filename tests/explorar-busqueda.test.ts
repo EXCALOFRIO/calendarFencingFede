@@ -115,7 +115,10 @@ describe('lectura y forma del DTO', () => {
     const claves = clavesDe(r.items);
     for (const privada of CLAVES_PRIVADAS) expect(claves.has(privada)).toBe(false);
     expect([...clavesDe(r.items[0])].sort()).toEqual(
-      ['alias', 'anioNacimiento', 'armas', 'genero', 'id', 'mismoNombre', 'nombre', 'pais', 'resultadosImportados'],
+      [
+        'alias', 'anioNacimiento', 'armas', 'bronces', 'genero', 'id', 'mejorPuesto', 'mismoNombre', 'nombre',
+        'oros', 'pais', 'platas', 'resultadosImportados', 'trayectoria', 'ultima',
+      ],
     );
   });
 

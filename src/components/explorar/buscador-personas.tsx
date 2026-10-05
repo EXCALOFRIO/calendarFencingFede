@@ -3,12 +3,14 @@
 import { Search, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { crearSolicitanteSugerencias, siguienteOpcion, type EstadoSugerencias } from '@/lib/sport/explorar/sugerencias-cliente';
 import { rutaFicha } from '@/lib/sport/explorar/url';
-import { GENDER_LABEL } from '@/lib/utils';
+import { inicialesVisibles, nombreVisible } from '@/lib/sport/nombre-visible';
+import { GENDER_LABEL, WEAPON_LABEL } from '@/lib/utils';
 
 export function BuscadorPersonas({ valor, onChange }: { valor: string; onChange: (valor: string) => void }) {
   const router = useRouter();
@@ -50,7 +52,7 @@ export function BuscadorPersonas({ valor, onChange }: { valor: string; onChange:
     : '';
 
   return (
-    <div className="col-span-2 flex min-w-0 flex-col gap-1.5 md:col-span-1">
+    <div className="flex min-w-0 flex-col gap-1.5">
       <Label htmlFor="explorar-q">Nombre o alias</Label>
       <div className="relative" onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget)) { setFoco(false); solicitante.cancelar(); }
@@ -101,13 +103,34 @@ export function BuscadorPersonas({ valor, onChange }: { valor: string; onChange:
                   id={`explorar-sugerencia-${i}`} role="option" aria-selected={activo === i}
                   className={`h-auto min-h-11 w-full justify-start rounded-none border-b px-3 py-2 text-left whitespace-normal ${activo === i ? 'bg-accent text-accent-foreground' : ''}`}
                   onMouseDown={(e) => e.preventDefault()} onClick={() => elegir(i)}>
-                  <span className="flex min-w-0 flex-col gap-1">
-                    <span className="break-words font-medium">{p.nombre}</span>
-                    <span className="text-xs text-muted-foreground">
-                      País: {p.pais ?? 'no publicado'}. Género: {p.genero ? GENDER_LABEL[p.genero] : 'no publicado'}.
-                      {' '}Año de nacimiento: {p.anioNacimiento ?? 'no publicado'}.
+                  <span className="flex w-full min-w-0 items-center gap-3">
+                    <Avatar className="size-9">
+                      <AvatarFallback className="text-xs">{inicialesVisibles(p.nombre)}</AvatarFallback>
+                    </Avatar>
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="break-words font-medium">{nombreVisible(p.nombre)}</span>
+                      <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+                        <span className="rounded-sm border px-1 font-mono text-[0.6875rem] leading-4 text-foreground">
+                          {p.pais ?? '—'}
+                        </span>
+                        <span>
+                          {p.genero ? GENDER_LABEL[p.genero] : 'Género no publicado'}
+                          {p.anioNacimiento !== null ? `, ${p.anioNacimiento}` : ''}
+                        </span>
+                        {p.armas && p.armas.length > 0 ? (
+                          <span>· {p.armas.map((a) => WEAPON_LABEL[a]).join(', ')}</span>
+                        ) : null}
+                      </span>
+                      {p.alias ? <span className="text-xs text-muted-foreground">Publicado también como {p.alias}</span> : null}
                     </span>
-                    {p.alias ? <span className="text-xs text-muted-foreground">Publicado también como {p.alias}</span> : null}
+                    {typeof p.resultados === 'number' ? (
+                      <span className="flex shrink-0 flex-col items-end text-right">
+                        <span className="cifra text-lg leading-none">{p.resultados}</span>
+                        <span className="text-[0.6875rem] text-muted-foreground">
+                          {p.resultados === 1 ? 'resultado' : 'resultados'}
+                        </span>
+                      </span>
+                    ) : null}
                   </span>
                 </Button>
               </li>

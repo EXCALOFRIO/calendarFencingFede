@@ -6,10 +6,15 @@ import type { FiltrosPrueba } from './tipos';
  * `ev0` evento del calendario vinculado a la edición.
  */
 
-/** Prueba, edición y evento del calendario de un hecho (`r` resultado o `b` asalto). */
+/**
+ * Prueba, edición y evento del calendario de un hecho (`r` resultado o `b` asalto).
+ * Quien la usa filtra el hecho por persona. CROSS JOIN fija el hecho como bucle
+ * exterior: sin estadísticas (D1 no tiene `sqlite_stat1`), con un filtro de arma
+ * o temporada SQLite empezaba por la prueba y recorría todos sus resultados.
+ */
 export function unionesPrueba(hecho: 'r' | 'b'): SQL {
-  return sql.raw(`JOIN sport_competition c ON c.id = ${hecho}.competition_id
-    JOIN sport_edition e ON e.id = c.edition_id
+  return sql.raw(`CROSS JOIN sport_competition c ON c.id = ${hecho}.competition_id
+    CROSS JOIN sport_edition e ON e.id = c.edition_id
     LEFT JOIN event ev0 ON ev0.id = e.event_id`);
 }
 
@@ -19,14 +24,13 @@ const LETRAS_SIN = 'aaaaaeeeeiiiiooooouuuuncAAAAAEEEEIIIIOOOOOUUUUNC';
 /** Texto en minúsculas, sin acentos y con la puntuación convertida en espacios. */
 export function plegarSql(columna: SQL): SQL {
   // SQLite no incluye translate/regexp_replace ni plegado Unicode en lower.
-  // El número de sustituciones es fijo, no depende del tamaño de la tabla.
-  return sql`(WITH RECURSIVE plegado(texto, paso) AS (
-    SELECT lower(${columna}), 1
-    UNION ALL
-    SELECT replace(texto, substr(${LETRAS_CON}, paso, 1), substr(${LETRAS_SIN}, paso, 1)), paso + 1
-    FROM plegado WHERE paso <= ${LETRAS_CON.length}
-  ) SELECT lower(replace(replace(replace(replace(texto, '-', ' '), ',', ' '), '.', ' '), '/', ' '))
-    FROM plegado ORDER BY paso DESC LIMIT 1)`;
+  // Sustituciones anidadas con literales constantes (no parámetros: D1 admite
+  // 100 por sentencia). Un CTE recursivo por fila costaba ~0,1 ms por edición.
+  let texto = sql`lower(${columna})`;
+  for (let i = 0; i < LETRAS_CON.length; i++) {
+    texto = sql`replace(${texto}, ${sql.raw(`'${LETRAS_CON[i]}'`)}, ${sql.raw(`'${LETRAS_SIN[i]}'`)})`;
+  }
+  return sql`lower(replace(replace(replace(replace(${texto}, '-', ' '), ',', ' '), '.', ' '), '/', ' '))`;
 }
 
 export function listaUuid(ids: readonly string[]): SQL {

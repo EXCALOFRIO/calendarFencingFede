@@ -7,8 +7,7 @@ import { FUENTES_CATALOGO, urlCatalogo, type CriteriosCatalogo } from '@/lib/spo
 import type { VistaCatalogo } from '@/lib/sport/explorar/catalogo';
 import { RUTA_EDICIONES } from '@/lib/sport/explorar/edicion-url';
 import { FilaEdicion } from './ediciones';
-
-const SELECT = 'min-h-11 w-full min-w-0 rounded-md border border-input bg-secondary px-3 text-base focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
+import { SelectorFuenteCatalogo } from './selector-fuente-catalogo';
 
 export function CatalogoEdiciones({
   vista, criterios, cursor,
@@ -18,7 +17,6 @@ export function CatalogoEdiciones({
   return (
     <section id="catalogo-ediciones" aria-labelledby="titulo-catalogo" className="flex min-w-0 flex-col gap-4">
       <header className="flex flex-col gap-2">
-        <p className="text-xs font-semibold uppercase tracking-widest text-primary-text">Archivo deportivo</p>
         <h2 id="titulo-catalogo" className="text-2xl leading-tight sm:text-3xl">Todas las ediciones importadas</h2>
         <p className="medida text-sm text-muted-foreground">
           Busca por nombre o ciudad. También aparecen las ediciones sin vínculos al calendario o a una persona.
@@ -34,11 +32,12 @@ export function CatalogoEdiciones({
         </div>
         <div className="flex min-w-0 flex-col gap-1.5">
           <Label htmlFor="catalogo-fuente">Fuente</Label>
-          <select id="catalogo-fuente" name="fuente" defaultValue={criterios.fuente} className={SELECT}>
-            <option value="">Todas las fuentes</option>
-            {FUENTES_CATALOGO.map((f) => <option key={f.valor} value={f.valor}>{f.etiqueta}</option>)}
-            {!fuenteConocida ? <option value={criterios.fuente}>Fuente no reconocida</option> : null}
-          </select>
+          <SelectorFuenteCatalogo
+            id="catalogo-fuente"
+            valorInicial={criterios.fuente}
+            fuentes={FUENTES_CATALOGO}
+            desconocida={fuenteConocida ? null : criterios.fuente}
+          />
         </div>
         <div className="flex min-w-0 flex-col gap-1.5">
           <Label htmlFor="catalogo-temporada">Temporada</Label>

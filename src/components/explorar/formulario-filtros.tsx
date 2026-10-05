@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Search, SlidersHorizontal } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
@@ -229,7 +229,7 @@ export function FormularioFiltros({
       role="search"
       aria-label="Buscar deportistas"
       aria-busy={pendiente}
-      className="flex min-w-0 flex-col gap-3 border-y bg-card p-4 sm:p-5"
+      className="flex min-w-0 flex-col gap-4 rounded-lg border bg-card p-4 sm:p-5"
       onSubmit={(e) => {
         e.preventDefault();
         buscar(borrador);
@@ -238,9 +238,15 @@ export function FormularioFiltros({
       {CLAVES_CRITERIO.filter((k) => k !== 'q').map((clave) => (
         <input key={clave} type="hidden" name={clave} value={borrador[clave]} />
       ))}
-      <div className="grid grid-cols-2 items-end gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+      <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
         <BuscadorPersonas valor={borrador.q} onChange={(q) => poner({ q })} />
+        <Button type="submit" size="lg" disabled={pendiente} className="min-h-11 sm:min-w-32">
+          <Search aria-hidden />
+          {pendiente ? 'Buscando…' : 'Buscar'}
+        </Button>
+      </div>
 
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,12rem)_minmax(0,12rem)_1fr]">
         <CampoSelect
           id="explorar-arma"
           etiqueta="Arma"
@@ -257,14 +263,10 @@ export function FormularioFiltros({
           textoVacio="Todos"
           onChange={(genero) => poner({ genero })}
         />
-
-        <Button type="submit" disabled={pendiente} className="col-span-2 min-h-11 md:col-span-1">
-          {pendiente ? 'Buscando…' : 'Buscar'}
-        </Button>
       </div>
 
       <Collapsible open={abierto} onOpenChange={setAbierto}>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t pt-3">
           {atajoEspana ? (
             <>
               <Button
@@ -289,11 +291,12 @@ export function FormularioFiltros({
           ) : null}
           <CollapsibleTrigger asChild>
             <Button type="button" variant="ghost" size="sm" className="min-h-11">
+              <SlidersHorizontal aria-hidden />
+              Más filtros{avanzadosActivos > 0 ? ` (${avanzadosActivos} activos)` : ''}
               <ChevronDown
                 className={abierto ? 'rotate-180 transition-transform motion-reduce:transition-none' : 'transition-transform motion-reduce:transition-none'}
                 aria-hidden
               />
-              Más filtros{avanzadosActivos > 0 ? ` (${avanzadosActivos} activos)` : ''}
             </Button>
           </CollapsibleTrigger>
           {hayCriterios(criterios) ? (

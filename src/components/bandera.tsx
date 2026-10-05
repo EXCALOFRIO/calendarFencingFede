@@ -197,8 +197,8 @@ export function BanderaPais({
   if (!pais?.trim()) return null;
 
   const codigo = codigoPais(pais);
-  const nombre = nombrePais(pais);
   const iso2 = iso2De(pais);
+  const nombre = iso2 ? nombrePais(iso2) : null;
 
   /**
    * ===========================================================================

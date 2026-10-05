@@ -1,7 +1,20 @@
-import { ArrowLeft, ArrowRight, CalendarDays, MapPin, Medal, SearchX, TriangleAlert } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  CalendarDays,
+  GitFork,
+  Grid3x3,
+  ListOrdered,
+  MapPin,
+  Medal,
+  SearchX,
+  TriangleAlert,
+} from 'lucide-react';
 import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   ETIQUETA_SERIE,
   type SerieComplementaria,
@@ -14,10 +27,13 @@ import {
   urlExplorarDePrueba,
   type CriteriosEdicion,
 } from '@/lib/sport/explorar/edicion-url';
+import type { EdicionConAsaltos } from '@/lib/sport/explorar/ediciones';
 import type { VistaEdicion, VistaSeries } from '@/lib/sport/explorar/ediciones-pantalla';
 import { fuenteResultado } from '@/lib/sport/explorar/etiquetas';
 import { rutaFichaConRetorno } from '@/lib/sport/explorar/ficha-url';
+import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { WEAPON_LABEL, cn, titular } from '@/lib/utils';
+import { CuadroDePrueba, PoulesDePrueba } from './asaltos-prueba';
 import { Aclaracion, Bloque, Nota, fechaLegible } from './piezas';
 import { EnlacesResultados, EstadoResultadosPrueba, nombreDePrueba } from './prueba-resultados';
 
@@ -78,36 +94,80 @@ function Aviso({
 
 /* --------------------------------------------------------------------- series */
 
-export function FilaEdicion({ e, catalogo }: { e: EdicionResumen; catalogo?: string }) {
+/** Color del organismo que publica, no de la fuente técnica: Skermo y los PDF son de la RFEE. */
+const COLOR_FUENTE: Record<string, string> = {
+  fie: 'bg-org-fie-tinte text-org-fie',
+  skermo_rfee: 'bg-org-rfee-tinte text-org-rfee',
+  rfee_pdf: 'bg-org-rfee-tinte text-org-rfee',
+};
+
+export function InsigniaFuente({ fuente, className }: { fuente: string; className?: string }) {
+  return (
+    <Badge
+      variant="outline"
+      className={cn('border-transparent font-semibold', COLOR_FUENTE[fuente] ?? 'bg-secondary text-foreground', className)}
+    >
+      {fuenteResultado(fuente)}
+    </Badge>
+  );
+}
+
+export function FilaEdicion({ e, catalogo }: { e: EdicionResumen & { clasificados?: number }; catalogo?: string }) {
   const fechas = periodo(e.inicio, e.fin);
   return (
     <li>
       <Link
         href={construirUrlEdicion(e.id, { catalogo })}
         prefetch={false}
-        className="group grid min-h-11 gap-x-6 gap-y-3 px-4 py-5 transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset motion-reduce:transition-none sm:px-5 md:grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1.5fr)] md:items-center"
+        className="group grid min-h-11 gap-x-6 gap-y-3 px-4 py-4 transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset motion-reduce:transition-none sm:px-5 md:grid-cols-[minmax(0,2.2fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto] md:items-center"
       >
         <span className="flex min-w-0 flex-col gap-2">
-          <span className="text-base font-semibold break-words">{titular(e.nombre)}</span>
-          <span className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <span className="rounded-md border bg-secondary px-2 py-0.5 font-medium text-foreground">{fuenteResultado(e.fuente)}</span>
-            <span>Temporada {e.temporada}</span>
-            {e.ciudad ? <span className="flex min-w-0 items-center gap-1.5"><MapPin aria-hidden className="size-3.5 shrink-0" /><span className="break-words">{e.ciudad}</span></span> : null}
+          <span className="flex flex-wrap items-center gap-2">
+            <InsigniaFuente fuente={e.fuente} />
+            <span className="text-xs text-muted-foreground">Temporada {e.temporada}</span>
+          </span>
+          <span className="text-base leading-snug font-semibold break-words">{titular(e.nombre)}</span>
+          <span className="flex flex-wrap items-center gap-1.5">
+            {e.armas.length > 0 ? (
+              e.armas.map((a) => <Badge key={a} variant="secondary">{WEAPON_LABEL[a]}</Badge>)
+            ) : (
+              <span className="text-xs text-muted-foreground">Sin armas indicadas</span>
+            )}
+            {e.formatos.length > 0 ? (
+              <span className="text-xs text-muted-foreground">
+                {e.formatos.map((f) => (f === 'EQUIPOS' ? 'equipos' : 'individual')).join(' y ')}
+              </span>
+            ) : null}
           </span>
         </span>
-        <span className="flex items-start gap-2 text-sm"><CalendarDays aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />{fechas ?? <span className="text-muted-foreground">Fechas no publicadas</span>}</span>
-        <span className="flex min-w-0 flex-col gap-2 text-sm">
+        <span className="flex min-w-0 flex-col gap-1.5 text-sm">
+          <span className="flex items-start gap-2">
+            <CalendarDays aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            {fechas ?? <span className="text-muted-foreground">Fechas no publicadas</span>}
+          </span>
+          {e.ciudad || e.pais ? (
+            <span className="flex min-w-0 flex-wrap items-center gap-2">
+              <MapPin aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              {e.ciudad ? <span className="break-words">{e.ciudad}</span> : null}
+              {e.pais ? <BanderaPais pais={e.pais} /> : null}
+            </span>
+          ) : null}
+        </span>
+        <span className="flex gap-6 text-sm md:flex-col md:gap-1">
           <span>
-            <span className="cifra text-3xl leading-none">{e.pruebas}</span>{' '}
+            <span className="cifra text-2xl leading-none">{e.pruebas}</span>{' '}
             <span className="text-xs text-muted-foreground">{e.pruebas === 1 ? 'prueba publicada' : 'pruebas publicadas'}</span>
           </span>
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary-text">Ver edición<ArrowRight aria-hidden className="size-3.5" /></span>
-          <span className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <span>{e.armas.length > 0 ? e.armas.map((a) => WEAPON_LABEL[a]).join(', ') : 'Sin armas indicadas'}</span>
-            {e.formatos.length > 0
-              ? <span>{e.formatos.map((f) => (f === 'EQUIPOS' ? 'equipos' : 'individual')).join(' y ')}</span>
-              : null}
-          </span>
+          {typeof e.clasificados === 'number' && e.clasificados > 0 ? (
+            <span>
+              <span className="cifra text-2xl leading-none">{e.clasificados}</span>{' '}
+              <span className="text-xs text-muted-foreground">{e.clasificados === 1 ? 'clasificado' : 'clasificados'}</span>
+            </span>
+          ) : null}
+        </span>
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary-text">
+          Ver edición
+          <ArrowRight aria-hidden className="size-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
         </span>
       </Link>
     </li>
@@ -261,6 +321,9 @@ export function PruebasDeEdicion({
   );
 }
 
+/** El metal va escrito: el color no puede ser la única señal y `gold` está reservado a otra cosa. */
+const METAL_PODIO: Record<number, string> = { 1: 'Oro', 2: 'Plata', 3: 'Bronce' };
+
 function FilaPuesto({
   fila,
   volver,
@@ -268,14 +331,30 @@ function FilaPuesto({
   fila: Clasificacion['filas'][number];
   volver: string;
 }) {
+  const metal = fila.puesto !== null ? METAL_PODIO[fila.puesto] : undefined;
   const contenido = (
     <>
-      <span className="cifra self-start text-3xl leading-none md:self-center md:text-right">
+      <span
+        className={cn(
+          'cifra self-start leading-none md:self-center md:justify-self-end',
+          metal
+            ? 'inline-flex size-11 items-center justify-center rounded-full border-2 border-foreground/80 text-2xl'
+            : 'text-3xl md:text-right',
+        )}
+      >
         <span className="sr-only">{fila.puesto === null ? 'Sin puesto numérico: ' : 'Puesto '}</span>
         {fila.puesto ?? '—'}
       </span>
       <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="font-semibold break-words">{fila.nombre}</span>
+        <span className="flex flex-wrap items-center gap-2">
+          <span className={cn('font-semibold break-words', metal && 'text-lg leading-tight')}>{nombreVisible(fila.nombre)}</span>
+          {metal ? (
+            <Badge variant="outline" className="gap-1">
+              <Medal className="size-3" aria-hidden />
+              {metal}
+            </Badge>
+          ) : null}
+        </span>
         {fila.puesto === null && fila.puestoPublicado ? (
           <span className="text-xs text-muted-foreground">Publicado como «{fila.puestoPublicado}»</span>
         ) : null}
@@ -292,12 +371,12 @@ function FilaPuesto({
   const rejilla =
     'grid min-h-11 grid-cols-[3rem_minmax(0,1fr)] items-center gap-x-4 gap-y-2 px-4 py-4 md:grid-cols-[3rem_minmax(0,2fr)_minmax(0,1.5fr)]';
   return (
-    <li>
+    <li className={metal ? 'bg-secondary/60' : undefined}>
       {fila.personaId ? (
         <Link
           href={rutaFichaConRetorno(fila.personaId, volver)}
           prefetch={false}
-          aria-label={`Abrir la ficha deportiva de ${fila.nombre}`}
+          aria-label={`Abrir la ficha deportiva de ${nombreVisible(fila.nombre)}`}
           className={cn(
             rejilla,
             'hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset',
@@ -396,7 +475,7 @@ export function EdicionCompleta({
   edicion,
   criterios,
 }: {
-  edicion: EdicionDetalle;
+  edicion: EdicionConAsaltos;
   criterios: CriteriosEdicion;
 }) {
   const fechas = periodo(edicion.inicio, edicion.fin);
@@ -453,14 +532,88 @@ export function EdicionCompleta({
       </Bloque>
 
       {elegida && edicion.clasificacion ? (
-        <ClasificacionDePrueba
-          edicion={edicion}
-          prueba={elegida}
-          clasificacion={edicion.clasificacion}
-          criterios={criterios}
-        />
+        <ResultadosDePrueba edicion={edicion} prueba={elegida} clasificacion={edicion.clasificacion} criterios={criterios} />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Clasificación y, si hay asaltos importados, poules y cuadro en pestañas. Sin
+ * asaltos no hay pestañas: una pestaña vacía parecería un fallo de la fuente.
+ */
+function ResultadosDePrueba({
+  edicion,
+  prueba,
+  clasificacion,
+  criterios,
+}: {
+  edicion: EdicionConAsaltos;
+  prueba: PruebaDeEdicion;
+  clasificacion: Clasificacion;
+  criterios: CriteriosEdicion;
+}) {
+  const tabla = <ClasificacionDePrueba edicion={edicion} prueba={prueba} clasificacion={clasificacion} criterios={criterios} />;
+  const asaltos = edicion.asaltos;
+  if (asaltos === 'error') {
+    return (
+      <div className="flex flex-col gap-3">
+        {tabla}
+        <p role="status" className="medida text-sm text-warn">
+          Las poules y el cuadro de esta prueba no se han podido leer ahora. La clasificación sí es la importada.
+        </p>
+      </div>
+    );
+  }
+  if (!asaltos || (asaltos.poules.length === 0 && asaltos.cuadro.length === 0)) return tabla;
+
+  const volver = construirUrlEdicion(edicion.id, { prueba: prueba.id, origen: criterios.origen, catalogo: criterios.catalogo });
+  const nAsaltos = (n: number) => (n === 1 ? '1 asalto' : `${n} asaltos`);
+  return (
+    <Tabs defaultValue="clasificacion" className="gap-4">
+      <TabsList variant="line" aria-label="Resultados de la prueba" className="w-full justify-start overflow-x-auto border-b">
+        <TabsTrigger value="clasificacion" className="min-h-11 flex-none px-3">
+          <ListOrdered aria-hidden />
+          Clasificación
+        </TabsTrigger>
+        {asaltos.poules.length > 0 ? (
+          <TabsTrigger value="poules" className="min-h-11 flex-none px-3">
+            <Grid3x3 aria-hidden />
+            Poules
+            <span className="text-xs text-muted-foreground">{asaltos.poules.length}</span>
+          </TabsTrigger>
+        ) : null}
+        {asaltos.cuadro.length > 0 ? (
+          <TabsTrigger value="cuadro" className="min-h-11 flex-none px-3">
+            <GitFork aria-hidden className="rotate-90" />
+            Cuadro
+          </TabsTrigger>
+        ) : null}
+      </TabsList>
+      <TabsContent value="clasificacion">{tabla}</TabsContent>
+      {asaltos.poules.length > 0 ? (
+        <TabsContent value="poules" className="flex flex-col gap-4">
+          <Nota>
+            {nAsaltos(asaltos.poules.reduce((n, p) => n + p.filas.reduce((m, f) => m + f.asaltos, 0) / 2, 0))} de
+            poule importados de {fuenteResultado(asaltos.fuente)}. Victorias, tocados e índice se calculan con esos
+            asaltos.
+          </Nota>
+          <PoulesDePrueba poules={asaltos.poules} volver={volver} />
+        </TabsContent>
+      ) : null}
+      {asaltos.cuadro.length > 0 ? (
+        <TabsContent value="cuadro" className="flex flex-col gap-4">
+          <Nota>
+            Eliminación directa importada de {fuenteResultado(asaltos.fuente)}, desde la primera ronda publicada
+            hasta la final.
+          </Nota>
+          <CuadroDePrueba cuadro={asaltos.cuadro} volver={volver} />
+        </TabsContent>
+      ) : null}
+      {asaltos.truncado ? (
+        <Nota>Se muestran los primeros asaltos importados de esta prueba; hay más que no caben en esta vista.</Nota>
+      ) : null}
+    </Tabs>
   );
 }
 

@@ -1,13 +1,14 @@
-import { consultaSugerencias, MAX_SUGERENCIAS, type SugerenciaPersona } from './sugerencias-modelo';
+import { consultaSugerencias, MAX_SUGERENCIAS } from './sugerencias-modelo';
+import type { SugerenciaConResumen } from './tipos-busqueda';
 
-export type EstadoSugerencias = { estado: 'reposo' | 'cargando' | 'ok' | 'error'; items: SugerenciaPersona[] };
+export type EstadoSugerencias = { estado: 'reposo' | 'cargando' | 'ok' | 'error'; items: SugerenciaConResumen[] };
 
 /** Una instancia por campo: caché efímera, nunca compartida entre sesiones. */
 export function crearSolicitanteSugerencias(
   recibir: (estado: EstadoSugerencias) => void,
   solicitar: typeof fetch = fetch,
 ) {
-  const cache = new Map<string, { hasta: number; items: SugerenciaPersona[] }>();
+  const cache = new Map<string, { hasta: number; items: SugerenciaConResumen[] }>();
   let version = 0;
   let temporizador: ReturnType<typeof setTimeout> | undefined;
   let aborto: AbortController | undefined;
@@ -38,7 +39,7 @@ export function crearSolicitanteSugerencias(
             signal: aborto.signal, cache: 'no-store', credentials: 'same-origin',
           });
           if (!response.ok) throw new Error('SUGERENCIAS_NO_DISPONIBLES');
-          const datos = await response.json() as { estado?: string; items?: SugerenciaPersona[] };
+          const datos = await response.json() as { estado?: string; items?: SugerenciaConResumen[] };
           if (datos.estado !== 'ok' || !Array.isArray(datos.items)) throw new Error('RESPUESTA_INVALIDA');
           if (turno !== version) return;
           const items = datos.items.slice(0, MAX_SUGERENCIAS);

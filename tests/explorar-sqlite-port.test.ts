@@ -150,12 +150,12 @@ describe('SQL deportivo nativo, con esquema D1 real y SQLite efímero', () => {
     expect(t.calls.every((c) => c.parameters <= 100)).toBe(true);
   });
 
-  it('acota lecturas de candidatos a 192, resultados a ocho y no consulta por texto corto o inválido', async () => {
+  it('acota lecturas de candidatos a 216, resultados a ocho y no consulta por texto corto o inválido', async () => {
     const t = entorno();
     for (let n = 0; n < 240; n++) t.persona(`candidato-${n}`, `Carlos Garcia Z${n}`);
     const raw = await t.db.execute(sqlCandidatosSugerencias('carlos garcia fernandez lopez'));
-    expect(raw.rows.length).toBeLessThanOrEqual(192);
-    expect(t.calls.at(-1)?.parameters).toBe(33);
+    expect(raw.rows.length).toBeLessThanOrEqual(216);
+    expect(t.calls.at(-1)?.parameters).toBe(50);
     const r = await sugerirPersonas(t.ctx, { q: 'carlos' });
     if (r.estado !== 'ok') throw new Error(r.estado);
     expect(r.items).toHaveLength(8);

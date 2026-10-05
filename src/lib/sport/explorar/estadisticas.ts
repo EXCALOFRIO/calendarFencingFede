@@ -15,6 +15,10 @@ export type FilaAgregadoEstadistico = {
   mejorPuesto: number | null;
   podios: number;
   victorias: number;
+  /** Puestos 2, 3 y 1 a 8; opcionales para filas construidas antes de existir. */
+  platas?: number;
+  bronces?: number;
+  finales?: number;
   sinPuesto: number;
   conflictos: number;
   sinFecha: number;
@@ -62,6 +66,55 @@ export function aDetalleEstadistico(rows: readonly FilaAgregadoEstadistico[]): E
     temporadasRecortadas: temporadas.length > LIMITE_TEMPORADAS_ESTADISTICAS,
     alcance: 'historial_individual_importado',
   };
+}
+
+export type EjeDesglose = 'tipo' | 'categoria' | 'arma';
+
+export type GrupoDesglose = ResumenEstadistico & {
+  clave: string;
+  tipo: string | null;
+  categoria: { codigo: string; raw: string | null } | null;
+  arma: Arma | null;
+};
+
+/**
+ * Suma los grupos finos (tipo × categoría × arma × género) por un solo eje.
+ * Cada prueba pertenece a un único grupo fino, así que la suma no duplica; el
+ * mejor puesto es el mínimo de los grupos y sigue siendo `null` si ninguno lo tiene.
+ */
+export function agruparDesglose(
+  detalle: EstadisticasDeportista,
+  eje: EjeDesglose,
+): GrupoDesglose[] {
+  const grupos = new Map<string, GrupoDesglose>();
+  for (const c of detalle.porCategoria) {
+    const clave = eje === 'tipo' ? `t:${c.tipo ?? ''}` : eje === 'categoria' ? `c:${c.categoria.codigo}|${c.categoria.raw ?? ''}` : `a:${c.arma}`;
+    const previo = grupos.get(clave);
+    if (!previo) {
+      grupos.set(clave, {
+        pruebas: c.pruebas, conPuesto: c.conPuesto, sinPuesto: c.sinPuesto, podios: c.podios,
+        victorias: c.victorias, mejorPuesto: c.mejorPuesto, conflictos: c.conflictos,
+        sinFecha: c.sinFecha, desde: c.desde, hasta: c.hasta,
+        clave,
+        tipo: eje === 'tipo' ? c.tipo : null,
+        categoria: eje === 'categoria' ? c.categoria : null,
+        arma: eje === 'arma' ? c.arma : null,
+      });
+      continue;
+    }
+    previo.pruebas += c.pruebas;
+    previo.conPuesto += c.conPuesto;
+    previo.sinPuesto += c.sinPuesto;
+    previo.podios += c.podios;
+    previo.victorias += c.victorias;
+    previo.conflictos += c.conflictos;
+    previo.sinFecha += c.sinFecha;
+    previo.mejorPuesto = previo.mejorPuesto === null ? c.mejorPuesto
+      : c.mejorPuesto === null ? previo.mejorPuesto : Math.min(previo.mejorPuesto, c.mejorPuesto);
+    previo.desde = [previo.desde, c.desde].filter(Boolean).sort()[0] ?? null;
+    previo.hasta = [previo.hasta, c.hasta].filter(Boolean).sort().at(-1) ?? null;
+  }
+  return [...grupos.values()].sort((a, b) => b.pruebas - a.pruebas || a.clave.localeCompare(b.clave));
 }
 
 /** Barras de volumen, no curva de puestos entre categorías incomparables. */

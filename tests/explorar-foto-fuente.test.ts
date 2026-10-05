@@ -42,11 +42,19 @@ describe('contrato y política del lector oficial', () => {
     { image: 'http://static.fie.org/a.jpg' }, { image: 'https://usuario:clave@static.fie.org/a.jpg' },
     { image: 'https://static.fie.org:444/a.jpg' }, { image: 'https://static.fie.org/a.svg' },
     { image: 'https://static.fie.org/a.html' }, { image: 'https://static.fie.org/a.jpg?token=secreto' },
-    { id: 124 }, { id: '123' }, { countryCode: 'FRA' }, { date: '2008-01-01' },
+    { id: 124 }, { id: '123' }, { date: '2008-01-01' }, { countryCode: 'FRA', date: '2010-05-05' },
   ])('rechaza metadata ausente, insegura, ajena o posiblemente menor: %j', async (sobre) => {
     const fetch = simular(perfil(sobre));
     expect(await leerFotoOficial(123, DIA, { fetch })).toBeNull();
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['FRA', 'ITA', 'HUN', null])('enlaza el retrato de un adulto de cualquier nacionalidad (%s) con el mismo contrato', async (countryCode) => {
+    const fetch = simular(perfil({ countryCode }), imagen());
+    expect(await leerFotoOficial(123, DIA, { fetch })).toEqual({
+      src: SRC, fichaUrl: 'https://fie.org/athletes/123',
+    });
+    expect(fetch.mock.calls[1][1]).toMatchObject({ method: 'HEAD', credentials: 'omit' });
   });
 
   it.each<Record<string, string>>([

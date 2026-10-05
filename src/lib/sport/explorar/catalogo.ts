@@ -15,9 +15,11 @@ const esquema = z.object({
   cursor: z.string().min(1).max(600).optional(),
 }).strict();
 
-type FilaCatalogo = Parameters<typeof aResumen>[0];
+type FilaCatalogo = Parameters<typeof aResumen>[0] & { clasificados?: number | null };
+/** `clasificados` cuenta filas de clasificación de todas sus pruebas, no personas distintas. */
+export type EdicionDeCatalogo = EdicionResumen & { clasificados?: number };
 export type ResultadoCatalogo =
-  | { estado: 'ok'; ediciones: EdicionResumen[]; total: number; pruebas: number; siguiente: string | null }
+  | { estado: 'ok'; ediciones: EdicionDeCatalogo[]; total: number; pruebas: number; siguiente: string | null }
   | { estado: 'entrada_invalida' | 'cursor_invalido' | 'no_disponible' };
 export type VistaCatalogo = ResultadoCatalogo | { estado: 'sin_sesion' | 'error' };
 
@@ -47,11 +49,19 @@ export async function leerCatalogoEdiciones(ctx: ContextoExplorador, entrada: un
       SELECT count(*) AS total,
         coalesce(sum((SELECT count(*) FROM sport_competition c WHERE c.edition_id=e.id)), 0) AS pruebas
       FROM sport_edition e WHERE ${y(condiciones)}`),
+    // La página se elige antes de calcular los agregados: SQLite evalúa las
+    // subconsultas de las columnas antes de ordenar, y así contaba los
+    // resultados de todas las ediciones filtradas, no sólo de las visibles.
     ctx.db.execute(sql`
-      SELECT ${COLUMNAS_EDICION}
-      FROM sport_edition e WHERE ${y(pagina)}
-      ORDER BY coalesce(e.start_date, '0000-01-01') DESC, e.id DESC
-      LIMIT ${LIMITE_CATALOGO + 1}`),
+      SELECT ${COLUMNAS_EDICION},
+        (SELECT count(*) FROM sport_competition c JOIN sport_result cr ON cr.competition_id = c.id
+          WHERE c.edition_id = e.id) AS clasificados
+      FROM (
+        SELECT e.* FROM sport_edition e WHERE ${y(pagina)}
+        ORDER BY coalesce(e.start_date, '0000-01-01') DESC, e.id DESC
+        LIMIT ${LIMITE_CATALOGO + 1}
+      ) e
+      ORDER BY coalesce(e.start_date, '0000-01-01') DESC, e.id DESC`),
   ]);
   const [total] = filas<{ total: number; pruebas: number }>(conteo);
   const rows = filas<FilaCatalogo>(lista);
@@ -59,7 +69,7 @@ export async function leerCatalogoEdiciones(ctx: ContextoExplorador, entrada: un
   const ultima = visibles.at(-1);
   return {
     estado: 'ok',
-    ediciones: visibles.map(aResumen),
+    ediciones: visibles.map((f) => ({ ...aResumen(f), clasificados: Number(f.clasificados ?? 0) })),
     total: Number(total?.total ?? 0),
     pruebas: Number(total?.pruebas ?? 0),
     siguiente: rows.length > LIMITE_CATALOGO && ultima

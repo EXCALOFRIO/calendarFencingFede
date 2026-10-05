@@ -107,8 +107,8 @@ export async function leerFotoOficial(
       const perfil: unknown = JSON.parse(new TextDecoder().decode(contenido));
       if (!perfil || typeof perfil !== 'object' || Array.isArray(perfil)) return null;
       const publicado = perfil as Record<string, unknown>;
-      // España es el ámbito autorizado. El ID exacto debe coincidir.
-      if (publicado.id !== fieId || publicado.countryCode !== 'ESP') return null;
+      // Vale para cualquier nacionalidad, pero el ID publicado debe ser exactamente el pedido.
+      if (publicado.id !== fieId) return null;
       // No se guarda ni devuelve el cumpleaños; se usa únicamente como veto.
       if (typeof publicado.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(publicado.date) &&
         Number(hoy.slice(0, 4)) - Number(publicado.date.slice(0, 4)) <= 18) return null;

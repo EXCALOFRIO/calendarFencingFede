@@ -2,7 +2,7 @@ import { distanciaEdicion, fonetico, palabrasNombre, parecidoNombre } from '@/li
 
 export const MAX_CONSULTA_SUGERENCIAS = 80;
 export const MAX_SUGERENCIAS = 8;
-export const MAX_CANDIDATOS_SUGERENCIAS = 192;
+export const MAX_CANDIDATOS_SUGERENCIAS = 216;
 
 /** Sólo datos deportivos públicos. El parecido NO acredita identidad. */
 export type SugerenciaPersona = {

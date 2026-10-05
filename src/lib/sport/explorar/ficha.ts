@@ -25,6 +25,9 @@ import { consultaEstadisticas } from './estadisticas-sql';
 import { aDetalleEstadistico, type FilaAgregadoEstadistico } from './estadisticas';
 import { TIPO_ESTADISTICO_DOCUMENTADO } from './estadisticas-tipo';
 import { resolverPersonaPropia, type PropietarioResuelto } from './propietario';
+import { leerFilasPerfil } from './perfil-datos';
+import { construirPerfil } from './perfil-modelo';
+import type { FichaConPerfil } from './tipos-perfil';
 import type {
   Arma,
   CoberturaFicha,
@@ -131,7 +134,7 @@ export function posibleMenor(anioNacimiento: number | null, hoy: string): boolea
 }
 
 export type ResultadoFicha =
-  | { estado: 'ok'; ficha: FichaDeportiva }
+  | { estado: 'ok'; ficha: FichaConPerfil }
   | { estado: 'entrada_invalida' }
   | { estado: 'no_encontrada' }
   | { estado: 'no_disponible' }
@@ -169,7 +172,7 @@ export async function leerFicha(ctx: ContextoExplorador, entrada: unknown): Prom
   const lista = listaUuid(ids);
   const [cobPrueba, cobLecturas] = sqlCobertura(ids);
 
-  const [cabeceras, alias, estadisticas, resumen, lecturas, temporadas] = await Promise.all([
+  const [cabeceras, alias, estadisticas, resumen, lecturas, temporadas, filasPerfil] = await Promise.all([
     leerCabeceras(ctx.db, [canonicaId]),
     ctx.db.execute(sql`
       SELECT DISTINCT name_original AS nombre FROM sport_person_alias
@@ -184,6 +187,7 @@ export async function leerFicha(ctx: ContextoExplorador, entrada: unknown): Prom
       GROUP BY p.season
       ORDER BY max(p.published_on) DESC, p.season DESC
       LIMIT 40`),
+    leerFilasPerfil(ctx.db, ids, canonicaId),
   ]);
 
   const cabecera = cabeceras.get(canonicaId);
@@ -208,6 +212,13 @@ export async function leerFicha(ctx: ContextoExplorador, entrada: unknown): Prom
 
   const esPropia = propietario.estado === 'confirmada' && propietario.personaId === canonicaId;
   const esMenor = posibleMenor(cabecera.anioNacimiento, ctx.hoy());
+  const filasEstadisticas = filas<FilaAgregadoEstadistico>(estadisticas);
+  const rankingOficial: FichaDeportiva['rankingOficial'] = {
+    temporada: temporadaRanking,
+    formato,
+    temporadasDisponibles: disponibles,
+    entradas: entradasRanking,
+  };
 
   return {
     estado: 'ok',
@@ -225,18 +236,12 @@ export async function leerFicha(ctx: ContextoExplorador, entrada: unknown): Prom
       esPropia,
       estadisticas: {
         conjunto: 'clasificaciones_individuales',
-        porTipo: aEstadisticas(
-          filas<FilaAgregadoEstadistico>(estadisticas).filter((r) => r.clase === 'tipo'),
-        ),
-        detalle: aDetalleEstadistico(filas<FilaAgregadoEstadistico>(estadisticas)),
+        porTipo: aEstadisticas(filasEstadisticas.filter((r) => r.clase === 'tipo')),
+        detalle: aDetalleEstadistico(filasEstadisticas),
       },
       cobertura,
-      rankingOficial: {
-        temporada: temporadaRanking,
-        formato,
-        temporadasDisponibles: disponibles,
-        entradas: entradasRanking,
-      },
+      rankingOficial,
+      perfil: construirPerfil({ ...filasPerfil, estadisticas: filasEstadisticas }, { esMenor, rankingOficial }),
     },
   };
 }

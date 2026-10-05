@@ -202,9 +202,10 @@ export function sqlPruebasComunes(
   ];
   return sql`
     WITH comunes AS (
-      SELECT ra.competition_id
-      FROM sport_result ra JOIN sport_result rb ON rb.competition_id = ra.competition_id
-      WHERE ra.person_id IN (${listaUuid(yo)}) AND rb.person_id IN (${listaUuid(rival)})
+      -- Cada lado por sport_result_person_date_idx; un JOIN por prueba leía la clasificación entera.
+      SELECT ra.competition_id FROM sport_result ra WHERE ra.person_id IN (${listaUuid(yo)})
+      INTERSECT
+      SELECT rb.competition_id FROM sport_result rb WHERE rb.person_id IN (${listaUuid(rival)})
       UNION
       SELECT b.competition_id FROM sport_bout b WHERE ${parejaDe(yo, rival)}
     )
@@ -212,7 +213,8 @@ export function sqlPruebasComunes(
            c.gender AS genero, c.category AS categoria, c.category_raw AS "categoriaRaw",
            c.season AS temporada,
            (SELECT count(*) FROM sport_bout b
-            WHERE b.competition_id = c.id AND ${parejaDe(yo, rival)}) AS asaltos,
+            -- El + hace entrar por la pareja (sport_bout_a/b_idx), no por todos los asaltos de la prueba.
+            WHERE +b.competition_id = c.id AND ${parejaDe(yo, rival)}) AS asaltos,
            (SELECT coalesce(group_concat(cov.fact_kind || ':' || cov.status, ','), '')
             FROM sport_import_coverage cov
             WHERE cov.competition_id = c.id AND cov.fact_kind IN ('pools', 'tableau', 'pdf')) AS lecturas

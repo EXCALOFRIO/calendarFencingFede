@@ -1,8 +1,11 @@
 import { SearchX, TriangleAlert, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import type { CoberturaCaraACara } from '@/lib/sport/explorar/cara-a-cara';
+import { etiquetaRonda } from '@/lib/sport/explorar/ediciones-asaltos';
+import { inicialesVisibles } from '@/lib/sport/nombre-visible';
 import {
   chipsCaraACara,
   construirUrlCaraACara,
@@ -162,9 +165,16 @@ export function BalanceCaraACara({ datos }: { datos: DatosCaraACara }) {
       </Bloque>
     );
   }
+  const decididos = r.victorias + r.derrotas;
   return (
     <Bloque id="h2h-balance" titulo="Balance" nivel="pagina">
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-5 border-y bg-card p-4 sm:p-6 lg:grid-cols-4">
+      {decididos > 0 ? (
+        <div aria-hidden className="flex h-2 overflow-hidden rounded-full bg-muted">
+          <span className="bg-ok" style={{ width: `${(r.victorias / decididos) * 100}%` }} />
+          <span className="bg-danger" style={{ width: `${(r.derrotas / decididos) * 100}%` }} />
+        </div>
+      ) : null}
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-5 rounded-lg border bg-card p-4 sm:p-6 lg:grid-cols-4">
         <div className="flex min-w-0 flex-col gap-2">
           <dt className="text-xs text-muted-foreground break-words">Victorias de {titular(yo.nombre)}</dt>
           <dd className="cifra text-5xl leading-none">{r.victorias}</dd>
@@ -201,12 +211,39 @@ export function BalanceCaraACara({ datos }: { datos: DatosCaraACara }) {
 
 /* ---------------------------------------------------------------------- asaltos */
 
-function FilaAsalto({ a, yo, rival }: { a: AsaltoDto; yo: PersonaCaraACara; rival: PersonaCaraACara }) {
-  const categoria = CATEGORY_LABEL[a.prueba.categoria.codigo as keyof typeof CATEGORY_LABEL] ?? a.prueba.categoria.codigo;
-  const victoria = a.resultado === 'victoria';
+/** Pastilla V/D: la letra y el texto oculto dicen el resultado, el color sólo lo acompaña. */
+function PastillaResultado({
+  victoria,
+  className,
+  decorativa = false,
+}: {
+  victoria: boolean;
+  className?: string;
+  /** Cuando el resultado ya va escrito al lado, la pastilla no se vuelve a leer. */
+  decorativa?: boolean;
+}) {
   return (
-    <li className="grid grid-cols-2 gap-x-4 gap-y-4 px-4 py-5 md:grid-cols-[minmax(0,1.3fr)_minmax(0,3fr)_minmax(0,1.2fr)_minmax(0,1.6fr)_minmax(0,1fr)] md:items-center">
-      <Celda etiqueta="Marcador" className="col-span-2 md:col-span-1">
+    <span
+      aria-hidden={decorativa || undefined}
+      className={cn(
+        'inline-flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-background',
+        victoria ? 'bg-ok' : 'bg-danger',
+        className,
+      )}
+    >
+      <span aria-hidden>{victoria ? 'V' : 'D'}</span>
+      {decorativa ? null : <span className="sr-only">{victoria ? 'Victoria' : 'Derrota'}</span>}
+    </span>
+  );
+}
+
+function FilaAsalto({ a, yo, rival }: { a: AsaltoDto; yo: PersonaCaraACara; rival: PersonaCaraACara }) {
+  const victoria = a.resultado === 'victoria';
+  const ronda = a.rondaPublicada ? etiquetaRonda(a.fase, a.rondaPublicada) : null;
+  return (
+    <li className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3 px-4 py-4 md:grid-cols-[auto_minmax(0,1.2fr)_minmax(0,1.6fr)_minmax(0,1fr)]">
+      <PastillaResultado victoria={victoria} decorativa className="size-9 text-sm" />
+      <Celda etiqueta="Marcador">
         <span className="flex items-baseline gap-2">
           <span className="cifra text-4xl leading-none">{a.marcador.mios}</span>
           <span className="text-xs text-muted-foreground">frente a</span>
@@ -219,32 +256,72 @@ function FilaAsalto({ a, yo, rival }: { a: AsaltoDto; yo: PersonaCaraACara; riva
           de {titular(yo.nombre)} sobre {titular(rival.nombre)}
         </span>
       </Celda>
-      <Celda etiqueta="Torneo y prueba" className="col-span-2 md:col-span-1">
-        <span className="font-medium break-words">{titular(a.torneo.nombre)}</span>
-        <span className="text-xs text-muted-foreground break-words">
-          {WEAPON_LABEL[a.prueba.arma]} {GENDER_LABEL[a.prueba.genero].toLowerCase()}, {categoria}
-          {a.prueba.categoria.raw ? ` («${a.prueba.categoria.raw}»)` : ''}
-        </span>
-      </Celda>
-      <Celda etiqueta="Fecha y temporada">
-        {a.fecha ? (
-          <Dato>{fechaLegible(a.fecha)}</Dato>
-        ) : (
-          <span className="text-sm text-muted-foreground">Fecha no publicada</span>
-        )}
-        <span className="text-xs text-muted-foreground">{etiquetaTemporada(a.temporada)}</span>
-      </Celda>
-      <Celda etiqueta="Fase y ronda">
-        <Dato>{etiquetaFase(a.fase)}</Dato>
+      <Celda etiqueta="Fase y ronda" className="col-start-2 md:col-start-auto">
+        <Dato>
+          {etiquetaFase(a.fase)}
+          {ronda ? <span className="text-muted-foreground"> · {ronda}</span> : null}
+        </Dato>
         {a.rondaPublicada ? (
           <span className="text-xs text-muted-foreground break-words">Ronda publicada: «{a.rondaPublicada}»</span>
         ) : (
           <span className="text-xs text-muted-foreground">Ronda no publicada</span>
         )}
       </Celda>
-      <Celda etiqueta="Fuente">
+      <Celda etiqueta="Fuente" className="col-start-2 md:col-start-auto">
         <EnlaceFuente url={a.enlace} etiqueta="Abrir en la fuente" />
       </Celda>
+    </li>
+  );
+}
+
+type GrupoAsaltos = { clave: string; primero: AsaltoDto; asaltos: AsaltoDto[] };
+
+/** Agrupa asaltos seguidos de la misma prueba; el orden (más reciente primero) no se toca. */
+function agruparPorPrueba(items: readonly AsaltoDto[]): GrupoAsaltos[] {
+  const grupos: GrupoAsaltos[] = [];
+  for (const a of items) {
+    const clave = `${a.torneo.id}|${a.prueba.id}`;
+    const ultimo = grupos.at(-1);
+    if (ultimo && ultimo.clave === clave) ultimo.asaltos.push(a);
+    else grupos.push({ clave, primero: a, asaltos: [a] });
+  }
+  return grupos;
+}
+
+function GrupoDePrueba({ g, yo, rival }: { g: GrupoAsaltos; yo: PersonaCaraACara; rival: PersonaCaraACara }) {
+  const a = g.primero;
+  const categoria = CATEGORY_LABEL[a.prueba.categoria.codigo as keyof typeof CATEGORY_LABEL] ?? a.prueba.categoria.codigo;
+  const ganados = g.asaltos.filter((x) => x.resultado === 'victoria').length;
+  return (
+    <li className="overflow-hidden rounded-lg border bg-card">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b bg-secondary/60 px-4 py-3">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="font-semibold break-words">{titular(a.torneo.nombre)}</span>
+          <span className="text-xs text-muted-foreground break-words">
+            {WEAPON_LABEL[a.prueba.arma]} {GENDER_LABEL[a.prueba.genero].toLowerCase()}, {categoria}
+            {a.prueba.categoria.raw ? ` («${a.prueba.categoria.raw}»)` : ''}
+          </span>
+        </div>
+        <div className="flex flex-col items-start gap-0.5 text-sm sm:items-end">
+          {a.fecha ? (
+            <Dato>{fechaLegible(a.fecha)}</Dato>
+          ) : (
+            <span className="text-sm text-muted-foreground">Fecha no publicada</span>
+          )}
+          <span className="text-xs text-muted-foreground">{etiquetaTemporada(a.temporada)}</span>
+        </div>
+        {g.asaltos.length > 1 ? (
+          <span className="w-full text-xs text-muted-foreground">
+            {g.asaltos.length} asaltos en esta prueba: {ganados} {ganados === 1 ? 'ganado' : 'ganados'} por{' '}
+            {titular(yo.nombre)}
+          </span>
+        ) : null}
+      </div>
+      <ul className="divide-y">
+        {g.asaltos.map((x) => (
+          <FilaAsalto key={x.id} a={x} yo={yo} rival={rival} />
+        ))}
+      </ul>
     </li>
   );
 }
@@ -274,9 +351,9 @@ export function AsaltosCaraACara({
         </p>
       ) : (
         <>
-          <ul className="divide-y rounded-md border bg-card" aria-label="Asaltos entre las dos personas">
-            {datos.items.map((a) => (
-              <FilaAsalto key={a.id} a={a} yo={yo} rival={rival} />
+          <ul className="flex flex-col gap-4" aria-label="Asaltos entre las dos personas, por prueba">
+            {agruparPorPrueba(datos.items).map((g) => (
+              <GrupoDePrueba key={`${g.clave}|${g.primero.id}`} g={g} yo={yo} rival={rival} />
             ))}
           </ul>
           <nav aria-label="Páginas de asaltos" className="flex flex-wrap items-center gap-3">
@@ -321,25 +398,71 @@ export function CabeceraCaraACara({
     'inline-flex min-h-11 items-center text-sm text-primary-text underline-offset-4 hover:underline',
     ENLACE_CLASES,
   );
+  // La cabecera también se pinta sólo con las personas (sin resumen ni asaltos).
+  const r = datos.resumen;
+  const conBalance = Boolean(r && r.asaltos > 0);
+  // Los últimos asaltos sólo son los últimos en la primera página.
+  const ultimos = !criterios.cursor ? (datos.items ?? []).slice(0, 5) : [];
   return (
-    <header className="flex min-w-0 flex-col gap-4 border-y border-l-2 border-l-primary bg-card px-4 py-5 sm:px-6 sm:py-6">
+    <header className="flex min-w-0 flex-col gap-5 overflow-hidden rounded-xl border bg-card px-4 py-5 sm:px-6 sm:py-6">
       <h1 className="text-3xl leading-tight sm:text-4xl">Cara a cara</h1>
-      <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
-        <div className="flex min-w-0 flex-col gap-1">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-x-3 gap-y-4 sm:gap-x-6">
+        <dl className="flex min-w-0 flex-col items-start gap-1">
           <dt className="text-xs text-muted-foreground">Visto desde</dt>
           <dd className="flex min-w-0 flex-col items-start gap-2">
-            <span className="font-display text-2xl leading-tight break-words sm:text-3xl">{titular(yo.nombre)}</span>
+            <Avatar className="size-12 sm:size-16">
+              <AvatarFallback className="text-base sm:text-lg">{inicialesVisibles(yo.nombre)}</AvatarFallback>
+            </Avatar>
+            <span className="font-display text-xl leading-tight break-words sm:text-3xl">{titular(yo.nombre)}</span>
             {yo.pais ? <BanderaPais pais={yo.pais} conNombre /> : null}
           </dd>
+        </dl>
+        <div aria-hidden className="flex flex-col items-center gap-1 self-center pt-5">
+          {conBalance && r ? (
+            <>
+              <span className="cifra flex items-baseline gap-1.5 text-4xl leading-none sm:gap-3 sm:text-6xl">
+                <span className={r.victorias >= r.derrotas ? 'text-foreground' : 'text-muted-foreground'}>{r.victorias}</span>
+                <span className="text-2xl text-muted-foreground sm:text-4xl">–</span>
+                <span className={r.derrotas >= r.victorias ? 'text-foreground' : 'text-muted-foreground'}>{r.derrotas}</span>
+              </span>
+              <span className="text-center text-xs text-muted-foreground">
+                tocados <span className="cifra">{r.tantosFavor}</span>–<span className="cifra">{r.tantosContra}</span>
+              </span>
+            </>
+          ) : (
+            <span className="font-display text-2xl text-muted-foreground sm:text-3xl">vs</span>
+          )}
         </div>
-        <div className="flex min-w-0 flex-col gap-1">
+        <dl className="flex min-w-0 flex-col items-end gap-1 text-right">
           <dt className="text-xs text-muted-foreground">Rival</dt>
-          <dd className="flex min-w-0 flex-col items-start gap-2">
-            <span className="font-display text-2xl leading-tight break-words sm:text-3xl">{titular(rival.nombre)}</span>
+          <dd className="flex min-w-0 flex-col items-end gap-2">
+            <Avatar className="size-12 sm:size-16">
+              <AvatarFallback className="text-base sm:text-lg">{inicialesVisibles(rival.nombre)}</AvatarFallback>
+            </Avatar>
+            <span className="font-display text-xl leading-tight break-words sm:text-3xl">{titular(rival.nombre)}</span>
             {rival.pais ? <BanderaPais pais={rival.pais} conNombre /> : null}
           </dd>
+        </dl>
+      </div>
+      {conBalance && r ? (
+        <p className="sr-only">
+          {r.victorias} {r.victorias === 1 ? 'victoria' : 'victorias'} y {r.derrotas}{' '}
+          {r.derrotas === 1 ? 'derrota' : 'derrotas'} de {titular(yo.nombre)}, {r.tantosFavor} tocados a favor y{' '}
+          {r.tantosContra} en contra, en los asaltos importados con estos filtros.
+        </p>
+      ) : null}
+      {ultimos.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-center gap-2 border-t pt-4">
+          <span className="text-xs text-muted-foreground">Últimos asaltos, del más reciente:</span>
+          <ol className="flex gap-1.5">
+            {ultimos.map((a) => (
+              <li key={a.id}>
+                <PastillaResultado victoria={a.resultado === 'victoria'} />
+              </li>
+            ))}
+          </ol>
         </div>
-      </dl>
+      ) : null}
       <nav aria-label="Enlaces del cara a cara" className="flex flex-wrap gap-x-5 gap-y-1">
         <Link href={rutaFicha(yo.id)} prefetch={false} className={enlace} aria-label={`Ficha de ${titular(yo.nombre)}`}>
           Ficha consultada
@@ -406,10 +529,13 @@ function FilaPersona({
         href={href}
         prefetch={false}
         className={cn(
-          'grid min-h-11 gap-x-4 gap-y-2 px-4 py-4 hover:bg-accent focus-visible:bg-accent md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.5fr)] md:items-center',
+          'grid min-h-11 grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 px-4 py-4 hover:bg-accent focus-visible:bg-accent md:grid-cols-[auto_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.5fr)] md:items-center',
           ENLACE_CLASES,
         )}
       >
+        <Avatar className="row-span-3 size-10 md:row-span-1">
+          <AvatarFallback>{inicialesVisibles(nombre)}</AvatarFallback>
+        </Avatar>
         <span className="flex min-w-0 flex-col gap-1">
           <span className="font-medium break-words">{titular(nombre)}</span>
           {aviso}
