@@ -52,14 +52,6 @@ function palabrasCoinciden(columna: SQL, palabras: readonly string[]): SQL {
   );
 }
 
-function condicionNombre(q: string): { nombre: SQL; alias: SQL } {
-  const palabras = q.split(' ');
-  return {
-    nombre: palabrasCoinciden(sql`p.name_normalized`, palabras),
-    alias: palabrasCoinciden(sql`a.name_normalized`, palabras),
-  };
-}
-
 /**
  * Nacionalidad documentada: la que publica la persona o la que consta en sus
  * resultados y rankings oficiales. Para ESP también cuenta una licencia RFEE
@@ -97,8 +89,20 @@ function condicionPrueba(f: FiltrosBusqueda): SQL | null {
     WHERE r.person_id IN ${grupoP} AND ${y(condiciones)}
   )`;
 
+  const ranking = condicionRanking(f);
+  if (!ranking) return porResultado;
+
+  return sql`(${porResultado} OR EXISTS (
+    SELECT 1 FROM sport_ranking_entry en2
+    JOIN sport_ranking_publication pub ON pub.id = en2.publication_id
+    WHERE en2.person_id IN ${grupoP} AND ${ranking}
+  ))`;
+}
+
+/** Condición sobre `pub`, o `null` si algún filtro no lo documenta el ranking. */
+function condicionRanking(f: FiltrosBusqueda): SQL | null {
   const soloTorneo = f.torneo || f.edicionId || f.desde || f.hasta || f.ambito;
-  if (soloTorneo) return porResultado;
+  if (soloTorneo) return null;
 
   const rankingCond: SQL[] = [];
   if (f.temporada) rankingCond.push(sql`pub.season = ${f.temporada}`);
@@ -107,12 +111,80 @@ function condicionPrueba(f: FiltrosBusqueda): SQL | null {
   if (f.categoria) rankingCond.push(sql`pub.category = ${f.categoria}`);
   if (f.categoriaRaw) rankingCond.push(sql`pub.category_raw = ${f.categoriaRaw}`);
   if (f.formato) rankingCond.push(sql`pub.format = ${f.formato}`);
+  return y(rankingCond);
+}
 
-  return sql`(${porResultado} OR EXISTS (
-    SELECT 1 FROM sport_ranking_entry en2
-    JOIN sport_ranking_publication pub ON pub.id = en2.publication_id
-    WHERE en2.person_id IN ${grupoP} AND ${y(rankingCond)}
-  ))`;
+/** Umbral de `hechos_prueba`: una temporada y arma ronda 10-15 mil resultados. */
+const MAX_HECHOS_POR_ROWID = 20000;
+
+/**
+ * La misma condición que `condicionPrueba` para la búsqueda por nombre. Las
+ * pruebas y publicaciones que cumplen los filtros se calculan una vez
+ * (`pruebas_ok`, `pubs_ok`) en vez de unir prueba y edición a cada resultado
+ * de cada candidata. Si las pruebas válidas suman pocos resultados
+ * (`hechos_prueba`), el cruce es por rowid y se resuelve en
+ * sport_result_person_date_idx sin leer la tabla de resultados; con muchos,
+ * construir esa lista cuesta más que leer los resultados de las candidatas
+ * hasta llenar la página. El CTE recursivo del grupo sólo se evalúa para las
+ * candidatas con alguna persona fundida en ellas (`con_fundidas`); el resto es
+ * un grupo de una sola persona. Las CTE se añaden tras `ordenadas`; la
+ * condición se evalúa sobre `p`. Las fechas dependen del resultado
+ * (`r.occurred_on`): con `desde`/`hasta` devuelve `null` y se usa
+ * `condicionPrueba`.
+ */
+function pruebaPorConjuntos(f: FiltrosBusqueda): { ctes: SQL; condicion: SQL } | null {
+  if (f.desde || f.hasta) return null;
+  const condiciones = condicionesPrueba(f, FECHA_RESULTADO);
+  if (condiciones.length === 0) return null;
+  const ranking = condicionRanking(f);
+
+  // `+`: sin él SQLite recorre los resultados de cada prueba válida (o cada
+  // rowid) por cada candidata en vez de los pocos resultados de la candidata.
+  const cumple = (personas: SQL) => sql`(CASE WHEN (SELECT pocos FROM modo_prueba)
+      THEN EXISTS (
+        SELECT 1 FROM sport_result r
+        WHERE r.person_id IN ${personas} AND +r.rowid IN hechos_prueba)
+      ELSE EXISTS (
+        SELECT 1 FROM sport_result r
+        WHERE r.person_id IN ${personas} AND +r.competition_id IN pruebas_ok) END${
+    ranking
+      ? sql` OR EXISTS (
+      SELECT 1 FROM sport_ranking_entry en2
+      WHERE en2.person_id IN ${personas} AND en2.publication_id IN pubs_ok)`
+      : sql``
+  })`;
+
+  return {
+    ctes: sql`,
+    pruebas_ok(id) AS MATERIALIZED (
+      SELECT c.id FROM sport_competition c
+      CROSS JOIN sport_edition e ON e.id = c.edition_id
+      LEFT JOIN event ev0 ON ev0.id = e.event_id
+      WHERE ${y(condiciones)}
+    ),
+    hechos_prueba(rid) AS MATERIALIZED (
+      SELECT r.rowid FROM sport_result r
+      WHERE r.competition_id IN pruebas_ok
+      LIMIT ${sql.raw(String(MAX_HECHOS_POR_ROWID + 1))}
+    ),
+    modo_prueba(pocos) AS MATERIALIZED (
+      SELECT count(*) <= ${sql.raw(String(MAX_HECHOS_POR_ROWID))} FROM hechos_prueba
+    ),${
+      ranking
+        ? sql`
+    pubs_ok(id) AS MATERIALIZED (
+      SELECT pub.id FROM sport_ranking_publication pub WHERE ${ranking}
+    ),`
+        : sql``
+    }
+    con_fundidas(id) AS MATERIALIZED (
+      SELECT DISTINCT m.merged_into_person_id FROM sport_person m
+      WHERE m.merged_into_person_id IN (SELECT o.id FROM ordenadas o)
+    )`,
+    condicion: sql`CASE WHEN p.id IN con_fundidas
+      THEN ${cumple(grupoP)}
+      ELSE ${cumple(sql`(p.id)`)} END`,
+  };
 }
 
 type FilaBusqueda = {
@@ -130,25 +202,13 @@ export function sqlBusqueda(
   limite: number,
   clave: readonly (string | number)[] | null,
 ): SQL {
+  if (f.q) return sqlBusquedaPorNombre(f, f.q, limite, clave);
+
   // Sin nombre, casi todas las personas cumplen los filtros de prueba: el `+`
   // impide usar sport_person_merged_idx (casi todas tienen NULL) y deja a SQLite
   // recorrer sport_person_name_idx en el orden pedido, parando al llenar la
-  // página en vez de evaluar y ordenar a todas. Con nombre la coincidencia es
-  // rara y el recorrido secuencial por merged_idx es más rápido.
-  const condiciones: SQL[] = [
-    f.q ? sql`p.merged_into_person_id IS NULL` : sql`+p.merged_into_person_id IS NULL`,
-  ];
-  let aliasSql: SQL = sql`NULL`;
-
-  if (f.q) {
-    const { nombre, alias } = condicionNombre(f.q);
-    const porAlias = sql`EXISTS (SELECT 1 FROM sport_person_alias a WHERE a.person_id IN ${grupoP} AND ${alias})`;
-    condiciones.push(sql`(${nombre} OR ${porAlias})`);
-    aliasSql = sql`CASE WHEN ${nombre} THEN NULL ELSE (
-      SELECT a.name_original FROM sport_person_alias a
-      WHERE a.person_id IN ${grupoP} AND ${alias}
-      ORDER BY a.name_normalized, a.id LIMIT 1) END`;
-  }
+  // página en vez de evaluar y ordenar a todas.
+  const condiciones: SQL[] = [sql`+p.merged_into_person_id IS NULL`];
   if (f.nacionalidad) condiciones.push(condicionNacionalidad(f.nacionalidad));
   const prueba = condicionPrueba(f);
   if (prueba) condiciones.push(prueba);
@@ -158,12 +218,98 @@ export function sqlBusqueda(
 
   return sql`
     SELECT p.id AS id, p.display_name AS nombre, p.name_normalized AS "claveNombre",
-           ${aliasSql} AS alias, p.country_code AS pais, p.gender AS genero,
+           NULL AS alias, p.country_code AS pais, p.gender AS genero,
            p.birth_year AS "anioNacimiento"
     FROM sport_person p
     WHERE ${y(condiciones)}
     ORDER BY p.name_normalized ASC, p.id ASC
     LIMIT ${limite + 1}`;
+}
+
+/**
+ * Con nombre, la coincidencia de texto se resuelve primero en bloque: un
+ * recorrido del índice de nombres y otro del de alias, en vez de un CTE
+ * recursivo por persona. Un alias de una persona fundida sube por
+ * `merged_into_person_id` (hasta `SALTOS`) hasta la que prevalece: es el mismo
+ * grupo que `sqlGrupoDe` recorre hacia abajo. Las candidatas se ordenan antes
+ * de los filtros de prueba y nacionalidad para que SQLite los evalúe en ese
+ * orden y pare al llenar la página. Alias mostrado y columnas de la ficha se
+ * leen después del LIMIT, sólo para la página.
+ */
+function sqlBusquedaPorNombre(
+  f: FiltrosBusqueda,
+  q: string,
+  limite: number,
+  clave: readonly (string | number)[] | null,
+): SQL {
+  const nombreDe = (columna: SQL) => palabrasCoinciden(columna, q.split(' '));
+
+  const condiciones: SQL[] = [];
+  const porConjuntos = pruebaPorConjuntos(f);
+  const prueba = porConjuntos ? porConjuntos.condicion : condicionPrueba(f);
+  if (prueba) condiciones.push(prueba);
+  if (f.nacionalidad) condiciones.push(condicionNacionalidad(f.nacionalidad));
+  const filtros = condiciones.length > 0 ? sql`WHERE ${y(condiciones)}` : sql``;
+  const tras = clave
+    ? sql`WHERE (p.name_normalized, p.id) > (${String(clave[0])}, ${String(clave[1])})`
+    : sql``;
+
+  // `rowid IN (...)` recorre sport_person_name_idx como índice de cobertura,
+  // mucho más estrecho que la tabla, y sólo lee las filas que coinciden.
+  // Casi todos los alias repiten el nombre de su persona: la subida parte de
+  // `nombres` cuando la persona ya está ahí y sólo busca por ID las demás.
+  return sql`
+    WITH RECURSIVE
+    nombres(id, name_normalized, merged_into_person_id, country_code) AS MATERIALIZED (
+      SELECT p.id, p.name_normalized, p.merged_into_person_id, p.country_code
+      FROM sport_person p
+      WHERE p.rowid IN (
+        SELECT i.rowid FROM sport_person i WHERE ${nombreDe(sql`i.name_normalized`)})
+    ),
+    por_alias(id) AS MATERIALIZED (
+      SELECT DISTINCT a.person_id FROM sport_person_alias a
+      WHERE ${nombreDe(sql`a.name_normalized`)}
+    ),
+    subida(id, name_normalized, merged_into_person_id, country_code, salto) AS (
+      SELECT * FROM (
+        SELECT n.id, n.name_normalized, n.merged_into_person_id, n.country_code, 0
+        FROM nombres n WHERE n.id IN por_alias
+        UNION ALL
+        SELECT sp.id, sp.name_normalized, sp.merged_into_person_id, sp.country_code, 0
+        FROM por_alias x CROSS JOIN sport_person sp ON sp.id = x.id
+        WHERE x.id NOT IN (SELECT id FROM nombres)
+      )
+      UNION ALL
+      SELECT sp.id, sp.name_normalized, sp.merged_into_person_id, sp.country_code, s.salto + 1
+      FROM subida s JOIN sport_person sp ON sp.id = s.merged_into_person_id
+      WHERE s.salto < ${SALTOS}
+    ),
+    candidatas(id, name_normalized, country_code) AS MATERIALIZED (
+      SELECT p.id, p.name_normalized, p.country_code FROM nombres p
+      WHERE p.merged_into_person_id IS NULL
+      UNION
+      SELECT s.id, s.name_normalized, s.country_code FROM subida s
+      WHERE s.merged_into_person_id IS NULL
+    ),
+    ordenadas(id, name_normalized, country_code) AS MATERIALIZED (
+      SELECT p.id, p.name_normalized, p.country_code FROM candidatas p ${tras}
+      ORDER BY p.name_normalized, p.id
+    )${porConjuntos ? porConjuntos.ctes : sql``}
+    SELECT p.id AS id, sp.display_name AS nombre, p.name_normalized AS "claveNombre",
+           CASE WHEN ${nombreDe(sql`p.name_normalized`)} THEN NULL ELSE (
+             SELECT a.name_original FROM sport_person_alias a
+             WHERE a.person_id IN ${grupoP} AND ${nombreDe(sql`a.name_normalized`)}
+             ORDER BY a.name_normalized, a.id LIMIT 1) END AS alias,
+           p.country_code AS pais, sp.gender AS genero, sp.birth_year AS "anioNacimiento"
+    FROM (
+      SELECT p.id, p.name_normalized, p.country_code
+      FROM ordenadas p
+      ${filtros}
+      ORDER BY p.name_normalized ASC, p.id ASC
+      LIMIT ${limite + 1}
+    ) p
+    CROSS JOIN sport_person sp ON sp.id = p.id
+    ORDER BY p.name_normalized ASC, p.id ASC`;
 }
 
 export async function complementos(
@@ -194,7 +340,8 @@ export async function complementos(
       : db.execute(sql`
           SELECT name_normalized AS clave, count(*) AS personas
           FROM sport_person
-          WHERE merged_into_person_id IS NULL
+          -- '+': sin él SQLite recorre todas las personas no fundidas por merged_idx.
+          WHERE +merged_into_person_id IS NULL
             AND name_normalized IN (SELECT value FROM json_each(${JSON.stringify(claves)}))
           GROUP BY name_normalized`),
   ]);
