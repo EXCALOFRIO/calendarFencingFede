@@ -151,6 +151,26 @@ describe('estadísticas por rival', () => {
     for (const x of Object.values(c)) expect(x.descripcion).not.toMatch(/undefined|NaN/);
   });
 
+  it('un empate corta la racha y un empate en la curiosidad lo deshace el ID del rival', () => {
+    const f = fixture();
+    f.persona(YO, 'YO'); f.persona(RIVAL, 'RIVAL'); f.persona(OTRO, 'OTRO'); f.persona(TERCERO, 'TERCERO');
+    f.prueba('p1', { fecha: '2026-01-01' });
+    // RIVAL: V E V V D V → la mejor racha es 2.
+    for (const [i, [a, b]] of ([[5, 0], [3, 3], [5, 0], [5, 0], [0, 1], [5, 0]] as const).entries()) {
+      f.asalto('p1', YO, RIVAL, a, b, 'POULE', `2026-01-0${i + 1}`);
+    }
+    // Mismos tocados recibidos y mismos asaltos: gana el ID menor aunque se inserte después.
+    f.asalto('p1', YO, TERCERO, 1, 5);
+    f.asalto('p1', YO, OTRO, 0, 5);
+    const r = rivales(f, [YO], YO);
+    expect(r.rivales.find((x) => x.rival.id === RIVAL)?.mejorRacha).toBe(2);
+    const c = Object.fromEntries(r.curiosidades.map((x) => [x.clave, x]));
+    expect(c.mejorRacha).toMatchObject({ valor: 2, rival: { id: RIVAL } });
+    expect(c.masTocadosRecibidos).toMatchObject({ valor: 5, rival: { id: OTRO } });
+    expect(r.poule).toMatchObject({ asaltos: 8, victorias: 4, derrotas: 3, empates: 1 });
+    expect(r.eliminacion.asaltos).toBe(0);
+  });
+
   it('suma los IDs fundidos de ambos lados, ignora asaltos dentro del grupo, equipos y relevos', async () => {
     const f = fixture();
     f.persona(YO, 'YO'); f.persona(YO_FUNDIDA, 'YO bis', YO);

@@ -21,6 +21,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { freemem, homedir } from 'node:os';
+import { RAIZ_DATOS } from './comun';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
@@ -674,7 +675,7 @@ export function fusionarTramos(resultados: unknown, trozos: unknown[]): unknown 
 
 // ---------------------------------------------------------------- ejecución
 
-const TEMP = process.env.TEMP ?? join(homedir(), 'AppData', 'Local', 'Temp');
+const TEMP = RAIZ_DATOS;
 const TRABAJO = join(TEMP, 'calendario-trabajo');
 const RUTAS = {
   calidad: join(TRABAJO, 'hechos', 'pdf-calidad.json'),

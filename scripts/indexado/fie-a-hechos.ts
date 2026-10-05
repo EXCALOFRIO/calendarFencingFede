@@ -20,6 +20,7 @@ import {
   type HechosPrueba,
   type ResultadoHecho,
 } from '../../src/lib/ingest/hechos/formato';
+import { RAIZ_DATOS } from './comun';
 
 /**
  * Convierte la caché local de la API FIE en ficheros de hechos (un JSON por
@@ -34,7 +35,7 @@ import {
  * Sólo lee la caché y la base (en modo lectura); no hace peticiones de red.
  */
 
-const TEMP = process.env.TEMP ?? process.env.TMP ?? '/tmp';
+const TEMP = RAIZ_DATOS;
 const POR_DEFECTO = {
   cache: path.join(TEMP, 'qa-prod-calendario', 'cache-fie-2018'),
   salida: path.join(TEMP, 'calendario-trabajo', 'hechos', 'fie'),

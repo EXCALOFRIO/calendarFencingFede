@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { MEDIDAS_REGISTRO, porcentaje, sqlAsaltosOrientados } from './asaltos-orientados-sql';
+import { porcentaje, sqlAsaltosOrientados } from './asaltos-orientados-sql';
 import { exigirPerfil, filas, type ContextoExplorador } from './contexto';
 import { UUID_RE } from './cursor';
 import { listaUuid } from './filtros-sql';
@@ -32,35 +32,32 @@ export const LIMITE_PRUEBAS_AMBITO = 1500;
  */
 export function sqlPruebasAmbito(ids: readonly string[]) {
   return sql`
-    WITH ${sqlAsaltosOrientados(ids)}, asaltos_por AS (
-      SELECT equivalencia, min(prueba) AS prueba, ${MEDIDAS_REGISTRO}
-      FROM validos GROUP BY equivalencia
-    ), resultados AS MATERIALIZED (
+    WITH ${sqlAsaltosOrientados(ids)}, hechos AS (
+      -- Resultados (puesto, -1 si no hay) y asaltos (favor/contra) en un solo
+      -- GROUP BY: agrupar cada lado aparte y cruzarlos costaba el doble en D1.
       SELECT coalesce('cal:' || c.event_competition_id, 'sport:' || c.id) AS equivalencia,
-             c.id AS prueba, CASE WHEN r.position > 0 THEN r.position END AS puesto
+             c.id AS prueba, coalesce(CASE WHEN r.position > 0 THEN r.position END, -1) AS puesto,
+             NULL AS favor, NULL AS contra
       FROM sport_result r CROSS JOIN sport_competition c ON c.id = r.competition_id
       WHERE r.person_id IN (${listaUuid(ids)}) AND c.format = 'INDIVIDUAL'
-    ), puestos AS (
+      UNION ALL
+      SELECT equivalencia, prueba, NULL, favor, contra FROM validos
+    ), por_prueba AS (
       SELECT equivalencia, min(prueba) AS prueba,
-             CASE WHEN count(DISTINCT coalesce(puesto, -1)) = 1 THEN min(puesto) END AS puesto
-      FROM resultados GROUP BY equivalencia
-    ), todas AS (
-      SELECT equivalencia, min(prueba) AS prueba FROM (
-        SELECT equivalencia, prueba FROM puestos
-        UNION ALL SELECT equivalencia, prueba FROM asaltos_por
-      ) GROUP BY equivalencia
+             CASE WHEN min(puesto) = max(puesto) AND min(puesto) > 0 THEN min(puesto) END AS puesto,
+             count(favor) AS asaltos,
+             coalesce(sum(favor > contra), 0) AS victorias, coalesce(sum(favor < contra), 0) AS derrotas,
+             coalesce(sum(favor), 0) AS dados, coalesce(sum(contra), 0) AS recibidos
+      FROM hechos GROUP BY equivalencia
     )
     SELECT c.source AS fuente, e.name AS torneo, c.category AS categoria, e.country_code AS pais,
            ev0.scope AS "ambitoEvento", ev0.circuit AS "circuitoEvento", ev0.source AS "fuenteEvento",
-           p.puesto AS puesto, coalesce(a.asaltos, 0) AS asaltos, coalesce(a.victorias, 0) AS victorias,
-           coalesce(a.derrotas, 0) AS derrotas, coalesce(a.dados, 0) AS dados,
-           coalesce(a.recibidos, 0) AS recibidos
-    FROM todas t
+           t.puesto AS puesto, t.asaltos AS asaltos, t.victorias AS victorias,
+           t.derrotas AS derrotas, t.dados AS dados, t.recibidos AS recibidos
+    FROM por_prueba t
     CROSS JOIN sport_competition c ON c.id = t.prueba
     CROSS JOIN sport_edition e ON e.id = c.edition_id
     LEFT JOIN event ev0 ON ev0.id = e.event_id
-    LEFT JOIN puestos p ON p.equivalencia = t.equivalencia
-    LEFT JOIN asaltos_por a ON a.equivalencia = t.equivalencia
     ORDER BY coalesce(c.competition_date, e.start_date, '0001-01-01') DESC, t.prueba
     LIMIT ${LIMITE_PRUEBAS_AMBITO + 1}`;
 }

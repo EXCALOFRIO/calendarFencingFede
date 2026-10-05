@@ -19,6 +19,7 @@ import {
   type ParteAsaltos,
 } from '../../src/lib/ingest/sources/fie-resultados';
 import { resultFactKey } from '../../src/lib/identity/resolver';
+import { RAIZ_DATOS } from './comun';
 
 /**
  * Convierte las respuestas FIE descargadas por `fie-descargar-antiguas.ts` al formato común
@@ -35,7 +36,7 @@ const opt = (n: string, d: string) => {
   const i = args.indexOf(n);
   return i >= 0 && args[i + 1] ? args[i + 1] : d;
 };
-const TMP = process.env.TEMP ?? process.env.TMP ?? '/tmp';
+const TMP = RAIZ_DATOS;
 const ENTRADA = opt('--entrada', path.join(TMP, 'calendario-trabajo', 'fie-antiguo'));
 const SALIDA = opt('--salida', path.join(TMP, 'calendario-trabajo', 'hechos', 'fie-antiguo'));
 const TODO = args.includes('--todo');

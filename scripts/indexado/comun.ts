@@ -1,11 +1,19 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { palabrasNombre } from '../../src/lib/nombres';
 
+/**
+ * Raíz de datos locales (copias de D1, cachés de fuentes, hechos). Fuera de
+ * %TEMP% a propósito: el Sensor de almacenamiento de Windows vacía %TEMP%
+ * cuando queda poco disco y borró una reindexación entera a mitad de trabajo.
+ */
+export const RAIZ_DATOS = process.env.CALENDARIO_DATOS ?? join(homedir(), 'calendario-datos');
 /** Carpeta compartida de la reindexación local (base exportada, hechos, copias de trabajo). */
-export const CARPETA_TRABAJO = join(tmpdir(), 'calendario-trabajo');
+export const CARPETA_TRABAJO = join(RAIZ_DATOS, 'calendario-trabajo');
+/** Cachés de descargas de fuentes (FIE, RFEE, inventario nacional). */
+export const CARPETA_CACHES = join(RAIZ_DATOS, 'qa-prod-calendario');
 export const BASE_POR_DEFECTO = join(CARPETA_TRABAJO, 'base.sqlite');
 export const NUEVO_POR_DEFECTO = join(CARPETA_TRABAJO, 'nuevo.sqlite');
 

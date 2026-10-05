@@ -20,7 +20,6 @@
  */
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ficheroHechos, hechosPrueba, type HechosPrueba } from '../../src/lib/ingest/hechos/formato';
@@ -41,7 +40,7 @@ import {
   normalizarCuadroAntiguo,
   tipoDocumentoEngarde,
 } from '../../src/lib/ingest/sources/engarde-antiguo';
-import { argumento } from './comun';
+import { argumento, CARPETA_TRABAJO } from './comun';
 import { convertirPrueba, temporadaRfee, type Paginas, type PruebaIndice } from './engarde-a-hechos';
 import { CacheEngarde, claveCache, paginasDePrueba } from './engarde-descargar';
 import {
@@ -333,7 +332,7 @@ export function clavesExistentes(carpeta: string): Set<string> {
 
 async function main(): Promise<void> {
   const entrada = argumento('entrada', CARPETA_ENGARDE_HISTORICO);
-  const hechos = join(tmpdir(), 'calendario-trabajo', 'hechos');
+  const hechos = join(CARPETA_TRABAJO, 'hechos');
   const salida = argumento('salida', join(hechos, 'engarde-historico'));
   const hasta = argumento('hasta', FECHA_CORTE);
   const yaEngarde = clavesExistentes(argumento('engarde', join(hechos, 'engarde')));

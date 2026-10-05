@@ -33,7 +33,11 @@ export type FilaSugerido = {
  *    `VENTANA_PRUEBAS_SUGERIDOS` pruebas individuales más recientes
  *    (`sport_result_person_date_idx` y luego la clasificación de cada prueba
  *    por `sport_result_competition_position_idx`) y asaltos contados sólo con
- *    `sport_bout_a_idx` / `sport_bout_b_idx`, sin leer la tabla. Se queda con
+ *    `sport_bout_a_idx` / `sport_bout_b_idx`, sin leer la tabla. Coincidencias
+ *    y asaltos se agrupan por ID en un único GROUP BY (`por_pid`), que guarda
+ *    además lo que necesita la fase 2 (equivalencias en JSON, club más
+ *    reciente): D1 cobra cada fila leída de una tabla temporal, y releer las
+ *    ~3 000 coincidencias de una ficha grande duplicaba el coste. Se queda con
  *    `CANDIDATOS_BRUTOS` IDs, y sólo esos se llevan a su persona canónica.
  * 2. Cifras exactas para los elegidos, que son las que se enseñan: asaltos
  *    individuales (sin equipos y sin duplicar pruebas con equivalencia
@@ -49,6 +53,11 @@ export type FilaSugerido = {
  * los CROSS JOIN fijan el orden (primero lo de la persona, luego lo demás).
  */
 export function sqlTiradoresSugeridos(ids: readonly string[], canonicaId: string) {
+  // `NOT IN (SELECT value FROM grupo)` cuesta en D1 una fila leída por cada
+  // fila comprobada; buscar el ID entre comillas en el JSON del grupo no lee
+  // nada. Equivale porque los IDs no llevan comillas ni barras invertidas.
+  const json = JSON.stringify(ids);
+  const fuera = (columna: string) => sql`instr(${json}, '"' || ${sql.raw(columna)} || '"') = 0`;
   return sql`
     WITH grupo AS MATERIALIZED (${listaUuid(ids)}),
     mias AS MATERIALIZED (
@@ -63,28 +72,30 @@ export function sqlTiradoresSugeridos(ids: readonly string[], canonicaId: string
       GROUP BY r.competition_id
       ORDER BY fecha_orden DESC, r.competition_id DESC
       LIMIT ${VENTANA_PRUEBAS_SUGERIDOS}
-    ), coincidencias AS MATERIALIZED (
-      SELECT o.person_id AS pid, m.equivalencia AS equivalencia,
-             m.fecha_orden || m.prueba AS orden, o.source_club AS club,
-             CASE WHEN trim(coalesce(m.club, '')) <> '' AND o.source_club = m.club THEN 1 ELSE 0 END AS mismo
-      FROM mias m
-      CROSS JOIN sport_result o ON o.competition_id = m.prueba
-      WHERE o.person_id IS NOT NULL AND o.person_id NOT IN (SELECT value FROM grupo)
-    ), brutos AS (
-      SELECT pid, count(*) AS pruebas, max(mismo) AS mismo, 0 AS asaltos FROM coincidencias GROUP BY pid
-      UNION ALL
-      SELECT b.fencer_b_person_id, 0, 0, count(*) FROM sport_bout b
-      WHERE b.fencer_a_person_id IN (SELECT value FROM grupo) AND b.fencer_b_person_id IS NOT NULL
-      GROUP BY b.fencer_b_person_id
-      UNION ALL
-      SELECT b.fencer_a_person_id, 0, 0, count(*) FROM sport_bout b
-      WHERE b.fencer_b_person_id IN (SELECT value FROM grupo) AND b.fencer_a_person_id IS NOT NULL
-      GROUP BY b.fencer_a_person_id
-    ), primeros AS MATERIALIZED (
-      SELECT pid, sum(pruebas) AS pruebas, max(mismo) AS mismo, sum(asaltos) AS asaltos
-      FROM brutos WHERE pid NOT IN (SELECT value FROM grupo)
+    ), por_pid AS MATERIALIZED (
+      SELECT pid, sum(prueba) AS pruebas, max(mismo) AS mismo, sum(asalto) AS asaltos,
+             json_group_array(equivalencia) FILTER (WHERE prueba = 1) AS equivalencias,
+             max(club_orden) AS club_orden
+      FROM (
+        SELECT o.person_id AS pid, 1 AS prueba, 0 AS asalto, m.equivalencia AS equivalencia,
+               CASE WHEN trim(coalesce(m.club, '')) <> '' AND o.source_club = m.club THEN 1 ELSE 0 END AS mismo,
+               CASE WHEN trim(coalesce(o.source_club, '')) <> ''
+                    THEN m.fecha_orden || m.prueba || '|' || o.source_club END AS club_orden
+        FROM mias m
+        CROSS JOIN sport_result o ON o.competition_id = m.prueba
+        WHERE o.person_id IS NOT NULL
+        UNION ALL
+        SELECT b.fencer_b_person_id, 0, 1, NULL, 0, NULL FROM sport_bout b
+        WHERE b.fencer_a_person_id IN (SELECT value FROM grupo) AND b.fencer_b_person_id IS NOT NULL
+        UNION ALL
+        SELECT b.fencer_a_person_id, 0, 1, NULL, 0, NULL FROM sport_bout b
+        WHERE b.fencer_b_person_id IN (SELECT value FROM grupo) AND b.fencer_a_person_id IS NOT NULL
+      )
       GROUP BY pid
-      ORDER BY sum(asaltos) * 5 + sum(pruebas) + max(mismo) * 10 DESC, pid
+      HAVING ${fuera('pid')}
+    ), primeros AS MATERIALIZED (
+      SELECT pid, pruebas, mismo, asaltos FROM por_pid
+      ORDER BY asaltos * 5 + pruebas + mismo * 10 DESC, pid
       LIMIT ${CANDIDATOS_BRUTOS}
     ), elegidos AS MATERIALIZED (
       SELECT rp.id AS id, rp.display_name AS nombre, rp.country_code AS pais,
@@ -102,9 +113,10 @@ export function sqlTiradoresSugeridos(ids: readonly string[], canonicaId: string
       SELECT el.id, p.id FROM elegidos el
       CROSS JOIN sport_person p ON p.merged_into_person_id = el.id
     ), juntas AS (
-      SELECT mb.raiz AS raiz, count(DISTINCT co.equivalencia) AS pruebas, max(co.mismo) AS mismo,
-             max(CASE WHEN trim(coalesce(co.club, '')) <> '' THEN co.orden || '|' || co.club END) AS club_orden
-      FROM miembros mb CROSS JOIN coincidencias co ON co.pid = mb.pid
+      SELECT mb.raiz AS raiz, count(DISTINCT je.value) AS pruebas, max(pp.mismo) AS mismo,
+             max(pp.club_orden) AS club_orden
+      FROM miembros mb CROSS JOIN por_pid pp ON pp.pid = mb.pid
+      CROSS JOIN json_each(pp.equivalencias) je
       GROUP BY mb.raiz
     ), pares AS MATERIALIZED (
       SELECT mb.raiz AS raiz, b.competition_id AS prueba, b.score_a AS favor, b.score_b AS contra

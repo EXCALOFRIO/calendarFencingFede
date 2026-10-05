@@ -39,47 +39,101 @@ const MEDIDAS_RIVAL = sql.raw(`
  * la hora).
  */
 export function sqlEstadisticasRivales(ids: readonly string[], canonicaId: string) {
-  const curiosidad = (clave: ClaveCuriosidad, donde: string, orden: string) => sql`
-    SELECT * FROM (
-      SELECT 'curiosidad' AS clase, ${clave} AS clave, ${MEDIDAS_RIVAL},
-             NULL AS favor, NULL AS contra, NULL AS fecha, NULL AS prueba
-      FROM por_rival pr WHERE ${sql.raw(donde)}
-      ORDER BY ${sql.raw(orden)}, pr.rival LIMIT 1)`;
   const minimo = MINIMO_ASALTOS_CURIOSIDAD;
+  // Cada curiosidad ordena por `principal DESC, resto, pr.rival` entre los
+  // rivales que cumplen `donde`.
+  const curiosidades: { clave: ClaveCuriosidad; donde: string; principal: string; resto: string }[] = [
+    { clave: 'rivalMasHabitual', donde: 'TRUE', principal: 'pr.asaltos', resto: 'pr."ultimaOrden" DESC' },
+    { clave: 'masTocadosDados', donde: 'pr.dados > 0', principal: 'pr.dados', resto: 'pr.asaltos ASC' },
+    { clave: 'masTocadosPorAsalto', donde: `pr.asaltos >= ${minimo}`, principal: 'pr.dados * 1.0 / pr.asaltos', resto: 'pr.asaltos DESC' },
+    { clave: 'masTocadosRecibidos', donde: 'pr.recibidos > 0', principal: 'pr.recibidos', resto: 'pr.asaltos ASC' },
+    { clave: 'rivalMasDificil', donde: `pr.asaltos >= ${minimo} AND pr.derrotas > pr.victorias`,
+      principal: 'pr.derrotas', resto: 'pr.derrotas - pr.victorias DESC, pr.asaltos DESC' },
+    { clave: 'masVictoriasContra', donde: `pr.asaltos >= ${minimo} AND pr.victorias > pr.derrotas`,
+      principal: 'pr.victorias', resto: 'pr.victorias - pr.derrotas DESC, pr.asaltos DESC' },
+    { clave: 'duelosMasAjustados', donde: 'pr.ajustados > 0', principal: 'pr.ajustados', resto: 'pr.asaltos ASC' },
+    { clave: 'mejorRacha', donde: 'pr.racha >= 2', principal: 'pr.racha', resto: 'pr."ultimaOrden" DESC' },
+  ];
+  const curiosidad = (i: number) => {
+    const c = curiosidades[i];
+    return sql`
+    SELECT * FROM (
+      SELECT 'curiosidad' AS clase, ${c.clave} AS clave, ${MEDIDAS_RIVAL},
+             NULL AS favor, NULL AS contra, NULL AS fecha, NULL AS prueba
+      FROM candidatos pr WHERE ${sql.raw(c.donde)}
+      ORDER BY ${sql.raw(c.principal)} DESC, ${sql.raw(c.resto)}, pr.rival LIMIT 1)`;
+  };
+  const maximos = sql.raw(curiosidades
+    .map((c, i) => `max(CASE WHEN ${c.donde} THEN ${c.principal} END) AS m${i}`).join(',\n             '));
+  const esCandidato = sql.raw(curiosidades
+    .map((c, i) => `(${c.donde} AND ${c.principal} = mx.m${i})`).join('\n         OR '));
+  const medidasFase = (fase: 'POULE' | 'TABLEAU') => {
+    const en = (expr: string) => `CASE WHEN fase = '${fase}' THEN ${expr} END`;
+    return sql.raw(`sum(fase = '${fase}') AS "${fase}_asaltos",
+             coalesce(sum(${en('favor > contra')}), 0) AS "${fase}_victorias",
+             coalesce(sum(${en('favor < contra')}), 0) AS "${fase}_derrotas",
+             coalesce(sum(${en('favor = contra')}), 0) AS "${fase}_empates",
+             coalesce(sum(${en('favor')}), 0) AS "${fase}_dados",
+             coalesce(sum(${en('contra')}), 0) AS "${fase}_recibidos"`);
+  };
+  const filaFase = (fase: 'POULE' | 'TABLEAU') => sql.raw(`
+      SELECT 'fase', '${fase}', NULL, "${fase}_asaltos", "${fase}_victorias", "${fase}_derrotas",
+             "${fase}_empates", "${fase}_dados", "${fase}_recibidos", 0, 0, 0, NULL, NULL, NULL, NULL, NULL
+      FROM resumen WHERE "${fase}_asaltos" > 0`);
   return sql`
     WITH ${sqlAsaltosOrientados(ids)}, con_rival AS MATERIALIZED (
       SELECT v.*, coalesce(rp.merged_into_person_id, rp.id) AS rival
       FROM validos v CROSS JOIN sport_person rp ON rp.id = v.rival_id
       WHERE coalesce(rp.merged_into_person_id, rp.id) <> ${canonicaId}
     ), secuencia AS (
-      SELECT rival, favor > contra AS gana,
-             row_number() OVER (PARTITION BY rival ORDER BY fecha_orden, fase = 'TABLEAU', id)
-             - row_number() OVER (PARTITION BY rival, favor > contra ORDER BY fecha_orden, fase = 'TABLEAU', id) AS isla
+      -- Isla: no victorias contra el rival hasta este asalto incluido. Cada
+      -- isla es una no victoria seguida de victorias (la 0, sólo victorias),
+      -- así que sus victorias son una racha. Una sola ventana: en D1 cuestan.
+      SELECT rival, favor, contra, fecha, fecha_orden,
+             sum(favor <= contra) OVER (
+               PARTITION BY rival ORDER BY fecha_orden, fase = 'TABLEAU', id ROWS UNBOUNDED PRECEDING
+             ) AS isla
       FROM con_rival
-    ), rachas AS (
-      SELECT rival, max(n) AS racha FROM (
-        SELECT rival, count(*) AS n FROM secuencia WHERE gana GROUP BY rival, isla
-      ) GROUP BY rival
-    ), por_rival AS MATERIALIZED (
-      SELECT cr.rival, ${MEDIDAS_REGISTRO},
+    ), islas AS (
+      SELECT rival, count(*) AS asaltos, sum(favor > contra) AS victorias, sum(favor < contra) AS derrotas,
+             sum(favor = contra) AS empates, sum(favor) AS dados, sum(contra) AS recibidos,
              sum(abs(favor - contra) = 1) AS ajustados,
              sum(abs(favor - contra) = 1 AND favor > contra) AS "ajustadosGanados",
-             coalesce(max(ra.racha), 0) AS racha,
              max(fecha) AS "ultimaFecha", max(fecha_orden) AS "ultimaOrden"
-      FROM con_rival cr LEFT JOIN rachas ra ON ra.rival = cr.rival
-      GROUP BY cr.rival
+      FROM secuencia GROUP BY rival, isla
+    ), por_rival AS MATERIALIZED (
+      SELECT rival, sum(asaltos) AS asaltos, sum(victorias) AS victorias, sum(derrotas) AS derrotas,
+             sum(empates) AS empates, sum(dados) AS dados, sum(recibidos) AS recibidos,
+             sum(ajustados) AS ajustados, sum("ajustadosGanados") AS "ajustadosGanados",
+             max(victorias) AS racha,
+             max("ultimaFecha") AS "ultimaFecha", max("ultimaOrden") AS "ultimaOrden"
+      FROM islas GROUP BY rival
+    ), resumen AS MATERIALIZED (
+      -- Totales y fases en una sola pasada (un GROUP BY fase volvería a leer y ordenar).
+      SELECT ${MEDIDAS_REGISTRO},
+             coalesce(sum(abs(favor - contra) = 1), 0) AS ajustados,
+             coalesce(sum(abs(favor - contra) = 1 AND favor > contra), 0) AS "ajustadosGanados",
+             ${medidasFase('POULE')}, ${medidasFase('TABLEAU')}
+      FROM con_rival
+    ), maximos AS MATERIALIZED (
+      SELECT count(*) AS rivales,
+             ${maximos}
+      FROM por_rival pr
+    ), candidatos AS MATERIALIZED (
+      -- El ganador de cada curiosidad tiene el máximo de su criterio principal:
+      -- sólo esos rivales se ordenan (y no la tabla entera una vez por curiosidad).
+      SELECT pr.* FROM maximos mx CROSS JOIN por_rival pr
+      WHERE ${esCandidato}
     ), salida AS (
       -- D1 admite como mucho cinco términos por cadena de UNION ALL: se anidan en grupos.
       SELECT * FROM (
-      SELECT 'total' AS clase, NULL AS clave, NULL AS rival, ${MEDIDAS_REGISTRO},
-             coalesce(sum(abs(favor - contra) = 1), 0) AS ajustados,
-             coalesce(sum(abs(favor - contra) = 1 AND favor > contra), 0) AS "ajustadosGanados",
-             (SELECT count(*) FROM por_rival) AS racha, NULL AS "ultimaFecha",
+      SELECT 'total' AS clase, NULL AS clave, NULL AS rival,
+             asaltos, victorias, derrotas, empates, dados, recibidos, ajustados, "ajustadosGanados",
+             (SELECT rivales FROM maximos) AS racha, NULL AS "ultimaFecha",
              NULL AS favor, NULL AS contra, NULL AS fecha, NULL AS prueba
-      FROM con_rival
-      UNION ALL
-      SELECT 'fase', fase, NULL, ${MEDIDAS_REGISTRO}, 0, 0, 0, NULL, NULL, NULL, NULL, NULL
-      FROM con_rival GROUP BY fase
+      FROM resumen
+      UNION ALL ${filaFase('POULE')}
+      UNION ALL ${filaFase('TABLEAU')}
       UNION ALL
       SELECT * FROM (
         SELECT 'rival', NULL, ${MEDIDAS_RIVAL}, NULL, NULL, NULL, NULL
@@ -87,25 +141,23 @@ export function sqlEstadisticasRivales(ids: readonly string[], canonicaId: strin
         LIMIT ${LIMITE_RIVALES_STATS + 1})
       )
       UNION ALL SELECT * FROM (
-      ${curiosidad('rivalMasHabitual', 'TRUE', 'pr.asaltos DESC, pr."ultimaOrden" DESC')}
-      UNION ALL ${curiosidad('masTocadosDados', 'pr.dados > 0', 'pr.dados DESC, pr.asaltos ASC')}
-      UNION ALL ${curiosidad('masTocadosPorAsalto', `pr.asaltos >= ${minimo}`,
-        'pr.dados * 1.0 / pr.asaltos DESC, pr.asaltos DESC')}
-      UNION ALL ${curiosidad('masTocadosRecibidos', 'pr.recibidos > 0', 'pr.recibidos DESC, pr.asaltos ASC')}
+      ${curiosidad(0)}
+      UNION ALL ${curiosidad(1)}
+      UNION ALL ${curiosidad(2)}
+      UNION ALL ${curiosidad(3)}
       )
       UNION ALL SELECT * FROM (
-      ${curiosidad('rivalMasDificil', `pr.asaltos >= ${minimo} AND pr.derrotas > pr.victorias`,
-        'pr.derrotas DESC, pr.derrotas - pr.victorias DESC, pr.asaltos DESC')}
-      UNION ALL ${curiosidad('masVictoriasContra', `pr.asaltos >= ${minimo} AND pr.victorias > pr.derrotas`,
-        'pr.victorias DESC, pr.victorias - pr.derrotas DESC, pr.asaltos DESC')}
-      UNION ALL ${curiosidad('duelosMasAjustados', 'pr.ajustados > 0', 'pr.ajustados DESC, pr.asaltos ASC')}
-      UNION ALL ${curiosidad('mejorRacha', 'pr.racha >= 2', 'pr.racha DESC, pr."ultimaOrden" DESC')}
+      ${curiosidad(4)}
+      UNION ALL ${curiosidad(5)}
+      UNION ALL ${curiosidad(6)}
+      UNION ALL ${curiosidad(7)}
       )
       UNION ALL SELECT * FROM (
         SELECT 'curiosidad', 'mayorVictoria', ${MEDIDAS_RIVAL}, cr.favor, cr.contra, cr.fecha, cr.prueba
-        FROM con_rival cr JOIN por_rival pr ON pr.rival = cr.rival
-        WHERE cr.favor > cr.contra
-        ORDER BY cr.favor - cr.contra DESC, cr.fecha_orden DESC, cr.id LIMIT 1)
+        FROM (
+          SELECT * FROM con_rival WHERE favor > contra
+          ORDER BY favor - contra DESC, fecha_orden DESC, id LIMIT 1
+        ) cr CROSS JOIN por_rival pr ON pr.rival = cr.rival)
     )
     SELECT s.*, p.display_name AS "nombreRival", p.country_code AS "paisRival", ed.name AS torneo
     FROM salida s

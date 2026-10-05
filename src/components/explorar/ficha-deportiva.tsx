@@ -186,11 +186,11 @@ export function CabeceraFicha({
 
         <div
           className={cn(
-            'col-span-2 row-start-3 grid min-w-0 gap-2 sm:col-span-1 sm:col-start-2 sm:flex sm:flex-wrap',
-            enlaceFie && acciones ? 'grid-cols-3' : 'grid-cols-2',
+            'col-span-2 row-start-3 grid min-w-0 grid-cols-2 gap-2 sm:col-span-1 sm:col-start-2 sm:flex sm:flex-wrap',
           )}
         >
-          <Button asChild className="min-h-11 px-2 sm:px-4">
+          {/* Tres botones no caben con su rótulo a 393 px: el principal ocupa la fila. */}
+          <Button asChild className={cn('min-h-11 px-2 sm:px-4', enlaceFie && acciones && 'col-span-2')}>
             <Link href={rutaCaraACara(ficha.id)} prefetch={false}>
               <Swords aria-hidden />
               Cara a cara

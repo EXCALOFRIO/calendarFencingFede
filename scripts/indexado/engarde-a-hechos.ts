@@ -18,7 +18,6 @@
 import * as cheerio from 'cheerio';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { normalizeSportName } from '../../src/lib/identity/resolver';
@@ -42,7 +41,7 @@ import {
 } from '../../src/lib/ingest/sources/engarde';
 import { parsearCuadroEngarde } from '../../src/lib/ingest/sources/engarde-cuadro';
 import { parsearPoulesEngarde } from '../../src/lib/ingest/sources/engarde-poules';
-import { argumento } from './comun';
+import { argumento, CARPETA_TRABAJO } from './comun';
 import {
   CacheEngarde,
   CARPETA_ENGARDE,
@@ -383,7 +382,7 @@ export type InformeEngarde = {
 
 function main(): void {
   const entrada = argumento('entrada', CARPETA_ENGARDE);
-  const salida = argumento('salida', join(tmpdir(), 'calendario-trabajo', 'hechos', 'engarde'));
+  const salida = argumento('salida', join(CARPETA_TRABAJO, 'hechos', 'engarde'));
   const inventario = leerInventario(argumento('inventario', INVENTARIO_POR_DEFECTO));
   const porClave = new Map(inventario.map((f) => [f.claveCatalogo, f]));
   const { torneos } = torneosDelInventario(inventario);

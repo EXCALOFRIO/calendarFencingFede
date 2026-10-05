@@ -118,6 +118,24 @@ describe('tiradores sugeridos', () => {
     expect(marta).toMatchObject({ id: UUID_B, asaltos: 1, victorias: 1, derrotas: 0 });
   });
 
+  it('dos fichas fundidas en la misma prueba equivalente cuentan una vez; club de la más reciente; rival sólo por asaltos', () => {
+    const f = fixture();
+    f.persona(UUID_A, 'PEREZ Ana');
+    f.persona(UUID_B, 'RUIZ Marta'); f.persona(FUSIONADA_B, 'Marta Ruiz', UUID_B);
+    f.persona(UUID_C, 'GIL Eva');
+    f.prueba('fie', { fecha: '2026-01-10', equivalencia: 'cal-1' });
+    f.prueba('pdf', { fecha: '2026-01-10', equivalencia: 'cal-1' });
+    f.prueba('p3', { fecha: '2026-02-10' });
+    for (const p of ['fie', 'pdf', 'p3']) f.resultado(p, UUID_A, 1);
+    f.resultado('fie', UUID_B, 2, 'CLUB VIEJO');
+    f.resultado('pdf', FUSIONADA_B, 2, 'CLUB VIEJO');
+    f.resultado('p3', UUID_B, 3, 'CLUB NUEVO');
+    f.asalto('p3', UUID_A, UUID_C, 5, 4);
+    const filas = f.ejecutar<FilaSugerido>(sqlTiradoresSugeridos([UUID_A], UUID_A));
+    expect(filas.find((x) => x.id === UUID_B)).toMatchObject({ pruebas: 2, club: 'CLUB NUEVO', asaltos: 0, mismoClub: 0 });
+    expect(filas.find((x) => x.id === UUID_C)).toMatchObject({ pruebas: 0, club: null, asaltos: 1, victorias: 1 });
+  });
+
   it(`devuelve como mucho ${LIMITE_SUGERIDOS} personas`, () => {
     const f = fixture();
     f.persona(UUID_A, 'PEREZ Ana');

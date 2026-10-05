@@ -19,7 +19,6 @@
  */
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -30,11 +29,11 @@ import {
   urlPruebaEngarde,
   urlTorneoEngarde,
 } from '../../src/lib/ingest/sources/engarde';
-import { argumento } from './comun';
+import { argumento, CARPETA_CACHES, CARPETA_TRABAJO } from './comun';
 
 export const USER_AGENT_ENGARDE = 'CalendarioEsgrima/1.0 (+contacto)';
-export const CARPETA_ENGARDE = join(tmpdir(), 'calendario-trabajo', 'engarde');
-export const INVENTARIO_POR_DEFECTO = join(tmpdir(), 'qa-prod-calendario', 'history-national', 'national-inventory.json');
+export const CARPETA_ENGARDE = join(CARPETA_TRABAJO, 'engarde');
+export const INVENTARIO_POR_DEFECTO = join(CARPETA_CACHES, 'history-national', 'national-inventory.json');
 
 export type EnlaceEngarde =
   | { tipo: 'torneo'; org: string; evt: string; compe: string | null }

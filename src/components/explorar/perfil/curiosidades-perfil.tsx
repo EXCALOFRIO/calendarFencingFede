@@ -118,7 +118,9 @@ function TarjetaCuriosidad({ personaId, c, nivel }: { personaId: string; c: Curi
           {c.marcador.fecha ? fechaLegible(c.marcador.fecha) : 'Fecha no publicada'}
         </p>
       ) : null}
-      <div className="mt-auto flex min-w-0 flex-col gap-2 border-t pt-3">
+      {/* En el carrusel móvil las tarjetas se estiran a la más alta: el hueco
+          queda al final y no entre la frase y el rival. */}
+      <div className="flex min-w-0 flex-col gap-2 border-t pt-3 sm:mt-auto">
         <div className="flex min-w-0 items-center gap-2">
           <Link
             href={rutaFicha(c.rival.id)}
@@ -127,7 +129,7 @@ function TarjetaCuriosidad({ personaId, c, nivel }: { personaId: string; c: Curi
           >
             <AvatarAnillo nombre={nombre} tamano="sm" apagado />
             <span className="flex min-w-0 flex-col gap-0.5">
-              <span className="truncate text-sm font-medium">{nombre}</span>
+              <span className="line-clamp-2 text-sm leading-tight font-medium break-words">{nombre}</span>
               {c.rival.pais ? <BanderaPais pais={c.rival.pais} /> : null}
             </span>
           </Link>

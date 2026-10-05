@@ -74,7 +74,7 @@ export function TarjetaSiguiendo({ e }: { e: EntradaSiguiendo }) {
           >
             <AvatarAnillo nombre={nombre} tamano="sm" />
             <span className="flex min-w-0 flex-col gap-0.5">
-              <span className="truncate font-semibold">{nombre}</span>
+              <span className="line-clamp-2 leading-tight font-semibold break-words">{nombre}</span>
               {e.persona.pais ? <BanderaPais pais={e.persona.pais} /> : null}
             </span>
           </Link>
@@ -86,15 +86,13 @@ export function TarjetaSiguiendo({ e }: { e: EntradaSiguiendo }) {
         <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 border-t pt-3">
           <InsigniaPuesto puesto={e.puesto} puestoPublicado={e.puestoLiteral} />
           <div className="flex min-w-0 flex-col gap-1.5">
-            {/* El disco ya dice la medalla con texto; aquí va el puesto entre cuántos. */}
-            <span className="text-sm">
-              {e.puesto !== null ? (
-                <>
-                  Puesto <strong className="cifra text-lg">{e.puesto}</strong>
-                  {e.participantes > 0 ? <> de <strong className="cifra text-lg">{e.participantes}</strong></> : null}
-                </>
-              ) : e.puestoLiteral ?? 'Sin puesto publicado'}
-            </span>
+            {/* El disco ya dice el puesto (y la medalla); aquí sólo entre cuántos. */}
+            {e.puesto !== null && e.participantes > 0 ? (
+              <span className="text-sm text-muted-foreground">
+                Entre <strong className="cifra text-lg text-foreground">{e.participantes}</strong>{' '}
+                {e.participantes === 1 ? 'participante' : 'participantes'}
+              </span>
+            ) : null}
             <Link
               href={rutaEdicion(e.prueba.edicionId)}
               prefetch={false}

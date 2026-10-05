@@ -18,7 +18,6 @@
  * publican sus documentos (o los descarta sin temporada).
  */
 import { writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ENGARDE_BASE, ENGARDE_INDICE, esSegmentoEngarde, urlPruebaEngarde } from '../../src/lib/ingest/sources/engarde';
@@ -29,10 +28,10 @@ import {
   esFechaFicticiaEngarde,
   fechaDeTituloTorneo,
 } from '../../src/lib/ingest/sources/engarde-antiguo';
-import { argumento } from './comun';
+import { argumento, CARPETA_TRABAJO } from './comun';
 import { CacheEngarde, claveCache, formularioIndiceEngarde, paginasDePrueba, USER_AGENT_ENGARDE } from './engarde-descargar';
 
-export const CARPETA_ENGARDE_HISTORICO = join(tmpdir(), 'calendario-trabajo', 'engarde-historico');
+export const CARPETA_ENGARDE_HISTORICO = join(CARPETA_TRABAJO, 'engarde-historico');
 export const FECHA_CORTE = '2018-09-01';
 
 /**

@@ -1,17 +1,24 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { pathToFileURL } from 'node:url';
 import { urlCuadro, urlPoules, urlPrueba, urlRanking } from '../../src/lib/ingest/sources/fie-resultados';
+import { RAIZ_DATOS } from './comun';
 
 /**
  * Descarga reanudable de las pruebas FIE indexadas pero sin caché local.
  *
  *   node node_modules/tsx/dist/cli.mjs scripts/indexado/fie-descargar-antiguas.ts [--base <sqlite>] [--salida <dir>] [--limite N]
+ *     [--ids <temporada:id,...>] [--lista <fichero>]
  *
  * Guarda cada respuesta tal cual en `<salida>/raw/<season>-<id>-<kind>.json` y una línea por
  * prueba terminada en `<salida>/progress.jsonl`. Una prueba con línea en progress se salta; un
  * fichero raw ya presente no se vuelve a pedir. Una petición a la vez, >=400 ms entre inicios.
  * 429/5xx: espera Retry-After (o backoff) y reintenta; 403 o robots que prohíba: se para.
+ *
+ * Con `--ids` o `--lista` (un `temporada:id` por línea o separados por comas; `#` comenta) se
+ * descargan sólo esas pruebas y no se consulta la base: sirve para releer unas pocas pruebas
+ * ya indexadas. `fie-antiguas-a-hechos.ts --entrada <salida>` las convierte después.
  */
 
 const args = process.argv.slice(2);
@@ -19,10 +26,12 @@ const opt = (n: string, d: string) => {
   const i = args.indexOf(n);
   return i >= 0 && args[i + 1] ? args[i + 1] : d;
 };
-const TMP = process.env.TEMP ?? process.env.TMP ?? '/tmp';
+const TMP = RAIZ_DATOS;
 const BASE = opt('--base', path.join(TMP, 'calendario-trabajo', 'base.sqlite'));
 const SALIDA = opt('--salida', path.join(TMP, 'calendario-trabajo', 'fie-antiguo'));
 const LIMITE = Number(opt('--limite', '0')) || Infinity;
+const IDS = opt('--ids', '');
+const LISTA = opt('--lista', '');
 const RAW = path.join(SALIDA, 'raw');
 const PROGRESO = path.join(SALIDA, 'progress.jsonl');
 const PARADA = path.join(SALIDA, 'STOP');
@@ -31,15 +40,27 @@ const INTERVALO_MS = 400;
 const TAMANO_PAGINA = 200;
 const UA = process.env.INGEST_USER_AGENT || 'CalendarioEsgrima/1.0 (+https://calendario-fie-fede.excalofrio.workers.dev)';
 
-mkdirSync(RAW, { recursive: true });
-
 class Bloqueo extends Error {}
 
 const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let ultimoInicio = 0;
 let peticiones = 0;
 let bytesRaw = 0;
-for (const f of readdirSync(RAW)) bytesRaw += statSync(path.join(RAW, f)).size;
+
+/** `temporada:id` separados por comas, espacios o líneas, sin repetidos y ordenados. */
+export function pruebasDeLista(texto: string): { season: number; id: number }[] {
+  const vistas = new Map<string, { season: number; id: number }>();
+  for (const linea of texto.split(/\r?\n/)) {
+    for (const t of linea.replace(/#.*/, '').split(/[\s,;]+/)) {
+      if (!t) continue;
+      const m = /^(\d{4}):(\d+)$/.exec(t);
+      if (!m) throw new Error(`prueba mal escrita: «${t}» (se espera temporada:id)`);
+      const p = { season: Number(m[1]), id: Number(m[2]) };
+      vistas.set(`${p.season}-${p.id}`, p);
+    }
+  }
+  return [...vistas.values()].sort((a, b) => a.season - b.season || a.id - b.id);
+}
 
 function retryAfterMs(v: string | null): number | null {
   if (!v) return null;
@@ -190,6 +211,11 @@ function pendientes(): { season: number; id: number }[] {
 }
 
 async function main() {
+  mkdirSync(RAW, { recursive: true });
+  for (const f of readdirSync(RAW)) bytesRaw += statSync(path.join(RAW, f)).size;
+  const dirigidas = IDS || LISTA ? pruebasDeLista([IDS, LISTA ? readFileSync(LISTA, 'utf8') : ''].join('\n')) : null;
+  if (dirigidas && dirigidas.length === 0) throw new Error('--ids/--lista sin pruebas');
+
   const robots = await pedir('https://fie.org/robots.txt');
   if (robots.status === 200 && /^\s*Disallow:\s*\/(api)?\s*$/im.test(robots.cuerpo)) {
     throw new Bloqueo('robots.txt prohíbe el acceso');
@@ -208,7 +234,7 @@ async function main() {
       }
     }
   }
-  const lista = pendientes().filter((p) => !hechas.has(`${p.season}-${p.id}`));
+  const lista = (dirigidas ?? pendientes()).filter((p) => !hechas.has(`${p.season}-${p.id}`));
   log(`pendientes ${lista.length} (ya hechas ${hechas.size}); raw ${(bytesRaw / 1e6).toFixed(1)} MB`);
 
   const cuenta = { con_resultados: 0, sin_resultados: 0, error: 0 };
@@ -237,7 +263,9 @@ async function main() {
   log(`FIN hechas ${n} con=${cuenta.con_resultados} sin=${cuenta.sin_resultados} err=${cuenta.error} peticiones=${peticiones}`);
 }
 
-main().catch((e) => {
-  log(`${e instanceof Bloqueo ? 'BLOQUEADO' : 'ERROR'}: ${(e as Error).message}`);
-  process.exit(2);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main().catch((e) => {
+    log(`${e instanceof Bloqueo ? 'BLOQUEADO' : 'ERROR'}: ${(e as Error).message}`);
+    process.exit(2);
+  });
+}

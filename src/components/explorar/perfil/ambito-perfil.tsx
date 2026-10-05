@@ -89,7 +89,7 @@ function FilaDesglose({ rotulo, r }: { rotulo: React.ReactNode; r: ResumenCompet
         <Celda etiqueta={r.competiciones === 1 ? 'prueba' : 'pruebas'}>{r.competiciones}</Celda>
         <Celda etiqueta={r.medallas === 1 ? 'medalla' : 'medallas'}>{r.medallas}</Celda>
         <Celda etiqueta={r.finales === 1 ? 'final' : 'finales'}>{r.finales}</Celda>
-        <Celda etiqueta="asaltos ganados">{p === null ? <span className="text-base text-muted-foreground">—</span> : `${p}%`}</Celda>
+        <Celda etiqueta="asaltos ganados">{p === null ? <span className="text-muted-foreground">—</span> : `${p}%`}</Celda>
       </dl>
     </li>
   );
@@ -178,12 +178,13 @@ export function AmbitoPerfil({ ambito, nivel }: { ambito: EstadisticasPorAmbito;
       <div className="group/ambito flex min-w-0 flex-col gap-4">
         <fieldset className="min-w-0">
           <legend className="sr-only">Qué competiciones contar</legend>
-          <div className="inline-flex max-w-full gap-1 rounded-full border bg-card p-1">
+          {/* En móvil, tres columnas iguales: con cifras de tres dígitos los rótulos no caben en una fila libre. */}
+          <div className="grid w-full grid-cols-3 gap-1 rounded-full border bg-card p-1 sm:inline-flex sm:w-auto sm:max-w-full">
             {OPCIONES.map((o) => (
               <label
                 key={o.clave}
                 className={cn(
-                  'relative inline-flex min-h-11 min-w-0 cursor-pointer items-center gap-1.5 rounded-full px-3 text-sm text-muted-foreground sm:px-4',
+                  'relative inline-flex min-h-11 min-w-0 cursor-pointer flex-wrap items-center justify-center gap-x-1.5 rounded-full px-2 text-center text-sm leading-tight text-muted-foreground sm:px-4',
                   'hover:text-foreground has-[:checked]:bg-marcado has-[:checked]:font-semibold has-[:checked]:text-primary-text',
                   'has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/50',
                 )}
