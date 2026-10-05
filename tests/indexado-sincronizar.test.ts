@@ -141,6 +141,30 @@ describe('sincronizar-d1: diff, SQL y aplicación con guardas', () => {
     }
   });
 
+  it('una edición borrada espera a que se trasladen los asaltos de su prueba borrada', () => {
+    // Engarde repetida: su edición y su prueba desaparecen y sus asaltos pasan a c1.
+    const e = escenario({
+      chunkBytes: 1500,
+      extra: `INSERT INTO sport_edition(id,source,season,tournament_key,name,updated_at) VALUES('e9','engarde','2025','k9','Rep',1000);
+        INSERT INTO sport_competition(id,edition_id,source,season,competition_key,weapon,gender,category,updated_at)
+          VALUES('c9','e9','engarde','2025','c9','ESPADA','M','ABS',1000);
+        INSERT INTO sport_bout(id,competition_id,source,phase,round_key,fencer_a_ref,fencer_b_ref,fencer_a_name,fencer_b_name,score_a,score_b,content_hash,first_seen_at,revised_at)
+          VALUES('b9','c9','engarde','POULE','1','a','d','Uno','Cuatro',5,2,'hb9',1,1);`,
+      cambios: `UPDATE sport_bout SET competition_id='c1', revised_at=2 WHERE id='b9';
+        DELETE FROM sport_edition WHERE id='e9';`,
+    });
+    const m = e.plan();
+    expect(m.tablas.sport_competition).toMatchObject({ borrar: 1, borrarAlFinal: 1 });
+    expect(m.tablas.sport_edition).toMatchObject({ borrar: 1, borrarAlFinal: 1 });
+    const { ruta, db } = copiaDeBase(e.dir, e.base);
+    aplicarLocal(db, e.salida, m);
+    expect(db.prepare(`SELECT competition_id AS c FROM sport_bout WHERE id='b9'`).get()).toEqual({ c: 'c1' });
+    db.close();
+    for (const d of compararBases(ruta, e.nuevo)) {
+      expect(d, d.tabla).toEqual({ tabla: d.tabla, soloA: 0, soloB: 0, agregadosIguales: true });
+    }
+  });
+
   it('el cargo estimado cubre exactamente lo que cobran los triggers en cada chunk', () => {
     const e = escenario({
       chunkBytes: 1500,

@@ -37,32 +37,62 @@ export function sqlPruebasAmbito(ids: readonly string[]) {
       -- GROUP BY: agrupar cada lado aparte y cruzarlos costaba el doble en D1.
       SELECT coalesce('cal:' || c.event_competition_id, 'sport:' || c.id) AS equivalencia,
              c.id AS prueba, coalesce(CASE WHEN r.position > 0 THEN r.position END, -1) AS puesto,
-             NULL AS favor, NULL AS contra
+             NULL AS favor, NULL AS contra, c.id || '|' || r.id AS resultado
       FROM sport_result r CROSS JOIN sport_competition c ON c.id = r.competition_id
       WHERE r.person_id IN (${listaUuid(ids)}) AND c.format = 'INDIVIDUAL'
       UNION ALL
-      SELECT equivalencia, prueba, NULL, favor, contra FROM validos
+      SELECT equivalencia, prueba, NULL, favor, contra, NULL FROM validos
     ), por_prueba AS (
       SELECT equivalencia, min(prueba) AS prueba,
              CASE WHEN min(puesto) = max(puesto) AND min(puesto) > 0 THEN min(puesto) END AS puesto,
              count(favor) AS asaltos,
              coalesce(sum(favor > contra), 0) AS victorias, coalesce(sum(favor < contra), 0) AS derrotas,
-             coalesce(sum(favor), 0) AS dados, coalesce(sum(contra), 0) AS recibidos
+             coalesce(sum(favor), 0) AS dados, coalesce(sum(contra), 0) AS recibidos,
+             -- Fila de resultado que se enseña: la de la prueba de menor ID del grupo.
+             min(resultado) AS resultado
       FROM hechos GROUP BY equivalencia
     )
     SELECT c.source AS fuente, e.name AS torneo, c.category AS categoria, e.country_code AS pais,
            ev0.scope AS "ambitoEvento", ev0.circuit AS "circuitoEvento", ev0.source AS "fuenteEvento",
            t.puesto AS puesto, t.asaltos AS asaltos, t.victorias AS victorias,
-           t.derrotas AS derrotas, t.dados AS dados, t.recibidos AS recibidos
+           t.derrotas AS derrotas, t.dados AS dados, t.recibidos AS recibidos,
+           rr.id AS "resultadoId", rr.competition_id AS "pruebaResultado",
+           CASE WHEN rr.position > 0 THEN rr.position END AS "puestoResultado", rr.position_raw AS "puestoPublicado", rr.official_points AS puntos, rr.source AS "fuenteResultado",
+           coalesce(rr.source_url, c.source_url) AS enlace,
+           e.id AS "edicionId", e.city AS ciudad, c.weapon AS arma, c.gender AS genero,
+           c.category_raw AS "categoriaRaw", c.season AS temporada,
+           coalesce(rr.occurred_on, c.competition_date, e.start_date) AS fecha,
+           coalesce(rr.occurred_on, c.competition_date, e.start_date, '0001-01-01') AS "fechaOrden"
     FROM por_prueba t
     CROSS JOIN sport_competition c ON c.id = t.prueba
     CROSS JOIN sport_edition e ON e.id = c.edition_id
     LEFT JOIN event ev0 ON ev0.id = e.event_id
+    LEFT JOIN sport_result rr ON rr.id = substr(t.resultado, instr(t.resultado, '|') + 1)
     ORDER BY coalesce(c.competition_date, e.start_date, '0001-01-01') DESC, t.prueba
     LIMIT ${LIMITE_PRUEBAS_AMBITO + 1}`;
 }
 
-export type FilaPruebaAmbito = {
+/** Datos de presentación de la misma fila; `resultadoId` nulo = sólo hay asaltos, sin clasificación. */
+export type FilaPresentacionPrueba = {
+  resultadoId: string | null;
+  pruebaResultado: string | null;
+  /** Puesto de esa fila; `puesto` (el de la prueba) es nulo si dos fuentes se contradicen. */
+  puestoResultado: number | null;
+  puestoPublicado: string | null;
+  puntos: string | null;
+  fuenteResultado: string | null;
+  enlace: string | null;
+  edicionId: string;
+  ciudad: string | null;
+  arma: string;
+  genero: string;
+  categoriaRaw: string | null;
+  temporada: string;
+  fecha: string | null;
+  fechaOrden: string;
+};
+
+export type FilaPruebaAmbito = Partial<FilaPresentacionPrueba> & {
   fuente: string;
   torneo: string;
   categoria: string;
@@ -156,18 +186,27 @@ export function aEstadisticasPorAmbito(rows: readonly FilaPruebaAmbito[]): Estad
   };
 }
 
-/** Para quien ya resolvió la persona; un fallo devuelve `null`. */
-export async function leerEstadisticasAmbitoDe(
+/** Filas por prueba para quien ya resolvió la persona; un fallo devuelve `null`. */
+export async function leerPruebasAmbitoDe(
   db: ContextoExplorador['db'],
   ids: readonly string[],
-): Promise<EstadisticasPorAmbito | null> {
+): Promise<FilaPruebaAmbito[] | null> {
   try {
-    return aEstadisticasPorAmbito(filas<FilaPruebaAmbito>(await db.execute(sqlPruebasAmbito(ids))));
+    return filas<FilaPruebaAmbito>(await db.execute(sqlPruebasAmbito(ids)));
   } catch (error) {
     console.error('[explorar] las estadísticas por ámbito no se pudieron leer:',
       error instanceof Error ? error.name : 'desconocido');
     return null;
   }
+}
+
+/** Para quien ya resolvió la persona; un fallo devuelve `null`. */
+export async function leerEstadisticasAmbitoDe(
+  db: ContextoExplorador['db'],
+  ids: readonly string[],
+): Promise<EstadisticasPorAmbito | null> {
+  const rows = await leerPruebasAmbitoDe(db, ids);
+  return rows ? aEstadisticasPorAmbito(rows) : null;
 }
 
 const esquema = z.object({ personaId: z.string().regex(UUID_RE) }).strict();

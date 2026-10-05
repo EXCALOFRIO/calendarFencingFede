@@ -19,11 +19,18 @@ import {
   UNIONES_RESUMEN, vigente,
 } from './busqueda-indice';
 import { leerTrayectorias } from './busqueda-trayectoria';
+import { PESO_RESULTADO_SQL } from './indice-sql';
 import { SALTOS, sqlGrupoDe } from './personas';
 import type { Arma, FiltrosBusqueda, Genero } from './tipos';
 import { TRAYECTORIA_VACIA, type DeportistaBuscado } from './tipos-busqueda';
 
 const CLASE = 'busqueda';
+/**
+ * Lista por nombre con el índice, por popularidad. Otra clase de cursor: uno
+ * alfabético (sin índice, o anterior a este orden) no vale aquí ni al revés, y
+ * se responde `cursor_invalido` como con cualquier cursor de otra consulta.
+ */
+const CLASE_POPULAR = 'busqueda-popular';
 
 export type ResultadoBusqueda =
   | {
@@ -317,39 +324,50 @@ function sqlBusquedaPorNombre(
 }
 
 /**
- * La búsqueda por nombre con el índice de palabras, en UNA sentencia.
+ * Posición en la lista por popularidad: (relevancia, clave de nombre, id). La
+ * relevancia es el `peso` del índice, doble si cada palabra de la consulta es
+ * una palabra entera del nombre (la misma regla que el buscador en vivo,
+ * `relevanciaSugerencia`). Se ordena por relevancia descendente y, a igualdad,
+ * por nombre e id ascendentes.
+ */
+export type PosicionPopular = readonly [relevancia: number, clave: string, id: string];
+
+/**
+ * La búsqueda por nombre con el índice de palabras, en UNA sentencia, de la
+ * persona más popular a la menos («alejandro» empieza por los Alejandros con
+ * más resultados recientes).
  *
- * - `indexadas`/`orden_indice`: las personas del índice con todas las
- *   palabras, ya en orden de página (`n`), sin leer sport_person.
- * - `pagina_indice` las recorre en ese orden y, para cada una, comprueba en
- *   vivo lo mismo que `sqlBusquedaPorNombre` (sigue prevaleciendo, su nombre o
- *   un alias de su grupo coincide) y los filtros; para al llenar la página, así
- *   que una consulta frecuente («ma») no lee miles de personas.
- * - `delta_raices`/`pagina_delta`: altas posteriores a la reconstrucción.
+ * - `orden_indice`: las personas del índice con todas las palabras y su
+ *   relevancia, sin leer sport_person (peso y nombre salen de explorar_persona).
+ * - `orden_delta`: altas posteriores a la reconstrucción (o personas indexadas
+ *   a las que sólo un alias nuevo hace coincidir). Son pocas: su peso es el del
+ *   índice si la persona está en él y, si no, se calcula en vivo con la misma
+ *   regla sobre los resultados de su grupo (sport_result_person_date_idx).
+ * - `pagina` recorre `orden` (ambas, tras el cursor) en orden de página y, para
+ *   cada candidata, comprueba en vivo lo mismo que `sqlBusquedaPorNombre`
+ *   (sigue prevaleciendo, su nombre o un alias de su grupo coincide) y los
+ *   filtros; para al llenar la página.
  * - Recuentos, armas, trayectoria y homónimos de la página van en la misma
  *   sentencia en lugar de dos lecturas más (D1 ejecuta una sentencia tras otra).
  *
- * El orden de `n` es el de (name_normalized, id) al reconstruir; coincide con
- * el vivo mientras no cambie el nombre de una persona ya indexada.
+ * La clave de nombre de una persona indexada es la de la reconstrucción: si
+ * cambia su nombre, su sitio en la lista espera a la siguiente.
  */
 export function sqlBusquedaIndexada(
   f: FiltrosBusqueda & { q: string },
   limite: number,
-  clave: readonly (string | number)[] | null,
+  desde: PosicionPopular | null,
 ): SQL {
   const filtros: SQL[] = [];
   const porConjuntos = pruebaPorConjuntos(f);
   const prueba = porConjuntos ? porConjuntos.condicion : condicionPrueba(f);
   if (prueba) filtros.push(prueba);
   if (f.nacionalidad) filtros.push(condicionNacionalidad(f.nacionalidad));
-  const cursor = clave ? [String(clave[0]), String(clave[1])] as const : null;
-  if (cursor) filtros.push(sql`(p.name_normalized, p.id) > (${cursor[0]}, ${cursor[1]})`);
-  const desde = cursor
-    ? sql`(SELECT coalesce((
-        SELECT o.n FROM explorar_persona o
-        WHERE (o.name_normalized, o.id) <= (${cursor[0]}, ${cursor[1]})
-        ORDER BY o.name_normalized DESC, o.id DESC LIMIT 1), 0))`
-    : sql`0`;
+  const tras = desde
+    ? sql`WHERE (-o.rel, o.clave, o.id) > (${-desde[0]}, ${desde[1]}, ${desde[2]})`
+    : sql``;
+  const relevancia = (peso: SQL, nombre: SQL) =>
+    sql`${peso} * (CASE WHEN ${palabrasEnteras(nombre)} THEN 2 ELSE 1 END)`;
 
   return sql`
     WITH RECURSIVE
@@ -357,34 +375,40 @@ export function sqlBusquedaIndexada(
     ${CTE_MARCAS},
     ${CTE_INDEXADAS},
     ${ctesDelta()},
-    orden_indice(n, id) AS MATERIALIZED (
-      SELECT i.n, ep.id FROM indexadas i CROSS JOIN explorar_persona ep ON ep.n = i.n
-      WHERE i.n > ${desde}
-      ORDER BY i.n
-    )${porConjuntos ? sql`,
-    ordenadas(id) AS MATERIALIZED (
-      SELECT id FROM orden_indice UNION SELECT id FROM delta_raices
-    )${porConjuntos.ctes}` : sql``},
-    pagina_indice(id, name_normalized, country_code) AS MATERIALIZED (
-      SELECT p.id, p.name_normalized, p.country_code
-      FROM orden_indice o CROSS JOIN sport_person p ON p.id = o.id
-      WHERE ${y([vigente(), ...filtros])}
-      ORDER BY o.n
-      LIMIT ${limite + 1}
+    orden_indice(rel, clave, id) AS MATERIALIZED (
+      SELECT ${relevancia(sql`ep.peso`, sql`ep.name_normalized`)}, ep.name_normalized, ep.id
+      FROM indexadas i CROSS JOIN explorar_persona ep ON ep.n = i.n
     ),
-    pagina_delta(id, name_normalized, country_code) AS MATERIALIZED (
-      SELECT p.id, p.name_normalized, p.country_code
+    orden_delta(rel, clave, id) AS MATERIALIZED (
+      SELECT ${relevancia(sql`coalesce(
+               (SELECT ep.peso FROM explorar_persona ep
+                WHERE ep.name_normalized = p.name_normalized AND ep.id = p.id),
+               (SELECT coalesce(sum(${sql.raw(PESO_RESULTADO_SQL)}), 0)
+                FROM sport_result INDEXED BY sport_result_person_date_idx
+                WHERE person_id IN ${grupoP}))`, sql`p.name_normalized`)},
+             p.name_normalized, p.id
       FROM delta_raices d CROSS JOIN sport_person p ON p.id = d.id
-      WHERE ${y(filtros)}
+      WHERE d.id NOT IN (SELECT id FROM orden_indice)
     ),
-    pagina(id, name_normalized, country_code) AS MATERIALIZED (
-      SELECT id, name_normalized, country_code FROM pagina_indice
-      UNION
-      SELECT id, name_normalized, country_code FROM pagina_delta
-      ORDER BY 2, 1
+    orden(rel, clave, id) AS MATERIALIZED (
+      SELECT o.rel, o.clave, o.id FROM (
+        SELECT rel, clave, id FROM orden_indice
+        UNION ALL
+        SELECT rel, clave, id FROM orden_delta
+      ) o
+      ${tras}
+      ORDER BY o.rel DESC, o.clave, o.id
+    )${porConjuntos ? sql`,
+    ordenadas(id) AS MATERIALIZED (SELECT id FROM orden)${porConjuntos.ctes}` : sql``},
+    pagina(id, name_normalized, country_code, rel, clave) AS MATERIALIZED (
+      SELECT p.id, p.name_normalized, p.country_code, o.rel, o.clave
+      FROM orden o CROSS JOIN sport_person p ON p.id = o.id
+      WHERE ${y([vigente(), ...filtros])}
+      ORDER BY o.rel DESC, o.clave, o.id
       LIMIT ${limite + 1}
     )${ctesResumenPagina(limite)}
     SELECT p.id AS id, sp.display_name AS nombre, p.name_normalized AS "claveNombre",
+           p.rel AS relevancia, p.clave AS "claveOrden",
            CASE WHEN ${coincide(sql`p.name_normalized`)} THEN NULL ELSE (
              SELECT a.name_original FROM sport_person_alias a
              WHERE a.person_id IN ${grupoP} AND ${coincide(sql`a.name_normalized`)}
@@ -394,10 +418,27 @@ export function sqlBusquedaIndexada(
     FROM pagina p
     CROSS JOIN sport_person sp ON sp.id = p.id
     ${UNIONES_RESUMEN}
-    ORDER BY p.name_normalized ASC, p.id ASC`;
+    ORDER BY p.rel DESC, p.clave ASC, p.id ASC`;
+}
+
+function posicionPopular(k: readonly (string | number)[] | null): PosicionPopular | null {
+  if (!k) return null;
+  const [rel, clave, id] = k;
+  if (typeof rel !== 'number' || !Number.isSafeInteger(rel) || rel < 0) return null;
+  if (typeof clave !== 'string' || typeof id !== 'string' || !UUID_RE.test(id)) return null;
+  return [rel, clave, id];
+}
+
+/** Cada palabra de `palabras` es una palabra entera de `columna`. Requiere `palabras`. */
+function palabrasEnteras(columna: SQL): SQL {
+  return sql`NOT EXISTS (
+      SELECT 1 FROM palabras pw
+      WHERE instr(' ' || ${columna} || ' ', ' ' || pw.w || ' ') = 0)`;
 }
 
 type FilaIndexada = FilaBusqueda & {
+  relevancia: number;
+  claveOrden: string;
   resultados: number;
   armas: string | null;
   mejorPuesto: number | null;
@@ -474,8 +515,12 @@ export async function complementos(
 }
 
 /**
- * Búsqueda de deportistas globales, paginada por clave `(nombre normalizado,
- * id)`. Guarda de sesión antes de cualquier SQL. No lee `athlete` ni ninguna
+ * Búsqueda de deportistas globales, paginada por clave. Con nombre y con el
+ * índice de palabras va de la persona más popular a la menos (cursor
+ * `(relevancia, clave, id)`, ver `sqlBusquedaIndexada`); sin índice o sólo con
+ * filtros, por `(nombre normalizado, id)`: calcular la popularidad en vivo
+ * obligaría a leer los resultados de todas las candidatas. Guarda de sesión
+ * antes de cualquier SQL. No lee `athlete` ni ninguna
  * tabla de cuenta: incluye personas sin cuenta, con ficha inactiva o con sólo
  * un alias coincidente, y excluye las fundidas en otra: se llega a ellas por
  * la persona que prevalece, a través de los alias y hechos de todo su grupo.
@@ -495,22 +540,31 @@ export async function buscarDeportistas(
     return { estado: 'sin_criterio' };
   }
 
+  // Se lee antes de saber si hay índice: un cursor ilegible se rechaza sin
+  // tocar la base. Que sea del orden que toca se comprueba después.
   let clave: readonly (string | number)[] | null = null;
-  if (analizada.data.cursor) {
-    clave = decodificarCursor(CLASE, filtros, analizada.data.cursor, 2);
-    if (!clave || typeof clave[0] !== 'string' || !UUID_RE.test(String(clave[1]))) {
-      return { estado: 'cursor_invalido' };
+  let popular: PosicionPopular | null = null;
+  const cursor = analizada.data.cursor;
+  if (cursor) {
+    popular = filtros.q ? posicionPopular(decodificarCursor(CLASE_POPULAR, filtros, cursor, 3)) : null;
+    if (!popular) {
+      clave = decodificarCursor(CLASE, filtros, cursor, 2);
+      if (!clave || typeof clave[0] !== 'string' || !UUID_RE.test(String(clave[1]))) {
+        return { estado: 'cursor_invalido' };
+      }
     }
   }
 
   if (!(await ctx.esquema()).identidad) return { estado: 'no_disponible' };
 
   const limite = analizada.data.limite ?? LIMITE_POR_DEFECTO;
+  const conIndice = Boolean(filtros.q && ctx.indiceExplorar && (await ctx.indiceExplorar()));
+  if (cursor && conIndice !== Boolean(popular)) return { estado: 'cursor_invalido' };
 
-  if (filtros.q && ctx.indiceExplorar && (await ctx.indiceExplorar())) {
+  if (filtros.q && conIndice) {
     const q = filtros.q;
     const encontradas = filas<FilaIndexada>(
-      await ctx.db.execute(sqlBusquedaIndexada({ ...filtros, q }, limite, clave)),
+      await ctx.db.execute(sqlBusquedaIndexada({ ...filtros, q }, limite, popular)),
     );
     const pagina = encontradas.slice(0, limite);
     const ultima = pagina[pagina.length - 1];
@@ -519,7 +573,7 @@ export async function buscarDeportistas(
       filtros,
       items: pagina.map(deportistaIndexado),
       siguiente: encontradas.length > limite && ultima
-        ? codificarCursor(CLASE, filtros, [ultima.claveNombre, ultima.id])
+        ? codificarCursor(CLASE_POPULAR, filtros, [Number(ultima.relevancia), ultima.claveOrden, ultima.id])
         : null,
       sinResultados: pagina.length === 0,
     };

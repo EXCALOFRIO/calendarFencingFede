@@ -117,7 +117,7 @@ describe('selector de temporada con las claves de ambas fuentes', () => {
         atajoEspana: false,
       }),
     );
-    expect(html).toContain('Más filtros (1 activos)');
+    expect(html).toContain('<span class="sr-only">, 1 activo</span>');
     expect(html).toContain('for="explorar-temporada"');
   });
 });

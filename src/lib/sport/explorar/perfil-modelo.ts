@@ -13,6 +13,7 @@ import type {
   Medallero,
   PerfilDeportivo,
   PuestoRanking,
+  ResultadosPerfil,
   TemporadaPerfil,
   TiradorSugerido,
 } from './tipos-perfil';
@@ -197,6 +198,7 @@ export type FilasPerfil = {
   /** Ya construidas por `rivales-stats.ts`; `null` = falló, ausente = no se pidieron. */
   rivalesStats?: EstadisticasRivales | null;
   ambito?: EstadisticasPorAmbito | null;
+  resultados?: ResultadosPerfil | null;
 };
 
 export function construirPerfil(
@@ -275,5 +277,6 @@ export function construirPerfil(
     },
     ...(filas.rivalesStats === undefined ? {} : { rivalesStats: filas.rivalesStats }),
     ...(filas.ambito === undefined ? {} : { ambito: filas.ambito }),
+    ...(filas.resultados === undefined ? {} : { resultados: filas.resultados }),
   };
 }

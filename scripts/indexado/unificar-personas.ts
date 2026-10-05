@@ -17,6 +17,9 @@
  *     (`depurarSolapesEngarde`): se retiran sus puestos; sus asaltos sólo se
  *     quedan, trasladados a la prueba existente, si traen más que ella (nunca
  *     frente a FIE). Va antes de b para no crear personas de pruebas retiradas.
+ *  e2) Pruebas por equipos de PDF y Engarde: cada fila es un equipo, así que sus
+ *     puestos y asaltos se desvinculan de cualquier persona (`desvincularEquipos`);
+ *     al final se borran las personas por nombre que sólo existían por esas filas.
  *  b) Puestos de PDF RFEE y de Engarde (sin IDs): vínculo por nombre normalizado
  *     único entre personas con licencia RFEE / país ESP / creadas desde PDF,
  *     contadas por su persona raíz; si no hay candidata, persona nueva por
@@ -99,6 +102,11 @@ export type InformeUnificacion = {
   fusionPdf: { fusiones: number; ambiguas: number };
   /** Vínculos por nombre deshechos: la misma persona dos veces en una prueba individual rfee_pdf. */
   colisionesPdf: { pruebas: number; resultados: number; asaltosLado: number };
+  /**
+   * Filas de pruebas por equipos vinculadas por nombre a una persona (el nombre es el del
+   * equipo, «SAMA-M 1») y personas que sólo existían por esas filas, ya borradas.
+   */
+  equipos: { resultados: number; asaltosLado: number; personasBorradas: number };
   /** Puestos y asaltos rfee_pdf que ya estaban en la misma prueba de skermo_rfee. */
   solapes: InformeDepuracion;
   /** Pruebas engarde que ya existían en otra fuente: puestos retirados, asaltos sólo si traen más. */
@@ -525,8 +533,8 @@ class Unificador {
       `SELECT r.id, r.source_name nombre, c.gender genero, r.source fuente, r.competition_id comp, c.format formato
          FROM sport_result r
          JOIN sport_competition c ON c.id = r.competition_id
-        WHERE r.source IN (${FUENTES_NOMBRE_SQL}) AND r.person_id IS NULL
-          AND NOT (r.source='engarde' AND (c.format='EQUIPOS' OR coalesce(r.source_country_code, 'ESP') <> 'ESP'))`,
+        WHERE r.source IN (${FUENTES_NOMBRE_SQL}) AND r.person_id IS NULL AND c.format <> 'EQUIPOS'
+          AND NOT (r.source='engarde' AND coalesce(r.source_country_code, 'ESP') <> 'ESP')`,
     ).all() as { id: string; nombre: string; genero: string; fuente: string; comp: string; formato: string }[]) {
       const g = grupoDe(r.nombre, r.genero, r.fuente);
       if (!g) continue;
@@ -553,7 +561,8 @@ class Unificador {
       `SELECT b.id, b.competition_id competicion, b.fencer_a_ref a, b.fencer_a_name an, b.fencer_a_person_id ap,
               b.fencer_b_ref b, b.fencer_b_name bn, b.fencer_b_person_id bp, c.gender genero, b.source fuente
          FROM sport_bout b JOIN sport_competition c ON c.id = b.competition_id
-        WHERE b.source IN (${FUENTES_NOMBRE_SQL}) AND (b.fencer_a_person_id IS NULL OR b.fencer_b_person_id IS NULL)`,
+        WHERE b.source IN (${FUENTES_NOMBRE_SQL}) AND c.format <> 'EQUIPOS'
+          AND (b.fencer_a_person_id IS NULL OR b.fencer_b_person_id IS NULL)`,
     ).all() as Asalto[];
     for (const b of asaltos) {
       // En Engarde el asalto hereda la persona del puesto de su prueba; no abre grupos de nombre propios.
@@ -787,6 +796,59 @@ export function desvincularColisionesPdf(db: DatabaseSync): InformeUnificacion['
   return inf;
 }
 
+/**
+ * En las pruebas por equipos de las fuentes por nombre cada fila es un equipo, no un
+ * tirador: se desvinculan sus puestos y asaltos de cualquier persona.
+ */
+export function desvincularEquipos(db: DatabaseSync): Pick<InformeUnificacion['equipos'], 'resultados' | 'asaltosLado'> {
+  const equipos = `SELECT id FROM sport_competition WHERE format = 'EQUIPOS'`;
+  const resultados = Number(db.prepare(
+    `UPDATE sport_result SET person_id = NULL
+      WHERE person_id IS NOT NULL AND source IN (${FUENTES_NOMBRE_SQL}) AND competition_id IN (${equipos})`,
+  ).run().changes);
+  const ladoA = Number(db.prepare(
+    `UPDATE sport_bout SET fencer_a_person_id = NULL
+      WHERE fencer_a_person_id IS NOT NULL AND source IN (${FUENTES_NOMBRE_SQL}) AND competition_id IN (${equipos})`,
+  ).run().changes);
+  const ladoB = Number(db.prepare(
+    `UPDATE sport_bout SET fencer_b_person_id = NULL
+      WHERE fencer_b_person_id IS NOT NULL AND source IN (${FUENTES_NOMBRE_SQL}) AND competition_id IN (${equipos})`,
+  ).run().changes);
+  return { resultados, asaltosLado: ladoA + ladoB };
+}
+
+/**
+ * Borra las personas creadas por nombre que ya no tienen nada: sin puestos, asaltos, ID
+ * externo, ficha de deportista, seguidores, ranking ni personas fundidas en ellas, y cuyos
+ * alias son todos de fuentes por nombre. Sólo quedan así las que nacieron de filas de equipo.
+ */
+export function borrarPersonasHuerfanas(db: DatabaseSync): number {
+  const huerfanas = db.prepare(
+    `SELECT p.id FROM sport_person p
+      WHERE p.athlete_id IS NULL AND p.merged_into_person_id IS NULL
+        AND EXISTS (SELECT 1 FROM sport_person_alias a WHERE a.person_id = p.id)
+        AND NOT EXISTS (SELECT 1 FROM sport_person_alias a WHERE a.person_id = p.id AND a.source NOT IN (${FUENTES_NOMBRE_SQL}))
+        AND NOT EXISTS (SELECT 1 FROM sport_result r WHERE r.person_id = p.id)
+        AND NOT EXISTS (SELECT 1 FROM sport_bout b WHERE b.fencer_a_person_id = p.id)
+        AND NOT EXISTS (SELECT 1 FROM sport_bout b WHERE b.fencer_b_person_id = p.id)
+        AND NOT EXISTS (SELECT 1 FROM sport_external_id x WHERE x.person_id = p.id)
+        AND NOT EXISTS (SELECT 1 FROM sport_favorite f WHERE f.person_id = p.id)
+        AND NOT EXISTS (SELECT 1 FROM sport_ranking_entry e WHERE e.person_id = p.id)
+        AND NOT EXISTS (SELECT 1 FROM sport_person h WHERE h.merged_into_person_id = p.id)`,
+  ).all() as { id: string }[];
+  if (huerfanas.length === 0) return 0;
+  const borrar = db.prepare('DELETE FROM sport_person WHERE id = ?');
+  db.exec('BEGIN');
+  try {
+    for (const { id } of huerfanas) borrar.run(id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  return huerfanas.length;
+}
+
 export function unificarPersonas(db: DatabaseSync): InformeUnificacion {
   const inicio = Date.now();
   const informe: InformeUnificacion = {
@@ -801,6 +863,7 @@ export function unificarPersonas(db: DatabaseSync): InformeUnificacion {
     },
     fusionPdf: { fusiones: 0, ambiguas: 0 },
     colisionesPdf: { pruebas: 0, resultados: 0, asaltosLado: 0 },
+    equipos: { resultados: 0, asaltosLado: 0, personasBorradas: 0 },
     solapes: undefined as unknown as InformeDepuracion,
     solapesEngarde: undefined as unknown as InformeSolapesEngarde,
     candidatosRegistrados: 0,
@@ -812,10 +875,12 @@ export function unificarPersonas(db: DatabaseSync): InformeUnificacion {
   u.pasoFusionFieRfee(informe.fusionFieRfee);
   // Antes del paso por nombre: las pruebas Engarde repetidas no deben crear personas.
   informe.solapesEngarde = depurarSolapesEngarde(db);
+  informe.equipos = { ...desvincularEquipos(db), personasBorradas: 0 };
   u.pasoPdf(informe.pdf);
   u.pasoFusionPdf(informe.fusionPdf);
   informe.colisionesPdf = desvincularColisionesPdf(db);
   informe.solapes = depurarSolapes(db);
+  informe.equipos.personasBorradas = borrarPersonasHuerfanas(db);
   informe.candidatosRegistrados = u.candidatos;
   informe.despues = medir(db);
   informe.segundos = Math.round((Date.now() - inicio) / 100) / 10;

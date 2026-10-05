@@ -1,5 +1,10 @@
-import type { Arma, FichaDeportiva } from './tipos';
-import type { EstadisticasPorAmbito, EstadisticasRivales } from './tipos-social';
+import type { Arma, FichaDeportiva, ResultadoHistorial } from './tipos';
+import type {
+  AmbitoCompeticion,
+  ClasificacionCompeticion,
+  EstadisticasPorAmbito,
+  EstadisticasRivales,
+} from './tipos-social';
 
 /**
  * DTO del perfil deportivo (cabecera, cifras, año a año, mano a mano).
@@ -105,6 +110,28 @@ export type PerfilDeportivo = {
   rivalesStats?: EstadisticasRivales | null;
   /** Internacional, nacional, por categoría y por tipo. `null` = no se pudo leer; ausente en DTO anteriores. */
   ambito?: EstadisticasPorAmbito | null;
+  /**
+   * Un resultado individual por prueba (equivalencias fundidas), de la misma
+   * lectura que `ambito`. `null` = no se pudo leer; ausente en DTO anteriores.
+   */
+  resultados?: ResultadosPerfil | null;
+};
+
+/** Resultado del historial con su tipo y ámbito ya clasificados y el balance de asaltos de esa prueba. */
+export type ResultadoPerfil = ResultadoHistorial & {
+  clasificacion: ClasificacionCompeticion;
+  /** `null` = sin asaltos importados de esa prueba. */
+  asaltos: { victorias: number; derrotas: number } | null;
+  /** Puesto consensuado entre fuentes; `null` si se contradicen (no entra en «mejores»). */
+  puestoFiable: number | null;
+};
+
+export type ResultadosPerfil = {
+  /** Más reciente primero. */
+  items: ResultadoPerfil[];
+  porAmbito: Record<AmbitoCompeticion, number>;
+  /** Se alcanzó el tope de pruebas leídas. */
+  truncado: boolean;
 };
 
 export type FichaConPerfil = FichaDeportiva & {

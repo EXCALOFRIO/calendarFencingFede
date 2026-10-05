@@ -218,6 +218,20 @@ describe('vista de resultados', () => {
     expect(html).toContain('nacimiento 1994');
   });
 
+  it('cada fila lleva lo que el buscador guarda en Recientes al abrirla, dentro de su contenedor', () => {
+    const fila = resumen({ id: UUID_A, nombre: 'ZABALA Juan', pais: 'ESP' });
+    const html = lista([fila, resumen({ id: UUID_B, nombre: 'Sin País', pais: null })]);
+    expect(html).toMatch(new RegExp(`<a [^>]*data-fila-perfil=""[^>]*data-persona="${UUID_A}"[^>]*data-nombre="ZABALA Juan"[^>]*data-pais="ESP"`));
+    expect(html).toMatch(new RegExp(`data-persona="${UUID_B}"[^>]*data-pais=""`));
+    const c = criterios({ q: 'zabala' });
+    const pagina = renderToStaticMarkup(React.createElement(FormularioFiltros, {
+      criterios: c, temporadas: opcionesTemporada('2026-10-02', 2), atajoEspana: false, profileId: 'cuenta-1',
+    }, React.createElement(ListaDeportistas, { items: [fila], siguiente: null, cursorActual: undefined, criterios: c })));
+    // El clic se recoge por delegación en #explorar-perfiles (BuscadorSocial), como en el desplegable.
+    expect(pagina.indexOf('id="explorar-perfiles"')).toBeGreaterThan(-1);
+    expect(pagina.indexOf(`data-persona="${UUID_A}"`)).toBeGreaterThan(pagina.indexOf('id="explorar-perfiles"'));
+  });
+
   it('no muestra el año de nacimiento si el nombre es único', () => {
     expect(lista([resumen({ anioNacimiento: 2001, mismoNombre: 1 })])).not.toContain('2001');
   });
@@ -290,9 +304,19 @@ describe('formulario de filtros', () => {
     expect(html).toContain('role="search"');
   });
 
-  it('abre los filtros avanzados cuando alguno está activo', () => {
-    expect(formulario(false, criterios({ temporada: '2025-2026' }))).toContain('Más filtros (1 activos)');
-    expect(formulario(false)).toContain('Más filtros');
-    expect(formulario(false)).not.toContain('activos)');
+  it('los filtros quedan tras el botón «Filtros», que cuenta los activos', () => {
+    const conFiltro = formulario(false, criterios({ temporada: '2025-2026', arma: 'ESPADA' }));
+    expect(conFiltro).toContain('<span class="sr-only">, 2 activos</span>');
+    expect(conFiltro).toMatch(/id="explorar-panel-filtros"[^>]*data-state="closed"|data-state="closed"[^>]*id="explorar-panel-filtros"/);
+    const vacio = formulario(false);
+    expect(vacio).toContain('Filtros');
+    expect(vacio).not.toMatch(/, \d+ activos?</);
+    expect(vacio).toContain('Buscar tiradores');
+    expect(vacio).toContain('Aplicar filtros');
+  });
+
+  it('un filtro inválido en la URL abre el panel para que se vea el error', () => {
+    const html = formulario(false, criterios({ desde: '2026-99-99' }));
+    expect(html).toMatch(/id="explorar-panel-filtros"[^>]*data-state="open"|data-state="open"[^>]*id="explorar-panel-filtros"/);
   });
 });

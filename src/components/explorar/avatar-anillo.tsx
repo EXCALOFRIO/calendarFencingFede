@@ -9,6 +9,8 @@ import { cn } from '@/lib/utils';
  * referencia de cliente, no como texto.
  */
 export const ANILLO = 'rounded-full bg-linear-to-tr from-primary via-primary-text to-primary p-[2px]';
+/** El mismo anillo apagado: un filete para quien no es protagonista o no tiene resultados. */
+export const ANILLO_APAGADO = 'rounded-full bg-filete-alto p-[2px]';
 
 const TAMANOS = {
   sm: { caja: 'size-10', letra: 'text-sm' },
@@ -35,7 +37,7 @@ export function AvatarAnillo({
 }) {
   const t = TAMANOS[tamano];
   return (
-    <span aria-hidden="true" className={cn('inline-flex shrink-0', apagado ? 'rounded-full bg-filete-alto p-[2px]' : ANILLO, className)}>
+    <span aria-hidden="true" className={cn('inline-flex shrink-0', apagado ? ANILLO_APAGADO : ANILLO, className)}>
       <span className="inline-flex rounded-full bg-background p-[2px]">
         <Avatar className={t.caja}>
           <AvatarFallback className={cn('font-display', t.letra)}>{inicialesVisibles(nombre) || '—'}</AvatarFallback>

@@ -12,7 +12,8 @@ import {
   type FilaRivalFrecuente,
 } from './perfil-sql';
 import { leerEstadisticasRivalesDe } from './rivales-stats';
-import { leerEstadisticasAmbitoDe } from './stats-ambito';
+import { aResultadosPerfil } from './resultados-perfil';
+import { aEstadisticasPorAmbito, leerPruebasAmbitoDe } from './stats-ambito';
 import { sqlTiradoresSugeridos, type FilaSugerido } from './sugeridos';
 
 async function tolerante<T>(consulta: () => Promise<unknown>, que: string): Promise<T[] | null> {
@@ -37,7 +38,7 @@ export async function leerFilasPerfil(
   ids: readonly string[],
   canonicaId: string,
 ): Promise<Omit<FilasPerfil, 'estadisticas'>> {
-  const [asaltos, rivales, clubes, idsFie, mejorRanking, sugeridos, rivalesStats, ambito] = await Promise.all([
+  const [asaltos, rivales, clubes, idsFie, mejorRanking, sugeridos, rivalesStats, pruebas] = await Promise.all([
     tolerante<FilaBalanceAsaltos>(() => db.execute(sqlBalanceAsaltos(ids)), 'el balance de asaltos'),
     tolerante<FilaRivalFrecuente>(() => db.execute(sqlRivalesFrecuentes(ids, canonicaId)), 'la lista de rivales'),
     tolerante<FilaClubPublicado>(() => db.execute(sqlClubesRecientes(ids)), 'el club'),
@@ -45,14 +46,15 @@ export async function leerFilasPerfil(
     tolerante<FilaMejorRanking>(() => db.execute(sqlMejorRanking(ids)), 'el mejor ranking'),
     tolerante<FilaSugerido>(() => db.execute(sqlTiradoresSugeridos(ids, canonicaId)), 'los tiradores sugeridos'),
     leerEstadisticasRivalesDe(db, ids, canonicaId),
-    leerEstadisticasAmbitoDe(db, ids),
+    leerPruebasAmbitoDe(db, ids),
   ]);
   return {
     asaltos,
     rivales,
     sugeridos,
     rivalesStats,
-    ambito,
+    ambito: pruebas ? aEstadisticasPorAmbito(pruebas) : null,
+    resultados: pruebas ? aResultadosPerfil(pruebas) : null,
     clubes: clubes ?? [],
     idsFie: idsFie ?? [],
     mejorRanking: mejorRanking ?? [],

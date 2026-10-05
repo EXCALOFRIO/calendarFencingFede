@@ -13,10 +13,17 @@ export async function GET(request: Request): Promise<Response> {
     const perfil = await ctx.perfil();
     if (!perfil) return Response.json({ estado: 'no_autenticado' }, { status: 401, headers });
     const params = new URL(request.url).searchParams;
-    if ([...params.keys()].some((k) => k !== 'q') || params.getAll('q').length !== 1) {
+    // Sólo `q` (una vez) y, opcional, `limite` (una vez, entero sin ceros a la
+    // izquierda); el rango lo valida `sugerirPersonas`.
+    const limite = params.getAll('limite');
+    if ([...params.keys()].some((k) => k !== 'q' && k !== 'limite') || params.getAll('q').length !== 1
+      || limite.length > 1 || (limite.length === 1 && !/^[1-9]\d?$/.test(limite[0]))) {
       return Response.json({ estado: 'entrada_invalida' }, { status: 400, headers });
     }
-    const resultado = await sugerirPersonas({ ...ctx, perfil: async () => perfil }, { q: params.get('q') });
+    const resultado = await sugerirPersonas({ ...ctx, perfil: async () => perfil }, {
+      q: params.get('q'),
+      ...(limite.length === 1 ? { limite: Number(limite[0]) } : {}),
+    });
     return Response.json(resultado, {
       status: resultado.estado === 'entrada_invalida' ? 400 : resultado.estado === 'no_disponible' ? 503 : 200,
       headers,

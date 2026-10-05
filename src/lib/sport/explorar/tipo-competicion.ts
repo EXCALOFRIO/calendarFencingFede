@@ -41,6 +41,40 @@ export const TIPOS_COMPETICION: Record<TipoCompeticion, Definicion> = {
 
 const ORDEN = Object.keys(TIPOS_COMPETICION) as TipoCompeticion[];
 
+/**
+ * Peso deportivo de cada tipo para ordenar «mejores competiciones» (menor es
+ * más importante). No sigue el orden de las pastillas: un Gran Premio FIE
+ * puntúa como un Europeo y más que una Copa del Mundo, y cualquier prueba
+ * internacional pesa más que una nacional.
+ */
+const IMPORTANCIA: Record<TipoCompeticion, number> = {
+  JUEGOS_OLIMPICOS: 0,
+  CTO_MUNDO: 1,
+  CTO_EUROPA: 2,
+  GRAN_PREMIO: 2,
+  CTO_CONTINENTAL: 3,
+  COPA_MUNDO: 3,
+  JUEGOS_MULTIDEPORTE: 4,
+  CIRCUITO_EUROPEO: 5,
+  SATELITE: 5,
+  INTERNACIONAL_OTRO: 6,
+  CTO_ESPANA: 7,
+  TNR: 8,
+  LIGA_CLUBES: 9,
+  CRITERIUM: 9,
+  LIGA_MASTER: 10,
+  NACIONAL_OTRO: 10,
+  AUTONOMICO: 11,
+  OTRO: 12,
+};
+
+export function importanciaCompeticion(tipo: TipoCompeticion): number {
+  return IMPORTANCIA[tipo];
+}
+
+/** La FIE publica 998, 999 y 9999 para quien no termina (abandono, exclusión): no son puestos. */
+export const PUESTO_SIN_CLASIFICAR = 998;
+
 /** Circuito documentado del calendario → tipo. */
 const POR_CIRCUITO: Record<string, TipoCompeticion> = {
   CTO_MUNDO: 'CTO_MUNDO',

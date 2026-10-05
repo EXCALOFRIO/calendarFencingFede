@@ -92,47 +92,48 @@ export function vigente(): SQL {
 }
 
 /**
- * CTEs del resumen de una página (`pagina(id, name_normalized, ...)`): las
- * mismas cuentas que `complementos` y `sqlTrayectorias`, con los resultados de
- * todo el grupo de fusión, en la misma sentencia que la búsqueda. Sólo las
- * `limite` primeras filas: la de más sólo indica que hay página siguiente.
+ * CTEs del resumen de una página (`pagina(id, name_normalized, ..., rel,
+ * clave)`, en orden de popularidad): las mismas cuentas que `complementos` y
+ * `sqlTrayectorias`, con los resultados de todo el grupo de fusión, en la misma
+ * sentencia que la búsqueda. Sólo las `limite` primeras filas: la de más sólo
+ * indica que hay página siguiente.
+ *
+ * Una sola pasada por los resultados: la página por popularidad junta a las
+ * personas con más resultados y releer los hechos para la última competición
+ * casi duplicaba las filas leídas. La última es el máximo de
+ * `fecha || char(31) || edición`: char(31) es menor que cualquier carácter de
+ * una fecha, así que ordena igual que (fecha, edición) descendentes, y sin
+ * fecha cuenta como '0001-01-01'.
  */
 export function ctesResumenPagina(limite: number): SQL {
   return sql`,
     grupo_pagina(canonica, id, salto) AS (
-      SELECT id, id, 0 FROM (SELECT id FROM pagina ORDER BY name_normalized, id LIMIT ${limite})
+      SELECT id, id, 0 FROM (SELECT id FROM pagina ORDER BY rel DESC, clave, id LIMIT ${limite})
       UNION ALL
       SELECT g.canonica, mp.id, g.salto + 1
       FROM sport_person mp JOIN grupo_pagina g ON mp.merged_into_person_id = g.id
       WHERE g.salto < ${SALTOS}
     ),
-    hechos_pagina AS MATERIALIZED (
-      SELECT g.canonica AS canonica, r.position AS puesto, c.format AS formato, c.weapon AS arma,
-             e.id AS edicion, e.name AS torneo,
-             coalesce(r.occurred_on, c.competition_date, e.start_date) AS fecha
+    resumen_pagina AS MATERIALIZED (
+      SELECT g.canonica AS canonica, count(*) AS resultados, group_concat(DISTINCT c.weapon) AS armas,
+             min(CASE WHEN c.format = 'INDIVIDUAL' THEN r.position END) AS mejor_puesto,
+             count(*) FILTER (WHERE c.format = 'INDIVIDUAL' AND r.position = 1) AS oros,
+             count(*) FILTER (WHERE c.format = 'INDIVIDUAL' AND r.position = 2) AS platas,
+             count(*) FILTER (WHERE c.format = 'INDIVIDUAL' AND r.position = 3) AS bronces,
+             max(coalesce(r.occurred_on, c.competition_date, e.start_date, '0001-01-01')
+                 || char(31) || e.id) AS ultima
       FROM grupo_pagina g
       -- CROSS JOIN: sin él SQLite recorre todo sport_result y busca en el CTE.
       CROSS JOIN sport_result r ON r.person_id = g.id
       JOIN sport_competition c ON c.id = r.competition_id
       JOIN sport_edition e ON e.id = c.edition_id
-    ),
-    resumen_pagina AS (
-      SELECT canonica, count(*) AS resultados, group_concat(DISTINCT arma) AS armas,
-             min(CASE WHEN formato = 'INDIVIDUAL' THEN puesto END) AS mejor_puesto,
-             count(*) FILTER (WHERE formato = 'INDIVIDUAL' AND puesto = 1) AS oros,
-             count(*) FILTER (WHERE formato = 'INDIVIDUAL' AND puesto = 2) AS platas,
-             count(*) FILTER (WHERE formato = 'INDIVIDUAL' AND puesto = 3) AS bronces
-      FROM hechos_pagina GROUP BY canonica
+      GROUP BY g.canonica
     ),
     ultima_pagina AS (
-      SELECT canonica, edicion, torneo, fecha FROM (
-        SELECT canonica, edicion, torneo, fecha,
-               row_number() OVER (
-                 PARTITION BY canonica
-                 ORDER BY coalesce(fecha, '0001-01-01') DESC, edicion DESC
-               ) AS orden
-        FROM hechos_pagina)
-      WHERE orden = 1
+      SELECT rp.canonica AS canonica, ue.id AS edicion, ue.name AS torneo,
+             nullif(substr(rp.ultima, 1, instr(rp.ultima, char(31)) - 1), '0001-01-01') AS fecha
+      FROM resumen_pagina rp
+      CROSS JOIN sport_edition ue ON ue.id = substr(rp.ultima, instr(rp.ultima, char(31)) + 1)
     )`;
 }
 

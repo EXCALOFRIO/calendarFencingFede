@@ -31,8 +31,18 @@ export const TRAYECTORIA_VACIA: TrayectoriaPersona = {
 
 export type DeportistaBuscado = DeportistaResumen & { trayectoria: TrayectoriaPersona };
 
-/** Resumen de una sugerencia: sólo cuántas clasificaciones y de qué armas. */
-export type ResumenSugerencia = { resultados: number; armas: Arma[] };
+/**
+ * Resumen de una sugerencia: cuántas clasificaciones, de qué armas, la fecha
+ * de la más reciente y si la cuenta la sigue. Los dos últimos son opcionales
+ * para quien construya sugerencias a mano; la API siempre los envía.
+ */
+export type ResumenSugerencia = {
+  resultados: number;
+  armas: Arma[];
+  /** YYYY-MM-DD del resultado más reciente con fecha del grupo de fusión. */
+  ultimaFecha?: string | null;
+  seguida?: boolean;
+};
 
 export type SugerenciaConResumen = SugerenciaPersona & ResumenSugerencia;
 

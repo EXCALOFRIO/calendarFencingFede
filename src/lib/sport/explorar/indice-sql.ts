@@ -13,7 +13,27 @@ import { SALTOS } from './personas';
  * nombre de la persona que prevalece y los alias de todo su grupo (hasta
  * `SALTOS` niveles).
  */
-export const VERSION_INDICE = 1;
+export const VERSION_INDICE = 2;
+
+/**
+ * Versiones que este código sabe leer. La 1 tenía el mismo esquema y un
+ * `peso` que sólo contaba resultados: sigue sirviendo (ordena algo peor) hasta
+ * la siguiente reconstrucción, así que desplegar no apaga el índice.
+ */
+export const VERSIONES_INDICE_LEGIBLES: readonly number[] = [1, VERSION_INDICE];
+
+/**
+ * Popularidad de cada resultado según su antigüedad respecto al día de la
+ * reconstrucción: 4 en el último año, 3 hasta tres años, 2 hasta seis, 1 antes.
+ * Sin fecha, o con una fecha más de un mes en el futuro (dato erróneo), vale 1.
+ * Sólo usa `occurred_on`, que está en sport_result_person_date_idx.
+ */
+export const PESO_RESULTADO_SQL = `CASE
+      WHEN occurred_on IS NULL OR occurred_on > date('now', '+1 month') THEN 1
+      WHEN occurred_on >= date('now', '-1 year') THEN 4
+      WHEN occurred_on >= date('now', '-3 years') THEN 3
+      WHEN occurred_on >= date('now', '-6 years') THEN 2
+      ELSE 1 END`;
 
 /** Palabras más largas no generan variantes de errata. */
 export const MAX_LETRAS_VARIANTE = 24;
@@ -31,12 +51,14 @@ export const SENTENCIAS_INDICE: readonly string[] = [
   'DELETE FROM explorar_token',
   'DELETE FROM explorar_persona',
   'DELETE FROM explorar_indice_estado',
-  // El peso sale del índice persona/fecha sin leer la tabla de resultados:
-  // recorrerla por persona es acceso aleatorio a toda la tabla.
+  // El peso (popularidad: cuántos resultados y cuán recientes) sale del índice
+  // persona/fecha sin leer la tabla de resultados: recorrerla por persona es
+  // acceso aleatorio a toda la tabla.
   `INSERT INTO explorar_persona (n, id, name_normalized, peso)
   WITH RECURSIVE ${MIEMBROS},
   pesos(persona, peso) AS MATERIALIZED (
-    SELECT person_id, count(*) FROM sport_result INDEXED BY sport_result_person_date_idx
+    SELECT person_id, sum(${PESO_RESULTADO_SQL})
+    FROM sport_result INDEXED BY sport_result_person_date_idx
     WHERE person_id IS NOT NULL GROUP BY person_id
   ),
   por_raiz(raiz, peso) AS MATERIALIZED (

@@ -47,6 +47,33 @@ describe('sugerencias: normalización y navegación, nunca fusión', () => {
     expect(ordenarSugerencias('carlos', Array.from({ length: 250 }, (_, i) => candidato(`id-${i}`)))).toHaveLength(8);
   });
 
+  it('dentro del mismo parecido manda la popularidad; un nombre mucho más parecido sigue delante', () => {
+    const c = (id: string, nombre: string, peso: number, seguida = false): CandidatoSugerencia => ({
+      ...candidato(id, nombre), peso, seguida,
+    });
+    const r = ordenarSugerencias('zabala', [
+      c('irene', 'Zabala Gutierrez Irene', 23),
+      c('juan', 'Zabala Juan', 238),
+      c('nerea', 'Zabalo Echaniz Nerea', 900),
+      c('zavala', 'Zavala Svensson Daniel', 100),
+      c('ander', 'Ezquerro Zabala Ander', 5),
+    ], 20);
+    // Zavala (0,92) comparte nivel con los exactos, que cuentan el doble; Zabalo (0,75) va en el nivel siguiente.
+    expect(r.map((p) => p.id)).toEqual(['juan', 'zavala', 'irene', 'ander', 'nerea']);
+
+    const seguidas = ordenarSugerencias('jorgensen', [
+      c('patrick', 'Jorgensen Patrick', 360),
+      c('magnus', 'Jorgensen Magnus', 11, true),
+    ]);
+    expect(seguidas.map((p) => p.id)).toEqual(['magnus', 'patrick']);
+  });
+
+  it('el límite social llega a 20 y nunca lo supera', () => {
+    const muchos = Array.from({ length: 250 }, (_, i) => candidato(`id-${i}`));
+    expect(ordenarSugerencias('carlos', muchos, 20)).toHaveLength(20);
+    expect(ordenarSugerencias('carlos', muchos, 999)).toHaveLength(20);
+  });
+
   it('exige sesión antes incluso de validar o consultar el catálogo', async () => {
     const { ctx, sentencias } = crearContexto({ perfil: null });
     await expect(sugerirPersonas(ctx, { q: 'carlos' })).rejects.toThrow('NO_AUTENTICADO');
@@ -86,7 +113,15 @@ describe('API de sugerencias: política de sesión y validación', () => {
     expect(fallback).not.toHaveBeenCalled();
   });
 
-  it.each(['', '?q=carlos&q=otro', '?q=carlos&limite=999', `?q=${'x'.repeat(81)}`])(
+  it('acepta un límite de 1 a 20 una sola vez', async () => {
+    expect((await llamar('?q=carlos&limite=20')).status).toBe(200);
+    expect((await llamar('?q=carlos&limite=1')).status).toBe(200);
+  });
+
+  it.each([
+    '', '?q=carlos&q=otro', '?q=carlos&limite=999', '?q=carlos&limite=21', '?q=carlos&limite=0',
+    '?q=carlos&limite=05', '?q=carlos&limite=8&limite=9', '?q=carlos&otro=1', `?q=${'x'.repeat(81)}`,
+  ])(
     'rechaza parámetros inválidos sin SQL: %s', async (q) => {
       const t = crearContexto();
       dependencias.contexto.mockReturnValue(t.ctx);
@@ -183,6 +218,19 @@ describe('solicitante cliente: 250 ms, aborto, respuestas antiguas y caché acot
     cliente.buscar('carlos');
     await vi.advanceTimersByTimeAsync(250);
     expect(fetcher).toHaveBeenCalledTimes(35);
+  });
+
+  it('el buscador social pide 20 perfiles con su propia espera', async () => {
+    const recibir = vi.fn();
+    const fetcher = vi.fn(async (..._argumentos: Parameters<typeof fetch>) =>
+      respuesta(Array.from({ length: 20 }, (_, i) => candidato(`id-${i}`))));
+    const cliente = crearSolicitanteSugerencias(recibir, fetcher, { limite: 20, espera: 160 });
+    cliente.buscar('zabal');
+    await vi.advanceTimersByTimeAsync(159);
+    expect(fetcher).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetcher.mock.calls[0][0]).toBe('/api/explorar/sugerencias?q=zabal&limite=20');
+    expect(recibir.mock.calls.at(-1)?.[0].items).toHaveLength(20);
   });
 
   it('un error no se almacena, no impide reintentar ni sustituye el envío manual', async () => {

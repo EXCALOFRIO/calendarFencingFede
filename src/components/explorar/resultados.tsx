@@ -79,9 +79,16 @@ function FilaDeportista({ d, volver }: { d: FilaBuscada; volver: string }) {
   const t = d.trayectoria ?? TRAYECTORIA_VACIA;
   return (
     <li>
+      {/* Las marcas `data-*` son las de las filas del buscador: su contenedor
+          (BuscadorSocial) apunta la ficha abierta en Recientes y recorre las
+          filas con las flechas. */}
       <Link
         href={rutaFichaConRetorno(d.id, volver)}
         prefetch={false}
+        data-fila-perfil=""
+        data-persona={d.id}
+        data-nombre={d.nombre}
+        data-pais={d.pais ?? ''}
         className="group grid min-h-11 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-3 px-4 py-4 hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset md:grid-cols-[auto_minmax(0,2fr)_minmax(0,1.4fr)_auto] md:items-center md:gap-x-5"
       >
         <AvatarAnillo nombre={nombreVisible(d.nombre)} tamano="md" apagado={d.resultadosImportados === 0} className="self-start" />

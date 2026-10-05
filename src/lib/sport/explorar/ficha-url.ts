@@ -1,6 +1,7 @@
 import { UUID_RE } from './cursor';
 import { RUTA_EDICIONES, sanitizarRetornoEdicion } from './edicion-url';
 import { LONGITUD_MAXIMA_CURSOR, RUTA_FAVORITOS, construirUrlFavoritos } from './favoritos-url';
+import type { AmbitoCompeticion } from './tipos-social';
 import { CLAVES_CRITERIO, RUTA_EXPLORAR, construirUrl, leerCriterios, rutaFicha } from './url';
 
 /**
@@ -17,6 +18,10 @@ export type CriteriosFicha = {
   cursor: string;
   /** Búsqueda de Explorar de la que se llegó (ya saneada), o vacío en entrada directa. */
   volver: string;
+  /** Ámbito de la pestaña Resultados; ausente = todo. */
+  ambito?: AmbitoCompeticion;
+  /** Resultados del historial completo a la vista («Ver más»); ausente = la primera tanda. */
+  ver?: number;
 };
 
 export const CRITERIOS_FICHA_VACIOS: CriteriosFicha = { ranking: '', formato: '', cursor: '', volver: '' };
@@ -64,11 +69,15 @@ export function sanitizarRetorno(valor: string | undefined): string {
 
 export function leerCriteriosFicha(params: Parametros): CriteriosFicha {
   const formato = primero(params.formato).toUpperCase();
+  const ambito = primero(params.ambito).toLowerCase();
+  const ver = /^\d{1,4}$/.test(primero(params.ver)) ? Number(primero(params.ver)) : 0;
   return {
     ranking: primero(params.ranking).slice(0, 12),
     formato: formato === 'INDIVIDUAL' || formato === 'EQUIPOS' ? formato : '',
     cursor: primero(params.cursor).slice(0, 600),
     volver: sanitizarRetorno(primero(params.volver)),
+    ...(ambito === 'internacional' || ambito === 'nacional' ? { ambito } : {}),
+    ...(ver > 0 ? { ver } : {}),
   };
 }
 
@@ -98,6 +107,8 @@ export function construirUrlFicha(
   if (c.ranking) params.set('ranking', c.ranking);
   if (c.formato) params.set('formato', c.formato);
   if (c.cursor) params.set('cursor', c.cursor);
+  if (c.ambito) params.set('ambito', c.ambito);
+  if (c.ver) params.set('ver', String(c.ver));
   if (c.volver) params.set('volver', c.volver);
   const texto = params.toString();
   return `${base}${texto ? `?${texto}` : ''}${ancla ? `#${ancla}` : ''}`;

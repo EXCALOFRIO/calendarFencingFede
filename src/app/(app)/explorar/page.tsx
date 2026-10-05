@@ -13,11 +13,27 @@ import { getSessionProfile } from '@/lib/auth/session';
 import { edicionDeRuta } from '@/lib/sport/explorar/edicion-url';
 import { cargarExplorar } from '@/lib/sport/explorar/pantalla';
 import { contextoReal } from '@/lib/sport/explorar/real';
-import { cargarConteoSiguiendo } from '@/lib/sport/explorar/siguiendo-pantalla';
-import { construirUrl, leerCriterios, opcionesTemporada } from '@/lib/sport/explorar/url';
+import {
+  cargarConteoSiguiendo,
+  leerPropuestasParaSeguir,
+  type PersonaParaSeguir,
+} from '@/lib/sport/explorar/siguiendo-pantalla';
+import type { ContextoExplorador } from '@/lib/sport/explorar/contexto';
+import { PropuestasBuscador } from '@/components/explorar/buscador-social-fila';
+import { construirUrl, hayCriterios, leerCriterios, opcionesTemporada } from '@/lib/sport/explorar/url';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Explorar' };
+
+/** Sugerencias de la pantalla vacía; `null` si fallan (la búsqueda sigue funcionando). */
+async function cargarPropuestas(ctx: ContextoExplorador): Promise<PersonaParaSeguir[] | null> {
+  try {
+    return await leerPropuestasParaSeguir(ctx);
+  } catch (error) {
+    console.error('[explorar] las sugerencias para seguir no se pudieron leer:', error instanceof Error ? error.name : 'desconocido');
+    return null;
+  }
+}
 
 /**
  * Explorar: buscador de deportistas de todas las federaciones.
@@ -42,15 +58,34 @@ export default async function Pagina({
 
   const { criterios, cursor } = leerCriterios(await searchParams);
   const ctx = contextoReal();
-  const [vista, siguiendo] = await Promise.all([
+  const inicio = !hayCriterios(criterios);
+  const [vista, siguiendo, propuestas] = await Promise.all([
     cargarExplorar(ctx, criterios, cursor),
     cargarConteoSiguiendo(ctx),
+    inicio ? cargarPropuestas(ctx) : Promise.resolve(null),
   ]);
   if (vista.tipo === 'sin_sesion') redirect('/entrar');
 
   const atajoEspana = perfil.role === 'coach' || perfil.role === 'admin';
   const edicionAcotada = edicionDeRuta(criterios.edicionId);
   const hoy = new Date().toISOString().slice(0, 10);
+
+  const contenido = vista.tipo === 'ok' ? (
+    vista.sinResultados ? (
+      <EstadoSinCoincidencias criterios={criterios} />
+    ) : (
+      <ListaDeportistas
+        items={vista.items}
+        siguiente={vista.siguiente}
+        cursorActual={cursor}
+        criterios={criterios}
+      />
+    )
+  ) : inicio && vista.tipo === 'sin_criterio' && propuestas?.length !== 0 ? (
+    <PropuestasBuscador propuestas={propuestas} className="lg:max-w-2xl" />
+  ) : (
+    <EstadoSinLista vista={vista} criterios={criterios} />
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -68,31 +103,23 @@ export default async function Pagina({
         </nav>
       </header>
 
-      <div className="flex flex-col gap-3">
-        <FormularioFiltros
-          key={construirUrl(criterios, cursor)}
-          criterios={criterios}
-          temporadas={opcionesTemporada(hoy)}
-          atajoEspana={atajoEspana}
-        />
-        <ChipsActivos criterios={criterios} />
-        {edicionAcotada ? <EnlaceVolverAEdicion edicionId={edicionAcotada} /> : null}
-      </div>
-
-      {vista.tipo === 'ok' ? (
-        vista.sinResultados ? (
-          <EstadoSinCoincidencias criterios={criterios} />
-        ) : (
-          <ListaDeportistas
-            items={vista.items}
-            siguiente={vista.siguiente}
-            cursorActual={cursor}
-            criterios={criterios}
-          />
-        )
-      ) : (
-        <EstadoSinLista vista={vista} criterios={criterios} />
-      )}
+      <FormularioFiltros
+        key={construirUrl(criterios, cursor)}
+        criterios={criterios}
+        temporadas={opcionesTemporada(hoy)}
+        atajoEspana={atajoEspana}
+        profileId={perfil.profileId}
+      >
+        <div className="flex min-w-0 flex-col gap-6">
+          {inicio ? null : (
+            <div className="flex flex-col gap-3">
+              <ChipsActivos criterios={criterios} />
+              {edicionAcotada ? <EnlaceVolverAEdicion edicionId={edicionAcotada} /> : null}
+            </div>
+          )}
+          {contenido}
+        </div>
+      </FormularioFiltros>
     </div>
   );
 }

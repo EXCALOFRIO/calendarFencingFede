@@ -26,7 +26,9 @@ import { EstadisticasDeportistaVista } from './estadisticas-deportista';
 import { FotoDeportista } from './foto-deportista';
 import { CifrasPerfil } from './perfil/cifras-perfil';
 import { DestacadosPerfil } from './perfil/destacados-perfil';
+import { CompararPerfil } from './perfil/comparar-perfil';
 import { InsigniaPuesto, partesFecha } from './perfil/piezas-perfil';
+import { ResultadosPerfilVista } from './perfil/resultados-perfil';
 import { ManoAMano } from './perfil/rivales-perfil';
 import { SugeridosPerfil } from './perfil/sugeridos-perfil';
 import { AnioAAnio } from './perfil/temporadas-perfil';
@@ -737,7 +739,12 @@ export function FichaCompleta({
           <TabsTrigger value="rivales" className="flex-1 px-4 sm:flex-none">Rivales</TabsTrigger>
         </TabsList>
         <TabsContent value="resultados" forceMount className={panel}>
-          <HistorialFicha historial={historial} base={base} criterios={criterios} nivel={nivel} enPestana />
+          {/* Sin pruebas individuales (sólo equipos, o la lectura falló) queda el historial paginado de siempre. */}
+          {perfil?.resultados && perfil.resultados.items.length > 0 ? (
+            <ResultadosPerfilVista resultados={perfil.resultados} base={base} criterios={criterios} nivel={nivel} />
+          ) : (
+            <HistorialFicha historial={historial} base={base} criterios={criterios} nivel={nivel} enPestana />
+          )}
         </TabsContent>
         <TabsContent value="temporadas" forceMount className={panel}>
           {perfil ? (
@@ -755,6 +762,14 @@ export function FichaCompleta({
         <TabsContent value="rivales" forceMount className={panel}>
           {perfil ? (
             <>
+              <CompararPerfil
+                personaId={ficha.id}
+                nombre={ficha.nombre}
+                rapidos={(perfil.rivales ?? []).slice(0, 5).map(({ id, nombre, pais, asaltos, victorias, derrotas }) => ({
+                  id, nombre, pais, asaltos, victorias, derrotas,
+                }))}
+                encabezado={nivel === 'pagina' ? 'h2' : 'h3'}
+              />
               {conRivales ? (
                 <>
                   <BalanceFasesRivales stats={conRivales} nivel={nivel} />

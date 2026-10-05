@@ -1,11 +1,73 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { fotoPublicadaValida, type FotoPublicada } from '@/lib/sport/explorar/foto-contrato';
 import { inicialesVisibles } from '@/lib/sport/nombre-visible';
 import { cn } from '@/lib/utils';
-import { ANILLO } from './avatar-anillo';
+import { ANILLO, ANILLO_APAGADO } from './avatar-anillo';
+
+async function pedirFoto(personaId: string, signal?: AbortSignal): Promise<FotoPublicada | null> {
+  const controlador = new AbortController();
+  const temporizador = setTimeout(() => controlador.abort(), 7000);
+  const abortar = () => controlador.abort();
+  signal?.addEventListener('abort', abortar);
+  try {
+    const respuesta = await fetch(`/api/explorar/deportistas/${encodeURIComponent(personaId)}/foto`, {
+      cache: 'no-store', credentials: 'same-origin', signal: controlador.signal,
+      headers: { Accept: 'application/json' },
+    });
+    if (!respuesta.ok || !respuesta.headers.get('content-type')?.startsWith('application/json')) return null;
+    const texto = await respuesta.text();
+    if (texto.length > 4096 || controlador.signal.aborted) return null;
+    const valor: unknown = JSON.parse(texto);
+    if (!valor || typeof valor !== 'object') return null;
+    const resultado = valor as Record<string, unknown>;
+    return resultado.estado === 'publicada' && fotoPublicadaValida(resultado.foto) ? resultado.foto : null;
+  } catch {
+    // Ausencia, caducidad y errores de red dejan las iniciales, nunca un icono roto.
+    return null;
+  } finally {
+    clearTimeout(temporizador);
+    signal?.removeEventListener('abort', abortar);
+  }
+}
+
+/**
+ * En una lista cada retrato cuesta lecturas en D1 y dos peticiones a la FIE:
+ * se pide sólo al quedar a la vista y tras una pausa (al escribir, las filas
+ * cambian antes), como mucho tres a la vez, y la respuesta (también «sin
+ * foto») se recuerda mientras dure la página.
+ */
+const ESPERA_FOTO_LISTA = 350;
+const MAX_FOTOS_A_LA_VEZ = 3;
+const MAX_FOTOS_RECORDADAS = 300;
+const fotosLista = new Map<string, Promise<FotoPublicada | null>>();
+const turnos: (() => void)[] = [];
+let enCurso = 0;
+
+function conTurno<T>(tarea: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolver) => {
+    const empezar = () => {
+      enCurso++;
+      void tarea().then(resolver).finally(() => {
+        enCurso--;
+        turnos.shift()?.();
+      });
+    };
+    if (enCurso < MAX_FOTOS_A_LA_VEZ) empezar();
+    else turnos.push(empezar);
+  });
+}
+
+function fotoDeLista(personaId: string): Promise<FotoPublicada | null> {
+  const recordada = fotosLista.get(personaId);
+  if (recordada) return recordada;
+  const promesa = conTurno(() => pedirFoto(personaId));
+  fotosLista.set(personaId, promesa);
+  while (fotosLista.size > MAX_FOTOS_RECORDADAS) fotosLista.delete(fotosLista.keys().next().value!);
+  return promesa;
+}
 
 export type FotoDeportistaProps = {
   /** ID público de la persona deportiva, nunca athleteId/profileId. */
@@ -20,12 +82,16 @@ export type FotoDeportistaProps = {
    * la cabecera tipo red social (5 rem en móvil, 9 rem desde `sm`), con
    * anillo y la atribución FIE como sello sobre el retrato en vez de pie.
    * El sello no enlaza: quien lo usa pone el enlace a la FIE en otro sitio.
+   * `lista` es el avatar de 44 px con anillo de las filas del buscador: sin
+   * pie, y la foto se pide sólo al verse (ver `fotoDeLista`).
    */
-  tamano?: 'mini' | 'retrato' | 'perfil' | 'heroe';
+  tamano?: 'mini' | 'retrato' | 'perfil' | 'heroe' | 'lista';
+  /** Sólo `lista`: filete en vez de degradado (sin resultados importados). */
+  apagado?: boolean;
   className?: string;
 };
 
-const MEDIDAS = { mini: 48, retrato: 96, perfil: 120, heroe: 144 } as const;
+const MEDIDAS = { mini: 48, retrato: 96, perfil: 120, heroe: 144, lista: 44 } as const;
 
 export function FotoDeportista({ ocultar = false, ...props }: FotoDeportistaProps) {
   // La clave descarta también una imagen anterior al cambiar de persona.
@@ -33,38 +99,75 @@ export function FotoDeportista({ ocultar = false, ...props }: FotoDeportistaProp
 }
 
 function Retrato({
-  personaId, nombre, decorativa = true, tamano = 'retrato', className,
+  personaId, nombre, decorativa = true, tamano = 'retrato', apagado = false, className,
 }: Omit<FotoDeportistaProps, 'ocultar'>) {
   const [foto, setFoto] = useState<FotoPublicada | null>(null);
   const [cargada, setCargada] = useState(false);
+  const caja = useRef<HTMLDivElement>(null);
   const medida = MEDIDAS[tamano];
   const iniciales = inicialesVisibles(nombre) || '—';
 
   useEffect(() => {
-    const controlador = new AbortController();
-    const temporizador = setTimeout(() => controlador.abort(), 7000);
-    async function cargar() {
-      try {
-        const respuesta = await fetch(`/api/explorar/deportistas/${encodeURIComponent(personaId)}/foto`, {
-          cache: 'no-store', credentials: 'same-origin', signal: controlador.signal,
-          headers: { Accept: 'application/json' },
-        });
-        if (!respuesta.ok || !respuesta.headers.get('content-type')?.startsWith('application/json')) return;
-        const texto = await respuesta.text();
-        if (texto.length > 4096 || controlador.signal.aborted) return;
-        const valor: unknown = JSON.parse(texto);
-        if (!valor || typeof valor !== 'object') return;
-        const resultado = valor as Record<string, unknown>;
-        if (resultado.estado === 'publicada' && fotoPublicadaValida(resultado.foto)) setFoto(resultado.foto);
-      } catch {
-        // Ausencia, caducidad y errores de red dejan las iniciales, nunca un icono roto.
-      } finally {
-        clearTimeout(temporizador);
+    if (tamano === 'lista') {
+      let vigente = true;
+      let espera: ReturnType<typeof setTimeout> | undefined;
+      const cargar = () => {
+        espera = setTimeout(() => {
+          void fotoDeLista(personaId).then((f) => { if (vigente && f) setFoto(f); });
+        }, ESPERA_FOTO_LISTA);
+      };
+      const nodo = caja.current;
+      if (!nodo || typeof IntersectionObserver === 'undefined') {
+        cargar();
+        return () => { vigente = false; clearTimeout(espera); };
       }
+      const observador = new IntersectionObserver((entradas) => {
+        if (!entradas.some((e) => e.isIntersecting)) return;
+        observador.disconnect();
+        cargar();
+      }, { rootMargin: '120px' });
+      observador.observe(nodo);
+      return () => { vigente = false; observador.disconnect(); clearTimeout(espera); };
     }
-    void cargar();
-    return () => { clearTimeout(temporizador); controlador.abort(); };
-  }, [personaId]);
+    const controlador = new AbortController();
+    void pedirFoto(personaId, controlador.signal).then((f) => {
+      if (f && !controlador.signal.aborted) setFoto(f);
+    });
+    return () => controlador.abort();
+  }, [personaId, tamano]);
+
+  if (tamano === 'lista') {
+    return (
+      <div ref={caja} className={cn('shrink-0', apagado ? ANILLO_APAGADO : ANILLO, className)}>
+        <div className="rounded-full bg-background p-[2px]">
+          <Avatar
+            style={{ width: medida, height: medida }}
+            aria-hidden={decorativa || undefined}
+            role={decorativa ? undefined : 'img'}
+            aria-label={decorativa ? undefined : cargada ? `Foto oficial de ${nombre}, FIE` : 'Foto no publicada'}
+          >
+            <AvatarFallback aria-hidden="true" className="font-display text-base">{iniciales}</AvatarFallback>
+            {foto ? (
+              // Imagen nativa a propósito: Next no debe copiar ni optimizar fotos FIE.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={foto.src}
+                alt=""
+                width={medida}
+                height={medida}
+                loading="lazy"
+                decoding="async"
+                referrerPolicy="no-referrer"
+                className={`absolute inset-0 size-full object-cover ${cargada ? '' : 'invisible'}`}
+                onLoad={() => setCargada(true)}
+                onError={() => { setCargada(false); setFoto(null); }}
+              />
+            ) : null}
+          </Avatar>
+        </div>
+      </div>
+    );
+  }
 
   if (tamano === 'heroe') {
     return (

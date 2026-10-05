@@ -442,13 +442,17 @@ export function planificar(opciones: OpcionesPlan): Manifiesto {
 
     // 3. Borrados de padres: los que aún referencia una fila superviviente de la base
     //    (que el paso de actualización reapunta) se borran al final; el resto, al principio.
-    for (const t of TABLAS) {
+    //    De hijas a padres: un padre del que cuelga una hija que se borra al final también
+    //    espera, o su ON DELETE CASCADE se llevaría la hija y lo que aún cuelga de ella
+    //    (una edición borrada con una prueba cuyos asaltos se trasladan a otra prueba).
+    for (const t of [...TABLAS].reverse()) {
       const hijas = fksInternas.filter((f) => f.padre === t);
       if (!hijas.length || !resumen[t].borrar) continue;
       const usadas = hijas
         .map(
           (f) => `EXISTS (SELECT 1 FROM b.${q(f.hija)} x WHERE x.${q(f.columna)}=d.id
-            AND NOT EXISTS (SELECT 1 FROM temp.${q(`cambio_${f.hija}`)} y WHERE y.id=x.id AND y.op='D'))`,
+            AND NOT EXISTS (SELECT 1 FROM temp.${q(`cambio_${f.hija}`)} y WHERE y.id=x.id AND y.op='D'${
+              f.hija === t ? '' : ' AND y.fase<>3'}))`,
         )
         .join(' OR ');
       db.exec(`UPDATE temp.${q(`cambio_${t}`)} AS d SET fase=3 WHERE d.op='D' AND (${usadas})`);

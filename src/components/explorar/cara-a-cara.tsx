@@ -3,7 +3,14 @@ import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import type { CoberturaCaraACara } from '@/lib/sport/explorar/cara-a-cara';
+import type {
+  BalanceFase,
+  CoberturaCaraACara,
+  EncuentroCaraACara,
+  ResumenEncuentros,
+} from '@/lib/sport/explorar/cara-a-cara';
+import { rutaEdicion } from '@/lib/sport/explorar/edicion-url';
+import { EtiquetaTipoCompeticion } from './etiqueta-competicion';
 import { etiquetaRonda } from '@/lib/sport/explorar/ediciones-asaltos';
 import { inicialesVisibles, nombreVisible } from '@/lib/sport/nombre-visible';
 import {
@@ -583,17 +590,243 @@ export function CaraACaraCompleto({
 }) {
   return (
     <div className="flex flex-col gap-6">
+      {datos.resumenEncuentros ? <ResumenEncuentrosVista datos={datos} resumen={datos.resumenEncuentros} /> : null}
       <BalanceCaraACara datos={datos} />
-      <CoberturaCaraACaraVista cobertura={datos.cobertura} hayAsaltos={datos.resumen.asaltos > 0} />
+      {datos.encuentros ? <EncuentrosCaraACara datos={datos} encuentros={datos.encuentros} /> : null}
       <AsaltosCaraACara datos={datos} criterios={criterios} />
+      <CoberturaCaraACaraVista cobertura={datos.cobertura} hayAsaltos={datos.resumen.asaltos > 0} />
       <Aclaracion titulo="Qué se incluye en el cara a cara">
         <Nota>
           Sólo cuentan asaltos individuales entre dos personas confirmadas con el marcador
           publicado. Los resultados finales, los BYE, los encuentros por equipos y los relevos no
           suman victorias ni derrotas.
         </Nota>
+        <Nota>
+          Las pruebas por equipos tampoco aparecen entre los cruces: las fuentes publican el
+          resultado y los asaltos de cada equipo a nombre del club, sin decir qué tirador disputó
+          cada relevo, así que no se pueden atribuir a ninguna de las dos personas.
+        </Nota>
       </Aclaracion>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ encuentros */
+
+function primerNombre(nombre: string): string {
+  return nombreVisible(nombre) || titular(nombre);
+}
+
+function balanceTexto(b: BalanceFase): string {
+  return `${b.victorias}–${b.derrotas}`;
+}
+
+/**
+ * Lo esencial de un vistazo: quién terminó por delante más veces, el balance
+ * de poule frente al de eliminación directa y el último cruce. Las cifras
+ * salen de la lista de cruces de abajo (una prueba cuenta una vez).
+ */
+export function ResumenEncuentrosVista({ datos, resumen }: { datos: DatosCaraACara; resumen: ResumenEncuentros }) {
+  if (resumen.competiciones === 0) return null;
+  const yo = primerNombre(datos.personas.yo.nombre);
+  const rival = primerNombre(datos.personas.rival.nombre);
+  const u = resumen.ultimo;
+  const lider = resumen.delanteYo >= resumen.delanteRival ? { quien: yo, n: resumen.delanteYo } : { quien: rival, n: resumen.delanteRival };
+  return (
+    <section aria-labelledby="h2h-resumen" className="flex min-w-0 flex-col gap-3">
+      <h2 id="h2h-resumen" className="sr-only">Resumen</h2>
+      <dl className="grid min-w-0 grid-cols-2 gap-px overflow-hidden rounded-md border bg-border lg:grid-cols-4">
+        <div className="col-span-2 flex min-w-0 flex-col gap-1.5 bg-card px-4 py-4 lg:col-span-1">
+          <dt className="text-xs text-muted-foreground">Por delante en la clasificación</dt>
+          <dd className="flex min-w-0 flex-col gap-1">
+            {resumen.conAmbosPuestos > 0 ? (
+              <>
+                <span className="text-sm">
+                  <strong className="font-semibold">{lider.quien}</strong> terminó por delante{' '}
+                  <span className="cifra text-2xl leading-none">{lider.n}</span> de{' '}
+                  <span className="cifra text-2xl leading-none">{resumen.conAmbosPuestos}</span>{' '}
+                  {resumen.conAmbosPuestos === 1 ? 'vez' : 'veces'}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {yo} {resumen.delanteYo} · {rival} {resumen.delanteRival}
+                  {resumen.empates > 0 ? ` · mismo puesto ${resumen.empates}` : ''}
+                </span>
+              </>
+            ) : (
+              <span className="text-sm text-muted-foreground">Sin pruebas con el puesto de las dos publicado.</span>
+            )}
+          </dd>
+        </div>
+        <div className="flex min-w-0 flex-col gap-1.5 bg-card px-4 py-4">
+          <dt className="text-xs text-muted-foreground">En poule</dt>
+          <dd className="flex flex-col gap-0.5">
+            <span className="cifra text-3xl leading-none">{balanceTexto(resumen.poule)}</span>
+            <span className="text-xs text-muted-foreground">ganados y perdidos por {yo}</span>
+          </dd>
+        </div>
+        <div className="flex min-w-0 flex-col gap-1.5 bg-card px-4 py-4">
+          <dt className="text-xs text-muted-foreground">En eliminación directa</dt>
+          <dd className="flex flex-col gap-0.5">
+            <span className="cifra text-3xl leading-none">{balanceTexto(resumen.directa)}</span>
+            <span className="text-xs text-muted-foreground">ganados y perdidos por {yo}</span>
+          </dd>
+        </div>
+        {u ? (
+          <div className="col-span-2 flex min-w-0 flex-col gap-1.5 bg-card px-4 py-4 lg:col-span-1">
+            <dt className="text-xs text-muted-foreground">Último cruce</dt>
+            <dd className="flex min-w-0 flex-col gap-1">
+              <span className="text-sm font-medium break-words">{titular(u.torneo)}</span>
+              <span className="text-xs text-muted-foreground">
+                {u.fecha ? fechaLegible(u.fecha) : 'Fecha no publicada'}
+                {u.puestos.yo !== null && u.puestos.rival !== null
+                  ? ` · ${yo} ${u.puestos.yo}º, ${rival} ${u.puestos.rival}º`
+                  : ''}
+              </span>
+            </dd>
+          </div>
+        ) : null}
+      </dl>
+    </section>
+  );
+}
+
+function PuestoEncuentro({ puesto, publicado, delante }: { puesto: number | null; publicado: string | null; delante: boolean }) {
+  if (puesto === null) {
+    return <span className="text-xs leading-tight text-muted-foreground">{publicado ?? 'Sin puesto'}</span>;
+  }
+  return (
+    <span className={cn('cifra text-2xl leading-none', delante ? 'text-foreground' : 'text-muted-foreground')}>
+      {puesto}
+      <span className="text-xs">º</span>
+    </span>
+  );
+}
+
+function FaseEncuentro({ etiqueta, b }: { etiqueta: string; b: BalanceFase }) {
+  if (b.victorias + b.derrotas === 0) return null;
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      <span>{etiqueta}</span>
+      <span className="cifra text-sm text-foreground">{balanceTexto(b)}</span>
+    </span>
+  );
+}
+
+function FilaEncuentro({ e, yo, rival }: { e: EncuentroCaraACara; yo: string; rival: string }) {
+  const categoria = CATEGORY_LABEL[e.categoria as keyof typeof CATEGORY_LABEL] ?? e.categoria;
+  const delante =
+    e.delante === 'yo' ? `${yo} por delante` : e.delante === 'rival' ? `${rival} por delante` : e.delante === 'empate' ? 'Mismo puesto' : null;
+  return (
+    <li className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 bg-card px-4 py-3 sm:grid-cols-[minmax(0,1fr)_9rem_minmax(0,11rem)]">
+      <div className="flex min-w-0 flex-col gap-1">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-xs text-muted-foreground">{e.fecha ? fechaLegible(e.fecha) : 'Fecha no publicada'}</span>
+          <EtiquetaTipoCompeticion clasificacion={e.clasificacion} className="h-5 px-2 text-[0.6875rem]" />
+        </span>
+        {e.edicionId ? (
+          <Link
+            href={rutaEdicion(e.edicionId)}
+            prefetch={false}
+            className={cn('w-fit max-w-full text-sm font-medium break-words underline-offset-4 hover:underline', ENLACE_CLASES)}
+          >
+            {titular(e.torneo)}
+          </Link>
+        ) : (
+          <span className="text-sm font-medium break-words">{titular(e.torneo)}</span>
+        )}
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+          <span>
+            {WEAPON_LABEL[e.arma]} {GENDER_LABEL[e.genero].toLowerCase()}, {categoria.toLowerCase()}
+          </span>
+          {e.pais ? <BanderaPais pais={e.pais} /> : null}
+          {e.ciudad ? <span>{titular(e.ciudad)}</span> : null}
+        </span>
+      </div>
+      <div className="flex flex-col items-end gap-1 sm:items-center" role="group" aria-label={`Puestos: ${yo} ${e.puestos.yo ?? 'sin puesto'}, ${rival} ${e.puestos.rival ?? 'sin puesto'}`}>
+        <span aria-hidden className="flex items-baseline gap-2">
+          <PuestoEncuentro puesto={e.puestos.yo} publicado={e.puestos.yoPublicado} delante={e.delante === 'yo' || e.delante === 'empate'} />
+          <span className="text-xs text-muted-foreground">y</span>
+          <PuestoEncuentro puesto={e.puestos.rival} publicado={e.puestos.rivalPublicado} delante={e.delante === 'rival' || e.delante === 'empate'} />
+        </span>
+        {delante ? <span className="text-[0.6875rem] leading-tight text-muted-foreground">{delante}</span> : null}
+      </div>
+      <div className="col-span-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground sm:col-span-1 sm:justify-end">
+        {e.asaltos.total > 0 ? (
+          <>
+            <FaseEncuentro etiqueta="Poule" b={e.asaltos.poule} />
+            <FaseEncuentro etiqueta="Directa" b={e.asaltos.directa} />
+            {e.asaltos.poule.victorias + e.asaltos.poule.derrotas + e.asaltos.directa.victorias + e.asaltos.directa.derrotas === 0 ? (
+              <span>{e.asaltos.total} {e.asaltos.total === 1 ? 'asalto igualado' : 'asaltos igualados'}</span>
+            ) : null}
+          </>
+        ) : (
+          <span>Sin asalto entre las dos</span>
+        )}
+      </div>
+    </li>
+  );
+}
+
+const ENCUENTROS_VISIBLES = 10;
+
+/**
+ * Todas las pruebas individuales en las que coincidieron, con los dos puestos
+ * y sus asaltos. Las más antiguas van plegadas para que los asaltos y la
+ * cobertura no queden al fondo de una lista de decenas de pruebas.
+ */
+export function EncuentrosCaraACara({ datos, encuentros }: { datos: DatosCaraACara; encuentros: EncuentroCaraACara[] }) {
+  const yo = primerNombre(datos.personas.yo.nombre);
+  const rival = primerNombre(datos.personas.rival.nombre);
+  return (
+    <Bloque id="h2h-encuentros" titulo="Todas las veces que os habéis cruzado" nivel="pagina">
+      {encuentros.length === 0 ? (
+        <p role="status" className="medida text-sm text-muted-foreground">
+          No hay ninguna prueba individual importada con las dos con estos filtros. No significa que no
+          hayan coincidido: puede faltar una temporada o una fuente.
+        </p>
+      ) : (
+        <>
+          <div aria-hidden className="hidden grid-cols-[minmax(0,1fr)_9rem_minmax(0,11rem)] gap-x-4 px-4 text-xs text-muted-foreground sm:grid">
+            <span>{encuentros.length} {encuentros.length === 1 ? 'prueba' : 'pruebas'}, de la más reciente</span>
+            <span className="text-center">Puesto de {yo} y de {rival}</span>
+            <span className="text-right">Asaltos de {yo}</span>
+          </div>
+          <ol aria-label="Pruebas en las que coincidieron, de la más reciente" className="grid min-w-0 gap-px overflow-hidden rounded-md border bg-border">
+            {encuentros.slice(0, ENCUENTROS_VISIBLES).map((e) => <FilaEncuentro key={e.pruebaId} e={e} yo={yo} rival={rival} />)}
+          </ol>
+          {encuentros.length > ENCUENTROS_VISIBLES ? (
+            <details id="h2h-encuentros-anteriores" className="group min-w-0">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-md border bg-card px-4 text-sm font-medium hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+                <span>
+                  Ver las{' '}
+                  <span className="cifra text-base">{encuentros.length - ENCUENTROS_VISIBLES}</span>{' '}
+                  pruebas anteriores
+                </span>
+                <span className="text-xs text-muted-foreground group-open:hidden">Mostrar</span>
+                <span className="hidden text-xs text-muted-foreground group-open:inline">Ocultar</span>
+              </summary>
+              <ol
+                start={ENCUENTROS_VISIBLES + 1}
+                aria-label="Pruebas anteriores en las que coincidieron"
+                className="mt-3 grid min-w-0 gap-px overflow-hidden rounded-md border bg-border"
+              >
+                {encuentros.slice(ENCUENTROS_VISIBLES).map((e) => <FilaEncuentro key={e.pruebaId} e={e} yo={yo} rival={rival} />)}
+              </ol>
+            </details>
+          ) : null}
+          {datos.resumenEncuentros?.truncado ? (
+            <Nota>Se muestran las {encuentros.length} pruebas comunes más recientes.</Nota>
+          ) : null}
+        </>
+      )}
+      <Aclaracion titulo="Cómo se cuentan los cruces">
+        <Nota>
+          Una prueba individual cuenta una vez aunque la publiquen dos fuentes. «Por delante» compara los
+          puestos finales publicados de las dos; sin el puesto de alguna, esa prueba no cuenta. Los asaltos
+          van vistos desde {yo}: poule y eliminación directa por separado, sin los igualados.
+        </Nota>
+      </Aclaracion>
+    </Bloque>
   );
 }
 
@@ -740,7 +973,7 @@ export function ElegirRival({
       <Bloque id="h2h-rivales" titulo="Rivales con asaltos confirmados" nivel="pagina">
         <Nota>
           Personas con las que {titular(persona.nombre)} tiene al menos un asalto individual con marcador
-          publicado ya importado, por orden alfabético.
+          publicado ya importado, de más a menos asaltos.
           {criterios.temporada ? ` Sólo de ${etiquetaTemporada(criterios.temporada)}.` : ''}
         </Nota>
         {rivales.tipo === 'ok' ? (

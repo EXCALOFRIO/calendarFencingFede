@@ -168,6 +168,28 @@ describe('unificar-personas', () => {
     expect(inf.colisionesPdf).toEqual({ pruebas: 0, resultados: 0, asaltosLado: 0 });
   });
 
+  it('no vincula filas de equipo a personas y borra las personas que sólo venían de ellas', () => {
+    const db = fixture();
+    db.exec(`INSERT INTO sport_competition (id, edition_id, source, season, competition_key, weapon, gender, category, format) VALUES
+      ('ce', 'ep', 'rfee_pdf', '2023-2024', 'pdf:x:eq', 'ESPADA', 'F', 'ABS', 'EQUIPOS');`);
+    // Una persona creada antes por el nombre de un equipo, con su puesto y su asalto de equipo.
+    db.prepare(`INSERT INTO sport_person (id, display_name, name_normalized, gender) VALUES ('pequipo', 'SAMA-M 1', '1 m sama', 'F')`).run();
+    db.prepare(`INSERT INTO sport_person_alias (person_id, source, name_original, name_normalized) VALUES ('pequipo', 'rfee_pdf', 'SAMA-M 1', '1 m sama')`).run();
+    resultado(db, 'ce', 'rfee_pdf', 'pdf:e1', 'SAMA-M 1', null, 'pequipo');
+    resultado(db, 'ce', 'rfee_pdf', 'pdf:e2', 'RUIZ Marta');
+    asalto(db, 'ce', 'rfee_pdf', 'pdf:e1', 'pdf:e2', 'SAMA-M 1', 'RUIZ Marta');
+    db.exec(`UPDATE sport_bout SET fencer_a_person_id='pequipo' WHERE competition_id='ce'`);
+
+    const inf = unificarPersonas(db);
+    expect(inf.equipos).toEqual({ resultados: 1, asaltosLado: 1, personasBorradas: 1 });
+    expect(fila(db, `SELECT count(*) n FROM sport_result WHERE competition_id='ce' AND person_id IS NOT NULL`)).toEqual({ n: 0 });
+    expect(fila(db, `SELECT fencer_a_person_id a, fencer_b_person_id b FROM sport_bout WHERE competition_id='ce'`)).toEqual({ a: null, b: null });
+    expect(fila(db, `SELECT count(*) n FROM sport_person WHERE id='pequipo'`)).toEqual({ n: 0 });
+    // La persona individual del mismo nombre sigue vinculada a su puesto individual.
+    expect(fila(db, `SELECT person_id IS NOT NULL v FROM sport_result WHERE source_fact_key='pdf:2'`)).toEqual({ v: 1 });
+    expect(unificarPersonas(db).equipos).toEqual({ resultados: 0, asaltosLado: 0, personasBorradas: 0 });
+  });
+
   it('desvincula los puestos de una misma persona repetida en una prueba individual PDF', () => {
     const db = fixture();
     persona(db, 'pa', 'ROMERO ORTIN Eva', 'eva ortin romero', 'F', null);

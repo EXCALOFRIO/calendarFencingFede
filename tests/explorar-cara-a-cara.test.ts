@@ -6,6 +6,7 @@ import {
   resumirCobertura,
   type PruebaComun,
 } from '@/lib/sport/explorar/cara-a-cara';
+import { codificarCursor } from '@/lib/sport/explorar/cursor';
 import {
   CLAVES_PRIVADAS,
   UUID_A,
@@ -365,8 +366,16 @@ describe('rivales', () => {
 
     const siguiente = await listarRivales(ctx, { personaId: UUID_A, limite: 1, cursor: r.siguiente! });
     expect(siguiente.estado).toBe('ok');
-    const ultima = sentencias.filter((s) => /ORDER BY cp\.name_normalized/.test(s.text)).at(-1)!;
-    expect(ultima.params).toContain('marta ruiz');
+    // De más a menos asaltos; el cursor lleva (asaltos, nombre, id) y se compara tras agrupar.
+    const ultima = sentencias.filter((s) => /ORDER BY sum\(x\.n\) DESC/.test(s.text)).at(-1)!;
+    expect(ultima.text).toMatch(/HAVING \(-sum\(x\.n\), coalesce\(cp\.name_normalized, ''\), cp\.id\) >/);
+    expect(ultima.params).toEqual(expect.arrayContaining([-3, 'marta ruiz', UUID_B]));
+  });
+
+  it('un cursor de la ordenación alfabética anterior ya no vale', async () => {
+    const { ctx } = crearContexto({ respuestas: sinFusiones });
+    const antiguo = codificarCursor('rivales', { personaId: UUID_A, q: undefined }, ['marta ruiz', UUID_B]);
+    expect(await listarRivales(ctx, { personaId: UUID_A, cursor: antiguo })).toEqual({ estado: 'cursor_invalido' });
   });
 
   it('sin rivales informa sinResultados', async () => {
