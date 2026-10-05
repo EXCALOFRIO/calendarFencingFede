@@ -149,9 +149,10 @@
     "INGEST_SNAPSHOT_HTML": "true",
     "INGEST_USER_AGENT": "CalendarioEsgrima/1.0 (+https://calendario-fie-fede.excalofrio.workers.dev)",
     "RESEND_DAILY_LIMIT": "100",
-    // Presupuesto propio, inferior a los 5 GB incluidos y compartidos por cuenta.
-    // No activa por sí solo el incremental ni modifica el plan de facturación.
-    "D1_STORAGE_BUDGET_BYTES": "4294967296",
+    // Asignación propia de 8 GiB (techo del CHECK de sport_write_context tras
+    // 0005), por debajo de los 10 GB por base de D1 en el plan de pago. No es un
+    // tope de gasto, no activa el incremental ni modifica el plan de facturación.
+    "D1_STORAGE_BUDGET_BYTES": "8589934592",
     "SPORT_INCREMENTAL_ENABLED": "false",
     // Solo se activa deliberadamente para congelar escrituras durante el corte.
     "MIGRATION_MAINTENANCE": "false",

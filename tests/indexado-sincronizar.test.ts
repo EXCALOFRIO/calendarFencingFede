@@ -53,6 +53,7 @@ function crearBase(dir: string, extra = '') {
     ${extra}
   `);
   db.exec(MIGRACION('0002_guardia_deportiva.sql'));
+  db.exec(MIGRACION('0005_presupuesto_8gib.sql'));
   db.close();
   return ruta;
 }

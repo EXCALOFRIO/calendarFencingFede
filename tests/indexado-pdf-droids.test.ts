@@ -89,6 +89,50 @@ describe('validarExtraccion', () => {
     expect(v.descartes.cuadro_asalto_nombre_no_en_pdf).toBe(1);
   });
 
+  it('descarta los asaltos de un cuadro individual incoherente (semifinal copiada como final con otro ganador)', () => {
+    const p = prueba({
+      tableau: [
+        { round: 'T4', aName: 'GARCÍA LÓPEZ, Juan', bName: 'MARTÍN SOTO, Luis', scoreA: 15, scoreB: 8, winner: 'A' },
+        { round: 'T4', aName: 'PÉREZ RUIZ, Pedro', bName: 'ROMERO GIL, Ana', scoreA: 15, scoreB: 10, winner: 'A' },
+        { round: 'T2', aName: 'MARTÍN SOTO, Luis', bName: 'GARCÍA LÓPEZ, Juan', scoreA: 15, scoreB: 8, winner: 'A' },
+      ],
+    });
+    const v = validarExtraccion({ competitions: [p] }, ctx(TEXTO));
+    const h = v.hechos[0];
+    expect(h.bouts.filter((b) => b.phase === 'TABLEAU').map((b) => b.roundKey)).toEqual(['T4']);
+    expect(v.descartes).toMatchObject({ cuadro_pareja_repetida: 2 });
+    expect(h.status.tableau).toBe('parcial');
+
+    // En equipos los puestos se tiran y quien pierde sigue: no se toca.
+    const equipos = validarExtraccion({ competitions: [{ ...p, format: 'EQUIPOS', pools: [] }] }, ctx(TEXTO));
+    expect(equipos.descartes.cuadro_pareja_repetida).toBeUndefined();
+  });
+
+  it('no inventa puestos para las listas de ganadores y finalistas de un criterium', () => {
+    const paginas = [
+      'TNR SENIOR MADRID FLORETE MASCULINO ABSOLUTO INDIVIDUAL 25 MAYO 2019 Poule 1 Tablón T4 '.concat('relleno '.repeat(20)),
+      'GANADORES Apellido Nombre Club GARCÍA LÓPEZ Juan CE MADRID PÉREZ RUIZ Pedro SALA VALENCIA ' +
+        'FINALISTAS Apellido Nombre Club MARTÍN SOTO Luis ROMERO GIL Ana',
+    ];
+    const v = validarExtraccion({ competitions: [prueba()] }, ctx(paginas));
+    const h = v.hechos[0];
+    expect(h.results.map((r) => [r.position, r.positionRaw])).toEqual([
+      [null, 'Ganador'], [null, 'Ganador'], [null, 'Finalista'], [null, 'Finalista'],
+    ]);
+    expect(h.status.notes).toContain('puestos_no_publicados_lista_ganadores_finalistas:4');
+    expect(h.bouts.filter((b) => b.phase === 'TABLEAU')).toHaveLength(1);
+    // Sin las dos listas, los puestos de la clasificación se conservan.
+    expect(validarExtraccion({ competitions: [prueba()] }, ctx(TEXTO)).hechos[0].results[0].position).toBe(1);
+  });
+
+  it('sin fecha en el modelo ni en la cabecera toma la del catálogo nacional', () => {
+    const p = prueba({ date: null, headerLines: ['TNR SENIOR MADRID', 'FLORETE MASCULINO'] });
+    const v = validarExtraccion({ competitions: [p] }, ctx(TEXTO, {
+      fechaCatalogo: (f) => (f.weapon === 'FLORETE' && f.gender === 'M' ? '2019-05-26' : null),
+    }));
+    expect(v.hechos[0].competition.date).toBe('2019-05-26');
+  });
+
   it('rechaza marcadores fuera de rango, ganadores incoherentes y empates sin ganador', () => {
     const p = prueba({
       tableau: [

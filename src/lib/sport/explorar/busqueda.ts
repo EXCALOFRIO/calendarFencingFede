@@ -14,6 +14,10 @@ import {
   unionesPrueba,
   y,
 } from './filtros-sql';
+import {
+  coincide, COLUMNAS_RESUMEN, CTE_INDEXADAS, CTE_MARCAS, ctePalabras, ctesDelta, ctesResumenPagina,
+  UNIONES_RESUMEN, vigente,
+} from './busqueda-indice';
 import { leerTrayectorias } from './busqueda-trayectoria';
 import { SALTOS, sqlGrupoDe } from './personas';
 import type { Arma, FiltrosBusqueda, Genero } from './tipos';
@@ -312,6 +316,124 @@ function sqlBusquedaPorNombre(
     ORDER BY p.name_normalized ASC, p.id ASC`;
 }
 
+/**
+ * La búsqueda por nombre con el índice de palabras, en UNA sentencia.
+ *
+ * - `indexadas`/`orden_indice`: las personas del índice con todas las
+ *   palabras, ya en orden de página (`n`), sin leer sport_person.
+ * - `pagina_indice` las recorre en ese orden y, para cada una, comprueba en
+ *   vivo lo mismo que `sqlBusquedaPorNombre` (sigue prevaleciendo, su nombre o
+ *   un alias de su grupo coincide) y los filtros; para al llenar la página, así
+ *   que una consulta frecuente («ma») no lee miles de personas.
+ * - `delta_raices`/`pagina_delta`: altas posteriores a la reconstrucción.
+ * - Recuentos, armas, trayectoria y homónimos de la página van en la misma
+ *   sentencia en lugar de dos lecturas más (D1 ejecuta una sentencia tras otra).
+ *
+ * El orden de `n` es el de (name_normalized, id) al reconstruir; coincide con
+ * el vivo mientras no cambie el nombre de una persona ya indexada.
+ */
+export function sqlBusquedaIndexada(
+  f: FiltrosBusqueda & { q: string },
+  limite: number,
+  clave: readonly (string | number)[] | null,
+): SQL {
+  const filtros: SQL[] = [];
+  const porConjuntos = pruebaPorConjuntos(f);
+  const prueba = porConjuntos ? porConjuntos.condicion : condicionPrueba(f);
+  if (prueba) filtros.push(prueba);
+  if (f.nacionalidad) filtros.push(condicionNacionalidad(f.nacionalidad));
+  const cursor = clave ? [String(clave[0]), String(clave[1])] as const : null;
+  if (cursor) filtros.push(sql`(p.name_normalized, p.id) > (${cursor[0]}, ${cursor[1]})`);
+  const desde = cursor
+    ? sql`(SELECT coalesce((
+        SELECT o.n FROM explorar_persona o
+        WHERE (o.name_normalized, o.id) <= (${cursor[0]}, ${cursor[1]})
+        ORDER BY o.name_normalized DESC, o.id DESC LIMIT 1), 0))`
+    : sql`0`;
+
+  return sql`
+    WITH RECURSIVE
+    ${ctePalabras(f.q.split(' '))},
+    ${CTE_MARCAS},
+    ${CTE_INDEXADAS},
+    ${ctesDelta()},
+    orden_indice(n, id) AS MATERIALIZED (
+      SELECT i.n, ep.id FROM indexadas i CROSS JOIN explorar_persona ep ON ep.n = i.n
+      WHERE i.n > ${desde}
+      ORDER BY i.n
+    )${porConjuntos ? sql`,
+    ordenadas(id) AS MATERIALIZED (
+      SELECT id FROM orden_indice UNION SELECT id FROM delta_raices
+    )${porConjuntos.ctes}` : sql``},
+    pagina_indice(id, name_normalized, country_code) AS MATERIALIZED (
+      SELECT p.id, p.name_normalized, p.country_code
+      FROM orden_indice o CROSS JOIN sport_person p ON p.id = o.id
+      WHERE ${y([vigente(), ...filtros])}
+      ORDER BY o.n
+      LIMIT ${limite + 1}
+    ),
+    pagina_delta(id, name_normalized, country_code) AS MATERIALIZED (
+      SELECT p.id, p.name_normalized, p.country_code
+      FROM delta_raices d CROSS JOIN sport_person p ON p.id = d.id
+      WHERE ${y(filtros)}
+    ),
+    pagina(id, name_normalized, country_code) AS MATERIALIZED (
+      SELECT id, name_normalized, country_code FROM pagina_indice
+      UNION
+      SELECT id, name_normalized, country_code FROM pagina_delta
+      ORDER BY 2, 1
+      LIMIT ${limite + 1}
+    )${ctesResumenPagina(limite)}
+    SELECT p.id AS id, sp.display_name AS nombre, p.name_normalized AS "claveNombre",
+           CASE WHEN ${coincide(sql`p.name_normalized`)} THEN NULL ELSE (
+             SELECT a.name_original FROM sport_person_alias a
+             WHERE a.person_id IN ${grupoP} AND ${coincide(sql`a.name_normalized`)}
+             ORDER BY a.name_normalized, a.id LIMIT 1) END AS alias,
+           p.country_code AS pais, sp.gender AS genero, sp.birth_year AS "anioNacimiento",
+           ${COLUMNAS_RESUMEN}
+    FROM pagina p
+    CROSS JOIN sport_person sp ON sp.id = p.id
+    ${UNIONES_RESUMEN}
+    ORDER BY p.name_normalized ASC, p.id ASC`;
+}
+
+type FilaIndexada = FilaBusqueda & {
+  resultados: number;
+  armas: string | null;
+  mejorPuesto: number | null;
+  oros: number;
+  platas: number;
+  bronces: number;
+  ultimaEdicion: string | null;
+  ultimoTorneo: string | null;
+  ultimaFecha: string | null;
+  mismoNombre: number;
+};
+
+function deportistaIndexado(p: FilaIndexada): DeportistaBuscado {
+  const resultados = Number(p.resultados ?? 0);
+  return {
+    id: p.id,
+    nombre: p.nombre,
+    alias: p.alias,
+    pais: p.pais,
+    genero: p.genero,
+    anioNacimiento: p.anioNacimiento === null ? null : Number(p.anioNacimiento),
+    resultadosImportados: resultados,
+    armas: p.armas ? (p.armas.split(',').sort() as Arma[]) : [],
+    mismoNombre: Number(p.mismoNombre ?? 1) || 1,
+    trayectoria: resultados === 0 ? TRAYECTORIA_VACIA : {
+      ultima: p.ultimaEdicion && p.ultimoTorneo
+        ? { edicionId: p.ultimaEdicion, torneo: p.ultimoTorneo, fecha: p.ultimaFecha }
+        : null,
+      mejorPuesto: p.mejorPuesto === null ? null : Number(p.mejorPuesto),
+      oros: Number(p.oros ?? 0),
+      platas: Number(p.platas ?? 0),
+      bronces: Number(p.bronces ?? 0),
+    },
+  };
+}
+
 export async function complementos(
   db: ContextoExplorador['db'],
   ids: readonly string[],
@@ -384,6 +506,25 @@ export async function buscarDeportistas(
   if (!(await ctx.esquema()).identidad) return { estado: 'no_disponible' };
 
   const limite = analizada.data.limite ?? LIMITE_POR_DEFECTO;
+
+  if (filtros.q && ctx.indiceExplorar && (await ctx.indiceExplorar())) {
+    const q = filtros.q;
+    const encontradas = filas<FilaIndexada>(
+      await ctx.db.execute(sqlBusquedaIndexada({ ...filtros, q }, limite, clave)),
+    );
+    const pagina = encontradas.slice(0, limite);
+    const ultima = pagina[pagina.length - 1];
+    return {
+      estado: 'ok',
+      filtros,
+      items: pagina.map(deportistaIndexado),
+      siguiente: encontradas.length > limite && ultima
+        ? codificarCursor(CLASE, filtros, [ultima.claveNombre, ultima.id])
+        : null,
+      sinResultados: pagina.length === 0,
+    };
+  }
+
   const encontradas = filas<FilaBusqueda>(await ctx.db.execute(sqlBusqueda(filtros, limite, clave)));
   const hayMas = encontradas.length > limite;
   const pagina = encontradas.slice(0, limite);

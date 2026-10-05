@@ -54,6 +54,39 @@ export class PdfNoLeible extends Error {
   }
 }
 
+const formatoCaja = (n: number): string => String(Number(n.toFixed(4)));
+
+/**
+ * PDF.js omite en `getTextContent` los glifos que empiezan fuera de la caja de la página.
+ * Los PDF de Engarde impresos con «Microsoft Print to PDF» dejan la última columna del
+ * cuadro pegada al borde derecho y PDF.js lee «15/1» y «RAM» donde el contenido dice
+ * «15/13» y «RAMIREZ LARENA Alejandro». Se reescribe cada `/MediaBox` y `/CropBox` con el
+ * borde derecho ampliado y exactamente la misma longitud, para no mover los offsets de la
+ * tabla xref. Devuelve `null` si no hay ninguna caja que ampliar (p. ej. cajas dentro de
+ * flujos de objetos comprimidos).
+ */
+export function ampliarBordeDerecho(bytes: Uint8Array): Uint8Array | null {
+  const texto = new TextDecoder('latin1').decode(bytes);
+  const re = /\/(?:MediaBox|CropBox)\s*\[([^\]]{1,120})\]/g;
+  const salida = new Uint8Array(bytes);
+  let cambios = 0;
+  for (let m = re.exec(texto); m; m = re.exec(texto)) {
+    const interior = m[1];
+    const numeros = interior.trim().split(/\s+/).map(Number);
+    if (numeros.length !== 4 || numeros.some((n) => !Number.isFinite(n))) continue;
+    const [x0, y0, x1, y1] = numeros.map(formatoCaja);
+    const libre = interior.length - (x0.length + y0.length + y1.length + 3);
+    if (libre < 1) continue;
+    const ancho = '9'.repeat(Math.min(libre, 6));
+    if (Number(ancho) <= numeros[2]) continue;
+    const nuevo = `${x0} ${y0} ${ancho} ${y1}`.padEnd(interior.length, ' ');
+    const inicio = m.index + m[0].indexOf('[') + 1;
+    for (let i = 0; i < nuevo.length; i += 1) salida[inicio + i] = nuevo.charCodeAt(i);
+    cambios += 1;
+  }
+  return cambios > 0 ? salida : null;
+}
+
 const heapMb = (): number | null =>
   typeof process !== 'undefined' && typeof process.memoryUsage === 'function' ? process.memoryUsage().heapUsed / 1048576 : null;
 
@@ -73,16 +106,22 @@ export async function extraerPaginas(
   const { getDocumentProxy } = await import('unpdf');
   // PDF.js puede tomar posesión del buffer; se le da una copia.
   const documento = await getDocumentProxy(new Uint8Array(bytes));
+  const ampliado = ampliarBordeDerecho(bytes);
+  // El texto sale del documento con el borde ampliado; las medidas de página, del original.
+  const conTexto = ampliado ? await getDocumentProxy(ampliado) : documento;
   const paginas: PaginaTexto[] = [];
   let items = 0;
   try {
     if (documento.numPages > maxPaginas) {
       throw new PdfNoLeible(`El PDF tiene ${documento.numPages} páginas y el límite es ${maxPaginas}`);
     }
+    if (conTexto.numPages !== documento.numPages) throw new PdfNoLeible('El PDF cambia de páginas al ampliar su caja');
     for (let n = 1; n <= documento.numPages; n += 1) {
       limites.comprobar?.();
-      const pagina = await documento.getPage(n);
-      const [, , ancho, alto] = pagina.view;
+      const original = await documento.getPage(n);
+      const [, , ancho, alto] = original.view;
+      if (conTexto !== documento) original.cleanup();
+      const pagina = conTexto === documento ? original : await conTexto.getPage(n);
       const contenido = await pagina.getTextContent();
       const lista: ItemTexto[] = [];
       for (const it of contenido.items) {
@@ -97,6 +136,7 @@ export async function extraerPaginas(
       if (h !== null && (heapMax === null || h > heapMax)) heapMax = h;
     }
   } finally {
+    if (conTexto !== documento) await conTexto.loadingTask.destroy();
     await documento.loadingTask.destroy();
   }
 

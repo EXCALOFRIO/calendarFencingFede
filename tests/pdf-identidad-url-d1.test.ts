@@ -19,6 +19,7 @@ let lease: SportLease | null;
 beforeEach(async () => {
   local = localD1();
   local.sqlite.exec(readFileSync(new URL('../drizzle-d1/0002_guardia_deportiva.sql', import.meta.url), 'utf8'));
+  local.sqlite.exec(readFileSync(new URL('../drizzle-d1/0005_presupuesto_8gib.sql', import.meta.url), 'utf8'));
   const raw = createD1Database(local.binding);
   lease = await reclamarSportLease(raw);
   writer = dbConSportLease(raw, lease!);

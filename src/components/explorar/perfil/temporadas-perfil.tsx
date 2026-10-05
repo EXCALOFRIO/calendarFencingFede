@@ -130,10 +130,18 @@ function FilaTemporada({ t }: { t: TemporadaPerfil }) {
 }
 
 /** Año a año: una fila por temporada deportiva, la más reciente arriba, con su gráfico. */
-export function AnioAAnio({ perfil, nivel }: { perfil: PerfilDeportivo; nivel: Nivel }) {
+export function AnioAAnio({
+  perfil,
+  nivel,
+  enPestana = false,
+}: {
+  perfil: PerfilDeportivo;
+  nivel: Nivel;
+  enPestana?: boolean;
+}) {
   const serie = serieTemporadas(perfil.temporadas);
   return (
-    <Bloque id="ficha-temporadas" titulo="Año a año" nivel={nivel}>
+    <Bloque id="ficha-temporadas" titulo="Año a año" nivel={nivel} tituloOculto={enPestana}>
       {perfil.temporadas.length === 0 ? (
         <p role="status" className="medida text-sm text-muted-foreground">
           Sin datos importados por temporada. Cuando se importen clasificaciones o asaltos de esta

@@ -90,7 +90,7 @@ describe('combobox de personas: manejadores y contrato accesible sin browser', (
     expect(String(por(arbol, 'id', 'explorar-q-ayuda').props.children)).toContain('no una confirmación de identidad');
   });
 
-  it('listbox/options no generan pestañas extra y los homónimos mantienen metadatos distintos', () => {
+  it('listbox/options no generan pestañas extra y los homónimos mantienen metadatos distintos', async () => {
     const arbol = abierto();
     expect(por(arbol, 'role', 'combobox').props['aria-expanded']).toBe(true);
     expect(por(arbol, 'role', 'listbox').props.id).toBe('explorar-sugerencias');
@@ -100,9 +100,18 @@ describe('combobox de personas: manejadores y contrato accesible sin browser', (
       expect(opcion.props.tabIndex).toBe(-1);
       expect(String(opcion.props.className)).toContain('min-h-11');
     }
-    const texto = arbol.flatMap((n) => React.Children.toArray(n.props.children as React.ReactNode)).filter((h) => typeof h === 'string').join(' ');
+    // Cada opción pinta su contenido con `ContenidoSugerencia`, que el recorrido no expande.
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const contenidos = arbol.filter((n) => n.props.p && typeof n.props.p === 'object');
+    expect(contenidos).toHaveLength(2);
+    const texto = contenidos
+      .map((n) => renderToStaticMarkup(React.createElement(n.type as React.FC<{ p: unknown }>, { p: n.props.p })))
+      .join(' ');
     expect(texto).toContain('ESP');
     expect(texto).toContain('FRA');
+    expect(texto).toContain('1998');
+    expect(texto).toContain('2001');
+    expect(texto).not.toContain('·');
   });
 
   it('Intro sin opción no impide búsqueda ordinaria; las flechas activan e Intro abre la ficha canónica', () => {

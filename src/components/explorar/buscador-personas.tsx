@@ -3,14 +3,56 @@
 import { Search, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { BanderaPais } from '@/components/bandera';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { crearSolicitanteSugerencias, siguienteOpcion, type EstadoSugerencias } from '@/lib/sport/explorar/sugerencias-cliente';
 import { rutaFicha } from '@/lib/sport/explorar/url';
-import { inicialesVisibles, nombreVisible } from '@/lib/sport/nombre-visible';
+import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { GENDER_LABEL, WEAPON_LABEL } from '@/lib/utils';
+import { AvatarAnillo } from './avatar-anillo';
+
+type Sugerida = EstadoSugerencias['items'][number];
+
+/** Contenido de una opción: iniciales con anillo, nombre, bandera y datos en columnas, sin cadenas con puntos. */
+export function ContenidoSugerencia({ p }: { p: Sugerida }) {
+  const nombre = nombreVisible(p.nombre);
+  return (
+    <span className="flex w-full min-w-0 items-center gap-3">
+      <AvatarAnillo nombre={nombre} tamano="sm" apagado={!p.resultados} />
+      <span className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="leading-tight font-medium break-words">{nombre}</span>
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          {p.pais ? <BanderaPais pais={p.pais} /> : <span>País no publicado</span>}
+          <span>
+            {p.genero ? GENDER_LABEL[p.genero] : 'Género no publicado'}
+            {p.anioNacimiento !== null ? `, ${p.anioNacimiento}` : ''}
+          </span>
+        </span>
+        {p.armas && p.armas.length > 0 ? (
+          <span className="flex flex-wrap gap-1">
+            <span className="sr-only">Armas: </span>
+            {p.armas.map((a) => (
+              <span key={a} className="rounded-full border border-filete-alto px-2 text-[0.6875rem] leading-5 text-foreground">
+                {WEAPON_LABEL[a]}
+              </span>
+            ))}
+          </span>
+        ) : null}
+        {p.alias ? <span className="text-xs text-muted-foreground">Publicado también como {p.alias}</span> : null}
+      </span>
+      {typeof p.resultados === 'number' ? (
+        <span className="flex shrink-0 flex-col items-end text-right">
+          <span className="cifra text-2xl leading-none">{p.resultados}</span>
+          <span className="text-[0.6875rem] text-muted-foreground">
+            {p.resultados === 1 ? 'resultado' : 'resultados'}
+          </span>
+        </span>
+      ) : null}
+    </span>
+  );
+}
 
 export function BuscadorPersonas({ valor, onChange }: { valor: string; onChange: (valor: string) => void }) {
   const router = useRouter();
@@ -103,35 +145,7 @@ export function BuscadorPersonas({ valor, onChange }: { valor: string; onChange:
                   id={`explorar-sugerencia-${i}`} role="option" aria-selected={activo === i}
                   className={`h-auto min-h-11 w-full justify-start rounded-none border-b px-3 py-2 text-left whitespace-normal ${activo === i ? 'bg-accent text-accent-foreground' : ''}`}
                   onMouseDown={(e) => e.preventDefault()} onClick={() => elegir(i)}>
-                  <span className="flex w-full min-w-0 items-center gap-3">
-                    <Avatar className="size-9">
-                      <AvatarFallback className="text-xs">{inicialesVisibles(p.nombre)}</AvatarFallback>
-                    </Avatar>
-                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span className="break-words font-medium">{nombreVisible(p.nombre)}</span>
-                      <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
-                        <span className="rounded-sm border px-1 font-mono text-[0.6875rem] leading-4 text-foreground">
-                          {p.pais ?? '—'}
-                        </span>
-                        <span>
-                          {p.genero ? GENDER_LABEL[p.genero] : 'Género no publicado'}
-                          {p.anioNacimiento !== null ? `, ${p.anioNacimiento}` : ''}
-                        </span>
-                        {p.armas && p.armas.length > 0 ? (
-                          <span>· {p.armas.map((a) => WEAPON_LABEL[a]).join(', ')}</span>
-                        ) : null}
-                      </span>
-                      {p.alias ? <span className="text-xs text-muted-foreground">Publicado también como {p.alias}</span> : null}
-                    </span>
-                    {typeof p.resultados === 'number' ? (
-                      <span className="flex shrink-0 flex-col items-end text-right">
-                        <span className="cifra text-lg leading-none">{p.resultados}</span>
-                        <span className="text-[0.6875rem] text-muted-foreground">
-                          {p.resultados === 1 ? 'resultado' : 'resultados'}
-                        </span>
-                      </span>
-                    ) : null}
-                  </span>
+                  <ContenidoSugerencia p={p} />
                 </Button>
               </li>
             ))}

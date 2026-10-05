@@ -14,6 +14,7 @@ import {
   resolverDocId,
   type IndiceBase,
 } from '../scripts/indexado/pdf-a-hechos';
+import { indiceFechas } from '../scripts/indexado/fechas-catalogo';
 
 type Fixture = { fuente: { url: string; sha256: string }; paginas: PaginaTexto[] };
 const fixture = (n: string): Fixture => JSON.parse(readFileSync(join(__dirname, 'fixtures', 'rfee-pdf', n), 'utf8'));
@@ -49,6 +50,36 @@ describe('lecturaAHechos', () => {
       expect(claves.has(b.bRef)).toBe(true);
     }
     expect(h.status.results).toBe(estadoSeccion('results', p.cobertura.puestos, p.rechazos));
+  });
+
+  it('los asaltos llevan el nombre completo del puesto, no el truncado del cuadro', () => {
+    const l = leer('abs-individual-espada-2019.json');
+    const truncada: LecturaPdf = {
+      ...l,
+      pruebas: l.pruebas.map((p) => ({ ...p, asaltos: p.asaltos.map((a) => ({ ...a, nombreA: a.nombreA.slice(0, 5), nombreB: a.nombreB.slice(0, 5) })) })),
+    };
+    const h = lecturaAHechos(truncada, '2018-2019').hechos[0];
+    const nombres = new Map(h.results.map((r) => [r.factKey, r.name]));
+    const atribuidos = h.bouts.filter((b) => nombres.has(b.aRef));
+    expect(atribuidos.length).toBeGreaterThan(0);
+    for (const b of atribuidos) expect(b.aName).toBe(nombres.get(b.aRef));
+  });
+
+  it('sin fecha en el PDF, la edición y la prueba toman la del catálogo nacional', () => {
+    const l = leer('abs-individual-espada-2019.json');
+    const sinFecha: LecturaPdf = { ...l, pruebas: l.pruebas.map((p) => ({ ...p, fecha: null })) };
+    const p = l.pruebas[0];
+    const indice = indiceFechas({
+      ownRfeeCatalog: [{
+        claveCatalogo: 'k1', temporada: '2018-2019', fecha: '2019-03-02', arma: p.arma, genero: p.genero,
+        categoria: p.categoria, formato: p.formato,
+      }],
+      readingUnits: [{ sourceUrl: l.url, datos: { refOriginal: 'k1' } }],
+    });
+    const h = lecturaAHechos(sinFecha, '2018-2019', indice).hechos[0];
+    expect(h.edition).toMatchObject({ startDate: '2019-03-02', endDate: '2019-03-02' });
+    expect(h.competition.date).toBe('2019-03-02');
+    expect(lecturaAHechos(sinFecha, '2018-2019').hechos[0].edition.startDate).toBeNull();
   });
 
   it('una prueba por equipos no publica asaltos individuales', () => {

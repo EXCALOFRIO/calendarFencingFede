@@ -76,7 +76,9 @@ describe('acciones de favoritos', () => {
     vi.mocked(revalidatePath).mockClear();
     await guardarFavoritoAccion({ personaId: UUID_A });
     await quitarFavoritoAccion({ personaId: UUID_A });
-    expect(vi.mocked(revalidatePath).mock.calls).toEqual([['/explorar/favoritos'], ['/explorar/favoritos']]);
+    // Seguir es el mismo favorito: también caducan el feed y el «Siguiendo N» de Explorar.
+    const tanda = [['/explorar/favoritos'], ['/explorar/siguiendo'], ['/explorar']];
+    expect(vi.mocked(revalidatePath).mock.calls).toEqual([...tanda, ...tanda]);
   });
 
   it('un cambio que no se hizo (entrada inválida, persona inexistente, sin sesión) no invalida nada', async () => {

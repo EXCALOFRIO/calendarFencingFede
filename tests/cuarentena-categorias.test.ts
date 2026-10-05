@@ -37,6 +37,13 @@ describe('los tramos de veteranos de las autonómicas', () => {
     expect(mapCategory('Veteranos')).toBe('VET');
   });
 
+  it('«GV» de la FIE (Grand Veterans por equipos) es veteranos', () => {
+    expect(mapCategory('GV')).toBe('VET');
+    expect(mapCategory('Grand Veterans')).toBe('VET');
+    expect(mapCategory('G')).toBeNull();
+    expect(mapCategory('GVX')).toBeNull();
+  });
+
   it('un «+» con un solo dígito NO es una edad', () => {
     // No se traga cualquier cosa que empiece por «+»: si algún día aparece un
     // «+1» que signifique otra cosa, va a cuarentena y se mira.

@@ -5,7 +5,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import type { CoberturaCaraACara } from '@/lib/sport/explorar/cara-a-cara';
 import { etiquetaRonda } from '@/lib/sport/explorar/ediciones-asaltos';
-import { inicialesVisibles } from '@/lib/sport/nombre-visible';
+import { inicialesVisibles, nombreVisible } from '@/lib/sport/nombre-visible';
 import {
   chipsCaraACara,
   construirUrlCaraACara,
@@ -25,6 +25,7 @@ import { etiquetaFase } from '@/lib/sport/explorar/etiquetas';
 import type { AsaltoDto, DeportistaResumen } from '@/lib/sport/explorar/tipos';
 import { etiquetaTemporada, rutaFicha } from '@/lib/sport/explorar/url';
 import { CATEGORY_LABEL, GENDER_LABEL, WEAPON_LABEL, cn, titular } from '@/lib/utils';
+import { AvatarAnillo } from './avatar-anillo';
 import { Aclaracion, Bloque, Celda, Dato, EnlaceFuente, Nota, fechaLegible } from './piezas';
 
 /**
@@ -151,6 +152,55 @@ export function CoberturaCaraACaraVista({
 
 /* -------------------------------------------------------------------- balance */
 
+/**
+ * Una medida de las dos personas, enfrentadas: cada una su cifra y su media
+ * barra hacia fuera desde el centro. La mayor va en blanco; la otra, apagada.
+ * El nombre completo de cada cifra va en el `dt` para el lector de pantalla.
+ */
+function FilaComparada({
+  rotulo,
+  yo,
+  rival,
+  valorYo,
+  valorRival,
+  textoYo,
+  textoRival,
+}: {
+  rotulo: string;
+  yo: number;
+  rival: number;
+  valorYo?: string;
+  valorRival?: string;
+  textoYo: string;
+  textoRival: string;
+}) {
+  const maximo = Math.max(yo, rival, 1);
+  const lado = (valor: number, otro: number) => (valor >= otro ? 'text-foreground' : 'text-muted-foreground');
+  return (
+    <div role="group" aria-label={rotulo} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-4 py-4 sm:px-6">
+      <div className="min-w-0">
+        <p className="sr-only">{textoYo}</p>
+        <div className="flex min-w-0 flex-col items-start gap-2">
+          <span className={cn('cifra text-4xl leading-none sm:text-5xl', lado(yo, rival))}>{valorYo ?? yo}</span>
+          <span aria-hidden className="flex h-1.5 w-full justify-end overflow-hidden rounded-full bg-muted">
+            <span className="rounded-full bg-primary" style={{ width: `${(yo / maximo) * 100}%` }} />
+          </span>
+        </div>
+      </div>
+      <span aria-hidden className="w-20 text-center text-xs leading-tight text-muted-foreground sm:w-28">{rotulo}</span>
+      <div className="min-w-0">
+        <p className="sr-only">{textoRival}</p>
+        <div className="flex min-w-0 flex-col items-end gap-2">
+          <span className={cn('cifra text-4xl leading-none sm:text-5xl', lado(rival, yo))}>{valorRival ?? rival}</span>
+          <span aria-hidden className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <span className="rounded-full bg-muted-foreground" style={{ width: `${(rival / maximo) * 100}%` }} />
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function BalanceCaraACara({ datos }: { datos: DatosCaraACara }) {
   const { yo, rival } = datos.personas;
   const r = datos.resumen;
@@ -165,39 +215,45 @@ export function BalanceCaraACara({ datos }: { datos: DatosCaraACara }) {
       </Bloque>
     );
   }
-  const decididos = r.victorias + r.derrotas;
+  const media = (tantos: number) => (tantos / r.asaltos).toLocaleString('es-ES', { maximumFractionDigits: 1, minimumFractionDigits: 1 });
   return (
     <Bloque id="h2h-balance" titulo="Balance" nivel="pagina">
-      {decididos > 0 ? (
-        <div aria-hidden className="flex h-2 overflow-hidden rounded-full bg-muted">
-          <span className="bg-ok" style={{ width: `${(r.victorias / decididos) * 100}%` }} />
-          <span className="bg-danger" style={{ width: `${(r.derrotas / decididos) * 100}%` }} />
+      <div className="flex flex-col divide-y rounded-md border bg-card">
+        <div aria-hidden className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-3 px-4 py-2 text-xs text-muted-foreground sm:px-6">
+          <span className="truncate">{nombreVisible(yo.nombre) || titular(yo.nombre)}</span>
+          <span />
+          <span className="truncate text-right">{nombreVisible(rival.nombre) || titular(rival.nombre)}</span>
         </div>
-      ) : null}
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-5 rounded-lg border bg-card p-4 sm:p-6 lg:grid-cols-4">
-        <div className="flex min-w-0 flex-col gap-2">
-          <dt className="text-xs text-muted-foreground break-words">Victorias de {titular(yo.nombre)}</dt>
-          <dd className="cifra text-5xl leading-none">{r.victorias}</dd>
-        </div>
-        <div className="flex min-w-0 flex-col gap-2">
-          <dt className="text-xs text-muted-foreground break-words">Victorias de {titular(rival.nombre)}</dt>
-          <dd className="cifra text-5xl leading-none">{r.derrotas}</dd>
-        </div>
+        <FilaComparada
+          rotulo="Victorias"
+          yo={r.victorias}
+          rival={r.derrotas}
+          textoYo={`Victorias de ${titular(yo.nombre)}`}
+          textoRival={`Victorias de ${titular(rival.nombre)}`}
+        />
+        <FilaComparada
+          rotulo="Tocados dados"
+          yo={r.tantosFavor}
+          rival={r.tantosContra}
+          textoYo={`Tantos de ${titular(yo.nombre)}`}
+          textoRival={`Tantos de ${titular(rival.nombre)}`}
+        />
+        <FilaComparada
+          rotulo="Media por asalto"
+          yo={r.tantosFavor / r.asaltos}
+          rival={r.tantosContra / r.asaltos}
+          valorYo={media(r.tantosFavor)}
+          valorRival={media(r.tantosContra)}
+          textoYo={`Media de tocados de ${titular(yo.nombre)}`}
+          textoRival={`Media de tocados de ${titular(rival.nombre)}`}
+        />
         {r.sinDecidir > 0 ? (
-          <div className="flex min-w-0 flex-col gap-2">
+          <dl className="flex items-baseline justify-center gap-2 px-4 py-3 text-sm">
             <dt className="text-xs text-muted-foreground">Marcador igualado, sin ganador</dt>
-            <dd className="cifra text-5xl leading-none">{r.sinDecidir}</dd>
-          </div>
+            <dd className="cifra text-2xl leading-none">{r.sinDecidir}</dd>
+          </dl>
         ) : null}
-        <div className="col-span-2 flex min-w-0 flex-col gap-2 lg:col-span-1">
-          <dt className="text-xs text-muted-foreground">Tantos de {titular(yo.nombre)} y del rival</dt>
-          <dd className="cifra flex flex-wrap items-baseline gap-x-2 text-5xl leading-none">
-            {r.tantosFavor}
-            <span className="text-muted-foreground"> a </span>
-            {r.tantosContra}
-          </dd>
-        </div>
-      </dl>
+      </div>
       <Aclaracion titulo={`Balance de ${r.asaltos} ${r.asaltos === 1 ? 'asalto importado' : 'asaltos importados'}`}>
         <Nota>
           Cuenta {r.asaltos} {r.asaltos === 1 ? 'asalto individual' : 'asaltos individuales'} con
@@ -259,7 +315,7 @@ function FilaAsalto({ a, yo, rival }: { a: AsaltoDto; yo: PersonaCaraACara; riva
       <Celda etiqueta="Fase y ronda" className="col-start-2 md:col-start-auto">
         <Dato>
           {etiquetaFase(a.fase)}
-          {ronda ? <span className="text-muted-foreground"> · {ronda}</span> : null}
+          {ronda ? <span className="text-muted-foreground">, {ronda}</span> : null}
         </Dato>
         {a.rondaPublicada ? (
           <span className="text-xs text-muted-foreground break-words">Ronda publicada: «{a.rondaPublicada}»</span>
@@ -293,7 +349,16 @@ function GrupoDePrueba({ g, yo, rival }: { g: GrupoAsaltos; yo: PersonaCaraACara
   const categoria = CATEGORY_LABEL[a.prueba.categoria.codigo as keyof typeof CATEGORY_LABEL] ?? a.prueba.categoria.codigo;
   const ganados = g.asaltos.filter((x) => x.resultado === 'victoria').length;
   return (
-    <li className="overflow-hidden rounded-lg border bg-card">
+    <li className="relative">
+      {/* Nudo de la línea de tiempo: centrado sobre el filete izquierdo de la lista. */}
+      <span
+        aria-hidden
+        className={cn(
+          'absolute top-4 -left-[calc(1rem+7px)] size-3 rounded-full ring-4 ring-background sm:-left-[calc(1.5rem+7px)]',
+          ganados * 2 > g.asaltos.length ? 'bg-primary' : 'bg-muted-foreground',
+        )}
+      />
+      <div className="overflow-hidden rounded-md border bg-card">
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b bg-secondary/60 px-4 py-3">
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="font-semibold break-words">{titular(a.torneo.nombre)}</span>
@@ -322,6 +387,7 @@ function GrupoDePrueba({ g, yo, rival }: { g: GrupoAsaltos; yo: PersonaCaraACara
           <FilaAsalto key={x.id} a={x} yo={yo} rival={rival} />
         ))}
       </ul>
+      </div>
     </li>
   );
 }
@@ -351,7 +417,10 @@ export function AsaltosCaraACara({
         </p>
       ) : (
         <>
-          <ul className="flex flex-col gap-4" aria-label="Asaltos entre las dos personas, por prueba">
+          <ul
+            className="ml-1.5 flex flex-col gap-4 border-l border-filete-alto pl-4 sm:ml-2 sm:pl-6"
+            aria-label="Asaltos entre las dos personas, por prueba"
+          >
             {agruparPorPrueba(datos.items).map((g) => (
               <GrupoDePrueba key={`${g.clave}|${g.primero.id}`} g={g} yo={yo} rival={rival} />
             ))}
@@ -403,47 +472,73 @@ export function CabeceraCaraACara({
   const conBalance = Boolean(r && r.asaltos > 0);
   // Los últimos asaltos sólo son los últimos en la primera página.
   const ultimos = !criterios.cursor ? (datos.items ?? []).slice(0, 5) : [];
+  const decididos = r ? r.victorias + r.derrotas : 0;
+  const visibleYo = nombreVisible(yo.nombre) || titular(yo.nombre);
+  const visibleRival = nombreVisible(rival.nombre) || titular(rival.nombre);
+  const pctYo = decididos > 0 && r ? Math.round((r.victorias / decididos) * 100) : null;
   return (
-    <header className="flex min-w-0 flex-col gap-5 overflow-hidden rounded-xl border bg-card px-4 py-5 sm:px-6 sm:py-6">
-      <h1 className="text-3xl leading-tight sm:text-4xl">Cara a cara</h1>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-x-3 gap-y-4 sm:gap-x-6">
-        <dl className="flex min-w-0 flex-col items-start gap-1">
-          <dt className="text-xs text-muted-foreground">Visto desde</dt>
-          <dd className="flex min-w-0 flex-col items-start gap-2">
-            <Avatar className="size-12 sm:size-16">
-              <AvatarFallback className="text-base sm:text-lg">{inicialesVisibles(yo.nombre)}</AvatarFallback>
-            </Avatar>
-            <span className="font-display text-xl leading-tight break-words sm:text-3xl">{titular(yo.nombre)}</span>
+    <header className="flex min-w-0 flex-col gap-5 overflow-hidden rounded-md border border-t-filete-alto bg-card px-4 py-5 sm:px-8 sm:py-7">
+      <h1 className="text-center text-3xl leading-tight sm:text-4xl">Cara a cara</h1>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-x-2 gap-y-4 sm:gap-x-8">
+        <dl className="flex min-w-0 flex-col items-center gap-1 text-center">
+          <dt className="sr-only">Visto desde</dt>
+          <dd className="flex min-w-0 flex-col items-center gap-2">
+            <AvatarAnillo nombre={visibleYo} tamano="lg" />
+            <Link
+              href={rutaFicha(yo.id)}
+              prefetch={false}
+              aria-label={`Ficha de ${visibleYo}`}
+              className={cn('inline-flex min-h-11 items-center font-display text-xl leading-tight break-words underline-offset-4 hover:underline sm:text-3xl', ENLACE_CLASES)}
+            >
+              {visibleYo}
+            </Link>
             {yo.pais ? <BanderaPais pais={yo.pais} conNombre /> : null}
           </dd>
         </dl>
-        <div aria-hidden className="flex flex-col items-center gap-1 self-center pt-5">
+        <div aria-hidden className="flex flex-col items-center gap-1 self-start pt-6 sm:pt-8">
           {conBalance && r ? (
             <>
-              <span className="cifra flex items-baseline gap-1.5 text-4xl leading-none sm:gap-3 sm:text-6xl">
+              <span className="cifra flex items-baseline gap-1.5 text-6xl leading-none sm:gap-4 sm:text-8xl">
                 <span className={r.victorias >= r.derrotas ? 'text-foreground' : 'text-muted-foreground'}>{r.victorias}</span>
-                <span className="text-2xl text-muted-foreground sm:text-4xl">–</span>
+                <span className="text-3xl text-muted-foreground sm:text-5xl">–</span>
                 <span className={r.derrotas >= r.victorias ? 'text-foreground' : 'text-muted-foreground'}>{r.derrotas}</span>
               </span>
               <span className="text-center text-xs text-muted-foreground">
-                tocados <span className="cifra">{r.tantosFavor}</span>–<span className="cifra">{r.tantosContra}</span>
+                {r.asaltos} {r.asaltos === 1 ? 'asalto' : 'asaltos'}
               </span>
             </>
           ) : (
-            <span className="font-display text-2xl text-muted-foreground sm:text-3xl">vs</span>
+            <span className="font-display text-3xl text-muted-foreground sm:text-5xl">vs</span>
           )}
         </div>
-        <dl className="flex min-w-0 flex-col items-end gap-1 text-right">
-          <dt className="text-xs text-muted-foreground">Rival</dt>
-          <dd className="flex min-w-0 flex-col items-end gap-2">
-            <Avatar className="size-12 sm:size-16">
-              <AvatarFallback className="text-base sm:text-lg">{inicialesVisibles(rival.nombre)}</AvatarFallback>
-            </Avatar>
-            <span className="font-display text-xl leading-tight break-words sm:text-3xl">{titular(rival.nombre)}</span>
+        <dl className="flex min-w-0 flex-col items-center gap-1 text-center">
+          <dt className="sr-only">Rival</dt>
+          <dd className="flex min-w-0 flex-col items-center gap-2">
+            <AvatarAnillo nombre={visibleRival} tamano="lg" />
+            <Link
+              href={rutaFicha(rival.id)}
+              prefetch={false}
+              aria-label={`Ficha de ${visibleRival}`}
+              className={cn('inline-flex min-h-11 items-center font-display text-xl leading-tight break-words underline-offset-4 hover:underline sm:text-3xl', ENLACE_CLASES)}
+            >
+              {visibleRival}
+            </Link>
             {rival.pais ? <BanderaPais pais={rival.pais} conNombre /> : null}
           </dd>
         </dl>
       </div>
+      {pctYo !== null && r ? (
+        <div aria-hidden className="flex flex-col gap-1.5">
+          <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
+            <span className="bg-primary" style={{ width: `${pctYo}%` }} />
+            <span className="ml-auto bg-muted-foreground" style={{ width: `${100 - pctYo}%` }} />
+          </div>
+          <div className="flex justify-between text-xs text-muted-foreground">
+            <span><span className="cifra text-base text-foreground">{pctYo}%</span> ganados</span>
+            <span>ganados <span className="cifra text-base text-foreground">{100 - pctYo}%</span></span>
+          </div>
+        </div>
+      ) : null}
       {conBalance && r ? (
         <p className="sr-only">
           {r.victorias} {r.victorias === 1 ? 'victoria' : 'victorias'} y {r.derrotas}{' '}
@@ -463,13 +558,7 @@ export function CabeceraCaraACara({
           </ol>
         </div>
       ) : null}
-      <nav aria-label="Enlaces del cara a cara" className="flex flex-wrap gap-x-5 gap-y-1">
-        <Link href={rutaFicha(yo.id)} prefetch={false} className={enlace} aria-label={`Ficha de ${titular(yo.nombre)}`}>
-          Ficha consultada
-        </Link>
-        <Link href={rutaFicha(rival.id)} prefetch={false} className={enlace} aria-label={`Ficha de ${titular(rival.nombre)}`}>
-          Ficha del rival
-        </Link>
+      <nav aria-label="Enlaces del cara a cara" className="flex flex-wrap justify-center gap-x-5 gap-y-1 border-t pt-2">
         <Link href={urlVistaDelRival(yo.id, rival.id, criterios)} prefetch={false} className={enlace} aria-label={`Verlo desde ${titular(rival.nombre)}`}>
           Invertir perspectiva
         </Link>

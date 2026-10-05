@@ -49,6 +49,54 @@ export function PuestoFinal({
   );
 }
 
+/**
+ * El puesto como disco, para las tarjetas de resultado. Oro va relleno en el
+ * carmesí del tema, plata y bronce con aro blanco más o menos marcado, y el
+ * nombre de la medalla siempre escrito debajo: el disco no comunica solo.
+ */
+export function InsigniaPuesto({
+  puesto,
+  puestoPublicado = null,
+}: {
+  puesto: number | null;
+  puestoPublicado?: string | null;
+}) {
+  if (puesto === null) {
+    return (
+      <span className="flex max-w-24 flex-col items-center gap-1 text-center text-xs leading-tight">
+        {puestoPublicado ?? <span className="text-muted-foreground">Sin puesto publicado</span>}
+      </span>
+    );
+  }
+  const medalla = etiquetaMedalla(puesto);
+  const disco = puesto === 1
+    ? 'bg-primary text-primary-foreground'
+    : puesto === 2
+      ? 'border-2 border-foreground'
+      : puesto === 3
+        ? 'border-2 border-muted-foreground'
+        : 'border border-filete-alto';
+  return (
+    <span className="flex flex-col items-center gap-1">
+      <span
+        className={cn('inline-flex size-12 items-center justify-center rounded-full sm:size-14', disco)}
+        aria-label={`Puesto ${puesto}`}
+        role="img"
+      >
+        <span aria-hidden="true" className="cifra text-3xl leading-none sm:text-4xl">{puesto}</span>
+      </span>
+      {medalla ? (
+        <span className="inline-flex items-center gap-1 text-xs font-medium">
+          <Medal className="size-3.5" aria-hidden />
+          {medalla}
+        </span>
+      ) : puesto <= 8 ? (
+        <span className="text-xs text-muted-foreground">Final</span>
+      ) : null}
+    </span>
+  );
+}
+
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'];
 
 /** Día y mes por separado para la columna de la línea de tiempo; sin zona horaria de por medio. */

@@ -6,6 +6,7 @@ import { construirUrlCaraACara, rutaCaraACara } from '@/lib/sport/explorar/cara-
 import type { PerfilDeportivo, RivalFrecuente } from '@/lib/sport/explorar/tipos-perfil';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { titular } from '@/lib/utils';
+import { AvatarAnillo } from '../avatar-anillo';
 import { Aclaracion, Bloque, Nota, fechaLegible, type Nivel } from '../piezas';
 
 function FilaRival({ personaId, r }: { personaId: string; r: RivalFrecuente }) {
@@ -18,9 +19,12 @@ function FilaRival({ personaId, r }: { personaId: string; r: RivalFrecuente }) {
         prefetch={false}
         className="grid min-h-11 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-4 hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:grid-cols-[minmax(0,2fr)_6rem_7rem_minmax(0,2fr)] sm:px-5"
       >
-        <span className="flex min-w-0 flex-col gap-1">
-          <span className="font-medium break-words">{nombreVisible(r.nombre)}</span>
-          {r.pais ? <BanderaPais pais={r.pais} /> : <span className="text-xs text-muted-foreground">País no publicado</span>}
+        <span className="flex min-w-0 items-center gap-3">
+          <AvatarAnillo nombre={nombreVisible(r.nombre)} tamano="sm" apagado />
+          <span className="flex min-w-0 flex-col gap-1">
+            <span className="font-medium break-words">{nombreVisible(r.nombre)}</span>
+            {r.pais ? <BanderaPais pais={r.pais} /> : <span className="text-xs text-muted-foreground">País no publicado</span>}
+          </span>
         </span>
         <span className="flex flex-col items-end sm:items-start">
           <span className="cifra text-3xl leading-none">{r.victorias}–{r.derrotas}</span>
@@ -58,11 +62,13 @@ export function ManoAMano({
   nombre,
   perfil,
   nivel,
+  enPestana = false,
 }: {
   personaId: string;
   nombre: string;
   perfil: PerfilDeportivo;
   nivel: Nivel;
+  enPestana?: boolean;
 }) {
   const otro = (
     <Button asChild variant="outline">
@@ -73,7 +79,7 @@ export function ManoAMano({
     </Button>
   );
   return (
-    <Bloque id="ficha-rivales" titulo="Mano a mano" nivel={nivel}>
+    <Bloque id="ficha-rivales" titulo="Mano a mano" nivel={nivel} tituloOculto={enPestana}>
       {perfil.rivales === null ? (
         <div role="alert" className="flex items-start gap-2 border-y bg-card px-4 py-4 text-sm">
           <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden />

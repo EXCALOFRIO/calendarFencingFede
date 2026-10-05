@@ -324,8 +324,9 @@ o revertir. No lances dos `--aplicar` solapados.
 El runtime mide almacenamiento total con `meta.size_after` de un `SELECT 1`
 y cuenta hechos sin leer sus cuerpos. No usa PRAGMAs de tamaño, que el D1
 remoto deniega, ni inventa tamaños de tablas o índices. La asignación propia
-máxima es 4 GiB; puede reducirse con `D1_STORAGE_BUDGET_BYTES`. No es un
-límite de gasto ni una cuota exclusiva de esta aplicación.
+máxima es 8 GiB (desde `0005_presupuesto_8gib.sql`; antes 4 GiB); puede
+reducirse con `D1_STORAGE_BUDGET_BYTES`. No es un límite de gasto ni una cuota
+exclusiva de esta aplicación; D1 admite hasta 10 GB por base en el plan de pago.
 
 Antes de cada escritura se reserva crecimiento conservador en un ledger
 atómico. Si falta medición, esquema o margen, no se inicia ese batch.

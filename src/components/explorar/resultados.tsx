@@ -1,14 +1,13 @@
 import { ChevronRight, Medal, SearchX, TriangleAlert, Trophy, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { rutaFichaConRetorno } from '@/lib/sport/explorar/ficha-url';
 import type { VistaExplorar } from '@/lib/sport/explorar/pantalla';
 import type { DeportistaResumen } from '@/lib/sport/explorar/tipos';
 import { TRAYECTORIA_VACIA, type TrayectoriaPersona } from '@/lib/sport/explorar/tipos-busqueda';
-import { inicialesVisibles, nombreVisible } from '@/lib/sport/nombre-visible';
+import { nombreVisible } from '@/lib/sport/nombre-visible';
 import {
   RUTA_EXPLORAR,
   chipsActivos,
@@ -18,6 +17,7 @@ import {
   type CriteriosExplorar,
 } from '@/lib/sport/explorar/url';
 import { GENDER_LABEL, WEAPON_LABEL, cn, titular } from '@/lib/utils';
+import { AvatarAnillo } from './avatar-anillo';
 import { Aclaracion, Celda, Nota, fechaLegible } from './piezas';
 
 /** Filtros activos como enlaces que los quitan uno a uno. */
@@ -84,15 +84,12 @@ function FilaDeportista({ d, volver }: { d: FilaBuscada; volver: string }) {
         prefetch={false}
         className="group grid min-h-11 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-3 px-4 py-4 hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset md:grid-cols-[auto_minmax(0,2fr)_minmax(0,1.4fr)_auto] md:items-center md:gap-x-5"
       >
-        <Avatar size="lg" className="size-11 md:size-12">
-          <AvatarFallback>{inicialesVisibles(d.nombre)}</AvatarFallback>
-        </Avatar>
+        <AvatarAnillo nombre={nombreVisible(d.nombre)} tamano="md" apagado={d.resultadosImportados === 0} className="self-start" />
 
         <span className="flex min-w-0 flex-col gap-1.5">
           <span className="text-base leading-tight font-semibold break-words">{nombreVisible(d.nombre)}</span>
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             {d.pais ? <BanderaPais pais={d.pais} conNombre /> : <span>País no publicado</span>}
-            <span aria-hidden>·</span>
             <span>
               {d.genero ? GENDER_LABEL[d.genero] : 'Género no publicado'}
               {homonimo && d.anioNacimiento !== null ? `, nacimiento ${d.anioNacimiento}` : ''}
@@ -185,7 +182,7 @@ export function ListaDeportistas({
         </p>
       </div>
 
-      <ul className="divide-y overflow-hidden rounded-lg border bg-card" aria-label="Deportistas encontrados">
+      <ul className="divide-y overflow-hidden rounded-md border bg-card" aria-label="Deportistas encontrados">
         {items.map((d) => (
           <FilaDeportista key={d.id} d={d} volver={volver} />
         ))}

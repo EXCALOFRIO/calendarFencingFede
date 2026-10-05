@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  ampliarBordeDerecho,
   descargarPdf,
   docIdDeUrl,
   extraerPaginas,
@@ -41,6 +42,27 @@ describe('extracción de texto posicionado con unpdf/PDF.js', () => {
     expect(a && b && Math.abs(a.y - b.y) < 0.5 && b.x - a.x > 150).toBe(true);
     expect(perfil).toMatchObject({ bytes: bytes.length, paginas: 1, items: 3 });
     expect(perfil.ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it('lee el texto que se sale por el borde derecho de la página sin cambiar sus medidas', async () => {
+    const bytes = pdfMinimo([`${texto(560, 700, 'RAMIREZ LARENA Alejandro')}\n${texto(570, 680, '15/13')}`]);
+    const { paginas } = await extraerPaginas(bytes);
+    expect(paginas[0]).toMatchObject({ ancho: 595, alto: 842 });
+    const todo = paginas[0].items.map((i) => i.s).join(' ');
+    expect(todo).toContain('RAMIREZ LARENA Alejandro');
+    expect(todo).toContain('15/13');
+  });
+
+  it('amplía el borde derecho de MediaBox y CropBox sin mover un byte', () => {
+    const pdf = '%PDF-1.4\n<</MediaBox[0 0 612 792]/CropBox [ 0 0 612.0 792 ]>>';
+    const bytes = new TextEncoder().encode(pdf);
+    const r = ampliarBordeDerecho(bytes)!;
+    expect(r).not.toBeNull();
+    expect(r.length).toBe(bytes.length);
+    expect(new TextDecoder('latin1').decode(r)).toBe('%PDF-1.4\n<</MediaBox[0 0 999 792]/CropBox [0 0 999999 792 ]>>');
+    // Sin hueco para un borde mayor, o sin cajas, no hay nada que reescribir.
+    expect(ampliarBordeDerecho(new TextEncoder().encode('<</MediaBox[0 0 9999 792]>>'))).toBeNull();
+    expect(ampliarBordeDerecho(new TextEncoder().encode('%PDF-1.4 sin cajas'))).toBeNull();
   });
 
   it('rechaza lo que no es un PDF y lo que supera los límites de bytes o páginas', async () => {

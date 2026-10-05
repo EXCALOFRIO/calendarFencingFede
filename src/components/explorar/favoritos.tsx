@@ -239,13 +239,13 @@ export function ControlFavoritoFicha({
 }) {
   switch (estado.tipo) {
     case 'ok':
-      return <BotonFavorito key={estado.personaId} personaId={estado.personaId} nombre={nombre} inicial={estado.favorito} lectura={estado} />;
+      return <BotonFavorito key={estado.personaId} personaId={estado.personaId} nombre={nombre} inicial={estado.favorito} lectura={estado} variante="perfil" />;
     case 'no_disponible':
-      return <p className="medida text-xs text-muted-foreground">Favoritos aún no está activo en esta instalación.</p>;
+      return <p className="medida text-xs text-muted-foreground">Seguir aún no está activo en esta instalación.</p>;
     case 'error':
       return (
         <div role="alert" className="flex flex-col items-start gap-1 text-sm text-danger">
-          <p className="medida">No se ha podido comprobar si {nombre} está en tus favoritos.</p>
+          <p className="medida">No se ha podido comprobar si sigues a {nombre}.</p>
           <Link href={reintentar} prefetch={false} className={ENLACE}>
             Reintentar
           </Link>

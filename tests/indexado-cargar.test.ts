@@ -8,7 +8,7 @@ import { quitarGuardia, restaurarGuardia } from '../scripts/indexado/comun';
 
 function crearBase(): DatabaseSync {
   const db = new DatabaseSync(':memory:');
-  for (const f of ['0000_aplicacion.sql', '0001_auth.sql', '0002_guardia_deportiva.sql', '0003_vinculos_revisados.sql']) {
+  for (const f of ['0000_aplicacion.sql', '0001_auth.sql', '0002_guardia_deportiva.sql', '0003_vinculos_revisados.sql', '0005_presupuesto_8gib.sql']) {
     db.exec(readFileSync(new URL(`../drizzle-d1/${f}`, import.meta.url), 'utf8'));
   }
   return db;

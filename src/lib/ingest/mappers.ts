@@ -51,6 +51,9 @@ export function mapCategory(raw: string | null | undefined): Category | null {
   const v = normalizeLabel(raw).replace(/[\s.]/g, '');
 
   if (v.startsWith('VET') || v === 'V' || v.startsWith('VETERAN')) return 'VET';
+  // La FIE publica «GV» (Grand Veterans) en los Mundiales de veteranos por
+  // equipos; no hay un enum aparte y el literal queda en `category_raw`.
+  if (v === 'GV' || v.startsWith('GRANDVET')) return 'VET';
 
   /**
    * LOS TRAMOS DE VETERANOS: «+30», «+40», «+50», «+60», «+70».

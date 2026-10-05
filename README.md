@@ -116,7 +116,7 @@ contra datos existentes.
 | `CRON_SECRET` | Protege los endpoints de cron | Sí en producción |
 | `NEXT_PUBLIC_APP_URL` | Origen absoluto de la aplicación (feed iCal, correos). Se fija **al compilar** | Sí al compilar para publicar |
 | Binding `ARCHIVOS` | R2 privado para PDFs, snapshots y originales | Sí para archivos obligatorios |
-| `D1_STORAGE_BUDGET_BYTES` | Asignación propia, como máximo 4 GiB; no es un tope de gasto | Sí en producción |
+| `D1_STORAGE_BUDGET_BYTES` | Asignación propia, como máximo 8 GiB (D1 admite 10 GB por base en el plan de pago); no es un tope de gasto | Sí en producción |
 | `SPORT_INCREMENTAL_ENABLED` | Incremental corto, inicialmente `false` | No activar antes de validar |
 | `MIGRATION_MAINTENANCE` | Bloquea aplicación y tareas programadas durante un corte controlado | `false` fuera del corte |
 | `NEON_SOURCE_DATABASE_URL` | Solo exportación local de migración, nunca runtime ni secreto del Worker | Solo exportador |

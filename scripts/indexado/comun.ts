@@ -38,7 +38,7 @@ export { palabrasNombre };
 
 /**
  * Los triggers de 0002_guardia_deportiva.sql exigen un lease y cobran cada fila
- * contra un ledger monotónico con techo de 4 GiB: una recarga completa de
+ * contra un ledger monotónico con techo de 8 GiB: una recarga completa de
  * ~1M filas lo agotaría y además iría decenas de veces más lenta. En la COPIA
  * de trabajo se retiran y se guardan en una tabla de respaldo dentro de la
  * propia base, de modo que si el proceso muere a medias la siguiente ejecución

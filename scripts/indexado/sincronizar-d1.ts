@@ -43,8 +43,8 @@ export type Tabla = (typeof TABLAS)[number];
 export const D1_NOMBRE = 'calendario-fie-fede-db';
 export const D1_ID = 'e1c28f19-278c-4d8f-9c7c-9b9d1c45653e';
 export const CUENTA_CLOUDFLARE = '52d39cf14bc17b94754729436036124d';
-/** Igual que D1_STORAGE_BUDGET_BYTES de wrangler.jsonc y el techo del CHECK de sport_write_context. */
-export const PRESUPUESTO_BYTES = 4_294_967_296;
+/** Igual que D1_STORAGE_BUDGET_BYTES de wrangler.jsonc y el techo del CHECK de sport_write_context (0005). */
+export const PRESUPUESTO_BYTES = 8_589_934_592;
 export const LEASE_MS = 30 * 60_000;
 const SOBRECOSTE_LOTE = 16_384;
 const SOBRECOSTE_FILA = 1_024;

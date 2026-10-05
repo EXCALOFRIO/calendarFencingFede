@@ -13,10 +13,15 @@
  *  c1) FIE(ESP) ↔ licencia RFEE: fusión por nombre normalizado idéntico o
  *     superconjunto único en ambos sentidos, mismo género. La persona RFEE apunta
  *     a la FIE (`merged_into_person_id`, reversible, sin cadenas).
- *  b) Puestos de PDF RFEE (sin IDs): vínculo por nombre normalizado único entre
- *     personas con licencia RFEE / país ESP / creadas desde PDF, contadas por su
- *     persona raíz; si no hay candidata, persona nueva por (nombre, género). Los
- *     asaltos PDF heredan la persona del puesto de la misma prueba.
+ *  e) Pruebas Engarde que ya existen en skermo_rfee, rfee_pdf o FIE
+ *     (`depurarSolapesEngarde`): se retiran sus puestos; sus asaltos sólo se
+ *     quedan, trasladados a la prueba existente, si traen más que ella (nunca
+ *     frente a FIE). Va antes de b para no crear personas de pruebas retiradas.
+ *  b) Puestos de PDF RFEE y de Engarde (sin IDs): vínculo por nombre normalizado
+ *     único entre personas con licencia RFEE / país ESP / creadas desde PDF,
+ *     contadas por su persona raíz; si no hay candidata, persona nueva por
+ *     (nombre, género). En Engarde sólo puestos individuales de nación ESP o sin
+ *     nación. Los asaltos heredan la persona del puesto de la misma prueba.
  *  c2) Personas creadas desde PDF que casan de forma única con una persona
  *     FIE/RFEE se funden en ella.
  * c1 va antes que b para que una persona FIE y su ficha RFEE no cuenten como dos
@@ -26,7 +31,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import { pathToFileURL } from 'node:url';
-import { depurarSolapes, type InformeDepuracion } from './medir-solapes';
+import { depurarSolapes, depurarSolapesEngarde, type InformeDepuracion, type InformeSolapesEngarde } from './medir-solapes';
 import {
   ahora,
   argumento,
@@ -41,6 +46,11 @@ import {
 } from './comun';
 
 type Genero = 'M' | 'F' | 'MIXTO';
+
+/** Fuentes sin identificadores publicados, cuyos puestos se vinculan por nombre (paso b). */
+const FUENTES_NOMBRE = ['rfee_pdf', 'engarde'] as const;
+type FuenteNombre = (typeof FUENTES_NOMBRE)[number];
+const FUENTES_NOMBRE_SQL = FUENTES_NOMBRE.map((f) => `'${f}'`).join(', ');
 
 type Persona = {
   id: string;
@@ -83,10 +93,16 @@ export type InformeUnificacion = {
     nombresCortos: number;
     resultadosVinculados: number;
     asaltosLadoVinculados: number;
+    /** Puestos sin vincular porque su grupo de nombre se repite en la misma prueba individual. */
+    puestosAmbiguosEnPrueba: number;
   };
   fusionPdf: { fusiones: number; ambiguas: number };
+  /** Vínculos por nombre deshechos: la misma persona dos veces en una prueba individual rfee_pdf. */
+  colisionesPdf: { pruebas: number; resultados: number; asaltosLado: number };
   /** Puestos y asaltos rfee_pdf que ya estaban en la misma prueba de skermo_rfee. */
   solapes: InformeDepuracion;
+  /** Pruebas engarde que ya existían en otra fuente: puestos retirados, asaltos sólo si traen más. */
+  solapesEngarde: InformeSolapesEngarde;
   candidatosRegistrados: number;
   segundos: number;
 };
@@ -480,10 +496,10 @@ class Unificador {
   pasoPdf(inf: InformeUnificacion['pdf']): Map<string, string> {
     type Grupo = {
       norm: string; genero: Genero; palabras: string[]; nombres: Map<string, number>;
-      persona?: string; resultados: string[];
+      persona?: string; resultados: string[]; fuente: FuenteNombre;
     };
     const grupos = new Map<string, Grupo>();
-    const grupoDe = (nombre: string, genero: string): Grupo | null => {
+    const grupoDe = (nombre: string, genero: string, fuente: string): Grupo | null => {
       const palabras = palabrasNombre(nombre).sort();
       const g = generoDe(genero) ?? 'MIXTO';
       const norm = palabras.join(' ');
@@ -491,37 +507,65 @@ class Unificador {
       const k = `${norm}|${g}`;
       let gr = grupos.get(k);
       if (!gr) {
-        gr = { norm, genero: g, palabras, nombres: new Map(), resultados: [] };
+        gr = { norm, genero: g, palabras, nombres: new Map(), resultados: [], fuente: fuente as FuenteNombre };
         grupos.set(k, gr);
       }
+      if (fuente === 'rfee_pdf') gr.fuente = 'rfee_pdf';
       gr.nombres.set(nombre, (gr.nombres.get(nombre) ?? 0) + 1);
       return gr;
     };
+    // Engarde publica tiradores extranjeros con su nación: sólo se vinculan por nombre los
+    // de nación española o sin nación, igual que el resto del grupo de candidatas (RFEE/ESP).
+    // Dos puestos de la misma prueba individual con el mismo grupo de nombre son dos personas
+    // («LACASTA AREN» trunca a Sergio y a Daniel; «ORTIN ROMERO» y «ROMERO ORTIN» ordenan igual):
+    // ninguno se vincula por nombre en esa prueba.
+    const puestosEnPrueba = new Map<string, Map<string, string[]>>();
+    const resultadoAmbiguo = new Set<string>();
     for (const r of this.db.prepare(
-      `SELECT r.id, r.source_name nombre, c.gender genero FROM sport_result r
+      `SELECT r.id, r.source_name nombre, c.gender genero, r.source fuente, r.competition_id comp, c.format formato
+         FROM sport_result r
          JOIN sport_competition c ON c.id = r.competition_id
-        WHERE r.source='rfee_pdf' AND r.person_id IS NULL`,
-    ).all() as { id: string; nombre: string; genero: string }[]) {
-      grupoDe(r.nombre, r.genero)?.resultados.push(r.id);
+        WHERE r.source IN (${FUENTES_NOMBRE_SQL}) AND r.person_id IS NULL
+          AND NOT (r.source='engarde' AND (c.format='EQUIPOS' OR coalesce(r.source_country_code, 'ESP') <> 'ESP'))`,
+    ).all() as { id: string; nombre: string; genero: string; fuente: string; comp: string; formato: string }[]) {
+      const g = grupoDe(r.nombre, r.genero, r.fuente);
+      if (!g) continue;
+      g.resultados.push(r.id);
+      if (r.formato !== 'INDIVIDUAL') continue;
+      const k = `${g.norm}|${g.genero}`;
+      const m = puestosEnPrueba.get(k) ?? puestosEnPrueba.set(k, new Map()).get(k)!;
+      m.set(r.comp, [...(m.get(r.comp) ?? []), r.id]);
     }
+    const pruebasAmbiguas = new Map<string, Set<string>>();
+    for (const [k, m] of puestosEnPrueba) {
+      for (const [comp, ids] of m) {
+        if (ids.length < 2) continue;
+        (pruebasAmbiguas.get(k) ?? pruebasAmbiguas.set(k, new Set()).get(k)!).add(comp);
+        for (const id of ids) resultadoAmbiguo.add(id);
+      }
+    }
+    inf.puestosAmbiguosEnPrueba = resultadoAmbiguo.size;
     type Asalto = {
-      id: string; competicion: string; a: string; an: string; ap: string | null; b: string; bn: string; bp: string | null; genero: string;
+      id: string; competicion: string; a: string; an: string; ap: string | null; b: string; bn: string; bp: string | null;
+      genero: string; fuente: string;
     };
     const asaltos = this.db.prepare(
       `SELECT b.id, b.competition_id competicion, b.fencer_a_ref a, b.fencer_a_name an, b.fencer_a_person_id ap,
-              b.fencer_b_ref b, b.fencer_b_name bn, b.fencer_b_person_id bp, c.gender genero
+              b.fencer_b_ref b, b.fencer_b_name bn, b.fencer_b_person_id bp, c.gender genero, b.source fuente
          FROM sport_bout b JOIN sport_competition c ON c.id = b.competition_id
-        WHERE b.source='rfee_pdf' AND (b.fencer_a_person_id IS NULL OR b.fencer_b_person_id IS NULL)`,
+        WHERE b.source IN (${FUENTES_NOMBRE_SQL}) AND (b.fencer_a_person_id IS NULL OR b.fencer_b_person_id IS NULL)`,
     ).all() as Asalto[];
     for (const b of asaltos) {
-      if (!b.ap) grupoDe(b.an, b.genero);
-      if (!b.bp) grupoDe(b.bn, b.genero);
+      // En Engarde el asalto hereda la persona del puesto de su prueba; no abre grupos de nombre propios.
+      if (b.fuente === 'engarde') continue;
+      if (!b.ap) grupoDe(b.an, b.genero, b.fuente);
+      if (!b.bp) grupoDe(b.bn, b.genero, b.fuente);
     }
     inf.gruposNombre = grupos.size;
 
     // Las fundidas también cuentan: su nombre (p. ej. el de la ficha RFEE) lleva a la raíz FIE.
     const pool = [...this.personas.values()]
-      .filter((p) => this.conLicencia.has(p.id) || p.pais === 'ESP' || p.fuentesAlias.has('rfee_pdf'))
+      .filter((p) => this.conLicencia.has(p.id) || p.pais === 'ESP' || FUENTES_NOMBRE.some((f) => p.fuentesAlias.has(f)))
       .map((p) => p.id);
     const idx = this.indice(pool);
     const compatible = (id: string, g: Genero) => {
@@ -552,20 +596,20 @@ class Unificador {
         }
         if (cands.length > 1) {
           inf.ambiguos += 1;
-          for (const c of cands.slice(0, 10)) this.candidato('rfee_pdf', ref, visible, c, 'PROPUESTO', 'nombre_varias_candidatas');
+          for (const c of cands.slice(0, 10)) this.candidato(g.fuente, ref, visible, c, 'PROPUESTO', 'nombre_varias_candidatas');
           continue;
         }
         if (cands.length === 1) {
           g.persona = cands[0];
           if (evidencia === 'nombre_normalizado_unico') inf.vinculadosExacto += 1;
           else inf.vinculadosSuperconjunto += 1;
-          this.candidato('rfee_pdf', ref, visible, g.persona, 'CONFIRMADO', evidencia);
+          this.candidato(g.fuente, ref, visible, g.persona, 'CONFIRMADO', evidencia);
         } else {
-          g.persona = this.crearPersona(visible, g.norm, g.genero, null, 'rfee_pdf').id;
+          g.persona = this.crearPersona(visible, g.norm, g.genero, null, g.fuente).id;
           inf.personasCreadas += 1;
         }
         resolucion.set(k, g.persona);
-        for (const id of g.resultados) mapa.run(id, g.persona);
+        for (const id of g.resultados) if (!resultadoAmbiguo.has(id)) mapa.run(id, g.persona);
       }
       inf.resultadosVinculados = Number(this.db.prepare(
         `UPDATE sport_result SET person_id = m.person_id FROM temp._mapa_pdf m
@@ -577,7 +621,10 @@ class Unificador {
       const porComp = new Map<string, { ref: Map<string, string>; nombre: Map<string, string | null> }>();
       for (const r of this.db.prepare(
         `SELECT competition_id c, source_fact_key k, source_name n, person_id p FROM sport_result
-          WHERE source='rfee_pdf' AND person_id IS NOT NULL`,
+          WHERE person_id IS NOT NULL AND (source IN (${FUENTES_NOMBRE_SQL}) OR competition_id IN (
+            -- Asaltos de Engarde trasladados a una prueba skermo_rfee: se vinculan con sus puestos.
+            SELECT competition_id FROM sport_bout
+             WHERE source='engarde' AND (fencer_a_person_id IS NULL OR fencer_b_person_id IS NULL)))`,
       ).iterate() as Iterable<{ c: string; k: string; n: string; p: string }>) {
         let m = porComp.get(r.c);
         if (!m) porComp.set(r.c, (m = { ref: new Map(), nombre: new Map() }));
@@ -585,18 +632,24 @@ class Unificador {
         const n = normalizarNombre(r.n);
         m.nombre.set(n, m.nombre.has(n) && m.nombre.get(n) !== r.p ? null : r.p);
       }
-      const persona = (comp: string, ref: string, nombre: string, genero: string): string | null => {
+      const persona = (comp: string, ref: string, nombre: string, genero: string, fuente: string): string | null => {
         const m = porComp.get(comp);
         const norm = normalizarNombre(nombre);
-        return m?.ref.get(ref) ?? m?.nombre.get(norm) ?? resolucion.get(`${norm}|${generoDe(genero) ?? 'MIXTO'}`) ?? null;
+        const enPrueba = m?.ref.get(ref) ?? m?.nombre.get(norm) ?? null;
+        // Un tirador de Engarde sin puesto vinculado en su prueba (extranjero, nombre repetido)
+        // no se resuelve por el nombre de otras pruebas.
+        if (fuente === 'engarde') return enPrueba;
+        const k = `${palabrasNombre(nombre).sort().join(' ')}|${generoDe(genero) ?? 'MIXTO'}`;
+        if (pruebasAmbiguas.get(k)?.has(comp)) return enPrueba;
+        return enPrueba ?? resolucion.get(`${norm}|${generoDe(genero) ?? 'MIXTO'}`) ?? null;
       };
       this.db.exec('DROP TABLE IF EXISTS temp._mapa_asalto');
       this.db.exec('CREATE TEMP TABLE _mapa_asalto (id TEXT PRIMARY KEY, a TEXT, b TEXT)');
       const ma = this.db.prepare('INSERT INTO temp._mapa_asalto (id, a, b) VALUES (?, ?, ?)');
       let lados = 0;
       for (const b of asaltos) {
-        const a = b.ap ?? persona(b.competicion, b.a, b.an, b.genero);
-        let bb = b.bp ?? persona(b.competicion, b.b, b.bn, b.genero);
+        const a = b.ap ?? persona(b.competicion, b.a, b.an, b.genero, b.fuente);
+        let bb = b.bp ?? persona(b.competicion, b.b, b.bn, b.genero, b.fuente);
         if (a !== null && bb === a) bb = b.bp;
         const nuevaA = b.ap ? null : a;
         const nuevaB = b.bp ? null : bb;
@@ -618,7 +671,7 @@ class Unificador {
 
   pasoFusionPdf(inf: InformeUnificacion['fusionPdf']): void {
     const creadas = [...this.personas.values()].filter(
-      (p) => !p.fusionada && p.fuentesAlias.has('rfee_pdf') && !this.conIdExterno.has(p.id),
+      (p) => !p.fusionada && FUENTES_NOMBRE.some((f) => p.fuentesAlias.has(f)) && !this.conIdExterno.has(p.id),
     );
     if (creadas.length === 0) return;
     // Destinos: raíces con ID FIE (ESP) o licencia RFEE, con las variantes de todo su grupo.
@@ -695,6 +748,45 @@ class Unificador {
   }
 }
 
+/**
+ * Una persona no puede tener dos puestos en la misma prueba individual. En rfee_pdf todo
+ * vínculo es por nombre, así que dos puestos con la misma raíz son dos tiradores que el
+ * nombre (truncado o con los apellidos en otro orden) no distingue: se desvinculan los
+ * puestos y los asaltos de esa persona en esa prueba.
+ */
+export function desvincularColisionesPdf(db: DatabaseSync): InformeUnificacion['colisionesPdf'] {
+  const inf = { pruebas: 0, resultados: 0, asaltosLado: 0 };
+  const colisiones = db.prepare(
+    `SELECT r.competition_id comp, coalesce(p.merged_into_person_id, p.id) raiz, group_concat(r.id, ',') ids
+       FROM sport_result r JOIN sport_person p ON p.id = r.person_id JOIN sport_competition c ON c.id = r.competition_id
+      WHERE r.source = 'rfee_pdf' AND c.format = 'INDIVIDUAL'
+      GROUP BY 1, 2 HAVING count(*) > 1`,
+  ).all() as { comp: string; raiz: string; ids: string }[];
+  if (colisiones.length === 0) return inf;
+  const resultado = db.prepare('UPDATE sport_result SET person_id = NULL WHERE id = ?');
+  const ladoA = db.prepare(
+    `UPDATE sport_bout SET fencer_a_person_id = NULL WHERE competition_id = ? AND source = 'rfee_pdf' AND fencer_a_person_id IN
+       (SELECT id FROM sport_person WHERE id = ? OR merged_into_person_id = ?)`,
+  );
+  const ladoB = db.prepare(
+    `UPDATE sport_bout SET fencer_b_person_id = NULL WHERE competition_id = ? AND source = 'rfee_pdf' AND fencer_b_person_id IN
+       (SELECT id FROM sport_person WHERE id = ? OR merged_into_person_id = ?)`,
+  );
+  db.exec('BEGIN');
+  try {
+    for (const c of colisiones) {
+      inf.pruebas += 1;
+      for (const id of c.ids.split(',')) inf.resultados += Number(resultado.run(id).changes);
+      inf.asaltosLado += Number(ladoA.run(c.comp, c.raiz, c.raiz).changes) + Number(ladoB.run(c.comp, c.raiz, c.raiz).changes);
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  return inf;
+}
+
 export function unificarPersonas(db: DatabaseSync): InformeUnificacion {
   const inicio = Date.now();
   const informe: InformeUnificacion = {
@@ -705,10 +797,12 @@ export function unificarPersonas(db: DatabaseSync): InformeUnificacion {
     fusionFieRfee: { fusiones: 0, exactas: 0, superconjunto: 0, ambiguas: 0, omitidasPorAtleta: 0 },
     pdf: {
       gruposNombre: 0, vinculadosExacto: 0, vinculadosSuperconjunto: 0, personasCreadas: 0, ambiguos: 0,
-      nombresCortos: 0, resultadosVinculados: 0, asaltosLadoVinculados: 0,
+      nombresCortos: 0, resultadosVinculados: 0, asaltosLadoVinculados: 0, puestosAmbiguosEnPrueba: 0,
     },
     fusionPdf: { fusiones: 0, ambiguas: 0 },
+    colisionesPdf: { pruebas: 0, resultados: 0, asaltosLado: 0 },
     solapes: undefined as unknown as InformeDepuracion,
+    solapesEngarde: undefined as unknown as InformeSolapesEngarde,
     candidatosRegistrados: 0,
     segundos: 0,
   };
@@ -716,8 +810,11 @@ export function unificarPersonas(db: DatabaseSync): InformeUnificacion {
   u.pasoFie(informe.fie);
   u.pasoFusionLicencia(informe.fusionLicencia);
   u.pasoFusionFieRfee(informe.fusionFieRfee);
+  // Antes del paso por nombre: las pruebas Engarde repetidas no deben crear personas.
+  informe.solapesEngarde = depurarSolapesEngarde(db);
   u.pasoPdf(informe.pdf);
   u.pasoFusionPdf(informe.fusionPdf);
+  informe.colisionesPdf = desvincularColisionesPdf(db);
   informe.solapes = depurarSolapes(db);
   informe.candidatosRegistrados = u.candidatos;
   informe.despues = medir(db);

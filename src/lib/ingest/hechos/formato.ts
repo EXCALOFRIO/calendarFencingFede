@@ -52,8 +52,8 @@ export const estadoExtraccion = z.enum(['completo', 'parcial', 'sin_resultados',
 
 export const hechosPrueba = z.object({
   version: z.literal(1),
-  /** fie | rfee_pdf | skermo_rfee */
-  source: z.enum(['fie', 'rfee_pdf', 'skermo_rfee']),
+  /** fie | rfee_pdf | skermo_rfee | engarde */
+  source: z.enum(['fie', 'rfee_pdf', 'skermo_rfee', 'engarde']),
   /** lector_fie | lector_pdf | droid:<modelo> */
   extractor: texto,
   /** URL completa del original y SHA-256 del fichero leído. */

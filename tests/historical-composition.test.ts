@@ -15,7 +15,8 @@ import { sha256 } from '@/lib/migracion-cloudflare/files';
 
 const workspace = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const foundation = readFileSync(new URL('../drizzle-d1/0000_aplicacion.sql', import.meta.url), 'utf8');
-const guard = readFileSync(new URL('../drizzle-d1/0002_guardia_deportiva.sql', import.meta.url), 'utf8');
+const guard = readFileSync(new URL('../drizzle-d1/0002_guardia_deportiva.sql', import.meta.url), 'utf8')
+  + readFileSync(new URL('../drizzle-d1/0005_presupuesto_8gib.sql', import.meta.url), 'utf8');
 const schema = parseSqliteSchema(foundation);
 const cleanups: (() => void | Promise<void>)[] = [];
 afterEach(async () => {

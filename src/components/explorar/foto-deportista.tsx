@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { fotoPublicadaValida, type FotoPublicada } from '@/lib/sport/explorar/foto-contrato';
 import { inicialesVisibles } from '@/lib/sport/nombre-visible';
+import { cn } from '@/lib/utils';
+import { ANILLO } from './avatar-anillo';
 
 export type FotoDeportistaProps = {
   /** ID público de la persona deportiva, nunca athleteId/profileId. */
@@ -13,12 +15,17 @@ export type FotoDeportistaProps = {
   ocultar?: boolean;
   /** Junto a un nombre visible el retrato es decorativo. */
   decorativa?: boolean;
-  /** `perfil` es el retrato grande de la cabecera de la ficha. */
-  tamano?: 'mini' | 'retrato' | 'perfil';
+  /**
+   * `perfil` es el retrato grande de la cabecera de la ficha; `heroe`, el de
+   * la cabecera tipo red social (5 rem en móvil, 9 rem desde `sm`), con
+   * anillo y la atribución FIE como sello sobre el retrato en vez de pie.
+   * El sello no enlaza: quien lo usa pone el enlace a la FIE en otro sitio.
+   */
+  tamano?: 'mini' | 'retrato' | 'perfil' | 'heroe';
   className?: string;
 };
 
-const MEDIDAS = { mini: 48, retrato: 96, perfil: 120 } as const;
+const MEDIDAS = { mini: 48, retrato: 96, perfil: 120, heroe: 144 } as const;
 
 export function FotoDeportista({ ocultar = false, ...props }: FotoDeportistaProps) {
   // La clave descarta también una imagen anterior al cambiar de persona.
@@ -58,6 +65,48 @@ function Retrato({
     void cargar();
     return () => { clearTimeout(temporizador); controlador.abort(); };
   }, [personaId]);
+
+  if (tamano === 'heroe') {
+    return (
+      <div className={`relative shrink-0 ${className ?? ''}`}>
+        <div className={cn(ANILLO, 'p-[3px]')}>
+          <div className="rounded-full bg-background p-[3px]">
+            <Avatar
+              className="size-20 sm:size-36"
+              aria-hidden={decorativa || undefined}
+              role={decorativa ? undefined : 'img'}
+              aria-label={decorativa ? undefined : cargada ? `Foto oficial de ${nombre}, FIE` : 'Foto no publicada'}
+              title={cargada ? 'Foto oficial FIE' : 'Foto no publicada'}
+            >
+              <AvatarFallback aria-hidden="true" className="font-display text-3xl sm:text-6xl">{iniciales}</AvatarFallback>
+              {foto ? (
+                // Imagen nativa a propósito: Next no debe copiar ni optimizar fotos FIE.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={foto.src}
+                  alt=""
+                  width={medida}
+                  height={medida}
+                  loading="lazy"
+                  decoding="async"
+                  referrerPolicy="no-referrer"
+                  className={`absolute inset-0 size-full object-cover ${cargada ? '' : 'invisible'}`}
+                  onLoad={() => setCargada(true)}
+                  onError={() => { setCargada(false); setFoto(null); }}
+                />
+              ) : null}
+            </Avatar>
+          </div>
+        </div>
+        {/* Sello sin enlace: no llega a 44 px; el enlace a la FIE va en los botones de la cabecera. */}
+        {foto && cargada ? (
+          <span className="absolute -bottom-1 left-1/2 inline-flex min-h-6 -translate-x-1/2 items-center whitespace-nowrap rounded-full border-2 border-background bg-card px-2 text-[0.6875rem] font-semibold">
+            Foto FIE
+          </span>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className={`shrink-0 ${className ?? ''}`} style={{ width: medida }}>

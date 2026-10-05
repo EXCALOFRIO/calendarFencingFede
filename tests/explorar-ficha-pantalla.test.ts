@@ -501,7 +501,9 @@ describe('historial en la ficha', () => {
     expect(salida).toContain('RFEE 2025-2026');
     expect(salida).toContain('Abandono');
     expect(salida).toContain('Fecha no publicada');
-    expect(salida).toContain('Tipo de torneo sin documentar');
+    // El tipo va como pastilla de color (deducido del nombre si el calendario no lo documenta).
+    expect(salida).toContain('data-tipo="COPA_MUNDO"');
+    expect(salida).not.toContain('Tipo de torneo sin documentar');
     expect(salida).toContain('Una inscripción sin final no');
     expect(salida).toContain('<h3');
   });

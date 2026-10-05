@@ -23,9 +23,13 @@ export function reservaCapacidad(queries: readonly { sql: string; params: unknow
   return bytes;
 }
 
+/** Application allocation ceiling enforced by sport_write_context, NOT a spending cap. */
+export const CAPACITY_MAX_BUDGET_BYTES = 8 * 1024 ** 3;
+
 // Complete definitions are shared with the strict schema verifier. SQL0002
-// contains these literal definitions and generated row charges; tests compare
-// SQLite's actual sqlite_master definitions, not only the object names.
+// installed them (historically with a 4 GiB budget ceiling) plus the generated
+// row charges; SQL0005 rebuilds sport_write_context and its dependents with the
+// current ceiling. Tests compare SQLite's actual sqlite_master definitions.
 export const CAPACITY_DEFINITIONS = {
   sport_capacity_ledger: `CREATE TABLE sport_capacity_ledger (
     key TEXT PRIMARY KEY CHECK (key = 'global'),
@@ -35,7 +39,7 @@ export const CAPACITY_DEFINITIONS = {
     key TEXT PRIMARY KEY CHECK (key = 'global'), owner TEXT NOT NULL,
     lease_version INTEGER NOT NULL CHECK (lease_version > 0),
     budget_bytes INTEGER NOT NULL CHECK (
-      typeof(budget_bytes)='integer' AND budget_bytes>0 AND budget_bytes<=4294967296),
+      typeof(budget_bytes)='integer' AND budget_bytes>0 AND budget_bytes<=${CAPACITY_MAX_BUDGET_BYTES}),
     projected_bytes INTEGER NOT NULL CHECK (
       typeof(projected_bytes)='integer' AND projected_bytes>=${CAPACITY_BATCH_OVERHEAD}),
     measured_bytes INTEGER NOT NULL CHECK (

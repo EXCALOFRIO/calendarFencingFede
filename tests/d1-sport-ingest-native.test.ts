@@ -27,7 +27,10 @@ import type { PublicacionRanking } from '../src/lib/ingest/sources/ranking-ofici
 const cleanups: (() => void)[] = [];
 function fixture(fence = true) {
   const local = localD1();
-  if (fence) local.sqlite.exec(readFileSync(new URL('../drizzle-d1/0002_guardia_deportiva.sql', import.meta.url), 'utf8'));
+  if (fence) {
+    local.sqlite.exec(readFileSync(new URL('../drizzle-d1/0002_guardia_deportiva.sql', import.meta.url), 'utf8'));
+    local.sqlite.exec(readFileSync(new URL('../drizzle-d1/0005_presupuesto_8gib.sql', import.meta.url), 'utf8'));
+  }
   cleanups.push(local.close);
   return { ...local, db: createD1Database(local.binding) };
 }
@@ -197,18 +200,19 @@ describe('native D1 capacity, persistence, provenance and checkpoints', () => {
       expect(() => old.prepare('select sport_ranking_publication.revision from sport_ranking_publication')).toThrow('revision');
     } finally { old.close(); }
   });
-  it('uses D1 storage metadata, <=4GiB allocation, tiny budgets and fail-closed unknowns', async () => {
+  it('uses D1 storage metadata, <=8GiB allocation, tiny budgets and fail-closed unknowns', async () => {
     const { db, writer } = await owned();
     const e = { puestos: 1, asaltos: 0, documentos: 0, unidades: 1 };
     const d = await comprobarCapacidadD1(db, e);
-    expect(d.umbralBytes).toBe(4294967296);
+    expect(d.umbralBytes).toBe(8589934592);
     expect(d.actualBytes).toBeGreaterThan(0);
     expect((await comprobarCapacidadD1(db, e, d.actualBytes! + 5300)).continuar).toBe(true);
     expect((await comprobarCapacidadD1(db, e, d.actualBytes! + 5296)).continuar).toBe(false);
     await expect(medirOcupacion(async () => [])).rejects.toThrow('sport_capacity_measurement_unknown');
     await expect(comprobarCapacidadD1(db, { ...e, puestos: NaN })).rejects.toThrow('sport_capacity_projection_unknown');
     expect(presupuestoD1()).toBe(D1_DEFAULT_BUDGET_BYTES);
-    for (const n of ['0', '-1', 'NaN', '4294967297']) expect(() => presupuestoD1(n)).toThrow();
+    expect(presupuestoD1('8589934592')).toBe(8589934592);
+    for (const n of ['0', '-1', 'NaN', '8589934593']) expect(() => presupuestoD1(n)).toThrow();
     vi.stubEnv('D1_STORAGE_BUDGET_BYTES', String(d.actualBytes));
     await expect(writer.insert(sportPerson).values({ displayName: 'Blocked', nameNormalized: 'blocked' })).rejects.toThrow('sport_capacity');
     expect(await db.select().from(sportPerson)).toEqual([]);
@@ -345,8 +349,10 @@ describe('native D1 capacity, persistence, provenance and checkpoints', () => {
     await writer.insert(sportPerson).values({ displayName: 'Fixture', nameNormalized: 'fixture' });
     await lease!.liberar();
     expect(deny.mock.calls.every(([q]) => !/\bpragma\s+page_|\bpragma_page_/i.test(q))).toBe(true);
-    expect(readFileSync(new URL('../drizzle-d1/0002_guardia_deportiva.sql', import.meta.url), 'utf8'))
-      .not.toMatch(/\bpragma\s+page_|\bpragma_page_/i);
+    for (const file of ['0002_guardia_deportiva.sql', '0005_presupuesto_8gib.sql']) {
+      expect(readFileSync(new URL(`../drizzle-d1/${file}`, import.meta.url), 'utf8'))
+        .not.toMatch(/\bpragma\s+page_|\bpragma_page_/i);
+    }
   });
   it('repeating hundreds of results is idempotent; revisions/date mapping and D1 bounds are real', async () => {
     const { db, writer, calls, sqlite } = await owned();

@@ -7,6 +7,7 @@ export function fixtureDeportivaD1() {
   const local = localD1();
   try {
     local.sqlite.exec(readFileSync(new URL('../../drizzle-d1/0002_guardia_deportiva.sql', import.meta.url), 'utf8'));
+    local.sqlite.exec(readFileSync(new URL('../../drizzle-d1/0005_presupuesto_8gib.sql', import.meta.url), 'utf8'));
     return { ...local, db: createD1Database(local.binding) };
   } catch (error) {
     local.close();

@@ -5,13 +5,16 @@ import type {
   FilaMejorRanking,
   FilaRivalFrecuente,
 } from './perfil-sql';
+import { ASALTOS_RIVAL_FRECUENTE, type FilaSugerido } from './sugeridos';
 import type { Arma, FichaDeportiva } from './tipos';
+import type { EstadisticasPorAmbito, EstadisticasRivales } from './tipos-social';
 import type {
   BalanceAsaltos,
   Medallero,
   PerfilDeportivo,
   PuestoRanking,
   TemporadaPerfil,
+  TiradorSugerido,
 } from './tipos-perfil';
 
 const ARMAS: readonly Arma[] = ['ESPADA', 'FLORETE', 'SABLE'];
@@ -56,6 +59,39 @@ export function porcentajeVictorias(b: Pick<BalanceAsaltos, 'victorias' | 'derro
 }
 
 const n = (valor: unknown) => Number(valor ?? 0) || 0;
+
+/**
+ * Motivo principal de una sugerencia, del más fuerte al más débil. El texto
+ * sólo afirma lo que cuentan los hechos importados.
+ */
+export function motivoSugerido(
+  f: Pick<TiradorSugerido, 'asaltos' | 'pruebas' | 'mismoClub'>,
+): TiradorSugerido['motivo'] {
+  if (f.asaltos >= ASALTOS_RIVAL_FRECUENTE) return 'rival_frecuente';
+  if (f.mismoClub) return 'mismo_club';
+  if (f.asaltos > 0) return 'asaltos';
+  return 'pruebas';
+}
+
+export function aTiradoresSugeridos(filas: readonly FilaSugerido[]): TiradorSugerido[] {
+  return filas.map((f) => {
+    const club = typeof f.club === 'string' && f.club.trim() && !esCodigoClub(f.club)
+      ? f.club.trim().replace(/\s+/g, ' ')
+      : null;
+    const base = {
+      id: f.id,
+      nombre: f.nombre,
+      pais: f.pais,
+      club,
+      asaltos: n(f.asaltos),
+      victorias: n(f.victorias),
+      derrotas: n(f.derrotas),
+      pruebas: n(f.pruebas),
+      mismoClub: n(f.mismoClub) === 1,
+    };
+    return { ...base, motivo: motivoSugerido(base) };
+  });
+}
 
 function medallero(r: Partial<FilaAgregadoEstadistico> | undefined): Medallero {
   return { oros: n(r?.victorias), platas: n(r?.platas), bronces: n(r?.bronces), finales: n(r?.finales) };
@@ -153,9 +189,14 @@ export type FilasPerfil = {
   /** `null` = la consulta falló. */
   asaltos: readonly FilaBalanceAsaltos[] | null;
   rivales: readonly FilaRivalFrecuente[] | null;
+  /** Ausente en llamadas anteriores a las sugerencias; `null` = la consulta falló. */
+  sugeridos?: readonly FilaSugerido[] | null;
   clubes: readonly FilaClubPublicado[];
   idsFie: readonly { valor: string }[];
   mejorRanking: readonly FilaMejorRanking[];
+  /** Ya construidas por `rivales-stats.ts`; `null` = falló, ausente = no se pidieron. */
+  rivalesStats?: EstadisticasRivales | null;
+  ambito?: EstadisticasPorAmbito | null;
 };
 
 export function construirPerfil(
@@ -175,6 +216,7 @@ export function construirPerfil(
     .filter((e) => e.puesto !== null && e.formato === 'INDIVIDUAL')
     .sort((a, b) => (a.puesto ?? 0) - (b.puesto ?? 0))[0];
   const [mejor] = filas.mejorRanking;
+  const rivalesTotal = filas.asaltos?.find((a) => a.clase === 'total')?.rivales;
 
   return {
     armas: [...porArma.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([arma]) => arma),
@@ -191,6 +233,7 @@ export function construirPerfil(
           total: balance(filas.asaltos.find((a) => a.clase === 'total')),
           poule: balance(fases.find((a) => a.fase === 'POULE')),
           eliminacion: balance(fases.find((a) => a.fase === 'TABLEAU')),
+          rivales: rivalesTotal == null ? null : n(rivalesTotal),
         }
       : null,
     temporadas: temporadasPerfil(filas.estadisticas, filas.asaltos),
@@ -205,6 +248,9 @@ export function construirPerfil(
           ultimo: { fecha: r.ultimaFecha, favor: n(r.ultimoFavor), contra: n(r.ultimoContra), torneo: r.ultimoTorneo },
         }))
       : null,
+    sugeridos: filas.sugeridos === undefined ? undefined
+      : filas.sugeridos === null ? null
+      : aTiradoresSugeridos(filas.sugeridos),
     ranking: {
       actual: actual
         ? puestoRanking({
@@ -227,5 +273,7 @@ export function construirPerfil(
           })
         : null,
     },
+    ...(filas.rivalesStats === undefined ? {} : { rivalesStats: filas.rivalesStats }),
+    ...(filas.ambito === undefined ? {} : { ambito: filas.ambito }),
   };
 }

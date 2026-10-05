@@ -437,6 +437,44 @@ describe('normalización del cuadro: BYE, marcador y equipos', () => {
     expect(r.ok && r.parte.asaltos).toHaveLength(1);
     expect(r.ok && r.parte.excluidos.duplicado).toBe(1);
   });
+
+  it('el cuadro publicado dos veces (A16 y F16, o Phase_1 numérica) se queda con la ronda A', () => {
+    const cruce = { fencer1: t(5, 15, true), fencer2: t(3, 11, false) };
+    const otro = { fencer1: t(7, 15, true), fencer2: t(8, 4, false) };
+    const r = normalizarCuadro(
+      {
+        tableau: [
+          { suiteTableId: 'SuiteTab_F', rounds: { F16: [cruce] } },
+          { suiteTableId: 'SuiteTab_A', rounds: { A16: [cruce, otro] } },
+          { suiteTableId: 'Phase_1', rounds: { '2': [otro] } },
+        ],
+      },
+      { individual: true },
+    );
+    expect(r.ok && r.parte.asaltos.map((a) => [a.ronda, a.refA, a.refB])).toEqual([
+      ['A16', '3', '5'],
+      ['A16', '7', '8'],
+    ]);
+    expect(r.ok && r.parte.excluidos.duplicado).toBe(2);
+    expect(r.ok && r.parte.cobertura).toMatchObject({ estado: 'completo', publicado: 2, importado: 2 });
+  });
+
+  it('el mismo par con otro marcador en otra ronda no se toma por repetido', () => {
+    const r = normalizarCuadro(
+      {
+        tableau: [{
+          suiteTableId: 'SuiteTab_A',
+          rounds: {
+            A32: [{ fencer1: t(5, 15, true), fencer2: t(3, 11, false) }],
+            A8: [{ fencer1: t(5, 15, true), fencer2: t(3, 9, false) }],
+          },
+        }],
+      },
+      { individual: true },
+    );
+    expect(r.ok && r.parte.asaltos).toHaveLength(2);
+    expect(r.ok && r.parte.excluidos.duplicado).toBe(0);
+  });
 });
 
 describe('París 2024/246: individual olímpico sin poules (VAL-RESULT-004)', () => {

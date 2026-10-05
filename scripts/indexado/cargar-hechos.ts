@@ -40,6 +40,7 @@ import {
   type Contadores,
   jsonCanonico,
   normalizarNombre,
+  palabrasNombre,
   NUEVO_POR_DEFECTO,
   prepararCopiaTrabajo,
   quitarGuardia,
@@ -47,6 +48,7 @@ import {
   sha256,
   uuid,
 } from './comun';
+import { consistenciaCuadro, pesoCuadro, type AsaltoCuadro } from './cuadro-consistencia';
 
 export type EntradaHechos = { ruta: string; carpeta: string; leer: () => unknown };
 
@@ -58,6 +60,29 @@ type Modo = 'nuevo' | 'reemplazo' | 'fusion' | 'deduplicado' | 'conservado' | 'v
 /** Mismo asalto aunque cambien referencias, ronda u orden: nombres normalizados y tocados. */
 export function firmaAsalto(nombreA: string, tocadosA: number, nombreB: string, tocadosB: number): string {
   return [`${normalizarNombre(nombreA)}:${tocadosA}`, `${normalizarNombre(nombreB)}:${tocadosB}`].sort().join('|');
+}
+
+/** Mismo nombre con las palabras en otro orden o recortado por la columna («LETE MUÑOZ-REPISO» de «LETE MUÑOZ-REPISO Mateo»). */
+export function nombresCompatibles(x: string, y: string): boolean {
+  if (normalizarNombre(x) === normalizarNombre(y)) return true;
+  const a = palabrasNombre(x).join('').toLowerCase();
+  const b = palabrasNombre(y).join('').toLowerCase();
+  return a.length >= 6 && b.length >= 6 && (a.startsWith(b) || b.startsWith(a));
+}
+
+/**
+ * El mismo asalto de poule leído por otro extractor: nombres compatibles y el mismo par de
+ * tocados, aunque las lecturas discrepen en quién ganó. La nueva lectura sustituye a la otra.
+ */
+export function mismoAsaltoOtraLectura(
+  p: { fencer_a_name: string; fencer_b_name: string; score_a: number; score_b: number },
+  b: { aName: string; bName: string; scoreA: number; scoreB: number },
+): boolean {
+  if (Math.min(p.score_a, p.score_b) !== Math.min(b.scoreA, b.scoreB) || Math.max(p.score_a, p.score_b) !== Math.max(b.scoreA, b.scoreB)) {
+    return false;
+  }
+  return (nombresCompatibles(p.fencer_a_name, b.aName) && nombresCompatibles(p.fencer_b_name, b.bName)) ||
+    (nombresCompatibles(p.fencer_a_name, b.bName) && nombresCompatibles(p.fencer_b_name, b.aName));
 }
 
 /**
@@ -194,6 +219,36 @@ function elegir(metas: Meta[], s: Seccion): Meta | null {
   })[0];
 }
 
+/**
+ * Cuadro de una prueba individual rfee_pdf: sale de una sola lectura, la de más asaltos coherentes
+ * (y después más ganadores confirmados en la ronda siguiente); a igualdad, el rango de
+ * siempre. Sin esto un droid con más filas pero cruces imposibles ganaba al lector.
+ */
+export function elegirCuadroPdf<M extends Pick<Meta, 'extractor' | 'status' | 'filas'> & { entrada: { ruta: string } }>(
+  metas: M[],
+  asaltosDe: (m: M) => readonly AsaltoHecho[],
+): M | null {
+  const validas = metas.filter((m) => m.filas.tableau > 0 || m.status.tableau === 'sin_resultados');
+  if (validas.length === 0) return null;
+  const claves = new Map(validas.map((m) => [m, [
+    ...pesoCuadro(asaltosDe(m).filter((b) => b.phase === 'TABLEAU')),
+    rangoExtractor(m.extractor, m.status.tableau), RANGO_ESTADO[m.status.tableau], m.filas.tableau,
+  ]]));
+  return validas.sort((x, y) => {
+    const a = claves.get(x)!;
+    const b = claves.get(y)!;
+    for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return b[i] - a[i];
+    return x.entrada.ruta < y.entrada.ruta ? -1 : 1;
+  })[0];
+}
+
+/** Las filas guardadas son una sola lectura: un estilo de ronda (A* o T*) y un estilo de referencia. */
+export function lecturaUnica(filas: readonly { round_key: string; fencer_a_ref: string; fencer_b_ref: string }[]): boolean {
+  const rondas = new Set(filas.map((f) => f.round_key[0]));
+  const refs = new Set(filas.flatMap((f) => [f.fencer_a_ref, f.fencer_b_ref]).map((r) => r.includes(':pdfd:')));
+  return rondas.size <= 1 && refs.size <= 1;
+}
+
 function cargar(m: Meta): HechosPrueba {
   return hechosPrueba.parse(m.entrada.leer());
 }
@@ -308,7 +363,9 @@ class Cargador {
     const comp = this.upsertCompeticion(h0, edicionId);
     const divisiones = h0.source === 'rfee_pdf' ? this.absorberDivisiones(comp) : [];
     for (const s of SECCIONES) {
-      const m = elegir(metas, s);
+      const m = s === 'tableau' && h0.source === 'rfee_pdf' && h0.competition.format === 'INDIVIDUAL'
+        ? elegirCuadroPdf(metas, (x) => leer(x).bouts)
+        : elegir(metas, s);
       if (!m) continue;
       const h = leer(m);
       const r =
@@ -467,7 +524,9 @@ class Cargador {
       category_raw, competition_date, source_url`;
     let previa = this.q(`SELECT ${columnas} FROM sport_competition WHERE source=? AND season=? AND competition_key=?`)
       .get(h.source, h.edition.season, c.competitionKey) as Previa | undefined;
-    if (!previa && h.source !== 'fie') {
+    // FIE y Engarde tienen un único extractor con claves fijas; en Engarde, además, la depuración de
+    // solapes borra pruebas y la búsqueda por atributos pegaría su recarga a otra prueba de la edición.
+    if (!previa && h.source !== 'fie' && h.source !== 'engarde') {
       // Otro extractor puede haber construido la clave de otra forma para la misma prueba.
       const candidatas = (this.q(
         `SELECT ${columnas} FROM sport_competition
@@ -608,6 +667,7 @@ class Cargador {
   private aplicarAsaltos(comp: Competicion, h: HechosPrueba, fase: 'POULE' | 'TABLEAU'): { modo: Modo } {
     const T = 'sport_bout';
     const seccion: Seccion = fase === 'POULE' ? 'pools' : 'tableau';
+    const individual = h.competition.format === 'INDIVIDUAL';
     const previas = this.q(
       `SELECT id, round_key, fencer_a_ref, fencer_b_ref, fencer_a_person_id, fencer_b_person_id, fencer_a_name,
          fencer_b_name, score_a, score_b, occurred_on, source_url, content_hash
@@ -640,20 +700,51 @@ class Cargador {
       const sobran = repetidosEntreRondas([...nuevas.values()]);
       for (const b of sobran) nuevas.delete(clave(b.roundKey, b.aRef, b.bRef));
       if (sobran.length > 0) contar(this.tablas, T, h.source, 'repetidasEntreRondas', sobran.length);
+      // Una pareja que se cruza dos veces o un perdedor que sigue: algún asalto está mal leído y no
+      // se sabe cuál. En equipos se tiran los puestos y el perdedor sigue legítimamente.
+      const lista = individual ? [...nuevas.entries()] : [];
+      const coherencia = consistenciaCuadro(lista.map(([, b]) => b));
+      for (const i of coherencia.incoherentes) nuevas.delete(lista[i][0]);
+      if (coherencia.incoherentes.size > 0) contar(this.tablas, T, h.source, 'incoherentesDescartadas', coherencia.incoherentes.size);
     }
     const estables =
       clavesEstables([...nuevas.values()].flatMap((b) => [b.aRef, b.bRef])) &&
       clavesEstables(previas.flatMap((p) => [p.fencer_a_ref, p.fencer_b_ref]));
     // En rfee_pdf las referencias antiguas (`<doc>:<clave>:p0023`) nunca casan con las
-    // nuevas (factKey del puesto): con tantas o más filas nuevas la fase se sustituye
-    // (cualquier estado); con menos, se añaden y se quitan los asaltos antiguos repetidos.
+    // nuevas (factKey del puesto). El cuadro sale de una sola lectura: la nueva sustituye
+    // la fase entera salvo que lo guardado sea una sola lectura con más asaltos coherentes.
+    // En poules, con tantas o más filas nuevas se sustituye; con menos, se quitan los repetidos.
+    const peso = (l: AsaltoCuadro[]): [number, number] => (individual ? pesoCuadro(l) : [l.length, 0]);
+    const pesoPrevias = () => peso(previas.map((p) => ({
+      roundKey: p.round_key, aRef: p.fencer_a_ref, bRef: p.fencer_b_ref, scoreA: p.score_a, scoreB: p.score_b,
+    })));
+    const pesoNuevas = () => peso([...nuevas.values()]);
+    const mejorGuardado = () => {
+      const [a, b] = [pesoPrevias(), pesoNuevas()];
+      return a[0] > b[0] || (a[0] === b[0] && a[1] > b[1]);
+    };
     const modo: Modo = h.source === 'rfee_pdf'
       ? nuevas.size === 0 ? 'vacio'
         : previas.length === 0 ? 'nuevo'
+        : fase === 'TABLEAU' ? (lecturaUnica(previas) && mejorGuardado() ? 'conservado' : 'reemplazo')
         : nuevas.size >= previas.length ? 'reemplazo' : 'deduplicado'
       : this.decidirModo(h.status[seccion], previas.length, nuevas.size, estables);
     if (modo === 'vacio' || modo === 'conservado') {
-      contar(this.tablas, T, h.source, 'conservadas', previas.length);
+      // Lo guardado puede venir de una carga anterior a la comprobación de coherencia.
+      let borradas = 0;
+      if (h.source === 'rfee_pdf' && fase === 'TABLEAU' && individual) {
+        const incoherentes = consistenciaCuadro(previas.map((p) => ({
+          roundKey: p.round_key, aRef: p.fencer_a_ref, bRef: p.fencer_b_ref, scoreA: p.score_a, scoreB: p.score_b,
+        }))).incoherentes;
+        const borrar = this.q('DELETE FROM sport_bout WHERE id=?');
+        for (const i of incoherentes) {
+          borrar.run(previas[i].id);
+          borradas += 1;
+          this.escrito();
+        }
+        if (borradas > 0) contar(this.tablas, T, h.source, 'incoherentesGuardadasBorradas', borradas);
+      }
+      contar(this.tablas, T, h.source, 'conservadas', previas.length - borradas);
       if (modo === 'conservado') contar(this.tablas, T, h.source, 'descartadas', nuevas.size);
       return { modo };
     }
@@ -722,6 +813,26 @@ class Cargador {
       contar(this.tablas, T, h.source, 'actualizadas');
       this.escrito();
     }
+    if (modo === 'fusion' && fase === 'TABLEAU') {
+      // La API FIE llegó a publicar el mismo cuadro dos veces (A64..A2 y F64..F1, o rondas «1»..«4»);
+      // el lector ya lo cuenta una vez, y la copia guardada con la otra ronda sobra.
+      const firma = (ronda: string, a: string, b: string, sa: number, sb: number) => ({ ronda, k: `${a}|${b}|${sa}|${sb}` });
+      const nuevasPorFirma = new Map<string, Set<string>>();
+      for (const b of nuevas.values()) {
+        const f = firma(b.roundKey, b.aRef, b.bRef, b.scoreA, b.scoreB);
+        nuevasPorFirma.set(f.k, (nuevasPorFirma.get(f.k) ?? new Set()).add(f.ronda));
+      }
+      const borrar = this.q('DELETE FROM sport_bout WHERE id=?');
+      for (const [k, p] of porClave) {
+        if (nuevas.has(k)) continue;
+        const f = firma(p.round_key, p.fencer_a_ref, p.fencer_b_ref, p.score_a, p.score_b);
+        const rondas = nuevasPorFirma.get(f.k);
+        if (!rondas || rondas.has(f.ronda)) continue;
+        borrar.run(p.id);
+        contar(this.tablas, T, h.source, 'repetidasOtraRondaBorradas');
+        this.escrito();
+      }
+    }
     if (modo === 'reemplazo') {
       const borrar = this.q('DELETE FROM sport_bout WHERE id=?');
       for (const [k, p] of porClave) {
@@ -734,15 +845,23 @@ class Cargador {
     if (modo === 'deduplicado') {
       const nuevasFirmas = new Set([...nuevas.values()].map((b) =>
         `${ambitoFirma(fase, b.roundKey)}|${firmaAsalto(b.aName, b.scoreA, b.bName, b.scoreB)}`));
+      const nuevasPorAmbito = new Map<string, AsaltoHecho[]>();
+      for (const b of nuevas.values()) {
+        const a = ambitoFirma(fase, b.roundKey);
+        nuevasPorAmbito.set(a, [...(nuevasPorAmbito.get(a) ?? []), b]);
+      }
       const borrar = this.q('DELETE FROM sport_bout WHERE id=?');
       for (const [k, p] of porClave) {
         if (nuevas.has(k)) continue;
-        if (!nuevasFirmas.has(`${ambitoFirma(fase, p.round_key)}|${firmaAsalto(p.fencer_a_name, p.score_a, p.fencer_b_name, p.score_b)}`)) {
+        const ambito = ambitoFirma(fase, p.round_key);
+        const exacta = nuevasFirmas.has(`${ambito}|${firmaAsalto(p.fencer_a_name, p.score_a, p.fencer_b_name, p.score_b)}`);
+        const otraLectura = !exacta && (nuevasPorAmbito.get(ambito) ?? []).some((b) => mismoAsaltoOtraLectura(p, b));
+        if (!exacta && !otraLectura) {
           contar(this.tablas, T, h.source, 'conservadas');
           continue;
         }
         borrar.run(p.id);
-        contar(this.tablas, T, h.source, 'duplicadasBorradas');
+        contar(this.tablas, T, h.source, exacta ? 'duplicadasBorradas' : 'otraLecturaBorradas');
         this.escrito();
       }
     }

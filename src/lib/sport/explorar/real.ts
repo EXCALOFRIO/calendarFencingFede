@@ -5,6 +5,7 @@ import { getManagedAthletes, getSessionProfile } from '@/lib/auth/session';
 import { depsEvidenciaDb } from '@/lib/entries/evidencia-db';
 import { esquemaDeportivo } from '@/lib/sport/esquema-db';
 import type { ContextoExplorador } from './contexto';
+import { indiceExplorarDisponible } from './indice-db';
 
 /**
  * Único punto que conecta el explorador con D1 y con la sesión real. El
@@ -16,6 +17,7 @@ export function contextoReal(): ContextoExplorador {
     db,
     perfil: getSessionProfile,
     esquema: esquemaDeportivo,
+    indiceExplorar: indiceExplorarDisponible,
     hoy: () => new Date().toISOString().slice(0, 10),
     propietario: {
       async atletasDeCuenta(profileId) {

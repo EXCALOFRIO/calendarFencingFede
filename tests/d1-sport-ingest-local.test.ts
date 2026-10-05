@@ -17,6 +17,7 @@ function file() {
   sqlite.exec('BEGIN');
   sqlite.exec(readFileSync(new URL('../drizzle-d1/0000_aplicacion.sql', import.meta.url), 'utf8'));
   sqlite.exec(readFileSync(new URL('../drizzle-d1/0002_guardia_deportiva.sql', import.meta.url), 'utf8'));
+  sqlite.exec(readFileSync(new URL('../drizzle-d1/0005_presupuesto_8gib.sql', import.meta.url), 'utf8'));
   sqlite.exec('COMMIT');
   sqlite.close();
   cleanups.push(() => { unlinkSync(path); rmdirSync(dir); });

@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { EnlaceEdiciones, EnlaceVolverAEdicion } from '@/components/explorar/ediciones';
 import { EnlaceFavoritos } from '@/components/explorar/favoritos';
 import { FormularioFiltros } from '@/components/explorar/formulario-filtros';
+import { EnlaceSiguiendo } from '@/components/explorar/siguiendo';
 import {
   ChipsActivos,
   EstadoSinCoincidencias,
@@ -12,6 +13,7 @@ import { getSessionProfile } from '@/lib/auth/session';
 import { edicionDeRuta } from '@/lib/sport/explorar/edicion-url';
 import { cargarExplorar } from '@/lib/sport/explorar/pantalla';
 import { contextoReal } from '@/lib/sport/explorar/real';
+import { cargarConteoSiguiendo } from '@/lib/sport/explorar/siguiendo-pantalla';
 import { construirUrl, leerCriterios, opcionesTemporada } from '@/lib/sport/explorar/url';
 
 export const dynamic = 'force-dynamic';
@@ -39,7 +41,11 @@ export default async function Pagina({
   if (!perfil) redirect('/entrar');
 
   const { criterios, cursor } = leerCriterios(await searchParams);
-  const vista = await cargarExplorar(contextoReal(), criterios, cursor);
+  const ctx = contextoReal();
+  const [vista, siguiendo] = await Promise.all([
+    cargarExplorar(ctx, criterios, cursor),
+    cargarConteoSiguiendo(ctx),
+  ]);
   if (vista.tipo === 'sin_sesion') redirect('/entrar');
 
   const atajoEspana = perfil.role === 'coach' || perfil.role === 'admin';
@@ -56,6 +62,7 @@ export default async function Pagina({
           </p>
         </div>
         <nav aria-label="Colecciones de Explorar" className="flex flex-wrap items-center gap-x-5 gap-y-1">
+          <EnlaceSiguiendo siguiendo={siguiendo} />
           <EnlaceEdiciones />
           <EnlaceFavoritos />
         </nav>

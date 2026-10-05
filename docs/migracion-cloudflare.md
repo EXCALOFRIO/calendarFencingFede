@@ -328,8 +328,10 @@ parciales, los denominadores desconocidos y los conflictos se conservan.
 
 ## Capacidad D1 y costes
 
-La asignación propia máxima es 4 GiB (`D1_STORAGE_BUDGET_BYTES`), no la cuota
-gratuita de esta aplicación ni un límite de gasto. D1 rechaza los PRAGMAs de
+La asignación propia máxima es 8 GiB (`D1_STORAGE_BUDGET_BYTES`, techo del
+CHECK de `sport_write_context` desde `0005_presupuesto_8gib.sql`; `0002` lo
+instaló con 4 GiB). No es la cuota gratuita de esta aplicación ni un límite de
+gasto; D1 admite hasta 10 GB por base en el plan de pago. D1 rechaza los PRAGMAs de
 tamaño: el runtime usa `meta.size_after` de un `SELECT 1` y conteos de solo
 lectura. No afirma tamaños por tabla que D1 no publica.
 

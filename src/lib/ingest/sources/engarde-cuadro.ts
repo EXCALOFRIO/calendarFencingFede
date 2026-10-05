@@ -55,9 +55,10 @@ function plano(t: string): string {
 /** Clave de ronda estable entre fuentes; `null` si el título no es una ronda regular (p. ej. tercer lugar). */
 export function claveRondaCuadro(titulo: string): string | null {
   const t = plano(titulo);
-  const n = t.match(/^(?:tableau|table|tabla|round)\s+(?:of|de|d)?\s*(\d{1,3})$/);
+  // El cuadro preliminar (p. ej. 256→64) y el principal no repiten rondas con asaltos, así que comparten claves.
+  const n = t.match(/^(?:(?:main|preliminary|preliminaire|preliminar|principal)\s+)?(?:tableau|table|tabla|round)\s+(?:of|de|d)?\s*(\d{1,3})$/);
   if (n) return `T${n[1]}`;
-  if (/^semi/.test(t)) return 'SF';
+  if (/^(semi|demi)/.test(t)) return 'SF';
   if (/^final(?:e|es)?$/.test(t)) return 'F';
   return null;
 }

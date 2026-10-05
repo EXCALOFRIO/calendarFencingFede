@@ -26,7 +26,7 @@ const TEMPORADA_DEPORTIVA = `(CASE
  * cuentan los asaltos de una de ellas: nunca se suman dos copias del mismo
  * asalto ni se mezclan marcadores de fuentes distintas.
  */
-function asaltosValidos(ids: readonly string[]): SQL {
+export function asaltosValidos(ids: readonly string[]): SQL {
   const columnas = (rival: string, favor: string, contra: string) => sql.raw(`
       b.id AS id, b.competition_id AS prueba, b.phase AS fase, b.${rival} AS rival_id,
       b.${favor} AS favor, b.${contra} AS contra,
@@ -72,19 +72,33 @@ export type FilaBalanceAsaltos = {
   empates: number;
   tocadosDados: number;
   tocadosRecibidos: number;
+  /** Sólo en la fila total: rivales distintos, ya llevados a su persona canónica. */
+  rivales?: number | null;
 };
 
-/** Balance total, por fase y por temporada en una sola sentencia; sólo agregados vuelven al Worker. */
+/**
+ * Balance total, por fase y por temporada en una sola sentencia; sólo agregados vuelven al Worker.
+ * La fila total cuenta además los rivales distintos: cada rival se lleva a la
+ * persona que prevalece (un salto, las fusiones no encadenan) para que dos
+ * fichas fundidas del mismo rival cuenten una vez.
+ */
 export function sqlBalanceAsaltos(ids: readonly string[]) {
   return sql`
     WITH ${asaltosValidos(ids)}, por_temporada AS (
-      SELECT 'temporada' AS clase, NULL AS fase, temporada, ${MEDIDAS_ASALTOS}
+      SELECT 'temporada' AS clase, NULL AS fase, temporada, ${MEDIDAS_ASALTOS}, NULL AS rivales
       FROM validos GROUP BY temporada ORDER BY temporada DESC
       LIMIT ${LIMITE_TEMPORADAS_ASALTOS}
+    ), rivales_distintos AS (
+      SELECT count(DISTINCT coalesce(p.merged_into_person_id, p.id)) AS n
+      FROM (SELECT DISTINCT rival_id FROM validos WHERE rival_id IS NOT NULL) d
+      CROSS JOIN sport_person p ON p.id = d.rival_id
+      WHERE coalesce(p.merged_into_person_id, p.id) NOT IN (${listaUuid(ids)})
     )
-    SELECT 'total' AS clase, NULL AS fase, NULL AS temporada, ${MEDIDAS_ASALTOS} FROM validos
+    SELECT 'total' AS clase, NULL AS fase, NULL AS temporada, ${MEDIDAS_ASALTOS},
+           (SELECT n FROM rivales_distintos) AS rivales
+    FROM validos
     UNION ALL
-    SELECT 'fase' AS clase, fase, NULL AS temporada, ${MEDIDAS_ASALTOS} FROM validos GROUP BY fase
+    SELECT 'fase' AS clase, fase, NULL AS temporada, ${MEDIDAS_ASALTOS}, NULL AS rivales FROM validos GROUP BY fase
     UNION ALL
     SELECT * FROM por_temporada`;
 }

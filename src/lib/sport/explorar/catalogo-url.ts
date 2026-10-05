@@ -6,6 +6,7 @@ export const FUENTES_CATALOGO = [
   { valor: 'fie', etiqueta: 'FIE' },
   { valor: 'skermo_rfee', etiqueta: 'RFEE / Skermo HTML' },
   { valor: 'rfee_pdf', etiqueta: 'RFEE PDF' },
+  { valor: 'engarde', etiqueta: 'Engarde' },
 ] as const;
 
 export type CriteriosCatalogo = { q: string; fuente: string; temporada: string };

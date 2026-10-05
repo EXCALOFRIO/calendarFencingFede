@@ -29,6 +29,8 @@ import {
 } from '../../src/lib/ingest/hechos/formato';
 import { metadatosDeCabecera } from '../../src/lib/ingest/sources/rfee-pdf/cabecera';
 import { normalizar } from '../../src/lib/ingest/sources/rfee-pdf/geometria';
+import { consistenciaCuadro } from './cuadro-consistencia';
+import { fechasCatalogo, indiceFechas, type IndiceFechas, type InventarioNacional, type PruebaFecha } from './fechas-catalogo';
 
 // ---------------------------------------------------------------- claves
 
@@ -141,6 +143,8 @@ export type ContextoValidacion = {
   /** Texto de cada página según `unpdf`. */
   paginas: string[];
   extractor: string;
+  /** Fecha de la prueba en el catálogo nacional, para cuando ni el modelo ni la cabecera la dan. */
+  fechaCatalogo?: (p: PruebaFecha) => string | null;
 };
 
 export type Descartes = Record<string, number>;
@@ -165,6 +169,26 @@ const esPotenciaDeDos = (n: number) => n >= 2 && n <= 1024 && (n & (n - 1)) === 
 /** Texto mínimo (letras y cifras) para considerar que el PDF tiene capa de texto. */
 const MIN_TEXTO = 80;
 
+/**
+ * Los criterium de menores (M11, M13) publican, en vez de clasificación, una lista de
+ * «GANADORAS/GANADORES» (quienes ganan su asalto de T8) y otra de «FINALISTAS», sin puestos.
+ * El modelo numera esas listas (1, 2, 3, 3...) y el puesto es inventado. Devuelve el texto
+ * compactado de cada lista, cortado en el fin de página, o `null` si el documento no las trae.
+ */
+export function listasGanadores(paginas: readonly string[]): { ganadores: string; finalistas: string } | null {
+  let ganadores = '';
+  let finalistas = '';
+  for (const p of paginas) {
+    const marcas = [...p.matchAll(/\b(GANADOR(?:A|E)S|FINALISTAS)\b/gi)];
+    marcas.forEach((m, i) => {
+      const trozo = compacto(p.slice(m.index! + m[0].length, marcas[i + 1]?.index ?? p.length));
+      if (/^GANADOR/i.test(m[1])) ganadores += `|${trozo}`;
+      else finalistas += `|${trozo}`;
+    });
+  }
+  return ganadores && finalistas ? { ganadores, finalistas } : null;
+}
+
 export function validarExtraccion(crudo: unknown, ctx: ContextoValidacion): ResultadoValidacion {
   const descartes: Descartes = {};
   const problemas: string[] = [];
@@ -181,6 +205,7 @@ export function validarExtraccion(crudo: unknown, ctx: ContextoValidacion): Resu
   const pruebas = arr(raiz.competitions) as PruebaCruda[];
   if (pruebas.length === 0) problemas.push('sin_competiciones');
 
+  const listas = listasGanadores(ctx.paginas);
   const existentes = new Set<string>();
   const borradores: { h: Omit<HechosPrueba, 'edition'>; fecha: string | null }[] = [];
 
@@ -216,7 +241,8 @@ export function validarExtraccion(crudo: unknown, ctx: ContextoValidacion): Resu
     }
     const competitionKey = claveCompeticion(ctx.docId, { weapon, gender, format, category, cohorte: meta.cohorte }, existentes);
     const fechaModelo = str(p.date);
-    const fecha = fechaModelo && /^\d{4}-\d{2}-\d{2}$/.test(fechaModelo) ? fechaModelo : meta.fecha;
+    const fecha = (fechaModelo && /^\d{4}-\d{2}-\d{2}$/.test(fechaModelo) ? fechaModelo : meta.fecha) ??
+      ctx.fechaCatalogo?.({ weapon, gender, category, format }) ?? null;
     const individual = format === 'INDIVIDUAL';
 
     // ---- clasificación
@@ -230,15 +256,19 @@ export function validarExtraccion(crudo: unknown, ctx: ContextoValidacion): Resu
     const aceptadosRes: Omit<ResultadoHecho, 'factKey'>[] = [];
     let previo = 0;
     let sinPuesto = 0;
+    let puestosDeLista = 0;
     for (const [iFila, f] of filas.entries()) {
       const nombre = str(f?.name);
-      const posicion = f?.position === null || f?.position === undefined ? null : int(f.position);
+      const cn = nombre ? compacto(nombre) : '';
+      const enLista = !listas || !individual || cn.length < 6 ? null
+        : listas.ganadores.includes(cn) ? 'Ganador' : listas.finalistas.includes(cn) ? 'Finalista' : null;
+      const posicion = enLista || f?.position === null || f?.position === undefined ? null : int(f.position);
       // El índice cuenta las filas impresas, no las aceptadas: una fila descartada no debe desplazar las siguientes.
       const filaNumerica = iFila + 1;
       const motivo =
         !nombre ? 'resultado_sin_nombre'
           : !enPdf(nombre) ? 'resultado_nombre_no_en_pdf'
-          : f?.position !== null && f?.position !== undefined && (posicion === null || posicion < 1) ? 'resultado_posicion_invalida'
+          : !enLista && f?.position !== null && f?.position !== undefined && (posicion === null || posicion < 1) ? 'resultado_posicion_invalida'
           : posicion !== null && posicion < previo ? 'resultado_posicion_no_monotona'
           : individual && repetidos.has(compacto(nombre)) ? 'resultado_duplicado'
           : null;
@@ -251,7 +281,10 @@ export function validarExtraccion(crudo: unknown, ctx: ContextoValidacion): Resu
         if (posicion !== previo && posicion !== filaNumerica) anomalias += 1;
         previo = posicion;
       }
-      if (posicion === null && !str(f?.positionRaw)) sinPuesto += 1;
+      if (enLista) {
+        puestosDeLista += 1;
+        sumarDescarte(descartes, 'resultado_puesto_de_lista_anulado');
+      } else if (posicion === null && !str(f?.positionRaw)) sinPuesto += 1;
       const club = str(f?.club);
       const pais = str(f?.country)?.toUpperCase() ?? null;
       if (club && !enPdf(club)) sumarDescarte(descartes, 'club_no_en_pdf_anulado');
@@ -260,7 +293,7 @@ export function validarExtraccion(crudo: unknown, ctx: ContextoValidacion): Resu
         countryCode: pais && /^[A-Z]{3}$/.test(pais) ? pais : null,
         club: club && enPdf(club) ? club : null,
         position: posicion,
-        positionRaw: str(f?.positionRaw) ?? (posicion === null ? null : String(posicion)),
+        positionRaw: enLista ?? str(f?.positionRaw) ?? (posicion === null ? null : String(posicion)),
         points: null,
         fieId: null,
         license: null,
@@ -277,6 +310,7 @@ export function validarExtraccion(crudo: unknown, ctx: ContextoValidacion): Resu
       notas.push(`posiciones_con_huecos:${anomalias}`);
     }
     if (sinPuesto > 0 && aceptadosRes.length > 0) notas.push(`filas_sin_puesto_legible:${sinPuesto}`);
+    if (puestosDeLista > 0) notas.push(`puestos_no_publicados_lista_ganadores_finalistas:${puestosDeLista}`);
 
     const cuentaPorPos = new Map<number, number>();
     for (const r of aceptadosRes) if (r.position !== null) cuentaPorPos.set(r.position, (cuentaPorPos.get(r.position) ?? 0) + 1);
@@ -415,6 +449,18 @@ export function validarExtraccion(crudo: unknown, ctx: ContextoValidacion): Resu
       porRonda.set(ronda, usados);
       empujar('TABLEAU', ronda, r);
       boutsCuadro += 1;
+    }
+    // Un cuadro individual incoherente (pareja que se cruza dos veces, perdedor que sigue) tiene
+    // al menos un asalto mal leído y no se sabe cuál: se descartan todos los implicados. Los de
+    // equipos se quedan fuera: suelen tirar los puestos y el perdedor sigue legítimamente.
+    const enCuadro = individual ? bouts.filter((b) => b.phase === 'TABLEAU') : [];
+    const coherencia = consistenciaCuadro(enCuadro);
+    if (coherencia.incoherentes.size > 0) {
+      const fuera = new Set([...coherencia.incoherentes].map((i) => enCuadro[i]));
+      for (let i = bouts.length - 1; i >= 0; i -= 1) if (fuera.has(bouts[i])) bouts.splice(i, 1);
+      for (const [motivo, n] of Object.entries(coherencia.motivos)) sumarDescarte(descartes, `cuadro_${motivo}`, n);
+      descCuadro += fuera.size;
+      boutsCuadro -= fuera.size;
     }
     aceptadas.bouts += bouts.length;
 
@@ -725,6 +771,7 @@ type Metadatos = {
   docPorUrl: Map<string, string>;
   tituloPorUrl: Map<string, { titulo: string | null; season: string }>;
   clavesProd: Set<string>;
+  fechas: IndiceFechas | null;
 };
 
 async function cargarMetadatos(): Promise<Metadatos> {
@@ -748,15 +795,17 @@ async function cargarMetadatos(): Promise<Metadatos> {
     db.close();
   }
   const tituloPorUrl: Metadatos['tituloPorUrl'] = new Map();
+  let fechas: IndiceFechas | null = null;
   if (existsSync(RUTAS.inventario)) {
-    const inv = JSON.parse(await readFile(RUTAS.inventario, 'utf8')) as {
+    const inv = JSON.parse(await readFile(RUTAS.inventario, 'utf8')) as InventarioNacional & {
       readingUnits?: { sourceUrl: string; season: string; datos?: { titulo?: string | null } }[];
     };
     for (const u of inv.readingUnits ?? []) {
       if (!tituloPorUrl.has(u.sourceUrl)) tituloPorUrl.set(u.sourceUrl, { titulo: u.datos?.titulo ?? null, season: u.season });
     }
+    fechas = indiceFechas(inv);
   }
-  return { edicionPorDoc, docPorUrl, tituloPorUrl, clavesProd };
+  return { edicionPorDoc, docPorUrl, tituloPorUrl, clavesProd, fechas };
 }
 
 async function textoPdf(bytes: Uint8Array): Promise<string[]> {
@@ -829,9 +878,13 @@ async function procesarPdf(grupo: EntradaCalidad[], meta: Metadatos, opt: Return
     const docId = x.docId ?? meta.docPorUrl.get(x.url) ?? docIdDeUrl(x.url);
     const ed = meta.edicionPorDoc.get(docId);
     const inv = meta.tituloPorUrl.get(x.url);
+    const season = x.season ?? ed?.season ?? inv?.season ?? null;
+    const cat = season ? fechasCatalogo(meta.fechas, season, x.url) : null;
     return {
-      url: x.url, sha256: x.sha256, docId, season: x.season ?? ed?.season ?? inv?.season ?? null,
-      editionName: ed?.name ?? inv?.titulo ?? null, editionStart: ed?.start ?? null, editionEnd: ed?.end ?? null,
+      url: x.url, sha256: x.sha256, docId, season,
+      editionName: ed?.name ?? inv?.titulo ?? null,
+      editionStart: ed?.start ?? cat?.inicio ?? null, editionEnd: ed?.end ?? cat?.fin ?? null,
+      fechaCatalogo: (p: PruebaFecha) => (season ? fechasCatalogo(meta.fechas, season, x.url, p).prueba : null),
     };
   });
   const estado: EstadoPdf = {

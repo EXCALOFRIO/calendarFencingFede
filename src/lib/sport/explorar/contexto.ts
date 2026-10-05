@@ -14,6 +14,12 @@ export type ContextoExplorador = {
   /** Perfil vigente de la petición, o `null` sin sesión o con acceso revocado. */
   perfil: () => Promise<SessionProfile | null>;
   esquema: () => Promise<EstadoEsquema>;
+  /**
+   * ¿Hay un índice de palabras de Explorar construido (migración 0004)? Sin
+   * esta función, o si responde `false`, búsqueda y sugerencias usan las
+   * consultas sin índice.
+   */
+  indiceExplorar?: () => Promise<boolean>;
   propietario: DepsPropietario;
   /** Día actual (YYYY-MM-DD). */
   hoy: () => string;

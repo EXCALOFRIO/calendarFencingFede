@@ -1,4 +1,4 @@
-import { ArrowLeft, Info, Swords, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Info, Swords, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
 import { Badge } from '@/components/ui/badge';
@@ -16,12 +16,19 @@ import { RUTA_EDICIONES, rutaEdicion } from '@/lib/sport/explorar/edicion-url';
 import { RUTA_FAVORITOS } from '@/lib/sport/explorar/favoritos-url';
 import type { FichaConPerfil } from '@/lib/sport/explorar/tipos-perfil';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
-import { Aclaracion, Bloque, Celda, Dato, EnlaceFuente, Nota, fechaLegible, type Nivel } from './piezas';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Aclaracion, Bloque, Celda, Dato, EnlaceFuente, Nota, enlaceSeguro, fechaLegible, type Nivel } from './piezas';
+import { AvatarAnillo } from './avatar-anillo';
+import { EtiquetasCompeticion, clasificarResultado } from './etiqueta-competicion';
+import { AmbitoPerfil } from './perfil/ambito-perfil';
+import { BalanceFasesRivales, CuriosidadesPerfil } from './perfil/curiosidades-perfil';
 import { EstadisticasDeportistaVista } from './estadisticas-deportista';
 import { FotoDeportista } from './foto-deportista';
 import { CifrasPerfil } from './perfil/cifras-perfil';
-import { PuestoFinal, partesFecha } from './perfil/piezas-perfil';
+import { DestacadosPerfil } from './perfil/destacados-perfil';
+import { InsigniaPuesto, partesFecha } from './perfil/piezas-perfil';
 import { ManoAMano } from './perfil/rivales-perfil';
+import { SugeridosPerfil } from './perfil/sugeridos-perfil';
 import { AnioAAnio } from './perfil/temporadas-perfil';
 import {
   construirUrlFicha,
@@ -77,10 +84,44 @@ function DatoCabecera({
 const plegar = (texto: string) =>
   texto.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('es').split(/\s+/).sort().join(' ');
 
+function Contador({ etiqueta, valor, ayuda }: { etiqueta: string; valor: number | null; ayuda?: string }) {
+  return (
+    <div className="flex min-w-0 flex-col items-center gap-0.5 sm:items-start">
+      <dt className="order-2 max-w-full truncate text-[0.6875rem] leading-tight text-muted-foreground sm:text-xs">{etiqueta}</dt>
+      <dd className="order-1 cifra text-3xl leading-none sm:text-4xl" title={ayuda}>
+        {valor === null ? (
+          <>
+            <span aria-hidden="true">—</span>
+            <span className="sr-only">sin dato</span>
+          </>
+        ) : valor.toLocaleString('es-ES')}
+      </dd>
+    </div>
+  );
+}
+
 /**
- * Cabecera tipo perfil: retrato FIE grande, nombre en formato «Nombre
- * Apellidos», país, armas, club y las dos acciones de la ficha (cara a cara y
- * favorito). Un posible menor no lleva retrato, año ni enlace a la FIE.
+ * Los cuatro contadores de la cabecera. Un asalto que no se pudo leer sale
+ * como raya, nunca como cero.
+ */
+function ContadoresFicha({ perfil }: { perfil: NonNullable<FichaConPerfil['perfil']> }) {
+  const r = perfil.resumen;
+  const a = perfil.asaltos;
+  return (
+    <dl className="grid min-w-0 grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))] gap-2 sm:flex sm:gap-8" aria-label="En cifras">
+      <Contador etiqueta={r.pruebas === 1 ? 'Competición' : 'Competiciones'} valor={r.pruebas} ayuda="Pruebas individuales con resultado importado" />
+      <Contador etiqueta="Asaltos" valor={a ? a.total.asaltos : null} ayuda="Asaltos individuales importados" />
+      <Contador etiqueta="Rivales" valor={a?.rivales ?? null} ayuda="Rivales distintos identificados en esos asaltos" />
+      <Contador etiqueta="Medallas" valor={r.oros + r.platas + r.bronces} />
+    </dl>
+  );
+}
+
+/**
+ * Cabecera tipo perfil social: retrato FIE con anillo, contadores, nombre en
+ * formato «Nombre Apellidos», país, club, armas y las acciones de la ficha
+ * (cara a cara, favorito y perfil FIE). Un posible menor no lleva retrato,
+ * año ni enlace a la FIE: sólo sus iniciales.
  */
 export function CabeceraFicha({
   ficha,
@@ -97,37 +138,77 @@ export function CabeceraFicha({
   const propio = plegar(nombre);
   // Un alias que sólo cambia el orden o las mayúsculas del nombre no aporta nada.
   const alias = ficha.alias.filter((a) => plegar(nombreVisible(a)) !== propio);
+  const enlaceFie = ficha.esMenor ? null : enlaceSeguro(perfil?.enlaceFie ?? null);
   return (
     <header className="flex min-w-0 flex-col border-y border-t-filete-alto bg-card">
-      <div className="flex min-w-0 items-start gap-4 px-4 pt-5 pb-4 sm:gap-6 sm:px-6 sm:pt-6 sm:pb-5">
-        <FotoDeportista
-          personaId={ficha.id}
-          nombre={nombre}
-          ocultar={ficha.esMenor}
-          tamano="perfil"
-          decorativa
-        />
-        <div className="flex min-w-0 flex-1 flex-col gap-3 sm:pt-1">
-          {titulo ? (
-            <h1 className="min-w-0 text-4xl leading-[0.95] break-words sm:text-5xl lg:text-6xl">{nombre}</h1>
+      <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-4 px-4 pt-5 pb-4 sm:gap-x-10 sm:px-6 sm:pt-7 sm:pb-6">
+        <div className="col-start-1 row-start-1 self-start sm:row-span-3">
+          {ficha.esMenor ? (
+            <AvatarAnillo nombre={nombre} tamano="lg" apagado />
           ) : (
-            <p className="min-w-0 font-display text-4xl leading-[0.95] break-words sm:text-5xl">{nombre}</p>
+            <FotoDeportista personaId={ficha.id} nombre={nombre} tamano="heroe" decorativa />
           )}
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
+        </div>
+
+        <div className="col-span-2 row-start-2 min-w-0 border-y py-3 sm:col-span-1 sm:col-start-2 sm:border-0 sm:py-0">
+          {perfil ? <ContadoresFicha perfil={perfil} /> : null}
+        </div>
+
+        <div className="col-start-2 row-start-1 flex min-w-0 flex-col gap-2 self-center sm:self-start">
+          {titulo ? (
+            <h1 className="min-w-0 text-3xl leading-[0.95] break-words sm:text-5xl lg:text-6xl">{nombre}</h1>
+          ) : (
+            <p className="min-w-0 font-display text-3xl leading-[0.95] break-words sm:text-5xl">{nombre}</p>
+          )}
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
             {ficha.pais ? (
               <BanderaPais pais={ficha.pais} tamaño="ficha" />
             ) : (
-              <span className="text-sm text-muted-foreground">País no publicado</span>
+              <span className="text-muted-foreground">País no publicado</span>
             )}
-            {perfil?.armas.map((arma) => (
-              <Badge key={arma} variant="outline" className="h-7 px-3 text-sm">
-                {WEAPON_LABEL[arma]}
-              </Badge>
-            ))}
-            {ficha.esPropia ? <Badge variant="secondary" className="h-7 px-3">Es tu ficha deportiva</Badge> : null}
+            {perfil?.club ? (
+              <span className="min-w-0 break-words" title={`Club publicado más reciente, según ${fuenteResultado(perfil.club.fuente)}`}>
+                {titular(perfil.club.nombre)}
+              </span>
+            ) : null}
           </div>
+          {(perfil?.armas.length ?? 0) > 0 || ficha.esPropia ? (
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              {perfil?.armas.map((arma) => (
+                <Badge key={arma} variant="outline" className="h-7 px-3 text-sm">
+                  {WEAPON_LABEL[arma]}
+                </Badge>
+              ))}
+              {ficha.esPropia ? <Badge variant="secondary" className="h-7 px-3">Es tu ficha deportiva</Badge> : null}
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          className={cn(
+            'col-span-2 row-start-3 grid min-w-0 gap-2 sm:col-span-1 sm:col-start-2 sm:flex sm:flex-wrap',
+            enlaceFie && acciones ? 'grid-cols-3' : 'grid-cols-2',
+          )}
+        >
+          <Button asChild className="min-h-11 px-2 sm:px-4">
+            <Link href={rutaCaraACara(ficha.id)} prefetch={false}>
+              <Swords aria-hidden />
+              Cara a cara
+            </Link>
+          </Button>
+          {acciones ? <div className="min-w-0 sm:min-w-32">{acciones}</div> : null}
+          {enlaceFie ? (
+            <Button asChild variant="outline" className="min-h-11 px-2 sm:px-4">
+              <a href={enlaceFie} target="_blank" rel="noopener noreferrer">
+                Perfil FIE
+                <ExternalLink aria-hidden />
+              </a>
+            </Button>
+          ) : null}
         </div>
       </div>
+
+      {perfil ? <DestacadosPerfil perfil={perfil} porTipo={ficha.estadisticas.porTipo} /> : null}
 
       <dl className="grid grid-cols-2 gap-px border-t bg-border sm:grid-cols-4">
         <DatoCabecera etiqueta="Club publicado más reciente">
@@ -154,17 +235,6 @@ export function CabeceraFicha({
           {alias.length > 0 ? alias.join(', ') : <span className="text-muted-foreground">Sin otras formas</span>}
         </DatoCabecera>
       </dl>
-
-      <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-3 border-t px-4 py-3 sm:px-6">
-        <Button asChild>
-          <Link href={rutaCaraACara(ficha.id)} prefetch={false}>
-            <Swords aria-hidden />
-            Cara a cara
-          </Link>
-        </Button>
-        {acciones ? <div className="min-w-0">{acciones}</div> : null}
-        {perfil?.enlaceFie ? <EnlaceFuente url={perfil.enlaceFie} etiqueta="Perfil en la FIE" /> : null}
-      </div>
 
       {ficha.esMenor ? (
         <p className="flex items-start gap-2 border-t px-4 py-3 text-sm text-muted-foreground sm:px-6">
@@ -407,47 +477,59 @@ function FilaHistorial({ r }: { r: ResultadoHistorial }) {
   const categoria = CATEGORY_LABEL[r.prueba.categoria.codigo as keyof typeof CATEGORY_LABEL] ?? r.prueba.categoria.codigo;
   const fecha = r.fecha ? partesFecha(r.fecha) : null;
   return (
-    <li className="grid min-w-0 grid-cols-[3.25rem_minmax(0,1fr)_auto] gap-x-3 gap-y-2 px-4 py-4 sm:grid-cols-[4.5rem_minmax(0,1fr)_auto_minmax(0,9rem)] sm:gap-x-5 sm:px-5">
-      <div className="flex flex-col items-start leading-none">
-        {fecha ? (
-          <>
-            <span className="cifra text-3xl leading-none">{fecha.dia}</span>
-            <span className="text-xs text-muted-foreground">{fecha.mes} {fecha.anio}</span>
-          </>
-        ) : r.fecha ? (
-          <span className="text-xs break-all">{r.fecha}</span>
-        ) : (
-          <span className="text-xs text-muted-foreground">Fecha no publicada</span>
-        )}
+    <li className="flex min-w-0 flex-col gap-3 bg-card px-4 pt-4 pb-2 sm:px-5">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4">
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="text-xs text-muted-foreground">
+            {fecha ? (
+              <time dateTime={r.fecha ?? undefined}>
+                <span className="cifra text-base text-foreground">{fecha.dia}</span> {fecha.mes} {fecha.anio}
+              </time>
+            ) : r.fecha ? (
+              <span className="break-all">{r.fecha}</span>
+            ) : 'Fecha no publicada'}
+          </span>
+          <Link
+            href={rutaEdicion(r.torneo.id)}
+            prefetch={false}
+            className="w-fit max-w-full font-medium leading-snug break-words underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+          >
+            {titular(r.torneo.nombre)}
+          </Link>
+          <EtiquetasCompeticion clasificacion={clasificarResultado(r)} categoria={r.prueba.categoria.codigo} />
+          <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            {r.torneo.pais ? <BanderaPais pais={r.torneo.pais} /> : null}
+            <span className="break-words">{r.torneo.ciudad ? titular(r.torneo.ciudad) : 'Sede no publicada'}</span>
+          </span>
+        </div>
+        <InsigniaPuesto puesto={r.puesto} puestoPublicado={r.puestoPublicado} />
       </div>
-      <div className="flex min-w-0 flex-col gap-1">
-        <Link
-          href={rutaEdicion(r.torneo.id)}
-          prefetch={false}
-          className="w-fit max-w-full font-medium break-words underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-        >
-          {titular(r.torneo.nombre)}
-        </Link>
-        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          {r.torneo.pais ? <BanderaPais pais={r.torneo.pais} /> : null}
-          <span className="break-words">{r.torneo.ciudad ? titular(r.torneo.ciudad) : 'Sede no publicada'}</span>
-        </span>
-        <span className="text-xs text-muted-foreground break-words">
-          {WEAPON_LABEL[r.prueba.arma]} {GENDER_LABEL[r.prueba.genero].toLowerCase()}, {categoria}
-          {r.prueba.categoria.raw ? ` («${r.prueba.categoria.raw}»)` : ''}
-          {r.prueba.formato === 'EQUIPOS' ? ', equipos' : ''}
-        </span>
-        <span className="text-xs text-muted-foreground">
-          {r.tipoDocumentado ? etiquetaTipo(r.tipoDocumentado) : 'Tipo de torneo sin documentar'}
-          {', '}{etiquetaTemporada(r.temporada)}
-        </span>
-      </div>
-      <div className="flex flex-col items-end gap-1 text-right">
-        <PuestoFinal puesto={r.puesto} puestoPublicado={r.puestoPublicado} />
-        {r.puntosOficiales ? <span className="text-xs text-muted-foreground">{r.puntosOficiales} puntos</span> : null}
-      </div>
-      <div className="col-span-2 col-start-2 flex min-w-0 flex-col sm:col-span-1 sm:col-start-auto sm:items-end sm:text-right">
-        <span className="text-xs text-muted-foreground">{fuenteResultado(r.fuente)}</span>
+      <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-2 border-t pt-3 text-xs">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <dt className="text-muted-foreground">Prueba</dt>
+          <dd className="break-words">
+            {WEAPON_LABEL[r.prueba.arma]} {GENDER_LABEL[r.prueba.genero].toLowerCase()}, {categoria}
+            {r.prueba.categoria.raw ? ` («${r.prueba.categoria.raw}»)` : ''}
+            {r.prueba.formato === 'EQUIPOS' ? ', equipos' : ''}
+          </dd>
+        </div>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          {/* El tipo va en la pastilla de arriba; repetirlo aquí lo contradecía cuando sale del nombre. */}
+          <dt className="text-muted-foreground">Temporada</dt>
+          <dd className="break-words">{etiquetaTemporada(r.temporada)}</dd>
+        </div>
+        {r.puntosOficiales ? (
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <dt className="text-muted-foreground">Puntos</dt>
+            <dd className="cifra text-base">{r.puntosOficiales}</dd>
+          </div>
+        ) : null}
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <dt className="text-muted-foreground">Fuente</dt>
+          <dd className="break-words">{fuenteResultado(r.fuente)}</dd>
+        </div>
+      </dl>
+      <div className="mt-auto -mb-1">
         <EnlaceFuente url={r.enlace} etiqueta="Abrir en la fuente" />
       </div>
     </li>
@@ -459,14 +541,16 @@ export function HistorialFicha({
   base,
   criterios,
   nivel,
+  enPestana = false,
 }: {
   historial: HistorialVista;
   base: string;
   criterios: CriteriosFicha;
   nivel: Nivel;
+  enPestana?: boolean;
 }) {
   return (
-    <Bloque id="historial" titulo="Resultados" nivel={nivel}>
+    <Bloque id="historial" titulo="Resultados" nivel={nivel} tituloOculto={enPestana}>
       <Aclaracion titulo="Resultados publicados, del más reciente al más antiguo">
         <Nota>
           Puestos finales publicados, del más reciente al más antiguo. Una inscripción sin final no
@@ -481,7 +565,10 @@ export function HistorialFicha({
           </p>
         ) : (
           <>
-            <ol className="divide-y border-y bg-card" aria-label="Resultados, del más reciente al más antiguo">
+            <ol
+              className="grid min-w-0 gap-px border-y bg-border md:grid-cols-2 md:[&>li:last-child:nth-child(odd)]:col-span-2"
+              aria-label="Resultados, del más reciente al más antiguo"
+            >
               {historial.items.map((r) => (
                 <FilaHistorial key={r.id} r={r} />
               ))}
@@ -635,19 +722,53 @@ export function FichaCompleta({
   acciones?: React.ReactNode;
 }) {
   const perfil = ficha.perfil;
+  const conRivales = perfil?.rivalesStats && perfil.rivalesStats.total.asaltos > 0 ? perfil.rivalesStats : null;
+  // Las tres pestañas se pintan siempre en el HTML (forceMount) y la inactiva
+  // sólo se oculta: los anclajes #historial y la lectura sin JS siguen funcionando.
+  const panel = 'flex min-w-0 flex-col gap-8 pt-4 data-[state=inactive]:hidden';
   return (
     <div className="flex min-w-0 flex-col gap-8">
-      <div className="flex min-w-0 flex-col">
-        <CabeceraFicha ficha={ficha} titulo={conTitulo} acciones={acciones} />
-        {perfil ? <CifrasPerfil perfil={perfil} /> : null}
-      </div>
-      {perfil ? <AnioAAnio perfil={perfil} nivel={nivel} /> : null}
-      <HistorialFicha historial={historial} base={base} criterios={criterios} nivel={nivel} />
-      {perfil ? (
-        <ManoAMano personaId={ficha.id} nombre={ficha.nombre} perfil={perfil} nivel={nivel} />
-      ) : (
-        <EntradaCaraACara ficha={ficha} nivel={nivel} />
-      )}
+      <CabeceraFicha ficha={ficha} titulo={conTitulo} acciones={acciones} />
+      {perfil ? <SugeridosPerfil personaId={ficha.id} sugeridos={perfil.sugeridos} nivel={nivel} /> : null}
+      <Tabs defaultValue="resultados" className="min-w-0 gap-0">
+        <TabsList variant="line" aria-label="Secciones de la ficha" className="w-full justify-start gap-0 border-b p-0">
+          <TabsTrigger value="resultados" className="flex-1 px-4 sm:flex-none">Resultados</TabsTrigger>
+          <TabsTrigger value="temporadas" className="flex-1 px-4 sm:flex-none">Temporadas</TabsTrigger>
+          <TabsTrigger value="rivales" className="flex-1 px-4 sm:flex-none">Rivales</TabsTrigger>
+        </TabsList>
+        <TabsContent value="resultados" forceMount className={panel}>
+          <HistorialFicha historial={historial} base={base} criterios={criterios} nivel={nivel} enPestana />
+        </TabsContent>
+        <TabsContent value="temporadas" forceMount className={panel}>
+          {perfil ? (
+            <>
+              <CifrasPerfil perfil={perfil} />
+              {perfil.ambito ? <AmbitoPerfil ambito={perfil.ambito} nivel={nivel} /> : null}
+              <AnioAAnio perfil={perfil} nivel={nivel} enPestana />
+            </>
+          ) : (
+            <p role="status" className="medida text-sm text-muted-foreground">
+              No se ha podido leer el resumen por temporadas. Los resultados siguen en su pestaña.
+            </p>
+          )}
+        </TabsContent>
+        <TabsContent value="rivales" forceMount className={panel}>
+          {perfil ? (
+            <>
+              {conRivales ? (
+                <>
+                  <BalanceFasesRivales stats={conRivales} nivel={nivel} />
+                  <CuriosidadesPerfil personaId={ficha.id} stats={conRivales} nivel={nivel} />
+                </>
+              ) : null}
+              {/* Con curiosidades encima, la lista necesita su propio título visible. */}
+              <ManoAMano personaId={ficha.id} nombre={ficha.nombre} perfil={perfil} nivel={nivel} enPestana={!conRivales} />
+            </>
+          ) : (
+            <EntradaCaraACara ficha={ficha} nivel={nivel} />
+          )}
+        </TabsContent>
+      </Tabs>
       <EstadisticasFicha ficha={ficha} nivel={nivel} />
       <RankingOficialFicha ficha={ficha} base={base} criterios={criterios} nivel={nivel} />
       <CoberturaFichaVista cobertura={ficha.cobertura} nivel={nivel} />

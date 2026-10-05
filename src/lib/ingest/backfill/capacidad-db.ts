@@ -6,8 +6,11 @@ import { evaluarCapacidad, proyectarCrecimiento, TASAS_CONSERVADORAS,
 export type ConsultaSql = ((texto: string) => Promise<Record<string, unknown>[]>) & {
   storageSize?: () => Promise<number>;
 };
-/** Application allocation, NOT a claim that the shared 5 GB account allowance is free. */
-export const D1_DEFAULT_BUDGET_BYTES = 4 * 1024 ** 3;
+/**
+ * Application allocation (8 GiB, below D1's 10 GB per-database limit on the paid
+ * plan), NOT a spending cap nor a claim that account storage is free.
+ */
+export const D1_DEFAULT_BUDGET_BYTES = 8 * 1024 ** 3;
 export function presupuestoD1(value = process.env.D1_STORAGE_BUDGET_BYTES): number {
   if (value === undefined) return D1_DEFAULT_BUDGET_BYTES;
   const n = Number(value);

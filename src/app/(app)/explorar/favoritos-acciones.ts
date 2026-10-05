@@ -10,6 +10,8 @@ import {
 } from '@/lib/sport/explorar/favoritos';
 import { RUTA_FAVORITOS } from '@/lib/sport/explorar/favoritos-url';
 import { contextoReal } from '@/lib/sport/explorar/real';
+import { RUTA_SIGUIENDO } from '@/lib/sport/explorar/siguiendo-url';
+import { RUTA_EXPLORAR } from '@/lib/sport/explorar/url';
 
 /**
  * Acciones de servidor de favoritos. La cuenta sale siempre de la sesión
@@ -25,7 +27,11 @@ import { contextoReal } from '@/lib/sport/explorar/real';
  * guardar).
  */
 function invalidarLista(r: ResultadoFavorito): ResultadoFavorito {
-  if (r.estado === 'ok') revalidatePath(RUTA_FAVORITOS);
+  if (r.estado === 'ok') {
+    revalidatePath(RUTA_FAVORITOS);
+    revalidatePath(RUTA_SIGUIENDO);
+    revalidatePath(RUTA_EXPLORAR);
+  }
   return r;
 }
 

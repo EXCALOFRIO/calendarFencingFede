@@ -22,15 +22,18 @@ export function Bloque({
   titulo,
   nivel,
   children,
+  tituloOculto = false,
 }: {
   id: string;
   titulo: string;
   nivel: Nivel;
   children: React.ReactNode;
+  /** Dentro de una pestaña el rótulo ya está a la vista: el título queda para lectores de pantalla. */
+  tituloOculto?: boolean;
 }) {
   return (
     <section aria-labelledby={id} className="flex min-w-0 flex-col gap-3">
-      <div className="border-b pb-3">
+      <div className={tituloOculto ? 'sr-only' : 'border-b pb-3'}>
         <Titulo nivel={nivel} id={id}>
           {titulo}
         </Titulo>

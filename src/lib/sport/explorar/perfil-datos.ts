@@ -11,6 +11,9 @@ import {
   type FilaMejorRanking,
   type FilaRivalFrecuente,
 } from './perfil-sql';
+import { leerEstadisticasRivalesDe } from './rivales-stats';
+import { leerEstadisticasAmbitoDe } from './stats-ambito';
+import { sqlTiradoresSugeridos, type FilaSugerido } from './sugeridos';
 
 async function tolerante<T>(consulta: () => Promise<unknown>, que: string): Promise<T[] | null> {
   try {
@@ -34,16 +37,22 @@ export async function leerFilasPerfil(
   ids: readonly string[],
   canonicaId: string,
 ): Promise<Omit<FilasPerfil, 'estadisticas'>> {
-  const [asaltos, rivales, clubes, idsFie, mejorRanking] = await Promise.all([
+  const [asaltos, rivales, clubes, idsFie, mejorRanking, sugeridos, rivalesStats, ambito] = await Promise.all([
     tolerante<FilaBalanceAsaltos>(() => db.execute(sqlBalanceAsaltos(ids)), 'el balance de asaltos'),
     tolerante<FilaRivalFrecuente>(() => db.execute(sqlRivalesFrecuentes(ids, canonicaId)), 'la lista de rivales'),
     tolerante<FilaClubPublicado>(() => db.execute(sqlClubesRecientes(ids)), 'el club'),
     tolerante<{ valor: string }>(() => db.execute(sqlIdFieConfirmado(ids)), 'el enlace FIE'),
     tolerante<FilaMejorRanking>(() => db.execute(sqlMejorRanking(ids)), 'el mejor ranking'),
+    tolerante<FilaSugerido>(() => db.execute(sqlTiradoresSugeridos(ids, canonicaId)), 'los tiradores sugeridos'),
+    leerEstadisticasRivalesDe(db, ids, canonicaId),
+    leerEstadisticasAmbitoDe(db, ids),
   ]);
   return {
     asaltos,
     rivales,
+    sugeridos,
+    rivalesStats,
+    ambito,
     clubes: clubes ?? [],
     idsFie: idsFie ?? [],
     mejorRanking: mejorRanking ?? [],

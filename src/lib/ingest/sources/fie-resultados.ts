@@ -598,6 +598,26 @@ export function normalizarCuadro(
     }
   }
 
+  // Algunas pruebas publican el mismo cuadro dos veces en la misma respuesta (rondas A64..A2
+  // y F64..F1, o un `Phase_1` con rondas «1»..«4»): mismo par y mismo marcador en otra ronda.
+  // Se cuenta una vez, con la ronda `A<n>` si la hay.
+  const porCruce = new Map<string, AsaltoFie[]>();
+  for (const a of asaltos) {
+    const k = `${a.refA}|${a.refB}|${a.puntosA}|${a.puntosB}`;
+    porCruce.set(k, [...(porCruce.get(k) ?? []), a]);
+  }
+  const repetidos = new Set<AsaltoFie>();
+  for (const grupo of porCruce.values()) {
+    if (grupo.length < 2) continue;
+    const queda = grupo.find((a) => /^A\d+$/.test(a.ronda)) ?? grupo[0];
+    for (const a of grupo) if (a !== queda) repetidos.add(a);
+  }
+  if (repetidos.size > 0) {
+    excluidos.duplicado += repetidos.size;
+    publicados -= repetidos.size;
+    for (let i = asaltos.length - 1; i >= 0; i -= 1) if (repetidos.has(asaltos[i])) asaltos.splice(i, 1);
+  }
+
   return {
     ok: true,
     parte: {

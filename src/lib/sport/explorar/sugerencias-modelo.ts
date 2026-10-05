@@ -14,7 +14,12 @@ export type SugerenciaPersona = {
   anioNacimiento: number | null;
 };
 
-export type CandidatoSugerencia = SugerenciaPersona & { nombreComparado: string };
+/**
+ * `peso` (resultados del grupo según el índice de Explorar) sólo desempata
+ * sugerencias igual de parecidas: sin índice no llega y el orden es el de
+ * siempre, por nombre.
+ */
+export type CandidatoSugerencia = SugerenciaPersona & { nombreComparado: string; peso?: number | null };
 
 export function consultaSugerencias(texto: string): string | null {
   if (texto.length > MAX_CONSULTA_SUGERENCIAS) return null;
@@ -59,7 +64,9 @@ export function ordenarSugerencias(q: string, candidatos: readonly CandidatoSuge
     grupos.set(candidato.id, { candidato, puntos });
   }
   return [...grupos.values()]
-    .sort((a, b) => b.puntos - a.puntos || a.candidato.nombre.localeCompare(b.candidato.nombre, 'es') || a.candidato.id.localeCompare(b.candidato.id))
+    .sort((a, b) => b.puntos - a.puntos
+      || Number(b.candidato.peso ?? 0) - Number(a.candidato.peso ?? 0)
+      || a.candidato.nombre.localeCompare(b.candidato.nombre, 'es') || a.candidato.id.localeCompare(b.candidato.id))
     .slice(0, MAX_SUGERENCIAS)
     .map(({ candidato: c }) => ({
       id: c.id, nombre: c.nombre, alias: c.alias, pais: c.pais,

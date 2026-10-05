@@ -1,13 +1,13 @@
 'use client';
 
-import { Star } from 'lucide-react';
+import { Star, UserCheck, UserPlus } from 'lucide-react';
 import { useOptimistic, useState, useTransition } from 'react';
 import {
   guardarFavoritoAccion,
   quitarFavoritoAccion,
 } from '@/app/(app)/explorar/favoritos-acciones';
 import { Button } from '@/components/ui/button';
-import { alternarFavorito } from '@/lib/sport/explorar/favorito-alternar';
+import { alternarFavorito, type CambioFavorito } from '@/lib/sport/explorar/favorito-alternar';
 import {
   type LecturaFavorito,
   estadoInicial,
@@ -16,6 +16,14 @@ import {
   resolverOperacion,
 } from '@/lib/sport/explorar/favorito-estado';
 import { cn } from '@/lib/utils';
+
+/** Los mensajes de favoritos, dichos como «seguir». Los errores no cambian. */
+export function mensajeSeguir(cambio: CambioFavorito | null | undefined, nombre: string): string | undefined {
+  if (!cambio) return undefined;
+  if (cambio.resultado === 'guardado') return `Ahora sigues a ${nombre}. Es privado: no recibe ningún aviso.`;
+  if (cambio.resultado === 'quitado') return `Has dejado de seguir a ${nombre}.`;
+  return cambio.mensaje;
+}
 
 /** Destino del foco tras quitar desde la lista, cuando la fila desaparece. */
 export const ID_ENCABEZADO_FAVORITOS = 'favoritos-resultados';
@@ -42,7 +50,8 @@ export function BotonFavorito({
   inicial: boolean;
   /** Objeto de la lectura de servidor de la que sale inicial: instancia nueva en cada lectura. */
   lectura: LecturaFavorito;
-  variante?: 'ficha' | 'lista';
+  /** `perfil` es el botón con rótulo de la cabecera de la ficha. */
+  variante?: 'ficha' | 'lista' | 'perfil';
 }) {
   const [estado, setEstado] = useState(() => estadoInicial(inicial, lectura));
   // La misma instancia sigue montada al navegar o refrescar: una lectura nueva
@@ -71,8 +80,34 @@ export function BotonFavorito({
   }
 
   const accion = optimista ? 'Quitar de favoritos' : 'Guardar en favoritos';
+  const mensaje = variante === 'perfil' ? mensajeSeguir(cambio, nombre) : cambio?.mensaje;
   return (
     <div className="flex min-w-0 flex-col items-start gap-1.5">
+      {variante === 'perfil' ? (
+        // «Seguir» es el mismo favorito privado. El rótulo cambia como en
+        // cualquier red social, así que no lleva `aria-pressed` (anunciaría el
+        // estado dos veces); el nombre accesible empieza por el texto visible.
+        <Button
+          type="button"
+          variant={optimista ? 'outline' : 'default'}
+          onClick={alternar}
+          aria-disabled={pendiente}
+          aria-busy={pendiente}
+          title={optimista ? `Dejar de seguir a ${nombre}` : `Seguir a ${nombre}: es privado y no le avisa`}
+          data-estado={optimista ? 'favorito' : 'sin-guardar'}
+          className={cn(
+            'min-h-11 w-full cursor-pointer px-2 aria-disabled:cursor-wait sm:px-4',
+            optimista && 'border-primary-text bg-marcado font-semibold text-primary-text hover:bg-marcado hover:text-primary-text',
+            pendiente && 'opacity-70',
+          )}
+        >
+          {optimista ? <UserCheck className="size-4" aria-hidden /> : <UserPlus className="size-4" aria-hidden />}
+          {optimista ? 'Siguiendo' : 'Seguir'}
+          <span className="sr-only">
+            {optimista ? `: toca para dejar de seguir a ${nombre}` : ` a ${nombre}`}
+          </span>
+        </Button>
+      ) : (
       <Button
         type="button"
         variant="ghost"
@@ -94,14 +129,17 @@ export function BotonFavorito({
       >
         <Star className={cn('size-5', optimista && 'fill-current')} aria-hidden />
       </Button>
+      )}
 
       {/* Siempre presente para que el lector de pantalla anuncie el cambio. */}
       <p role="status" className="sr-only">
-        {pendiente ? 'Guardando cambio de favorito…' : cambio && cambio.resultado !== 'error' ? cambio.mensaje : ''}
+        {pendiente
+          ? variante === 'perfil' ? 'Guardando el cambio…' : 'Guardando cambio de favorito…'
+          : cambio && cambio.resultado !== 'error' ? mensaje : ''}
       </p>
       {cambio?.resultado === 'error' ? (
         <p role="alert" className="medida text-sm text-danger">
-          {cambio.mensaje}
+          {mensaje}
         </p>
       ) : null}
     </div>

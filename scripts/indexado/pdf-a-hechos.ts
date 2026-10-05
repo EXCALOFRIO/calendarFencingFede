@@ -8,7 +8,8 @@
  *
  * Uso:
  *   node node_modules/tsx/dist/cli.mjs scripts/indexado/pdf-a-hechos.ts \
- *     --cache <dir caché nacional> --salida <dir hechos> [--base <base.sqlite>] [--limite N] [--solo <pdf-id>]
+ *     --cache <dir caché nacional> --salida <dir hechos> [--base <base.sqlite>] [--limite N] [--solo <pdf-id>] \
+ *     [--inventario <national-inventory.json>]  (por defecto <cache>/../history-national/national-inventory.json)
  *
  * Escribe `<salida>/pdf-lector/*.json`, `<salida>/pdf-lector/_informe.json` y
  * `<salida>/pdf-calidad.json` (reescrito de forma atómica cada lote).
@@ -27,6 +28,7 @@ import {
 import { docIdDeUrl, docIdLegadoDeUrl, extraerPaginas, sha256Hex } from '../../src/lib/ingest/sources/rfee-pdf/lectura';
 import { leerResultadosPdf } from '../../src/lib/ingest/sources/rfee-pdf/resultados';
 import type { CoberturaPdf, LecturaPdf, PaginaTexto, PruebaPdf, Rechazo } from '../../src/lib/ingest/sources/rfee-pdf/tipos';
+import { cargarIndiceFechas, fechasCatalogo, type IndiceFechas } from './fechas-catalogo';
 
 export type EstadoHecho = HechosPrueba['status']['results'];
 export type EstadosPdf = { results: EstadoHecho; pools: EstadoHecho; tableau: EstadoHecho };
@@ -87,10 +89,18 @@ function faltantes(p: PruebaPdf): string[] {
     .map(([k]) => k);
 }
 
-/** Convierte una lectura (ya con `docId` resuelto y `sha256`) en hechos por prueba. */
-export function lecturaAHechos(lectura: LecturaPdf, season: string): ConversionPdf {
+/**
+ * Convierte una lectura (ya con `docId` resuelto y `sha256`) en hechos por prueba.
+ * Sin fecha en la cabecera del PDF, la edición y la prueba toman la del catálogo nacional.
+ */
+export function lecturaAHechos(lectura: LecturaPdf, season: string, fechas: IndiceFechas | null = null): ConversionPdf {
   if (!lectura.sha256) throw new Error('lectura_sin_sha256');
   const edicion = edicionDe(lectura);
+  if (edicion.inicio === null) {
+    const f = fechasCatalogo(fechas, season, lectura.url);
+    edicion.inicio = f.inicio;
+    edicion.fin = f.fin;
+  }
   const hechos: HechosPrueba[] = [];
   const descartadas: PruebaDescartada[] = [];
   const refsLocales: ConversionPdf['refsLocales'] = new Map();
@@ -113,6 +123,7 @@ export function lecturaAHechos(lectura: LecturaPdf, season: string): ConversionP
     const notas: string[] = [];
 
     const porRef = new Map<string, string>();
+    const nombrePorRef = new Map<string, string>();
     const results: ResultadoHecho[] = [];
     for (const x of p.puestos) {
       const nombre = x.nombre.trim();
@@ -122,6 +133,7 @@ export function lecturaAHechos(lectura: LecturaPdf, season: string): ConversionP
       }
       const factKey = `${prefijo}${x.sourceFactKey}`;
       porRef.set(x.ref, factKey);
+      nombrePorRef.set(x.ref, nombre);
       const posicion = x.posicion !== null && Number.isInteger(x.posicion) && x.posicion > 0 ? x.posicion : null;
       results.push({
         factKey,
@@ -154,8 +166,9 @@ export function lecturaAHechos(lectura: LecturaPdf, season: string): ConversionP
           roundKey: a.ronda,
           aRef: aRef ?? `${prefijo}${a.refA}`,
           bRef: bRef ?? `${prefijo}${a.refB}`,
-          aName: a.nombreA,
-          bName: a.nombreB,
+          // El cuadro trunca los nombres a su columna («COMPAGNONI BL»); el puesto atribuido trae el completo.
+          aName: nombrePorRef.get(a.refA) ?? a.nombreA,
+          bName: nombrePorRef.get(a.refB) ?? a.nombreB,
           scoreA: a.puntosA,
           scoreB: a.puntosB,
           winner: null,
@@ -195,7 +208,9 @@ export function lecturaAHechos(lectura: LecturaPdf, season: string): ConversionP
         category: p.categoria as HechosPrueba['competition']['category'],
         categoryRaw: p.categoriaOriginal,
         format: p.formato!,
-        date: p.fecha,
+        date: p.fecha ?? fechasCatalogo(fechas, season, lectura.url, {
+          weapon: p.arma!, gender: p.genero!, category: p.categoria!, format: p.formato!,
+        }).prueba,
       },
       status: {
         results: estadoSeccion('results', p.cobertura.puestos, p.rechazos),
@@ -411,6 +426,9 @@ async function main() {
   const dirHechos = join(salida, 'pdf-lector');
   mkdirSync(dirHechos, { recursive: true });
   const indice = a.base ? await cargarBase(resolve(a.base)) : null;
+  const rutaInventario = a.inventario ?? join(resolve(cache, '..'), 'history-national', 'national-inventory.json');
+  const fechas = cargarIndiceFechas(rutaInventario);
+  if (!fechas) console.warn(`Sin inventario nacional en ${rutaInventario}: las pruebas sin fecha en el PDF quedan sin fecha`);
 
   const manifiesto = JSON.parse(readFileSync(join(cache, 'manifest.json'), 'utf8')) as { unidades: UnidadManifiesto[] };
   let unidades = manifiesto.unidades.filter((u) => u.tipo === 'pdf').sort((x, y) => (x.sha256 ?? '').localeCompare(y.sha256 ?? '') || x.id.localeCompare(y.id));
@@ -465,7 +483,7 @@ async function main() {
         paginasCache = { sha, paginas, perfil };
       }
       const lectura: LecturaPdf = { ...leerResultadosPdf(paginasCache.paginas, { url: u.url, docId }), sha256: paginasCache.sha, perfil: paginasCache.perfil };
-      const conv = lecturaAHechos(lectura, season);
+      const conv = lecturaAHechos(lectura, season, fechas);
       for (const h of conv.hechos) {
         const nombre = nombreUnico(h, usados);
         writeFileSync(join(dirHechos, nombre), JSON.stringify(h, null, 1), 'utf8');
