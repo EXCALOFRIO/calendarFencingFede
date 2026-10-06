@@ -237,7 +237,7 @@ describe('SQL deportivo nativo, con esquema D1 real y SQLite efímero', () => {
     expect(r.cobertura.estado).toBe('parcial');
     const rivales = await listarRivales(t.ctx, { personaId: A, q: 'mateo' });
     if (rivales.estado !== 'ok') throw new Error(rivales.estado);
-    expect(rivales.items).toEqual([{ id: E, nombre: 'Mateo Rival', pais: 'ESP', asaltos: 3 }]);
+    expect(rivales.items).toEqual([{ id: E, nombre: 'Mateo Rival', pais: 'ESP', asaltos: 3, victorias: 1, derrotas: 1 }]);
   });
 });
 

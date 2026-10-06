@@ -5,6 +5,12 @@
  *   npx tsx scripts/indexado/fie-atletas.ts [--db <copia.sqlite>] [--desde 2010]
  *     [--solo-esp] [--limite N] [--concurrencia 4] [--pausa-ms 350]
  *     [--cache <dir>] [--salida <fichero.jsonl>] [--sin-red]
+ *     [--excluir <fie-atletas-anterior.jsonl>] [--intervalo-ms 0]
+ *
+ * `--excluir` deja fuera los IDs FIE ya leídos en otro fichero (sólo las
+ * personas nuevas). `--intervalo-ms` impone una separación mínima entre dos
+ * peticiones cualesquiera, también con varios hilos. User-Agent:
+ * INGEST_USER_AGENT (entorno o `.env`).
  *
  * Educado con la FIE: como mucho 4 peticiones a la vez, pausa entre peticiones
  * de cada hilo y caché de la respuesta cruda (gzip) por ID: una segunda pasada
@@ -62,6 +68,43 @@ export function objetivosFie(db: DatabaseSync, desde: string, soloEsp: boolean):
       String(b.ultimo ?? '').localeCompare(String(a.ultimo ?? '')) || a.fieId - b.fieId);
 }
 
+/** IDs FIE ya leídos en un `fie-atletas*.jsonl` anterior (para `--excluir`). */
+export function idsEnJsonl(texto: string): Set<number> {
+  const ids = new Set<number>();
+  for (const l of texto.split(/\r?\n/)) {
+    if (!l.trim()) continue;
+    const id = Number((JSON.parse(l) as { fieId?: unknown }).fieId);
+    if (Number.isInteger(id) && id > 0) ids.add(id);
+  }
+  return ids;
+}
+
+/**
+ * Separación mínima entre el inicio de dos peticiones cualesquiera, sea cual
+ * sea el hilo: la pausa de cada hilo sola no la garantiza con varios hilos.
+ */
+export function crearCompuerta(intervaloMs: number, reloj = Date.now, dormir = esperar) {
+  let proxima = 0;
+  return async () => {
+    const ahora = reloj();
+    const turno = Math.max(ahora, proxima);
+    proxima = turno + intervaloMs;
+    if (turno > ahora) await dormir(turno - ahora);
+  };
+}
+
+function agenteRed(): string {
+  if (process.env.INGEST_USER_AGENT) return process.env.INGEST_USER_AGENT;
+  const ruta = resolve(import.meta.dirname ?? '.', '../../.env');
+  if (existsSync(ruta)) {
+    for (const l of readFileSync(ruta, 'utf8').split(/\r?\n/)) {
+      const m = /^INGEST_USER_AGENT\s*=\s*(.*)$/.exec(l);
+      if (m) return m[1].trim().replace(/^["']|["']$/g, '');
+    }
+  }
+  return AGENTE;
+}
+
 type Cacheado = { estado: number; cuerpo: string | null };
 
 function rutaCache(dir: string, fieId: number) {
@@ -88,10 +131,10 @@ function guardarCache(dir: string, fieId: number, valor: Cacheado) {
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function pedir(fieId: number): Promise<Cacheado | { transitorio: string }> {
+async function pedir(fieId: number, agente: string): Promise<Cacheado | { transitorio: string }> {
   try {
     const res = await fetch(`${API}/${fieId}`, {
-      headers: { Accept: 'application/json', 'User-Agent': AGENTE },
+      headers: { Accept: 'application/json', 'User-Agent': agente },
       signal: AbortSignal.timeout(30_000),
     });
     if (res.status === 404 || res.status === 410) return { estado: res.status, cuerpo: null };
@@ -114,12 +157,21 @@ async function main() {
   const cache = resolve(argumento('cache', join(CARPETA_TRABAJO, 'cache-fie-atletas')));
   const salida = resolve(argumento('salida', join(CARPETA_TRABAJO, 'perfiles', 'fie-atletas.jsonl')));
   const sinRed = bandera('sin-red');
+  const excluir = argumento('excluir', '');
+  const intervalo = Math.max(0, Number(argumento('intervalo-ms', '0')));
+  const agente = agenteRed();
+  const turno = crearCompuerta(intervalo);
   mkdirSync(cache, { recursive: true });
   mkdirSync(dirname(salida), { recursive: true });
 
   const base = new DatabaseSync(db, { readOnly: true });
   let objetivos = objetivosFie(base, desde, soloEsp);
   base.close();
+  if (excluir) {
+    const ya = idsEnJsonl(readFileSync(resolve(excluir), 'utf8'));
+    objetivos = objetivos.filter((o) => !ya.has(o.fieId));
+    console.log(`excluidos por ${excluir}: ${ya.size} IDs ya leídos`);
+  }
   if (limite > 0) objetivos = objetivos.slice(0, limite);
   console.log(`objetivos: ${objetivos.length} (${objetivos.filter((o) => o.pais === 'ESP').length} ESP)`);
 
@@ -133,7 +185,8 @@ async function main() {
       const o = objetivos[siguiente++];
       if (leerCache(cache, o.fieId)) { stats.cache += 1; continue; }
       if (sinRed) continue;
-      const r = await pedir(o.fieId);
+      await turno();
+      const r = await pedir(o.fieId, agente);
       if ('transitorio' in r) {
         stats.transitorios += 1;
         if (errores.length < 20) errores.push(`${o.fieId}: ${r.transitorio}`);

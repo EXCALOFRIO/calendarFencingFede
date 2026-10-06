@@ -148,6 +148,9 @@ export function contarAsaltosPdfDuplicados(db: DatabaseSync): number {
   return repetidos;
 }
 
+/** Fuentes cuyas claves de prueba no cambian entre extracciones: nunca se busca la prueba por atributos. */
+export const CLAVES_FIJAS: ReadonlySet<HechosPrueba['source']> = new Set(['fie', 'engarde', 'efc']);
+
 const RANGO_ESTADO: Record<Estado, number> = { completo: 3, parcial: 2, sin_resultados: 1, ilegible: 0 };
 
 /** lector_fie > lector_pdf (completo) > droid > lector_pdf parcial > desconocido. */
@@ -199,6 +202,17 @@ const RANGO_COBERTURA: Record<string, number> = { completo: 3, parcial: 2, sin_r
 function mejorEstado(a: string | null, b: string): string {
   if (a === null) return b;
   return (RANGO_COBERTURA[b] ?? 0) > (RANGO_COBERTURA[a] ?? 0) ? b : a;
+}
+
+/**
+ * Estado del documento a partir del estado `results` de cada prueba de su edición (null: la
+ * prueba no tiene cobertura todavía): completo si todas lo están, sin_resultados si ninguna
+ * tiene resultados, y si no parcial.
+ */
+export function estadosDocumento(estados: readonly (string | null)[]): string {
+  if (estados.length > 0 && estados.every((e) => e === 'completo')) return 'completo';
+  if (estados.length > 0 && estados.every((e) => e === 'sin_resultados')) return 'sin_resultados';
+  return 'parcial';
 }
 
 function filasSeccion(h: HechosPrueba, s: Seccion): number {
@@ -524,9 +538,9 @@ class Cargador {
       category_raw, competition_date, source_url`;
     let previa = this.q(`SELECT ${columnas} FROM sport_competition WHERE source=? AND season=? AND competition_key=?`)
       .get(h.source, h.edition.season, c.competitionKey) as Previa | undefined;
-    // FIE y Engarde tienen un único extractor con claves fijas; en Engarde, además, la depuración de
+    // FIE, Engarde y EFC tienen un único extractor con claves fijas; en Engarde, además, la depuración de
     // solapes borra pruebas y la búsqueda por atributos pegaría su recarga a otra prueba de la edición.
-    if (!previa && h.source !== 'fie' && h.source !== 'engarde') {
+    if (!previa && !CLAVES_FIJAS.has(h.source)) {
       // Otro extractor puede haber construido la clave de otra forma para la misma prueba.
       const candidatas = (this.q(
         `SELECT ${columnas} FROM sport_competition
@@ -930,24 +944,33 @@ class Cargador {
       this.contarFilas(comp, s), h.sourceUrl);
   }
 
-  /** Cobertura `pdf` por documento (clave `doc:<nombre del fichero>`), como la escribe el backfill de PDF. */
+  /**
+   * Cobertura `pdf` por documento (clave `doc:<nombre del fichero>`), como la escribe el backfill de PDF.
+   * El estado sale de la cobertura `results` de TODAS las pruebas rfee_pdf de la edición tal como
+   * quedan en la base (las de esta carga ya escritas y las de cargas anteriores), no sólo de las
+   * que trae esta carga: un lote con una sola prueba de un documento ya completo no lo deja en
+   * `parcial`. Nunca baja de estado (`mejorEstado` con el que ya tenía).
+   */
   coberturaDocumentos(): void {
     for (const [edicionId, d] of this.documentos) {
       const fichero = /\/([^/?#]+?)(\.pdf)?(?:[?#].*)?$/i.exec(d.url)?.[1];
       if (!fichero) continue;
-      const comps = this.q(`SELECT id, source FROM sport_competition WHERE edition_id=?`).all(edicionId) as {
-        id: string; source: string;
+      const comps = this.q(`SELECT id, source, season, competition_key FROM sport_competition WHERE edition_id=?`).all(edicionId) as {
+        id: string; source: string; season: string; competition_key: string;
       }[];
-      const todas = comps.every((c) => d.competiciones.has(c.id));
-      const estado = todas && d.estados.every((e) => e === 'completo')
-        ? 'completo'
-        : d.estados.every((e) => e === 'sin_resultados') ? 'sin_resultados' : 'parcial';
+      const estados = estadosDocumento(comps.filter((c) => c.source === 'rfee_pdf').map((c) => {
+        const fila = this.q(
+          `SELECT status FROM sport_import_coverage WHERE source='rfee_pdf' AND fact_kind='results' AND season=? AND competition_key=?`,
+        ).get(c.season, c.competition_key) as { status: string } | undefined;
+        return fila?.status ?? null;
+      }));
       let importadas = 0;
       for (const c of comps) {
         const comp = { id: c.id, source: c.source } as Competicion;
         importadas += this.contarFilas(comp, 'results') + this.contarFilas(comp, 'pools') + this.contarFilas(comp, 'tableau');
       }
-      this.escribirCobertura('rfee_pdf', d.season, 'pdf', `doc:${fichero}`, null, () => estado, null, importadas, d.url);
+      this.escribirCobertura('rfee_pdf', d.season, 'pdf', `doc:${fichero}`, null, (previo) => mejorEstado(previo, estados), null,
+        importadas, d.url);
     }
   }
 }

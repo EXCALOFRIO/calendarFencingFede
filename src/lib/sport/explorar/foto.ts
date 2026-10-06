@@ -71,8 +71,9 @@ export async function leerFotoDeportista(
   if (!grupo) return SIN_FOTO;
   // Veto conservador incluso para su propia ficha: nunca se revela un menor
   // por invocar directamente la API aunque el encabezado oculte el retrato.
+  // Sin año conocido en ningún miembro no se puede descartar que sea menor.
   const anioActual = Number(ctx.hoy().slice(0, 4));
-  if (!Number.isInteger(anioActual) || grupo.some((p) =>
+  if (!Number.isInteger(anioActual) || grupo.every((p) => p.anio === null) || grupo.some((p) =>
     p.anio !== null && (!Number.isInteger(Number(p.anio)) || anioActual - Number(p.anio) <= 18))) return SIN_FOTO;
 
   const ids = filas<{ valor: string }>(await ctx.db.execute(sql`

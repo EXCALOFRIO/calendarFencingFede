@@ -4,6 +4,7 @@
  *
  *   node node_modules/tsx/dist/cli.mjs scripts/indexado/unificar-personas.ts \
  *     [--db <nuevo.sqlite>] [--informe <unificacion-informe.json>] [--inventario <national-inventory.json>]
+ *     [--hechos-efc <hechos/lote7-efc>]
  *
  * Pasos, en este orden:
  *  a) FIE: una persona por ID FIE publicado (reutiliza `fie_addr_id` existentes)
@@ -18,6 +19,12 @@
  *  c1) FIE(ESP) ↔ licencia RFEE: fusión por nombre normalizado idéntico o
  *     superconjunto único en ambos sentidos, mismo género. La persona RFEE apunta
  *     a la FIE (`merged_into_person_id`, reversible, sin cadenas).
+ *  c3) EFC extranjeros por licencia (`pasoEfc`): con la FIE de la misma nación, nombre completo
+ *     y género si es única y las guardas (misma prueba, año de nacimiento, categoría) pasan; si
+ *     no, una persona por licencia (alias `efc_licencia`, año de `--hechos-efc`).
+ *  e0) Pruebas conjuntas (`dedupe-conjuntas.ts`): la lectura de Engarde de un evento que el PDF
+ *     parte por franjas, sexo o año queda como prueba propia, enlazada con sus partes, con sus
+ *     puestos sin persona; e y d no la tocan.
  *  e) Pruebas Engarde que ya existen en skermo_rfee, rfee_pdf o FIE
  *     (`depurarSolapesEngarde`): se retiran sus puestos; sus asaltos sólo se
  *     quedan, trasladados a la prueba existente, si traen más que ella (nunca
@@ -39,6 +46,9 @@
  *     (`revincularAsaltosPorPuesto`).
  *  f) Fusiones por nombre recortado y por apellido FIE con salvaguardas (`pasoFusionNombres`),
  *     y segunda pasada de b que sólo vincula con personas existentes.
+ *  g) Las fusiones por nombre que el nombre solo no decide, con la evidencia de los puestos
+ *     (club normalizado en temporadas cercanas, arma, carrera, edad por categoría; una sola
+ *     candidata posible): `dedupe-evidencia.ts#fundirPorEvidencia`.
  * En b, un nombre de 3+ palabras no se separa por el género de la prueba, y un nombre que
  * sólo sale en asaltos y cabe en un puesto de cada prueba donde sale no crea persona.
  * Después se ejecuta `vincular-asaltos.ts` (licencias Engarde, asaltos por puesto con
@@ -46,7 +56,7 @@
  * c1 va antes que b para que una persona FIE y su ficha RFEE no cuenten como dos
  * candidatas del mismo nombre. Skermo (enlazado por licencia) no se toca.
  */
-import { writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import { pathToFileURL } from 'node:url';
@@ -62,6 +72,16 @@ import {
   type InformeRevinculo,
   type NombrePreparado,
 } from './dedupe-pruebas';
+import { anioTemporada, fundirPorEvidencia, nacimientoPorCategoria, type InformeEvidencia } from './dedupe-evidencia';
+import {
+  desvincularPuestosConjuntas,
+  hayTablaConjuntas,
+  registrarConjuntas,
+  TABLA_CONJUNTAS,
+  vincularAsaltosConjuntas,
+  type InformeAsaltosConjuntas,
+  type InformeConjuntas,
+} from './dedupe-conjuntas';
 import { depurarSolapes, depurarSolapesEngarde, type InformeDepuracion, type InformeSolapesEngarde } from './medir-solapes';
 import {
   ahora,
@@ -95,13 +115,76 @@ export { partirNombreFie, pilaCompatible };
 // Import circular (vincular-asaltos importa `medir` de aquí): seguro porque ambos módulos sólo
 // usan las funciones del otro al ejecutarse, nunca al cargarse.
 import { coincidencia } from './vincular-asaltos';
+import {
+  anotarBloqueo, firmaApellidos, formatoDeFuente, motivoNoUnir, nuevoInformeOrden, prioridadFuente, sumarOrden, type InformeOrden,
+} from './nombres-union';
 
 type Genero = 'M' | 'F' | 'MIXTO';
 
-/** Fuentes sin identificadores publicados, cuyos puestos se vinculan por nombre (paso b). */
-const FUENTES_NOMBRE = ['rfee_pdf', 'engarde'] as const;
+/**
+ * Fuentes sin identificadores publicados, cuyos puestos se vinculan por nombre (paso b). La EFC
+ * (circuito europeo) publica la licencia EFC, que no es un ID FIE ni RFEE: como en Engarde, sólo
+ * se vinculan por nombre los tiradores de nación española y los asaltos heredan el puesto.
+ */
+export const FUENTES_NOMBRE = ['rfee_pdf', 'engarde', 'efc'] as const;
+/** Fuentes internacionales: sólo puestos ESP (o sin nación) por nombre; asaltos, sólo por el puesto de su prueba. */
+export const FUENTES_SOLO_EN_PRUEBA: ReadonlySet<string> = new Set(['engarde', 'efc']);
 type FuenteNombre = (typeof FUENTES_NOMBRE)[number];
 const FUENTES_NOMBRE_SQL = FUENTES_NOMBRE.map((f) => `'${f}'`).join(', ');
+/**
+ * Alias de las personas creadas por licencia EFC (`pasoEfc`). No es una fuente por nombre: esas
+ * personas no entran en el grupo de candidatas por nombre (son extranjeras), ni se funden por
+ * nombre recortado o por evidencia, ni cuentan como «sólo nombre» en `vincular-asaltos.ts`.
+ */
+export const ALIAS_EFC = 'efc_licencia';
+const ALIAS_BORRABLES_SQL = [...FUENTES_NOMBRE, ALIAS_EFC].map((f) => `'${f}'`).join(', ');
+
+export type InformeEfc = {
+  /** Puestos EFC individuales de nación extranjera. */
+  filas: number;
+  licencias: number;
+  /** Licencias vinculadas a una persona FIE por primera vez. */
+  licenciasFie: number;
+  /** Licencias con persona propia nueva. */
+  licenciasNuevas: number;
+  /** Licencias que ya tenían persona (de otra pasada). */
+  licenciasExistentes: number;
+  /** Personas de licencia EFC fundidas en la FIE que ahora casa. */
+  fusionesFie: number;
+  filasVinculadas: number;
+  /** Filas no vinculadas porque su persona ya tiene otro puesto en esa prueba. */
+  filasMismaPrueba: number;
+  sinLicencia: { grupos: number; fie: number; efc: number; sinVincular: number };
+  /** Por qué una licencia no fue a la FIE (`fie_ambigua`, `misma_prueba`, `nacimiento`, `categoria`, ...). */
+  rechazos: Record<string, number>;
+};
+
+/** Año de nacimiento que la EFC publica por licencia (`birthYear` de los hechos `efc`); se descartan las licencias con dos años. */
+export function leerNacimientosEfc(dir: string): Map<string, number> {
+  const out = new Map<string, number>();
+  const conflicto = new Set<string>();
+  if (!existsSync(dir)) return out;
+  const recorrer = (d: string) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const ruta = join(d, e.name);
+      if (e.isDirectory()) { recorrer(ruta); continue; }
+      if (!e.isFile() || !e.name.endsWith('.json') || e.name.startsWith('_')) continue;
+      let h: { source?: string; results?: { factKey?: string; birthYear?: number | null }[] };
+      try { h = JSON.parse(readFileSync(ruta, 'utf8')); } catch { continue; }
+      if (h.source !== 'efc') continue;
+      for (const r of h.results ?? []) {
+        const lic = /^efc:lic:(\d+)/.exec(r.factKey ?? '')?.[1];
+        if (!lic || !Number.isInteger(r.birthYear)) continue;
+        const previo = out.get(lic);
+        if (previo !== undefined && previo !== r.birthYear) conflicto.add(lic);
+        out.set(lic, r.birthYear!);
+      }
+    }
+  };
+  recorrer(dir);
+  for (const lic of conflicto) out.delete(lic);
+  return out;
+}
 
 type Persona = {
   id: string;
@@ -113,6 +196,8 @@ type Persona = {
   atleta: string | null;
   variantes: Set<string>;
   fuentesAlias: Set<string>;
+  /** Nombres tal cual los publicó cada fuente (nombre visible y alias), con el orden de los apellidos. */
+  publicados: { nombre: string; fuente: string | null }[];
 };
 
 export type Medida = {
@@ -183,6 +268,16 @@ export type InformeUnificacion = {
   fusionNombres: InformeFusionNombres;
   /** Segunda pasada del paso por nombre tras las fusiones: sólo vincula con personas que ya existen. */
   pdfTrasFusiones: InformeUnificacion['pdf'];
+  /** Fusiones por nombre decididas con club, arma, carrera y edad (`dedupe-evidencia.ts`). */
+  fusionEvidencia: InformeEvidencia;
+  /** Tiradores extranjeros de la EFC por licencia (`pasoEfc`). */
+  efc: InformeEfc;
+  /** Pruebas conjuntas detectadas y registradas (`dedupe-conjuntas.ts`). */
+  conjuntas: InformeConjuntas;
+  /** Lados de asaltos de las conjuntas vinculados con el puesto de su nombre en las partes. */
+  asaltosConjuntas: InformeAsaltosConjuntas;
+  /** Uniones por nombre impedidas por el orden de los apellidos, hermanos o primos (`nombres-union.ts`). */
+  orden: InformeOrden;
   /** Ediciones que se quedaron sin ninguna prueba (por cualquier paso, de esta pasada o de antes). */
   edicionesVacias: number;
   candidatosRegistrados: number;
@@ -253,15 +348,17 @@ class Unificador {
         atleta: p.athlete_id,
         variantes: new Set(p.name_normalized ? [p.name_normalized] : []),
         fuentesAlias: new Set(),
+        publicados: p.display_name ? [{ nombre: p.display_name, fuente: null }] : [],
       });
     }
-    for (const a of db.prepare(`SELECT person_id, source, name_normalized FROM sport_person_alias`).all() as {
-      person_id: string; source: string; name_normalized: string;
+    for (const a of db.prepare(`SELECT person_id, source, name_original, name_normalized FROM sport_person_alias`).all() as {
+      person_id: string; source: string; name_original: string | null; name_normalized: string;
     }[]) {
       const p = this.personas.get(a.person_id);
       if (!p) continue;
       if (a.name_normalized) p.variantes.add(a.name_normalized);
       p.fuentesAlias.add(a.source);
+      if (a.name_original) p.publicados.push({ nombre: a.name_original, fuente: a.source });
     }
     for (const e of db.prepare(
       `SELECT person_id, scheme, value, scope_source, scope_season FROM sport_external_id
@@ -328,6 +425,7 @@ class Unificador {
     const p: Persona = {
       id: uuid(), nombre, norm, genero: genero === 'MIXTO' ? null : genero, pais,
       fusionada: null, atleta: null, variantes: new Set([norm]), fuentesAlias: new Set([fuenteAlias]),
+      publicados: [],
     };
     this.q(
       `INSERT INTO sport_person (id, display_name, name_normalized, gender, country_code, created_at, updated_at)
@@ -335,6 +433,7 @@ class Unificador {
     ).run(p.id, nombre, norm, p.genero, pais, t, t);
     this.alias(p, fuenteAlias, nombre, norm);
     this.personas.set(p.id, p);
+    this.miembrosDe?.set(p.id, [p.id]);
     return p;
   }
 
@@ -345,8 +444,46 @@ class Unificador {
     ).run(uuid(), p.id, fuente, nombre, norm, ahora());
     p.variantes.add(norm);
     p.fuentesAlias.add(fuente);
+    if (Number(r.changes) > 0) p.publicados.push({ nombre, fuente });
     return Number(r.changes) > 0;
   }
+
+  /**
+   * Nombres publicados que identifican al grupo de `id`: los de la raíz y los de las fundidas
+   * con ID FIE, licencia o ficha. Los de una fundida sólo por nombre no cuentan: si una unión
+   * pasada fue mala, su nombre abriría la puerta a otras.
+   */
+  publicadosGrupo(id: string): { nombre: string; fuente: string | null }[] {
+    const r = this.raiz(id);
+    if (!this.miembrosDe) {
+      this.miembrosDe = new Map();
+      for (const p of this.personas.values()) {
+        const k = this.raiz(p.id);
+        (this.miembrosDe.get(k) ?? this.miembrosDe.set(k, []).get(k)!).push(p.id);
+      }
+    }
+    const ids = this.miembrosDe.get(r) ?? [r];
+    return ids.filter((m) => m === r || this.conIdExterno.has(m) || this.personas.get(m)?.atleta || this.personas.get(m)?.fuentesAlias.has(ALIAS_EFC))
+      .flatMap((m) => this.personas.get(m)?.publicados ?? []);
+  }
+
+  /** Miembros por raíz para `publicadosGrupo`; `fundir` lo mantiene. */
+  private miembrosDe: Map<string, string[]> | null = null;
+
+  /**
+   * El nombre impide unir `a` y `b` (`nombres-union.ts#motivoNoUnir`): se anota y se devuelve true.
+   * `soloPersona`: compara sólo los nombres de esas personas, no los de todo su grupo.
+   */
+  bloqueaNombre(paso: string, a: string, b: string, soloPersona = false): boolean {
+    const na = soloPersona ? this.personas.get(a)?.publicados ?? [] : this.publicadosGrupo(a);
+    const nb = soloPersona ? this.personas.get(b)?.publicados ?? [] : this.publicadosGrupo(b);
+    const m = motivoNoUnir(na, nb);
+    if (!m) return false;
+    anotarBloqueo(this.orden, paso, m, `[${a.slice(0, 8)} / ${b.slice(0, 8)}]`);
+    return true;
+  }
+
+  readonly orden: InformeOrden = nuevoInformeOrden();
 
   candidato(fuente: string, ref: string, nombre: string, personaId: string, estado: 'PROPUESTO' | 'CONFIRMADO', evidencia: string): void {
     const t = ahora();
@@ -375,6 +512,11 @@ class Unificador {
       this.fechas.delete(origenId);
     }
     for (const p of this.personas.values()) if (p.fusionada === origenId) p.fusionada = destino;
+    if (this.miembrosDe) {
+      const movidos = this.miembrosDe.get(origenId) ?? [origenId];
+      this.miembrosDe.delete(origenId);
+      (this.miembrosDe.get(destino) ?? this.miembrosDe.set(destino, [destino]).get(destino)!).push(...movidos.filter((m) => m !== destino));
+    }
     return true;
   }
 
@@ -592,7 +734,13 @@ class Unificador {
           if (resto[0] !== significativasDe(partido.apellidos)[0]) {
             c.delete(r);
             inf.omitidasPorOrden += 1;
+            continue;
           }
+        }
+        // Las mismas palabras no bastan: «ORTIN ROMERO Héctor» no es «ROMERO ORTIN Héctor».
+        if (this.bloqueaNombre('fusion_fie_rfee', r, f)) {
+          c.delete(r);
+          inf.omitidasPorOrden += 1;
         }
       }
       deF.set(f, c);
@@ -636,6 +784,187 @@ class Unificador {
   }
 
   /**
+   * Tiradores extranjeros de la EFC (nación publicada y distinta de ESP; los españoles van por
+   * el paso por nombre). Por licencia EFC (`efc:lic:N`): con la persona FIE de la misma nación
+   * cuyo nombre normalizado completo (palabras ordenadas) y género casan con exactamente una
+   * persona raíz, si ninguna fila de esa persona está ya en una prueba de la licencia, su año
+   * de nacimiento FIE no se aleja más de un año del que publica la EFC y cabe en la categoría
+   * de cada prueba de la licencia; si no, una persona por licencia (alias `efc_licencia`), que
+   * en otra pasada se funde en la FIE por la misma regla. Las filas sin licencia sólo se
+   * vinculan con una FIE o una persona de licencia EFC única por nación, nombre y género.
+   */
+  pasoEfc(inf: InformeEfc, nacimientos: ReadonlyMap<string, number> = new Map()): void {
+    type Fila = { id: string; comp: string; k: string; n: string; pais: string; p: string | null; g: string; cat: string; t: string };
+    const filas = this.db.prepare(
+      `SELECT r.id, r.competition_id comp, r.source_fact_key k, r.source_name n, r.source_country_code pais,
+              r.person_id p, c.gender g, c.category cat, c.season t
+         FROM sport_result r JOIN sport_competition c ON c.id = r.competition_id
+        WHERE r.source = 'efc' AND c.format = 'INDIVIDUAL'
+          AND r.source_country_code IS NOT NULL AND r.source_country_code <> 'ESP'`,
+    ).all() as Fila[];
+    inf.filas = filas.length;
+    if (filas.length === 0) return;
+    const rechazo = (m: string) => { inf.rechazos[m] = (inf.rechazos[m] ?? 0) + 1; };
+
+    // Quién tiene ya puesto en cada prueba EFC (por raíz), para no repetir persona en una prueba.
+    const enPrueba = new Map<string, Map<string, Set<string>>>();
+    const anotar = (comp: string, raiz: string, fila: string) => {
+      const m = enPrueba.get(comp) ?? enPrueba.set(comp, new Map()).get(comp)!;
+      (m.get(raiz) ?? m.set(raiz, new Set()).get(raiz)!).add(fila);
+    };
+    const comps = [...new Set(filas.map((f) => f.comp))];
+    const deComp = this.db.prepare(`SELECT id, person_id p FROM sport_result WHERE competition_id = ? AND person_id IS NOT NULL`);
+    for (const c of comps) for (const r of deComp.all(c) as { id: string; p: string }[]) anotar(c, this.raiz(r.p), r.id);
+    const ocupada = (raiz: string, propias: readonly Fila[]) => {
+      const ids = new Set(propias.map((f) => f.id));
+      return propias.some((f) => [...(enPrueba.get(f.comp)?.get(raiz) ?? [])].some((id) => !ids.has(id)));
+    };
+
+    const fies = new Map<string, Set<string>>();
+    for (const p of this.personas.values()) {
+      if (!this.conFie.has(p.id)) continue;
+      for (const v of p.variantes) if (v) (fies.get(v) ?? fies.set(v, new Set()).get(v)!).add(p.id);
+    }
+    const mayoritario = (xs: readonly string[]) => {
+      const n = new Map<string, number>();
+      for (const x of xs) n.set(x, (n.get(x) ?? 0) + 1);
+      return [...n].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0][0];
+    };
+    const generoDeFilas = (g: readonly Fila[]): Genero | null | 'varios' => {
+      const s = new Set(g.map((f) => f.g).filter((x) => x === 'M' || x === 'F'));
+      return s.size > 1 ? 'varios' : s.size === 1 ? ([...s][0] as Genero) : null;
+    };
+    /** La FIE raíz única para estas filas, o el motivo por el que no la hay. */
+    const fiePara = (g: readonly Fila[], anio: number | null): { raiz: string } | { motivo: string } => {
+      const genero = generoDeFilas(g);
+      if (genero === 'varios') return { motivo: 'genero_varios' };
+      const pais = mayoritario(g.map((f) => f.pais));
+      const raices = new Set<string>();
+      for (const n of new Set(g.map((f) => normalizarNombre(f.n)).filter(Boolean))) {
+        for (const id of fies.get(n) ?? []) {
+          const p = this.personas.get(id)!;
+          if (p.pais !== pais || (genero && p.genero && p.genero !== genero)) continue;
+          raices.add(this.raiz(id));
+        }
+      }
+      if (raices.size === 0) return { motivo: 'sin_fie' };
+      if (raices.size > 1) return { motivo: 'fie_ambigua' };
+      const raiz = [...raices][0];
+      if (ocupada(raiz, g)) return { motivo: 'misma_prueba' };
+      const anios = [...(this.fechas.get(raiz) ?? [])].map((f) => Number(f.slice(0, 4))).filter(Number.isFinite);
+      if (anio !== null && anios.length > 0 && anios.every((y) => Math.abs(y - anio) > 1)) return { motivo: 'nacimiento' };
+      if (anios.length > 0) {
+        for (const f of g) {
+          const t = anioTemporada(f.t);
+          if (t === null) continue;
+          const [lo, hi] = nacimientoPorCategoria(f.cat, t);
+          if (anios.every((y) => y < lo || y > hi)) return { motivo: 'categoria' };
+        }
+      }
+      return { raiz };
+    };
+    const poner = this.q('UPDATE sport_result SET person_id = ? WHERE id = ? AND person_id IS NULL');
+    const vincular = (g: readonly Fila[], persona: string) => {
+      const raiz = this.raiz(persona);
+      for (const f of g) {
+        if (f.p) continue;
+        // Una fila de la misma persona ya en esa prueba (otra licencia, otra lectura): ésta no.
+        if ([...(enPrueba.get(f.comp)?.get(raiz) ?? [])].length > 0) {
+          inf.filasMismaPrueba += 1;
+          continue;
+        }
+        if (Number(poner.run(persona, f.id).changes) === 0) continue;
+        f.p = persona;
+        anotar(f.comp, raiz, f.id);
+        inf.filasVinculadas += 1;
+      }
+    };
+
+    const licencias = new Map<string, Fila[]>();
+    const sinLicencia = new Map<string, Fila[]>();
+    for (const f of filas) {
+      const lic = /^efc:lic:(\d+)/.exec(f.k)?.[1];
+      const [m, k] = lic ? [licencias, lic] : [sinLicencia, `${f.pais}|${normalizarNombre(f.n)}|${f.g}`];
+      (m.get(k) ?? m.set(k, []).get(k)!).push(f);
+    }
+    inf.licencias = licencias.size;
+    this.transaccion(() => {
+      for (const [lic, g] of [...licencias].sort(([a], [b]) => (a < b ? -1 : 1))) {
+        const anio = nacimientos.get(lic) ?? null;
+        const raices = new Set(g.filter((f) => f.p).map((f) => this.raiz(f.p!)));
+        if (raices.size > 1) {
+          rechazo('licencia_varias_personas');
+          continue;
+        }
+        const previa = raices.size === 1 ? [...raices][0] : null;
+        if (previa && this.conFie.has(previa)) {
+          inf.licenciasExistentes += 1;
+          vincular(g, previa);
+          continue;
+        }
+        const fie = fiePara(g, anio);
+        if ('raiz' in fie) {
+          if (previa) {
+            if (this.chocan(previa, fie.raiz) || !this.fundir(previa, fie.raiz)) {
+              rechazo('fusion_fie_imposible');
+              vincular(g, previa);
+              continue;
+            }
+            inf.fusionesFie += 1;
+          } else inf.licenciasFie += 1;
+          for (const f of g) if (f.p && previa && this.raiz(f.p) === fie.raiz) anotar(f.comp, fie.raiz, f.id);
+          vincular(g, fie.raiz);
+          continue;
+        }
+        if (fie.motivo !== 'sin_fie') rechazo(fie.motivo);
+        if (previa) {
+          inf.licenciasExistentes += 1;
+          vincular(g, previa);
+          continue;
+        }
+        const genero = generoDeFilas(g);
+        const nombre = mayoritario(g.map((f) => f.n));
+        const p = this.crearPersona(nombre, normalizarNombre(nombre), genero === 'varios' ? null : genero, mayoritario(g.map((f) => f.pais)), ALIAS_EFC);
+        inf.licenciasNuevas += 1;
+        vincular(g, p.id);
+      }
+
+      // Sin licencia: una FIE, o una persona de licencia EFC, únicas por nación, nombre y género.
+      const deLicencia = new Map<string, Set<string>>();
+      for (const p of this.personas.values()) {
+        if (!p.fuentesAlias.has(ALIAS_EFC) || !p.pais) continue;
+        const r = this.raiz(p.id);
+        if (this.conFie.has(r)) continue;
+        for (const v of p.variantes) {
+          const k = `${p.pais}|${v}`;
+          (deLicencia.get(k) ?? deLicencia.set(k, new Set()).get(k)!).add(r);
+        }
+      }
+      inf.sinLicencia.grupos = sinLicencia.size;
+      for (const g of sinLicencia.values()) {
+        if (g.every((f) => f.p)) continue;
+        const fie = fiePara(g, null);
+        if ('raiz' in fie) {
+          inf.sinLicencia.fie += 1;
+          vincular(g, fie.raiz);
+          continue;
+        }
+        const genero = generoDeFilas(g);
+        const cands = [...(deLicencia.get(`${g[0].pais}|${normalizarNombre(g[0].n)}`) ?? [])].filter((r) => {
+          const pg = this.personas.get(r)?.genero ?? null;
+          return !genero || genero === 'varios' || !pg || pg === genero;
+        });
+        if (cands.length === 1 && !ocupada(cands[0], g)) {
+          inf.sinLicencia.efc += 1;
+          vincular(g, cands[0]);
+          continue;
+        }
+        inf.sinLicencia.sinVincular += 1;
+      }
+    });
+  }
+
+  /**
    * `soloExistentes`: segunda pasada, tras las fusiones. Sólo vincula con personas que ya
    * existen, nunca crea, y no vincula un puesto con una persona que ya tiene otro en la
    * misma prueba (`desvincularColisionesPdf` deshace los dos, también el bueno).
@@ -643,19 +972,26 @@ class Unificador {
   pasoPdf(inf: InformeUnificacion['pdf'], opciones: { soloExistentes?: boolean } = {}): Map<string, string> {
     type Grupo = {
       clave: string; norm: string; genero: Genero; palabras: string[]; nombres: Map<string, number>;
+      /** Fuente de cada nombre publicado del grupo (la primera que lo trajo). */
+      fuentes: Map<string, string>;
       persona?: string; resultados: { id: string; comp: string }[]; fuente: FuenteNombre;
       m: number; f: number; compsAsalto: Set<string>;
     };
     const grupos = new Map<string, Grupo>();
-    const grupoDe = (nombre: string, genero: string, fuente: string): Grupo | null => {
+    // El orden de los apellidos separa grupos: «ORTIN ROMERO» y «ROMERO ORTIN» tienen las mismas
+    // palabras y son dos personas (`nombres-union.ts#firmaApellidos`).
+    const claveDe = (nombre: string, genero: string, fuente: string) => {
       const palabras = palabrasNombre(nombre).sort();
+      return { palabras, k: `${claveGrupoNombre(palabras, genero)}|${firmaApellidos(nombre, formatoDeFuente(fuente))}` };
+    };
+    const grupoDe = (nombre: string, genero: string, fuente: string): Grupo | null => {
+      const { palabras, k } = claveDe(nombre, genero, fuente);
       const norm = palabras.join(' ');
       if (!norm) return null;
-      const k = claveGrupoNombre(palabras, genero);
       let gr = grupos.get(k);
       if (!gr) {
         gr = {
-          clave: k, norm, genero: generoDe(genero) ?? 'MIXTO', palabras, nombres: new Map(), resultados: [],
+          clave: k, norm, genero: generoDe(genero) ?? 'MIXTO', palabras, nombres: new Map(), fuentes: new Map(), resultados: [],
           fuente: fuente as FuenteNombre, m: 0, f: 0, compsAsalto: new Set(),
         };
         grupos.set(k, gr);
@@ -664,21 +1000,25 @@ class Unificador {
       if (genero === 'F') gr.f += 1;
       if (fuente === 'rfee_pdf') gr.fuente = 'rfee_pdf';
       gr.nombres.set(nombre, (gr.nombres.get(nombre) ?? 0) + 1);
+      if (!gr.fuentes.has(nombre)) gr.fuentes.set(nombre, fuente);
       return gr;
     };
     // Engarde publica tiradores extranjeros con su nación: sólo se vinculan por nombre los
     // de nación española o sin nación, igual que el resto del grupo de candidatas (RFEE/ESP).
     // Dos puestos de la misma prueba individual con el mismo grupo de nombre son dos personas
-    // («LACASTA AREN» trunca a Sergio y a Daniel; «ORTIN ROMERO» y «ROMERO ORTIN» ordenan igual):
-    // ninguno se vincula por nombre en esa prueba.
+    // («LACASTA AREN» trunca a Sergio y a Daniel): ninguno se vincula por nombre en esa prueba.
     const puestosEnPrueba = new Map<string, Map<string, string[]>>();
     const resultadoAmbiguo = new Set<string>();
+    // Los puestos de una prueba conjunta no llevan persona: los oficiales son los de sus partes.
+    const sinConjuntas = hayTablaConjuntas(this.db)
+      ? `AND NOT EXISTS (SELECT 1 FROM ${TABLA_CONJUNTAS} k WHERE k.combined_competition_id = r.competition_id)`
+      : '';
     for (const r of this.db.prepare(
       `SELECT r.id, r.source_name nombre, c.gender genero, r.source fuente, r.competition_id comp, c.format formato
          FROM sport_result r
          JOIN sport_competition c ON c.id = r.competition_id
         WHERE r.source IN (${FUENTES_NOMBRE_SQL}) AND r.person_id IS NULL AND c.format <> 'EQUIPOS'
-          AND NOT (r.source='engarde' AND coalesce(r.source_country_code, 'ESP') <> 'ESP')`,
+          AND NOT (r.source IN ('engarde', 'efc') AND coalesce(r.source_country_code, 'ESP') <> 'ESP') ${sinConjuntas}`,
     ).all() as { id: string; nombre: string; genero: string; fuente: string; comp: string; formato: string }[]) {
       const g = grupoDe(r.nombre, r.genero, r.fuente);
       if (!g) continue;
@@ -710,7 +1050,7 @@ class Unificador {
     ).all() as Asalto[];
     for (const b of asaltos) {
       // En Engarde el asalto hereda la persona del puesto de su prueba; no abre grupos de nombre propios.
-      if (b.fuente === 'engarde') continue;
+      if (FUENTES_SOLO_EN_PRUEBA.has(b.fuente)) continue;
       if (!b.ap) grupoDe(b.an, b.genero, b.fuente)?.compsAsalto.add(b.competicion);
       if (!b.bp) grupoDe(b.bn, b.genero, b.fuente)?.compsAsalto.add(b.competicion);
     }
@@ -757,18 +1097,31 @@ class Unificador {
       this.db.exec('DROP TABLE IF EXISTS temp._mapa_pdf');
       this.db.exec('CREATE TEMP TABLE _mapa_pdf (id TEXT PRIMARY KEY, person_id TEXT NOT NULL)');
       const mapa = this.db.prepare('INSERT INTO temp._mapa_pdf (id, person_id) VALUES (?, ?)');
+      // Un puesto que llevaría a una persona que ya tiene puesto en esa prueba, o dos grupos de
+      // nombre que llevarían a la misma persona en la misma prueba, son dos tiradores: no se
+      // vinculan (si no, `desvincularColisionesPdf` soltaría también el puesto bueno).
+      const asignados: { id: string; comp: string; persona: string; existente: boolean }[] = [];
       const ordenados = [...grupos.entries()].sort(([a], [b]) => (a < b ? -1 : 1));
       for (const [k, g] of ordenados) {
         if (g.palabras.length < 2) {
           inf.nombresCortos += 1;
           continue;
         }
-        const visible = [...g.nombres].sort((x, y) => y[1] - x[1] || (x[0] < y[0] ? -1 : 1))[0][0];
+        // El nombre visible conserva el orden de la fuente más fiable (nunca palabras ordenadas).
+        const visible = [...g.nombres].sort((x, y) => prioridadFuente(g.fuentes.get(x[0])) - prioridadFuente(g.fuentes.get(y[0]))
+          || y[1] - x[1] || (x[0] < y[0] ? -1 : 1))[0][0];
         const ref = `nombre:${g.norm}|${g.genero}`;
-        let cands = raices(idx.exacto.get(g.norm) ?? [], g.genero);
+        const publicadosG = [...g.nombres.keys()].map((nombre) => ({ nombre, fuente: g.fuentes.get(nombre) ?? null }));
+        const porNombre = (rs: string[]) => rs.filter((r) => {
+          const m = motivoNoUnir(publicadosG, this.publicadosGrupo(r));
+          if (m) anotarBloqueo(this.orden, opciones.soloExistentes ? 'pdf_tras_fusiones' : 'pdf', m, `[${r.slice(0, 8)}]`);
+          return !m;
+        });
+        const exactas = raices(idx.exacto.get(g.norm) ?? [], g.genero);
+        let cands = porNombre(exactas);
         let evidencia = 'nombre_normalizado_unico';
         if (cands.length === 0 && g.palabras.length >= 3) {
-          cands = raices(idx.superconjunto(g.palabras), g.genero);
+          cands = porNombre(raices(idx.superconjunto(g.palabras), g.genero).filter((r) => !exactas.includes(r)));
           evidencia = 'nombre_superconjunto_unico';
         }
         if (cands.length > 1) {
@@ -793,12 +1146,17 @@ class Unificador {
         resolucion.set(k, g.persona);
         for (const { id, comp } of g.resultados) {
           if (resultadoAmbiguo.has(id)) continue;
-          if (opciones.soloExistentes && yaEnPrueba.get(comp, g.persona)) {
-            inf.puestosYaEnPrueba += 1;
-            continue;
-          }
-          mapa.run(id, g.persona);
+          asignados.push({ id, comp, persona: g.persona, existente: cands.length === 1 });
         }
+      }
+      const porPrueba = new Map<string, number>();
+      for (const a of asignados) porPrueba.set(`${a.comp}|${a.persona}`, (porPrueba.get(`${a.comp}|${a.persona}`) ?? 0) + 1);
+      for (const a of asignados) {
+        if ((a.existente && yaEnPrueba.get(a.comp, a.persona)) || porPrueba.get(`${a.comp}|${a.persona}`)! > 1) {
+          inf.puestosYaEnPrueba += 1;
+          continue;
+        }
+        mapa.run(a.id, a.persona);
       }
       inf.resultadosVinculados = Number(this.db.prepare(
         `UPDATE sport_result SET person_id = m.person_id FROM temp._mapa_pdf m
@@ -807,28 +1165,37 @@ class Unificador {
       this.db.exec('DROP TABLE temp._mapa_pdf');
 
       // Asaltos: misma referencia o mismo nombre en la misma prueba; si no, el grupo de nombre.
-      const porComp = new Map<string, { ref: Map<string, string>; nombre: Map<string, string | null> }>();
+      type EnPrueba = { p: string | null; n: string; fuente: string };
+      const porComp = new Map<string, { ref: Map<string, string>; nombre: Map<string, EnPrueba>; orden: Map<string, string | null> }>();
+      const claveOrden = (n: string, fuente: string) => `${normalizarNombre(n)}|${firmaApellidos(n, formatoDeFuente(fuente))}`;
       for (const r of this.db.prepare(
-        `SELECT competition_id c, source_fact_key k, source_name n, person_id p FROM sport_result
+        `SELECT competition_id c, source_fact_key k, source_name n, person_id p, source s FROM sport_result
           WHERE person_id IS NOT NULL AND (source IN (${FUENTES_NOMBRE_SQL}) OR competition_id IN (
             -- Asaltos de Engarde trasladados a una prueba skermo_rfee: se vinculan con sus puestos.
             SELECT competition_id FROM sport_bout
              WHERE source='engarde' AND (fencer_a_person_id IS NULL OR fencer_b_person_id IS NULL)))`,
-      ).iterate() as Iterable<{ c: string; k: string; n: string; p: string }>) {
+      ).iterate() as Iterable<{ c: string; k: string; n: string; p: string; s: string }>) {
         let m = porComp.get(r.c);
-        if (!m) porComp.set(r.c, (m = { ref: new Map(), nombre: new Map() }));
+        if (!m) porComp.set(r.c, (m = { ref: new Map(), nombre: new Map(), orden: new Map() }));
         m.ref.set(r.k, r.p);
         const n = normalizarNombre(r.n);
-        m.nombre.set(n, m.nombre.has(n) && m.nombre.get(n) !== r.p ? null : r.p);
+        const previo = m.nombre.get(n);
+        m.nombre.set(n, previo && previo.p !== r.p ? { ...previo, p: null } : { p: r.p, n: r.n, fuente: r.s });
+        const o = claveOrden(r.n, r.s);
+        m.orden.set(o, m.orden.has(o) && m.orden.get(o) !== r.p ? null : r.p);
       }
       const persona = (comp: string, ref: string, nombre: string, genero: string, fuente: string): string | null => {
         const m = porComp.get(comp);
         const norm = normalizarNombre(nombre);
-        const enPrueba = m?.ref.get(ref) ?? m?.nombre.get(norm) ?? null;
+        // Con las mismas palabras en otro orden sólo si es el único puesto así de la prueba y el
+        // nombre no lo impide (hermanos, primos o apellidos cruzados).
+        const mismas = m?.nombre.get(norm);
+        const porPalabras = mismas?.p && !motivoNoUnir([{ nombre, fuente }], [{ nombre: mismas.n, fuente: mismas.fuente }]) ? mismas.p : null;
+        const enPrueba = m?.ref.get(ref) ?? (m?.orden.has(claveOrden(nombre, fuente)) ? m.orden.get(claveOrden(nombre, fuente))! : porPalabras);
         // Un tirador de Engarde sin puesto vinculado en su prueba (extranjero, nombre repetido)
         // no se resuelve por el nombre de otras pruebas.
-        if (fuente === 'engarde') return enPrueba;
-        const k = claveGrupoNombre(palabrasNombre(nombre).sort(), genero);
+        if (FUENTES_SOLO_EN_PRUEBA.has(fuente)) return enPrueba;
+        const { k } = claveDe(nombre, genero, fuente);
         if (pruebasAmbiguas.get(k)?.has(comp)) return enPrueba;
         return enPrueba ?? resolucion.get(k) ?? null;
       };
@@ -909,7 +1276,7 @@ class Unificador {
           (r) => compatible(r, p.genero) && conjuntos.get(r)!.some((c) => esSubconjunto(ws, c)),
         );
       }
-      cands = cands.filter((r) => !this.chocan(r, p.id));
+      cands = cands.filter((r) => !this.chocan(r, p.id) && !this.bloqueaNombre('fusion_rfee_pdf', p.id, r));
       if (cands.length > 1) {
         inf.ambiguas += 1;
         this.transaccion(() => {
@@ -1086,7 +1453,7 @@ class Unificador {
           const largos = comparten(ws).filter((y) => y !== x && espanola(y) && generoCompatible(x, y) && y.variantes.some((wy) => {
             const c = contenidoEn(ws, wy);
             return c !== null && (c.nivel === 'prefijo' || c.fuerza >= 3);
-          }));
+          }) && !this.bloqueaNombre('fusion_nombre_recortado', x.id, y.id));
           if (largos.length === 0) continue;
           const texto = (extra = '') => `${x.nombre} → ${largos.slice(0, 3).map((l) => l.nombre).join(' | ')}${extra}`;
           const cabezas = largos.filter((m) => largos.every((l) => l === m || contenidaEn(l, m)));
@@ -1142,6 +1509,7 @@ class Unificador {
             return i >= 0 && j > i;
           });
           if (!primero) { motivo = { tipo: 'no_es_el_primer_apellido', texto: texto() }; continue; }
+          if (this.bloqueaNombre('fusion_apellido_fie', y.id, f.id)) { motivo = { tipo: 'orden_nombre', texto: texto() }; continue; }
           const otraFie = y.variantes.flatMap((wy) => comparten(wy).filter((z) => z !== f && z.fie && generoCompatible(y, z)
             && z.variantes.some((wz) => significativasDe(wz).length >= 2 && contiene(wy, wz))))[0];
           if (otraFie) { motivo = { tipo: 'otra_fie_cabe', texto: texto(` / ${otraFie.nombre}`) }; continue; }
@@ -1319,7 +1687,7 @@ export function borrarPersonasHuerfanas(db: DatabaseSync): number {
     `SELECT p.id FROM sport_person p
       WHERE p.athlete_id IS NULL AND p.merged_into_person_id IS NULL
         AND EXISTS (SELECT 1 FROM sport_person_alias a WHERE a.person_id = p.id)
-        AND NOT EXISTS (SELECT 1 FROM sport_person_alias a WHERE a.person_id = p.id AND a.source NOT IN (${FUENTES_NOMBRE_SQL}))
+        AND NOT EXISTS (SELECT 1 FROM sport_person_alias a WHERE a.person_id = p.id AND a.source NOT IN (${ALIAS_BORRABLES_SQL}))
         AND NOT EXISTS (SELECT 1 FROM sport_result r WHERE r.person_id = p.id)
         AND NOT EXISTS (SELECT 1 FROM sport_bout b WHERE b.fencer_a_person_id = p.id)
         AND NOT EXISTS (SELECT 1 FROM sport_bout b WHERE b.fencer_b_person_id = p.id)
@@ -1353,7 +1721,12 @@ export function borrarEdicionesVacias(db: DatabaseSync): number {
 
 export function unificarPersonas(
   db: DatabaseSync,
-  opciones: { catalogo?: readonly FilaCatalogoNacional[]; fechas?: FechasNacimiento } = {},
+  opciones: {
+    catalogo?: readonly FilaCatalogoNacional[];
+    fechas?: FechasNacimiento;
+    /** Licencia EFC → año de nacimiento publicado (`leerNacimientosEfc`). */
+    nacimientosEfc?: ReadonlyMap<string, number>;
+  } = {},
 ): InformeUnificacion {
   const fechas: FechasNacimiento = opciones.fechas ?? { fie: new Map(), skermo: new Map() };
   const inicio = Date.now();
@@ -1380,6 +1753,14 @@ export function unificarPersonas(
     revinculo: undefined as unknown as InformeRevinculo,
     fusionNombres: nuevoInformeFusionNombres(),
     pdfTrasFusiones: informePdf(),
+    fusionEvidencia: undefined as unknown as InformeEvidencia,
+    efc: {
+      filas: 0, licencias: 0, licenciasFie: 0, licenciasNuevas: 0, licenciasExistentes: 0, fusionesFie: 0, filasVinculadas: 0,
+      filasMismaPrueba: 0, sinLicencia: { grupos: 0, fie: 0, efc: 0, sinVincular: 0 }, rechazos: {},
+    },
+    conjuntas: undefined as unknown as InformeConjuntas,
+    asaltosConjuntas: undefined as unknown as InformeAsaltosConjuntas,
+    orden: nuevoInformeOrden(),
     edicionesVacias: 0,
     candidatosRegistrados: 0,
     segundos: 0,
@@ -1394,21 +1775,39 @@ export function unificarPersonas(
   u.candidatos = deFie.candidatos;
   u.pasoFusionLicencia(informe.fusionLicencia);
   u.pasoFusionFieRfee(informe.fusionFieRfee);
+  u.pasoEfc(informe.efc, opciones.nacimientosEfc);
+  // Antes de los solapes y duplicados, que meterían una conjunta entera en una de sus partes.
+  const conjuntas = registrarConjuntas(db);
+  informe.conjuntas = conjuntas.informe;
   // Antes del paso por nombre: las pruebas Engarde repetidas no deben crear personas.
-  informe.solapesEngarde = depurarSolapesEngarde(db);
+  informe.solapesEngarde = depurarSolapesEngarde(db, 0.5, conjuntas.ids);
   informe.equipos = { ...desvincularEquipos(db), personasBorradas: 0 };
   u.pasoPdf(informe.pdf);
   u.pasoFusionPdf(informe.fusionPdf);
   informe.colisionesPdf = desvincularColisionesPdf(db);
   informe.solapes = depurarSolapes(db);
-  informe.duplicados = fundirDuplicados(db, { catalogo: opciones.catalogo });
+  informe.duplicados = fundirDuplicados(db, { catalogo: opciones.catalogo, excluir: conjuntas.ids });
   informe.revinculo = revincularAsaltosPorPuesto(db);
   u.pasoFusionNombres(informe.fusionNombres);
   // Con las fusiones, nombres que tenían varias candidatas pueden tener ya una sola.
   u.pasoPdf(informe.pdfTrasFusiones, { soloExistentes: true });
   const colisiones = desvincularColisionesPdf(db);
   for (const k of Object.keys(colisiones) as (keyof typeof colisiones)[]) informe.colisionesPdf[k] += colisiones[k];
+  informe.asaltosConjuntas = vincularAsaltosConjuntas(db);
+  informe.conjuntas.puestosDesvinculados += desvincularPuestosConjuntas(db);
   informe.equipos.personasBorradas = borrarPersonasHuerfanas(db);
+  // Al final (fuera del `Unificador`, que ya no se usa) y tras retirar las personas vacías,
+  // que contarían como candidatas. Una fusión puede dejar sola a otra candidata: se repite.
+  const nacimientos = nacimientosPorPersona(db, fechas);
+  informe.fusionEvidencia = fundirPorEvidencia(db, nacimientos);
+  for (let i = 0; i < 3; i += 1) {
+    const otra = fundirPorEvidencia(db, nacimientos);
+    if (otra.recortado.fusiones + otra.fie.fusiones === 0) break;
+    for (const m of ['recortado', 'fie'] as const) informe.fusionEvidencia[m].fusiones += otra[m].fusiones;
+    informe.fusionEvidencia.ejemplos.push(...otra.ejemplos);
+  }
+  informe.orden = u.orden;
+  sumarOrden(informe.orden, informe.fusionEvidencia.orden);
   informe.edicionesVacias = borrarEdicionesVacias(db);
   informe.candidatosRegistrados = u.candidatos;
   informe.despues = medir(db);
@@ -1424,13 +1823,14 @@ function main(): void {
     cacheSkermo: argumento('cache-skermo', CACHE_SKERMO),
     fieAtletas: argumento('fie-atletas', FIE_ATLETAS),
   });
+  const nacimientosEfc = leerNacimientosEfc(argumento('hechos-efc', join(CARPETA_TRABAJO, 'hechos', 'lote7-efc')));
   const db = new DatabaseSync(rutaDb);
   prepararCopiaTrabajo(db);
   restaurarGuardia(db);
   quitarGuardia(db);
   let informe: InformeUnificacion;
   try {
-    informe = unificarPersonas(db, { catalogo, fechas });
+    informe = unificarPersonas(db, { catalogo, fechas, nacimientosEfc });
   } finally {
     restaurarGuardia(db);
     db.close();

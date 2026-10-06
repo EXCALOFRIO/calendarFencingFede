@@ -8,12 +8,17 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { Browser, BrowserContext, BrowserServer, Page } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { EventView, CompetitionView } from '@/lib/queries/calendar';
-import type { RankingGroupKey, RankingTableView, TablaClasificacionFie, TablaOficial } from '@/lib/queries/ranking';
+import type { RankingGroupKey, RankingTableView, TablaOficial } from '@/lib/queries/ranking';
+import type { TablaFieCompleta } from '@/lib/ranking/tabla-fie-completa';
 import type { ComputedDeadline } from '@/lib/deadlines';
 import type { QuienVa } from '@/app/(app)/inscritos';
 import { terminarNavegadorPropio } from './helpers/proceso-navegador';
 
-vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/',
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 vi.mock('@/app/(app)/detalle-evento', () => ({ detalleDelEvento: vi.fn() }));
 vi.mock('@/app/(app)/explorar/resultados-evento', () => ({ resultadosDelEvento: vi.fn() }));
 
@@ -132,7 +137,7 @@ const oficial: TablaOficial = {
   sourceUrl: 'https://example.test/rfee',
   rule: null,
 };
-const mundial: TablaClasificacionFie = {
+const mundial: TablaFieCompleta = {
   group: grupo,
   format: 'INDIVIDUAL',
   season: 2026,
@@ -144,6 +149,8 @@ const mundial: TablaClasificacionFie = {
   espanoles: 1,
   actualizadoEl: new Date('2026-10-01T12:00:00Z'),
   sourceUrl: 'https://example.test/fie',
+  olimpica: null,
+  personas: {},
 };
 const calendario = () => React.createElement(VistaCalendario, {
   eventos: [evento], perfil: { role: 'admin', weapons: [] }, tiradores: [],
@@ -255,15 +262,16 @@ describe('calendario, navegación y ranking: contrato de presentación', () => {
   it('el ranking mantiene las ausencias, la fuente y las limitaciones, sin notas de reparación', () => {
     const nacionalHtml = html(nacional());
     expect(nacionalHtml).toContain(nombre);
-    expect(nacionalHtml).toContain('sin ficha vinculada');
-    expect(nacionalHtml).toContain('no sus plazos ni inscripciones');
-    expect(nacionalHtml).not.toContain('su cálculo interno');
-    expect(nacionalHtml).toContain('Clasificación oficial RFEE');
+    expect(nacionalHtml).toContain('</span> sin ficha</p>');
+    expect(nacionalHtml).toContain('sin plazos ni inscripciones');
+    expect(nacionalHtml).not.toContain('ni cálculo interno');
+    expect(nacionalHtml).toContain('clasificación oficial de la RFEE');
     expect(nacionalHtml).toContain('https://example.test/rfee');
     expect(nacionalHtml).not.toContain('Se arregla de uno en uno');
     const mundialHtml = html(fie());
     expect(mundialHtml).toContain(nombre);
-    expect(mundialHtml).toContain('Ranking mundial individual de la FIE');
+    expect(mundialHtml).toContain('Ranking internacional individual · FIE');
+    expect(mundialHtml).not.toMatch(/[Mm]undial/);
     expect(mundialHtml).toContain('Temporada');
     expect(mundialHtml).toContain('123');
     expect(mundialHtml).not.toContain('checked=""');
@@ -296,7 +304,8 @@ describe('calendario, navegación y ranking: contrato de presentación', () => {
     const banda = (inscritos: QuienVa | null, fallo = false) =>
       html(React.createElement(BandaEstasDentro, { evento, prueba, inscritos, fallo }));
     expect(banda(null)).toContain('Mirando quién va');
-    expect(banda({ oficiales: [], pendientes: [], estados: {} })).toContain('Todavía no hay lista');
+    // Sin lista publicada la banda no se pinta: no hay nada que mirar todavía.
+    expect(banda({ oficiales: [], pendientes: [], estados: {} })).toBe('');
     expect(banda({ oficiales: [], pendientes: [], estados: { [prueba.id]: 'vacia' } })).toContain('Lista vacía');
     expect(banda(null, true)).toContain('No se ha podido leer la lista');
     expect(banda(lista, true)).toContain('La última lectura falló');
@@ -427,7 +436,8 @@ describe('renderizado offline a 320, 393, 768 y 1440 px', () => {
             const truncados = [...document.querySelectorAll<HTMLElement>('td, [data-barra="torneo"], [data-plazo], [data-slot="item-title"], [data-slot="item-actions"]')].filter(visibles).filter((el) =>
               el.scrollWidth > el.clientWidth + 1 || getComputedStyle(el).textOverflow === 'ellipsis',
             ).map((el) => el.textContent);
-            const celdaNombre = [...document.querySelectorAll<HTMLElement>('td')].find((el) => el.textContent?.includes('Lucía García de la Torre Fernández'));
+            // Las tablas de ranking van en una línea por tirador: el nombre puede recortarse a la vista, pero entero en el texto y en 	itle.
+            const celdaNombre = [...document.querySelectorAll<HTMLElement>('td, [data-nombre]')].find((el) => el.textContent?.includes('Lucía García de la Torre Fernández'));
             return {
               ancho: innerWidth, documento: document.documentElement.scrollWidth,
               targets: targets.length, pequenos, truncados,
@@ -444,7 +454,12 @@ describe('renderizado offline a 320, 393, 768 y 1440 px', () => {
           expect(medicion.truncados).toEqual([]);
           if (pantalla === 'nacional' || pantalla === 'mundial' || pantalla === 'interno') {
             expect(medicion.anchoNombre).toBeGreaterThanOrEqual(120);
-            await expect(page.locator('td', { hasText: nombre }).count()).resolves.toBe(1);
+            if (pantalla === 'interno') {
+              await expect(page.locator('td', { hasText: nombre }).count()).resolves.toBe(1);
+            } else {
+              await expect(page.locator('[data-nombre]', { hasText: nombre }).count()).resolves.toBe(1);
+              await expect(page.locator('[data-nombre]').first().getAttribute('title')).resolves.toBe(nombre);
+            }
           }
       }, 30_000);
     }

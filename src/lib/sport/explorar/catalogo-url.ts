@@ -4,6 +4,7 @@ export const RUTA_EDICIONES = `${RUTA_EXPLORAR}/ediciones`;
 
 export const FUENTES_CATALOGO = [
   { valor: 'fie', etiqueta: 'FIE' },
+  { valor: 'efc', etiqueta: 'EFC' },
   { valor: 'skermo_rfee', etiqueta: 'RFEE / Skermo HTML' },
   { valor: 'rfee_pdf', etiqueta: 'RFEE PDF' },
   { valor: 'engarde', etiqueta: 'Engarde' },

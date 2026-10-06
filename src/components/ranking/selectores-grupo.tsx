@@ -37,6 +37,8 @@ export function SelectoresGrupo({
   busqueda,
   onBuscar,
   etiquetaBusqueda = 'Buscar un tirador',
+  antes = null,
+  despues = null,
 }: {
   grupos: RankingGroupKey[];
   grupo: RankingGroupKey;
@@ -44,6 +46,10 @@ export function SelectoresGrupo({
   busqueda?: string;
   onBuscar?: (v: string) => void;
   etiquetaBusqueda?: string;
+  /** Primer filtro de la fila (la temporada del ranking nacional). */
+  antes?: React.ReactNode;
+  /** Interruptores al final de la fila («Solo España», «Solo JJOO»). */
+  despues?: React.ReactNode;
 }) {
   const armas = [...new Set(grupos.map((g) => g.weapon))];
   const generos = [...new Set(grupos.filter((g) => g.weapon === grupo.weapon).map((g) => g.gender))];
@@ -57,6 +63,7 @@ export function SelectoresGrupo({
 
   return (
     <div className="flex min-w-0 flex-wrap items-end gap-2">
+      {antes}
       <label className="min-w-0 flex-[1_1_7rem] sm:max-w-44">
         <span className="mb-1 block text-xs text-muted-foreground">Arma</span>
         <Select
@@ -128,13 +135,14 @@ export function SelectoresGrupo({
               type="search"
               value={busqueda ?? ''}
               onChange={(e) => onBuscar(e.target.value)}
-              placeholder={etiquetaBusqueda}
+              placeholder="Buscar"
               aria-label={etiquetaBusqueda}
               className="pl-8"
             />
           </span>
         </label>
       ) : null}
+      {despues ? <div className="flex min-w-0 basis-full flex-wrap items-center gap-x-4 gap-y-1">{despues}</div> : null}
     </div>
   );
 }

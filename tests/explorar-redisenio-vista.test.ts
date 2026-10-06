@@ -163,12 +163,13 @@ describe('clasificación, poules y cuadro de una edición', () => {
     expect(marcado).toContain('role="search"');
   });
 
-  it('sin asaltos las poules y las directas quedan apagadas, y un fallo de asaltos no oculta la clasificación', () => {
+  it('sin asaltos no se ofrecen poules ni directas, y un fallo de asaltos no oculta la clasificación', () => {
     const sin = completa({ asaltos: null });
-    expect(pestanaApagada(sin, 'Poules')).toBe(true);
-    expect(pestanaApagada(sin, 'Directas')).toBe(true);
+    expect(pestanaApagada(sin, 'Poules')).toBe(false);
+    expect(sin).not.toContain('role="tab"');
+    expect(sin).not.toContain('>Directas<');
     const conError = completa({ asaltos: 'error' });
-    expect(pestanaApagada(conError, 'Poules')).toBe(true);
+    expect(conError).not.toContain('role="tab"');
     expect(conError).toMatch(/no se han podido leer/i);
     expect(conError).toContain('Lucia Garcia Perez');
   });

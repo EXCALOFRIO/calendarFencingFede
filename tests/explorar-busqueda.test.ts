@@ -180,10 +180,10 @@ describe('filtros combinados sobre el mismo hecho', () => {
     expect(sentencias[0].params).toContain(UUID_C);
   });
 
-  it('el ámbito usa el evento vinculado y trata FIE sin vínculo como internacional', async () => {
+  it('el ámbito usa el evento vinculado y trata FIE y EFC sin vínculo como internacional', async () => {
     const { ctx, sentencias } = crearContexto();
     await buscarDeportistas(ctx, { ambito: 'NACIONAL' });
-    expect(sentencias[0].text).toMatch(/coalesce\(ev0\.scope, CASE WHEN e\.source = 'fie' THEN 'INTERNACIONAL' END\)/);
+    expect(sentencias[0].text).toMatch(/coalesce\(ev0\.scope, CASE WHEN e\.source IN \('fie', 'efc'\) THEN 'INTERNACIONAL' END\)/);
   });
 });
 

@@ -11,6 +11,8 @@ import {
   officialDocument,
 } from '@/db/schema';
 import { recalcularVigencia } from '../documentos/recalcular';
+import { tocaClasificacionFie, tocaPorPeriodo, tocaRefrescar } from '../cron/niveles';
+import { anotarLecturas, ultimasLecturas } from '../cron/refresco';
 import { tocaLeerRanking } from './cadencia-ranking';
 import { consultaUltimaLecturaRanking } from './cadencia-ranking-db';
 import { esquemaDeportivo } from '@/lib/sport/esquema-db';
@@ -22,12 +24,15 @@ import {
   type ClaseHuella,
 } from './backfill/referencias';
 import { crearGuardaCapacidad } from './backfill/guarda-capacidad';
+import { ingestDirectosEngarde } from './directos';
 import { recalcularEnlaces } from './enlazar';
 import { fetchText } from './fetcher';
 import { fetchEfcCalendar } from './sources/efc';
 import {
   DIAS_VENTANA_INSCRITOS,
+  type ElegirTorneosFie,
   currentFieSeason,
+  torneosEnVentana,
   fetchFieSeason,
   fetchInscritosFie,
   fieEntriesUrl,
@@ -120,7 +125,11 @@ export type IngestResult = {
  */
 export async function runIngest(
   source: IngestSource,
-  options: { triggeredBy?: string } = {},
+  options: {
+    triggeredBy?: string;
+    /** Salta los niveles de refresco (docs/tareas-programadas.md): se lee todo. */
+    forzar?: boolean;
+  } = {},
 ): Promise<IngestResult> {
   const startedAt = new Date();
 
@@ -149,7 +158,7 @@ export async function runIngest(
   };
 
   try {
-    const result = await dispatch(source, run.id);
+    const result = await dispatch(source, run.id, options.forzar ?? false);
     Object.assign(base, result);
 
     /**
@@ -221,7 +230,7 @@ export async function runIngest(
 
 type Dispatched = Partial<IngestResult> & { note?: string | null };
 
-async function dispatch(source: IngestSource, runId: string): Promise<Dispatched> {
+async function dispatch(source: IngestSource, runId: string, forzar: boolean): Promise<Dispatched> {
   switch (source) {
     case 'skermo_rfee': {
       // Los resultados van DESPUÉS del calendario a propósito: necesitan que
@@ -230,6 +239,22 @@ async function dispatch(source: IngestSource, runId: string): Promise<Dispatched
         { code: 'RFEE', name: 'Real Federación Española de Esgrima' },
       ]);
       const resultados = await ingestSkermoResults(runId);
+      /*
+        Los enlaces de Engarde, al final y sin poder tumbar la pasada: un
+        calendario sin enlace de directo sigue siendo un calendario.
+      */
+      let notaDirectos: string;
+      try {
+        const d = await ingestDirectosEngarde();
+        notaDirectos =
+          `directos Engarde: ${d.torneosMirados} torneos de ${d.torneosListados}, ` +
+          `${d.peticiones} peticiones, ${d.enlaces} enlaces, ${d.escritos} nuevos` +
+          (d.fallos > 0 ? `, ${d.fallos} índices sin respuesta` : '');
+      } catch (error) {
+        notaDirectos = `directos Engarde: no se pudieron leer (${
+          error instanceof Error ? error.message : 'error'
+        })`;
+      }
       return {
         ...calendario,
         itemsSeen: (calendario.itemsSeen ?? 0) + resultados.itemsSeen,
@@ -237,15 +262,15 @@ async function dispatch(source: IngestSource, runId: string): Promise<Dispatched
         itemsUpdated: (calendario.itemsUpdated ?? 0) + resultados.itemsUpdated,
         itemsQuarantined:
           (calendario.itemsQuarantined ?? 0) + resultados.itemsQuarantined,
-        note: [calendario.note, resultados.note].filter(Boolean).join(' | ') || null,
+        note: [calendario.note, resultados.note, notaDirectos].filter(Boolean).join(' | ') || null,
       };
     }
     case 'skermo_regional':
       return ingestSkermo(runId, source, REGIONAL_FEDERATIONS);
     case 'fie':
-      return ingestFie(runId);
+      return ingestFie(runId, forzar);
     case 'efc':
-      return ingestEfc();
+      return ingestEfc(forzar);
     case 'rfee_wp':
       return ingestOfficialDocuments();
     case 'skermo_ranking': {
@@ -282,7 +307,7 @@ async function dispatch(source: IngestSource, runId: string): Promise<Dispatched
       };
     }
     case 'fie_tiradores':
-      return ingestFichasFie(runId);
+      return ingestFichasFie(runId, forzar);
   }
 }
 
@@ -375,14 +400,35 @@ async function ingestSkermo(
   };
 }
 
-async function ingestFie(runId: string): Promise<Dispatched> {
+async function ingestFie(runId: string, forzar: boolean): Promise<Dispatched> {
   const season = currentFieSeason();
-  const { candidates, rowsSeen, futuro } = await fetchFieSeason(season);
+  const ahora = new Date();
+  const niveles = { saltados: 0 };
+  /*
+    Dentro de la ventana de siempre (−3..+60 días), cada torneo se pide con la
+    frecuencia de su nivel: a diario lo que se tira en dos semanas, cada
+    semana lo demás. Sin la tabla de lecturas, todo cuenta como «nunca leído».
+  */
+  const elegirTorneos: ElegirTorneosFie = async (torneos) => {
+    const ventana = torneosEnVentana(torneos, ahora);
+    if (forzar) return ventana;
+    const ultimas = await ultimasLecturas('fie_torneo', ventana.map((t) => String(t.id)));
+    const elegidos = ventana.filter((t) => {
+      const desde = t.startDate ?? t.endDate!;
+      const hasta = t.endDate ?? t.startDate!;
+      return tocaRefrescar({ desde, hasta }, ahora, ultimas.get(String(t.id)) ?? null).leer;
+    });
+    niveles.saltados = ventana.length - elegidos.length;
+    return elegidos;
+  };
+  const { candidates, rowsSeen, futuro } = await fetchFieSeason(season, { elegirTorneos });
 
   const validated = validateEvents(candidates);
   const quarantined = await saveQuarantine(runId, 'fie', validated.quarantined);
   await resolverCuarentena('fie', validated.events);
   const stats = await upsertEvents(validated.events);
+  // Sólo tras guardar: si el guardado lanza, la próxima pasada los vuelve a leer.
+  await anotarLecturas('fie_torneo', futuro.leidos.map(String), ahora);
 
   /**
    * Y después del calendario, las listas de inscritos.
@@ -442,6 +488,7 @@ async function ingestFie(runId: string): Promise<Dispatched> {
     note:
       `Temporada FIE ${season} · futuro: ${futuro.torneos} torneos, ` +
       `${futuro.pruebas} pruebas, ${futuro.peticiones} peticiones` +
+      (forzar ? ' (forzado)' : `, ${niveles.saltados} torneos sin pedir por nivel`) +
       notaInscritos,
   };
 }
@@ -896,8 +943,35 @@ export async function ingestInscritosFie(
   return resumen;
 }
 
-async function ingestEfc(): Promise<Dispatched> {
-  const outcome = await fetchEfcCalendar();
+async function ingestEfc(forzar: boolean): Promise<Dispatched> {
+  /*
+    El dominio de la EFC no responde (HTTP 530) desde hace meses. Mientras la
+    última lectura haya fallado se mira una vez por semana si ha vuelto; en
+    cuanto una lectura trae filas, vuelve a leerse cada noche.
+
+    `calendario` guarda la última lectura FALLIDA (todas las anteriores a
+    este cambio lo fueron) y `calendario_ok` la última con filas.
+  */
+  const ahora = new Date();
+  const lecturas = await ultimasLecturas('efc', ['calendario', 'calendario_ok']);
+  const ultimoFallo = lecturas.get('calendario') ?? null;
+  const ultimoOk = lecturas.get('calendario_ok') ?? null;
+  const ultimaFallo = ultimoFallo !== null && (ultimoOk === null || ultimoFallo > ultimoOk);
+  if (!forzar && ultimaFallo && !tocaPorPeriodo(ahora, ultimoFallo, 7)) {
+    return {
+      status: 'ok',
+      itemsSeen: 0,
+      note: `No toca mirar la EFC: la última comprobación (${ultimoFallo!.toISOString().slice(0, 10)}) falló, se reintenta cada 7 días.`,
+    };
+  }
+  let outcome: Awaited<ReturnType<typeof fetchEfcCalendar>>;
+  try {
+    outcome = await fetchEfcCalendar();
+  } catch (error) {
+    await anotarLecturas('efc', ['calendario'], ahora);
+    throw error;
+  }
+  await anotarLecturas('efc', [outcome.rowsSeen > 0 ? 'calendario_ok' : 'calendario'], ahora);
   return {
     // "parcial", no "error": no hay nada roto por nuestra parte, la fuente no
     // existe. Marcarlo como error haría saltar la alerta de scraper averiado
@@ -942,8 +1016,38 @@ async function ingestRanking(runId: string): Promise<Dispatched> {
  * censo del país y una por tirador con ficha—, así que su presupuesto y su
  * horario de cron son distintos de los del calendario.
  */
-async function ingestFichasFie(runId: string): Promise<Dispatched> {
-  const stats = await ingestFieTiradores(runId);
+async function ingestFichasFie(runId: string, forzar: boolean): Promise<Dispatched> {
+  /*
+    La clasificación mundial completa (48 peticiones, ~2,8 MB) solo cambia
+    cuando la FIE recalcula tras una competición: se lee cada dos días en los
+    cuatro posteriores a una prueba FIE y una vez por semana el resto. Las
+    fichas de nuestros tiradores siguen siendo diarias.
+  */
+  const ahora = new Date();
+  const ultima = (await ultimasLecturas('fie_clasificacion', ['mundial'])).get('mundial') ?? null;
+  const decision = forzar
+    ? { leer: true, motivo: 'forzado' as const }
+    : tocaClasificacionFie(ahora, ultima, await ultimoFinFie(ahora));
+  const stats = await ingestFieTiradores(
+    runId,
+    decision.leer ? {} : { maxCombosClasificacion: 0 },
+  );
+  // A medias no cuenta como leída: la siguiente pasada programada la reintenta.
+  const completa =
+    stats.clasificacionPedidas > 0 &&
+    stats.clasificacionRespondidas === stats.clasificacionPedidas;
+  if (decision.leer && completa) await anotarLecturas('fie_clasificacion', ['mundial'], ahora);
+  stats.note = [
+    stats.note,
+    !decision.leer
+      ? 'clasificación mundial sin pedir: no toca por cadencia'
+      : completa
+        ? `clasificación mundial leída (${decision.motivo})`
+        : `clasificación mundial incompleta (${stats.clasificacionRespondidas} de ` +
+          `${stats.clasificacionPedidas} combinaciones respondieron): se reintenta en la próxima pasada`,
+  ]
+    .filter(Boolean)
+    .join(' | ');
   return {
     /**
      * "parcial" si no se enlazó a nadie: no hay nada roto —el censo se leyó—
@@ -979,10 +1083,15 @@ async function ingestOfficialDocuments(): Promise<Dispatched> {
     return { status: 'ok', itemsSeen: rowsSeen, note: '0 documentos únicos' };
   }
 
-  const yaExisten = new Set(
+  const existentes = new Map(
     (
       await db
-        .select({ wpMediaId: officialDocument.wpMediaId })
+        .select({
+          wpMediaId: officialDocument.wpMediaId,
+          title: officialDocument.title,
+          pdfUrl: officialDocument.pdfUrl,
+          publishedAt: officialDocument.publishedAt,
+        })
         .from(officialDocument)
         .where(
           inArray(
@@ -990,12 +1099,26 @@ async function ingestOfficialDocuments(): Promise<Dispatched> {
             candidates.map((d) => d.wpMediaId),
           ),
         )
-    ).map((r) => r.wpMediaId),
+    ).map((r) => [r.wpMediaId, r] as const),
   );
 
-  const nuevos = candidates.filter((d) => !yaExisten.has(d.wpMediaId));
+  const nuevos = candidates.filter((d) => !existentes.has(d.wpMediaId));
+  /*
+    Antes se reescribían las ~280 circulares cada noche aunque no cambiara
+    nada. Solo van al INSERT las nuevas y las que cambian de título, URL o
+    fecha.
+  */
+  const aEscribir = candidates.filter((d) => {
+    const previo = existentes.get(d.wpMediaId);
+    return (
+      !previo ||
+      previo.title !== d.title ||
+      previo.pdfUrl !== d.pdfUrl ||
+      new Date(previo.publishedAt).getTime() !== d.publishedAt.getTime()
+    );
+  });
 
-  for (const lote of lotesDeInsercion(candidates, officialDocument)) {
+  for (const lote of lotesDeInsercion(aEscribir, officialDocument)) {
     /**
      * `wp_media_id` es único, así que un solo INSERT ... ON CONFLICT hace de
      * alta y de actualización a la vez. Solo se refrescan título, URL y fecha:
@@ -1025,7 +1148,7 @@ async function ingestOfficialDocuments(): Promise<Dispatched> {
   }
 
   created = nuevos.length;
-  updated = candidates.length - nuevos.length;
+  updated = aEscribir.length - nuevos.length;
 
   /**
    * Circular nueva que menciona recargos, plazos o categorías: se avisa al
@@ -1090,6 +1213,7 @@ async function ingestOfficialDocuments(): Promise<Dispatched> {
     itemsSeen: rowsSeen,
     itemsCreated: created,
     itemsUpdated: updated,
+    itemsUnchanged: candidates.length - aEscribir.length,
     notificationsQueued: feeAlerts,
     note: `${candidates.length} documentos únicos${notaVigencia}`,
   };
@@ -1330,6 +1454,27 @@ export async function countEventsBetween(from: string, to: string) {
  * Si algo de esto falla, **se lee**: quedarse con el ranking viejo por un
  * error de consulta sería el fallo peor, porque no se vería.
  */
+/** Último día en que acabó algo de la FIE en la última quincena, o null. */
+async function ultimoFinFie(ahora: Date): Promise<string | null> {
+  try {
+    const desde = new Date(ahora.getTime() - 14 * 86_400_000).toISOString().slice(0, 10);
+    const hoy = ahora.toISOString().slice(0, 10);
+    const [fila] = await db
+      .select({ fin: sql<string | null>`max(${event.endDate})` })
+      .from(event)
+      .where(
+        and(
+          eq(event.source, 'fie'),
+          sql`${event.endDate} >= ${desde}`,
+          sql`${event.endDate} <= ${hoy}`,
+        ),
+      );
+    return fila?.fin ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function decidirCadenciaRanking() {
   try {
     // Excluye la ejecución en curso y los saltos sin descarga. De otro modo,

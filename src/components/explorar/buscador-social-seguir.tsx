@@ -1,6 +1,6 @@
 'use client';
 
-import { Check } from 'lucide-react';
+import { Check, RotateCw, UserPlus } from 'lucide-react';
 import { useOptimistic, useState, useTransition } from 'react';
 import {
   guardarFavoritoAccion,
@@ -58,33 +58,43 @@ export function BotonSeguirCompacto({
   }
 
   const error = cambio?.resultado === 'error';
+  const Icono = error ? RotateCw : optimista ? Check : UserPlus;
+  const etiqueta = error
+    ? `Reintentar: seguir a ${nombre}`
+    : optimista
+      ? `Siguiendo: toca para dejar de seguir a ${nombre}`
+      : `Seguir a ${nombre}`;
   return (
     <span className={cn('relative shrink-0', className)}>
-      {/* La pastilla mide 32 px, pero el botón ocupa los 44 px de alto de un toque. */}
+      {/*
+        La pastilla mide 32 px, pero el botón ocupa los 44 px de alto de un toque.
+        Por debajo de 360 px la palabra se come el nombre: queda sólo el icono en
+        un botón de 44 × 44, y la etiqueta lo dice entero.
+      */}
       <button
         type="button"
         onClick={alternar}
         aria-disabled={pendiente}
         aria-busy={pendiente}
+        aria-label={etiqueta}
         title={optimista ? `Dejar de seguir a ${nombre}` : `Seguir a ${nombre}: es privado y no le avisa`}
         data-estado={optimista ? 'favorito' : 'sin-guardar'}
-        className="group relative flex h-11 cursor-pointer items-center rounded-lg outline-none aria-disabled:cursor-wait"
+        className="group relative flex h-11 cursor-pointer items-center justify-center rounded-lg outline-none aria-disabled:cursor-wait max-[359px]:size-[44px]"
       >
         <span
           className={cn(
             clasesSeguir(optimista, error),
             'h-8 gap-1 rounded-full px-3 text-sm group-focus-visible:ring-[3px] group-focus-visible:ring-ring/50',
+            'max-[359px]:size-[36px] max-[359px]:px-0',
             pendiente && 'opacity-70',
           )}
         >
-          {error ? 'Reintentar' : optimista ? (
-            // En 320 px «Siguiendo» se come el nombre: queda la marca, y la palabra para el lector.
-            <span className="max-[359px]:sr-only">Siguiendo</span>
-          ) : 'Seguir'}
-          {optimista && !error ? <Check className="size-3.5" strokeWidth={2.5} aria-hidden /> : null}
-        </span>
-        <span className="sr-only">
-          {optimista ? `: toca para dejar de seguir a ${nombre}` : ` a ${nombre}`}
+          <span className="max-[359px]:sr-only">{error ? 'Reintentar' : optimista ? 'Siguiendo' : 'Seguir'}</span>
+          <Icono
+            className={cn('size-4', !optimista || error ? 'min-[360px]:hidden' : 'min-[360px]:size-3.5')}
+            strokeWidth={2.5}
+            aria-hidden
+          />
         </span>
       </button>
       <span role="status" className="sr-only">

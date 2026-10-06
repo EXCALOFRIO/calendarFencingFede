@@ -475,7 +475,7 @@ export type LecturaTorneoEngarde = {
   error: string | null;
 };
 
-function formularioIndice(org: string, evt: string, pagina: number): Record<string, string> {
+export function formularioIndice(org: string, evt: string, pagina: number): Record<string, string> {
   return {
     option: 'competition',
     sexe: '',

@@ -1,5 +1,5 @@
 import type { VistaPrueba } from '@/lib/sport/explorar/edicion-url';
-import type { AsaltoDePrueba, RondaCuadro } from '@/lib/sport/explorar/tipos-busqueda';
+import type { AsaltoDePrueba, FilaPoule, RondaCuadro } from '@/lib/sport/explorar/tipos-busqueda';
 import { nombreVisible, partesNombre } from '@/lib/sport/nombre-visible';
 
 /**
@@ -47,6 +47,25 @@ export function resaltado(t: { personaId: string | null; nombre: string }, filtr
 
 export function hayFiltro(filtro: Filtro): boolean {
   return Boolean(normalizarBusqueda(filtro.consulta) || filtro.persona);
+}
+
+/* -------------------------------------------------------------- poules */
+
+type CifrasPoule = Pick<FilaPoule, 'victorias' | 'asaltos' | 'tocados' | 'recibidos'>;
+
+/**
+ * Puesto de cada fila dentro de su poule, en el orden de `filas`: cociente de
+ * victorias, después índice y después tocados dados, como el reglamento FIE.
+ * Dos filas con las tres cifras iguales comparten puesto.
+ */
+export function puestosPoule(filas: readonly CifrasPoule[]): number[] {
+  const clave = (f: CifrasPoule) => [f.asaltos > 0 ? f.victorias / f.asaltos : 0, f.tocados - f.recibidos, f.tocados];
+  const compara = (a: CifrasPoule, b: CifrasPoule) => {
+    const [x, y] = [clave(a), clave(b)];
+    for (let i = 0; i < x.length; i += 1) if (x[i] !== y[i]) return y[i] - x[i];
+    return 0;
+  };
+  return filas.map((f) => 1 + filas.filter((o) => compara(o, f) < 0).length);
 }
 
 /* -------------------------------------------------------------- rondas */

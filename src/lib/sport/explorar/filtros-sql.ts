@@ -1,4 +1,5 @@
 import { sql, type SQL } from 'drizzle-orm';
+import { sqlOrganizador } from './organizador';
 import type { FiltrosPrueba } from './tipos';
 
 /**
@@ -64,12 +65,13 @@ export function condicionesPrueba(f: FiltrosPrueba, fecha: SQL): SQL[] {
   if (f.categoriaRaw) condiciones.push(sql`c.category_raw = ${f.categoriaRaw}`);
   if (f.formato) condiciones.push(sql`c.format = ${f.formato}`);
   if (f.ambito) {
-    // Ámbito del evento vinculado; una edición FIE sin vínculo es internacional.
+    // Ámbito del evento vinculado; una edición FIE o EFC sin vínculo es internacional.
     // Sin ninguna de las dos pruebas el ámbito es desconocido y no coincide.
     condiciones.push(
-      sql`coalesce(ev0.scope, CASE WHEN e.source = 'fie' THEN 'INTERNACIONAL' END) = ${f.ambito}`,
+      sql`coalesce(ev0.scope, CASE WHEN e.source IN ('fie', 'efc') THEN 'INTERNACIONAL' END) = ${f.ambito}`,
     );
   }
+  if (f.organizador) condiciones.push(sqlOrganizador(f.organizador));
   return condiciones;
 }
 

@@ -44,12 +44,17 @@ type Grupo = { etiqueta: string; opciones: Opcion[] };
 
 const NOMBRE_FUENTE: Record<OpcionTemporada['fuente'], string> = {
   FIE: 'FIE (internacional, año en que termina)',
-  RFEE: 'RFEE (nacional, septiembre a agosto)',
+  RFEE: 'RFEE y EFC (septiembre a agosto)',
 };
 
 export const ARMAS: Opcion[] = Object.entries(WEAPON_LABEL).map(([valor, etiqueta]) => ({ valor, etiqueta }));
 const GENEROS: Opcion[] = Object.entries(GENDER_LABEL).map(([valor, etiqueta]) => ({ valor, etiqueta }));
 const CATEGORIAS: Opcion[] = Object.keys(CATEGORY_LABEL).map((valor) => ({ valor, etiqueta: categoriaVisible(valor) }));
+const ORGANIZADORES_OPCIONES: Opcion[] = [
+  { valor: 'FIE', etiqueta: 'FIE' },
+  { valor: 'EFC', etiqueta: 'EFC' },
+  { valor: 'RFEE', etiqueta: 'RFEE' },
+];
 const AMBITOS: Opcion[] = [
   { valor: 'NACIONAL', etiqueta: 'Nacional' },
   { valor: 'INTERNACIONAL', etiqueta: 'Internacional' },
@@ -62,6 +67,7 @@ const CUALQUIERA = 'cualquiera';
 const CLAVES_AVANZADAS = [
   'categoria',
   'ambito',
+  'organizador',
   'nacionalidad',
   'temporada',
   'torneo',
@@ -353,6 +359,14 @@ export function FormularioFiltros({
                   opciones={AMBITOS}
                   textoVacio="Todos"
                   onChange={(ambito) => poner({ ambito })}
+                />
+                <CampoSelect
+                  id="explorar-organizador"
+                  etiqueta="Organizador"
+                  valor={borrador.organizador}
+                  opciones={ORGANIZADORES_OPCIONES}
+                  textoVacio="Todos"
+                  onChange={(organizador) => poner({ organizador })}
                 />
                 <CampoSelect
                   id="explorar-temporada"

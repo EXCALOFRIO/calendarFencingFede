@@ -113,7 +113,8 @@ export default async function AppLayout({
       <header className="sticky top-0 z-30 border-b bg-card">
         <div className="ancho-app flex h-14 items-center gap-4 px-4">
           <BotonAtras />
-          <Link href="/" className="flex shrink-0 items-center gap-2.5">
+          {/* La marca mide 28 px: el enlace llega a 44 de alto y de ancho sin mover el dibujo. */}
+          <Link href="/" className="-mx-2 flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2.5 px-2">
             {/*
               La marca va con `titulo` en el móvil y sin él en el escritorio:
               a partir de `sm` al lado se lee «CalendarFencing», y entonces el

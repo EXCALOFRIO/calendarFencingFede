@@ -9,7 +9,9 @@
 import { writeFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { pathToFileURL } from 'node:url';
-import { argumento, normalizarNombre, NUEVO_POR_DEFECTO } from './comun';
+import { argumento, normalizarNombre, NUEVO_POR_DEFECTO, palabrasNombre } from './comun';
+import { evaluarLectura, type FilaAsaltoLectura } from './dedupe-pruebas';
+import { anotarEleccion, elegirLectura, nuevoInformeLecturas, type InformeLecturas, type PuestoDe } from './dedupe-lecturas';
 
 type Comp = {
   id: string; source: string; season: string; weapon: string; gender: string; category: string;
@@ -231,14 +233,16 @@ const PREFERENCIA_DESTINO: Record<string, number> = { skermo_rfee: 0, rfee_pdf: 
  * personas, para no crear personas de pruebas que se van a retirar. Un nombre sin
  * puesto (prueba sólo con asaltos) cuenta por sus asaltos.
  */
-export function emparejarEngarde(db: DatabaseSync, umbral = 0.5): { pares: ParEngarde[]; nombres: Map<string, Set<string>> } {
+export function emparejarEngarde(
+  db: DatabaseSync, umbral = 0.5, excluir: ReadonlySet<string> = new Set(),
+): { pares: ParEngarde[]; nombres: Map<string, Set<string>> } {
   const comps = db.prepare(
     `SELECT c.id, c.source, c.season, c.weapon, c.gender, c.category, c.category_raw, c.format, c.edition_id,
             c.competition_key key, coalesce(c.competition_date, e.start_date) fecha, c.event_competition_id
        FROM sport_competition c JOIN sport_edition e ON e.id = c.edition_id
       WHERE c.source IN ('engarde', ${FUENTES_PREVIAS.map((f) => `'${f}'`).join(', ')})`,
   ).all() as CompEngarde[];
-  const engarde = comps.filter((c) => c.source === 'engarde' && c.fecha);
+  const engarde = comps.filter((c) => c.source === 'engarde' && c.fecha && !excluir.has(c.id));
   if (engarde.length === 0) return { pares: [], nombres: new Map() };
   const clave = (c: Comp, d: number) => `${c.weapon}|${c.category}|${c.format}|${d}`;
   const previasPor = new Map<string, CompEngarde[]>();
@@ -318,13 +322,19 @@ export type InformeSolapesEngarde = {
   edicionesBorradas: number;
   coberturasMovidas: number;
   coberturasBorradas: number;
+  /** Pruebas Engarde conjuntas (`dedupe-conjuntas.ts`) que no se emparejan. */
+  excluidas: number;
+  /** Elección de la lectura de cada fase (`dedupe-lecturas.ts`). */
+  lecturas: InformeLecturas;
 };
 
 /**
  * Una prueba de Engarde que ya existe en otra fuente no aporta puestos (los de la
  * otra fuente mandan y contarlos dos veces duplicaría historial y estadísticas).
- * Por fase (poule, cuadro), si Engarde trae MÁS asaltos que todas las pruebas
- * emparejadas juntas, sus asaltos sustituyen a los previos (rfee_pdf) y pasan a
+ * Por fase (poule, cuadro), si la lectura de Engarde gana a la de todas las pruebas
+ * emparejadas juntas (`elegirLectura`: más asaltos válidos, menos marcadores imposibles
+ * y, a igualdad, Engarde frente a una lectura del PDF; nunca frente a asaltos que ya
+ * son de Engarde), sus asaltos sustituyen a los previos (rfee_pdf) y pasan a
  * la prueba emparejada (skermo_rfee antes que rfee_pdf, luego la de más nombres
  * en común); si no, se descartan. Si el grupo incluye una prueba FIE no se toca
  * nada de la FIE y Engarde se descarta entera. La prueba Engarde queda vacía y
@@ -334,14 +344,16 @@ export type InformeSolapesEngarde = {
  * cargador las vuelve a crear, la prueba destino ya tiene esos asaltos (no
  * menos) y Engarde se descarta.
  */
-export function depurarSolapesEngarde(db: DatabaseSync, umbral = 0.5): InformeSolapesEngarde {
-  const { pares, nombres } = emparejarEngarde(db, umbral);
+export function depurarSolapesEngarde(
+  db: DatabaseSync, umbral = 0.5, excluir: ReadonlySet<string> = new Set(),
+): InformeSolapesEngarde {
+  const { pares, nombres } = emparejarEngarde(db, umbral, excluir);
   const total = Number((db.prepare(`SELECT count(*) n FROM sport_competition WHERE source='engarde'`).get() as { n: number }).n);
   const inf: InformeSolapesEngarde = {
     pruebasEngarde: total, emparejadas: 0, soloEngarde: 0, pares: pares.length, paresPorFuente: {}, grupos: 0,
     gruposConFie: 0, fasesSustituidas: 0, fasesDescartadas: 0, asaltosMovidos: 0, asaltosEngardeBorrados: 0,
     asaltosPreviosBorrados: 0, resultadosEngardeBorrados: 0, nombresSoloEnEngarde: 0, competicionesBorradas: 0, edicionesBorradas: 0,
-    coberturasMovidas: 0, coberturasBorradas: 0,
+    coberturasMovidas: 0, coberturasBorradas: 0, excluidas: excluir.size, lecturas: nuevoInformeLecturas(),
   };
   for (const p of pares) inf.paresPorFuente[p.x.source] = (inf.paresPorFuente[p.x.source] ?? 0) + 1;
   const emparejadas = new Set(pares.map((p) => p.e.id));
@@ -375,8 +387,11 @@ export function depurarSolapesEngarde(db: DatabaseSync, umbral = 0.5): InformeSo
   }
   inf.grupos = grupos.size;
 
-  const contar = db.prepare(`SELECT count(*) n FROM sport_bout WHERE competition_id=? AND phase=?`);
   const contarFuente = db.prepare(`SELECT count(*) n FROM sport_bout WHERE competition_id=? AND phase=? AND source=?`);
+  const filasFase = db.prepare(`SELECT source, round_key, fencer_a_ref, fencer_b_ref, fencer_a_name, fencer_b_name, score_a, score_b
+    FROM sport_bout WHERE competition_id=? AND phase=?`);
+  const puestosPrevia = db.prepare(`SELECT source_name n, position p FROM sport_result WHERE competition_id=? AND position IS NOT NULL`);
+  const ordenado = (n: string) => palabrasNombre(n).sort().join(' ');
   const n = (st: ReturnType<DatabaseSync['prepare']>, ...a: string[]) => Number((st.get(...a) as { n: number }).n);
   const borrarAsaltosPrevios = db.prepare(`DELETE FROM sport_bout WHERE competition_id=? AND phase=?`);
   const borrarAsaltosEngarde = db.prepare(`DELETE FROM sport_bout WHERE competition_id=? AND phase=? AND source='engarde'`);
@@ -410,11 +425,26 @@ export function depurarSolapesEngarde(db: DatabaseSync, umbral = 0.5): InformeSo
             (a.x.id < b.x.id ? -1 : 1))[0];
         if (mejor) destino.set(e, mejor.x.id);
       }
+      // Puestos finales de las pruebas previas (los oficiales), para el perdedor por delante del ganador.
+      const puestos = new Map<string, { grupo: string; puesto: number } | null>();
+      for (const x of g.xs.keys()) {
+        for (const r of puestosPrevia.all(x) as { n: string; p: number }[]) {
+          const k = ordenado(r.n);
+          puestos.set(k, puestos.has(k) ? null : { grupo: x, puesto: r.p });
+        }
+      }
+      const puestoDe: PuestoDe = (nombre) => puestos.get(ordenado(nombre)) ?? null;
       for (const fase of ['POULE', 'TABLEAU'] as const) {
-        const eN = [...g.es.keys()].reduce((s, id) => s + n(contarFuente, id, fase, 'engarde'), 0);
-        if (eN === 0) continue;
-        const xN = [...g.xs.keys()].reduce((s, id) => s + n(contar, id, fase), 0);
-        if (!conFie && eN > xN) {
+        const filasE = [...g.es.keys()].flatMap((id) =>
+          (filasFase.all(id, fase) as FilaAsaltoLectura[]).filter((b) => b.source === 'engarde'));
+        if (filasE.length === 0) continue;
+        const filasX = [...g.xs.keys()].flatMap((id) => filasFase.all(id, fase) as FilaAsaltoLectura[]);
+        const le = evaluarLectura('engarde', filasE, fase, false, puestoDe);
+        const lx = evaluarLectura([...g.xs.values()].map((x) => x.source).join('+'), filasX, fase, true, puestoDe);
+        const lecturas = filasX.length > 0 ? [le, lx] : [le];
+        const eleccion = elegirLectura(lecturas);
+        anotarEleccion(inf.lecturas, [...g.es.values()].map((e) => e.key).join('+'), fase, lecturas, eleccion);
+        if (!conFie && eleccion.ganadora === le) {
           inf.fasesSustituidas += 1;
           for (const x of g.xs.keys()) {
             inf.asaltosPreviosBorrados += Number(borrarAsaltosPrevios.run(x, fase).changes);

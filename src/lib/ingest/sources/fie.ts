@@ -1,3 +1,4 @@
+import { esPortada, normalizarUrlDirecto, proveedorDeUrl } from '@/lib/calendario/enlaces-directo';
 import { fetchJson, fixDoubleEncodedUtf8 } from '../fetcher';
 import {
   esUbicacionDesconocida,
@@ -245,6 +246,14 @@ type FieTournamentDetail = FieTournament & { events?: FieTournamentEvent[] };
  */
 const DIAS_VENTANA_FUTURO = 60;
 
+/**
+ * Y cuántos hacia atrás. La FIE suele publicar el enlace a Fencing Time Live
+ * el mismo día de la prueba, cuando el torneo ya no es «futuro». Con tres días
+ * se recoge el de lo que se tira este fin de semana; cuesta 3 o 4 torneos más,
+ * unas 20 peticiones.
+ */
+const DIAS_VENTANA_PASADO = 3;
+
 /** Peticiones en vuelo a la vez. La FIE no documenta límite; se es prudente. */
 const PETICIONES_EN_PARALELO = 6;
 
@@ -427,6 +436,25 @@ function tituloDeInvitacion(nombreTorneo: string | null): string {
   return nombre ? `Invitación · ${nombre}` : 'Invitación del torneo (FIE)';
 }
 
+/**
+ * Los enlaces que la FIE publica en la ficha de la prueba, limpios: llegan con
+ * `#today`, con la URL pegada dos veces o como la portada del proveedor.
+ */
+export function enlacesDirectoFie(
+  c: Pick<FieCompetition, 'livestreamLink' | 'livestreamResultsLink'>,
+): { platform: string; kind: string; url: string; label: string }[] {
+  const salida: { platform: string; kind: string; url: string; label: string }[] = [];
+  const resultados = normalizarUrlDirecto(c.livestreamResultsLink);
+  if (resultados && !esPortada(resultados)) {
+    salida.push({ platform: proveedorDeUrl(resultados), kind: 'resultados', url: resultados, label: 'Resultados en vivo (FIE)' });
+  }
+  const video = normalizarUrlDirecto(c.livestreamLink);
+  if (video && !esPortada(video) && video !== resultados) {
+    salida.push({ platform: proveedorDeUrl(video), kind: 'en_vivo', url: video, label: 'Retransmisión' });
+  }
+  return salida;
+}
+
 async function fetchAllCompetitions(season: number): Promise<FieCompetition[]> {
   const pageSize = 100; // La API tope es 100 por página.
   const items: FieCompetition[] = [];
@@ -492,12 +520,13 @@ async function enLotes<T, R>(
  * ayer y acaba mañana siga contando: sigue habiendo plazos vivos y el dossier
  * sigue sirviendo.
  */
-export function torneosEnVentana(
-  torneos: FieTournament[],
+export function torneosEnVentana<T extends Pick<FieTournament, 'startDate' | 'endDate'>>(
+  torneos: T[],
   hoy: Date = new Date(),
   dias: number = DIAS_VENTANA_FUTURO,
-): FieTournament[] {
-  const desde = hoy.toISOString().slice(0, 10);
+  diasAtras: number = DIAS_VENTANA_PASADO,
+): T[] {
+  const desde = new Date(hoy.getTime() - diasAtras * 86_400_000).toISOString().slice(0, 10);
   const hasta = new Date(hoy.getTime() + dias * 86_400_000).toISOString().slice(0, 10);
   return torneos.filter((t) => {
     const fin = t.endDate ?? t.startDate;
@@ -529,15 +558,18 @@ export function torneosEnVentana(
 async function fetchPruebasDeTorneosFuturos(
   season: number,
   torneos: FieTournament[],
-): Promise<{ competitions: FieCompetition[]; torneosMirados: number; peticiones: number }> {
-  const ventana = torneosEnVentana(torneos);
+  elegir: ElegirTorneosFie = async (t) => torneosEnVentana(t),
+): Promise<{ competitions: FieCompetition[]; torneosMirados: number; peticiones: number; leidos: number[] }> {
+  const ventana = await elegir(torneos);
   let peticiones = 0;
+  const leidos: number[] = [];
 
   const porTorneo = await enLotes(ventana, PETICIONES_EN_PARALELO, async (torneo) => {
     peticiones += 1;
     const detalle = await fetchJson<FieTournamentDetail>(
       `${FIE_API}/tournaments/${torneo.id}`,
     ).catch(() => null);
+    if (detalle) leidos.push(torneo.id);
     const pruebas = detalle?.events ?? [];
     if (pruebas.length === 0) return [] as FieCompetition[];
 
@@ -585,8 +617,17 @@ async function fetchPruebasDeTorneosFuturos(
     competitions: porTorneo.flat(),
     torneosMirados: ventana.length,
     peticiones,
+    leidos,
   };
 }
+
+/**
+ * Qué torneos del índice se piden hoy. Por defecto, la ventana fija de antes;
+ * el runner pasa la de niveles (`src/lib/cron/niveles.ts`).
+ */
+export type ElegirTorneosFie = <T extends Pick<FieTournament, 'id' | 'startDate' | 'endDate'>>(
+  torneos: T[],
+) => Promise<T[]>;
 
 /**
  * Trae y normaliza el calendario de una temporada FIE.
@@ -596,11 +637,12 @@ async function fetchPruebasDeTorneosFuturos(
  */
 export async function fetchFieSeason(
   season: number = currentFieSeason(),
+  opciones: { elegirTorneos?: ElegirTorneosFie } = {},
 ): Promise<{
   candidates: unknown[];
   rowsSeen: number;
   /** Para la nota de la ejecución: cuánto ha costado el calendario futuro. */
-  futuro: { torneos: number; pruebas: number; peticiones: number };
+  futuro: { torneos: number; pruebas: number; peticiones: number; leidos: number[] };
 }> {
   const [competitionsPasadas, tournaments] = await Promise.all([
     fetchAllCompetitions(season),
@@ -612,9 +654,11 @@ export async function fetchFieSeason(
    * se han celebrado. Si esto falla se sigue con lo que hay: perder el
    * calendario futuro es malo, perder también el pasado sería peor.
    */
-  const futuro = await fetchPruebasDeTorneosFuturos(season, [
-    ...tournaments.values(),
-  ]).catch(() => ({ competitions: [] as FieCompetition[], torneosMirados: 0, peticiones: 0 }));
+  const futuro = await fetchPruebasDeTorneosFuturos(
+    season,
+    [...tournaments.values()],
+    opciones.elegirTorneos,
+  ).catch(() => ({ competitions: [] as FieCompetition[], torneosMirados: 0, peticiones: 0, leidos: [] as number[] }));
 
   /**
    * Se unen por `competitionId`, que es la clave con la que se agrupa más
@@ -623,7 +667,15 @@ export async function fetchFieSeason(
    */
   const porId = new Map<number, FieCompetition>();
   for (const c of futuro.competitions) porId.set(c.competitionId, c);
-  for (const c of competitionsPasadas) porId.set(c.competitionId, c);
+  for (const c of competitionsPasadas) {
+    // El listado no trae los enlaces de directo; la ficha de la prueba, sí.
+    const ficha = porId.get(c.competitionId);
+    porId.set(c.competitionId, {
+      ...c,
+      livestreamLink: c.livestreamLink ?? ficha?.livestreamLink ?? null,
+      livestreamResultsLink: c.livestreamResultsLink ?? ficha?.livestreamResultsLink ?? null,
+    });
+  }
   const competitions = [...porId.values()];
 
   /** clave de torneo -> evento en construcción */
@@ -872,28 +924,7 @@ export async function fetchFieSeason(
             },
           ]
         : [],
-      liveLinks: [
-        ...(c.livestreamResultsLink?.startsWith('http')
-          ? [
-              {
-                platform: 'fie',
-                kind: 'resultados',
-                url: c.livestreamResultsLink,
-                label: 'Resultados en vivo (FIE)',
-              },
-            ]
-          : []),
-        ...(c.livestreamLink?.startsWith('http')
-          ? [
-              {
-                platform: 'fie',
-                kind: 'en_vivo',
-                url: c.livestreamLink,
-                label: 'Retransmisión',
-              },
-            ]
-          : []),
-      ],
+      liveLinks: enlacesDirectoFie(c),
       competitions: [competition],
     });
   }
@@ -905,6 +936,7 @@ export async function fetchFieSeason(
       torneos: futuro.torneosMirados,
       pruebas: futuro.competitions.length,
       peticiones: futuro.peticiones,
+      leidos: futuro.leidos,
     },
   };
 }

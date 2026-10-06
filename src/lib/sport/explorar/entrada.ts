@@ -31,6 +31,7 @@ const camposPrueba = {
   categoriaRaw: z.string().trim().min(1).max(40).optional(),
   formato: z.enum(['INDIVIDUAL', 'EQUIPOS']).optional(),
   ambito: z.enum(['NACIONAL', 'INTERNACIONAL', 'AUTONOMICO']).optional(),
+  organizador: z.enum(['FIE', 'EFC', 'RFEE']).optional(),
 };
 
 const paginacion = {

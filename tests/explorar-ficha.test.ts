@@ -210,6 +210,31 @@ describe('guardas y propiedad de la ficha', () => {
   });
 });
 
+describe('enlace a la ficha FIE: mismo criterio que la foto', () => {
+  const conAnios = (anios: (number | null)[]) =>
+    crearContexto({
+      respuestas: [
+        ...personaSimple(UUID_A),
+        cabecera(UUID_A),
+        { cuando: /SELECT birth_year AS anio FROM sport_person/, filas: anios.map((anio) => ({ anio })) },
+        { cuando: /\+scheme = 'fie_addr_id'/, filas: [{ valor: '12345' }] },
+        ...resumenVacio,
+      ],
+    }).ctx;
+
+  it('con año adulto conocido sale; sin año en el grupo o con un posible menor, no', async () => {
+    const adulto = await leerFicha(conAnios([1990]), { personaId: UUID_A });
+    if (adulto.estado !== 'ok') throw new Error(adulto.estado);
+    expect(adulto.ficha.perfil?.enlaceFie).toBe('https://fie.org/athletes/12345');
+    for (const anios of [[null], [1990, 2012]]) {
+      const r = await leerFicha(conAnios(anios), { personaId: UUID_A });
+      if (r.estado !== 'ok') throw new Error(r.estado);
+      expect(r.ficha.perfil?.enlaceFie, JSON.stringify(anios)).toBeNull();
+      expect(r.ficha.esMenor).toBe(false);
+    }
+  });
+});
+
 describe('ficha ajena: sólo hechos deportivos', () => {
   it('no incluye datos de cuenta, ranking interno ni lee tablas privadas', async () => {
     const { ctx, texto } = crearContexto({

@@ -915,12 +915,16 @@ export function VistaCalendario({
               «Hoy» solo cuando lleva a otro sitio. Estando en el mes en curso
               es un botón que no hace nada, y en un iPhone son 44 px que le
               quita a la rejilla.
+
+              En el móvil, «Hoy» y el botón de filtros tienen ancho fijo: a
+              320 px la fila cabía con la letra de la app y no con la de
+              reserva, y al llegar la fuente saltaba de dos renglones a uno.
             */}
             {!enElMesActual ? (
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-11 px-3"
+                className="h-11 px-3 max-sm:w-11 max-sm:px-0"
                 aria-label="Ir al mes actual"
                 onClick={() => {
                   setDireccion(0);
@@ -2059,9 +2063,9 @@ function PanelFiltros({
           ya era el mismo (4 px) en toda la fila.
         */
   const disparador = (
-    <Button variant="outline" size="sm" className="h-11 shrink-0 gap-1.5 px-3" aria-label={`Filtros del calendario: ${rotulo}${generos.length === 1 ? `, ${GENDER_LABEL[generos[0]]}` : ''}`}>
+    <Button variant="outline" size="sm" className="h-11 shrink-0 gap-1.5 px-3 max-sm:max-w-24" aria-label={`Filtros del calendario: ${rotulo}${generos.length === 1 ? `, ${GENDER_LABEL[generos[0]]}` : ''}`}>
           <SlidersHorizontal className="size-4" aria-hidden />
-          <span className="cifra text-sm leading-none tracking-tight">{rotulo}</span>
+          <span className="cifra min-w-0 truncate text-sm leading-none tracking-tight">{rotulo}</span>
           {generos.length === 1 ? (
             /*
               LA PASTILLA DEL GÉNERO EXISTÍA Y NO SE VEÍA.

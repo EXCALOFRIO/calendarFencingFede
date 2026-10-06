@@ -28,8 +28,11 @@ import type {
   EventView,
 } from '@/lib/queries/calendar';
 import { mapsLinks } from '@/lib/travel';
+import { hoyMadrid } from '@/lib/callups/fechas';
+import { esEnlaceDeResultados } from '@/lib/calendario/enlaces-directo';
 
 import { BarraPlazos } from './barra-plazos';
+import { PastillaDirectoDePrueba } from './enlace-directo';
 import { AccesoAlPabellon, HorariosTorneo, horariosDelTorneo } from './horarios-torneo';
 import {
   CitaConvocatoria,
@@ -39,6 +42,7 @@ import {
   plazosDeConvocatoria,
 } from './datos-convocatoria';
 import {
+  LineaDireccion,
   OtrosDatos,
   ParDato,
   Tarjeta,
@@ -310,7 +314,10 @@ export function FichaEvento({
   }, [suya, evento.competitions]);
 
   const prueba = evento.competitions.find((c) => c.id === elegida) ?? null;
+  // La categoría común ya la dice el torneo; repetida en cada pastilla no cabía en dos columnas a 320 px.
+  const variasCategorias = new Set(evento.competitions.map((c) => c.category)).size > 1;
   const terminado = torneoTerminado(evento);
+  const hoy = hoyMadrid();
 
   return (
     <div className="flex flex-col gap-4 px-4 pt-2 pb-10">
@@ -352,6 +359,13 @@ export function FichaEvento({
           <Badge variant="outline" className="px-2.5 py-1">
             {prueba.format === 'EQUIPOS' ? 'Equipos' : 'Individual'}
           </Badge>
+          <PastillaDirectoDePrueba
+            enlace={prueba.enlaceDirecto ?? evento.enlaceDirecto}
+            fecha={prueba.competitionDate}
+            evento={evento}
+            hoy={hoy}
+            clase="-my-2.5 ml-auto"
+          />
         </div>
       ) : null}
 
@@ -372,7 +386,7 @@ export function FichaEvento({
             más a la derecha. Un contenido escondido sin aviso no existe.
             Partido en líneas se lee entero, que es la regla de la casa.
           */
-          className="w-full max-w-full flex-wrap justify-start py-0.5"
+          className="grid w-full max-w-full grid-cols-2 justify-start py-0.5 sm:flex sm:flex-wrap"
         >
           {evento.competitions.map((c) => (
             <ToggleGroupItem
@@ -391,21 +405,34 @@ export function FichaEvento({
                 no se nota el día que se escribe; se nota el día que se cambia
                 la regla general y este sitio no se entera.
               */
-              className="h-auto gap-1.5 rounded-full px-3 py-1.5"
+              className="h-11 w-full gap-1.5 rounded-full px-3 whitespace-nowrap sm:w-auto"
             >
               <span className="cifra text-base leading-none sm:text-sm">
                 {WEAPON_SHORT[c.weapon]}
               </span>
               <span className="text-sm leading-none sm:text-xs">
-                {GENDER_SHORT[c.gender]}{' '}
-                {CATEGORY_SHORT[c.category] ??
-                  CATEGORY_LABEL[c.category as keyof typeof CATEGORY_LABEL] ??
-                  c.category}
+                {GENDER_SHORT[c.gender]}
+                {variasCategorias
+                  ? ` ${CATEGORY_SHORT[c.category] ??
+                    CATEGORY_LABEL[c.category as keyof typeof CATEGORY_LABEL] ??
+                    c.category}`
+                  : ''}
                 {c.format === 'EQUIPOS' ? ', equipos' : ''}
               </span>
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
+      ) : null}
+
+      {evento.competitions.length > 1 && prueba && (prueba.enlaceDirecto ?? evento.enlaceDirecto) ? (
+        <div className="-mt-3 -mb-2 flex justify-end">
+          <PastillaDirectoDePrueba
+            enlace={prueba.enlaceDirecto ?? evento.enlaceDirecto}
+            fecha={prueba.competitionDate}
+            evento={evento}
+            hoy={hoy}
+          />
+        </div>
       ) : null}
 
       {/*
@@ -597,38 +624,29 @@ function BandaDondeYCuando({
       <Tarjeta titulo="Sede">
         {sede ? (
           <CitaConvocatoria dato={sedeLeida}>
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="text-sm text-muted-foreground sm:text-xs">Pabellón</span>
-              <span className="text-lg leading-tight font-medium sm:text-base">
-                {titular(sede)}
-                {sedeLeida ? (
-                  <MarcaConvocatoria className="ml-1.5 size-3.5 text-muted-foreground" />
-                ) : null}
-              </span>
-            </div>
+            <span className="text-lg leading-tight font-medium sm:text-base">
+              {titular(sede)}
+              {sedeLeida ? (
+                <MarcaConvocatoria className="ml-1.5 size-3.5 text-muted-foreground" />
+              ) : null}
+            </span>
           </CitaConvocatoria>
         ) : null}
 
         {/*
-          Dónde está eso, con la bandera delante: el patrón «bandera + ciudad,
-          país» de la ficha de torneo de la FIE. Solo aparece cuando hay
-          pabellón o dirección; sin eso sería repetir la ciudad que la
-          cabecera ya escribe.
-
-          `titular()` también en la dirección: las convocatorias la escriben en
-          mayúsculas («CARRER DE DANIEL BALACIART S/N») y en pantalla eso se
-          lee como un grito, no como una calle.
+          La dirección en una línea, con la bandera delante, y es el enlace al
+          mapa: en el móvil la dirección entera ocupaba tres renglones y debajo
+          iba otro botón para lo mismo. Completa, en el `title` y en el mapa.
+          Solo aparece cuando hay pabellón o dirección; sin eso sería repetir
+          la ciudad que la cabecera ya escribe.
         */}
         {sede || direccion ? (
-          <CitaConvocatoria dato={direccionLeida}>
-            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-              <BanderaPais pais={evento.country} tamaño="ficha" />
-              <span className="min-w-0 break-words">
-                {direccion ? titular(direccion) : evento.city ? titular(evento.city) : null}
-                {direccionLeida ? <MarcaConvocatoria className="ml-1.5" /> : null}
-              </span>
-            </p>
-          </CitaConvocatoria>
+          <LineaDireccion
+            pais={evento.country}
+            texto={direccion ? titular(direccion) : evento.city ? titular(evento.city) : ''}
+            mapa={mapas?.google ?? null}
+            leida={direccionLeida}
+          />
         ) : null}
 
         {/*
@@ -658,16 +676,13 @@ function BandaDondeYCuando({
         ) : null}
 
         {/*
-          La acción principal de la ficha, y la única con el color de acento y
-          a todo el ancho en el móvil, mientras el torneo está por venir. Una
-          vez tirado, la principal es ver los resultados y el mapa pasa a ser
-          un botón compacto más. Sin pabellón el botón dice «Mapa» y no «Cómo
-          llegar»: llevar al centro de una ciudad extranjera prometiendo el
-          pabellón es peor que no tener botón.
+          Con dirección, el mapa se abre desde ella. Sin pabellón ni dirección
+          queda el botón «Mapa», que lleva a la ciudad: prometer «Cómo llegar»
+          al centro de una ciudad extranjera es peor que no tener botón.
         */}
-        {mapas || evento.officialSite ? (
+        {(mapas && !sede && !direccion) || evento.officialSite ? (
           <div className="flex flex-wrap items-center gap-2">
-            {mapas ? (
+            {mapas && !sede && !direccion ? (
               <Button
                 size={principal ? 'default' : 'sm'}
                 variant={principal ? 'default' : 'outline'}
@@ -676,7 +691,7 @@ function BandaDondeYCuando({
               >
                 <a href={mapas.google} target="_blank" rel="noreferrer">
                   <Navigation />
-                  {sede ? 'Cómo llegar' : 'Mapa'}
+                  Mapa
                 </a>
               </Button>
             ) : null}
@@ -788,6 +803,11 @@ export function BandaEstasDentro({
         La última lectura falló.
       </p>
     ) : null;
+
+  // Sin lista publicada la banda entera sobra: no hay nada que mirar todavía.
+  const sinLista =
+    inscritos !== null && !fallo && oficiales.length === 0 && inscritos.estados[prueba.id] !== 'vacia';
+  if (sinLista) return null;
 
   return (
     <Banda
@@ -902,9 +922,11 @@ function BandaConvocatoria({
   const otros = otrosDatosDe(evento, prueba);
   const fuentes = enlacesDeFuente(evento);
   const organiza = organizaDe(evento);
+  // Los de resultados van como pastilla junto a la prueba; aquí sólo las retransmisiones.
+  const retransmisiones = evento.liveLinks.filter((l) => !esEnlaceDeResultados(l.kind));
   const hayAlgo =
     evento.documents.length > 0 ||
-    evento.liveLinks.length > 0 ||
+    retransmisiones.length > 0 ||
     enlaces.length > 0 ||
     otros.length > 0 ||
     fuentes.length > 0 ||
@@ -914,7 +936,7 @@ function BandaConvocatoria({
 
   return (
     <Banda titulo="Convocatoria">
-      {evento.documents.length > 0 || evento.liveLinks.length > 0 ? (
+      {evento.documents.length > 0 || retransmisiones.length > 0 ? (
         <ItemGroup className="gap-1">
           {evento.documents.map((d) => (
             <Item key={d.id} asChild size="sm" variant="outline">
@@ -935,12 +957,10 @@ function BandaConvocatoria({
           ))}
 
           {/*
-            Retransmisión y resultados en directo. Casi nunca hay: la RFEE
-            publica los enlaces de Engarde cuando la competición está encima.
-            Cuando aparecen, es lo único que se mira ese día, así que van con
-            el verde del semáforo y su icono, no en una banda aparte.
+            Retransmisiones (vídeo). Los resultados en directo de Engarde o
+            Fencing Time Live van como pastilla junto a la prueba elegida.
           */}
-          {evento.liveLinks.map((l) => (
+          {retransmisiones.map((l) => (
             <Item key={l.id} asChild size="sm" variant="outline">
               <a href={l.url} target="_blank" rel="noreferrer">
                 <ItemMedia variant="icon" className="text-ok">

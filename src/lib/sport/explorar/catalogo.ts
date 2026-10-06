@@ -10,7 +10,7 @@ export const LIMITE_CATALOGO = 25;
 const CLASE = 'catalogo-ediciones';
 const esquema = z.object({
   q: z.string().max(100).optional(),
-  fuente: z.enum(['fie', 'skermo_rfee', 'rfee_pdf', 'engarde']).optional(),
+  fuente: z.enum(['fie', 'efc', 'skermo_rfee', 'rfee_pdf', 'engarde']).optional(),
   temporada: z.string().regex(/^\d{4}(?:-\d{4})?$/).optional(),
   cursor: z.string().min(1).max(600).optional(),
 }).strict();

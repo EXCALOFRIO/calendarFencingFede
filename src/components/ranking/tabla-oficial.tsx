@@ -2,7 +2,6 @@
 
 import { ChevronRight, ExternalLink, Scissors } from 'lucide-react';
 import * as React from 'react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -11,14 +10,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import type {
   BreakdownEntry,
   FilaOficial,
@@ -32,6 +23,7 @@ import type { CutoffStatus } from '@/lib/ranking/compute';
 import { nombreCasa } from '@/lib/nombres';
 import { cn, formatDateEs } from '@/lib/utils';
 import { Desglose } from './desglose';
+import { FilaLinea } from './fila-linea';
 import { SelectoresGrupo } from './selectores-grupo';
 import { clave, etiquetaGrupo, puntos } from './formato';
 
@@ -93,8 +85,9 @@ const PASO = 50;
  * punto según la normativa. Lo que se pierde es el «puesto interno» como
  * número, que sobre tres tiradores emparejados no significaba nada.
  *
- * En móvil NO se hace scroll horizontal: se enseñan puesto, quién y puntos, y
- * el club y el año bajan a una segunda línea dentro de la celda del nombre.
+ * En móvil NO se hace scroll horizontal: cada tirador es una sola línea
+ * (`FilaLinea`) con puesto, retrato, nombre recortado, código de club y
+ * puntos; el año de nacimiento queda en el panel de la fila.
  *
  * -------------------------------------------------------------------------
  * POR QUÉ AQUÍ NO HAY BANDERAS, Y SÍ CÓDIGO DE CLUB
@@ -129,7 +122,13 @@ export function TablaRankingOficial({
   grupoInicial,
   conMiFicha = false,
   armasAutorizadas = [],
+  personas = {},
+  selectorTemporada = null,
 }: {
+  /** Fila (`official_ranking_entry.id`) → persona deportiva, para el retrato y el enlace. */
+  personas?: Record<string, string>;
+  /** El selector de temporada, primero en la fila de filtros. */
+  selectorTemporada?: React.ReactNode;
   /**
    * Armas cuyo cálculo interno puede ver esta cuenta (`armasInternas`). El
    * bloque y las promesas del cálculo salen por el ARMA seleccionada: sin
@@ -258,6 +257,7 @@ export function TablaRankingOficial({
         onElegir={elegir}
         busqueda={busqueda}
         onBuscar={setBusqueda}
+        antes={selectorTemporada}
       />
 
       {/*
@@ -273,7 +273,7 @@ export function TablaRankingOficial({
           key={fila.id}
           type="button"
           onClick={() => setAbierto(fila.athleteId)}
-          className="flex h-auto min-w-0 cursor-pointer items-start justify-start gap-4 rounded-none border-y border-filete-alto bg-card px-4 py-4 text-left whitespace-normal transition-colors hover:bg-accent"
+          className="flex h-auto min-w-0 cursor-pointer items-start justify-start gap-4 rounded-xl border border-filete-alto bg-card px-4 py-3 text-left whitespace-normal transition-colors hover:bg-accent"
         >
           {conMiFicha ? null : (
             <span className="flex w-16 shrink-0 flex-col">
@@ -328,7 +328,7 @@ export function TablaRankingOficial({
         subtítulo no dice: cuándo se leyó y dónde está el original.
       */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-filete-alto pt-2 text-xs text-muted-foreground">
-        <span>Clasificación oficial RFEE</span>
+        <span>Ranking nacional · clasificación oficial de la RFEE</span>
         {tabla.actualizadoEl ? <span>Leída {formatDateEs(tabla.actualizadoEl)}</span> : null}
         {tabla.sourceUrl ? (
           <Button variant="link" size="sm" className="px-0 text-xs text-primary-text" asChild>
@@ -350,52 +350,57 @@ export function TablaRankingOficial({
         </p>
       ) : null}
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-12 pl-0 text-right">#</TableHead>
-            <TableHead>Tirador</TableHead>
-            {/*
-              «Club (código)» y no «Club» a secas: la columna no lleva el
-              nombre del club, lleva el código interno de Skermo, y encabezarla
-              «Club» afirma que el club se llama «SAMA-M». Ver `CodigoClub`.
-            */}
-            <TableHead className="hidden md:table-cell">Club (código)</TableHead>
-            <TableHead className="hidden w-20 text-right md:table-cell">Nació</TableHead>
-            <TableHead className="w-20 pr-0 text-right">Puntos</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {filasVisibles.map((fila) => (
-            <React.Fragment key={fila.id}>
-              <Fila
-                fila={fila}
-                esMia={fila.athleteId !== null && mios.includes(fila.athleteId)}
-                onAbrir={
-                  fila.athleteId ? () => setAbierto(fila.athleteId) : undefined
-                }
-              />
-              {hayCorte && fila.position === plazas ? (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={5} className="px-0 py-0">
-                    <div className="flex items-center gap-2 border-y border-dashed border-gold/60 bg-gold/5 px-2 py-1.5 text-xs text-gold">
-                      <Scissors className="size-3.5 shrink-0" aria-hidden />
-                      <span className="whitespace-normal">
-                        Corte de convocatoria: las {plazas} primeras plazas salen
-                        por ranking
-                        {tabla.rule && tabla.rule.technicalPlaces > 0
-                          ? `; otras ${tabla.rule.technicalPlaces} las decide el criterio técnico`
-                          : ''}
-                        .
-                      </span>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </React.Fragment>
-          ))}
-        </TableBody>
-      </Table>
+      {/*
+        Una línea por tirador (`FilaLinea`): puesto, retrato, nombre, código
+        de club y puntos. El año de nacimiento y el detalle quedan en el panel
+        de la fila; el código de club lo explica su `title`.
+      */}
+      {filasVisibles.length > 0 ? (
+        <ol
+          aria-label={`Ranking nacional, ${etiquetaGrupo(grupo)}`}
+          className="grid w-full min-w-0 max-w-3xl gap-px overflow-hidden rounded-xl border bg-border"
+        >
+          {filasVisibles.map((fila) => {
+            const esMia = fila.athleteId !== null && mios.includes(fila.athleteId);
+            return (
+              <React.Fragment key={fila.id}>
+                <FilaLinea
+                  puesto={fila.position}
+                  nombre={fila.nombre}
+                  personaId={personas[fila.id] ?? null}
+                  club={fila.club}
+                  puntos={fila.totalPoints}
+                  mio={esMia}
+                  accion={
+                    fila.athleteId ? (
+                      <button
+                        type="button"
+                        onClick={() => setAbierto(fila.athleteId)}
+                        aria-label={`Ver los datos de ${fila.nombre}`}
+                        className="-mr-2 inline-flex size-11 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                      >
+                        <ChevronRight className="size-4" aria-hidden />
+                      </button>
+                    ) : null
+                  }
+                />
+                {hayCorte && fila.position === plazas ? (
+                  <li className="flex items-center gap-2 border-y border-dashed border-gold/60 bg-gold/5 px-2 py-1.5 text-xs text-gold">
+                    <Scissors className="size-3.5 shrink-0" aria-hidden />
+                    <span>
+                      Corte de convocatoria: las {plazas} primeras plazas salen por ranking
+                      {tabla.rule && tabla.rule.technicalPlaces > 0
+                        ? `; otras ${tabla.rule.technicalPlaces} las decide el criterio técnico`
+                        : ''}
+                      .
+                    </span>
+                  </li>
+                ) : null}
+              </React.Fragment>
+            );
+          })}
+        </ol>
+      ) : null}
 
       {/*
         «Ver más», con el número de lo que falta.
@@ -418,11 +423,11 @@ export function TablaRankingOficial({
       ) : null}
 
       {conFicha < tabla.rows.length ? (
-        <p className="medida text-xs text-muted-foreground">
-          <span className="cifra text-base">{tabla.rows.length - conFicha}</span>{' '}
-          {tabla.rows.length - conFicha === 1 ? 'tirador' : 'tiradores'} sin ficha vinculada.
-          {' '}Solo se muestran sus datos publicados por la RFEE,
-          no sus plazos ni inscripciones{verCalculo ? ' ni su cálculo interno' : ''}.
+        <p
+          className="text-xs text-muted-foreground"
+          title={`Sin ficha vinculada: solo sus datos publicados por la RFEE, sin plazos ni inscripciones${verCalculo ? ' ni cálculo interno' : ''}.`}
+        >
+          <span className="cifra text-sm">{tabla.rows.length - conFicha}</span> sin ficha
         </p>
       ) : null}
 
@@ -680,153 +685,5 @@ function Corte({
       ) : null}{' '}
       del corte, que está en el puesto {corte.rankingPlaces}.{tecnicas}
     </>
-  );
-}
-
-/**
- * EL CLUB DEL RANKING NACIONAL ES UN CÓDIGO, Y SE DICE QUE LO ES.
- *
- * Skermo NO publica el nombre del club en ninguna parte: publica un código
- * interno («SAMA-M», «ATENEO-M», «FED-M-C», «CESJV-B»). Está comprobado
- * descargando las páginas, no supuesto:
- *
- *  · la tabla del ranking da `<td>SAMA-M</td>`, texto pelado, sin `title`, sin
- *    `data-*`, sin `abbr` y sin tooltip;
- *  · la ficha del tirador (`/ranking-rfee/public/RFEE/<id>`) da lo mismo;
- *  · el calendario completo (2,5 MB, 425 pruebas) no tiene ni un rótulo de
- *    club ni de organizador, y cero coincidencias de «Club de Esgrima», «Sala
- *    de Armas» o «Club d'Esgrima» en todo el documento;
- *  · la pestaña de inscritos, incluida la de equipos, también es código;
- *  · `/clubs`, `/club`, `/clubes`, `/entity` y media docena más dan 500.
- *
- * Así que hay 77 códigos distintos en las 1.235 filas del ranking y ninguna
- * fuente que los traduzca. Las dos salidas malas serían inventarse los nombres
- * —alguien se los creería— o dejar «SAMA-M» debajo de una columna que dice
- * «Club», que es afirmar que el club se llama así. Por eso se pinta como lo que
- * es: monoespaciado, apagado y con el `title` explicando de dónde sale. Debajo
- * de la tabla hay una línea que lo cuenta una sola vez.
- *
- * Si algún día aparece el nombre (un directorio de la RFEE, un listado nuevo de
- * Skermo), el sitio donde ponerlo es `club.skermo_club_code` -> `club.name`,
- * que ya existe para esto, y esta función pasa a preferir el nombre.
- *
- * NO LLEVA BANDERA, y también es una decisión medida: en el ranking NACIONAL
- * son todos españoles —`official_ranking_entry` no tiene ni columna de país—,
- * así que una bandera sería el mismo icono repetido 1.235 veces. Ver la nota de
- * la cabecera del fichero.
- */
-function CodigoClub({ codigo }: { codigo: string | null }) {
-  if (!codigo) {
-    return <span className="text-muted-foreground/60">sin club publicado</span>;
-  }
-  return (
-    <span
-      className="font-mono text-[0.8em] uppercase tracking-tight"
-      title={`Código de club de Skermo: ${codigo}. La fuente no publica el nombre completo.`}
-    >
-      {codigo}
-    </span>
-  );
-}
-
-function Fila({
-  fila,
-  esMia,
-  onAbrir,
-}: {
-  fila: FilaOficial;
-  esMia: boolean;
-  /** Sin ficha en la aplicación no hay nada que abrir, y un clic muerto molesta. */
-  onAbrir?: () => void;
-}) {
-  return (
-    <TableRow
-      onClick={onAbrir}
-      tabIndex={onAbrir ? 0 : undefined}
-      onKeyDown={
-        onAbrir
-          ? (e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onAbrir();
-              }
-            }
-          : undefined
-      }
-      aria-label={onAbrir ? `Ver los datos de ${fila.nombre}` : undefined}
-      className={cn(
-        onAbrir && 'cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
-        esMia && 'bg-marcado hover:bg-accent',
-      )}
-    >
-      <TableCell className="pl-0 text-right align-top">
-        <span
-          className={cn(
-            'cifra text-2xl',
-            esMia ? 'text-primary-text' : 'text-foreground',
-          )}
-        >
-          {fila.position ?? '—'}
-        </span>
-      </TableCell>
-
-      <TableCell className="whitespace-normal align-top">
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="min-w-0 break-words font-medium text-foreground">{fila.nombre}</span>
-          {esMia ? (
-            <Badge variant="outline" className="border-primary/50 text-primary-text">
-              Tú
-            </Badge>
-          ) : null}
-        </span>
-        {/*
-          Segunda línea solo en móvil: aquí caben los datos de las columnas que
-          se ocultan, sin obligar a desplazarse en horizontal. Con su rótulo
-          delante, no encadenados con puntos medios.
-        */}
-        <span className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground md:hidden">
-          {/*
-            EN MÓVIL EL CÓDIGO VA CON LA PALABRA «CLUB» DELANTE.
-
-            En escritorio lo explica la cabecera de la columna («Club
-            (código)»), pero en móvil esa columna no existe y el código salía
-            desnudo en su renglón: se leía «SAMA-M» debajo del nombre sin nada
-            que dijera qué era, y lo más parecido a un dato suelto es una
-            errata. Con el rótulo delante se entiende sin la cabecera.
-          */}
-          {/*
-            Club y año COMPARTEN RENGLÓN. El club llevaba `basis-full` de
-            cuando se recortaba con puntos suspensivos, y con eso cada fila
-            medía tres renglones: en espada masculina absoluta, la de 259
-            filas, eran 250 px por tirador. Juntos caben de sobra —«Club
-            CNE-NA   Nació en 2006» son unos 260 px a 12 px— y la fila baja a
-            dos renglones.
-          */}
-          <span className="min-w-0">
-            Club <CodigoClub codigo={fila.club} />
-          </span>
-          {fila.anioNacimiento ? (
-            <span>
-              Nació en <span className="cifra text-foreground">{fila.anioNacimiento}</span>
-            </span>
-          ) : null}
-          {fila.position === null ? <span>Sin clasificar</span> : null}
-        </span>
-      </TableCell>
-
-      <TableCell className="hidden whitespace-normal align-top text-muted-foreground md:table-cell">
-        <CodigoClub codigo={fila.club} />
-      </TableCell>
-
-      <TableCell className="hidden text-right align-top tabular-nums md:table-cell">
-        {fila.anioNacimiento ?? '—'}
-      </TableCell>
-
-      <TableCell className="pr-0 text-right align-top">
-        <span className="cifra text-lg text-foreground">
-          {fila.totalPoints === null ? '—' : puntos(fila.totalPoints)}
-        </span>
-      </TableCell>
-    </TableRow>
   );
 }

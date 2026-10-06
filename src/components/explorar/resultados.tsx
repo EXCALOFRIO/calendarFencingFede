@@ -38,7 +38,7 @@ export function ChipsActivos({ criterios }: { criterios: CriteriosExplorar }) {
             prefetch={false}
             aria-label={`Quitar filtro ${chip.etiqueta}: ${chip.valor}${chip.fechaInvalida ? ' (fecha no válida)' : ''}`}
             className={cn(
-              'inline-flex h-9 max-w-full items-center gap-1.5 rounded-full border bg-secondary pr-2 pl-3 text-[0.8125rem] whitespace-nowrap hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+              'inline-flex h-11 max-w-full items-center gap-1.5 rounded-full border bg-secondary pr-3 pl-3 text-[0.8125rem] whitespace-nowrap hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
               chip.fechaInvalida && 'border-danger/40',
             )}
           >

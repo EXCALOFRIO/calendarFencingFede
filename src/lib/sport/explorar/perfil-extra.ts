@@ -2,6 +2,16 @@ import { sql } from 'drizzle-orm';
 import { exigirPerfil, filas, type ContextoExplorador } from './contexto';
 import { UUID_RE } from './cursor';
 import { resolverPersona } from './personas';
+import {
+  leerRankingMundial,
+  leerRankingNacional,
+  leerResumenMundial,
+  type RankingNacional,
+  type ResumenMundial,
+} from './ranking-nacional';
+import type { EntradaRankingOficial } from './tipos';
+import { leerOlimpicaPerfil, type OlimpicaPerfil } from './olimpica-perfil';
+import { leerRankingAmbitos, type RankingAmbitos } from './ranking-ambitos';
 import { leerRendimientoDe, type Rendimiento } from './rendimiento';
 
 /**
@@ -23,6 +33,16 @@ export type DatosPersonales = {
 export type ExtrasPerfil = {
   datos: DatosPersonales | null;
   rendimiento: Rendimiento | null;
+  /** Ranking nacional RFEE por temporada; ausente si no se pudo leer. */
+  rankingNacional?: RankingNacional;
+  /** Puestos en el ranking mundial de su última temporada FIE. */
+  rankingMundial?: EntradaRankingOficial[];
+  /** Mejores puestos FIE de su carrera y la última temporada FIE publicada. */
+  resumenMundial?: ResumenMundial;
+  /** FIE con histórico y, para extranjeros, su federación (ver `leerRankingAmbitos`). */
+  rankingAmbitos?: RankingAmbitos;
+  /** Pruebas olímpicas en las que está en zona de clasificación. */
+  olimpica?: OlimpicaPerfil[];
 };
 
 export const EXTRAS_VACIOS: ExtrasPerfil = { datos: null, rendimiento: null };
@@ -84,18 +104,29 @@ export async function leerDatosPersonales(
 }
 
 /** Datos personales y rendimiento de una persona; con sesión, pero sin fallar nunca por ellos. */
-export async function cargarExtrasPerfil(ctx: ContextoExplorador, personaId: string): Promise<ExtrasPerfil> {
+export async function cargarExtrasPerfil(
+  ctx: ContextoExplorador,
+  personaId: string,
+  /** Sin rendimiento cuando la página lo pide aparte (`cargarDiferidosPerfil`). */
+  { conRendimiento = true }: { conRendimiento?: boolean } = {},
+): Promise<ExtrasPerfil> {
   try {
     await exigirPerfil(ctx);
     if (!UUID_RE.test(personaId)) return EXTRAS_VACIOS;
     if (!(await ctx.esquema()).identidad) return EXTRAS_VACIOS;
     const persona = await resolverPersona(ctx.db, personaId);
     if (!persona) return EXTRAS_VACIOS;
-    const [datos, rendimiento] = await Promise.all([
+    const resumen = leerResumenMundial(ctx.db, persona.ids);
+    const [datos, rendimiento, rankingNacional, rankingMundial, resumenMundial, rankingAmbitos, olimpica] = await Promise.all([
       leerDatosPersonales(ctx.db, persona.canonicaId, ctx.hoy()),
-      leerRendimientoDe(ctx.db, persona.ids),
+      conRendimiento ? leerRendimientoDe(ctx.db, persona.ids) : null,
+      leerRankingNacional(ctx.db, persona.ids),
+      leerRankingMundial(ctx.db, persona.ids),
+      resumen,
+      leerRankingAmbitos(ctx.db, persona.ids, persona.canonicaId),
+      resumen.then((r) => leerOlimpicaPerfil(r.actuales)).catch(() => []),
     ]);
-    return { datos, rendimiento };
+    return { datos, rendimiento, rankingNacional, rankingMundial, resumenMundial, rankingAmbitos, olimpica };
   } catch {
     return EXTRAS_VACIOS;
   }

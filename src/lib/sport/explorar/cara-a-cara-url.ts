@@ -87,16 +87,12 @@ export function urlVistaDelRival(
 }
 
 /**
- * Fija el rival conservando temporada, arma y fase. Sólo `q` y `cursor` se
- * descartan: pertenecen a la búsqueda de rival, y dejar caer un filtro
- * ampliaría la comparación sin que la persona lo note.
+ * El cara a cara con un rival, sin filtros: la elección de rival sólo busca
+ * por nombre, así que una temporada, arma o fase que quedara en su dirección
+ * (enlaces antiguos) no pasa al duelo.
  */
-export function urlElegirRival(
-  personaId: string,
-  rivalId: string,
-  c: Partial<CriteriosCaraACara>,
-): string {
-  return construirUrlCaraACara(personaId, { rival: rivalId, temporada: c.temporada, arma: c.arma, fase: c.fase });
+export function urlElegirRival(personaId: string, rivalId: string): string {
+  return construirUrlCaraACara(personaId, { rival: rivalId });
 }
 
 export function rivalValido(rival: string): boolean {
@@ -113,10 +109,9 @@ export function aEntradaCaraACara(personaId: string, c: CriteriosCaraACara): Rec
   return entrada;
 }
 
-/** Entrada de `listarRivales`: sólo lo rellenado. */
+/** Entrada de `listarRivales`: el nombre y la página; la temporada de un enlace antiguo se ignora. */
 export function aEntradaRivales(personaId: string, c: CriteriosCaraACara): Record<string, string> {
   const entrada: Record<string, string> = { personaId };
-  if (c.temporada) entrada.temporada = c.temporada;
   if (c.q) entrada.q = c.q;
   if (c.cursor) entrada.cursor = c.cursor;
   return entrada;

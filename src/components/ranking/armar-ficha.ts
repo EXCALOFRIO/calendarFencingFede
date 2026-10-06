@@ -4,6 +4,9 @@ import { CATEGORY_LABEL, WEAPON_LABEL, formatDateEs } from '@/lib/utils';
 import type { LadoRanking, VarianteRanking } from './ficha-ranking';
 import type { TemporadaRanking } from './tira-temporadas';
 import { puntos } from './formato';
+import type { LadoCompacto } from './mis-tiradores';
+import { ordenCategoriaVisible } from '@/lib/sport/explorar/presentacion';
+import type { MejorMundial } from '@/lib/sport/explorar/ranking-nacional';
 
 /**
  * ===========================================================================
@@ -54,7 +57,7 @@ function nombreCategoria(category: string): string {
  */
 export function ladoNacional(
   puestos: PuestoOficial[],
-  extra: { licencia: string | null; anioNacimiento: number | null },
+  extra: { licencia: string | null; anioNacimiento: number | null } = { licencia: null, anioNacimiento: null },
 ): LadoRanking {
   const porClasificacion = new Map<string, PuestoOficial[]>();
   for (const p of puestos) {
@@ -146,8 +149,36 @@ export function ladoNacional(
 }
 
 /**
+ * Lo único de un lado que pinta la tarjeta de /ranking (y viaja al cliente):
+ * federación, rótulo, motivo del vacío y el mejor puesto. Los pares y las
+ * temporadas se quedan en el servidor: llevan licencia y año de nacimiento.
+ */
+export function ladoCompacto(lado: LadoRanking): LadoCompacto {
+  const mejor = lado.variantes[0];
+  return {
+    federacion: lado.federacion,
+    etiqueta: lado.etiqueta,
+    motivoVacio: lado.motivoVacio,
+    mejor: mejor ? { etiqueta: mejor.etiqueta, puesto: mejor.insignia.puesto } : null,
+  };
+}
+
+/**
+ * El lado internacional de la tarjeta con el puesto de la clasificación FIE
+ * vigente, la misma que pinta la tabla de abajo y la cabecera del perfil,
+ * cruzada por el id FIE confirmado de la persona (nunca por el nombre). Sin
+ * puesto en ella se queda lo que traía la ficha FIE.
+ */
+export function conClasificacionFie(lado: LadoCompacto, actuales: readonly MejorMundial[]): LadoCompacto {
+  // Absoluto antes que las de edad y, dentro, el mejor puesto: como la cabecera del perfil.
+  const mejor = [...actuales].sort((a, b) =>
+    ordenCategoriaVisible(a.categoria) - ordenCategoriaVisible(b.categoria) || a.puesto - b.puesto)[0];
+  return mejor ? { ...lado, mejor: { etiqueta: etiquetaVariante(mejor.arma, mejor.categoria), puesto: mejor.puesto } } : lado;
+}
+
+/**
  * ---------------------------------------------------------------------------
- * LADO MUNDIAL: el ranking de la FIE
+ * LADO INTERNACIONAL: el ranking de la FIE
  * ---------------------------------------------------------------------------
  * Aquí está la tira de temporadas en su mejor versión, porque la FIE publica
  * el histórico completo: de Carlos Llavador constan 19 temporadas.
@@ -250,17 +281,17 @@ export function ladoMundial(ficha: FichaFie | null): LadoRanking {
         etiqueta: etiquetaVariante(vigente.weapon, vigente.category),
         insignia: {
           puesto: vigente.position,
-          rotulo: 'del mundo',
+          rotulo: 'internacional',
           tono: 'acento',
         },
         pares,
         temporadas,
-        tituloTemporadas: 'Temporadas en el ranking mundial',
+        tituloTemporadas: 'Temporadas en el ranking internacional',
         contextoTemporadas:
           temporadas.length > 1
             ? `${temporadas.length} temporadas publicadas por la FIE. La flecha compara con la anterior.`
             : 'La FIE solo publica una temporada de este tirador, así que todavía no hay evolución que comparar.',
-        procedencia: `Ranking mundial de la FIE, leído el ${formatDateEs(ficha.actualizadoEl)}. La foto y el puesto son suyos y se enlazan a su ficha; no se copian.`,
+        procedencia: `Ranking internacional de la FIE, leído el ${formatDateEs(ficha.actualizadoEl)}. La foto y el puesto son suyos y se enlazan a su ficha; no se copian.`,
         urlFuente: ficha.fichaUrl,
       });
     }
@@ -272,10 +303,10 @@ export function ladoMundial(ficha: FichaFie | null): LadoRanking {
 
   return {
     federacion: 'FIE',
-    etiqueta: 'Mundial',
+    etiqueta: 'Internacional',
     variantes,
     motivoVacio:
-      'Este tirador todavía no tiene ficha confirmada en la FIE, así que no hay puesto mundial ' +
+      'Este tirador todavía no tiene ficha confirmada en la FIE, así que no hay puesto internacional ' +
       'ni foto que enseñar. Se confirma desde Gestión, con la evidencia del emparejamiento delante.',
   };
 }

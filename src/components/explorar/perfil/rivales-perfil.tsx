@@ -66,7 +66,7 @@ export function ManoAMano({
   enPestana?: boolean;
 }) {
   const otro = (
-    <Button asChild variant="outline" size="sm" className="h-9 min-h-9 rounded-full px-3.5">
+    <Button asChild variant="outline" size="sm" className="h-11 min-h-11 rounded-full px-4">
       <Link href={rutaCaraACara(personaId)} prefetch={false}>
         <Swords aria-hidden />
         Elegir otro rival

@@ -256,6 +256,9 @@ export function validarExtraccion(crudo: unknown, ctx: ContextoValidacion): Resu
     const repetidos = new Set(Object.keys(cuentaNombres).filter((k) => cuentaNombres[k] > 1));
     const aceptadosRes: Omit<ResultadoHecho, 'factKey'>[] = [];
     let previo = 0;
+    let etiquetadasAntes = 0;
+    let numeradasAntes = 0;
+    let primeraNumerica: number | null = null;
     let sinPuesto = 0;
     let puestosDeLista = 0;
     for (const [iFila, f] of filas.entries()) {
@@ -279,8 +282,16 @@ export function validarExtraccion(crudo: unknown, ctx: ContextoValidacion): Resu
         continue;
       }
       if (posicion !== null) {
-        if (posicion !== previo && posicion !== filaNumerica) anomalias += 1;
+        // Tras filas con etiqueta sin número («CAMPEONA», «FINALISTA») el cuadro de puestos lo fija
+        // la propia fuente (puede haber 5 finalistas y luego el 9): se mide la contigüidad sólo entre
+        // las filas numeradas, a partir de la primera.
+        const esperada: number = etiquetadasAntes > 0 ? (primeraNumerica ?? posicion) + numeradasAntes : filaNumerica;
+        if (posicion !== previo && posicion !== esperada) anomalias += 1;
+        primeraNumerica ??= posicion;
+        numeradasAntes += 1;
         previo = posicion;
+      } else if (str(f?.positionRaw) && !/\d/.test(str(f?.positionRaw) ?? '')) {
+        etiquetadasAntes += 1;
       }
       if (enLista) {
         puestosDeLista += 1;
@@ -677,7 +688,7 @@ export function fusionarTramos(resultados: unknown, trozos: unknown[]): unknown 
 
 const TEMP = RAIZ_DATOS;
 const TRABAJO = join(TEMP, 'calendario-trabajo');
-const RUTAS = {
+export const RUTAS = {
   calidad: join(TRABAJO, 'hechos', 'pdf-calidad.json'),
   salida: join(TRABAJO, 'hechos', 'pdf-droid'),
   crudo: join(TRABAJO, 'pdf-droid-raw'),
@@ -809,7 +820,7 @@ async function cargarMetadatos(): Promise<Metadatos> {
   return { edicionPorDoc, docPorUrl, tituloPorUrl, clavesProd, fechas };
 }
 
-async function textoPdf(bytes: Uint8Array): Promise<string[]> {
+export async function textoPdf(bytes: Uint8Array): Promise<string[]> {
   const { extractText, getDocumentProxy } = await import('unpdf');
   const doc = await getDocumentProxy(new Uint8Array(bytes));
   try {
@@ -824,7 +835,7 @@ function matarArbol(pid: number) {
   spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
 }
 
-async function lanzarDroid(modelo: string, carpeta: string, promptPath: string, timeoutMs: number) {
+export async function lanzarDroid(modelo: string, carpeta: string, promptPath: string, timeoutMs: number) {
   return await new Promise<{ ok: boolean; stdout: string; stderr: string; motivo: string | null }>((resolve) => {
     const hijo = spawn(process.execPath, [
       RUTAS.droid, 'exec', '-m', modelo, '--cwd', carpeta, '--only-tools', 'Read', '-o', 'json', '-f', promptPath,
@@ -853,7 +864,7 @@ let permisosDroid = 8;
 const enEspera: (() => void)[] = [];
 
 /** Limita los droids vivos (cada uno ocupa ~800 MB) y no lanza otro si la máquina va justa de memoria. */
-async function semaforo<T>(f: () => Promise<T>): Promise<T> {
+export async function semaforo<T>(f: () => Promise<T>): Promise<T> {
   if (permisosDroid > 0) permisosDroid -= 1;
   else await new Promise<void>((r) => enEspera.push(r));
   try {

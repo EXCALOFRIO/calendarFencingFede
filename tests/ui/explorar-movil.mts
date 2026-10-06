@@ -188,7 +188,7 @@ function documento(css: string, cuerpo: string, datos: object = {}, atras = fals
 <style>body{--font-display:'Barlow Condensed';--font-sans-ui:'Inter'}</style>
 </head><body class="antialiased"><div class="hueco-barra flex min-h-dvh flex-col">
 <header class="sticky top-0 z-30 border-b bg-card"><div class="ancho-app flex h-14 items-center gap-4 px-4">${flecha}
-<a href="/" class="flex shrink-0 items-center gap-2.5">${marca}<span class="hidden font-semibold tracking-tight sm:inline">Calendar<span class="text-primary">Fencing</span></span></a>
+<a href="/" class="-mx-2 flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2.5 px-2">${marca}<span class="hidden font-semibold tracking-tight sm:inline">Calendar<span class="text-primary">Fencing</span></span></a>
 <div class="mx-auto" id="nav-escritorio"></div>
 <div class="flex shrink-0 items-center gap-1"><a href="/perfil" class="flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-md p-1 pr-2"><span class="flex size-8 items-center justify-center rounded-full bg-muted text-xs">AR</span><span class="hidden min-w-0 flex-col leading-tight md:flex"><span class="max-w-36 truncate text-xs font-medium">Alejandro Ramírez</span><span class="max-w-36 truncate text-[11px] text-muted-foreground">Dirección técnica</span></span></a><button class="inline-flex size-11 items-center justify-center" aria-label="Salir">⎋</button></div>
 </div></header>

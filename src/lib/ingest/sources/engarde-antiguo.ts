@@ -79,7 +79,9 @@ export function documentosDelMenu(html: string): { fichero: string; tipo: TipoDo
   const vistos = new Set<string>();
   const out: { fichero: string; tipo: TipoDocumento }[] = [];
   for (const m of html.matchAll(/href\s*=\s*["']?([^"' >]+)/gi)) {
-    const fichero = m[1].split(/[?#]/)[0];
+    // Las exportaciones más recientes enlazan `index.php?page=poules1.htm`; el documento es el de `page`.
+    const pagina = m[1].match(/^index\.php\?(?:[^#]*&)?page=([^&#]+)/i)?.[1];
+    const fichero = (pagina ?? m[1]).split(/[?#]/)[0];
     if (fichero.includes('/') || fichero.includes(':')) continue;
     const tipo = tipoDocumentoEngarde(fichero);
     if (!tipo || vistos.has(fichero.toLowerCase())) continue;

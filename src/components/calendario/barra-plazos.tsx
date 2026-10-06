@@ -326,7 +326,7 @@ export function BarraPlazos({ plazos, estado, conEstado = true }: Props) {
           target="_blank"
           rel="noreferrer"
           title={plazos[0].sourceDocument ?? undefined}
-          className="inline-flex size-8 items-center justify-center self-start rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="-ml-3 inline-flex size-11 items-center justify-center self-start rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           <FileText className="size-4" aria-hidden />
           <span className="sr-only">{plazos[0].sourceDocument ?? 'Circular'}</span>

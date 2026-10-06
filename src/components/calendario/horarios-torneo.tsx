@@ -108,7 +108,17 @@ export type HitoHorario = {
   aQue: string | null;
 };
 
-export type DiaHorario = { fecha: string; hitos: HitoHorario[] };
+export type DiaHorario = {
+  fecha: string;
+  /**
+   * La apertura del pabellón, que vale para todo el día: va en el titular del
+   * día y no como una fila por prueba. Si se leyeron varias, la más temprana.
+   */
+  apertura: HitoHorario | null;
+  hitos: HitoHorario[];
+};
+
+const esApertura = (h: HitoHorario) => h.campo === 'installation_open' && h.rotulo === 'Apertura del pabellón';
 
 function aplanar(texto: string): string {
   return texto
@@ -300,17 +310,17 @@ export function horariosDelTorneo(evento: EventView): {
   const orden = new Map(evento.competitions.map((c, i) => [c.id, i]));
   const dias = [...porDia.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([fecha, hitos]) => ({
-      fecha,
-      hitos: hitos.sort(
+    .map(([fecha, todos]) => {
+      const hitos = todos.sort(
         (a, b) =>
           minutosDe(a.hora) - minutosDe(b.hora) ||
           HITOS.indexOf(a.campo as (typeof HITOS)[number]) -
             HITOS.indexOf(b.campo as (typeof HITOS)[number]) ||
           (a.prueba ? (orden.get(a.prueba.id) ?? 99) : -1) -
             (b.prueba ? (orden.get(b.prueba.id) ?? 99) : -1),
-      ),
-    }));
+      );
+      return { fecha, apertura: hitos.find(esApertura) ?? null, hitos: hitos.filter((h) => !esApertura(h)) };
+    });
   return { dias, usados };
 }
 
@@ -377,9 +387,21 @@ export function HorariosTorneo({
       <ol className="flex flex-col">
         {dias.map((dia) => (
           <li key={dia.fecha} className="border-b border-b-filete last:border-b-0">
-            <h5 className="cifra px-3 pt-2.5 pb-1 text-sm text-muted-foreground">
-              {tituloDeDia(dia.fecha)}
-            </h5>
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 px-3 pt-2.5 pb-1">
+              <h5 className="cifra text-sm text-muted-foreground">
+                {tituloDeDia(dia.fecha)}
+                {dia.apertura ? (
+                  <CitaConvocatoria dato={dia.apertura.dato} className="mx-0 inline px-1">
+                    <span className="font-sans text-xs">
+                      {' · '}abre <span className="cifra text-sm text-foreground">{dia.apertura.hora}</span>
+                    </span>
+                  </CitaConvocatoria>
+                ) : null}
+              </h5>
+              {dia.apertura && dosRelojes && husoSede ? (
+                <HoraEnTuHuso fecha={dia.fecha} hora={dia.apertura.hora} husoSede={husoSede} />
+              ) : null}
+            </div>
             <ul className="flex flex-col pb-1.5">
               {dia.hitos.map((h) => (
                 <FilaHito

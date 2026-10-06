@@ -9,6 +9,8 @@ import type { PruebaPasada } from '@/lib/queries/calendario-pasado-modelo';
 import { categoriaVisible, COLOR_MEDALLA } from '@/lib/sport/explorar/presentacion';
 import { construirUrlEdicion } from '@/lib/sport/explorar/edicion-url';
 import { cn, formatDateEs, GENDER_LABEL, WEAPON_LABEL } from '@/lib/utils';
+import type { EnlaceDirecto, EstadoDirecto } from '@/lib/calendario/enlaces-directo';
+import { PastillaDirecto } from '../enlace-directo';
 
 /**
  * ===========================================================================
@@ -47,17 +49,32 @@ export function Terminada({ clase }: { clase?: string }) {
  * el de la espada femenina, no el del florete masculino del mismo torneo. Si
  * ninguna encaja con el filtro —puede pasar: el cruce trae la prueba de la FIE
  * y el calendario la publica con otra categoría— se devuelven todas, porque
- * esconder los resultados de un torneo que sí se ve sería peor.
+ * esconder los resultados de un torneo que sí se ve sería peor. El formato no
+ * cuenta: la prueba por equipos de un circuito europeo no suele estar en el
+ * calendario de la RFEE y es del mismo arma y categoría que su individual.
  */
 export function pruebasVisibles(evento: EventView, pruebas: PruebaPasada[]): PruebaPasada[] {
   const ids = new Set(evento.competitions.map((c) => c.id));
-  const claves = new Set(
-    evento.competitions.map((c) => `${c.weapon}|${c.gender}|${c.category}|${c.format}`),
-  );
+  const claves = new Set(evento.competitions.map((c) => `${c.weapon}|${c.gender}|${c.category}`));
   const visibles = pruebas.filter(
-    (p) => ids.has(p.id) || claves.has(`${p.arma}|${p.genero}|${p.categoria}|${p.formato}`),
+    (p) => ids.has(p.id) || claves.has(`${p.arma}|${p.genero}|${p.categoria}`),
   );
   return visibles.length > 0 ? visibles : pruebas;
+}
+
+/** Las pruebas con algún puesto importado: sin ninguna, el pie no se pinta. */
+export function conResultadosPasados(evento: EventView, pruebas: PruebaPasada[] | undefined): PruebaPasada[] {
+  return pruebas ? pruebasVisibles(evento, pruebas).filter((p) => p.conResultados) : [];
+}
+
+/**
+ * «BROU» de «BROU Isaora»: las fuentes escriben el apellido en mayúsculas
+ * delante del nombre. En el pie de la tarjeta, a 320 px, el nombre de pila
+ * dejaba el apellido en cuatro letras. Sin ese patrón, el nombre tal cual.
+ */
+export function apellidoDe(nombre: string): string {
+  const m = nombre.trim().match(/^((?:[\p{Lu}'’-]{2,}\s*)+?)\s+\p{Lu}\p{Ll}/u);
+  return m ? m[1].trim() : nombre;
 }
 
 /** «+50» en una prueba de veteranos que lo publica; `null` en cualquier otra. */
@@ -91,9 +108,9 @@ const AREA_PASTILLA =
 const PASTILLA =
   'inline-flex h-7 items-center gap-1 rounded-full border border-filete px-2.5 text-xs font-semibold text-primary-text transition-colors group-hover:bg-muted group-focus-visible:ring-2 group-focus-visible:ring-ring';
 
-/** Solo icono; `min-h-0 min-w-0` anulan el mínimo de `.calendario a[href]` y el `after` da el área. */
+/** Solo icono, con los 44 px táctiles en la propia caja. */
 const ICONO_EXTERNO =
-  "relative inline-flex size-7 min-h-0 min-w-0 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors after:absolute after:-inset-2 after:content-[''] hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  'inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 /**
  * El punto de oro y el nombre de quien ganó, con su bandera. En el pie de la
@@ -152,18 +169,33 @@ export function PieResultados({
   retorno,
   onVer,
   clase,
+  directo,
+  terminada = false,
 }: {
   evento: EventView;
   pruebas: PruebaPasada[] | undefined;
   retorno?: string;
   onVer: (e: EventView) => void;
   clase?: string;
+  /** El enlace a Engarde / Fencing Time Live del torneo, si lo hay. */
+  directo?: { enlace: EnlaceDirecto; estado: EstadoDirecto } | null;
+  /** «Terminada» va aquí, en la línea del ganador, y no en la tarjeta. */
+  terminada?: boolean;
 }) {
-  const visibles = React.useMemo(
-    () => (pruebas ? pruebasVisibles(evento, pruebas).filter((p) => p.conResultados) : []),
-    [evento, pruebas],
-  );
-  if (visibles.length === 0) return null;
+  const visibles = React.useMemo(() => conResultadosPasados(evento, pruebas), [evento, pruebas]);
+  if (visibles.length === 0) {
+    if (!directo) return null;
+    return (
+      <div
+        className={cn(
+          'flex min-h-11 min-w-0 items-center justify-end gap-x-2 border-t border-filete px-3 text-xs',
+          clase,
+        )}
+      >
+        <PastillaDirecto enlace={directo.enlace} estado={directo.estado} />
+      </div>
+    );
+  }
 
   const ediciones = [...new Set(visibles.map((p) => p.edicionId))];
   const unica = visibles.length === 1 ? visibles[0] : null;
@@ -176,42 +208,50 @@ export function PieResultados({
   const primera = visibles.find((p) => p.ganador) ?? null;
   const mas = visibles.length - (primera ? 1 : 0);
 
-  return (
-    <div
-      data-resultados={visibles.length}
-      className={cn(
-        'flex min-h-11 min-w-0 items-center gap-x-2 border-t border-filete pl-3 text-xs text-muted-foreground',
-        clase,
+  /*
+    Una sola línea, y entera es el enlace a los resultados: «Terminada», el oro
+    y cuántas pruebas más. Con la pastilla «Resultados» aparte y «Terminada»
+    en la fila de arriba, a 320 px al ganador le quedaban cuatro letras.
+  */
+  const cuerpo = (
+    <>
+      <span className="sr-only">{etiqueta}. </span>
+      {terminada ? <Terminada /> : <Trophy className="size-3.5 shrink-0 opacity-70" aria-hidden />}
+      {primera?.ganador ? (
+        <Ganador ganador={{ ...primera.ganador, nombre: apellidoDe(primera.ganador.nombre) }} recortar />
+      ) : (
+        <span aria-hidden className="flex-1 font-semibold text-primary-text">Resultados</span>
       )}
-    >
-      <Trophy className="size-3.5 shrink-0 opacity-70" aria-hidden />
-      {primera?.ganador ? <Ganador ganador={primera.ganador} recortar /> : <span className="flex-1" />}
       {mas > 0 ? (
         <span className="cifra shrink-0 text-muted-foreground">
           +{mas}
           <span className="sr-only"> pruebas</span>
         </span>
       ) : null}
+      <ChevronRight className="size-4 shrink-0 text-primary-text" aria-hidden />
+    </>
+  );
+  const fila =
+    'flex min-h-11 min-w-0 flex-1 items-center gap-x-2 rounded-md pr-1 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+
+  return (
+    <div
+      data-resultados={visibles.length}
+      className={cn(
+        'flex min-h-11 min-w-0 items-center gap-x-1 border-t border-filete pl-3 text-xs text-muted-foreground',
+        clase,
+      )}
+    >
       {destino ? (
-        <Link href={destino} className={cn(AREA_PASTILLA, 'ml-auto')} aria-label={etiqueta}>
-          <span className={PASTILLA}>
-            Resultados
-            <ChevronRight className="size-3.5" aria-hidden />
-          </span>
+        <Link href={destino} className={fila}>
+          {cuerpo}
         </Link>
       ) : (
-        <button
-          type="button"
-          onClick={() => onVer(evento)}
-          className={cn(AREA_PASTILLA, 'ml-auto')}
-          aria-label={etiqueta}
-        >
-          <span className={PASTILLA}>
-            Resultados
-            <ChevronRight className="size-3.5" aria-hidden />
-          </span>
+        <button type="button" onClick={() => onVer(evento)} className={fila}>
+          {cuerpo}
         </button>
       )}
+      {directo ? <PastillaDirecto enlace={directo.enlace} estado={directo.estado} soloIcono /> : null}
     </div>
   );
 }

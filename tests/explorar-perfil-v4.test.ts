@@ -234,6 +234,38 @@ describe('cara a cara: rivales y cruces', () => {
     expect(vistos).toEqual([['RIVAL', 6], ['OTRO', 2], ['TERCERO', 2]]);
   });
 
+  it('la lista de rivales cuenta como el cara a cara: sin lecturas repetidas ni relevos', async () => {
+    const DOBLE = uuid(7);
+    const f = carrera();
+    f.persona(DOBLE, 'DOBLE');
+    // El mismo TNR publicado por dos fuentes, con los mismos asaltos y puestos.
+    for (const [id, fuente] of [['tnr-pdf', 'rfee_pdf'], ['tnr-sk', 'skermo_rfee']] as const) {
+      f.prueba(id, { fuente, nombre: id === 'tnr-pdf' ? 'TNR ABS' : 'TNR ABS (3/3)', fecha: '2026-04-12' });
+      f.resultado(id, YO, 3, fuente);
+      f.resultado(id, DOBLE, 5, fuente);
+      f.asalto(id, YO, DOBLE, 5, 3);
+      f.asalto(id, DOBLE, YO, 15, 10, 'TABLEAU');
+    }
+    // Un relevo de equipos colado en una prueba individual no es un asalto.
+    f.prueba('relevo', { fecha: '2026-05-01' });
+    f.asalto('relevo', YO, DOBLE, 45, 40, 'TABLEAU');
+
+    const ctx = f.contexto();
+    const lista = await listarRivales(ctx, { personaId: YO });
+    if (lista.estado !== 'ok') throw new Error(lista.estado);
+    const duelo = await leerCaraACara(ctx, { personaId: YO, rivalId: DOBLE });
+    if (duelo.estado !== 'ok') throw new Error(duelo.estado);
+    // Antes la lista daba 5 asaltos (2 + 2 repetidos + el relevo) frente a 2 del cara a cara.
+    expect(duelo.resumen).toMatchObject({ asaltos: 2, victorias: 1, derrotas: 1 });
+    expect(lista.items.find((r) => r.id === DOBLE)).toMatchObject({ asaltos: 2, victorias: 1, derrotas: 1 });
+    // Y para todos los demás rivales, las mismas cifras.
+    for (const r of lista.items) {
+      const d = await leerCaraACara(ctx, { personaId: YO, rivalId: r.id });
+      if (d.estado !== 'ok') throw new Error(d.estado);
+      expect([r.asaltos, r.victorias, r.derrotas]).toEqual([d.resumen.asaltos, d.resumen.victorias, d.resumen.derrotas]);
+    }
+  });
+
   it('lista todas las pruebas comunes con los dos puestos, quién quedó delante y los asaltos por fase', async () => {
     const f = carrera();
     const r = await leerCaraACara(f.contexto(), { personaId: YO, rivalId: RIVAL });

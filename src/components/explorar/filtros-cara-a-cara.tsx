@@ -15,7 +15,7 @@ import {
 } from '@/lib/sport/explorar/cara-a-cara-url';
 import type { OpcionTemporada } from '@/lib/sport/explorar/url';
 import { cn } from '@/lib/utils';
-import { ARMAS, CampoSelect, agruparTemporadas } from './formulario-filtros';
+import { ARMAS, agruparTemporadas } from './formulario-filtros';
 
 type Props = {
   personaId: string;
@@ -150,97 +150,58 @@ function FiltrosCompactos({ personaId, criterios, temporadas }: Props) {
   );
 }
 
-function BuscarRival({ personaId, criterios, temporadas }: Props) {
+/**
+ * Elección de rival: sólo el nombre. Temporada, arma y fase se eligen ya en
+ * el duelo; la búsqueda escribe `q` y empieza en la primera página.
+ */
+function BuscarRival({ personaId, criterios }: Props) {
   const router = useRouter();
   const [pendiente, empezar] = React.useTransition();
-  const [borrador, setBorrador] = React.useState(criterios);
-  const eligiendo = criterios.rival === '';
-  const qCorta = eligiendo && borrador.q.trim().length === 1;
-
-  const poner = (parcial: Partial<CriteriosCaraACara>) =>
-    setBorrador((actual) => ({ ...actual, ...parcial }));
-
-  const { sueltas, grupos } = agruparTemporadas(temporadas, borrador.temporada);
+  const [q, setQ] = React.useState(criterios.q);
+  const corta = q.trim().length === 1;
 
   return (
     <form
       role="search"
-      aria-label={eligiendo ? 'Buscar rival' : 'Filtros del cara a cara'}
+      aria-label="Buscar rival"
       aria-busy={pendiente}
-      className="flex flex-col gap-3"
+      className="flex min-w-0 items-start gap-2"
       onSubmit={(e) => {
         e.preventDefault();
-        if (qCorta) return;
-        empezar(() =>
-          router.push(construirUrlCaraACara(personaId, { ...borrador, cursor: '', q: borrador.q.trim() })),
-        );
+        if (corta) return;
+        empezar(() => router.push(construirUrlCaraACara(personaId, { q: q.trim() })));
       }}
     >
-      <div className="grid grid-cols-2 items-end gap-3 md:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
-        {eligiendo ? (
-          <div className="col-span-2 flex min-w-0 flex-col gap-1.5 md:col-span-2">
-            <Label htmlFor="h2h-q">Nombre del rival</Label>
-            <div className="relative">
-              <Search
-                className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-                aria-hidden
-              />
-              <Input
-                id="h2h-q"
-                type="search"
-                value={borrador.q}
-                maxLength={80}
-                autoComplete="off"
-                placeholder="Apellido, nombre o alias"
-                className="pl-8"
-                aria-invalid={qCorta}
-                aria-describedby="h2h-q-ayuda"
-                onChange={(e) => poner({ q: e.target.value })}
-              />
-            </div>
-            <p id="h2h-q-ayuda" className={qCorta ? 'text-xs text-danger' : 'text-xs text-muted-foreground'}>
-              {qCorta
-                ? 'Escribe al menos dos letras del nombre.'
-                : 'Filtra los rivales con asaltos y busca a cualquier otra persona indexada.'}
-            </p>
-          </div>
-        ) : null}
-
-        <CampoSelect
-          id="h2h-temporada"
-          etiqueta="Temporada"
-          valor={borrador.temporada}
-          opciones={sueltas}
-          grupos={grupos}
-          textoVacio="Todas"
-          onChange={(temporada) => poner({ temporada })}
+      <div className="relative min-w-0 flex-1">
+        <Label htmlFor="h2h-q" className="sr-only">
+          Nombre del rival
+        </Label>
+        <Search
+          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+          aria-hidden
         />
-
-        {eligiendo ? null : (
-          <>
-            <CampoSelect
-              id="h2h-arma"
-              etiqueta="Arma"
-              valor={borrador.arma}
-              opciones={ARMAS}
-              textoVacio="Todas"
-              onChange={(arma) => poner({ arma })}
-            />
-            <CampoSelect
-              id="h2h-fase"
-              etiqueta="Fase"
-              valor={borrador.fase}
-              opciones={FASE_FILTRO.map((f) => ({ valor: f.valor, etiqueta: f.etiqueta }))}
-              textoVacio="Poule y eliminación"
-              onChange={(fase) => poner({ fase })}
-            />
-          </>
-        )}
-
-        <Button type="submit" disabled={pendiente} className="col-span-2 md:col-span-1">
-          {pendiente ? 'Aplicando…' : eligiendo ? 'Buscar' : 'Aplicar'}
-        </Button>
+        <Input
+          id="h2h-q"
+          type="search"
+          value={q}
+          maxLength={80}
+          autoComplete="off"
+          enterKeyHint="search"
+          placeholder="Rival"
+          className="h-11 rounded-full pl-9"
+          aria-invalid={corta}
+          aria-describedby={corta ? 'h2h-q-ayuda' : undefined}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        {corta ? (
+          <p id="h2h-q-ayuda" className="mt-1 px-3 text-xs text-danger">
+            Al menos dos letras.
+          </p>
+        ) : null}
       </div>
+      <Button type="submit" disabled={pendiente} className="h-11 rounded-full px-5">
+        {pendiente ? 'Buscando…' : 'Buscar'}
+      </Button>
     </form>
   );
 }

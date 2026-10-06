@@ -1,4 +1,5 @@
 import type { CategoryCode } from '../categories';
+import { ciudadCanonica } from '@/lib/calendario/ciudades';
 import { nombrePrueba } from '@/lib/sport/explorar/presentacion';
 import { clasificarCompeticion, plegarNombre } from '@/lib/sport/explorar/tipo-competicion';
 import type { TipoCompeticion } from '@/lib/sport/explorar/tipos-social';
@@ -101,19 +102,26 @@ export type TramoPasado = {
 
 export const SEPARADOR_GANADOR = '\u001f';
 
-/** Fuentes de Explorar que entran en el calendario: la FIE y la RFEE. */
-export const FUENTES_IMPORTADAS = ['fie', 'skermo_rfee', 'rfee_pdf'] as const;
+/**
+ * Fuentes de Explorar que entran en el calendario: la FIE, la EFC y la RFEE
+ * (Skermo, sus PDF y los torneos nacionales que sólo están en Engarde, que son
+ * casi todo lo de 2009 a 2019).
+ */
+export const FUENTES_IMPORTADAS = ['fie', 'efc', 'skermo_rfee', 'rfee_pdf', 'engarde'] as const;
 
 /**
  * Cuando dos fuentes publican la misma prueba se queda la primera: Skermo trae
- * sede y clave estable; el PDF de la RFEE, solo la clasificación.
+ * sede y clave estable; el PDF de la RFEE y Engarde, solo la clasificación.
  */
-const PRIORIDAD_FUENTE: Record<string, number> = { skermo_rfee: 0, fie: 1, rfee_pdf: 2 };
+const PRIORIDAD_FUENTE: Record<string, number> = { skermo_rfee: 0, fie: 1, efc: 1, rfee_pdf: 2, engarde: 3 };
+
+/** Fuentes nacionales que sólo cuentan si Skermo no trae ya esa prueba ese día. */
+const FUENTES_SECUNDARIAS: readonly string[] = ['rfee_pdf', 'engarde'];
 
 type Familia = 'INT' | 'NAC';
 
 function familiaDeFuente(fuente: string): Familia {
-  return fuente === 'fie' ? 'INT' : 'NAC';
+  return fuente === 'fie' || fuente === 'efc' ? 'INT' : 'NAC';
 }
 
 function familiaDeEvento(e: EventView): Familia {
@@ -193,7 +201,7 @@ function claveDePrueba(p: {
  * «Gand» frente a «Gante» no se empareja, y es lo prudente.
  */
 function ciudadPlegada(ciudad: string | null | undefined): string {
-  return ciudad ? plegarNombre(ciudad) : '';
+  return ciudad ? ciudadCanonica(plegarNombre(ciudad)) : '';
 }
 
 function ordenPruebas(a: PruebaPasada, b: PruebaPasada): number {
@@ -238,9 +246,12 @@ export function baseDeNombre(nombre: string): string {
       ' ',
     )
     .replace(/\b\d+ \d+\b/g, ' ')
+    // «TNR ABS 1 Sable Masculino» es la prueba de sable del «TNR ABS» de ese día: el PDF
+    // de la RFEE titula cada prueba y Skermo, el torneo.
+    .replace(/\b(espada|florete|sable|masculin[oa]s?|femenin[oa]s?|mixt[oa]s?|\d)\b/g, ' ')
     .split(/\s+/)
     .filter(Boolean);
-  return [...new Set(palabras)].join(' ');
+  return [...new Set(palabras)].join(' ') || plegarNombre(nombre);
 }
 
 /** «TNR M20 M20» y «TNR M20_equipos» se leen como el torneo que son. */
@@ -249,6 +260,15 @@ function nombreLimpio(nombre: string): string {
   return palabras
     .filter((p, i) => i === 0 || p.toLowerCase() !== palabras[i - 1].toLowerCase())
     .join(' ');
+}
+
+/** «TNR ABS 1 Sable Femenino Individual» → «TNR ABS»: la tarjeta junta varias pruebas. */
+function tituloDeTorneo(nombre: string): string {
+  const limpio = nombreLimpio(nombre)
+    .replace(/\b(espada|florete|sable|masculin[oa]s?|femenin[oa]s?|mixt[oa]s?|individual(es)?|\d)\b/giu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return limpio || nombreLimpio(nombre);
 }
 
 /** Tipo de competición de Explorar → circuito del calendario, para el color y la pastilla. */
@@ -330,13 +350,18 @@ function eventoDeGrupo(g: Grupo): { evento: EventView; pruebas: PruebaPasada[] }
     pais: principal.pais,
   }).tipo;
   const nombre =
-    fuente === 'fie'
+    fuente === 'fie' || fuente === 'efc'
       ? nombrePrueba({
           nombre: principal.edicion.replace(/[’`´]/g, "'"),
           formato: 'INDIVIDUAL',
           fuente,
         })
-      : nombreLimpio(principal.edicion);
+      : // El título más corto es el del torneo («TNR ABS»); el PDF titula cada prueba.
+        tituloDeTorneo(
+          [...filas]
+            .filter((f) => !/equip|team/i.test(f.edicion))
+            .sort((a, b) => a.edicion.length - b.edicion.length)[0]?.edicion ?? principal.edicion,
+        );
 
   const pruebas = filas.map(aPruebaPasada).sort(ordenPruebas);
   const ciudad = filas.find((f) => f.ciudad)?.ciudad ?? null;
@@ -352,7 +377,7 @@ function eventoDeGrupo(g: Grupo): { evento: EventView; pruebas: PruebaPasada[] }
 
   const evento: EventView = {
     id: `ed-${principal.edicionId}`,
-    source: fuente === 'fie' ? 'fie' : 'skermo_rfee',
+    source: fuente === 'fie' || fuente === 'efc' ? fuente : 'skermo_rfee',
     sourceUrl: sources[0]?.url ?? null,
     name: nombre,
     startDate: g.desde,
@@ -541,6 +566,58 @@ export function componerTramo({
     resultados[e.id].sort(ordenPruebas);
   }
 
+  /*
+    Una prueba internacional que el calendario fecha otro día (la EFC movió el
+    individual al domingo y la RFEE lo dejó en sábado) se ata igual si la sede
+    es la misma, cae en las fechas del torneo ±1 día y el torneo tiene esa
+    misma arma, género y categoría en cualquier formato.
+  */
+  for (const e of calendario) {
+    if (familiaDeEvento(e) !== 'INT') continue;
+    const ciudades = new Set(
+      [e.city, ...e.linkedEvents.map((l) => l.city)].map(ciudadPlegada).filter(Boolean),
+    );
+    if (ciudades.size === 0) continue;
+    const desdeE = msDe(e.startDate) - DIA;
+    const hastaE = msDe(e.endDate ?? e.startDate) + DIA;
+    const tiradores = new Set(e.competitions.map((c) => `${c.weapon}|${c.gender}|${c.category}`));
+    for (const f of candidatas) {
+      if (usadas.has(f.id) || !f.fecha || familiaDeFuente(f.fuente) !== 'INT') continue;
+      if (!ciudades.has(ciudadPlegada(f.ciudad))) continue;
+      if (!tiradores.has(`${f.arma}|${f.genero}|${f.categoria}`)) continue;
+      const dia = msDe(f.fecha);
+      if (dia < desdeE || dia > hastaE) continue;
+      resultados[e.id].push(aPruebaPasada(f));
+      usadas.add(f.id);
+    }
+  }
+
+  /*
+    Una edición que ya está en una tarjeta entra entera si sus demás pruebas
+    caen en las fechas del torneo: la EFC publica una edición por torneo y
+    sus pruebas por equipos (o una prueba cambiada de día) no siempre están en
+    el calendario de la RFEE. Sin esto saldrían en otra tarjeta del mismo
+    torneo.
+  */
+  const edicionesDeEvento = new Map<string, Set<string>>();
+  for (const e of calendario) {
+    const ediciones = new Set(resultados[e.id].map((p) => p.edicionId));
+    if (ediciones.size > 0) edicionesDeEvento.set(e.id, ediciones);
+  }
+  for (const [eventoId, ediciones] of edicionesDeEvento) {
+    const e = porEvento.get(eventoId)!;
+    const desdeE = msDe(e.startDate) - DIA;
+    const hastaE = msDe(e.endDate ?? e.startDate) + DIA;
+    for (const f of candidatas) {
+      if (usadas.has(f.id) || !ediciones.has(f.edicionId) || !f.fecha) continue;
+      const dia = msDe(f.fecha);
+      if (dia < desdeE || dia > hastaE) continue;
+      resultados[eventoId].push(aPruebaPasada(f));
+      usadas.add(f.id);
+    }
+    resultados[eventoId].sort(ordenPruebas);
+  }
+
   for (const f of candidatas) {
     if (!usadas.has(f.id) || !f.fecha) continue;
     cubiertas.add(
@@ -573,9 +650,10 @@ export function componerTramo({
   );
   const duenoDePdf = new Map<string, string>();
   const pdfs = sueltas
-    .filter((f) => f.fuente === 'rfee_pdf')
+    .filter((f) => FUENTES_SECUNDARIAS.includes(f.fuente))
     .sort(
       (a, b) =>
+        (PRIORIDAD_FUENTE[a.fuente] ?? 9) - (PRIORIDAD_FUENTE[b.fuente] ?? 9) ||
         Number(Boolean(Number(b.conResultados ?? 0))) - Number(Boolean(Number(a.conResultados ?? 0))) ||
         a.edicionId.localeCompare(b.edicionId),
     );
@@ -596,6 +674,8 @@ export function componerTramo({
   for (const grupo of agruparImportadas(sueltas.filter((f) => !pdfDescartados.has(f.id)))) {
     const { evento, pruebas } = eventoDeGrupo(grupo);
     if (resultados[evento.id]) continue;
+    // Una edición importada sin un solo puesto no dice nada: ni ganador ni «Resultados».
+    if (!pruebas.some((p) => p.conResultados)) continue;
     eventos.push(evento);
     importados.push(evento.id);
     resultados[evento.id] = pruebas;

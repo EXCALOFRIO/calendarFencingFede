@@ -549,6 +549,16 @@ export function aEncuentros(
   return { encuentros, resumen, descartadas };
 }
 
+/**
+ * Lecturas cuyos asaltos no cuentan por repetir los de otra lectura de la
+ * misma prueba. Sólo mira las lecturas con asaltos entre las dos: así la lista
+ * de rivales, que no lee las pruebas comunes sin asaltos, decide igual que el
+ * cara a cara y los dos recuentos coinciden.
+ */
+export function lecturasDescartadas(rows: readonly FilaEncuentro[]): string[] {
+  return aEncuentros(rows.filter((r) => Number(r.asaltos ?? 0) > 0), false).descartadas;
+}
+
 type FilaAsalto = {
   id: string;
   mios: number;
@@ -649,11 +659,12 @@ export async function leerCaraACara(
 
   const comunes = filas<FilaEncuentro>(comunesRows);
   const truncado = comunes.length > MAX_COMUNES;
-  const { encuentros, resumen: resumenEncuentros, descartadas } = aEncuentros(
+  const { encuentros, resumen: resumenEncuentros } = aEncuentros(
     comunes.slice(0, MAX_COMUNES),
     truncado,
     filtros.fase,
   );
+  const descartadas = lecturasDescartadas(comunes.slice(0, MAX_COMUNES));
 
   // Después de las pruebas comunes: sus lecturas repetidas no deben contar dos veces cada asalto.
   const [resumenRows, asaltosRows] = await Promise.all([
@@ -733,7 +744,9 @@ export type ResultadoRivales =
  * Rivales individuales con al menos un asalto confirmado, de más a menos
  * asaltos y paginados por `(asaltos, nombre normalizado, id)`. Sirve para elegir oponente en el filtro del
  * cara a cara; un rival sin persona resuelta no aparece (no se adivina por
- * nombre).
+ * nombre). Cuenta como el resumen del cara a cara sin filtros: sólo
+ * marcadores individuales y sin las lecturas repetidas de una prueba
+ * (`lecturasDescartadas`), así el balance de la lista y el del duelo coinciden.
  */
 export async function listarRivales(
   ctx: ContextoExplorador,
@@ -764,8 +777,11 @@ export async function listarRivales(
 
   const limite = pedido ?? LIMITE_POR_DEFECTO;
   const lista = listaUuid(persona.ids);
+  // Las mismas condiciones que `condicionesH2h` sin la pareja: pruebas
+  // individuales y marcadores de asalto individual (un relevo no cuenta).
   const condiciones: SQL[] = [
     sql`c.format = 'INDIVIDUAL'`,
+    MARCADOR_INDIVIDUAL,
     sql`(b.fencer_a_person_id IN (${lista}) OR b.fencer_b_person_id IN (${lista}))`,
     sql`b.fencer_a_person_id IS NOT NULL AND b.fencer_b_person_id IS NOT NULL`,
     ...(filtros.temporada ? [sql`c.season = ${filtros.temporada}`] : []),
@@ -776,18 +792,22 @@ export async function listarRivales(
       sql`(cp.name_normalized LIKE ${`${w}%`} OR cp.name_normalized LIKE ${`% ${w}%`})`,
     );
   }
-  // El orden es por asaltos (un agregado): la posición del cursor se compara en HAVING.
-  const despues = clave
-    ? sql`HAVING (-sum(x.n), coalesce(cp.name_normalized, ''), cp.id) > (${-Number(clave[0])}, ${String(clave[1])}, ${String(clave[2])})`
-    : sql``;
 
-  const rows = filas<{ id: string; clave: string; nombre: string; pais: string | null; asaltos: number }>(
+  // Una fila por rival y prueba: el recuento por rival se hace aquí, después
+  // de quitar las lecturas repetidas de una misma prueba, como en el cara a cara.
+  const rows = filas<FilaRivalPrueba>(
     await ctx.db.execute(sql`
-      WITH RECURSIVE orientados AS (
-        SELECT CASE WHEN b.fencer_a_person_id IN (${lista}) THEN b.fencer_b_person_id ELSE b.fencer_a_person_id END AS rival_id,
-               1 AS n
+      WITH RECURSIVE lados AS (
+        SELECT b.fencer_a_person_id IN (${lista}) AS es_a, b.fencer_a_person_id AS pa, b.fencer_b_person_id AS pb,
+               b.score_a AS sa, b.score_b AS sb, b.competition_id AS prueba
         FROM sport_bout b ${unionesPrueba('b')}
         WHERE ${y(condiciones)}
+      ), orientados AS (
+        SELECT CASE WHEN es_a THEN pb ELSE pa END AS rival_id, prueba,
+               1 AS n,
+               CASE WHEN (CASE WHEN es_a THEN sa - sb ELSE sb - sa END) > 0 THEN 1 ELSE 0 END AS v,
+               CASE WHEN (CASE WHEN es_a THEN sa - sb ELSE sb - sa END) < 0 THEN 1 ELSE 0 END AS d
+        FROM lados
       ), ruta(rival_id, id, destino, salto) AS (
         SELECT DISTINCT x.rival_id, p.id, p.merged_into_person_id, 0
         FROM orientados x JOIN sport_person p ON p.id = x.rival_id
@@ -796,25 +816,156 @@ export async function listarRivales(
         FROM ruta r JOIN sport_person p ON p.id = r.destino WHERE r.salto < ${SALTOS}
       )
       SELECT cp.id AS id, coalesce(cp.name_normalized, '') AS clave, cp.display_name AS nombre,
-             cp.country_code AS pais, sum(x.n) AS asaltos
+             cp.country_code AS pais, x.prueba AS prueba,
+             sum(x.n) AS asaltos, sum(x.v) AS victorias, sum(x.d) AS derrotas,
+             c.event_competition_id AS equivalencia, coalesce(c.competition_date, e.start_date) AS fecha,
+             c.weapon AS arma, c.gender AS genero, c.category AS categoria, c.format AS formato
       FROM orientados x
       JOIN ruta r ON r.rival_id = x.rival_id AND r.destino IS NULL
       JOIN sport_person cp ON cp.id = r.id
+      JOIN sport_competition c ON c.id = x.prueba
+      JOIN sport_edition e ON e.id = c.edition_id
       WHERE ${y(externas)}
-      GROUP BY cp.id, cp.name_normalized, cp.display_name, cp.country_code
-      ${despues}
-      ORDER BY sum(x.n) DESC, coalesce(cp.name_normalized, '') ASC, cp.id ASC
-      LIMIT ${limite + 1}`),
+      GROUP BY cp.id, cp.name_normalized, cp.display_name, cp.country_code, x.prueba`),
   );
-  const pagina = rows.slice(0, limite);
+
+  const porRival = new Map<string, FilaRivalPrueba[]>();
+  for (const r of rows) porRival.set(r.id, [...(porRival.get(r.id) ?? []), r]);
+  const dudosas = [...porRival.values()].flatMap((ps) => pruebasPosiblementeRepetidas(ps));
+  const puestos = await leerPuestosPorPrueba(ctx, [...new Set(dudosas.map((p) => p.prueba))]);
+
+  const rivales = [...porRival.values()].map((ps) => {
+    const r = ps[0];
+    const lecturas = ps.map((p) => {
+      const enPrueba = puestos.get(p.prueba);
+      return {
+        id: p.prueba,
+        fuente: '',
+        torneo: '',
+        arma: p.arma,
+        genero: p.genero,
+        categoria: p.categoria,
+        categoriaRaw: null,
+        temporada: '',
+        lecturas: '',
+        formato: p.formato,
+        equivalencia: p.equivalencia,
+        fecha: p.fecha,
+        asaltos: Number(p.asaltos),
+        puestoYo: enPrueba?.get(persona.canonicaId) ?? null,
+        puestoRival: enPrueba?.get(r.id) ?? null,
+      } satisfies FilaEncuentro;
+    });
+    const fuera = new Set(lecturasDescartadas(lecturas));
+    const cuentan = ps.filter((p) => !fuera.has(p.prueba));
+    const suma = (k: 'asaltos' | 'victorias' | 'derrotas') => cuentan.reduce((s, p) => s + Number(p[k] ?? 0), 0);
+    return {
+      id: r.id, clave: r.clave, nombre: r.nombre, pais: r.pais,
+      asaltos: suma('asaltos'), victorias: suma('victorias'), derrotas: suma('derrotas'),
+    };
+  });
+  rivales.sort((a, b) => b.asaltos - a.asaltos || compararTexto(a.clave, b.clave) || compararTexto(a.id, b.id));
+  const desde = clave
+    ? rivales.findIndex((r) => {
+        const [asaltos, nombre, id] = [Number(clave![0]), String(clave![1]), String(clave![2])];
+        return r.asaltos < asaltos || (r.asaltos === asaltos && (compararTexto(r.clave, nombre) > 0
+          || (r.clave === nombre && compararTexto(r.id, id) > 0)));
+      })
+    : 0;
+  const resto2 = desde < 0 ? [] : rivales.slice(desde);
+  const pagina = resto2.slice(0, limite);
   const ultima = pagina[pagina.length - 1];
   return {
     estado: 'ok',
-    items: pagina.map((r) => ({ id: r.id, nombre: r.nombre, pais: r.pais, asaltos: Number(r.asaltos) })),
+    items: pagina.map((r) => ({
+      id: r.id,
+      nombre: r.nombre,
+      pais: r.pais,
+      asaltos: r.asaltos,
+      victorias: r.victorias,
+      derrotas: r.derrotas,
+    })),
     siguiente:
-      rows.length > limite && ultima
-        ? codificarCursor(CLASE_RIVALES, huella, [Number(ultima.asaltos), ultima.clave, ultima.id])
+      resto2.length > limite && ultima
+        ? codificarCursor(CLASE_RIVALES, huella, [ultima.asaltos, ultima.clave, ultima.id])
         : null,
     sinResultados: pagina.length === 0,
   };
+}
+
+type FilaRivalPrueba = {
+  id: string;
+  clave: string;
+  nombre: string;
+  pais: string | null;
+  prueba: string;
+  asaltos: number;
+  victorias?: number | null;
+  derrotas?: number | null;
+  equivalencia?: string | null;
+  fecha?: string | null;
+  arma: Arma;
+  genero: Genero;
+  categoria: string;
+  formato: Formato | null;
+};
+
+/** Orden por código, igual que el `ORDER BY` de SQLite sobre texto. */
+function compararTexto(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * Pruebas de un rival que podrían ser dos lecturas de la misma (mismo enlace
+ * de calendario, o mismo arma, género, categoría y formato a un día como
+ * mucho): sólo para ellas hacen falta los puestos que decide `mismaPrueba`.
+ */
+function pruebasPosiblementeRepetidas(ps: readonly FilaRivalPrueba[]): FilaRivalPrueba[] {
+  if (ps.length < 2) return [];
+  return ps.filter((a) =>
+    ps.some((b) => b !== a && (
+      (a.equivalencia && a.equivalencia === b.equivalencia)
+      || (a.fecha && b.fecha && diasEntre(a.fecha, b.fecha) <= 1 && a.arma === b.arma && a.genero === b.genero
+        && a.categoria === b.categoria && a.formato === b.formato)
+    )),
+  );
+}
+
+/** Pruebas por consulta: cada una trae su clasificación entera. */
+const LOTE_PRUEBAS = 80;
+
+/**
+ * Mejor puesto numérico de cada persona canónica en cada prueba, siguiendo
+ * las fusiones de quien tiene el resultado (como `resolverPersona`).
+ */
+async function leerPuestosPorPrueba(
+  ctx: ContextoExplorador,
+  pruebas: readonly string[],
+): Promise<Map<string, Map<string, number>>> {
+  const salida = new Map<string, Map<string, number>>();
+  for (let i = 0; i < pruebas.length; i += LOTE_PRUEBAS) {
+    const lote = pruebas.slice(i, i + LOTE_PRUEBAS);
+    const rows = filas<{ prueba: string; canonica: string; puesto: number }>(
+      await ctx.db.execute(sql`
+        WITH RECURSIVE res AS (
+          SELECT competition_id, person_id, position FROM sport_result
+          WHERE competition_id IN (${listaUuid(lote)}) AND position > 0
+        ), cadena(origen, id, destino, salto) AS (
+          SELECT DISTINCT r.person_id, p.id, p.merged_into_person_id, 0
+          FROM res r JOIN sport_person p ON p.id = r.person_id
+          UNION ALL
+          SELECT c.origen, p.id, p.merged_into_person_id, c.salto + 1
+          FROM cadena c JOIN sport_person p ON p.id = c.destino WHERE c.salto < ${SALTOS}
+        )
+        SELECT res.competition_id AS prueba, k.id AS canonica, min(res.position) AS puesto
+        FROM res JOIN cadena k ON k.origen = res.person_id AND k.destino IS NULL
+        GROUP BY res.competition_id, k.id`),
+    );
+    for (const r of rows) {
+      const m = salida.get(r.prueba) ?? new Map<string, number>();
+      m.set(r.canonica, Number(r.puesto));
+      salida.set(r.prueba, m);
+    }
+  }
+  return salida;
 }

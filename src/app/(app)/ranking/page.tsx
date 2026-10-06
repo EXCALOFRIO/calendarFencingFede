@@ -1,8 +1,8 @@
 import { IdCard } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ladoMundial, ladoNacional } from '@/components/ranking/armar-ficha';
-import { PanelRanking } from '@/components/ranking/panel-ranking';
+import { conClasificacionFie, ladoCompacto, ladoMundial, ladoNacional } from '@/components/ranking/armar-ficha';
+import { type FichaPanel, PanelRanking } from '@/components/ranking/panel-ranking';
 import { TablaRankingOficial } from '@/components/ranking/tabla-oficial';
 import {
   type AthleteSummary,
@@ -20,9 +20,25 @@ import {
   getRankingScreenData,
   groupKey,
 } from '@/lib/queries/ranking';
+import { SelectorTemporada } from '@/components/ranking/selector-temporada';
+import { TablaTemporada } from '@/components/ranking/tabla-temporada';
+import { db } from '@/db';
+import { mapCategory } from '@/lib/ingest/mappers';
+import {
+  elegirGrupo,
+  leerTablaNacional,
+  listarGruposNacionales,
+  listarTemporadasNacionales,
+  personaPorAtleta,
+  personasDeAtletas,
+} from '@/lib/queries/ranking-temporadas';
 import { armasInternas } from '@/lib/ranking/acceso-interno';
-import { yearFromIsoDate } from '@/lib/utils';
-import { cargarClasificacionFie, paisesFie } from './consultas';
+import { leerFiltroRankingNacional } from '@/lib/ranking/url-nacional';
+import { personasOficiales } from '@/lib/queries/personas-ranking';
+import type { PuestoOficial } from '@/lib/queries/ranking';
+import { leerPuestosOficialesVigentes, leerResumenMundial, type MejorMundial } from '@/lib/sport/explorar/ranking-nacional';
+import { resolverPersona } from '@/lib/sport/explorar/personas';
+import { cargarClasificacionFie, completarTablaFie } from './consultas';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Ranking' };
@@ -50,9 +66,14 @@ export const metadata = { title: 'Ranking' };
  * Ninguna de las dos recalcula nada al vuelo: se enseña lo que hay, con su
  * fecha. Si falta, se dice.
  */
-export default async function Pagina() {
+export default async function Pagina({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const perfil = await getSessionProfile();
   if (!perfil) redirect('/entrar');
+  const filtro = leerFiltroRankingNacional(await searchParams);
 
   /**
    * El cálculo interno se autoriza ANTES de leerlo: sin permiso no se consulta
@@ -62,13 +83,46 @@ export default async function Pagina() {
    */
   const armas = armasInternas(perfil);
 
-  const [oficial, interno, atletas] = await Promise.all([
+  // Sin temporada pedida se abre la vigente: el cálculo interno va en paralelo como siempre.
+  const [oficial, atletas, historicas, internoVigente] = await Promise.all([
     getRankingOficialScreenData(),
-    getRankingScreenData(armas),
     getManagedAthletes(perfil.profileId),
+    listarTemporadasNacionales(db).catch(() => [] as string[]),
+    filtro.temporada ? null : getRankingScreenData(armas),
   ]);
 
   const mios = atletas.map((a) => a.id);
+
+  const vigente = oficial.seasonLabel ?? historicas[0] ?? null;
+  const temporadas = [...new Set([...(vigente ? [vigente] : []), ...historicas])].sort().reverse();
+
+  /**
+   * Una temporada pasada se lee de las publicaciones oficiales guardadas por
+   * temporada; la vigente sigue siendo la vista de siempre, con su ficha, el
+   * mundial y el corte de convocatoria.
+   */
+  if (filtro.temporada && filtro.temporada !== vigente && historicas.includes(filtro.temporada)) {
+    const temporada = filtro.temporada;
+    const [grupos, misPersonas] = await Promise.all([
+      listarGruposNacionales(db, temporada),
+      personasDeAtletas(db, mios).catch(() => [] as string[]),
+    ]);
+    const grupo = elegirGrupo(grupos, filtro);
+    const tabla = grupo ? await leerTablaNacional(db, temporada, grupo) : null;
+    return (
+      <>
+        <Cabecera contexto={`Ranking nacional · temporada ${temporada}`} />
+        <SelectorTemporada temporadas={temporadas} vigente={vigente} actual={filtro} grupos={grupos} grupo={grupo} className="mb-4" />
+        {tabla && tabla.filas.length > 0 ? (
+          <TablaTemporada tabla={tabla} mios={misPersonas} />
+        ) : (
+          <p className="text-sm text-muted-foreground">Sin clasificación publicada.</p>
+        )}
+      </>
+    );
+  }
+
+  const interno = internoVigente ?? (await getRankingScreenData(armas));
 
   /**
    * Las fichas de los tiradores de esta cuenta: foto y puesto mundial de la
@@ -80,10 +134,9 @@ export default async function Pagina() {
    * Las dos consultas van en paralelo y solo con los identificadores de esta
    * cuenta: son una o dos personas, no la federación entera.
    */
-  const [fichasFie, puestosOficiales, paises, mundial, misGruposFie] = await Promise.all([
+  const [fichasFie, puestosOficiales, mundial, misGruposFie, personaDe, personasRfee] = await Promise.all([
     getFichasFie(mios),
     getPuestosOficiales(mios),
-    paisesFie(mios),
     /**
      * Solo la LISTA de combinaciones del mundial, que son 44 filas de cinco
      * campos. La tabla del grupo se pide abajo, una sola, y las demás cuando
@@ -93,6 +146,13 @@ export default async function Pagina() {
     listGruposClasificacionFie(),
     /** En qué prueba del mundial está cada tirador de esta cuenta. */
     gruposDeMisTiradoresFie(mios),
+    personaPorAtleta(db, mios).catch(() => ({}) as Record<string, string>),
+    personasOficiales(db, oficial.seasonLabel),
+  ]);
+  const grupos = await gruposDePersonas(personaDe);
+  const [puestosVigentes, fieVigente] = await Promise.all([
+    completarPuestosOficiales(atletas, puestosOficiales, grupos),
+    clasificacionFieDeAtletas(grupos),
   ]);
   const esPersonal = perfil.role === 'athlete';
   const sinFicha = atletas.length === 0;
@@ -129,7 +189,18 @@ export default async function Pagina() {
           .map((g) => groupKey(g))
       : [];
 
-    const grupoInicial = suyos[0] ?? deSuArma[0] ?? groupKey(oficial.groups[0]);
+    // Un enlace a la temporada vigente con arma y categoría (p. ej. desde un perfil) manda.
+    const categoriaPedida = filtro.categoria ? mapCategory(filtro.categoria) : null;
+    const pedido = filtro.arma
+      ? oficial.groups.find(
+          (g) =>
+            g.weapon === filtro.arma &&
+            (filtro.genero === null || g.gender === filtro.genero) &&
+            (categoriaPedida === null || g.category === categoriaPedida),
+        )
+      : undefined;
+
+    const grupoInicial = (pedido ? groupKey(pedido) : null) ?? suyos[0] ?? deSuArma[0] ?? groupKey(oficial.groups[0]);
 
     /**
      * EL MUNDIAL ABRE EN LA PRUEBA DE TU TIRADOR, NO EN LA DE CUALQUIERA.
@@ -204,13 +275,13 @@ export default async function Pagina() {
      * llegue pintada. Cambiar de arma después ya es una acción de servidor.
      */
     const primeraTablaMundial = grupoMundial
-      ? await getClasificacionFie({
+      ? await completarTablaFie(await getClasificacionFie({
           format: 'INDIVIDUAL',
           weapon: grupoMundial.weapon,
           gender: grupoMundial.gender,
           category: grupoMundial.category,
           athleteIdsPropios: mios,
-        })
+        }))
       : null;
 
     /** Fila del cálculo interno por `grupo|athleteId`, para el panel. */
@@ -252,7 +323,9 @@ export default async function Pagina() {
         */}
 
         <PanelRanking
-          fichas={armarFichas({ atletas, fichasFie, puestosOficiales, paises })}
+          key={grupoInicial}
+          federacionInicial={filtro.temporada || pedido ? 'RFEE' : 'FIE'}
+          fichas={armarFichas({ atletas, fichasFie, puestosOficiales: puestosVigentes, personaDe, fieVigente })}
           rfee={
             <TablaRankingOficial
               grupos={oficial.groups}
@@ -262,8 +335,10 @@ export default async function Pagina() {
               internos={internos}
               mios={mios}
               grupoInicial={grupoInicial}
-              conMiFicha={puestosOficiales.length > 0 || fichasFie.size > 0}
+              conMiFicha={puestosVigentes.length > 0 || fichasFie.size > 0}
               armasAutorizadas={armas}
+              personas={personasRfee}
+              selectorTemporada={temporadas.length > 1 ? <SelectorTemporada temporadas={temporadas} vigente={vigente} actual={filtro} /> : null}
             />
           }
           fie={
@@ -338,64 +413,104 @@ export default async function Pagina() {
  *   nacional ni de la FIE. Es un encargo de ingestión, no de pantalla.
  */
 /**
- * Los datos de la ficha de cada tirador de la cuenta.
- *
- * Devuelve DATOS y no elementos porque el conmutador Nacional/Mundial de la
- * ficha manda ahora también sobre la tabla, así que su estado tiene que vivir
- * en un componente de cliente que envuelva a las dos cosas
- * (`PanelRanking`). Todo lo que sale de aquí es serializable.
+ * Los datos de la tarjeta de cada tirador de la cuenta: su mejor puesto en
+ * cada lado (nacional e internacional). Devuelve DATOS y no elementos porque
+ * el conmutador vive en `PanelRanking`, un componente de cliente.
  */
 function armarFichas({
   atletas,
   fichasFie,
   puestosOficiales,
-  paises,
+  personaDe,
+  fieVigente,
 }: {
   atletas: AthleteSummary[];
   fichasFie: Awaited<ReturnType<typeof getFichasFie>>;
   puestosOficiales: Awaited<ReturnType<typeof getPuestosOficiales>>;
-  /** `athleteId` -> código de país de la FIE («ESP»). */
-  paises: Map<string, string>;
-}) {
+  /** `athleteId` -> persona de Explorar, para el retrato. */
+  personaDe: Record<string, string>;
+  /** `athleteId` -> sus puestos en la clasificación FIE vigente (la de la tabla). */
+  fieVigente: Record<string, MejorMundial[]>;
+}): FichaPanel[] {
   const fichas = atletas
     .map((atleta) => {
       const ficha = fichasFie.get(atleta.id) ?? null;
       const suyos = puestosOficiales.filter((p) => p.athleteId === atleta.id);
 
-      const nacional = ladoNacional(suyos, {
-        licencia: atleta.rfeeLicense,
-        anioNacimiento: atleta.birthDate ? yearFromIsoDate(atleta.birthDate) : null,
-      });
+      // Ni licencia ni año de nacimiento (puede ser menor): la tarjeta no los pinta.
+      const nacional = ladoNacional(suyos);
       const mundial = ladoMundial(ficha);
+      const fie = fieVigente[atleta.id] ?? [];
 
-      return { atleta, ficha, nacional, mundial };
+      return { atleta, ficha, nacional, mundial, fie };
     })
     // Sin ningún puesto en ninguno de los dos lados no hay ficha que enseñar.
     .filter(
-      (f) => f.nacional.variantes.length > 0 || f.mundial.variantes.length > 0,
+      (f) => f.nacional.variantes.length > 0 || f.mundial.variantes.length > 0 || f.fie.length > 0,
     );
 
-  return fichas.map(({ atleta, ficha, nacional, mundial }) => ({
+  return fichas.map(({ atleta, nacional, mundial, fie }) => ({
     athleteId: atleta.id,
     apellidos: atleta.lastName,
     nombre: atleta.firstName,
-    pais: paises.get(atleta.id) ?? null,
-    foto: ficha
-      ? {
-          url: ficha.fotoUrlRetrato,
-          fichaUrl: ficha.fichaUrl,
-          nombrePublicado: ficha.nombrePublicado,
-        }
-      : null,
-    lados: [mundial, nacional],
+    personaId: personaDe[atleta.id] ?? null,
+    lados: [ladoCompacto(nacional), conClasificacionFie(ladoCompacto(mundial), fie)],
   }));
 }
 
-function Cabecera({ contexto }: { contexto: string }) {
+/** La persona de cada tirador con sus fusiones: los ids de Skermo, licencias e id FIE pueden colgar de cualquiera. */
+async function gruposDePersonas(personaDe: Record<string, string>): Promise<Record<string, string[]>> {
+  const pares = await Promise.all(Object.entries(personaDe).map(async ([atleta, persona]) => {
+    const grupo = await resolverPersona(db, persona).catch(() => null);
+    return [atleta, grupo?.ids ?? [persona]] as const;
+  }));
+  return Object.fromEntries(pares);
+}
+
+/** Puestos en la clasificación FIE vigente por el id FIE confirmado de la persona: el mismo cruce que la tabla y el perfil. */
+async function clasificacionFieDeAtletas(grupos: Record<string, string[]>): Promise<Record<string, MejorMundial[]>> {
+  const pares = await Promise.all(Object.entries(grupos).map(async ([atleta, ids]) =>
+    [atleta, (await leerResumenMundial(db, ids)).actuales ?? []] as const));
+  return Object.fromEntries(pares);
+}
+
+/**
+ * Los puestos oficiales de cada tirador de la cuenta. La fila oficial casi
+ * nunca trae `athlete_id`, así que para quien no sale por ahí se buscan por
+ * su persona deportiva y sus fusiones (id de Skermo o licencia), la misma
+ * lectura que usa su perfil: el mismo puesto en la tarjeta, en el perfil y en
+ * la tabla.
+ */
+async function completarPuestosOficiales(
+  atletas: AthleteSummary[],
+  puestos: PuestoOficial[],
+  grupos: Record<string, string[]>,
+): Promise<PuestoOficial[]> {
+  const sinPuesto = atletas.filter((a) => grupos[a.id] && !puestos.some((p) => p.athleteId === a.id));
+  const extra = await Promise.all(sinPuesto.map(async (a) =>
+    (await leerPuestosOficialesVigentes(db, grupos[a.id])).map((f): PuestoOficial => ({
+      athleteId: a.id,
+      seasonLabel: f.temporada,
+      weapon: f.arma as PuestoOficial['weapon'],
+      gender: f.genero as PuestoOficial['gender'],
+      category: f.categoria,
+      categoryRaw: f.categoriaRaw,
+      position: f.puesto === null ? null : Number(f.puesto),
+      totalPoints: f.puntos === null ? null : Number.parseFloat(f.puntos),
+      club: f.club,
+      deCuantos: f.clasificados,
+      actualizadoEl: new Date(Number(f.lectura ?? 0)),
+      sourceUrl: f.url,
+    }))));
+  return [...puestos, ...extra.flat()];
+}
+
+function Cabecera({ contexto, control = null }: { contexto: string; control?: React.ReactNode }) {
   return (
-    <div className="mb-6 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+    <div className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-2">
       <h1 className="text-3xl sm:text-4xl">Ranking</h1>
-      <p className="text-sm text-muted-foreground">{contexto}</p>
+      {/* Con selector de temporada, la temporada ya se lee en él. */}
+      {control ?? <p className="text-sm text-muted-foreground">{contexto}</p>}
     </div>
   );
 }

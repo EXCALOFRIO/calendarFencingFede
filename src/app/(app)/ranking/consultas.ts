@@ -9,6 +9,9 @@ import {
   getClasificacionFie,
 } from '@/lib/queries/ranking';
 import type { Gender, RankingCategory, Weapon } from '@/lib/ranking/compute';
+import { getAnotacionesOlimpicas } from '@/lib/queries/olimpica';
+import { personasPorFieId } from '@/lib/queries/personas-ranking';
+import type { TablaFieCompleta } from '@/lib/ranking/tabla-fie-completa';
 
 /**
  * Lo que le falta a `src/lib/queries/ranking.ts` para esta pantalla.
@@ -85,14 +88,38 @@ export async function cargarClasificacionFie(params: {
   weapon: Weapon;
   gender: Gender;
   category: RankingCategory;
-}): Promise<TablaClasificacionFie | null> {
+}): Promise<TablaFieCompleta | null> {
   'use server';
 
   const perfil = await requireProfile();
   const mios = await getManagedAthletes(perfil.profileId);
 
-  return getClasificacionFie({
-    ...params,
-    athleteIdsPropios: mios.map((a) => a.id),
-  });
+  return completarTablaFie(
+    await getClasificacionFie({
+      ...params,
+      athleteIdsPropios: mios.map((a) => a.id),
+    }),
+  );
+}
+
+/**
+ * La tabla FIE con lo que le añade esta pantalla: la persona de cada fila
+ * (retrato y enlace a su ficha) y, sólo en las seis pruebas olímpicas
+ * (absoluto, masculino o femenino), las marcas de la clasificación de LA 2028.
+ * Cualquier fallo deja la parte vacía: la tabla se pinta igual.
+ */
+export async function completarTablaFie(
+  tabla: TablaClasificacionFie | null,
+): Promise<TablaFieCompleta | null> {
+  if (!tabla) return null;
+  const { weapon, gender, category } = tabla.group;
+  const olimpica =
+    category === 'ABS' && (gender === 'M' || gender === 'F')
+      ? getAnotacionesOlimpicas(weapon, gender).catch(() => null)
+      : Promise.resolve(null);
+  const personas =
+    tabla.format === 'INDIVIDUAL'
+      ? personasPorFieId(db, tabla.rows.map((r) => r.fieId))
+      : Promise.resolve({});
+  return { ...tabla, olimpica: await olimpica, personas: await personas };
 }

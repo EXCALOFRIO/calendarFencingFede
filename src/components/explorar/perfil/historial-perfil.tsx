@@ -71,7 +71,7 @@ function Selector({
         value={valor}
         onChange={(e) => onChange(e.target.value)}
         className={cn(
-          'h-9 w-full min-w-0 cursor-pointer appearance-none truncate rounded-full border bg-card pr-5.5 pl-2.5 text-[0.8125rem] outline-none max-[359px]:pr-5 max-[359px]:pl-2 max-[359px]:text-xs sm:pr-8 sm:pl-3.5 sm:text-sm',
+          'h-11 w-full min-w-0 cursor-pointer appearance-none truncate rounded-full border bg-card pr-5.5 pl-2.5 text-[0.8125rem] outline-none max-[359px]:pr-5 max-[359px]:pl-2 max-[359px]:text-xs sm:pr-8 sm:pl-3.5 sm:text-sm',
           'focus-visible:ring-[3px] focus-visible:ring-ring/50',
           activo ? 'border-primary-text bg-marcado font-semibold text-primary-text' : 'text-foreground',
         )}
@@ -245,7 +245,7 @@ export function HistorialPerfil({
                     aria-current={activo ? 'page' : undefined}
                     data-ambito={a}
                     className={cn(
-                      'flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-full px-2 text-[0.8125rem] font-medium whitespace-nowrap max-[359px]:px-1 max-[359px]:text-xs sm:px-4 sm:text-sm',
+                      'flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-full px-2 text-[0.8125rem] font-medium whitespace-nowrap max-[359px]:px-1 max-[359px]:text-xs sm:px-4 sm:text-sm',
                       'focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
                       activo ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
                     )}
@@ -291,8 +291,8 @@ export function HistorialPerfil({
               type="search"
               value={texto}
               onChange={(e) => cambiar(setTexto)(e.target.value)}
-              placeholder="Buscar competición, ciudad…"
-              className="h-10 w-full min-w-0 rounded-full border bg-card pr-4 pl-10 text-base outline-none placeholder:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-sm"
+              placeholder="Competición o ciudad"
+              className="h-11 w-full min-w-0 rounded-full border bg-card pr-4 pl-10 text-base outline-none placeholder:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-sm"
             />
           </label>
           <div className={cn('grid min-w-0 gap-2 max-[359px]:gap-1.5', conArma ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-[5fr_3fr_5fr] sm:grid-cols-3')}>
@@ -305,7 +305,7 @@ export function HistorialPerfil({
             <button
               type="button"
               onClick={limpiar}
-              className="inline-flex min-h-9 w-fit items-center gap-1 rounded-full px-2 text-sm text-primary-text hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+              className="inline-flex min-h-11 w-fit items-center gap-1 rounded-full px-3 text-sm text-primary-text hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
             >
               <X className="size-4" aria-hidden />
               Quitar filtros

@@ -21,11 +21,14 @@ import {
   type Filtro,
 } from './logica';
 
-const VISTAS: { valor: Vista; etiqueta: string; icono: typeof ListOrdered }[] = [
-  { valor: 'clasificacion', etiqueta: 'Clasificación', icono: ListOrdered },
+// `corta` es el rótulo del móvil: «Clasificación» no cabe en un tercio de 320 px.
+const VISTAS: { valor: Vista; etiqueta: string; corta?: string; icono: typeof ListOrdered }[] = [
+  { valor: 'clasificacion', etiqueta: 'Clasificación', corta: 'Clasif.', icono: ListOrdered },
   { valor: 'poules', etiqueta: 'Poules', icono: Grid3x3 },
   { valor: 'directas', etiqueta: 'Directas', icono: GitFork },
 ];
+
+const COLUMNAS: Record<number, string> = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3' };
 
 function inicioDeFiltro(asaltos: AsaltosDePrueba | null, filtro: Filtro, actual: number): number {
   if (!asaltos) return actual;
@@ -121,35 +124,52 @@ export function VistaPrueba({
   }
 
   const panelId = `${id}-panel`;
+  // Una vista sin datos no se ofrece: deshabilitada se leía como un fallo y no
+  // llegaba al contraste mínimo. La elegida se queda aunque esté vacía.
+  const ofrecidas = VISTAS.filter(({ valor }) => disponibles[valor] || valor === vista);
+  const conPestanas = ofrecidas.length > 1;
   return (
     <section aria-label="Resultados de la prueba" className="flex min-w-0 flex-col gap-3">
       <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
-        <div role="tablist" aria-label="Vista" className="grid shrink-0 grid-cols-3 gap-0.5 rounded-full border bg-card p-0.5 sm:w-auto">
-          {VISTAS.map(({ valor, etiqueta, icono: Icono }) => {
-            const activa = valor === vista;
-            return (
-              <button
-                key={valor}
-                type="button"
-                role="tab"
-                id={`${id}-${valor}`}
-                aria-selected={activa}
-                aria-controls={panelId}
-                disabled={!disponibles[valor]}
-                onClick={() => cambiarVista(valor)}
-                className={cn(
-                  'inline-flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-full px-3 text-sm transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-40 motion-reduce:transition-none',
-                  activa
-                    ? 'bg-marcado font-semibold text-primary-text ring-1 ring-primary-text ring-inset'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                )}
-              >
-                <Icono aria-hidden className={cn('hidden size-4 shrink-0 sm:block', valor === 'directas' && 'rotate-90')} />
-                <span className="truncate">{etiqueta}</span>
-              </button>
-            );
-          })}
-        </div>
+        {conPestanas ? (
+          <div
+            role="tablist"
+            aria-label="Vista"
+            className={cn('grid shrink-0 gap-0.5 rounded-full border bg-card p-0.5 sm:w-auto', COLUMNAS[ofrecidas.length])}
+          >
+            {ofrecidas.map(({ valor, etiqueta, corta, icono: Icono }) => {
+              const activa = valor === vista;
+              return (
+                <button
+                  key={valor}
+                  type="button"
+                  role="tab"
+                  id={`${id}-${valor}`}
+                  aria-selected={activa}
+                  aria-controls={panelId}
+                  aria-label={corta ? etiqueta : undefined}
+                  onClick={() => cambiarVista(valor)}
+                  className={cn(
+                    'inline-flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-full px-3 text-sm transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none',
+                    activa
+                      ? 'bg-marcado font-semibold text-primary-text ring-1 ring-primary-text ring-inset'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                  )}
+                >
+                  <Icono aria-hidden className={cn('hidden size-4 shrink-0 sm:block', valor === 'directas' && 'rotate-90')} />
+                  {corta ? (
+                    <>
+                      <span className="sm:hidden">{corta}</span>
+                      <span className="hidden truncate sm:inline">{etiqueta}</span>
+                    </>
+                  ) : (
+                    <span className="truncate">{etiqueta}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
 
         <form
           role="search"
@@ -168,7 +188,7 @@ export function VistaPrueba({
             aria-label="Buscar un tirador en esta vista"
             enterKeyHint="search"
             autoComplete="off"
-            className="h-10 w-full min-w-0 rounded-full border border-input bg-card pr-24 pl-9 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm [&::-webkit-search-cancel-button]:hidden"
+            className="h-11 w-full min-w-0 rounded-full border border-input bg-card pr-24 pl-9 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm [&::-webkit-search-cancel-button]:hidden"
           />
           {consulta ? (
             <div className="absolute inset-y-0 right-0 flex items-center">
@@ -179,7 +199,7 @@ export function VistaPrueba({
                 <button
                   type="submit"
                   aria-label="Siguiente coincidencia"
-                  className="inline-flex size-10 items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                  className="inline-flex size-11 items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
                 >
                   <ChevronDown className="size-4" aria-hidden />
                 </button>
@@ -188,7 +208,7 @@ export function VistaPrueba({
                 type="button"
                 onClick={() => buscar('')}
                 aria-label="Borrar la búsqueda"
-                className="inline-flex size-10 items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                className="inline-flex size-11 items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
               >
                 <X className="size-4" aria-hidden />
               </button>
@@ -200,7 +220,7 @@ export function VistaPrueba({
         </form>
       </div>
 
-      <div ref={panel} id={panelId} role="tabpanel" aria-labelledby={`${id}-${vista}`} className="flex min-w-0 flex-col gap-3">
+      <div ref={panel} id={panelId} role={conPestanas ? 'tabpanel' : undefined} aria-labelledby={conPestanas ? `${id}-${vista}` : undefined} className="flex min-w-0 flex-col gap-3">
         {vista === 'clasificacion' ? (
           <>
             <ListaClasificacion filas={clasificacion} enlace={enlace} filtro={filtro} />

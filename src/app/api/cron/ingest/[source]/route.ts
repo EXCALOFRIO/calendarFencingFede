@@ -35,7 +35,12 @@ export async function GET(
     );
   }
 
-  const resultado = await runIngest(source, { triggeredBy: 'cron' });
+  // `?forzar=1` relee todo lo de la ventana, sin niveles (docs/tareas-programadas.md).
+  const forzar = new URL(request.url).searchParams.get('forzar') === '1';
+  const resultado = await runIngest(source, {
+    triggeredBy: forzar ? 'cron:forzado' : 'cron',
+    forzar,
+  });
 
   /**
    * Siempre 200, incluso si la ingestión falló: `runIngest` no lanza y deja

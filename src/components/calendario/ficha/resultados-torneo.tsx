@@ -223,24 +223,33 @@ function FilaPodio({ puesto }: { puesto: PuestoPodio }) {
       >
         {puesto.puesto}
       </span>
-      <span className="flex min-w-0 flex-1 flex-col leading-tight">
-        <span className="flex min-w-0 items-center gap-1.5">
-          {puesto.personaId ? (
-            <Link
-              href={rutaFicha(puesto.personaId)}
-              className="min-w-0 truncate text-sm font-medium underline-offset-4 hover:underline"
-            >
-              {nombre}
-            </Link>
-          ) : (
-            <span className="min-w-0 truncate text-sm font-medium">{nombre}</span>
-          )}
-          <BanderaPais pais={puesto.pais} />
+      {puesto.personaId ? (
+        // La fila entera es el enlace: el nombre solo medía 23 px de alto.
+        <Link
+          href={rutaFicha(puesto.personaId)}
+          className="group flex min-h-11 min-w-0 flex-1 flex-col justify-center rounded-md leading-tight focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+        >
+          <DatosPodio puesto={puesto} nombre={nombre} />
+        </Link>
+      ) : (
+        <span className="flex min-h-11 min-w-0 flex-1 flex-col justify-center leading-tight">
+          <DatosPodio puesto={puesto} nombre={nombre} />
         </span>
-        {puesto.club ? (
-          <span className="truncate text-xs text-muted-foreground">{titular(puesto.club)}</span>
-        ) : null}
-      </span>
+      )}
     </li>
+  );
+}
+
+function DatosPodio({ puesto, nombre }: { puesto: PuestoPodio; nombre: string }) {
+  return (
+    <>
+      <span className="flex min-w-0 items-center gap-1.5">
+        <span className="min-w-0 truncate text-sm font-medium underline-offset-4 group-hover:underline">{nombre}</span>
+        <BanderaPais pais={puesto.pais} />
+      </span>
+      {puesto.club ? (
+        <span className="truncate text-xs text-muted-foreground">{titular(puesto.club)}</span>
+      ) : null}
+    </>
   );
 }

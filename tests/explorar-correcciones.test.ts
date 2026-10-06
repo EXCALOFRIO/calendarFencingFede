@@ -48,7 +48,7 @@ describe('selector de temporada con las claves de ambas fuentes', () => {
     expect(new Set(opciones.map((o) => o.valor)).size).toBe(opciones.length);
     expect(new Set(opciones.map((o) => o.etiqueta)).size).toBe(opciones.length);
     expect(opciones.find((o) => o.valor === '2027')?.etiqueta).toBe('FIE 2027');
-    expect(opciones.find((o) => o.valor === '2026-2027')?.etiqueta).toBe('RFEE 2026-2027');
+    expect(opciones.find((o) => o.valor === '2026-2027')?.etiqueta).toBe('2026-2027');
   });
 
   it('la temporada FIE cambia de año en septiembre igual que la ingestión', () => {
@@ -76,11 +76,11 @@ describe('selector de temporada con las claves de ambas fuentes', () => {
 
   it('el chip y el selector nombran la fuente sin convertir la temporada en un rango civil', () => {
     expect(etiquetaTemporada('2027')).toBe('FIE 2027');
-    expect(etiquetaTemporada('2026-2027')).toBe('RFEE 2026-2027');
+    expect(etiquetaTemporada('2026-2027')).toBe('2026-2027');
     expect(etiquetaTemporada('abc')).toBe('abc');
     expect(chipsActivos(criterios({ temporada: '2027' }))[0]).toMatchObject({ valor: 'FIE 2027' });
     expect(chipsActivos(criterios({ temporada: '2026-2027' }))[0]).toMatchObject({
-      valor: 'RFEE 2026-2027',
+      valor: '2026-2027',
     });
   });
 
@@ -93,8 +93,8 @@ describe('selector de temporada con las claves de ambas fuentes', () => {
         ['2026', 'FIE 2026'],
       ],
       [
-        ['2026-2027', 'RFEE 2026-2027'],
-        ['2025-2026', 'RFEE 2025-2026'],
+        ['2026-2027', '2026-2027'],
+        ['2025-2026', '2025-2026'],
       ],
     ]);
     expect(grupos[0].etiqueta).toMatch(/^FIE/);

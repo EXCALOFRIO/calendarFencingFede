@@ -1,12 +1,11 @@
 import { ArrowLeftRight, ChevronDown, SearchX, TriangleAlert, UserRoundSearch, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import type { EncuentroCaraACara, MarcadorEncuentro, ResumenEncuentros } from '@/lib/sport/explorar/cara-a-cara';
 import { rutaEdicion } from '@/lib/sport/explorar/edicion-url';
 import { etiquetaRonda } from '@/lib/sport/explorar/ediciones-asaltos';
-import { CLASES_MEDALLA, categoriaVisible, medallaDe, nombrePrueba } from '@/lib/sport/explorar/presentacion';
+import { CLASES_MEDALLA, categoriaVisible, medallaDe, nombrePrueba, nombrePruebaCorto } from '@/lib/sport/explorar/presentacion';
 import { inicialesVisibles, nombreVisible } from '@/lib/sport/nombre-visible';
 import {
   chipsCaraACara,
@@ -24,11 +23,12 @@ import type {
   VistaCaraACara,
 } from '@/lib/sport/explorar/cara-a-cara-pantalla';
 import type { DeportistaResumen } from '@/lib/sport/explorar/tipos';
-import { etiquetaTemporada, rutaFicha } from '@/lib/sport/explorar/url';
+import { rutaFicha } from '@/lib/sport/explorar/url';
 import { WEAPON_LABEL, cn, titular } from '@/lib/utils';
+import { BarraVictorias } from './barra-victorias';
 import { EtiquetaTipoCompeticion } from './etiqueta-competicion';
 import { FotoDeportista } from './foto-deportista';
-import { Bloque, Nota } from './piezas';
+import { Bloque } from './piezas';
 
 /**
  * Cara a cara individual. Sólo lleva lo que traen los DTO de `cara-a-cara.ts`:
@@ -95,17 +95,22 @@ function Contendiente({
 }) {
   return (
     <div className={cn('flex min-w-0 flex-col items-center gap-2 text-center', className)}>
-      <FotoDeportista personaId={persona.id} nombre={nombre} tamano="heroe" />
+      {/* El nombre es el enlace accesible; el retrato repite el destino sin otra parada de tabulador. */}
+      <Link href={rutaFicha(persona.id)} prefetch={false} tabIndex={-1} aria-hidden className="block rounded-full">
+        <FotoDeportista personaId={persona.id} nombre={nombre} tamano="heroe" />
+      </Link>
       <Link
         href={rutaFicha(persona.id)}
         prefetch={false}
         aria-label={`Ficha de ${nombre}`}
+        title={nombre}
         className={cn(
-          'max-w-full rounded-sm font-display text-xl leading-tight font-semibold break-words underline-offset-4 hover:underline sm:text-3xl',
+          // 44 px de área táctil aunque el nombre ocupe una línea; un nombre largo, dos como mucho.
+          'inline-flex min-h-11 max-w-full items-center justify-center rounded-sm font-display text-xl leading-tight font-semibold underline-offset-4 hover:underline sm:text-3xl',
           ENLACE_CLASES,
         )}
       >
-        {nombre}
+        <span className="line-clamp-2 break-words">{nombre}</span>
       </Link>
       {bandera && persona.pais ? <BanderaPais pais={persona.pais} /> : null}
     </div>
@@ -146,7 +151,7 @@ export function CabeceraCaraACara({
   const pctYo = decididos > 0 && r ? Math.round((r.victorias / decididos) * 100) : null;
   // Los últimos asaltos sólo son los últimos en la primera página.
   const ultimos = !criterios.cursor ? (datos.items ?? []).slice(0, 8) : [];
-  const cambiar = construirUrlCaraACara(yo.id, { temporada: criterios.temporada, arma: criterios.arma, fase: criterios.fase });
+  const cambiar = rutaCaraACara(yo.id);
   // Dos banderas iguales no dicen nada: sólo se pintan si los países difieren.
   const banderas = Boolean(yo.pais || rival.pais) && yo.pais !== rival.pais;
 
@@ -340,6 +345,7 @@ export function CaraACaraCompleto({
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <ResumenEncuentrosVista datos={datos} resumen={datos.resumenEncuentros} criterios={criterios} />
+      <AsaltosCaraACara datos={datos} encuentros={datos.encuentros ?? []} />
       {rendimiento}
       <EncuentrosCaraACara datos={datos} encuentros={datos.encuentros ?? []} />
     </div>
@@ -428,7 +434,9 @@ function FilaCruce({
   /** Arma de casi todas las pruebas: sólo se escribe en las que no la tienen. */
   armaHabitual: string;
 }) {
-  const nombre = nombrePrueba({ nombre: e.torneo, formato: e.formato, fuente: e.fuente });
+  const datosNombre = { nombre: e.torneo, formato: e.formato, fuente: e.fuente };
+  const nombre = nombrePrueba(datosNombre);
+  const corto = nombrePruebaCorto(datosNombre);
   const fecha = fechaDe(e.fecha);
   const detalle = [e.arma !== armaHabitual ? WEAPON_LABEL[e.arma] : null, categoriaVisible(e.categoria), e.ciudad ? titular(e.ciudad) : null]
     .filter((x): x is string => Boolean(x));
@@ -452,7 +460,7 @@ function FilaCruce({
         <span aria-hidden className="pt-1 text-center text-xs text-muted-foreground">–</span>
       )}
       <span aria-hidden className="flex min-w-0 flex-col gap-1">
-        <span className="line-clamp-2 text-sm leading-snug font-medium">{nombre}</span>
+        <span className="line-clamp-2 text-sm leading-snug font-medium" title={corto === nombre ? undefined : nombre}>{corto}</span>
         <span className="flex min-w-0 items-center gap-2 overflow-hidden text-xs whitespace-nowrap text-muted-foreground">
           <EtiquetaTipoCompeticion clasificacion={e.clasificacion} className="h-5 px-2 text-[0.625rem]" />
           {detalle.map((d, i) => (
@@ -526,6 +534,147 @@ function ListaCruces({
   ));
 }
 
+/* ------------------------------------------------------------------- asaltos */
+
+export type AsaltoDirecto = { clave: string; encuentro: EncuentroCaraACara; marcador: MarcadorEncuentro };
+
+/**
+ * Cada asalto entre las dos, del más reciente: las pruebas ya vienen de la más
+ * reciente y, dentro de una, la final se tiró después que la poule. Sale de los
+ * marcadores de las pruebas comunes (ya sin lecturas repetidas), no de la
+ * página de `items`, para que estén todos.
+ */
+export function asaltosDirectos(encuentros: readonly EncuentroCaraACara[]): AsaltoDirecto[] {
+  return encuentros.flatMap((e) =>
+    [...e.marcadores].reverse().map((m, i) => ({ clave: `${e.pruebaId}-${i}`, encuentro: e, marcador: m })),
+  );
+}
+
+const ANIO_CORTO = new Intl.DateTimeFormat('es-ES', { year: '2-digit', timeZone: 'UTC' });
+const FILA_ASALTO = 'grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-2.5 sm:px-4';
+
+function FilaAsaltoDirecto({ a, yo, nYo, nRival }: { a: AsaltoDirecto; yo: string; nYo: string; nRival: string }) {
+  const { encuentro: e, marcador: m } = a;
+  const datosNombre = { nombre: e.torneo, formato: e.formato, fuente: e.fuente };
+  const nombre = nombrePrueba(datosNombre);
+  const corto = nombrePruebaCorto(datosNombre);
+  const fecha = fechaDe(e.fecha);
+  const ronda = rotuloMarcador(m);
+  const gana = m.mios > m.rival ? 'yo' : m.mios < m.rival ? 'rival' : null;
+  const etiqueta = [
+    fecha ? FECHA_LARGA.format(fecha) : null,
+    nombre,
+    ronda,
+    `${nYo} ${m.mios}, ${nRival} ${m.rival}`,
+    gana === 'yo' ? `gana ${nYo}` : gana === 'rival' ? `gana ${nRival}` : null,
+  ]
+    .filter(Boolean)
+    .join('. ');
+  const contenido = (
+    <>
+      {fecha ? (
+        <time dateTime={e.fecha!.slice(0, 10)} aria-hidden className="flex flex-col items-center leading-none">
+          <span className="cifra text-lg">{DIA.format(fecha)}</span>
+          <span className="text-[0.625rem] text-muted-foreground">
+            {MES.format(fecha).replace('.', '')} {ANIO_CORTO.format(fecha)}
+          </span>
+        </time>
+      ) : (
+        <span aria-hidden className="text-center text-xs text-muted-foreground">–</span>
+      )}
+      <span aria-hidden className="flex min-w-0 flex-col gap-1">
+        <span className="truncate text-sm leading-tight font-medium" title={corto === nombre ? undefined : nombre}>{corto}</span>
+        <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="inline-flex h-5 shrink-0 items-center rounded-full border border-filete-alto px-2 text-[0.6875rem] text-foreground/85">
+            {ronda}
+          </span>
+          {e.categoria ? <span className="truncate">{categoriaVisible(e.categoria)}</span> : null}
+        </span>
+      </span>
+      <span aria-hidden className="flex items-center gap-2">
+        <span className="cifra flex items-baseline gap-1 text-xl leading-none">
+          <span className={gana === 'yo' ? 'text-ok' : 'text-muted-foreground'}>{m.mios}</span>
+          <span className="text-sm text-muted-foreground">–</span>
+          <span className={gana === 'rival' ? 'text-danger' : 'text-muted-foreground'}>{m.rival}</span>
+        </span>
+        {gana ? (
+          <span
+            className={cn(
+              'inline-flex size-6 items-center justify-center rounded-full text-[0.6875rem] font-bold text-background',
+              gana === 'yo' ? 'bg-ok' : 'bg-danger',
+            )}
+          >
+            {gana === 'yo' ? 'V' : 'D'}
+          </span>
+        ) : null}
+      </span>
+    </>
+  );
+  return (
+    <li>
+      {e.edicionId ? (
+        <Link
+          href={urlCruce(e, yo)}
+          prefetch={false}
+          aria-label={etiqueta}
+          className={cn(FILA_ASALTO, 'transition-colors hover:bg-secondary/60', ENLACE_CLASES)}
+        >
+          {contenido}
+        </Link>
+      ) : (
+        <div role="group" aria-label={etiqueta} className={FILA_ASALTO}>
+          {contenido}
+        </div>
+      )}
+    </li>
+  );
+}
+
+const ASALTOS_VISIBLES = 8;
+
+/**
+ * Los asaltos directos entre las dos, antes que las pruebas comunes: fecha,
+ * prueba, ronda y marcador con el ganador marcado (V/D desde la persona
+ * consultada). Cada fila abre la prueba en esa persona.
+ */
+export function AsaltosCaraACara({ datos, encuentros }: { datos: DatosCaraACara; encuentros: readonly EncuentroCaraACara[] }) {
+  const asaltos = asaltosDirectos(encuentros);
+  if (asaltos.length === 0) return null;
+  const { yo, rival } = datos.personas;
+  const fila = { yo: yo.id, nYo: visible(yo.nombre), nRival: visible(rival.nombre) };
+  const lista = (xs: AsaltoDirecto[]) => (
+    <ol className="divide-y divide-filete">
+      {xs.map((a) => <FilaAsaltoDirecto key={a.clave} a={a} {...fila} />)}
+    </ol>
+  );
+  return (
+    <section aria-labelledby="h2h-asaltos" className="flex min-w-0 flex-col gap-3">
+      <h2 id="h2h-asaltos" className="flex items-baseline gap-2 text-xl">
+        Asaltos
+        <span className="cifra text-lg text-muted-foreground">{asaltos.length}</span>
+      </h2>
+      <div className="min-w-0 overflow-hidden rounded-md border border-t-filete-alto bg-card">
+        {lista(asaltos.slice(0, ASALTOS_VISIBLES))}
+        {asaltos.length > ASALTOS_VISIBLES ? (
+          <details className="group min-w-0">
+            <summary
+              className={cn(
+                'flex min-h-11 cursor-pointer list-none items-center justify-center gap-1.5 border-t border-filete text-sm font-medium text-primary-text hover:bg-secondary/60 [&::-webkit-details-marker]:hidden',
+                ENLACE_CLASES,
+              )}
+            >
+              <span className="group-open:hidden">Ver {asaltos.length - ASALTOS_VISIBLES} más</span>
+              <span className="hidden group-open:inline">Ver menos</span>
+              <ChevronDown className="size-4 transition-transform group-open:rotate-180" aria-hidden />
+            </summary>
+            <div className="border-t border-filete">{lista(asaltos.slice(ASALTOS_VISIBLES))}</div>
+          </details>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 const CRUCES_VISIBLES = 12;
 
 function armaMasComun(encuentros: readonly EncuentroCaraACara[]): string {
@@ -596,12 +745,14 @@ export function EncuentrosCaraACara({ datos, encuentros }: { datos: DatosCaraACa
 /* ----------------------------------------------------------------- elegir rival */
 
 function FilaPersona({
+  id,
   href,
   nombre,
   pais,
   detalle,
   aviso,
 }: {
+  id: string;
   href: string;
   nombre: string;
   pais: string | null;
@@ -618,16 +769,16 @@ function FilaPersona({
           ENLACE_CLASES,
         )}
       >
-        <Avatar className="row-span-3 size-10 md:row-span-1">
-          <AvatarFallback>{inicialesVisibles(nombre)}</AvatarFallback>
-        </Avatar>
+        <span className="row-span-3 self-start md:row-span-1 md:self-center">
+          <FotoDeportista personaId={id} nombre={visible(nombre)} tamano="lista" />
+        </span>
         <span className="flex min-w-0 flex-col gap-1">
           <span className="font-medium break-words">{visible(nombre)}</span>
           {aviso}
         </span>
         <span className="flex min-w-0 flex-col gap-0.5">
           {pais ? (
-            <BanderaPais pais={pais} conNombre />
+            <BanderaPais pais={pais} soloBandera />
           ) : (
             <span className="text-sm text-muted-foreground">País no publicado</span>
           )}
@@ -642,12 +793,10 @@ function OtrosCoincidentes({
   otros,
   persona,
   excluidos,
-  criterios,
 }: {
   otros: OtrosVista;
   persona: PersonaCaraACara;
   excluidos: ReadonlySet<string>;
-  criterios: CriteriosCaraACara;
 }) {
   if (otros.tipo === 'error') {
     return (
@@ -665,37 +814,31 @@ function OtrosCoincidentes({
   return (
     <div className="flex flex-col gap-2">
       <h3 id="h2h-otros" className="text-lg">
-        Otras personas indexadas que coinciden
+        Otras personas
       </h3>
       {/* La lista confirmada filtra por nombre canónico y esta búsqueda también casa alias: que una persona
           no figure arriba no prueba que no tenga asaltos con la consultada, ni siquiera con la lista leída. */}
-      <Nota>
-        Son personas indexadas que coinciden con el nombre o un alias. No se afirma que tengan o no asaltos
-        con {visible(persona.nombre)}: su cobertura se determina al abrirlo, y ahí se muestra qué cubre la
-        lectura, no un balance.
-      </Nota>
       <ul aria-labelledby="h2h-otros" className="divide-y rounded-md border bg-card">
         {items.map((d) => (
           <FilaPersona
             key={d.id}
-            href={urlElegirRival(persona.id, d.id, criterios)}
+            id={d.id}
+            href={urlElegirRival(persona.id, d.id)}
             nombre={d.nombre}
             pais={d.pais}
             aviso={
               d.mismoNombre > 1 ? (
                 <span className="inline-flex items-start gap-1.5 text-xs text-warn">
                   <Users className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                  <span>{d.mismoNombre} personas con este nombre: comprueba país, año y armas.</span>
+                  <span>{d.mismoNombre} personas con este nombre</span>
                 </span>
               ) : d.alias ? (
-                <span className="text-xs text-muted-foreground">Coincide con el alias «{d.alias}»</span>
+                <span className="text-xs text-muted-foreground">Alias «{d.alias}»</span>
               ) : undefined
             }
             detalle={
               <>
-                <span className="text-sm">
-                  {d.armas.length > 0 ? d.armas.map((a) => WEAPON_LABEL[a]).join(', ') : 'Sin pruebas importadas'}
-                </span>
+                {d.armas.length > 0 ? <span className="text-sm">{d.armas.map((a) => WEAPON_LABEL[a]).join(', ')}</span> : null}
                 {d.anioNacimiento !== null && d.mismoNombre > 1 ? (
                   <span className="text-xs text-muted-foreground">Nacimiento {d.anioNacimiento}</span>
                 ) : null}
@@ -712,7 +855,7 @@ const MENSAJES_RIVALES: Record<'cursor_invalido' | 'entrada_invalida' | 'no_disp
   cursor_invalido:
     'Esta página de rivales es de otra búsqueda o ha caducado. Vuelve a la primera página.',
   entrada_invalida:
-    'Algún valor de la dirección no se entiende (por ejemplo la temporada), así que no se ha listado a nadie. No significa que no haya rivales.',
+    'Algún valor de la dirección no se entiende. No significa que no haya rivales.',
   no_disponible:
     'Los datos deportivos todavía no están preparados en esta instalación. No significa que no haya rivales.',
   error: 'Ha fallado la consulta; no es que no haya rivales. Inténtalo de nuevo.',
@@ -729,42 +872,28 @@ export function ElegirRival({
   otros: OtrosVista | null;
   criterios: CriteriosCaraACara;
 }) {
-  const base = { ...criterios, cursor: '' };
+  // La elección de rival sólo busca por nombre: los filtros del duelo no viajan con la página.
+  const base = { q: criterios.q };
   const idsRivales = new Set(rivales.tipo === 'ok' ? rivales.items.map((r) => r.id) : []);
   return (
     <div className="flex flex-col gap-6">
-      <Bloque id="h2h-rivales" titulo="Rivales con asaltos confirmados" nivel="pagina">
-        <Nota>
-          Personas con las que {visible(persona.nombre)} tiene al menos un asalto individual con marcador
-          publicado ya importado, de más a menos asaltos.
-          {criterios.temporada ? ` Sólo de ${etiquetaTemporada(criterios.temporada)}.` : ''}
-        </Nota>
+      <Bloque id="h2h-rivales" titulo="Rivales" nivel="pagina">
         {rivales.tipo === 'ok' ? (
           rivales.sinResultados ? (
-            <p role="status" className="medida text-sm text-muted-foreground">
-              {criterios.q || criterios.temporada
-                ? 'Ningún rival con asaltos importados coincide con estos criterios. '
-                : 'Todavía no hay asaltos individuales importados de esta persona. '}
-              Puede faltar por importar; no significa que no haya competido. Busca por nombre para abrir el
-              cara a cara con cualquier persona y ver qué cubre.
+            <p role="status" className="text-sm text-muted-foreground">
+              {criterios.q ? 'Sin coincidencias.' : 'Sin rivales con asaltos.'}
             </p>
           ) : (
             <>
-              <ul className="divide-y rounded-md border bg-card" aria-label="Rivales con asaltos confirmados">
+              <ul className="divide-y rounded-md border bg-card" aria-label="Rivales, de más a menos asaltos">
                 {rivales.items.map((r) => (
                   <FilaPersona
                     key={r.id}
-                    href={urlElegirRival(persona.id, r.id, criterios)}
+                    id={r.id}
+                    href={urlElegirRival(persona.id, r.id)}
                     nombre={r.nombre}
                     pais={r.pais}
-                    detalle={
-                      <span className="flex items-baseline gap-1.5">
-                        <span className="cifra text-2xl leading-none">{r.asaltos}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {r.asaltos === 1 ? 'asalto importado' : 'asaltos importados'}
-                        </span>
-                      </span>
-                    }
+                    detalle={<BarraVictorias victorias={r.victorias} derrotas={r.derrotas} className="max-w-56" />}
                   />
                 ))}
               </ul>
@@ -786,9 +915,7 @@ export function ElegirRival({
                       Ver más rivales
                     </Link>
                   </Button>
-                ) : (
-                  <p className="text-sm text-muted-foreground">No hay más rivales con estos criterios.</p>
-                )}
+                ) : null}
               </nav>
             </>
           )
@@ -814,7 +941,6 @@ export function ElegirRival({
           otros={otros}
           persona={persona}
           excluidos={idsRivales}
-          criterios={criterios}
         />
       ) : null}
     </div>

@@ -31,6 +31,7 @@ import { hoyMadrid } from '@/lib/callups/fechas';
 import { listEvents, type Scope } from '@/lib/queries/calendar';
 import { cargarTramoPasado, edicionesExplorarDeEvento } from '@/lib/queries/calendario-pasado';
 import { tramoDeMeses, tramoPasadoDe } from '@/lib/queries/calendario-pasado-tramo';
+import { aplicarDirectos, fijarHoy } from './_directos.mts';
 
 const RAIZ = process.cwd();
 const SALIDA = carpetaCapturas(RAIZ, 'calendario-pasado');
@@ -41,6 +42,8 @@ const VISTA = process.env.VISTA === 'trimestre' ? 'trimestre' : 'mes';
 const SCOPE: Scope[] = ['NACIONAL', 'INTERNACIONAL'];
 
 const sqlite = new DatabaseSync(BASE, { readOnly: true });
+fijarHoy();
+aplicarDirectos(sqlite);
 let consultas = 0;
 
 function valor(v: unknown): SQLInputValue {
@@ -236,6 +239,20 @@ for (const p of paginas) {
       const destino = path.join(SALIDA, `${p.nombre}-${a.sufijo}${completa ? '-completa' : ''}.png`);
       await pagina.screenshot({ path: destino, fullPage: completa });
       capturas.push(path.relative(RAIZ, destino));
+    }
+    // Con DIRECTOS, además, las tarjetas que llevan pastilla de directo, sueltas.
+    if (process.env.DIRECTOS) {
+      const enVivo = pagina.locator('article:has([data-directo="directo"]):visible');
+      const despues = pagina.locator('article:has([data-directo="resultados"]):visible');
+      const elegidas = [
+        ...(await enVivo.count()) > 0 ? [['vivo', enVivo.first()] as const] : [],
+        ...(await despues.count()) > 0 ? [['resultados', despues.first()] as const] : [],
+      ];
+      for (const [clave, tarjeta] of elegidas) {
+        const destino = path.join(SALIDA, `${p.nombre}-${a.sufijo}-directo-${clave}.png`);
+        await tarjeta.screenshot({ path: destino });
+        capturas.push(path.relative(RAIZ, destino));
+      }
     }
     await pagina.close();
   }

@@ -32,6 +32,8 @@ export type FiltrosPrueba = {
   categoriaRaw?: string;
   formato?: Formato;
   ambito?: Ambito;
+  /** Quién organiza la prueba (ver `organizador.ts`). */
+  organizador?: 'FIE' | 'EFC' | 'RFEE';
 };
 
 export type FiltrosBusqueda = FiltrosPrueba & {
@@ -214,4 +216,7 @@ export type RivalResumen = {
   nombre: string;
   pais: string | null;
   asaltos: number;
+  /** Desde la persona consultada; un empate no suma a ninguna de las dos. */
+  victorias: number;
+  derrotas: number;
 };

@@ -165,9 +165,9 @@ describe('promesa «Ver tus datos y el cálculo» por arma seleccionada', () => 
         armasAutorizadas: [],
       }),
     );
-    expect(sinPermiso).toContain('sin ficha vinculada');
-    expect(sinPermiso).toContain('Solo se muestran sus datos publicados por la RFEE');
-    expect(sinPermiso).not.toContain('su cálculo interno');
+    expect(sinPermiso).toContain('</span> sin ficha</p>');
+    expect(sinPermiso).toContain('solo sus datos publicados por la RFEE');
+    expect(sinPermiso).not.toContain('ni cálculo interno');
   });
 });
 

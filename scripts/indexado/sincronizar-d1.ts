@@ -37,8 +37,29 @@ export const TABLAS = [
   'sport_person_alias',
   'sport_external_id',
   'sport_link_candidate',
+  // 0013: hija de sport_competition.
+  'sport_competition_combined',
 ] as const;
 export type Tabla = (typeof TABLAS)[number];
+/**
+ * Tablas de migraciones aditivas posteriores: si no está ni en la base ni en la nueva, no hay
+ * nada que copiar y se omite; si sólo está en una, falta aplicar la migración en la otra.
+ */
+const TABLAS_OPCIONALES: ReadonlySet<string> = new Set(['sport_competition_combined']);
+
+/** Las tablas de TABLAS que se comparan entre `b` y `n`. */
+export function tablasPresentes(db: DatabaseSync): Tabla[] {
+  const hay = (esquema: string, t: string) =>
+    Boolean(db.prepare(`SELECT 1 FROM ${esquema}.sqlite_master WHERE type='table' AND name=?`).get(t));
+  return TABLAS.filter((t) => {
+    if (!TABLAS_OPCIONALES.has(t)) return true;
+    const [b, n] = [hay('b', t), hay('n', t)];
+    if (b !== n) {
+      throw new Error(`migracion_pendiente:${t} (aplica drizzle-d1/0013_pruebas_conjuntas.sql en D1 y en la copia ${b ? 'nueva' : 'base'})`);
+    }
+    return b;
+  });
+}
 
 export const D1_NOMBRE = 'calendario-fie-fede-db';
 export const D1_ID = 'e1c28f19-278c-4d8f-9c7c-9b9d1c45653e';
@@ -245,6 +266,7 @@ export function agregadosLocales(
 ): Record<string, Agregado> {
   const salida: Record<string, Agregado> = {};
   for (const tabla of TABLAS) {
+    if (!info[tabla]) continue;
     const { columnas: cols, version } = info[tabla];
     const filas = consultasAgregado(tabla, cols, version).map((sql) => {
       const st = db.prepare(sql.replace(`FROM ${q(tabla)}`, `FROM ${esquema}.${q(tabla)}`));
@@ -395,17 +417,18 @@ export function planificar(opciones: OpcionesPlan): Manifiesto {
   }
   const db = abrirComparacion(opciones.base, opciones.nuevo);
   try {
+    const tablas = tablasPresentes(db);
     const info: Record<string, InfoTabla> = {};
-    for (const t of TABLAS) info[t] = infoTabla(db, t);
+    for (const t of tablas) info[t] = infoTabla(db, t);
     const fks = clavesAjenas(db);
-    const sincronizadas = new Set<string>(TABLAS);
+    const sincronizadas = new Set<string>(tablas);
     const fksInternas = fks.filter((f) => sincronizadas.has(f.hija) && sincronizadas.has(f.padre));
     const referenciasExternas = fks.filter((f) => !sincronizadas.has(f.hija) && sincronizadas.has(f.padre));
     const fksSalientes = fks.filter((f) => sincronizadas.has(f.hija) && !sincronizadas.has(f.padre));
 
     // 1. Conjuntos de cambios por clave primaria, en SQL sobre las dos bases adjuntas.
     const resumen: Manifiesto['tablas'] = {};
-    for (const t of TABLAS) {
+    for (const t of tablas) {
       const { columnas: cols } = info[t];
       const cambio = `temp.${q(`cambio_${t}`)}`;
       db.exec(`CREATE TABLE ${cambio} (id TEXT PRIMARY KEY, op TEXT NOT NULL, fase INTEGER NOT NULL DEFAULT 2, dep INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID`);
@@ -432,7 +455,7 @@ export function planificar(opciones: OpcionesPlan): Manifiesto {
     }
 
     // node:sqlite corta los textos en el primer NUL: esas filas se copiarían truncadas.
-    for (const t of TABLAS) {
+    for (const t of tablas) {
       const conNul = info[t].columnas.map((c) => `instr(x.${q(c)}, char(0))>0`).join(' OR ');
       const n = (db.prepare(
         `SELECT count(*) AS n FROM n.${q(t)} x JOIN temp.${q(`cambio_${t}`)} d ON d.id=x.id AND d.op IN ('I','U') WHERE ${conNul}`,
@@ -445,7 +468,7 @@ export function planificar(opciones: OpcionesPlan): Manifiesto {
     //    De hijas a padres: un padre del que cuelga una hija que se borra al final también
     //    espera, o su ON DELETE CASCADE se llevaría la hija y lo que aún cuelga de ella
     //    (una edición borrada con una prueba cuyos asaltos se trasladan a otra prueba).
-    for (const t of [...TABLAS].reverse()) {
+    for (const t of [...tablas].reverse()) {
       const hijas = fksInternas.filter((f) => f.padre === t);
       if (!hijas.length || !resumen[t].borrar) continue;
       const usadas = hijas
@@ -460,7 +483,7 @@ export function planificar(opciones: OpcionesPlan): Manifiesto {
         (db.prepare(`SELECT count(*) AS n FROM temp.${q(`cambio_${t}`)} WHERE op='D' AND fase=3`).get() as { n: number }).n,
       );
     }
-    for (const t of TABLAS) db.exec(`UPDATE temp.${q(`cambio_${t}`)} SET fase=1 WHERE op='D' AND fase=2`);
+    for (const t of tablas) db.exec(`UPDATE temp.${q(`cambio_${t}`)} SET fase=1 WHERE op='D' AND fase=2`);
 
     // Borrar una persona referenciada desde tablas fuera del alcance (favoritos, rankings)
     // las modificaría por cascada: no se permite.
@@ -474,7 +497,7 @@ export function planificar(opciones: OpcionesPlan): Manifiesto {
 
     // 4. Dependencias dentro de cada tabla en la fase de altas/cambios.
     const dependencias: Record<string, Map<string, Set<string>>> = {};
-    for (const t of TABLAS) {
+    for (const t of tablas) {
       const deps = new Map<string, Set<string>>();
       const arista = (antes: string, despues: string) => {
         if (!deps.has(antes)) deps.set(antes, new Set());
@@ -486,7 +509,7 @@ export function planificar(opciones: OpcionesPlan): Manifiesto {
         const k = (a: string) => `json_array(${u.columnas.map((c) => `${a}.${q(c)}`).join(',')})`;
         const noNulo = (a: string) => u.columnas.map((c) => `${a}.${q(c)} IS NOT NULL`).join(' AND ');
         const donde = u.donde ? ` AND (${u.donde})` : '';
-        // Tablas temporales indexadas: un JOIN directo sobre json_array() sería cuadrático.
+        // tablas temporales indexadas: un JOIN directo sobre json_array() sería cuadrático.
         db.exec(`DROP TABLE IF EXISTS temp.clave_a; DROP TABLE IF EXISTS temp.clave_r`);
         db.exec(`CREATE TEMP TABLE clave_a AS SELECT ${q(t)}.id AS id, ${k(q(t))} AS k FROM n.${q(t)} AS ${q(t)}
             JOIN ${cambio} d ON d.id=${q(t)}.id AND d.op IN ('I','U') WHERE ${noNulo(q(t))}${donde}`);
@@ -526,9 +549,9 @@ export function planificar(opciones: OpcionesPlan): Manifiesto {
     const borrar = (t: string, fase: number) => emitirBorrados(
       db, escritor, t, info[t], fase, referenciasExternas, fksInternas.filter((f) => f.hija === t && f.padre === t),
     );
-    for (const t of [...TABLAS].reverse()) borrar(t, 1);
-    for (const t of TABLAS) emitirAltasYCambios(db, escritor, t, info[t], dependencias[t]);
-    for (const t of [...TABLAS].reverse()) borrar(t, 3);
+    for (const t of [...tablas].reverse()) borrar(t, 1);
+    for (const t of tablas) emitirAltasYCambios(db, escritor, t, info[t], dependencias[t]);
+    for (const t of [...tablas].reverse()) borrar(t, 3);
     escritor.cerrar();
 
     const manifiesto: Manifiesto = {
@@ -859,11 +882,12 @@ export interface Diferencia {
 export function compararBases(rutaA: string, rutaB: string): Diferencia[] {
   const db = abrirComparacion(rutaA, rutaB);
   try {
+    const tablas = tablasPresentes(db);
     const info: Record<string, InfoTabla> = {};
-    for (const t of TABLAS) info[t] = infoTabla(db, t);
+    for (const t of tablas) info[t] = infoTabla(db, t);
     const agA = agregadosLocales(db, info, 'b');
     const agB = agregadosLocales(db, info, 'n');
-    return TABLAS.map((t) => {
+    return tablas.map((t) => {
       const cols = info[t].columnas.map(q).join(',');
       const cuenta = (x: string, y: string) =>
         Number((db.prepare(`SELECT count(*) AS n FROM (SELECT ${cols} FROM ${x}.${q(t)} EXCEPT SELECT ${cols} FROM ${y}.${q(t)})`).get() as { n: number }).n);
@@ -919,7 +943,9 @@ export function consultarRemoto(sql: string): ResultadoD1[] {
 
 function agregadosRemotos(manifiesto: Manifiesto, log: (m: string) => void): Record<string, Agregado> {
   const salida: Record<string, Agregado> = {};
+  // Sólo las del manifiesto: una tabla opcional que no estaba en ninguna copia no se consulta.
   for (const t of TABLAS) {
+    if (!manifiesto.tablas[t]) continue;
     const t0 = Date.now();
     salida[t] = agregadoRemoto(manifiesto, t);
     log(`  ${t}: n=${salida[t].n} (${Date.now() - t0} ms)`);
@@ -978,7 +1004,7 @@ function estadoRemoto(): EstadoRemoto {
 }
 
 function compararAgregados(esperado: Record<string, Agregado>, real: Record<string, Agregado>): string[] {
-  return TABLAS.filter((t) => JSON.stringify(esperado[t]) !== JSON.stringify(real[t])).map(
+  return TABLAS.filter((t) => t in esperado && JSON.stringify(esperado[t]) !== JSON.stringify(real[t])).map(
     (t) => `${t}: esperado ${JSON.stringify(esperado[t])} remoto ${JSON.stringify(real[t])}`,
   );
 }

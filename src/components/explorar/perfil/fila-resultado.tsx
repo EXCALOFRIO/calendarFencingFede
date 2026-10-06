@@ -19,7 +19,7 @@ export function fechaCorta(iso: string | null): string {
   return p ? `${p.dia} ${p.mes} ${p.anio}` : iso;
 }
 
-const NOMBRE_FUENTE: Record<string, string> = { fie: 'FIE', rfee_pdf: 'RFEE', engarde: 'Engarde', fww: 'Fencing Worldwide' };
+const NOMBRE_FUENTE: Record<string, string> = { fie: 'FIE', efc: 'EFC', rfee_pdf: 'RFEE', engarde: 'Engarde', fww: 'Fencing Worldwide' };
 
 function nombreFuente(fuente: string): string {
   return NOMBRE_FUENTE[fuente] ?? (fuente.startsWith('skermo') ? 'Skermo' : fuente);

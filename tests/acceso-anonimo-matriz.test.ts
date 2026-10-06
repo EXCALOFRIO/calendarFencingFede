@@ -67,7 +67,7 @@ describe('páginas sin sesión', () => {
   const rutaPersona = Promise.resolve({ personaId: UUID_A });
 
   const paginas: [string, string, () => Promise<unknown>][] = [
-    ['/ranking', '@/app/(app)/ranking/page', async () => (await import('@/app/(app)/ranking/page')).default()],
+    ['/ranking', '@/app/(app)/ranking/page', async () => (await import('@/app/(app)/ranking/page')).default({ searchParams: sinConsulta })],
     [
       '/explorar',
       '@/app/(app)/explorar/page',

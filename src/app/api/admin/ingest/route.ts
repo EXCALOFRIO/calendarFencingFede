@@ -69,8 +69,10 @@ export async function POST(request: Request) {
    * el cron y aparezcan dos filas seguidas en `ingest_run`, esto es lo que
    * explica por qué.
    */
+  // Quien la lanza a mano quiere datos frescos ya: sin niveles de refresco.
   const resultado = await runIngest(source, {
     triggeredBy: `admin:${perfil.email}`,
+    forzar: true,
   });
 
   return Response.json({

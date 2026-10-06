@@ -21,6 +21,7 @@ import {
 import { leerTrayectorias } from './busqueda-trayectoria';
 import { PESO_RESULTADO_SQL } from './indice-sql';
 import { SALTOS, sqlGrupoDe } from './personas';
+import { anioNacimientoPublico } from './anio-publico';
 import type { Arma, FiltrosBusqueda, Genero } from './tipos';
 import { TRAYECTORIA_VACIA, type DeportistaBuscado } from './tipos-busqueda';
 
@@ -112,7 +113,7 @@ function condicionPrueba(f: FiltrosBusqueda): SQL | null {
 
 /** Condición sobre `pub`, o `null` si algún filtro no lo documenta el ranking. */
 function condicionRanking(f: FiltrosBusqueda): SQL | null {
-  const soloTorneo = f.torneo || f.edicionId || f.desde || f.hasta || f.ambito;
+  const soloTorneo = f.torneo || f.edicionId || f.desde || f.hasta || f.ambito || f.organizador;
   if (soloTorneo) return null;
 
   const rankingCond: SQL[] = [];
@@ -451,7 +452,7 @@ type FilaIndexada = FilaBusqueda & {
   mismoNombre: number;
 };
 
-function deportistaIndexado(p: FilaIndexada): DeportistaBuscado {
+function deportistaIndexado(p: FilaIndexada, hoy: string): DeportistaBuscado {
   const resultados = Number(p.resultados ?? 0);
   return {
     id: p.id,
@@ -459,7 +460,7 @@ function deportistaIndexado(p: FilaIndexada): DeportistaBuscado {
     alias: p.alias,
     pais: p.pais,
     genero: p.genero,
-    anioNacimiento: p.anioNacimiento === null ? null : Number(p.anioNacimiento),
+    anioNacimiento: anioNacimientoPublico(p.anioNacimiento, hoy),
     resultadosImportados: resultados,
     armas: p.armas ? (p.armas.split(',').sort() as Arma[]) : [],
     mismoNombre: Number(p.mismoNombre ?? 1) || 1,
@@ -571,7 +572,7 @@ export async function buscarDeportistas(
     return {
       estado: 'ok',
       filtros,
-      items: pagina.map(deportistaIndexado),
+      items: pagina.map((p) => deportistaIndexado(p, ctx.hoy())),
       siguiente: encontradas.length > limite && ultima
         ? codificarCursor(CLASE_POPULAR, filtros, [Number(ultima.relevancia), ultima.claveOrden, ultima.id])
         : null,
@@ -599,7 +600,7 @@ export async function buscarDeportistas(
       alias: p.alias,
       pais: p.pais,
       genero: p.genero,
-      anioNacimiento: p.anioNacimiento === null ? null : Number(p.anioNacimiento),
+      anioNacimiento: anioNacimientoPublico(p.anioNacimiento, ctx.hoy()),
       resultadosImportados: c ? Number(c.resultados) : 0,
       armas: c?.armas ? (c.armas.split(',').sort() as Arma[]) : [],
       mismoNombre: porClave.get(p.claveNombre) ?? 1,

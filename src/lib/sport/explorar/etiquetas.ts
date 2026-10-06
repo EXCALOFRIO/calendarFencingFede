@@ -18,6 +18,7 @@ export function fuenteRanking(fuente: string): string {
 
 export function fuenteResultado(fuente: string): string {
   if (fuente === 'fie') return 'FIE';
+  if (fuente === 'efc') return 'EFC (Confederación Europea de Esgrima)';
   if (fuente === 'rfee_pdf') return 'RFEE (PDF de resultados)';
   if (fuente.startsWith('skermo')) return 'RFEE o federación autonómica (Skermo)';
   if (fuente === 'engarde') return 'Engarde';

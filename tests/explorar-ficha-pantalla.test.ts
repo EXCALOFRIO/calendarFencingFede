@@ -261,7 +261,7 @@ describe('menores y ausencia honesta', () => {
     for (const privada of CLAVES_PRIVADAS) expect(clavesDe(vista).has(privada)).toBe(false);
     expect(texto()).not.toMatch(/birth_date|photo|foto|email|consent|guardian|tutor/i);
     const html = renderToStaticMarkup(React.createElement(CabeceraFicha, { ficha: vista.ficha }));
-    expect(html).toContain('Posible menor de edad');
+    expect(html).not.toContain('Posible menor de edad');
     expect(html).not.toContain('2013');
   });
 

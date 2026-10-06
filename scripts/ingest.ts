@@ -6,13 +6,15 @@ import { INGEST_SOURCES, isIngestSource, runIngest } from '../src/lib/ingest/run
  *
  *   npm run ingest                 -> todas las fuentes
  *   npm run ingest -- skermo_rfee  -> solo una
+ *   npm run ingest -- fie --forzar -> sin niveles de refresco
  */
+const forzar = process.argv.includes('--forzar');
 const requested = process.argv.slice(2).filter(isIngestSource);
 const sources = requested.length > 0 ? requested : [...INGEST_SOURCES];
 
 for (const source of sources) {
   process.stdout.write(`\n== ${source} ==\n`);
-  const result = await runIngest(source, { triggeredBy: 'cli' });
+  const result = await runIngest(source, { triggeredBy: 'cli', forzar });
   console.log(
     `  estado=${result.status} vistos=${result.itemsSeen} ` +
       `nuevos=${result.itemsCreated} actualizados=${result.itemsUpdated} ` +

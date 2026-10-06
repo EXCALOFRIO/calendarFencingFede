@@ -63,6 +63,7 @@ export async function cargarFichaPantalla(
   ctx: ContextoExplorador,
   personaId: string | undefined,
   criterios: CriteriosFicha,
+  opciones: { diferirRivales?: boolean } = {},
 ): Promise<VistaFicha> {
   try {
     // Con persona pedida, ficha e historial no dependen entre sí.
@@ -71,7 +72,7 @@ export async function cargarFichaPantalla(
       : null;
     // Si la ficha falla primero, esta promesa no queda sin manejador.
     adelantado?.catch(() => undefined);
-    const lectura = await leerFicha(ctx, aEntradaFicha(personaId, criterios));
+    const lectura = await leerFicha(ctx, aEntradaFicha(personaId, criterios), opciones);
     if (lectura.estado === 'propia_no_confirmada') {
       return { tipo: 'propia_no_confirmada', motivo: lectura.motivo };
     }

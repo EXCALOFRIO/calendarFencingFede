@@ -6,6 +6,7 @@ import { codificarCursor, decodificarCursor, UUID_RE } from './cursor';
 import { LIMITE_MAXIMO, LIMITE_POR_DEFECTO } from './entrada';
 import { listaUuid } from './filtros-sql';
 import { resolverPersona, SALTOS } from './personas';
+import { anioNacimientoPublico } from './anio-publico';
 import type { Arma, DeportistaResumen } from './tipos';
 import { exigirEscritura } from '@/lib/auth/read-only';
 import { AHORA_SQL } from '@/lib/sqlite';
@@ -252,7 +253,7 @@ export async function listarFavoritos(
       alias: null,
       pais: f.pais,
       genero: f.genero,
-      anioNacimiento: f.anioNacimiento === null ? null : Number(f.anioNacimiento),
+      anioNacimiento: anioNacimientoPublico(f.anioNacimiento, ctx.hoy()),
       resultadosImportados: c ? Number(c.resultados) : 0,
       armas: c?.armas ? (c.armas.split(',').sort() as Arma[]) : [],
       mismoNombre: Number(f.mismoNombre),

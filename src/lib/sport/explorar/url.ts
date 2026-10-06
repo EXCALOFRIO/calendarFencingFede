@@ -26,6 +26,7 @@ export const CLAVES_CRITERIO = [
   'genero',
   'categoria',
   'ambito',
+  'organizador',
   'temporada',
   'torneo',
   'desde',
@@ -45,6 +46,7 @@ export const CRITERIOS_VACIOS: CriteriosExplorar = {
   genero: '',
   categoria: '',
   ambito: '',
+  organizador: '',
   temporada: '',
   torneo: '',
   desde: '',
@@ -61,6 +63,7 @@ const EN_MAYUSCULAS: ReadonlySet<ClaveCriterio> = new Set([
   'genero',
   'categoria',
   'ambito',
+  'organizador',
   'formato',
 ]);
 
@@ -138,6 +141,7 @@ const ETIQUETA: Record<ClaveCriterio, string> = {
   genero: 'Género',
   categoria: 'Categoría',
   ambito: 'Ámbito',
+  organizador: 'Organizador',
   temporada: 'Temporada',
   torneo: 'Torneo',
   desde: 'Desde',
@@ -252,6 +256,7 @@ export function opcionesTemporada(hoy: string, cuantas = 16): OpcionTemporada[] 
 /** Nombre visible de una clave de temporada; lo desconocido se muestra tal cual. */
 export function etiquetaTemporada(valor: string): string {
   if (/^\d{4}$/.test(valor)) return `FIE ${valor}`;
-  if (/^\d{4}-\d{4}$/.test(valor)) return `RFEE ${valor}`;
+  // `AAAA-AAAA` lo comparten la RFEE y la EFC: el prefijo de una sola sería falso para la otra.
+  if (/^\d{4}-\d{4}$/.test(valor)) return valor;
   return valor;
 }

@@ -22,7 +22,9 @@ import {
 } from '@/lib/entries/identidad';
 import { esquemaDeportivo } from '@/lib/sport/esquema-db';
 import { parseFechaMadrid } from '../callups/fechas';
+import { hayQueMarcarVisto } from '../cron/niveles';
 import { sha256 } from '../utils';
+import { escribirEnlacesDirecto, type FilaDirecto } from './directos';
 import type { NormalizedEvent } from './types';
 
 export type UpsertStats = {
@@ -245,7 +247,7 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
       toInsert.push(values);
       stats.created += 1;
     } else if (existing.contentHash === contentHash) {
-      touched.push(existing.id);
+      if (hayQueMarcarVisto(existing, now)) touched.push(existing.id);
       stats.unchanged += 1;
     } else {
       for (const field of Object.keys(NOTIFIABLE_FIELDS)) {
@@ -317,7 +319,9 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
     rows: NonNullable<NormalizedEvent['competitions'][number]['registrations']>;
   }[] = [];
   const documentInserts: (typeof eventDocument.$inferInsert)[] = [];
-  const liveInserts: (typeof liveSource.$inferInsert)[] = [];
+  const liveInserts: FilaDirecto[] = [];
+  /** Prueba a la que pertenece cada enlace de `liveInserts`, resuelta tras insertar las pruebas. */
+  const liveCompetitionKeys: (string | null)[] = [];
   /** Plazos publicados por la fuente; se resuelven tras insertar las pruebas. */
   const publishedDeadlines: {
     eventId: string;
@@ -377,7 +381,12 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
       } else {
         // El nº de inscritos cambia a diario y no entra en el hash a propósito,
         // pero sí interesa tenerlo al día.
-        competitionTouched.push({
+        const mismoRecuento = existing.registrationCount === c.registrationCount;
+        if (
+          !mismoRecuento ||
+          hayQueMarcarVisto({ endDate: normalized.endDate, lastSeenAt: existing.lastSeenAt }, now)
+        )
+          competitionTouched.push({
           id: existing.id,
           registrationCount: c.registrationCount,
         });
@@ -412,6 +421,8 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
       });
     }
 
+    // La FIE publica un evento por prueba: su enlace es el de esa prueba.
+    const unica = normalized.competitions.length === 1 ? normalized.competitions[0] : null;
     for (const link of normalized.liveLinks) {
       liveInserts.push({
         eventId,
@@ -420,7 +431,9 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
         url: link.url,
         label: link.label,
         automatic: true,
+        matchRule: `${normalized.source}_publicado`,
       });
+      liveCompetitionKeys.push(unica ? competitionKey(eventId, unica) : null);
     }
   }
 
@@ -503,14 +516,15 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
       .onConflictDoNothing({ target: [eventDocument.eventId, eventDocument.url] });
   }
 
-  for (const batch of lotesDeInsercion(liveInserts, liveSource)) {
-    await db
-      .insert(liveSource)
-      .values(batch)
-      .onConflictDoNothing({
-        target: [liveSource.eventId, liveSource.eventCompetitionId, liveSource.url],
-      });
-  }
+  await escribirEnlacesDirecto(
+    liveInserts.flatMap((fila, i): FilaDirecto[] => {
+      const clave = liveCompetitionKeys[i];
+      if (!clave) return [{ ...fila, eventCompetitionId: null }];
+      // El enlace es de una prueba: sin su id no se guarda como si fuera del torneo.
+      const id = existingCompetitions.get(clave)?.id;
+      return id ? [{ ...fila, eventCompetitionId: id }] : [];
+    }),
+  );
 
   /**
    * LISTA NOMINAL DE INSCRITOS.

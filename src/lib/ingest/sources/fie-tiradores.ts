@@ -76,11 +76,15 @@ import { currentFieSeason } from './fie';
  * justificarlo, lo aporta el usuario. **Es verbal para este código**, y por eso
  * el alcance se deja estrecho a propósito y la vuelta atrás es de una línea.
  *
- * La aplicación entera está detrás de sesión, el permiso escrito del que hablan
- * sus condiciones se está pidiendo, y el alcance sigue siendo estrecho:
+ * Después el usuario amplió el alcance a todo el contenido de la FIE: *«todos
+ * tenemos todo esto y los permisos para todo»*. Por eso se guardan enteras la
+ * clasificación mundial y su histórico desde 2003
+ * (`scripts/rankings-internacionales.ts`).
  *
- *  - **solo España**, porque el censo se pide por país. El ranking mundial de
- *    los otros 11.062 tiradores no se toca.
+ * La aplicación entera está detrás de sesión y de cada tirador se guarda poco:
+ *
+ *  - **censo solo de España**, porque se pide por país. De los demás solo hay
+ *    nombre, país, puesto y puntos de las clasificaciones.
  *  - **ni fecha de nacimiento, ni foto, ni mano, ni licencia** de quien no es
  *    uno de los nuestros: hay menores en ese censo. Queda el nombre, el arma,
  *    la categoría, el puesto, los puntos y el enlace a su ficha.
@@ -711,6 +715,10 @@ export type FieTiradoresStats = {
   porLicencia: number;
   /** Propuestas esperando que las mire una persona. */
   propuestos: number;
+  /** Combinaciones de la clasificación mundial pedidas en esta pasada. */
+  clasificacionPedidas: number;
+  /** De las pedidas, las que respondieron. Si no son todas, no cuenta como leída. */
+  clasificacionRespondidas: number;
   note: string | null;
 };
 
@@ -755,6 +763,8 @@ export async function ingestFieTiradores(
     enlazados: 0,
     porLicencia: 0,
     propuestos: 0,
+    clasificacionPedidas: 0,
+    clasificacionRespondidas: 0,
     note: null,
   };
 
@@ -839,8 +849,8 @@ export async function ingestFieTiradores(
    * Lo que se guarda sigue siendo lo mínimo, y esto NO es una concesión de
    * estilo:
    *
-   *  - **solo España.** El censo se pide por país (`country=ESP`), así que no
-   *    se toca el ranking mundial de nadie más.
+   *  - **solo España.** El censo se pide por país (`country=ESP`); de los
+   *    demás solo se guardan las clasificaciones (ver la cabecera).
    *  - **ni fecha de nacimiento, ni foto, ni mano, ni licencia** de quien no
    *    es uno de los nuestros. Es la regla que el usuario puso para las listas
    *    de inscritos —*«solo los españoles, y de los demás se descarta la fecha
@@ -1291,6 +1301,8 @@ export async function ingestFieTiradores(
     delayMs,
   });
   stats.peticiones += clasificacion.peticiones;
+  stats.clasificacionPedidas = clasificacion.pedidas;
+  stats.clasificacionRespondidas = clasificacion.combos;
 
   // --- 10. Cuarentena ---
   for (const lote of lotesDeInsercion(cuarentena, ingestQuarantine)) {
@@ -1331,7 +1343,8 @@ export async function ingestFieTiradores(
     `clasificación mundial: ${clasificacion.filas} filas ` +
       `(${clasificacion.individuales} individuales, ${clasificacion.selecciones} selecciones) ` +
       `en ${clasificacion.combos} combinaciones` +
-      (clasificacion.vacias > 0 ? `, ${clasificacion.vacias} vacías en la FIE` : ''),
+      (clasificacion.vacias > 0 ? `, ${clasificacion.vacias} vacías en la FIE` : '') +
+      (clasificacion.retiradas > 0 ? `, ${clasificacion.retiradas} retiradas` : ''),
   );
   stats.note = partes.join(' | ');
 
@@ -1379,24 +1392,33 @@ async function guardarClasificacionMundial(opciones: {
   delayMs: number;
 }): Promise<{
   peticiones: number;
+  /** Combinaciones que se intentaron pedir. */
+  pedidas: number;
+  /** Combinaciones que respondieron. */
   combos: number;
   filas: number;
   individuales: number;
   selecciones: number;
   vacias: number;
+  retiradas: number;
 }> {
   const { fieClasificacion } = await import('@/db/schema');
   const { db } = await import('@/db');
   const { and, eq, sql } = await import('drizzle-orm');
   const { sha256 } = await import('@/lib/utils');
+  const { cerrarLecturaGrupo, escritorLecturaD1 } = await import('./fie-clasificacion-lectura');
+  const escritorLectura = escritorLecturaD1(db, fieClasificacion);
 
   const resumen = {
     peticiones: 0,
+    pedidas: 0,
     combos: 0,
     filas: 0,
     individuales: 0,
     selecciones: 0,
     vacias: 0,
+    /** Filas que ya no estaban en la lista de la FIE y se han retirado. */
+    retiradas: 0,
   };
 
   /** Las dos clasificaciones de cada combinación, individual primero. */
@@ -1417,6 +1439,7 @@ async function guardarClasificacionMundial(opciones: {
     if (!weapon || !gender || !category) continue;
 
     let filas: FilaClasificacionFie[];
+    resumen.pedidas += 1;
     try {
       filas = await fetchClasificacionFie({ season: opciones.season, ...tarea });
       resumen.peticiones += 1;
@@ -1521,6 +1544,14 @@ async function guardarClasificacionMundial(opciones: {
           },
         });
     }
+
+    // Después del upsert: si este fallara, se sale antes y no se borra nada.
+    const cierre = await cerrarLecturaGrupo(
+      escritorLectura,
+      { season: opciones.season, format, weapon, gender, categoryRaw: tarea.category },
+      { ok: true, fieIds: filas.map((f) => f.addrId), sourceUrl },
+    );
+    resumen.retiradas += cierre.borradas;
   }
 
   return resumen;

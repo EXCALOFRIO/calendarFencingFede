@@ -1386,7 +1386,7 @@ async function enlazarDocumentosYDirectos(
   }
 
   const documentos: (typeof eventDocumentTable.$inferInsert)[] = [];
-  const directos: (typeof liveSourceTable.$inferInsert)[] = [];
+  const directos: import('../directos').FilaDirecto[] = [];
   const vistosDoc = new Set<string>();
   const vistosDirecto = new Set<string>();
 
@@ -1426,17 +1426,19 @@ async function enlazarDocumentosYDirectos(
     }
 
     for (const enlace of fila.liveLinks) {
-      const clave = `${elegido.eventId}|${enlace.url}`;
+      const clave = `${elegido.competitionId}|${enlace.url}`;
       if (vistosDirecto.has(clave)) continue;
       vistosDirecto.add(clave);
       directos.push({
         eventId: elegido.eventId,
-        eventCompetitionId: null,
+        // La fila del índice es una prueba concreta, emparejada por clave estricta.
+        eventCompetitionId: elegido.competitionId,
         platform: enlace.platform,
         kind: enlace.kind,
         url: enlace.url,
         label: enlace.label,
         automatic: true,
+        matchRule: 'skermo_indice',
       });
     }
   }
@@ -1453,21 +1455,8 @@ async function enlazarDocumentosYDirectos(
     escritosDoc += filasNuevas.length;
   }
 
-  let escritosDirecto = 0;
-  for (const lote of lotesDeInsercion(directos, liveSourceTable)) {
-    const filasNuevas = await db
-      .insert(liveSourceTable)
-      .values(lote)
-      .onConflictDoNothing({
-        target: [
-          liveSourceTable.eventId,
-          liveSourceTable.eventCompetitionId,
-          liveSourceTable.url,
-        ],
-      })
-      .returning({ id: liveSourceTable.id });
-    escritosDirecto += filasNuevas.length;
-  }
+  const { escribirEnlacesDirecto } = await import('../directos');
+  const escritosDirecto = await escribirEnlacesDirecto(directos);
 
   return { documentos: escritosDoc, directos: escritosDirecto };
 }

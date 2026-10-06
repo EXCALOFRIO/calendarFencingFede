@@ -161,6 +161,11 @@ describe('URL del cara a cara', () => {
       cursor: 'c',
     });
     expect(aEntradaRivales(UUID_A, { ...CRITERIOS_CARA_A_CARA_VACIOS, q: 'ru' })).toEqual({ personaId: UUID_A, q: 'ru' });
+    // La elección de rival sólo busca por nombre: la temporada de un enlace antiguo se ignora.
+    expect(aEntradaRivales(UUID_A, { ...CRITERIOS_CARA_A_CARA_VACIOS, temporada: '2027', arma: 'ESPADA', q: 'ru' })).toEqual({
+      personaId: UUID_A,
+      q: 'ru',
+    });
   });
 
   it('las temporadas ofrecidas se conservan tal y como se guardan', () => {
@@ -343,7 +348,7 @@ describe('cargarCaraACaraPantalla: cara a cara', () => {
 
 describe('cargarCaraACaraPantalla: elegir rival', () => {
   const rivalesFila = [
-    { id: UUID_B, clave: 'marta ruiz', nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3 },
+    { id: UUID_B, clave: 'marta ruiz', nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3, victorias: 2, derrotas: 1 },
     { id: UUID_C, clave: 'nora diaz', nombre: 'Nora Diaz', pais: 'ITA', asaltos: 1 },
   ];
   const respuestasElegir = (extra: { cuando: RegExp; filas: unknown[] }[] = []) => [
@@ -354,9 +359,11 @@ describe('cargarCaraACaraPantalla: elegir rival', () => {
   ];
 
   it('lista los rivales con asaltos y cabecera de la persona, sin ofrecer el cara a cara de nadie sin rival', async () => {
-    const { ctx } = crearContexto({ respuestas: respuestasElegir() });
+    const { ctx, sentencias } = crearContexto({ respuestas: respuestasElegir() });
+    // Un enlace antiguo con temporada sigue abriendo la lista, entera.
     const v = await cargarCaraACaraPantalla(ctx, UUID_A, { ...CRITERIOS_CARA_A_CARA_VACIOS, temporada: '2026-2027' });
     if (v.tipo !== 'elegir') throw new Error(v.tipo);
+    expect(sentencias.some((s) => s.params.includes('2026-2027'))).toBe(false);
     expect(v.persona).toEqual({ id: UUID_A, nombre: 'Lucia Garcia', pais: 'ESP' });
     expect(v.rivales).toMatchObject({ tipo: 'ok', sinResultados: false });
     expect(v.rivales.tipo === 'ok' && v.rivales.items.map((r) => r.id)).toEqual([UUID_B, UUID_C]);
@@ -410,13 +417,13 @@ describe('cargarCaraACaraPantalla: elegir rival', () => {
     expect(marcado).toContain('no es que no haya rivales');
   });
 
-  it('los rivales enlazan al cara a cara por ID, con la temporada elegida, y paginan con cursor', () => {
+  it('los rivales enlazan al cara a cara por ID sin filtros (una temporada antigua se ignora) y paginan con cursor', () => {
     const marcado = html(
       React.createElement(ElegirRival, {
         persona: { id: UUID_A, nombre: 'Lucia Garcia', pais: 'ESP' },
         rivales: {
           tipo: 'ok',
-          items: [{ id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3 }],
+          items: [{ id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3, victorias: 2, derrotas: 1 }],
           siguiente: 'sig',
           sinResultados: false,
         },
@@ -450,13 +457,17 @@ describe('cargarCaraACaraPantalla: elegir rival', () => {
         criterios: { ...CRITERIOS_CARA_A_CARA_VACIOS, temporada: '2027', q: 'ruiz' },
       }),
     );
-    expect(marcado).toContain(`href="/explorar/${UUID_A}/cara-a-cara?rival=${UUID_B}&amp;temporada=2027"`);
-    expect(marcado).toContain(`href="/explorar/${UUID_A}/cara-a-cara?rival=${UUID_C}&amp;temporada=2027"`);
+    expect(marcado).toContain(`href="/explorar/${UUID_A}/cara-a-cara?rival=${UUID_B}"`);
+    expect(marcado).toContain(`href="/explorar/${UUID_A}/cara-a-cara?rival=${UUID_C}"`);
+    expect(marcado).not.toContain('temporada=');
     expect(marcado).toContain('2 personas con este nombre');
     // La propia persona no se ofrece como su rival.
     expect(marcado).not.toContain(`rival=${UUID_A}`);
     expect(marcado).toContain('cursor=sig');
-    expect(marcado).toContain('al abrirlo');
+    expect(marcado).toContain('>Otras personas<');
+    // Sin párrafos explicativos (UI.md §2 bis): título corto y la lista.
+    expect(marcado).not.toMatch(/Personas con las que|Son personas indexadas|al abrirlo|de más a menos asaltos\./);
+    expect(marcado).toContain('aria-label="Rivales, de más a menos asaltos"');
     expect(marcado).not.toContain('Aún no tienen asaltos confirmados');
   });
 
@@ -469,12 +480,13 @@ describe('cargarCaraACaraPantalla: elegir rival', () => {
         criterios: CRITERIOS_CARA_A_CARA_VACIOS,
       }),
     );
-    expect(marcado).toContain('Puede faltar por importar');
-    expect(marcado).not.toMatch(/nunca|Nadie/i);
+    expect(marcado).toContain('role="status"');
+    expect(marcado).toContain('Sin rivales con asaltos.');
+    expect(marcado).not.toMatch(/nunca|Nadie|Puede faltar/i);
   });
 });
 
-describe('elegir rival conserva temporada, arma y fase', () => {
+describe('elegir rival: sólo por nombre', () => {
   const todos = { temporada: '2027', arma: 'ESPADA', fase: 'POULE' } as const;
   const persona = { id: UUID_A, nombre: 'Lucia Garcia', pais: 'ESP' };
   const coincidente = {
@@ -489,22 +501,19 @@ describe('elegir rival conserva temporada, arma y fase', () => {
     mismoNombre: 1,
   };
 
-  it('urlElegirRival fija el rival, conserva los tres filtros y descarta q y cursor', () => {
-    expect(urlElegirRival(UUID_A, UUID_B, { ...todos, q: 'ruiz', cursor: 'abc' })).toBe(
-      `/explorar/${UUID_A}/cara-a-cara?rival=${UUID_B}&temporada=2027&arma=ESPADA&fase=POULE`,
-    );
-    expect(urlElegirRival(UUID_A, UUID_B, CRITERIOS_CARA_A_CARA_VACIOS)).toBe(
+  it('urlElegirRival fija sólo el rival', () => {
+    expect(urlElegirRival(UUID_A, UUID_B)).toBe(
       `/explorar/${UUID_A}/cara-a-cara?rival=${UUID_B}`,
     );
   });
 
-  it('los enlaces de la lista confirmada y de la búsqueda suplementaria llevan arma y fase', () => {
+  it('con filtros de un enlace antiguo, los enlaces de las dos listas abren el duelo sin ellos', () => {
     const marcado = html(
       React.createElement(ElegirRival, {
         persona,
         rivales: {
           tipo: 'ok',
-          items: [{ id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3 }],
+          items: [{ id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3, victorias: 2, derrotas: 1 }],
           siguiente: null,
           sinResultados: false,
         },
@@ -512,26 +521,20 @@ describe('elegir rival conserva temporada, arma y fase', () => {
         criterios: { ...CRITERIOS_CARA_A_CARA_VACIOS, ...todos, q: 'diaz' },
       }),
     );
-    const sufijo = 'temporada=2027&amp;arma=ESPADA&amp;fase=POULE';
-    expect(marcado).toContain(`href="/explorar/${UUID_A}/cara-a-cara?rival=${UUID_B}&amp;${sufijo}"`);
-    expect(marcado).toContain(`href="/explorar/${UUID_A}/cara-a-cara?rival=${UUID_C}&amp;${sufijo}"`);
+    expect(marcado).toContain(`href="/explorar/${UUID_A}/cara-a-cara?rival=${UUID_B}"`);
+    expect(marcado).toContain(`href="/explorar/${UUID_A}/cara-a-cara?rival=${UUID_C}"`);
+    expect(marcado).not.toMatch(/arma=|fase=|temporada=/);
   });
 
-  it('Cambiar de rival y volver a elegir conserva los filtros de ida y vuelta', () => {
+  it('Cambiar de rival abre la elección sin filtros', () => {
     const datos = {
       personas: { yo: persona, rival: { id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA' } },
     } as unknown as DatosCaraACara;
     const cabecera = html(
       React.createElement(CabeceraCaraACara, { datos, criterios: criterios({ ...todos, cursor: 'zz' }) }),
     );
-    const cambiar = `/explorar/${UUID_A}/cara-a-cara?temporada=2027&amp;arma=ESPADA&amp;fase=POULE`;
-    expect(cabecera).toContain(`href="${cambiar}"`);
-
-    const elegida = leerCriteriosCaraACara(
-      Object.fromEntries(new URL(`http://x${cambiar.replace(/&amp;/g, '&')}`).searchParams),
-    );
-    expect(elegida).toMatchObject(todos);
-    expect(urlElegirRival(UUID_A, UUID_C, elegida)).toContain('arma=ESPADA&fase=POULE');
+    expect(cabecera).toContain(`href="/explorar/${UUID_A}/cara-a-cara"`);
+    expect(urlElegirRival(UUID_A, UUID_C)).toBe(`/explorar/${UUID_A}/cara-a-cara?rival=${UUID_C}`);
   });
 
   it('con la lista de rivales caída y la búsqueda correcta, no afirma que falten asaltos', async () => {
@@ -567,10 +570,10 @@ describe('elegir rival conserva temporada, arma y fase', () => {
     );
     expect(marcado).toContain('Ha fallado la consulta; no es que no haya rivales');
     expect(marcado).toContain('Nora Diaz');
-    expect(marcado).toContain('al abrirlo');
+    expect(marcado).toContain('>Otras personas<');
     expect(marcado).not.toContain('Aún no tienen asaltos confirmados');
     expect(marcado).not.toMatch(/sin asaltos|no tienen asaltos/i);
-    expect(marcado).toContain(`rival=${UUID_C}&amp;temporada=2027&amp;arma=ESPADA&amp;fase=POULE`);
+    expect(marcado).toContain(`cara-a-cara?rival=${UUID_C}"`);
   });
 
   it('cualquier lista de rivales no leída (no sólo error) usa el texto neutro', () => {
@@ -587,7 +590,7 @@ describe('elegir rival conserva temporada, arma y fase', () => {
           criterios: CRITERIOS_CARA_A_CARA_VACIOS,
         }),
       );
-      expect(marcado).toContain('al abrirlo');
+      expect(marcado).toContain('>Otras personas<');
       expect(marcado).not.toContain('Aún no tienen asaltos confirmados');
     }
   });
@@ -595,7 +598,7 @@ describe('elegir rival conserva temporada, arma y fase', () => {
   it('con la lista leída tampoco promete ausencia de asaltos: la búsqueda suplementaria usa siempre el texto neutro', () => {
     const listas: RivalesVista[] = [
       { tipo: 'ok', items: [], siguiente: null, sinResultados: true },
-      { tipo: 'ok', items: [{ id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3 }], siguiente: 'sig', sinResultados: false },
+      { tipo: 'ok', items: [{ id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3, victorias: 2, derrotas: 1 }], siguiente: 'sig', sinResultados: false },
     ];
     for (const rivales of listas) {
       const marcado = html(
@@ -606,8 +609,8 @@ describe('elegir rival conserva temporada, arma y fase', () => {
           criterios: CRITERIOS_CARA_A_CARA_VACIOS,
         }),
       );
-      expect(marcado).toContain('al abrirlo');
-      expect(marcado).toContain('personas indexadas');
+      expect(marcado).toContain('>Otras personas<');
+      expect(marcado).not.toContain('personas indexadas');
       expect(marcado).not.toMatch(/Aún no tienen|no tienen asaltos|sin asaltos/i);
     }
   });
@@ -645,10 +648,10 @@ describe('elegir rival conserva temporada, arma y fase', () => {
     const marcado = html(
       React.createElement(ElegirRival, { persona: v.persona, rivales: v.rivales, otros: v.otros, criterios: entrada }),
     );
-    expect(marcado).toContain('Coincide con el alias «N. Diaz-Pons»');
-    expect(marcado).toContain('al abrirlo');
+    expect(marcado).toContain('Alias «N. Diaz-Pons»');
+    expect(marcado).toContain('>Otras personas<');
     expect(marcado).not.toMatch(/Aún no tienen|no tienen asaltos|sin asaltos/i);
-    expect(marcado).toContain(`rival=${UUID_C}&amp;temporada=2027&amp;arma=ESPADA&amp;fase=POULE`);
+    expect(marcado).toContain(`cara-a-cara?rival=${UUID_C}"`);
   });
 
   it('el error de la búsqueda suplementaria es un aviso propio y neutro, con la lista confirmada intacta', () => {
@@ -657,7 +660,7 @@ describe('elegir rival conserva temporada, arma y fase', () => {
         persona,
         rivales: {
           tipo: 'ok',
-          items: [{ id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3 }],
+          items: [{ id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3, victorias: 2, derrotas: 1 }],
           siguiente: null,
           sinResultados: false,
         },
@@ -874,7 +877,7 @@ describe('cabecera y entradas al cara a cara', () => {
     expect(marcado).toContain(`href="/explorar/${UUID_A}"`);
     expect(marcado).toContain(`href="/explorar/${UUID_B}"`);
     expect(marcado).toContain(`href="/explorar/${UUID_B}/cara-a-cara?rival=${UUID_A}&amp;temporada=2027&amp;fase=POULE"`);
-    expect(marcado).toContain(`href="/explorar/${UUID_A}/cara-a-cara?temporada=2027&amp;fase=POULE"`);
+    expect(marcado).toContain(`href="/explorar/${UUID_A}/cara-a-cara"`);
   });
 
   it('toda ficha, propia o ajena, ofrece elegir rival y avisa de que sólo cuenta lo individual', () => {

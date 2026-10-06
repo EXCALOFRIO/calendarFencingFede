@@ -386,8 +386,9 @@ describe('vistas de la prueba en pantalla', () => {
       ],
       asaltos: null,
     }));
-    expect(marcado).toMatch(/role="tab"[^>]*aria-selected="true"[^>]*>.*Clasificación/);
-    expect(marcado).toMatch(/aria-selected="false" aria-controls="[^"]*" disabled=""/);
+    // Sin poules ni directas no hay pestañas que elegir: ni deshabilitadas ni la tira.
+    expect(marcado).not.toContain('role="tab"');
+    expect(marcado).not.toContain('disabled=""');
     expect(marcado).toContain('data-resaltado="true"');
     const volver = construirUrlEdicion(UUID_A, { prueba: UUID_B, persona: UUID_C });
     expect(marcado).toContain(`href="/explorar/${UUID_C}?volver=${encodeURIComponent(volver).replace(/&/g, '&amp;')}"`);
@@ -414,7 +415,9 @@ describe('vistas de la prueba en pantalla', () => {
     expect(marcado).toContain('>Copa del Mundo<');
     expect(marcado).toContain('>Espada masculina<');
     expect(marcado).toContain('>Absoluto<');
-    expect(marcado).not.toMatch(/>FIE<|Volver a/);
+    expect(marcado).not.toMatch(/Volver a/);
+    // La única mención de la FIE es la insignia del organizador, no la fuente.
+    expect(marcado.match(/>FIE</g)).toHaveLength(1);
     expect(marcado).not.toMatch(/· S ·/);
     expect(marcado).toContain('>Individual<');
     expect(marcado).toContain(`href="${construirUrlEdicion(UUID_A, { prueba: UUID_C })}"`);

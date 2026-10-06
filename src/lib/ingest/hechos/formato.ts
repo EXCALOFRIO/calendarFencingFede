@@ -52,8 +52,12 @@ export const estadoExtraccion = z.enum(['completo', 'parcial', 'sin_resultados',
 
 export const hechosPrueba = z.object({
   version: z.literal(1),
-  /** fie | rfee_pdf | skermo_rfee | engarde */
-  source: z.enum(['fie', 'rfee_pdf', 'skermo_rfee', 'engarde']),
+  /**
+   * fie | rfee_pdf | skermo_rfee | engarde | efc (circuito europeo de la Confederación
+   * Europea de Esgrima, cadete y júnior). Claves EFC: edición `efc:<temporada>:<evento>`,
+   * prueba `efc:<temporada>:<evento>:<arma><género><categoría>[-eq]`.
+   */
+  source: z.enum(['fie', 'rfee_pdf', 'skermo_rfee', 'engarde', 'efc']),
   /** lector_fie | lector_pdf | droid:<modelo> */
   extractor: texto,
   /** URL completa del original y SHA-256 del fichero leído. */

@@ -1,14 +1,26 @@
-import { ArrowLeft, ExternalLink, ShieldCheck, Swords, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Swords, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
+import { Suspense } from 'react';
+import { chipsRanking, type ChipRanking } from '@/lib/sport/explorar/chips-ranking';
+import type { DiferidosPerfil } from '@/lib/sport/explorar/perfil-diferido';
+import type { RivalesPorAmbito } from '@/lib/sport/explorar/rivales-ambito';
+import type { ResumenAmbito } from '@/lib/sport/explorar/tipos-social';
+import { medallaMasValiosa, type MedallaPerfil } from '@/lib/sport/explorar/medallas-perfil';
+import { Skeleton } from '@/components/ui/skeleton';
+import { RivalesPorAmbitoVista } from './perfil/rivales-ambito';
+import { RelevosPerfilDiferido } from './relevos';
+import { TarjetaGiratoria, type CaraTarjeta } from './perfil/tarjeta-giratoria';
 import { BanderaPais } from '@/components/bandera';
+import { InsigniaOlimpica } from '@/components/olimpica/insignia-olimpica';
 import { Button } from '@/components/ui/button';
 import { rutaCaraACara } from '@/lib/sport/explorar/cara-a-cara-url';
 import { explicacionSinVinculo } from '@/lib/sport/explorar/etiquetas';
 import { EXTRAS_VACIOS, type DatosPersonales, type ExtrasPerfil } from '@/lib/sport/explorar/perfil-extra';
 import { RUTA_EDICIONES } from '@/lib/sport/explorar/edicion-url';
 import { RUTA_FAVORITOS } from '@/lib/sport/explorar/favoritos-url';
-import { porcentajeVictorias } from '@/lib/sport/explorar/perfil-modelo';
-import { CLASES_MEDALLA, CONTORNO_MEDALLA, categoriaVisible, type Medalla } from '@/lib/sport/explorar/presentacion';
+import { porcentajeVictorias, temporadaDeportiva } from '@/lib/sport/explorar/perfil-modelo';
+import { temporadaCorta as temporadaCortaRanking } from '@/lib/ranking/url-nacional';
+import { CLASES_MEDALLA, CONTORNO_MEDALLA, categoriaVisible, ordenCategoriaVisible, type Medalla } from '@/lib/sport/explorar/presentacion';
 import { enlacePruebaPerfil, nombreListaPerfil, type FilaListaPerfil } from '@/lib/sport/explorar/resultados-perfil';
 import { tipoPorNombre } from '@/lib/sport/explorar/tipo-competicion';
 import type { FichaConPerfil } from '@/lib/sport/explorar/tipos-perfil';
@@ -29,6 +41,9 @@ import { CompararPerfil } from './perfil/comparar-perfil';
 import { FilaResultado } from './perfil/fila-resultado';
 import { PuntoMedalla } from './perfil/medallas';
 import { ResultadosPerfilVista } from './perfil/resultados-perfil';
+import { RankingMundialPerfil, RankingNacionalPerfil } from './perfil/ranking-perfil';
+import { EuropeoDiferido, RankingAmbitoPerfil, SeccionRanking } from './perfil/ranking-ambito';
+import { bloquesRankingPerfil, type BloquesRankingPerfil } from '@/lib/sport/explorar/ranking-ambitos';
 import { ManoAMano } from './perfil/rivales-perfil';
 import { SugeridosPerfil } from './perfil/sugeridos-perfil';
 import { AnioAAnio } from './perfil/temporadas-perfil';
@@ -107,7 +122,7 @@ export function MedallasCabecera({
       {hitos.map((h) => (
         <div key={h.clave} data-hito={h.clave} className={cn(BALDOSA, 'bg-background/40', h.resaltado ? CONTORNO_MEDALLA.oro : 'border-filete-alto')}>
           <dd className="cifra truncate text-2xl leading-none" title={h.detalle}>{h.cifra}</dd>
-          <dt className="line-clamp-2 text-[0.6875rem] leading-tight font-medium break-words hyphens-auto text-muted-foreground max-[359px]:line-clamp-3 max-[359px]:text-[0.625rem] max-[359px]:wrap-anywhere" title={h.detalle ? `${h.rotulo} · ${h.detalle}` : h.rotulo}>
+          <dt className="line-clamp-2 text-[0.6875rem] leading-tight font-medium text-muted-foreground max-[359px]:text-[0.625rem]" title={h.detalle ? `${h.rotulo} · ${h.detalle}` : h.rotulo}>
             {h.rotulo}
           </dt>
         </div>
@@ -136,8 +151,129 @@ function edadDe(anio: number | null): number | null {
 
 const MANO = { L: 'Zurdo', R: 'Diestro' } as const;
 
-/** Acciones compactas: pastillas de 36 px de alto; el área táctil la da el hueco entre ellas. */
-const ACCION = 'h-9 min-h-9 rounded-full px-3 text-sm';
+/** «2021» (FIE) y «2020-2021» se leen igual: «20-21». */
+const temporadaCorta = (t: string) => temporadaCortaRanking(temporadaDeportiva(t));
+
+function textoChip(c: ChipRanking): { texto: string; detalle: string } {
+  const ambito = c.ambito === 'nacional' ? 'nacional' : 'internacional';
+  const modalidad = `${WEAPON_LABEL[c.arma]} ${categoriaVisible(c.categoria).toLowerCase()}`;
+  // «Absoluto» se sobreentiende: sólo se escribe otra categoría. El detalle va en `title`.
+  const cat = ordenCategoriaVisible(c.categoria) === 0 ? '' : ` ${categoriaVisible(c.categoria)}`;
+  const organismo = c.organismo ? ` · ${c.organismo}` : '';
+  // FIE y RFEE se sobreentienden; la federación de un extranjero, no.
+  const propio = c.organismo && c.organismo !== 'FIE' && c.organismo !== 'RFEE' ? organismo : '';
+  return c.actual
+    ? { texto: `${WEAPON_LABEL[c.arma]}${cat}${propio}`, detalle: `Ranking ${ambito} ${temporadaCorta(c.temporada)}${organismo}: ${modalidad}` }
+    : { texto: `Mejor ${temporadaCorta(c.temporada)} · ${WEAPON_LABEL[c.arma]}${cat}${propio}`, detalle: `Mejor puesto en el ranking ${ambito}${organismo}: ${modalidad}, ${temporadaCorta(c.temporada)}` };
+}
+
+/**
+ * Ranking de la cabecera en dos filas: Internacional (si alguna vez tuvo
+ * puesto) y Nacional. Puesto grande, el resto en una línea que se recorta
+ * con el detalle en `title`.
+ */
+export function FilasRanking({ chips }: { chips: readonly ChipRanking[] }) {
+  if (chips.length === 0) return null;
+  return (
+    <dl aria-label="Ranking" className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 rounded-xl border border-filete-alto px-3 py-2">
+      {chips.map((c) => {
+        const { texto, detalle } = textoChip(c);
+        return (
+          <div key={c.ambito} className="contents" data-fila-ranking={c.ambito}>
+            <dt className="text-xs text-muted-foreground">{c.ambito === 'internacional' ? 'Internacional' : 'Nacional'}</dt>
+            <dd className="flex min-w-0 items-center gap-2" title={detalle}>
+              <span data-chip-ranking={c.ambito} className={cn('cifra shrink-0 text-xl leading-none', c.actual ? 'text-primary-text' : 'text-foreground')}>
+                {c.puesto}º
+              </span>
+              <span className="min-w-0 truncate text-xs text-muted-foreground">{texto}</span>
+              {c.olimpica ? <InsigniaOlimpica anotacion={c.olimpica} /> : null}
+            </dd>
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
+
+/** Cifras grandes de una cara de la tarjeta, en una fila que reparte el ancho. */
+function FilaCifras({ cifras }: { cifras: readonly { etiqueta: string; valor: number }[] }) {
+  return (
+    <dl
+      className="grid min-w-0 auto-cols-fr grid-flow-col gap-2 border-y py-3 sm:justify-start sm:gap-10 sm:border-0 sm:py-0"
+      aria-label="En cifras"
+    >
+      {cifras.map((c) => <Contador key={c.etiqueta} etiqueta={c.etiqueta} valor={c.valor} />)}
+    </dl>
+  );
+}
+
+const NOMBRE_METAL: Record<Medalla, string> = { oro: 'Oro', plata: 'Plata', bronce: 'Bronce' };
+
+/** La medalla más valiosa de la cara (ver `compararMedallas`), en una línea. */
+function MedallaDestacada({ m }: { m: MedallaPerfil | null }) {
+  if (!m) return null;
+  const partes = [
+    m.etiquetaTipo,
+    ordenCategoriaVisible(m.categoria) === 0 ? null : categoriaVisible(m.categoria),
+    m.formato === 'EQUIPOS' ? 'equipos' : null,
+  ].filter(Boolean);
+  return (
+    // Puede ir en dos líneas: nunca se recorta.
+    <p data-medalla-destacada={m.medalla} className="flex min-w-0 items-baseline gap-1.5 text-xs leading-snug" title={m.torneo}>
+      <PuntoMedalla medalla={m.medalla} className="size-2.5 shrink-0 self-center" />
+      <span className="shrink-0 font-semibold">{NOMBRE_METAL[m.medalla]}</span>
+      <span className="min-w-0 text-muted-foreground">
+        {partes.map((p) => `${p} · `).join('')}
+        <span className="whitespace-nowrap">{temporadaCorta(m.temporada)}</span>
+      </span>
+    </p>
+  );
+}
+
+/** Reparto de las medallas entre internacional y nacional, en una barra fina. */
+function BarraAmbitos({ internacional, nacional }: { internacional: number; nacional: number }) {
+  // Con un lado a cero la barra sólo repetiría el total.
+  if (internacional === 0 || nacional === 0) return null;
+  const total = internacional + nacional;
+  const pct = Math.round((internacional / total) * 100);
+  return (
+    <div data-barra-ambitos className="flex min-w-0 flex-col gap-1">
+      <div className="flex h-1.5 min-w-0 overflow-hidden rounded-full bg-muted" aria-hidden>
+        <span className="h-full bg-primary-text" style={{ width: `${pct}%` }} />
+        <span className="h-full flex-1 bg-org-rfee/70" />
+      </div>
+      <p className="flex justify-between gap-2 text-[0.6875rem] leading-none text-muted-foreground">
+        <span>Internacional <span className="cifra text-foreground">{internacional}</span></span>
+        <span>Nacional <span className="cifra text-foreground">{nacional}</span></span>
+      </p>
+    </div>
+  );
+}
+
+/** Cara Internacional o Nacional: mismas piezas que la general, con lo de ese ámbito. */
+function CaraAmbito({ r, destacada }: { r: ResumenAmbito; destacada: MedallaPerfil | null }) {
+  const pct = r.porcentajeVictorias === null ? null : Math.round(r.porcentajeVictorias * 100);
+  const cifras = [
+    { etiqueta: r.competiciones === 1 ? 'Prueba' : 'Pruebas', valor: r.competiciones },
+    ...(r.asaltos > 0 ? [{ etiqueta: 'Asaltos', valor: r.asaltos }] : []),
+    { etiqueta: 'Medallas', valor: r.medallas },
+  ];
+  const hitos: Ficha[] = [
+    ...(pct !== null ? [{ clave: 'ganados', cifra: `${pct}%`, rotulo: 'Ganados' }] : []),
+    ...(r.mejorPuesto !== null ? [{ clave: 'mejor', cifra: `${r.mejorPuesto}º`, rotulo: 'Mejor puesto' }] : []),
+    { clave: 'finales', cifra: String(r.finales), rotulo: r.finales === 1 ? 'Final de ocho' : 'Finales de ocho' },
+  ].slice(0, 3);
+  return (
+    <div className="flex min-w-0 flex-col gap-4 sm:gap-5">
+      <FilaCifras cifras={cifras} />
+      <MedallasCabecera oros={r.oros} platas={r.platas} bronces={r.bronces} hitos={hitos} />
+      <MedallaDestacada m={destacada} />
+    </div>
+  );
+}
+
+/** Acciones en pastillas de 44 px de alto: el objetivo táctil mínimo. */
+const ACCION = 'h-11 min-h-11 rounded-full px-4 text-sm';
 
 /**
  * Cabecera tipo perfil social: retrato con anillo, nombre completo, bandera,
@@ -151,12 +287,18 @@ export function CabeceraFicha({
   titulo = true,
   acciones,
   datos = null,
+  chips = [],
+  caraInicial = 0,
 }: {
   ficha: FichaConPerfil;
   titulo?: boolean;
   /** Controles propios de la cuenta que mira, como guardar en favoritos. */
   acciones?: React.ReactNode;
   datos?: DatosPersonales | null;
+  /** Puesto nacional e internacional (ver `chipsRanking`). */
+  chips?: readonly ChipRanking[];
+  /** Cara de la tarjeta de cifras con la que se abre (0 General, 1 Internacional, 2 Nacional). */
+  caraInicial?: number;
 }) {
   const nombre = datos?.nombreCompleto || nombreVisible(ficha.nombre) || ficha.nombre;
   const perfil = ficha.perfil;
@@ -178,8 +320,33 @@ export function CabeceraFicha({
   const hitos: Ficha[] = perfil
     ? [
         ...(pct !== null ? [{ clave: 'ganados', cifra: `${pct}%`, rotulo: 'Ganados' }] : []),
-        ...destacadosPerfil(perfil, ficha.estadisticas.porTipo),
+        // El ranking ya tiene sus dos filas encima, con la lectura oficial: aquí no se repite.
+        ...destacadosPerfil(perfil, ficha.estadisticas.porTipo).filter((d) => d.clave !== 'ranking' && d.clave !== 'mejor-ranking'),
       ].slice(0, 3)
+    : [];
+
+  const ambito = perfil?.ambito;
+  const items = perfil?.resultados?.items ?? [];
+  const general = cifras.length > 0 || (medallas && competiciones) ? (
+    <div className="flex min-w-0 flex-col gap-4 sm:gap-5">
+      {cifras.length > 0 ? <FilaCifras cifras={cifras} /> : null}
+      {medallas && competiciones ? <MedallasCabecera oros={medallas.oros} platas={medallas.platas} bronces={medallas.bronces} hitos={hitos} /> : null}
+      {ambito ? <BarraAmbitos internacional={ambito.internacional.medallas} nacional={ambito.nacional.medallas} /> : null}
+      <MedallaDestacada m={medallaMasValiosa(items)} />
+    </div>
+  ) : null;
+  // Con un solo ámbito, su cara repetiría la general: entonces no se gira.
+  const dosAmbitos = ambito && ambito.internacional.competiciones > 0 && ambito.nacional.competiciones > 0;
+  const caras: CaraTarjeta[] = general
+    ? [
+        { clave: 'general', rotulo: 'General', contenido: general },
+        ...(dosAmbitos
+          ? [
+              { clave: 'internacional', rotulo: 'Internacional', contenido: <CaraAmbito r={ambito.internacional} destacada={medallaMasValiosa(items, 'internacional')} /> },
+              { clave: 'nacional', rotulo: 'Nacional', contenido: <CaraAmbito r={ambito.nacional} destacada={medallaMasValiosa(items, 'nacional')} /> },
+            ]
+          : []),
+      ]
     : [];
 
   const edad = datos?.edad ?? edadDe(ficha.anioNacimiento);
@@ -231,27 +398,14 @@ export function CabeceraFicha({
                 {club.texto}
               </Pastilla>
             ) : null}
-            {ficha.esMenor ? (
-              <Pastilla className="gap-1 text-muted-foreground">
-                <ShieldCheck className="mr-1 inline size-3.5 align-[-2px]" aria-hidden />
-                Posible menor de edad
-              </Pastilla>
-            ) : null}
             {ficha.esPropia ? <Pastilla className="border-primary-text/50 text-primary-text">Tu ficha</Pastilla> : null}
           </ul>
         </div>
       </div>
 
-      {cifras.length > 0 ? (
-        <dl
-          className="grid min-w-0 auto-cols-fr grid-flow-col gap-2 border-y py-3 sm:justify-start sm:gap-10 sm:border-0 sm:py-0"
-          aria-label="En cifras"
-        >
-          {cifras.map((c) => <Contador key={c.etiqueta} etiqueta={c.etiqueta} valor={c.valor} />)}
-        </dl>
-      ) : null}
+      <FilasRanking chips={chips} />
 
-      {medallas && competiciones ? <MedallasCabecera oros={medallas.oros} platas={medallas.platas} bronces={medallas.bronces} hitos={hitos} /> : null}
+      {caras.length > 0 ? <TarjetaGiratoria caras={caras} etiqueta="Cifras de la carrera" inicial={caraInicial} /> : null}
 
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <Button asChild variant="secondary" size="sm" className={ACCION}>
@@ -262,7 +416,7 @@ export function CabeceraFicha({
         </Button>
         {acciones ? (
           // El control de Seguir trae su propio alto de 44 px: aquí se iguala a las otras pastillas.
-          <div className="min-w-0 [&_button]:rounded-full [&_button>span:first-child]:h-9 [&_button>span:first-child]:rounded-full [&_button>span:first-child]:px-3.5">
+          <div className="min-w-0 [&_button]:rounded-full [&_button>span:first-child]:h-11 [&_button>span:first-child]:rounded-full [&_button>span:first-child]:px-4">
 
             {acciones}
           </div>
@@ -466,6 +620,7 @@ export function FichaCompleta({
   conTitulo = true,
   acciones,
   extras = EXTRAS_VACIOS,
+  diferidos,
 }: {
   ficha: FichaConPerfil;
   historial: HistorialVista;
@@ -476,21 +631,47 @@ export function FichaCompleta({
   acciones?: React.ReactNode;
   /** Datos personales y rendimiento; cada uno se omite si no se pudo leer. */
   extras?: ExtrasPerfil;
+  /**
+   * Rendimiento y rivales que llegan después (streaming). Con ellos, la ficha
+   * no los espera: sus pestañas se pintan con un esqueleto hasta que llegan.
+   */
+  diferidos?: DiferidosPerfil;
 }) {
   const perfil = ficha.perfil;
-  const rendimiento = extras.rendimiento && extras.rendimiento.vistas.todo.total.competiciones > 0 ? extras.rendimiento : null;
-  const conRivales = perfil?.rivalesStats && perfil.rivalesStats.total.asaltos > 0 ? perfil.rivalesStats : null;
+  const ambitos = extras.rankingAmbitos ?? null;
+  const bloques = bloquesRankingPerfil(extras);
+  const conRanking = bloques.hay;
+  const soloEuropeo = bloques.europeo && !bloques.internacional && !bloques.mundial && !bloques.nacional && !bloques.nacionalFuera;
+  // Con pestaña de ranking, el resumen de la temporada ya no se repite en Rendimiento.
+  const rankingEnRendimiento = conRanking ? null : <RankingCompacto ficha={ficha} nivel={nivel} />;
   // Las tres pestañas se pintan siempre en el HTML (forceMount) y la inactiva
   // sólo se oculta: los anclajes #historial y la lectura sin JS siguen funcionando.
   const panel = 'flex min-w-0 flex-col gap-8 pt-5 data-[state=inactive]:hidden';
+  // Con cuatro pestañas, en móvil cada una ocupa lo que su rótulo y la letra baja un punto.
+  const pestana = conRanking
+    ? 'flex-auto px-1 text-[0.8125rem] max-[359px]:px-0.5 max-[359px]:text-xs sm:flex-none sm:px-4 sm:text-sm'
+    : 'flex-1 px-2 sm:flex-none sm:px-4';
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      <CabeceraFicha ficha={ficha} titulo={conTitulo} acciones={acciones} datos={extras.datos} />
+      <CabeceraFicha
+        ficha={ficha}
+        titulo={conTitulo}
+        acciones={acciones}
+        datos={extras.datos}
+        chips={chipsRanking({
+          nacional: extras.rankingNacional,
+          mundial: extras.rankingMundial,
+          resumenMundial: extras.resumenMundial,
+          ambitos,
+          olimpica: extras.olimpica,
+        })}
+      />
       <Tabs defaultValue="resultados" className="min-w-0 gap-0">
         <TabsList variant="line" aria-label="Secciones de la ficha" className="w-full justify-start gap-0 border-b p-0">
-          <TabsTrigger value="resultados" className="flex-1 px-2 sm:flex-none sm:px-4">Resultados</TabsTrigger>
-          <TabsTrigger value="estadisticas" className="flex-1 px-2 sm:flex-none sm:px-4">Rendimiento</TabsTrigger>
-          <TabsTrigger value="rivales" className="flex-1 px-2 sm:flex-none sm:px-4">Rivales</TabsTrigger>
+          <TabsTrigger value="resultados" className={pestana}>Resultados</TabsTrigger>
+          <TabsTrigger value="estadisticas" className={pestana}>Rendimiento</TabsTrigger>
+          {conRanking ? <TabsTrigger value="ranking" className={pestana}>Ranking</TabsTrigger> : null}
+          <TabsTrigger value="rivales" className={pestana}>Rivales</TabsTrigger>
         </TabsList>
         <TabsContent value="resultados" forceMount className={panel}>
           {/* Sin pruebas individuales (sólo equipos, o la lectura falló) queda el historial paginado de siempre. */}
@@ -501,56 +682,206 @@ export function FichaCompleta({
           )}
         </TabsContent>
         <TabsContent value="estadisticas" forceMount className={panel}>
-          {rendimiento ? (
-            <>
-              <RankingCompacto ficha={ficha} nivel={nivel} />
-              {/* Cifras, evolución, temporadas, tipo y categoría con Todo / Internacional / Nacional. */}
-              <SeccionRendimiento datos={rendimiento} nivel={nivel} tituloOculto />
-            </>
-          ) : perfil ? (
-            <>
-              <CifrasPerfil perfil={perfil} />
-              {perfil.ambito ? <AmbitoPerfil ambito={perfil.ambito} nivel={nivel} /> : null}
-              {perfil.ambito ? (
-                <CategoriasPerfil categorias={perfil.ambito.porCategoria} nivel={nivel} />
-              ) : ficha.estadisticas.detalle ? (
-                <EstadisticasDeportistaVista detalle={ficha.estadisticas.detalle} nivel={nivel} />
-              ) : null}
-              <RankingCompacto ficha={ficha} nivel={nivel} />
-              <AnioAAnio perfil={perfil} nivel={nivel} />
-            </>
+          {diferidos ? (
+            <Suspense fallback={<CargandoPestana texto="Cargando el rendimiento…" />}>
+              <RendimientoDiferido promesa={diferidos.rendimiento} ficha={ficha} rankingEnRendimiento={rankingEnRendimiento} nivel={nivel} />
+            </Suspense>
           ) : (
-            <p role="status" className="text-sm text-muted-foreground">No se han podido cargar.</p>
+            <PanelRendimiento ficha={ficha} rendimiento={extras.rendimiento} rankingEnRendimiento={rankingEnRendimiento} nivel={nivel} />
           )}
         </TabsContent>
-        <TabsContent value="rivales" forceMount className={panel}>
-          {perfil ? (
-            <>
-              <CompararPerfil
-                personaId={ficha.id}
-                nombre={ficha.nombre}
-                rapidos={(perfil.rivales ?? []).slice(0, 5).map(({ id, nombre, pais, asaltos, victorias, derrotas }) => ({
-                  id, nombre, pais, asaltos, victorias, derrotas,
-                }))}
-                encabezado={nivel === 'pagina' ? 'h2' : 'h3'}
-              />
-              {conRivales ? (
-                <>
-                  <BalanceFasesRivales stats={conRivales} nivel={nivel} />
-                  <CuriosidadesPerfil personaId={ficha.id} stats={conRivales} nivel={nivel} />
-                </>
+        {conRanking ? (
+          <TabsContent value="ranking" forceMount className={panel}>
+            <PestanaRanking
+              bloques={bloques}
+              nivel={nivel}
+              europeo={diferidos ? (
+                <Suspense fallback={soloEuropeo ? <CargandoPestana texto="Cargando el ranking…" /> : null}>
+                  <EuropeoDiferido
+                    promesa={diferidos.europeo}
+                    nivel={nivel}
+                    vacio={soloEuropeo ? <p role="status" className="text-sm text-muted-foreground">No se ha podido cargar.</p> : null}
+                  />
+                </Suspense>
               ) : null}
-              {/* Con curiosidades encima, la lista necesita su propio título visible. */}
-              <ManoAMano personaId={ficha.id} nombre={ficha.nombre} perfil={perfil} nivel={nivel} enPestana={!conRivales} />
-            </>
-          ) : (
+            />
+          </TabsContent>
+        ) : null}
+        <TabsContent value="rivales" forceMount className={panel}>
+          {!perfil ? (
             <EntradaCaraACara ficha={ficha} nivel={nivel} />
+          ) : diferidos ? (
+            <Suspense fallback={<CargandoPestana texto="Cargando los rivales…" />}>
+              <RivalesDiferidosVista promesa={diferidos.rivales} ficha={ficha} nivel={nivel} />
+            </Suspense>
+          ) : (
+            <PanelRivales ficha={ficha} perfil={perfil} nivel={nivel} />
           )}
+          {/* Sólo si hay relevos. */}
+          {diferidos ? (
+            <Suspense fallback={null}>
+              <RelevosPerfilDiferido promesa={diferidos.relevos} personaId={ficha.id} nivel={nivel} />
+            </Suspense>
+          ) : null}
         </TabsContent>
       </Tabs>
-      {perfil ? <SugeridosPerfil personaId={ficha.id} sugeridos={perfil.sugeridos} nivel={nivel} /> : null}
+      {!perfil ? null : diferidos ? (
+        <Suspense fallback={null}>
+          <SugeridosDiferidos promesa={diferidos.rivales} personaId={ficha.id} nivel={nivel} />
+        </Suspense>
+      ) : (
+        <SugeridosPerfil personaId={ficha.id} sugeridos={perfil.sugeridos} nivel={nivel} />
+      )}
     </div>
   );
+}
+
+/**
+ * Pestaña Ranking: Internacional, Europeo (diferido) y Nacional, con la misma
+ * lectura que las filas de la cabecera. Sin ningún bloque, una línea.
+ */
+export function PestanaRanking({
+  bloques,
+  nivel,
+  europeo = null,
+}: {
+  bloques: BloquesRankingPerfil;
+  nivel: Nivel;
+  europeo?: React.ReactNode;
+}) {
+  const { internacional, mundial, nacional, nacionalFuera } = bloques;
+  if (!internacional && !mundial && !nacional && !nacionalFuera && !europeo) {
+    return <p role="status" className="text-sm text-muted-foreground">Sin puestos en ningún ranking.</p>;
+  }
+  return (
+    <>
+      {internacional ? <RankingAmbitoPerfil titulo="Internacional" bloque={internacional} nivel={nivel} /> : null}
+      {mundial ? <RankingMundialPerfil entradas={mundial} nivel={nivel} /> : null}
+      {europeo}
+      {nacional ? (
+        <SeccionRanking titulo="Nacional" detalle="RFEE" nivel={nivel}>
+          <RankingNacionalPerfil ranking={nacional} nivel={nivel} />
+        </SeccionRanking>
+      ) : null}
+      {nacionalFuera ? <RankingAmbitoPerfil titulo="Nacional" bloque={nacionalFuera} nivel={nivel} /> : null}
+    </>
+  );
+}
+
+function CargandoPestana({ texto }: { texto: string }) {
+  return (
+    <div role="status" aria-live="polite" className="flex min-w-0 flex-col gap-3">
+      <span className="sr-only">{texto}</span>
+      <Skeleton className="h-11 w-full rounded-full sm:w-96" />
+      <Skeleton className="h-40 w-full rounded-xl" />
+      <Skeleton className="h-40 w-full rounded-xl" />
+    </div>
+  );
+}
+
+function PanelRendimiento({
+  ficha,
+  rendimiento: leido,
+  rankingEnRendimiento,
+  nivel,
+}: {
+  ficha: FichaConPerfil;
+  rendimiento: ExtrasPerfil['rendimiento'];
+  rankingEnRendimiento: React.ReactNode;
+  nivel: Nivel;
+}) {
+  const perfil = ficha.perfil;
+  const rendimiento = leido && leido.vistas.todo.total.competiciones > 0 ? leido : null;
+  if (rendimiento) {
+    return (
+      <>
+        {rankingEnRendimiento}
+        {/* Cifras, evolución, temporadas, tipo y categoría con Todo / Internacional / Nacional. */}
+        <SeccionRendimiento datos={rendimiento} nivel={nivel} tituloOculto />
+      </>
+    );
+  }
+  if (!perfil) return <p role="status" className="text-sm text-muted-foreground">No se han podido cargar.</p>;
+  return (
+    <>
+      <CifrasPerfil perfil={perfil} />
+      {perfil.ambito ? <AmbitoPerfil ambito={perfil.ambito} nivel={nivel} /> : null}
+      {perfil.ambito ? (
+        <CategoriasPerfil categorias={perfil.ambito.porCategoria} nivel={nivel} />
+      ) : ficha.estadisticas.detalle ? (
+        <EstadisticasDeportistaVista detalle={ficha.estadisticas.detalle} nivel={nivel} />
+      ) : null}
+      {rankingEnRendimiento}
+      <AnioAAnio perfil={perfil} nivel={nivel} />
+    </>
+  );
+}
+
+async function RendimientoDiferido({
+  promesa,
+  ...resto
+}: { promesa: DiferidosPerfil['rendimiento'] } & Omit<Parameters<typeof PanelRendimiento>[0], 'rendimiento'>) {
+  return <PanelRendimiento {...resto} rendimiento={await promesa} />;
+}
+
+/**
+ * Pestaña Rivales. Con `enfrentados` (lectura diferida): más enfrentados, a
+ * quién más gana y quién más le gana por ámbito; sin ella, la lista «Mano a
+ * mano» de siempre.
+ */
+export function PanelRivales({
+  ficha,
+  perfil,
+  enfrentados,
+  nivel,
+}: {
+  ficha: FichaConPerfil;
+  perfil: NonNullable<FichaConPerfil['perfil']>;
+  enfrentados?: RivalesPorAmbito | null;
+  nivel: Nivel;
+}) {
+  const conRivales = perfil.rivalesStats && perfil.rivalesStats.total.asaltos > 0 ? perfil.rivalesStats : null;
+  // Con «Más enfrentados» debajo, los atajos del comparador lo repetirían.
+  const rapidos = enfrentados !== undefined
+    ? []
+    : (perfil.rivales ?? []).slice(0, 5).map(({ id, nombre, pais, asaltos, victorias, derrotas }) => ({
+        id, nombre, pais, asaltos, victorias, derrotas,
+      }));
+  return (
+    <>
+      <CompararPerfil personaId={ficha.id} nombre={ficha.nombre} rapidos={rapidos} encabezado={nivel === 'pagina' ? 'h2' : 'h3'} />
+      {enfrentados !== undefined ? <RivalesPorAmbitoVista personaId={ficha.id} datos={enfrentados} nivel={nivel} /> : null}
+      {conRivales ? (
+        <>
+          <BalanceFasesRivales stats={conRivales} nivel={nivel} />
+          <CuriosidadesPerfil personaId={ficha.id} stats={conRivales} nivel={nivel} />
+        </>
+      ) : null}
+      {enfrentados === undefined ? (
+        // Con curiosidades encima, la lista necesita su propio título visible.
+        <ManoAMano personaId={ficha.id} nombre={ficha.nombre} perfil={perfil} nivel={nivel} enPestana={!conRivales} />
+      ) : null}
+    </>
+  );
+}
+
+async function RivalesDiferidosVista({
+  promesa,
+  ficha,
+  nivel,
+}: {
+  promesa: DiferidosPerfil['rivales'];
+  ficha: FichaConPerfil;
+  nivel: Nivel;
+}) {
+  const d = await promesa;
+  const perfil = { ...ficha.perfil!, rivalesStats: d.stats };
+  return <PanelRivales ficha={ficha} perfil={perfil} enfrentados={d.enfrentados} nivel={nivel} />;
+}
+
+async function SugeridosDiferidos({ promesa, personaId, nivel }: { promesa: DiferidosPerfil['rivales']; personaId: string; nivel: Nivel }) {
+  const d = await promesa;
+  return <SugeridosPerfil personaId={personaId} sugeridos={d.sugeridos} nivel={nivel} />;
 }
 
 /* --------------------------------------------------------------------- retorno */

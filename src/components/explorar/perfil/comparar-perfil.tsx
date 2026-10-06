@@ -181,7 +181,7 @@ export function CompararPerfil({
                 >
                   <AvatarAnillo nombre={nombreVisible(r.nombre)} tamano="sm" apagado />
                   <span className="min-w-0 max-w-40 truncate font-medium">{nombreVisible(r.nombre)}</span>
-                  <span className="cifra text-sm text-muted-foreground" title={`${r.asaltos} asaltos: ${r.victorias} ganados, ${r.derrotas} perdidos`}>
+                  <span className="cifra shrink-0 text-sm whitespace-nowrap text-muted-foreground" title={`${r.asaltos} asaltos: ${r.victorias} ganados, ${r.derrotas} perdidos`}>
                     {r.victorias}–{r.derrotas}
                   </span>
                 </Link>

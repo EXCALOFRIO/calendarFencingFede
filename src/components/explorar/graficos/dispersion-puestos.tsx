@@ -1,8 +1,10 @@
+import { MoveRight, TrendingDown, TrendingUp } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import type { PuntoEvolucion } from '@/lib/sport/explorar/rendimiento';
 import { medallaDe } from '@/lib/sport/explorar/presentacion';
 import type { TonoTipo } from '@/lib/sport/explorar/tipos-social';
 import { cn } from '@/lib/utils';
-import { camino, COLOR, COLOR_TONO, fraccionDelante, MARCAS_PERCENTIL, mesAnio, yPercentil } from './comun';
+import { camino, COLOR, COLOR_TONO, fraccionDelante, MARCAS_PERCENTIL, mesAnio, top, yPercentil } from './comun';
 import { ALTO, EjeX, Guias, Leyenda, Lienzo, Punto, type Alto } from './eje';
 import { Lectura } from './lectura';
 
@@ -10,7 +12,7 @@ import { Lectura } from './lectura';
 const GRUPO_TONO: Record<TonoTipo, string> = {
   gold: 'JJOO',
   primary: 'Mundial y JJOO',
-  'org-efc': 'Europa',
+  'org-efc': 'EFC',
   'org-fie': 'FIE',
   'org-rfee': 'RFEE',
   'org-aut': 'Autonómico',
@@ -35,6 +37,46 @@ export function tendencia(valores: number[], ventana = 9, suavizado = 4): number
     const tramo = medianas.slice(Math.max(0, i - suavizado), i + suavizado + 1);
     return tramo.reduce((s, v) => s + v, 0) / tramo.length;
   });
+}
+
+export type ResumenTendencia = { valor: number; sentido: 'mejora' | 'baja' | 'estable' | null };
+
+/**
+ * Dónde está ahora la tendencia (parte del cuadro por delante) y hacia dónde va
+ * respecto a la de hace un año; sin un punto de hace un año, sólo el valor.
+ * Menos de 3 puntos de diferencia es estable.
+ */
+export function resumenTendencia(linea: readonly number[], dias: readonly number[]): ResumenTendencia | null {
+  const valor = linea.at(-1);
+  const hoy = dias.at(-1);
+  if (valor === undefined || hoy === undefined) return null;
+  let antes: number | null = null;
+  for (let i = dias.length - 1; i >= 0; i -= 1) {
+    if (dias[i] <= hoy - 365) {
+      antes = linea[i];
+      break;
+    }
+  }
+  if (antes === null) return { valor, sentido: null };
+  const cambio = valor - antes;
+  return { valor, sentido: cambio < -0.03 ? 'mejora' : cambio > 0.03 ? 'baja' : 'estable' };
+}
+
+const SENTIDO = {
+  mejora: { icono: TrendingUp, clase: 'text-ok', texto: 'mejor que hace un año' },
+  baja: { icono: TrendingDown, clase: 'text-danger', texto: 'peor que hace un año' },
+  estable: { icono: MoveRight, clase: 'text-muted-foreground', texto: 'igual que hace un año' },
+} as const;
+
+function ChipTendencia({ r }: { r: ResumenTendencia }) {
+  const s = r.sentido ? SENTIDO[r.sentido] : null;
+  return (
+    <Badge variant="secondary" className="h-6 gap-1.5 px-2.5 text-xs">
+      {s ? <s.icono aria-hidden className={cn('size-3.5', s.clase)} /> : null}
+      <span>Tendencia {top(r.valor)}</span>
+      {s ? <span className="sr-only">, {s.texto}</span> : null}
+    </Badge>
+  );
 }
 
 export function lecturaPuesto(p: PuntoEvolucion): string {
@@ -85,8 +127,10 @@ export function DispersionPuestos({
 
   const tonos = ORDEN_TONO.filter((t) => validos.some((p) => p.tono === t));
   const podios = validos.some((p) => p.puesto <= 3);
+  const resumen = trazo ? resumenTendencia(linea, dias) : null;
   return (
     <Lectura inicial={inicial} className={className}>
+      {resumen ? <ChipTendencia r={resumen} /> : null}
       <div role="img" aria-label={titulo} className="flex min-w-0 flex-col gap-1">
         <div className={cn('relative mt-3', ALTO[alto])}>
           <Guias

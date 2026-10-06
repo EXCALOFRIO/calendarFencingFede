@@ -12,6 +12,7 @@ import type {
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { cn } from '@/lib/utils';
 import type { EnlaceFicha } from './prueba/enlaces';
+import { HojaPoule } from './prueba/hoja-poule';
 import {
   huecosCuadro,
   inicioPorDefecto,
@@ -26,7 +27,8 @@ import {
 /**
  * Poules y cuadro de una prueba, sin estado propio: la vista de la prueba
  * decide qué rondas se ven y a quién se resalta. Nada desborda en horizontal:
- * en móvil la poule es una lista y el cuadro enseña dos rondas en lugar de tres.
+ * en móvil la poule es una lista (la matriz se abre a pantalla completa) y el
+ * cuadro enseña dos rondas en lugar de tres.
  */
 
 const ENLACE_NOMBRE =
@@ -38,11 +40,17 @@ function Nombre({
   t,
   enlace,
   corto = false,
+  tactil = false,
   className,
 }: {
   t: { personaId: string | null; nombre: string };
   enlace?: EnlaceFicha;
   corto?: boolean;
+  /**
+   * El enlace llena su hueco y mide al menos 44 px de alto (en px: `min-h-11`
+   * serían 49,5 con la raíz de 18 px del móvil), con el texto recortado dentro.
+   */
+  tactil?: boolean;
   className?: string;
 }) {
   const completo = nombreVisible(t.nombre);
@@ -61,9 +69,9 @@ function Nombre({
       prefetch={false}
       title={titulo}
       aria-label={titulo ? `Ficha de ${completo}` : undefined}
-      className={cn(ENLACE_NOMBRE, 'truncate', className)}
+      className={cn(ENLACE_NOMBRE, tactil ? 'flex min-h-[44px] flex-1 items-center' : 'truncate', className)}
     >
-      {texto}
+      {tactil ? <span className="min-w-0 truncate">{texto}</span> : texto}
     </Link>
   );
 }
@@ -87,16 +95,19 @@ function Poule({ poule, enlace, filtro }: { poule: PouleDePrueba; enlace?: Enlac
       aria-labelledby={`${id}-titulo`}
       data-resaltado={marcada ? 'true' : undefined}
       className={cn(
-        'flex min-w-0 scroll-mt-24 flex-col overflow-hidden rounded-lg border bg-card',
+        'relative flex min-w-0 scroll-mt-24 flex-col overflow-hidden rounded-lg border bg-card',
         marcada && 'border-primary ring-1 ring-primary',
       )}
     >
-      <header className="flex items-baseline justify-between gap-2 border-b px-3 py-1.5">
-        <h3 id={`${id}-titulo`} className="text-base leading-tight">{poule.etiqueta}</h3>
-        <span className="text-xs text-muted-foreground">{poule.filas.length}</span>
+      <header className="flex min-h-11 items-center justify-between gap-2 border-b px-3 py-1.5">
+        <span className="flex min-w-0 items-baseline gap-2">
+          <h3 id={`${id}-titulo`} className="truncate text-base leading-tight">{poule.etiqueta}</h3>
+          <span className="text-xs text-muted-foreground">{poule.filas.length}</span>
+        </span>
+        <HojaPoule poule={poule} enlace={enlace} filtro={filtro} className="sm:hidden" />
       </header>
 
-      {/* Móvil: una fila por tirador con sus cifras; la matriz no cabe. */}
+      {/* Móvil: una fila por tirador con sus cifras; la matriz se abre en una hoja. */}
       <div className="sm:hidden">
         <div aria-hidden className={cn('grid gap-x-1.5 px-3 pt-1.5 text-[0.6875rem] text-muted-foreground', COLUMNAS_LISTA)}>
           <span />
@@ -111,7 +122,7 @@ function Poule({ poule, enlace, filtro }: { poule: PouleDePrueba; enlace?: Enlac
             <li
               key={f.clave}
               className={cn(
-                'grid min-h-10 items-center gap-x-1.5 px-3 py-1 text-sm',
+                'grid min-h-[44px] items-center gap-x-1.5 px-3 text-sm',
                 COLUMNAS_LISTA,
                 resaltado(f, filtro) && 'bg-marcado',
               )}
@@ -119,7 +130,8 @@ function Poule({ poule, enlace, filtro }: { poule: PouleDePrueba; enlace?: Enlac
               <span className="cifra text-right text-muted-foreground">{i + 1}</span>
               <span className="flex min-w-0 items-center gap-1.5">
                 {f.pais ? <BanderaPais pais={f.pais} soloBandera /> : null}
-                <Nombre t={f} enlace={enlace} corto className="min-w-0 font-medium" />
+                {/* Por encima del área táctil del botón de la matriz, que cubre la tarjeta. */}
+                <Nombre t={f} enlace={enlace} corto tactil className="relative z-[1] min-w-0 font-medium" />
               </span>
               <span className="cifra text-center font-semibold">
                 {f.victorias}
@@ -177,10 +189,11 @@ function Poule({ poule, enlace, filtro }: { poule: PouleDePrueba; enlace?: Enlac
           {poule.filas.map((f, i) => (
             <tr key={f.clave} className={cn('border-t', resaltado(f, filtro) && 'bg-marcado')}>
               <td className="cifra py-1.5 pr-1 text-right text-muted-foreground">{i + 1}</td>
-              <th scope="row" className="px-2 py-1.5 text-left font-normal">
+              <th scope="row" className="relative px-2 py-1.5 text-left font-normal">
                 <span className="flex min-w-0 items-center gap-1.5">
                   {f.pais ? <BanderaPais pais={f.pais} /> : null}
-                  <Nombre t={f} enlace={enlace} className="min-w-0 font-medium" />
+                  {/* La zona del toque es la casilla entera, sin que la fila crezca. */}
+                  <Nombre t={f} enlace={enlace} className="min-w-0 font-medium after:absolute after:inset-0 after:content-['']" />
                 </span>
               </th>
               {f.celdas.map((c, j) => (

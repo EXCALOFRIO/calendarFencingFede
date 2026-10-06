@@ -86,15 +86,16 @@ export type FotoDeportistaProps = {
    * anillo y la atribución FIE como sello sobre el retrato en vez de pie.
    * El sello no enlaza: quien lo usa pone el enlace a la FIE en otro sitio.
    * `lista` es el avatar de 44 px con anillo de las filas del buscador: sin
-   * pie, y la foto se pide sólo al verse (ver `fotoDeLista`).
+   * pie, y la foto se pide sólo al verse (ver `fotoDeLista`). `fila` es lo
+   * mismo a 28 px, para las tablas de ranking de una línea por tirador.
    */
-  tamano?: 'mini' | 'retrato' | 'perfil' | 'heroe' | 'lista';
+  tamano?: 'mini' | 'retrato' | 'perfil' | 'heroe' | 'lista' | 'fila';
   /** Sólo `lista`: filete en vez de degradado (sin resultados importados). */
   apagado?: boolean;
   className?: string;
 };
 
-const MEDIDAS = { mini: 48, retrato: 96, perfil: 120, heroe: 144, lista: 44 } as const;
+const MEDIDAS = { mini: 48, retrato: 96, perfil: 120, heroe: 144, lista: 44, fila: 28 } as const;
 
 export function FotoDeportista({ ocultar = false, ...props }: FotoDeportistaProps) {
   // La clave descarta también una imagen anterior al cambiar de persona.
@@ -113,7 +114,7 @@ function Retrato({
   const src = foto ? retratoAncho(foto.src, anchoRetratoPara(medida)) ?? foto.src : undefined;
 
   useEffect(() => {
-    if (tamano === 'lista') {
+    if (tamano === 'lista' || tamano === 'fila') {
       let vigente = true;
       let espera: ReturnType<typeof setTimeout> | undefined;
       const cargar = () => {
@@ -141,17 +142,17 @@ function Retrato({
     return () => controlador.abort();
   }, [personaId, tamano]);
 
-  if (tamano === 'lista') {
+  if (tamano === 'lista' || tamano === 'fila') {
     return (
       <div ref={caja} className={cn('shrink-0', apagado ? ANILLO_APAGADO : ANILLO, className)}>
-        <div className="rounded-full bg-background p-[2px]">
+        <div className={cn('rounded-full bg-background', tamano === 'fila' ? 'p-px' : 'p-[2px]')}>
           <Avatar
             style={{ width: medida, height: medida }}
             aria-hidden={decorativa || undefined}
             role={decorativa ? undefined : 'img'}
             aria-label={decorativa ? undefined : cargada ? `Foto oficial de ${nombre}, FIE` : 'Foto no publicada'}
           >
-            <AvatarFallback aria-hidden="true" className="font-display text-base">{iniciales}</AvatarFallback>
+            <AvatarFallback aria-hidden="true" className={tamano === 'fila' ? 'font-display text-[0.6875rem]' : 'font-display text-base'}>{iniciales}</AvatarFallback>
             {foto ? (
               // Imagen nativa a propósito: Next no debe copiar ni optimizar fotos FIE.
               // eslint-disable-next-line @next/next/no-img-element

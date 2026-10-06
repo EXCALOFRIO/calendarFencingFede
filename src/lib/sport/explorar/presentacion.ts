@@ -1,4 +1,5 @@
 import { titular, titularTorneo } from '@/lib/utils';
+import { nombreEdicionEfc } from './nombre-efc';
 
 /**
  * Nombres cortos y uniformes para pintar Explorar. Las fuentes escriben la
@@ -120,6 +121,31 @@ export type DatosNombrePrueba = {
   fuente?: string | null;
 };
 
+/**
+ * Formas cortas de los nombres de competición, sólo al principio del nombre
+ * (el nombre del evento): «Campeonato del Mundo de Veteranos» → «Mundial de
+ * Veteranos», pero un «… del Campeonato del Mundo» en medio se queda igual.
+ */
+const CORTOS: [RegExp, string][] = [
+  [/^campeonatos? de españa\b/i, 'Cto. España'],
+  [/^torneo nacional de ranking\b/i, 'TNR'],
+  [/^campeonato de europa\b/i, 'Europeo'],
+  [/^circuito europeo\b/i, 'Circ. europeo'],
+  [/^campeonato del mundo\b/i, 'Mundial'],
+];
+
+/**
+ * Nombre de una prueba para filas estrechas (393 px): el de `nombrePrueba`
+ * con la forma corta del evento. El nombre entero va en `title`/`aria-label`.
+ */
+export function nombrePruebaCorto(datos: DatosNombrePrueba): string {
+  const largo = nombrePrueba(datos);
+  for (const [patron, corto] of CORTOS) {
+    if (patron.test(largo)) return largo.replace(patron, corto).replace(/\s+/g, ' ').trim();
+  }
+  return largo;
+}
+
 /** Nombre de una prueba listo para pintar: en castellano, sin el sufijo de equipos si es individual. */
 export function nombrePrueba({ nombre, formato, fuente }: DatosNombrePrueba): string {
   let texto = nombre.replace(/\s+/g, ' ').trim();
@@ -136,5 +162,6 @@ export function nombrePrueba({ nombre, formato, fuente }: DatosNombrePrueba): st
     }
     return titularTorneo(texto);
   }
+  if (fuente === 'efc') return nombreEdicionEfc(texto);
   return titular(texto);
 }

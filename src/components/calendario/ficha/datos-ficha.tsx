@@ -1,8 +1,10 @@
 'use client';
 
-import { ChevronDown, ExternalLink } from 'lucide-react';
+import { ChevronDown, ExternalLink, Navigation } from 'lucide-react';
 import * as React from 'react';
+import { BanderaPais } from '@/components/bandera';
 import { Button } from '@/components/ui/button';
+import { mapsLinks } from '@/lib/travel';
 import {
   Collapsible,
   CollapsibleContent,
@@ -456,19 +458,73 @@ export function organizaDe(evento: EventView) {
 export function TarjetaOrganiza({ evento }: { evento: EventView }) {
   const { quien, direccion } = organizaDe(evento);
   if (!quien && !direccion) return null;
+  const mapa = direccion ? mapsLinks({ venueAddress: direccion.valor })?.google ?? null : null;
   return (
     <Tarjeta titulo="Organiza">
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1">
         {quien ? (
-          <ParDato linea={{ clave: quien.id, rotulo: 'Entidad', valor: titular(quien.valor), dato: quien }} />
+          <CitaConvocatoria dato={quien}>
+            <span className="text-base font-medium sm:text-sm">
+              {titular(quien.valor)}
+              <MarcaConvocatoria className="ml-1.5 text-muted-foreground" />
+            </span>
+          </CitaConvocatoria>
         ) : null}
-        {direccion ? (
-          <ParDato
-            linea={{ clave: direccion.id, rotulo: 'Dirección', valor: titular(direccion.valor), dato: direccion }}
-          />
-        ) : null}
+        {direccion ? <LineaDireccion texto={titular(direccion.valor)} mapa={mapa} leida={direccion} /> : null}
       </div>
     </Tarjeta>
+  );
+}
+
+/**
+ * Una dirección en una sola línea que abre el mapa. Entera va en el `title` y
+ * en el propio mapa; la marca del documento, si se leyó del PDF, es un botón
+ * aparte porque no puede ir dentro del enlace.
+ */
+export function LineaDireccion({
+  pais,
+  texto,
+  mapa,
+  leida,
+}: {
+  pais?: string | null;
+  texto: string;
+  mapa: string | null;
+  leida: DatoExtraidoView | null;
+}) {
+  const contenido = (
+    <>
+      {pais ? <BanderaPais pais={pais} tamaño="ficha" /> : null}
+      <span className="min-w-0 flex-1 truncate">{texto}</span>
+    </>
+  );
+  return (
+    <div className="flex min-w-0 items-center gap-1">
+      {mapa ? (
+        <a
+          href={mapa}
+          target="_blank"
+          rel="noreferrer"
+          title={texto}
+          aria-label={`${texto}: abrir en el mapa`}
+          className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        >
+          {contenido}
+          <Navigation className="size-4 shrink-0 text-primary-text" aria-hidden />
+        </a>
+      ) : (
+        <p title={texto} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-sm text-muted-foreground">
+          {contenido}
+        </p>
+      )}
+      {leida ? (
+        <CitaConvocatoria dato={leida} className="mx-0 px-0">
+          <span className="flex size-11 items-center justify-center text-muted-foreground">
+            <MarcaConvocatoria />
+          </span>
+        </CitaConvocatoria>
+      ) : null}
+    </div>
   );
 }
 

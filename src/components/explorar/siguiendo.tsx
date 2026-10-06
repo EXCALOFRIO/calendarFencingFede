@@ -137,7 +137,7 @@ function FiltroMedallas({ soloMedallas }: { soloMedallas: boolean }) {
       prefetch={false}
       aria-current={activa ? 'page' : undefined}
       className={cn(
-        'inline-flex h-9 min-w-0 flex-1 items-center justify-center rounded-full px-4 text-sm whitespace-nowrap text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+        'inline-flex h-11 min-w-0 flex-1 items-center justify-center rounded-full px-4 text-sm whitespace-nowrap text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
         activa && 'bg-secondary font-semibold text-foreground',
       )}
     >

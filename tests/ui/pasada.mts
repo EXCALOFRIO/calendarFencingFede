@@ -7,7 +7,9 @@ import path from 'node:path';
 
 export const PASADA = Boolean(process.env.PASADA);
 
+/** Con CAPTURAS=<nombre>, todo va a `capturas/<nombre>/<carpeta>/` (una tanda de revisión). */
 export function carpetaCapturas(raiz: string, carpeta: string): string {
+  if (process.env.CAPTURAS) return path.join(raiz, 'capturas', process.env.CAPTURAS, carpeta);
   return PASADA ? path.join(raiz, 'capturas', 'pasada-global', carpeta) : path.join(raiz, 'capturas', carpeta);
 }
 

@@ -186,7 +186,10 @@ describe('el horario día a día', () => {
       ['07:00', 'Apertura y control de armas', 'Florete femenino'],
       ['09:00', 'Poules y primeras directas', 'Florete femenino'],
     ]);
-    expect(dias[1].hitos.map((h) => [h.rotulo, h.aQue])).toEqual([['Apertura del pabellón', 'Equipos']]);
+    // La apertura del pabellón vale para todo el día: va en su titular, no como fila.
+    expect(dias[1].hitos).toEqual([]);
+    expect(dias[1].apertura).toMatchObject({ hora: '06:30', rotulo: 'Apertura del pabellón' });
+    expect(dias[0].apertura).toBeNull();
     expect(tituloDeDia('2026-10-16')).toBe('Vie 16 oct');
   });
 

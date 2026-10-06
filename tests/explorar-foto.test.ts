@@ -169,6 +169,19 @@ describe('identidad exacta de retratos', () => {
     expect(s.fetch).not.toHaveBeenCalled();
   });
 
+  it('sin año de nacimiento conocido no hay foto: no se puede descartar que sea menor', async () => {
+    const s = escenario(); s.persona(UUID_A, null, null); s.externo();
+    expect(await s.leer()).toEqual({ estado: 'foto_no_publicada' });
+    const fundida = escenario(); fundida.persona(UUID_A, null, null); fundida.persona(UUID_B, UUID_A, null); fundida.externo();
+    expect(await fundida.leer()).toEqual({ estado: 'foto_no_publicada' });
+    expect(s.fetch).not.toHaveBeenCalled(); expect(fundida.fetch).not.toHaveBeenCalled();
+  });
+
+  it('basta el año adulto de un miembro del grupo aunque otro no lo tenga', async () => {
+    const s = escenario(); s.persona(UUID_A, null, null); s.persona(UUID_B, UUID_A, 1990); s.externo();
+    expect((await s.leer()).estado).toBe('publicada');
+  });
+
   it('también considera el año de un miembro fundido, no sólo el de la canónica', async () => {
     const s = escenario(); s.persona(); s.persona(UUID_B, UUID_A, 2010); s.externo();
     expect(await s.leer()).toEqual({ estado: 'foto_no_publicada' });

@@ -155,15 +155,21 @@ describe('unificar-personas', () => {
     db.exec(`INSERT INTO sport_competition (id, edition_id, source, season, competition_key, weapon, gender, category) VALUES
       ('cp2', 'ep', 'rfee_pdf', '2023-2024', 'pdf:x:2', 'ESPADA', 'F', 'ABS'),
       ('cp3', 'ep', 'rfee_pdf', '2023-2024', 'pdf:x:3', 'ESPADA', 'F', 'M17');`);
-    // «LACASTA AREN» trunca a dos tiradoras distintas; «AREN LACASTA» ordena igual.
+    // «LACASTA AREN» trunca a dos tiradoras distintas. «AREN LACASTA» tiene las mismas palabras
+    // con los apellidos en otro orden: es otra persona, con su propio grupo de nombre.
     resultado(db, 'cp2', 'rfee_pdf', 'pdf:21', 'LACASTA AREN');
-    resultado(db, 'cp2', 'rfee_pdf', 'pdf:22', 'AREN LACASTA');
+    resultado(db, 'cp2', 'rfee_pdf', 'pdf:22', 'LACASTA AREN');
+    resultado(db, 'cp2', 'rfee_pdf', 'pdf:23', 'AREN LACASTA');
     resultado(db, 'cp3', 'rfee_pdf', 'pdf:31', 'LACASTA AREN');
-    asalto(db, 'cp2', 'rfee_pdf', 'pdf:21', 'pdf:22', 'LACASTA AREN', 'AREN LACASTA');
+    asalto(db, 'cp2', 'rfee_pdf', 'pdf:21', 'pdf:22', 'LACASTA AREN', 'LACASTA AREN');
     const inf = unificarPersonas(db);
     expect(inf.pdf.puestosAmbiguosEnPrueba).toBe(2);
     expect(fila(db, `SELECT count(*) n FROM sport_result WHERE source_fact_key IN ('pdf:21','pdf:22') AND person_id IS NULL`)).toEqual({ n: 2 });
-    expect(fila(db, `SELECT person_id IS NOT NULL v FROM sport_result WHERE source_fact_key='pdf:31'`)).toEqual({ v: 1 });
+    const p31 = fila(db, `SELECT person_id p FROM sport_result WHERE source_fact_key='pdf:31'`).p;
+    const p23 = fila(db, `SELECT person_id p FROM sport_result WHERE source_fact_key='pdf:23'`).p;
+    expect(p31).not.toBeNull();
+    expect(p23).not.toBeNull();
+    expect(p23).not.toBe(p31);
     expect(fila(db, `SELECT fencer_a_person_id a, fencer_b_person_id b FROM sport_bout WHERE competition_id='cp2'`)).toEqual({ a: null, b: null });
     expect(inf.colisionesPdf).toEqual({ pruebas: 0, resultados: 0, asaltosLado: 0 });
   });

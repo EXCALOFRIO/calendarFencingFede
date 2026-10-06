@@ -5,6 +5,7 @@ import { getSessionProfile } from '@/lib/auth/session';
 import { cargarEstadoFavorito } from '@/lib/sport/explorar/favoritos-pantalla';
 import { cargarFichaPantalla } from '@/lib/sport/explorar/ficha-pantalla';
 import { construirUrlFicha, leerCriteriosFicha, personaDeRuta } from '@/lib/sport/explorar/ficha-url';
+import { cargarDiferidosPerfil } from '@/lib/sport/explorar/perfil-diferido';
 import { cargarExtrasPerfil, EXTRAS_VACIOS } from '@/lib/sport/explorar/perfil-extra';
 import { contextoReal } from '@/lib/sport/explorar/real';
 import { RUTA_EXPLORAR } from '@/lib/sport/explorar/url';
@@ -37,13 +38,17 @@ export default async function Pagina({
   const personaId = personaDeRuta(segmento);
   const criterios = leerCriteriosFicha(consulta);
 
-  // Independientes entre sí: ni el favorito ni los datos personales y el
-  // rendimiento esperan a la ficha (y si fallan, sólo se omiten).
+  // Rendimiento y rivales se empiezan ya pero no se esperan: llegan en
+  // streaming a sus pestañas. Nunca se rechazan (un fallo es `null`).
+  const diferidos = personaId ? cargarDiferidosPerfil(contextoReal(), personaId) : undefined;
+
+  // Independientes entre sí: ni el favorito ni los datos personales esperan a
+  // la ficha (y si fallan, sólo se omiten).
   const [vista, favorito, extras] = personaId
     ? await Promise.all([
-        cargarFichaPantalla(contextoReal(), personaId, criterios),
+        cargarFichaPantalla(contextoReal(), personaId, criterios, { diferirRivales: true }),
         cargarEstadoFavorito(contextoReal(), personaId),
-        cargarExtrasPerfil(contextoReal(), personaId),
+        cargarExtrasPerfil(contextoReal(), personaId, { conRendimiento: false }),
       ])
     : ([{ tipo: 'entrada_invalida' }, { tipo: 'no_encontrada' }, EXTRAS_VACIOS] as const);
   if (vista.tipo === 'sin_sesion' || favorito.tipo === 'sin_sesion') redirect('/entrar');
@@ -61,6 +66,7 @@ export default async function Pagina({
           criterios={criterios}
           nivel="pagina"
           extras={extras}
+          diferidos={diferidos}
           acciones={
             <ControlFavoritoFicha
               estado={favorito}

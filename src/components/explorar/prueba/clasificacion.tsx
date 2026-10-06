@@ -37,19 +37,33 @@ function Puesto({ puesto }: { puesto: number | null }) {
   );
 }
 
+const comparable = (texto: string) =>
+  texto.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('es').replace(/[^\p{L}\p{N}]/gu, '');
+
+/**
+ * Un equipo con nombre en código («VCE-VA») trae el mismo código como club:
+ * se compara sin mayúsculas, tildes, guiones ni espacios.
+ */
+export function repiteNombre(nombre: string, club: string | null | undefined): boolean {
+  if (!club) return false;
+  const c = comparable(club);
+  return c !== '' && c === comparable(nombre);
+}
+
 function Fila({ fila, enlace, filtro }: { fila: FilaClasificacion; enlace?: EnlaceFicha; filtro: Filtro }) {
   const nombre = nombreVisible(fila.nombre);
   const marcada = resaltado(fila, filtro);
   const podio = medallaDe(fila.puesto) !== null;
+  const club = fila.club && !repiteNombre(nombre, fila.club) ? fila.club : null;
   const contenido = (
     <>
       <Puesto puesto={fila.puesto} />
       <span className="flex min-w-0 flex-col">
         <span className={cn('truncate font-medium', podio && 'font-semibold')}>{nombre}</span>
-        {fila.club || (fila.puesto === null && fila.puestoPublicado) ? (
+        {club || (fila.puesto === null && fila.puestoPublicado) ? (
           <span className="flex min-w-0 gap-2 text-xs text-muted-foreground">
             {fila.puesto === null && fila.puestoPublicado ? <span className="shrink-0">{fila.puestoPublicado}</span> : null}
-            {fila.club ? <span className="truncate">{fila.club}</span> : null}
+            {club ? <span className="truncate">{club}</span> : null}
           </span>
         ) : null}
       </span>

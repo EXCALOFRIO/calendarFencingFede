@@ -127,19 +127,21 @@ function TarjetaCuriosidad({ personaId, c, nivel }: { personaId: string; c: Curi
             className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-sm underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
           >
             <AvatarAnillo nombre={nombre} tamano="sm" apagado />
-            <span className="flex min-w-0 flex-col gap-0.5">
-              <span className="line-clamp-2 text-sm leading-tight font-medium break-words">{nombre}</span>
-              {c.rival.pais ? <BanderaPais pais={c.rival.pais} /> : null}
+            <span className="flex min-w-0 items-center gap-1.5">
+              {c.rival.pais ? <BanderaPais pais={c.rival.pais} soloBandera className="shrink-0" /> : null}
+              <span className="truncate text-sm leading-tight font-medium" title={nombre}>{nombre}</span>
             </span>
           </Link>
+          {/* En móvil sólo el icono: el nombre se queda con el ancho. */}
           <Link
             href={construirUrlCaraACara(personaId, { rival: c.rival.id })}
             prefetch={false}
             aria-label={`Cara a cara con ${nombre}`}
-            className="relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+            title="Cara a cara"
+            className="inline-flex size-11 shrink-0 items-center justify-center gap-1.5 rounded-full border text-sm font-medium hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto sm:px-3"
           >
             <Swords className="size-4" aria-hidden />
-            Cara a cara
+            <span className="hidden sm:inline">Cara a cara</span>
           </Link>
         </div>
         <span className="flex min-w-0 flex-col gap-1.5">

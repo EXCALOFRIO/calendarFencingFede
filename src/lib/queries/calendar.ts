@@ -32,6 +32,8 @@ import {
 import { PATRONES_CAMPO_RETIRADO_SQL, etiquetaDeCampo } from '@/lib/ai/campos';
 import type { CategoryCode, SeasonCategoryRow } from '../categories';
 import { clavePrueba } from './clave-prueba';
+import { atribuirEnlacesDirecto } from './enlaces-directo-vista';
+import type { EnlaceDirecto } from '@/lib/calendario/enlaces-directo';
 import {
   type ComputedDeadline,
   type DeadlineRuleRow,
@@ -124,6 +126,8 @@ export type CompetitionView = {
    * Vacío mientras nadie haya procesado un dossier de este torneo.
    */
   datosExtraidos: DatoExtraidoView[];
+  /** Dónde seguir esta prueba en directo y ver luego sus resultados. */
+  enlaceDirecto?: EnlaceDirecto | null;
 };
 
 /**
@@ -173,6 +177,8 @@ export type EventView = {
   competitions: CompetitionView[];
   documents: { id: string; title: string; url: string; kind: string | null }[];
   liveLinks: { id: string; platform: string; kind: string; url: string; label: string | null }[];
+  /** El enlace de directo del torneo entero (p. ej. la página del torneo en Engarde). */
+  enlaceDirecto?: EnlaceDirecto | null;
   /**
    * Los registros de la FIE que son ESTE MISMO torneo y se han colapsado en
    * esta tarjeta. Vacío en la inmensa mayoría de eventos.
@@ -479,7 +485,26 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
             inArray(event.canonicalEventId, eventIds),
           ),
         ),
-      db.select().from(liveSource).where(inArray(liveSource.eventId, eventIds)),
+      // Los del par de la FIE también: es la FIE quien publica el enlace a Fencing Time Live.
+      db
+        .select({
+          id: liveSource.id,
+          eventId: liveSource.eventId,
+          eventCompetitionId: liveSource.eventCompetitionId,
+          platform: liveSource.platform,
+          kind: liveSource.kind,
+          url: liveSource.url,
+          label: liveSource.label,
+          canonico: event.canonicalEventId,
+        })
+        .from(liveSource)
+        .innerJoin(event, eq(event.id, liveSource.eventId))
+        .where(
+          or(
+            inArray(liveSource.eventId, eventIds),
+            inArray(event.canonicalEventId, eventIds),
+          ),
+        ),
       db
         .select({
           id: event.id,
@@ -602,11 +627,27 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
   }
 
   const liveByEvent = new Map<string, typeof liveRows>();
+  const urlsDirectoPorTarjeta = new Map<string, Set<string>>();
   for (const l of liveRows) {
-    const list = liveByEvent.get(l.eventId) ?? [];
+    const tarjetaId = tarjetaDe(l.eventId, l.canonico);
+    const urls = urlsDirectoPorTarjeta.get(tarjetaId) ?? new Set<string>();
+    if (urls.has(l.url)) continue;
+    urls.add(l.url);
+    urlsDirectoPorTarjeta.set(tarjetaId, urls);
+    const list = liveByEvent.get(tarjetaId) ?? [];
     list.push(l);
-    liveByEvent.set(l.eventId, list);
+    liveByEvent.set(tarjetaId, list);
   }
+  const conEnlace = (enlace: EnlaceDirecto | undefined) => (enlace ? { enlaceDirecto: enlace } : {});
+  const clavePorPrueba = new Map(competitionRows.map((f) => [f.prueba.id, f.clave] as const));
+  const directos = atribuirEnlacesDirecto({
+    enlaces: liveRows.map((l) => ({ ...l, tarjetaId: tarjetaDe(l.eventId, l.canonico) })),
+    pruebas: competitionRows.map((f) => ({
+      id: f.prueba.id,
+      eventId: f.prueba.eventId,
+      clave: f.clave,
+    })),
+  });
 
   const linkedByEvent = new Map<string, typeof linkedRows>();
   for (const l of linkedRows) {
@@ -816,8 +857,11 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
           // construidas: para saber a cuál va un horario hay que poder
           // compararlo con TODAS.
           datosExtraidos: [],
+          // Ausente y no `null` cuando no hay: son 250 tarjetas por carga y casi ninguna lo tiene.
+          ...conEnlace(directos.porPrueba.get(`${e.id}|${clavePorPrueba.get(c.id)}`)),
         };
       }),
+      ...conEnlace(directos.porTarjeta.get(e.id)),
       datosExtraidos: [],
     };
 

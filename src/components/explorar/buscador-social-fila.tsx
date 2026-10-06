@@ -44,9 +44,8 @@ export function datoCorto(p: Pick<PerfilFila, 'armas' | 'resultados'>): string |
 
 export const CLASE_LISTA_PERFILES = 'flex min-w-0 flex-col';
 
-/** «Ver más» en pastilla compacta; el `::before` estira el toque a 44 px sin agrandar el dibujo. */
-export const CLASE_VER_MAS =
-  "relative h-9 rounded-full px-5 text-sm font-semibold before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']";
+/** «Ver más» en pastilla de 44 px dibujados, no sólo de toque. */
+export const CLASE_VER_MAS = 'h-11 rounded-full px-5 text-sm font-semibold';
 
 export function PastillaMotivo({ children }: { children: React.ReactNode }) {
   return (
@@ -100,7 +99,7 @@ export function FilaPerfil({
           {hayLinea ? (
             // Sin el recorte, las medallas de quien tiene muchas montan sobre el botón de Seguir.
             <span className="flex min-w-0 items-center gap-1.5 overflow-hidden py-px text-xs leading-none whitespace-nowrap text-muted-foreground">
-              {p.pais ? <BanderaPais pais={p.pais} className="shrink-0" /> : null}
+              {p.pais ? <BanderaPais pais={p.pais} soloBandera className="shrink-0" /> : null}
               {detalle}
               {p.motivo ? <PastillaMotivo>{p.motivo}</PastillaMotivo> : null}
               {dato && !p.motivo ? <span className="min-w-0 truncate">{dato}</span> : null}

@@ -37,20 +37,24 @@ export async function leerFilasPerfil(
   db: ContextoExplorador['db'],
   ids: readonly string[],
   canonicaId: string,
+  { diferirRivales = false }: { diferirRivales?: boolean } = {},
 ): Promise<Omit<FilasPerfil, 'estadisticas'>> {
+  // Con `diferirRivales` las tres lecturas de rivales (las más caras tras los
+  // asaltos) no se hacen aquí: la pestaña Rivales las pide aparte, en streaming.
+  const nada = async () => undefined;
   const [asaltos, rivales, clubes, idsFie, mejorRanking, sugeridos, rivalesStats, pruebas] = await Promise.all([
     tolerante<FilaBalanceAsaltos>(() => db.execute(sqlBalanceAsaltos(ids)), 'el balance de asaltos'),
-    tolerante<FilaRivalFrecuente>(() => db.execute(sqlRivalesFrecuentes(ids, canonicaId)), 'la lista de rivales'),
+    diferirRivales ? nada() : tolerante<FilaRivalFrecuente>(() => db.execute(sqlRivalesFrecuentes(ids, canonicaId)), 'la lista de rivales'),
     tolerante<FilaClubPublicado>(() => db.execute(sqlClubesRecientes(ids)), 'el club'),
     tolerante<{ valor: string }>(() => db.execute(sqlIdFieConfirmado(ids)), 'el enlace FIE'),
     tolerante<FilaMejorRanking>(() => db.execute(sqlMejorRanking(ids)), 'el mejor ranking'),
-    tolerante<FilaSugerido>(() => db.execute(sqlTiradoresSugeridos(ids, canonicaId)), 'los tiradores sugeridos'),
-    leerEstadisticasRivalesDe(db, ids, canonicaId),
+    diferirRivales ? nada() : tolerante<FilaSugerido>(() => db.execute(sqlTiradoresSugeridos(ids, canonicaId)), 'los tiradores sugeridos'),
+    diferirRivales ? nada() : leerEstadisticasRivalesDe(db, ids, canonicaId),
     leerPruebasAmbitoDe(db, ids),
   ]);
   return {
     asaltos,
-    rivales,
+    rivales: rivales ?? null,
     sugeridos,
     rivalesStats,
     ambito: pruebas ? aEstadisticasPorAmbito(pruebas) : null,

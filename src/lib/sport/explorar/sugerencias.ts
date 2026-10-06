@@ -1,5 +1,6 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
+import { anioNacimientoPublico } from './anio-publico';
 import { exigirPerfil, filas, type ContextoExplorador } from './contexto';
 import { CTE_MARCAS, ctePalabras, ctesDelta } from './busqueda-indice';
 import { listaUuid } from './filtros-sql';
@@ -267,12 +268,14 @@ export async function sugerirPersonas(ctx: ContextoExplorador, datos: unknown): 
     await ctx.db.execute(sqlResumenSugerencias(elegidas.map((s) => s.id), perfil.profileId)),
   );
   const porId = new Map(resumen.map((c) => [c.id, c]));
+  const hoy = ctx.hoy();
   return {
     estado: 'ok',
     items: elegidas.map((s) => {
       const c = porId.get(s.id);
       return {
         ...s,
+        anioNacimiento: anioNacimientoPublico(s.anioNacimiento, hoy),
         resultados: c ? Number(c.resultados) : 0,
         armas: c?.armas ? (c.armas.split(',').sort() as Arma[]) : [],
         ultimaFecha: typeof c?.ultimaFecha === 'string' ? c.ultimaFecha.slice(0, 10) : null,

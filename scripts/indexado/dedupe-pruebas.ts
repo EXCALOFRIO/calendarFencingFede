@@ -18,13 +18,15 @@
  *  - Por grupo, la prueba que queda es la de mejores puestos: skermo_rfee, luego
  *    rfee_pdf, luego engarde; a igualdad, la de más puestos. Un grupo con dos
  *    pruebas skermo_rfee no se toca (no se sabe cuál es cuál).
- *  - Por fase (poule, cuadro) se queda la lectura con más asaltos del grupo, a
- *    igualdad la que ya está en la prueba destino; se trasladan a la destino
+ *  - Por fase (poule, cuadro) se queda la lectura con más asaltos válidos del grupo; a
+ *    igualdad, la de menos marcadores imposibles, la de Engarde frente al PDF y la que ya
+ *    está en la prueba destino (`dedupe-lecturas.ts`); se trasladan a la destino
  *    conservando el id cuando la misma clave ya estaba allí (recargas). Las demás
  *    lecturas de esa fase se borran. La cobertura de la fase pasa a la destino.
  *  - Los puestos de las otras pruebas cuyo nombre casa con un puesto de la destino
  *    se borran (su vínculo de persona pasa si allí falta). Una prueba que queda sin
  *    puestos ni asaltos se borra con su cobertura (y su edición, si queda vacía).
+ *  - Las pruebas conjuntas (`dedupe-conjuntas.ts`, opción `excluir`) no entran en ningún grupo.
  *  - Después, los asaltos rfee_pdf/engarde de la destino se vinculan con el puesto
  *    de su mismo nombre en la prueba (`revincularAsaltosPorPuesto`).
  *
@@ -45,6 +47,16 @@ import {
   quitarGuardia,
   restaurarGuardia,
 } from './comun';
+import {
+  anomaliasLectura,
+  anotarEleccion,
+  elegirLectura,
+  nuevoInformeLecturas,
+  type Anomalias,
+  type InformeLecturas,
+  type Lectura,
+  type PuestoDe,
+} from './dedupe-lecturas';
 
 export const FUENTES_NACIONALES = ['skermo_rfee', 'rfee_pdf', 'engarde'] as const;
 const RANGO_DESTINO: Record<string, number> = { skermo_rfee: 3, rfee_pdf: 2, engarde: 1 };
@@ -355,6 +367,10 @@ export type InformeDuplicados = {
   coberturasMovidas: number;
   coberturasBorradas: number;
   revinculo: InformeRevinculo;
+  /** Elección de la lectura de cada fase: motivo (más asaltos, anomalías, Engarde) y marcadores imposibles. */
+  lecturas: InformeLecturas;
+  /** Pruebas conjuntas y sus partes (`dedupe-conjuntas.ts`) que no entran en ningún grupo. */
+  pruebasExcluidas: number;
   ejemplos: { destino: string; otras: string[]; fases: string[] }[];
   /** Sólo al simular: muestra de puestos `ocupado`. */
   ocupadosEjemplo: string[];
@@ -413,10 +429,30 @@ export type OpcionesDuplicados = {
   umbral?: number;
   /** Catálogo nacional: empareja también por el PDF que Skermo publica para la prueba. */
   catalogo?: readonly FilaCatalogoNacional[];
+  /** Pruebas que no se agrupan con ninguna otra (las conjuntas de `dedupe-conjuntas.ts`). */
+  excluir?: ReadonlySet<string>;
 };
 
+export type FilaAsaltoLectura = {
+  source: string; round_key: string; fencer_a_ref: string; fencer_b_ref: string; fencer_a_name: string;
+  fencer_b_name: string; score_a: number | null; score_b: number | null;
+};
+
+/** Lectura de una fase para `elegirLectura`: asaltos, anomalías y si es de Engarde (la mayoría de sus asaltos). */
+export function evaluarLectura<T>(ref: T, filas: readonly FilaAsaltoLectura[], fase: Fase, destino: boolean, puestoDe?: PuestoDe):
+  Lectura<T> & { tipos: Anomalias['tipos'] } {
+  const an = anomaliasLectura(filas.map((b) => ({
+    fase, ronda: b.round_key, a: b.fencer_a_ref, b: b.fencer_b_ref, nombreA: b.fencer_a_name, nombreB: b.fencer_b_name,
+    tocadosA: b.score_a, tocadosB: b.score_b,
+  })), puestoDe);
+  const engarde = filas.filter((b) => b.source === 'engarde').length * 2 > filas.length;
+  return { ref, asaltos: filas.length, anomalias: an.asaltos, engarde, destino, tipos: an.tipos };
+}
+
 export function fundirDuplicados(db: DatabaseSync, opciones: OpcionesDuplicados = {}): InformeDuplicados {
-  const pruebas = cargarPruebasNacionales(db, opciones.desde);
+  const excluir = opciones.excluir ?? new Set<string>();
+  const todasNacionales = cargarPruebasNacionales(db, opciones.desde);
+  const pruebas = todasNacionales.filter((p) => !excluir.has(p.id));
   const { grupos, gruposConVariasSkermo } = emparejarDuplicados(
     pruebas, opciones.umbral, enlacesDelCatalogo(pruebas, opciones.catalogo ?? []),
   );
@@ -425,7 +461,8 @@ export function fundirDuplicados(db: DatabaseSync, opciones: OpcionesDuplicados 
     gruposOmitidosRondasDistintas: 0, porFuentes: {}, fasesTrasladadas: 0, asaltosTrasladados: 0, asaltosYaPresentes: 0, asaltosDescartados: 0, asaltosDescartadosSinPareja: 0,
     resultadosDuplicadosBorrados: 0, resultadosTrasladados: 0, resultadosPuestoOcupado: 0, gruposOmitidosPuestosDistintos: 0, personasHeredadas: 0, competicionesBorradas: 0,
     edicionesBorradas: 0, coberturasMovidas: 0, coberturasBorradas: 0,
-    revinculo: { pruebas: 0, ladosRevinculados: 0, ladosVinculadosNuevos: 0, descartadosHomonimo: 0, descartadosRonda: 0 }, ejemplos: [], ocupadosEjemplo: [],
+    revinculo: { pruebas: 0, ladosRevinculados: 0, ladosVinculadosNuevos: 0, descartadosHomonimo: 0, descartadosRonda: 0 },
+    lecturas: nuevoInformeLecturas(), pruebasExcluidas: todasNacionales.length - pruebas.length, ejemplos: [], ocupadosEjemplo: [],
   };
   for (const g of grupos) {
     const k = [g.destino.source, ...g.otras.map((o) => o.source).sort()].join('+');
@@ -447,6 +484,13 @@ export function fundirDuplicados(db: DatabaseSync, opciones: OpcionesDuplicados 
   const borrarCoberturasComp = q(`DELETE FROM sport_import_coverage WHERE competition_id=?1 OR (source=?2 AND season=?3 AND competition_key=?4 AND competition_id IS NULL)`);
   const borrarComp = q(`DELETE FROM sport_competition WHERE id=?`);
   const borrarEdicion = q(`DELETE FROM sport_edition WHERE id=? AND NOT EXISTS (SELECT 1 FROM sport_competition WHERE edition_id=?)`);
+  const asaltosLectura = q(`SELECT source, round_key, fencer_a_ref, fencer_b_ref, fencer_a_name, fencer_b_name, score_a, score_b
+    FROM sport_bout WHERE competition_id=? AND phase=?`);
+  // Una parte de una prueba conjunta que se funde en otra deja su vínculo a la destino.
+  const hayConjuntas = Boolean(db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='sport_competition_combined'`).get());
+  const moverParte = hayConjuntas
+    ? q(`UPDATE OR IGNORE sport_competition_combined SET part_competition_id=? WHERE part_competition_id=?`)
+    : null;
   const destinos: string[] = [];
 
   const firmasFase = q(`SELECT fencer_a_name a, score_a sa, fencer_b_name b, score_b sb FROM sport_bout WHERE competition_id=? AND phase=?`);
@@ -489,11 +533,24 @@ export function fundirDuplicados(db: DatabaseSync, opciones: OpcionesDuplicados 
         inf.gruposOmitidosPuestosDistintos += 1;
         continue;
       }
+      const preparadosDestino = filasDestino.map((r) => prepararNombre(r.source_name));
+      const puestoDe: PuestoDe = (nombre) => {
+        const i = casarUnico(prepararNombre(nombre), preparadosDestino);
+        const puesto = i === null ? null : filasDestino[i].position;
+        return puesto === null ? null : { grupo: d.id, puesto };
+      };
       for (const fase of FASES) {
         const conAsaltos = todas.filter((p) => p.asaltos[fase] > 0);
         if (conAsaltos.length === 0) continue;
-        // Gana la lectura con más asaltos; a igualdad la que ya está en la destino.
-        const ganadora = [...conAsaltos].sort((x, y) => y.asaltos[fase] - x.asaltos[fase] || (x === d ? -1 : y === d ? 1 : 0))[0];
+        // Gana la lectura con más asaltos válidos; luego la de menos marcadores imposibles, la de
+        // Engarde frente al PDF y, a igualdad de todo, la que ya está en la destino (`dedupe-lecturas.ts`).
+        const lecturas = conAsaltos.map((p) =>
+          evaluarLectura(p, asaltosLectura.all(p.id, fase) as FilaAsaltoLectura[], fase, p === d, puestoDe));
+        const eleccion = elegirLectura(lecturas);
+        const ganadora = eleccion.ganadora.ref;
+        anotarEleccion(inf.lecturas, `${d.source}:${d.competition_key}`, fase,
+          lecturas.map((l) => ({ ...l, ref: `${l.ref.source}:${l.ref.id}` })),
+          { ganadora: { ...eleccion.ganadora, ref: `${ganadora.source}:${ganadora.id}` }, motivo: eleccion.motivo });
         if (ganadora === d && conAsaltos.length === 1) continue;
         fasesMovidas.push(`${fase}:${ganadora.source}`);
         const firmasGanadora = new Set(firmas(ganadora.id, fase));
@@ -586,6 +643,7 @@ export function fundirDuplicados(db: DatabaseSync, opciones: OpcionesDuplicados 
           borrarPuesto.run(r.fila.id);
         }
         if (opciones.simular || Number((quedan.get(p.id, p.id) as { n: number }).n) > 0) continue;
+        moverParte?.run(d.id, p.id);
         inf.coberturasBorradas += Number(borrarCoberturasComp.run(p.id, p.source, p.season, p.competition_key).changes);
         borrarComp.run(p.id);
         inf.competicionesBorradas += 1;

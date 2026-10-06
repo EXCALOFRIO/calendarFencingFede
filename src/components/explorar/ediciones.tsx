@@ -1,4 +1,6 @@
-import { CalendarDays, ExternalLink, MapPin, Medal, SearchX, TriangleAlert } from 'lucide-react';
+import { CalendarDays, ExternalLink, MapPin, Medal, SearchX, Swords, TriangleAlert } from 'lucide-react';
+import type { VistaConjunta } from '@/lib/sport/explorar/conjunta-edicion';
+import { ETIQUETA_PRUEBA_CONJUNTA } from '@/lib/sport/explorar/pruebas-conjuntas';
 import Link from 'next/link';
 import { BanderaPais, codigoPais } from '@/components/bandera';
 import { Button } from '@/components/ui/button';
@@ -26,6 +28,8 @@ import type { EdicionConAsaltos } from '@/lib/sport/explorar/ediciones';
 import type { VistaEdicion, VistaSeries } from '@/lib/sport/explorar/ediciones-pantalla';
 import { categoriaVisible, nombrePrueba, ordenCategoriaVisible } from '@/lib/sport/explorar/presentacion';
 import { clasificarCompeticion } from '@/lib/sport/explorar/tipo-competicion';
+import { organizadorDe } from '@/lib/sport/explorar/organizador';
+import { InsigniaOrganismo } from '@/components/insignia-organismo';
 import { cn, titular } from '@/lib/utils';
 import { EtiquetaTipoCompeticion } from './etiqueta-competicion';
 import { Nota, fechaLegible } from './piezas';
@@ -353,18 +357,60 @@ function enlaceOficial(p: PruebaDeEdicion | null) {
   return e ? { url: e.url, proveedor: ETIQUETA_PROVEEDOR[e.proveedor] } : null;
 }
 
+/**
+ * Prueba partida ↔ prueba conjunta: desde una parte, el enlace a las poules y
+ * el cuadro; desde la conjunta, las clasificaciones oficiales que agrupa.
+ */
+export function EnlaceConjunta({ conjunta, criterios }: { conjunta: VistaConjunta; criterios: CriteriosEdicion }) {
+  const { origen, catalogo, persona } = criterios;
+  if (!conjunta.esConjunta) {
+    return (
+      <Link
+        data-conjunta="parte"
+        href={construirUrlEdicion(conjunta.conjunta.edicionId, { prueba: conjunta.conjunta.pruebaId, vista: 'poules', origen, catalogo, persona })}
+        prefetch={false}
+        className={cn(ENLACE, 'self-start')}
+      >
+        <Swords className="size-4" aria-hidden />
+        {ETIQUETA_PRUEBA_CONJUNTA}
+      </Link>
+    );
+  }
+  if (conjunta.partes.length === 0) return null;
+  return (
+    <p data-conjunta="conjunta" className="flex min-w-0 flex-wrap items-center gap-x-3 text-sm text-muted-foreground">
+      <span>Clasificación oficial:</span>
+      {conjunta.partes.map((p) => (
+        <Link
+          key={p.pruebaId}
+          href={construirUrlEdicion(p.edicionId, { prueba: p.pruebaId, origen, catalogo, persona })}
+          prefetch={false}
+          className={ENLACE}
+        >
+          {p.etiqueta}
+        </Link>
+      ))}
+    </p>
+  );
+}
+
 export function EdicionCompleta({
   edicion,
   criterios,
+  conjunta = null,
 }: {
   edicion: EdicionConAsaltos;
   criterios: CriteriosEdicion;
+  /** Prueba conjunta de la elegida (ver `conjunta-edicion.ts`). */
+  conjunta?: VistaConjunta | null;
 }) {
   const idElegida = edicion.pruebaElegida ?? criterios.prueba;
   const elegida = idElegida ? (pruebaDeId(edicion.pruebasDetalle, idElegida) ?? null) : null;
   const fechas = elegida?.fecha ? fechaLegible(elegida.fecha) : periodo(edicion.inicio, edicion.fin);
   const titulo = nombrePrueba({ nombre: edicion.nombre, formato: elegida?.formato, fuente: edicion.fuente });
   const oficial = enlaceOficial(elegida);
+  const tipo = clasificarCompeticion({ nombre: edicion.nombre, fuente: edicion.fuente, pais: edicion.pais ? codigoPais(edicion.pais) : null });
+  const organizador = organizadorDe(tipo, edicion.fuente);
   return (
     <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-4">
       <header className="flex min-w-0 flex-col gap-1">
@@ -386,6 +432,12 @@ export function EdicionCompleta({
           ) : null}
         </div>
         <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+          {organizador !== 'OTRO' ? (
+            <span className="inline-flex items-center gap-1.5">
+              <InsigniaOrganismo organismo={organizador} />
+              <EtiquetaTipoCompeticion clasificacion={tipo} />
+            </span>
+          ) : null}
           {fechas ? (
             <span className="inline-flex items-center gap-1.5">
               <CalendarDays aria-hidden className="size-4" />
@@ -417,6 +469,8 @@ export function EdicionCompleta({
         catalogo={criterios.catalogo}
         persona={criterios.persona}
       />
+
+      {conjunta && elegida ? <EnlaceConjunta conjunta={conjunta} criterios={criterios} /> : null}
 
       {elegida ? (
         <ResultadosDePrueba

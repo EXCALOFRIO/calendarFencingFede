@@ -5,9 +5,9 @@ import { RUTA_FAVORITOS } from '@/lib/sport/explorar/favoritos-url';
 import { NOMBRE_SECCION } from '@/lib/sport/explorar/nombre-seccion';
 import { RUTA_SIGUIENDO } from '@/lib/sport/explorar/siguiendo-url';
 
-// 36 px de dibujo; el `::before` lleva el toque a 44 px sin separar más las pastillas. Por debajo de 400 px la letra baja a 13 px y por debajo de 360 px se van los iconos, para que las tres quepan sin cortarse.
+// 44 px de alto dibujados, no sólo de toque. Por debajo de 400 px la letra baja a 13 px y por debajo de 360 px se van los iconos, para que las tres quepan sin cortarse.
 const PASTILLA =
-  "relative flex h-9 min-w-0 shrink items-center gap-1 rounded-full border bg-card px-2 text-[0.8125rem] max-[359px]:px-2.5 max-[359px]:text-xs min-[400px]:px-3 min-[400px]:text-sm font-medium whitespace-nowrap before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none";
+  'flex h-11 min-w-0 shrink items-center gap-1 rounded-full border bg-card px-2 text-[0.8125rem] max-[359px]:px-2.5 max-[359px]:text-xs min-[400px]:px-3 min-[400px]:text-sm font-medium whitespace-nowrap hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
 
 /**
  * Cabecera de la pantalla principal: el nombre de la sección y sus tres

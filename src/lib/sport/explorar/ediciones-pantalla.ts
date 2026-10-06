@@ -1,5 +1,6 @@
 import { ERROR_NO_AUTENTICADO, type ContextoExplorador } from './contexto';
 import type { EdicionResumen, PruebaDeEdicion } from './edicion-modelo';
+import { leerConjuntaDePrueba, type VistaConjunta } from './conjunta-edicion';
 import type { CriteriosEdicion } from './edicion-url';
 import { leerEdicion, leerEdicionesDeEvento, leerSeries, type EdicionConAsaltos, type ResultadoSeries } from './ediciones';
 
@@ -22,7 +23,7 @@ export type VistaEdicion =
   | { tipo: 'no_encontrada' }
   | { tipo: 'no_disponible' }
   | { tipo: 'error' }
-  | { tipo: 'ok'; edicion: EdicionConAsaltos };
+  | { tipo: 'ok'; edicion: EdicionConAsaltos; conjunta?: VistaConjunta | null };
 
 export type VistaResultadosEvento =
   | { tipo: 'sin_sesion' }
@@ -61,7 +62,10 @@ export async function cargarEdicion(
       ...(criterios.prueba ? { prueba: criterios.prueba } : {}),
       ...(criterios.cursor ? { cursor: criterios.cursor } : {}),
     });
-    return r.estado === 'ok' ? { tipo: 'ok', edicion: r.edicion } : { tipo: r.estado };
+    if (r.estado !== 'ok') return { tipo: r.estado };
+    const pruebaId = r.edicion.pruebaElegida ?? criterios.prueba;
+    const conjunta = pruebaId ? await leerConjuntaDePrueba(ctx.db, pruebaId) : null;
+    return { tipo: 'ok', edicion: r.edicion, conjunta };
   } catch (error) {
     if (esNoAutenticado(error)) return { tipo: 'sin_sesion' };
     registrar('la edición no se pudo leer', error);

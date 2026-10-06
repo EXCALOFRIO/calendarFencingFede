@@ -1,5 +1,6 @@
 import { Award, Crown, Globe2, TrendingUp, type LucideIcon } from 'lucide-react';
-import { etiquetaTemporadaDeportiva, porcentajeVictorias } from '@/lib/sport/explorar/perfil-modelo';
+import { temporadaCorta } from '@/lib/ranking/url-nacional';
+import { porcentajeVictorias, temporadaDeportiva } from '@/lib/sport/explorar/perfil-modelo';
 import { CONTORNO_MEDALLA, categoriaVisible } from '@/lib/sport/explorar/presentacion';
 import type { EstadisticaPorTipo } from '@/lib/sport/explorar/tipos';
 import type { PerfilDeportivo, PuestoRanking, TemporadaPerfil } from '@/lib/sport/explorar/tipos-perfil';
@@ -32,10 +33,10 @@ export function mejorTemporada(temporadas: readonly TemporadaPerfil[]): Temporad
     || (porcentajeVictorias(b.asaltos) ?? -1) - (porcentajeVictorias(a.asaltos) ?? -1))[0];
 }
 
-/** Rótulo corto de la lista oficial: en una tarjeta no cabe «FIE (ranking mundial)». */
+/** Rótulo corto de la lista oficial: «Mundial» es el Campeonato del Mundo, no el ranking de la FIE. */
 export function rotuloRanking(fuente: string): string {
-  if (fuente === 'fie_tiradores') return 'Ranking FIE';
-  if (fuente === 'skermo_ranking') return 'Ranking RFEE';
+  if (fuente === 'fie_tiradores') return 'Ranking internacional';
+  if (fuente === 'skermo_ranking') return 'Ranking nacional';
   return 'Ranking';
 }
 
@@ -79,7 +80,7 @@ export function destacadosPerfil(perfil: PerfilDeportivo, porTipo: readonly Esta
   const internacional = perfil.ambito?.internacional;
   if (internacional && internacional.competiciones > 0 && internacional.mejorPuesto !== null && perfil.ambito!.nacional.competiciones > 0) {
     lista.push({
-      clave: 'internacional', cifra: `${internacional.mejorPuesto}º`, rotulo: 'Mejor internacional',
+      clave: 'internacional', cifra: `${internacional.mejorPuesto}º`, rotulo: 'Mejor intl.',
       detalle: `${internacional.competiciones} ${internacional.competiciones === 1 ? 'prueba' : 'pruebas'}`,
     });
   }
@@ -89,7 +90,8 @@ export function destacadosPerfil(perfil: PerfilDeportivo, porTipo: readonly Esta
     const m = medallasDe(temporada);
     lista.push({
       clave: 'temporada',
-      cifra: etiquetaTemporadaDeportiva(temporada.temporada),
+      // «20-21»: «2020-21» no cabe en la baldosa a 320 px.
+      cifra: temporadaCorta(temporadaDeportiva(temporada.temporada)),
       rotulo: 'Mejor temporada',
       detalle: m > 0 ? `${m} ${m === 1 ? 'medalla' : 'medallas'}` : `Mejor puesto ${temporada.mejorPuesto}º`,
     });

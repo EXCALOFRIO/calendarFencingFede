@@ -98,8 +98,8 @@ const ARMAS: [RegExp, 'ESPADA' | 'FLORETE' | 'SABLE'][] = [
   [/^(sabre|sabel|sable|sciabola|saebel)\b/, 'SABLE'],
 ];
 const GENEROS: [RegExp, 'M' | 'F' | 'MIXTO'][] = [
-  [/^(men|man|herren|masculino|hommes?|uomini|maschile)\b/, 'M'],
-  [/^(women|woman|damen|femenin[oa]|femmes?|donne|femminile)\b/, 'F'],
+  [/^(men|man|male|herren|mannlich|masculino|hommes?|messieurs|uomini|maschile)\b/, 'M'],
+  [/^(women|woman|female|damen|dames|weiblich|femenin[oa]|femmes?|donne|femminile)\b/, 'F'],
   [/^(mixed|mixto|gemischt|mixte|misto)\b/, 'MIXTO'],
 ];
 const FORMATOS: [RegExp, 'INDIVIDUAL' | 'EQUIPOS'][] = [

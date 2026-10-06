@@ -90,7 +90,8 @@ describe('Explorar: jerarquía y explicación progresiva', () => {
     }));
     expect(salida.indexOf(ficha.nombre)).toBeLessThan(salida.indexOf('Guardar ficha'));
     expect(salida).not.toMatch(/<h1[^>]*(truncate|line-clamp)/);
-    expect(sinDetalles(salida)).toContain('Posible menor de edad');
+    // La protección sigue (sin retrato ni enlace FIE), pero ya no se rotula en la cabecera.
+    expect(sinDetalles(salida)).not.toContain('Posible menor de edad');
   });
 
   it('la cabecera omite lo que no se publica y no explica de dónde salen los datos', () => {
@@ -137,7 +138,7 @@ describe('Explorar: jerarquía y explicación progresiva', () => {
       },
       nivel: 'pagina',
     }));
-    expect(conPuesto).toContain('Ranking FIE');
+    expect(conPuesto).toContain('Ranking internacional');
     expect(conPuesto).toMatch(/>12(<!-- -->)?º</);
     expect(conPuesto).not.toMatch(/Leída el|Qué representa|Modalidad|Ver equipos|de \d+/);
     expect(html(React.createElement(RankingCompacto, { ficha, nivel: 'pagina' }))).toBe('');

@@ -37,6 +37,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createD1Database } from '@/db/d1/runtime';
 import type { D1Binding, D1QueryResult, D1Statement } from '@/db/d1/binding';
 import { crearContexto } from '../helpers/explorar';
+import { aplicarDirectos, fijarHoy } from './_directos.mts';
 
 const RAIZ = process.cwd();
 const SALIDA = carpetaCapturas(RAIZ, 'ficha-evento-v2');
@@ -68,6 +69,8 @@ const VINCULOS = (
   .map((v) => v.split(':') as [string, string]);
 
 const sqlite = new DatabaseSync(BASE, { readOnly: true });
+fijarHoy();
+aplicarDirectos(sqlite);
 // Una tabla temporal con el mismo nombre tapa a la de la base en esta conexión.
 sqlite.exec('CREATE TEMP TABLE sport_edition AS SELECT * FROM main.sport_edition');
 for (const [edicion, evento] of VINCULOS) {

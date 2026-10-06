@@ -4,6 +4,7 @@ import { CalendarClock, Check, MapPin } from 'lucide-react';
 import * as React from 'react';
 import { BanderaPais } from '@/components/bandera';
 import { EtiquetaArma } from '@/components/calendario/iconos-arma';
+import { InsigniaOrganismo } from '@/components/insignia-organismo';
 import { Button } from '@/components/ui/button';
 import {
   LETRAS_SEMANA,
@@ -26,7 +27,9 @@ import { colorDeOrganismo, type ColorOrganismo } from '@/lib/colores';
 import type { EventView } from '@/lib/queries/calendar';
 import type { PruebaPasada } from '@/lib/queries/calendario-pasado-modelo';
 import { cn, organismoDe, titularTorneo } from '@/lib/utils';
-import { PieResultados, Terminada } from './pasado/resultados-pasados';
+import { enlaceDeTarjeta, estadoDirecto } from '@/lib/calendario/enlaces-directo';
+import { PastillaDirecto } from './enlace-directo';
+import { PieResultados, Terminada, conResultadosPasados } from './pasado/resultados-pasados';
 
 /**
  * ===========================================================================
@@ -357,10 +360,10 @@ function PildorasSemana({ ocupa, color }: { ocupa: boolean[]; color: ColorOrgani
         <span
           key={i}
           className={cn(
-            'cifra flex size-[14px] items-center justify-center rounded-[3px] text-[0.58rem] leading-none',
+            'cifra flex size-[14px] items-center justify-center rounded-[3px] text-xs leading-none',
             ocupa[i]
               ? cn(color.superficie, color.textoSobreSuperficie, 'font-semibold')
-              : 'bg-secondary text-off',
+              : 'bg-secondary text-muted-foreground',
           )}
         >
           {letra}
@@ -422,18 +425,14 @@ function Inscrito({ clase }: { clase?: string }) {
  * competición se reconoce sin leer.
  */
 function PastillaCircuito({ evento }: { evento: EventView }) {
-  const color = colorDe(evento);
   const circuito = pastillaDeCircuito(evento);
+  // La misma insignia que la ficha del torneo y la página de la prueba.
   return (
-    <span
-      className={cn(
-        'inline-flex min-w-0 flex-wrap items-center gap-x-1.5 rounded-sm px-1.5 py-1 text-xs font-medium leading-tight',
-        color.tintePastilla,
-        color.texto,
-      )}
-    >
-      <span>{color.corto}</span>
-      {circuito ? <span>{circuito}</span> : null}
+    <span className="inline-flex min-w-0 items-center gap-1.5">
+      <InsigniaOrganismo organismo={organismoDe(evento.source, evento.scope, evento.circuit)} />
+      {circuito ? (
+        <span className="min-w-0 text-xs leading-tight font-medium text-secondary-foreground">{circuito}</span>
+      ) : null}
     </span>
   );
 }
@@ -559,17 +558,32 @@ function Plazo({ evento, clase }: { evento: EventView; clase?: string }) {
 function EstadoDelEvento({
   evento,
   hoy,
+  pasado,
   clase,
 }: {
   evento: EventView;
   hoy: string;
+  pasado?: PasadoDeTarjeta;
   clase?: string;
 }) {
+  if (terminadaEnPie(evento, pasado, hoy)) return null;
   if (estaTerminado(evento, hoy)) return <Terminada clase={clase} />;
   return <Plazo evento={evento} clase={clase} />;
 }
 
-/** Quién ganó y «Resultados», debajo del torneo ya tirado. */
+/**
+ * «Terminada» se pinta en el pie, junto al ganador, cuando el pie existe; si
+ * no hay resultados que enseñar, se queda en la tarjeta.
+ */
+function terminadaEnPie(evento: EventView, pasado: PasadoDeTarjeta | undefined, hoy: string): boolean {
+  return Boolean(pasado) && estaTerminado(evento, hoy) && conResultadosPasados(evento, pasado!.resultados[evento.id]).length > 0;
+}
+
+/**
+ * Quién ganó y «Resultados», debajo del torneo ya tirado; «En directo» los días
+ * que se tira. Antes del torneo no se pinta: el enlace ya está en la ficha y
+ * una fila más en cada tarjeta futura es ruido.
+ */
 function PieDeEvento({
   evento,
   pasado,
@@ -581,15 +595,33 @@ function PieDeEvento({
   hoy: string;
   clase?: string;
 }) {
-  if (!pasado || !estaTerminado(evento, hoy)) return null;
+  const terminado = estaTerminado(evento, hoy);
+  const enlace = enlaceDeTarjeta(evento, hoy);
+  const estado = enlace ? estadoDirecto(rangoRealDeEvento(evento), hoy, evento.timezone) : null;
+  const directo = enlace && (estado === 'directo' || terminado) ? { enlace, estado: estado! } : null;
+  if (terminado && pasado) {
+    return (
+      <PieResultados
+        evento={evento}
+        pruebas={pasado.resultados[evento.id]}
+        retorno={pasado.retorno}
+        onVer={pasado.onVer}
+        clase={clase}
+        directo={directo}
+        terminada={terminadaEnPie(evento, pasado, hoy)}
+      />
+    );
+  }
+  if (!directo) return null;
   return (
-    <PieResultados
-      evento={evento}
-      pruebas={pasado.resultados[evento.id]}
-      retorno={pasado.retorno}
-      onVer={pasado.onVer}
-      clase={clase}
-    />
+    <div
+      className={cn(
+        'flex min-h-11 min-w-0 items-center justify-end gap-x-2 border-t border-filete px-3 text-xs',
+        clase,
+      )}
+    >
+      <PastillaDirecto enlace={directo.enlace} estado={directo.estado} />
+    </div>
   );
 }
 
@@ -621,6 +653,7 @@ function CuerpoUnico({
   mostrarCategoria,
   onAbrir,
   hoy,
+  pasado,
 }: { evento: EventView } & Comun) {
   const inscrito = estaInscrito(evento, inscripciones);
   const terminado = estaTerminado(evento, hoy);
@@ -656,7 +689,7 @@ function CuerpoUnico({
           mostrarGenero={mostrarGenero}
           mostrarCategoria={mostrarCategoria}
         />
-        <EstadoDelEvento evento={evento} hoy={hoy} />
+        <EstadoDelEvento evento={evento} hoy={hoy} pasado={pasado} />
       </span>
     </Button>
   );
@@ -749,6 +782,7 @@ function CuerpoMultiple({
             mostrarCategoria={mostrarCategoria}
             onAbrir={onAbrir}
             hoy={hoy}
+            pasado={pasado}
           />
           <PieDeEvento evento={evento} pasado={pasado} hoy={hoy} clase="border-t-0 pl-1" />
         </React.Fragment>
@@ -784,6 +818,7 @@ function FilaEvento({
   mostrarCategoria,
   onAbrir,
   hoy,
+  pasado,
 }: {
   evento: EventView;
   conFilete: boolean;
@@ -793,6 +828,7 @@ function FilaEvento({
   mostrarCategoria: boolean;
   onAbrir: (e: EventView) => void;
   hoy: string;
+  pasado?: PasadoDeTarjeta;
 }) {
   const terminado = estaTerminado(evento, hoy);
   return (
@@ -828,7 +864,7 @@ function FilaEvento({
           mostrarGenero={mostrarGenero}
           mostrarCategoria={mostrarCategoria}
         />
-        <EstadoDelEvento evento={evento} hoy={hoy} />
+        <EstadoDelEvento evento={evento} hoy={hoy} pasado={pasado} />
       </span>
     </Button>
   );
@@ -851,8 +887,8 @@ function FilaEvento({
  * en horizontal —`13 - 14 OCT · MAR-MIÉ`— con el estado de inscripción al otro
  * extremo, y el nombre se queda con el ancho entero.
  *
- * Las píldoras de día de la semana bajan a la última fila, con los chips: ahí
- * hay sitio y siguen contando lo mismo.
+ * Sin las píldoras de día de la semana: la fila de la fecha ya dice «sáb-dom»
+ * y en el móvil las letras no llegaban a un tamaño legible.
  */
 function FilaFecha({
   capsula,
@@ -891,8 +927,6 @@ function FilaFecha({
 function ApiladaUnica({
   evento,
   capsula,
-  ocupa,
-  color,
   entreSemana,
   inscripciones,
   mostrarArma,
@@ -900,6 +934,7 @@ function ApiladaUnica({
   mostrarCategoria,
   onAbrir,
   hoy,
+  pasado,
   terminado: bloqueTerminado,
 }: {
   evento: EventView;
@@ -924,7 +959,7 @@ function ApiladaUnica({
     >
       <FilaFecha capsula={capsula} terminado={bloqueTerminado}>
         {terminado ? (
-          <Terminada />
+          terminadaEnPie(evento, pasado, hoy) ? null : <Terminada />
         ) : inscrito ? (
           <Inscrito />
         ) : (
@@ -952,9 +987,6 @@ function ApiladaUnica({
           mostrarGenero={mostrarGenero}
           mostrarCategoria={mostrarCategoria}
         />
-        <span className="ml-auto">
-          <PildorasSemana ocupa={ocupa} color={color} />
-        </span>
       </span>
     </Button>
   );
@@ -975,8 +1007,6 @@ function ApiladaUnica({
 function ApiladaMultiple({
   bloque,
   capsula,
-  ocupa,
-  color,
   entreSemana,
   inscripciones,
   mostrarArma,
@@ -1002,7 +1032,6 @@ function ApiladaMultiple({
     <div className="flex min-w-0 flex-col gap-1.5 px-2.5 py-2">
       <FilaFecha capsula={capsula} terminado={bloqueTerminado}>
         {entreSemana ? <EntreSemana /> : null}
-        <PildorasSemana ocupa={ocupa} color={color} />
       </FilaFecha>
 
       <span className="flex items-baseline gap-1.5 text-xs text-muted-foreground">
@@ -1046,7 +1075,7 @@ function ApiladaMultiple({
                   mostrarGenero={mostrarGenero}
                   mostrarCategoria={mostrarCategoria}
                 />
-                <EstadoDelEvento evento={evento} hoy={hoy} />
+                <EstadoDelEvento evento={evento} hoy={hoy} pasado={pasado} />
               </span>
             </Button>
             <PieDeEvento evento={evento} pasado={pasado} hoy={hoy} clase="border-t-0 pl-1" />

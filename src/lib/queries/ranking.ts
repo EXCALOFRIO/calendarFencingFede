@@ -28,6 +28,42 @@ import {
 import { puedeVerInterno } from '../ranking/acceso-interno';
 import { fieFichaPublicaUrl, fotoFieAncho } from '../ingest/sources/fie-tiradores';
 import { titular, yearFromIsoDate } from '../utils';
+import { hoyMadrid } from '../callups/fechas';
+import { posibleMenor } from '../sport/explorar/anio-publico';
+
+const CATEGORIAS_MENORES: ReadonlySet<string> = new Set([
+  'M7', 'M9', 'M10', 'M11', 'M12', 'M13', 'M14', 'M15', 'M17', 'M20',
+]);
+
+/**
+ * El año de nacimiento de una fila del ranking oficial que puede salir al
+ * cliente. Se oculta en el servidor si la persona puede ser menor o si la
+ * tabla es de una categoría de menores (ahí lo son casi todos, y quien no lo
+ * es queda identificado por contraste).
+ */
+export function anioNacimientoVisible(
+  nacimiento: string | null,
+  categoria: string,
+  hoy: string,
+): number | null {
+  if (CATEGORIAS_MENORES.has(categoria)) return null;
+  const anio = nacimiento ? yearFromIsoDate(nacimiento) : null;
+  if (anio === null || posibleMenor(anio, hoy)) return null;
+  return anio;
+}
+
+/**
+ * Si una fila de la clasificación FIE puede enlazar a la ficha del tirador en
+ * fie.org: nunca en categorías de menores (M17, M20…) ni para quien, por la
+ * fecha que conocemos de él, pueda ser menor. La FIE no publica la fecha en la
+ * clasificación; sólo la tenemos de los tiradores con ficha en `fie_fencer`.
+ */
+export function fichaFieVisible(categoria: string, nacimiento: string | null, hoy: string): boolean {
+  if (CATEGORIAS_MENORES.has(categoria)) return false;
+  if (!nacimiento) return true;
+  const anio = Number(nacimiento.slice(0, 4));
+  return Number.isInteger(anio) && !posibleMenor(anio, hoy);
+}
 
 /**
  * Consultas de la pantalla de ranking.
@@ -790,7 +826,9 @@ export type RankingOficialScreenData = {
  * viaje a la red. El volumen lo permite —1.235 filas de seis campos cortos, el
  * grupo más grande son 259— y crece con la federación, no con el tiempo.
  */
-export async function getRankingOficialScreenData(): Promise<RankingOficialScreenData> {
+export async function getRankingOficialScreenData(
+  hoy: string = hoyMadrid(),
+): Promise<RankingOficialScreenData> {
   const [temporada, filas] = await Promise.all([
     getRankingSeason(),
     db
@@ -889,7 +927,7 @@ export async function getRankingOficialScreenData(): Promise<RankingOficialScree
       nombre: titular(fila.nombre),
       club: fila.club,
       totalPoints: fila.totalPoints === null ? null : Number.parseFloat(fila.totalPoints),
-      anioNacimiento: fila.nacimiento ? yearFromIsoDate(fila.nacimiento) : null,
+      anioNacimiento: anioNacimientoVisible(fila.nacimiento, fila.category, hoy),
       athleteId: fila.athleteId,
     });
     if (fila.position !== null) tabla.clasificados += 1;
@@ -1608,8 +1646,10 @@ export async function getClasificacionFie(params: {
   gender: Gender;
   category: RankingCategory;
   athleteIdsPropios?: string[];
+  hoy?: string;
 }): Promise<TablaClasificacionFie | null> {
   const propios = new Set(params.athleteIdsPropios ?? []);
+  const hoy = params.hoy ?? hoyMadrid();
 
   const [ultima] = await db
     .select({ season: sql<number>`max(${fieClasificacionTable.season})` })
@@ -1633,6 +1673,7 @@ export async function getClasificacionFie(params: {
        * por `fie_id`, no un cruce por nombre: por nombre no se empareja nunca.
        */
       athleteId: fieFencerTable.athleteId,
+      nacimiento: fieFencerTable.sourceBirthDate,
     })
     .from(fieClasificacionTable)
     .leftJoin(fieFencerTable, eq(fieFencerTable.fieId, fieClasificacionTable.fieId))
@@ -1665,7 +1706,10 @@ export async function getClasificacionFie(params: {
       Un país no tiene ficha de tirador: enlazar ahí llevaría a una página que
       no habla de él.
     */
-    fichaUrl: params.format === 'INDIVIDUAL' ? fieFichaPublicaUrl(f.fieId) : null,
+    fichaUrl:
+      params.format === 'INDIVIDUAL' && fichaFieVisible(params.category, isoDate(f.nacimiento), hoy)
+        ? fieFichaPublicaUrl(f.fieId)
+        : null,
     athleteId: params.format === 'INDIVIDUAL' ? f.athleteId : null,
     esMio:
       params.format === 'INDIVIDUAL' &&

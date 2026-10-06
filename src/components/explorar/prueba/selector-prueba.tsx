@@ -13,7 +13,7 @@ export type GrupoDePruebas = { clave: string; titulo: string; opciones: OpcionDe
 export type PruebaActual = { titulo: string; categoria: string; variante?: string };
 
 const PASTILLA =
-  'inline-flex h-9 min-w-0 items-center gap-1.5 rounded-full px-2.5 text-[0.8125rem] transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none';
+  'inline-flex h-11 min-w-0 items-center gap-1.5 rounded-full px-2.5 text-[0.8125rem] transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none';
 const MARCADA = 'bg-marcado font-semibold text-primary-text ring-1 ring-primary-text ring-inset';
 const LIBRE = 'text-muted-foreground hover:bg-accent hover:text-foreground';
 
@@ -51,7 +51,7 @@ export function SelectorPrueba({
               href={f.href}
               prefetch={false}
               aria-current={f.activa ? 'true' : undefined}
-              className={cn(PASTILLA, 'h-8', f.activa ? MARCADA : LIBRE)}
+              className={cn(PASTILLA, 'px-3', f.activa ? MARCADA : LIBRE)}
             >
               {f.etiqueta}
             </Link>

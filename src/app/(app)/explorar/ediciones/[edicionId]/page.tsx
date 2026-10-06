@@ -39,7 +39,7 @@ export default async function Pagina({
   if (vista.tipo === 'sin_sesion') redirect('/entrar');
 
   return vista.tipo === 'ok' ? (
-    <EdicionCompleta edicion={vista.edicion} criterios={criterios} />
+    <EdicionCompleta edicion={vista.edicion} criterios={criterios} conjunta={vista.conjunta ?? null} />
   ) : (
     <EstadoEdicion vista={vista} />
   );

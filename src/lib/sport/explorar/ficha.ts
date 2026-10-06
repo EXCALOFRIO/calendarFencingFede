@@ -21,6 +21,7 @@ import {
   y,
 } from './filtros-sql';
 import { leerCabeceras, resolverPersona } from './personas';
+import { posibleMenor } from './anio-publico';
 import { consultaEstadisticas } from './estadisticas-sql';
 import { aDetalleEstadistico, type FilaAgregadoEstadistico } from './estadisticas';
 import { TIPO_ESTADISTICO_DOCUMENTADO } from './estadisticas-tipo';
@@ -123,14 +124,17 @@ export function sqlCobertura(ids: readonly string[]) {
   ] as const;
 }
 
+export { posibleMenor };
+
 /**
- * Con sólo el año de nacimiento no se puede demostrar la mayoría de edad: quien
- * cumple 18 este mismo año podría seguir siendo menor. Se trata como menor a
- * todo el que cumple 18 o menos este año.
+ * Mismo criterio que la foto (`foto.ts`): el enlace a la ficha FIE sólo sale
+ * si algún miembro del grupo de identidad tiene año conocido y ninguno puede
+ * ser menor.
  */
-export function posibleMenor(anioNacimiento: number | null, hoy: string): boolean {
-  if (anioNacimiento === null) return false;
-  return Number(hoy.slice(0, 4)) - anioNacimiento <= 18;
+export function vetarEnlaceFie(anios: readonly (number | null)[], hoy: string): boolean {
+  if (!Number.isInteger(Number(hoy.slice(0, 4)))) return true;
+  if (anios.every((a) => a === null)) return true;
+  return anios.some((a) => a !== null && (!Number.isInteger(Number(a)) || posibleMenor(Number(a), hoy)));
 }
 
 export type ResultadoFicha =
@@ -147,7 +151,11 @@ export type ResultadoFicha =
  * sólo si está confirmada. Una persona ajena devuelve únicamente hechos
  * deportivos; ni propia ni ajena llevan datos de la cuenta.
  */
-export async function leerFicha(ctx: ContextoExplorador, entrada: unknown): Promise<ResultadoFicha> {
+export async function leerFicha(
+  ctx: ContextoExplorador,
+  entrada: unknown,
+  opciones: { diferirRivales?: boolean } = {},
+): Promise<ResultadoFicha> {
   const perfil = await exigirPerfil(ctx);
 
   const analizada = esquemaFicha.safeParse(entrada);
@@ -172,8 +180,8 @@ export async function leerFicha(ctx: ContextoExplorador, entrada: unknown): Prom
   const lista = listaUuid(ids);
   const [cobPrueba, cobLecturas] = sqlCobertura(ids);
 
-  const [cabeceras, alias, estadisticas, resumen, lecturas, temporadas, filasPerfil] = await Promise.all([
-    leerCabeceras(ctx.db, [canonicaId]),
+  const [cabeceras, alias, estadisticas, resumen, lecturas, temporadas, filasPerfil, aniosGrupo] = await Promise.all([
+    leerCabeceras(ctx.db, [canonicaId], { sinFiltrar: true }),
     ctx.db.execute(sql`
       SELECT DISTINCT name_original AS nombre FROM sport_person_alias
       WHERE person_id IN (${lista}) ORDER BY name_original LIMIT 6`),
@@ -187,7 +195,8 @@ export async function leerFicha(ctx: ContextoExplorador, entrada: unknown): Prom
       GROUP BY p.season
       ORDER BY max(p.published_on) DESC, p.season DESC
       LIMIT 40`),
-    leerFilasPerfil(ctx.db, ids, canonicaId),
+    leerFilasPerfil(ctx.db, ids, canonicaId, opciones),
+    ctx.db.execute(sql`SELECT birth_year AS anio FROM sport_person WHERE id IN (${lista})`),
   ]);
 
   const cabecera = cabeceras.get(canonicaId);
@@ -212,6 +221,7 @@ export async function leerFicha(ctx: ContextoExplorador, entrada: unknown): Prom
 
   const esPropia = propietario.estado === 'confirmada' && propietario.personaId === canonicaId;
   const esMenor = posibleMenor(cabecera.anioNacimiento, ctx.hoy());
+  const anios = filas<{ anio: number | null }>(aniosGrupo).map((a) => (a.anio === null ? null : Number(a.anio)));
   const filasEstadisticas = filas<FilaAgregadoEstadistico>(estadisticas);
   const rankingOficial: FichaDeportiva['rankingOficial'] = {
     temporada: temporadaRanking,
@@ -241,7 +251,11 @@ export async function leerFicha(ctx: ContextoExplorador, entrada: unknown): Prom
       },
       cobertura,
       rankingOficial,
-      perfil: construirPerfil({ ...filasPerfil, estadisticas: filasEstadisticas }, { esMenor, rankingOficial }),
+      // `esMenor` sólo veta el enlace FIE en construirPerfil; aquí además lo veta un año desconocido.
+      perfil: construirPerfil(
+        { ...filasPerfil, estadisticas: filasEstadisticas },
+        { esMenor: esMenor || vetarEnlaceFie(anios, ctx.hoy()), rankingOficial },
+      ),
     },
   };
 }

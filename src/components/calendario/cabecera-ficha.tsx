@@ -2,6 +2,7 @@
 
 import { Flag, MapPin } from 'lucide-react';
 import * as React from 'react';
+import { InsigniaOrganismo } from '@/components/insignia-organismo';
 import { Badge } from '@/components/ui/badge';
 import {
   SheetDescription,
@@ -112,7 +113,7 @@ export function CabeceraFicha({ evento }: { evento: EventView }) {
         )}
       >
         <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="secondary">{organismo}</Badge>
+          <InsigniaOrganismo organismo={organismo} />
           <Badge variant="outline">
             {CIRCUIT_LABEL[evento.circuit] ?? evento.circuit}
           </Badge>

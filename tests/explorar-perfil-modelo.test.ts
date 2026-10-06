@@ -210,7 +210,7 @@ describe('vistas del perfil', () => {
     // La única imagen permitida es la bandera del país.
     expect(salida).not.toMatch(/<img(?![^>]*\/banderas\/)/);
     expect(salida).not.toContain('1990');
-    expect(salida).toContain('Posible menor de edad');
+    expect(salida).not.toContain('Posible menor de edad');
   });
 
   it('las cifras enseñan balance y porcentaje sólo con asaltos, y «sin dato» cuando faltan', () => {

@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import { normalizeSportName } from '@/lib/identity/resolver';
 import { fixDoubleEncodedUtf8 } from '../fetcher';
 import { motivoHttp } from '../http-retry';
 import {
@@ -38,6 +39,21 @@ function limpio(s: string): string {
 
 const refFww = (id: string) => `fww:athlete:${id}`;
 
+export type OpcionesFww = {
+  /**
+   * Sin enlace a ficha de atleta, usar el nombre publicado como referencia (`fww:nombre:<nombre normalizado>`).
+   * Sólo para quien después casa cada referencia con una clasificación propia; por defecto ese asalto se excluye.
+   */
+  refPorNombre?: boolean;
+};
+
+function refDe(id: string | null, nombre: string, opciones: OpcionesFww): string | null {
+  if (id) return refFww(id);
+  if (!opciones.refPorNombre || /bye/i.test(nombre)) return null;
+  const n = normalizeSportName(nombre);
+  return n ? `fww:nombre:${n}` : null;
+}
+
 type Celda = { resultado: 'V' | 'D'; puntos: number | null } | 'vacia' | 'ilegible';
 
 function leerCelda(texto: string): Celda {
@@ -48,7 +64,7 @@ function leerCelda(texto: string): Celda {
   return { resultado: m[1].toUpperCase() as 'V' | 'D', puntos: m[2] === undefined ? null : Number(m[2]) };
 }
 
-export function parsearPoulesFww(html: string, ronda: number): ParteAsaltosComplementarios {
+export function parsearPoulesFww(html: string, ronda: number, opciones: OpcionesFww = {}): ParteAsaltosComplementarios {
   const $ = cheerio.load(html);
   const acumulador = new AcumuladorAsaltos();
   let completo = true;
@@ -76,9 +92,10 @@ export function parsearPoulesFww(html: string, ronda: number): ParteAsaltosCompl
       }
       const enlace = nombreCelda.find('a[href^="/athlete/"]').first();
       const id = enlace.attr('href')?.match(/^\/athlete\/(\d+)\/?$/)?.[1] ?? null;
+      const nombre = limpio(enlace.length > 0 ? enlace.text() : nombreCelda.text());
       participantes.push({
-        id,
-        nombre: limpio(enlace.length > 0 ? enlace.text() : nombreCelda.text()),
+        id: refDe(id, nombre, opciones),
+        nombre,
         celdas: Array.from({ length: n }, (_, j) => leerCelda(tds.eq(3 + j).text())),
       });
     });
@@ -120,8 +137,8 @@ export function parsearPoulesFww(html: string, ronda: number): ParteAsaltosCompl
         acumulador.anadir({
           fase: 'POULE',
           ronda: claveRonda,
-          a: { ref: refFww(a.id), nombre: a.nombre, puntos: ganaA ? g.puntos! : p.puntos! },
-          b: { ref: refFww(b.id), nombre: b.nombre, puntos: ganaA ? p.puntos! : g.puntos! },
+          a: { ref: a.id, nombre: a.nombre, puntos: ganaA ? g.puntos! : p.puntos! },
+          b: { ref: b.id, nombre: b.nombre, puntos: ganaA ? p.puntos! : g.puntos! },
         });
       }
     }
@@ -130,7 +147,21 @@ export function parsearPoulesFww(html: string, ronda: number): ParteAsaltosCompl
   return acumulador.resumen(completo);
 }
 
-export function parsearDirectaFww(html: string): ParteAsaltosComplementarios {
+/**
+ * FWW titula a veces los cruces en alemán aunque la ruta sea `/en/`
+ * («16er Tableau», «Viertelfinale», «Halbfinale»); se llevan a la forma
+ * inglesa antes de la clave común de ronda.
+ */
+export function rondaFww(titulo: string): string | null {
+  const t = limpio(titulo);
+  const n = /^(\d{1,3})er[- ]?(?:tableau|tabelle|runde)$/i.exec(t);
+  if (n) return claveRondaCuadro(`Table of ${n[1]}`);
+  if (/^(viertelfinale|quarter[- ]?finals?|quarts? de finale|cuartos de final)$/i.test(t)) return 'T8';
+  if (/^halbfinale$/i.test(t)) return 'SF';
+  return claveRondaCuadro(t);
+}
+
+export function parsearDirectaFww(html: string, opciones: OpcionesFww = {}): ParteAsaltosComplementarios {
   const $ = cheerio.load(html);
   const acumulador = new AcumuladorAsaltos();
   let completo = true;
@@ -138,7 +169,7 @@ export function parsearDirectaFww(html: string): ParteAsaltosComplementarios {
   $('.fullmatch').each((_, cruce) => {
     const c = $(cruce);
     const titulo = limpio(c.find('div.d-block.d-lg-none.small').first().contents().first().text()).replace(/:\s*\d+$/, '');
-    const ronda = claveRondaCuadro(titulo);
+    const ronda = rondaFww(titulo);
     const filas = c.find('.derow').filter((__, r) => $(r).children('div.col-7').length > 0);
     if (filas.length !== 2) {
       completo = false;
@@ -148,10 +179,11 @@ export function parsearDirectaFww(html: string): ParteAsaltosComplementarios {
       const hijos = $(r).children('div');
       const nombreCelda = hijos.eq(1);
       const enlace = nombreCelda.find('a[href^="/athlete/"]').first();
+      const nombre = limpio(enlace.length > 0 ? enlace.text() : nombreCelda.text());
       return {
         bye: /bye/i.test(limpio(nombreCelda.text())) && enlace.length === 0,
-        id: enlace.attr('href')?.match(/^\/athlete\/(\d+)\/?$/)?.[1] ?? null,
-        nombre: limpio(enlace.length > 0 ? enlace.text() : nombreCelda.text()),
+        id: refDe(enlace.attr('href')?.match(/^\/athlete\/(\d+)\/?$/)?.[1] ?? null, nombre, opciones),
+        nombre,
         resultado: limpio(hijos.eq(3).text()).toUpperCase(),
         puntos: limpio(hijos.eq(4).text()),
         columnas: hijos.length,
@@ -194,8 +226,8 @@ export function parsearDirectaFww(html: string): ParteAsaltosComplementarios {
     acumulador.anadir({
       fase: 'TABLEAU',
       ronda,
-      a: { ref: refFww(x.id), nombre: x.nombre, puntos: px },
-      b: { ref: refFww(y.id), nombre: y.nombre, puntos: py },
+      a: { ref: x.id, nombre: x.nombre, puntos: px },
+      b: { ref: y.id, nombre: y.nombre, puntos: py },
     });
   });
 

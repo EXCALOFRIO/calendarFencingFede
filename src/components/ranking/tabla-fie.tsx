@@ -1,30 +1,25 @@
 'use client';
 
 import { ExternalLink, Loader2 } from 'lucide-react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import * as React from 'react';
-import { BanderaPais } from '@/components/bandera';
-import { Badge } from '@/components/ui/badge';
+import { BurbujaOlimpica } from '@/components/olimpica/burbuja-olimpica';
+import { FiltroOlimpico } from '@/components/olimpica/filtro-olimpico';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type {
   FilaFie,
   FormatoClasificacion,
   GrupoClasificacion,
   RankingGroupKey,
-  TablaClasificacionFie,
 } from '@/lib/queries/ranking';
 import { nombreCasa } from '@/lib/nombres';
+import { ordenarSoloJjoo } from '@/lib/ranking/olimpica';
+import type { TablaFieCompleta } from '@/lib/ranking/tabla-fie-completa';
 import { cn, formatDateEs } from '@/lib/utils';
-import { clave, puntos } from './formato';
+import { FilaLinea } from './fila-linea';
+import { clave } from './formato';
 import { SelectoresGrupo } from './selectores-grupo';
 
 /** Filas por tanda. Igual que en la tabla oficial. */
@@ -32,39 +27,26 @@ const PASO = 50;
 
 /**
  * ===========================================================================
- * LA CLASIFICACIÓN MUNDIAL DE LA FIE
+ * EL RANKING INTERNACIONAL DE LA FIE
  * ===========================================================================
  *
- * Dos clasificaciones y un filtro, que es lo que el usuario pidió con el caso
- * delante: *«no veo botón en el ranking para poner el ranking con tiradores
- * también no españoles»*, *«tampoco veo para ver el ranking de países»* y *«el
- * toggle para ver solo los de España, que por defecto estará apagado»*.
+ * «Internacional» y nunca «Mundial»: «Mundial» es el Campeonato del Mundo.
  *
- *  - **Individual / Selecciones**, que son `type=I` y `type=E` de la FIE. Los
- *    dos valores los dijo su propia API al rechazar `type=T`.
- *  - **«Solo España», APAGADO de entrada**: lo primero que se ve es el mundo,
- *    con Italia primera y España donde esté. Encendido, la misma tabla con sus
- *    puestos mundiales intactos: el 13 sigue siendo el 13, no pasa a ser el 1.
- *    Eso es lo que hace que el filtro informe en vez de mentir.
+ * Dos clasificaciones y dos filtros:
  *
- * ---------------------------------------------------------------------------
- * POR QUÉ SE PIDE UN GRUPO A LA VEZ
- * ---------------------------------------------------------------------------
- * La clasificación completa son **11.561 filas**. Mandarlas al navegador para
- * enseñar cincuenta es lo que el usuario pidió que no pasara. Así que de
- * entrada viene el grupo con el que se abre —ya pintado en el servidor, sin
- * parpadeo— y cambiar de arma pide **solo ese grupo**. El más grande son 1.253
- * filas, y con el grupo entero en la mano el buscador, el filtro y la
- * paginación funcionan sin volver a la red.
+ *  - **Individual / Selecciones**, que son `type=I` y `type=E` de la FIE.
+ *  - **«Solo España», APAGADO de entrada**: lo primero que se ve es el mundo.
+ *    Encendido, la misma tabla con sus puestos intactos: el 13 sigue siendo
+ *    el 13, no pasa a ser el 1.
+ *  - **«Solo JJOO»**, sólo en las seis pruebas olímpicas (absoluto, masculino
+ *    o femenino): quien entra hoy en Los Ángeles 2028 o está cerca, en el
+ *    orden de `ordenarSoloJjoo`. La marca va en cada fila, detrás del nombre
+ *    (`BurbujaOlimpica`), con el filtro encendido o no. Se recuerda en la URL
+ *    (`?jjoo=1`) para poder compartir el enlace.
  *
- * ---------------------------------------------------------------------------
- * LAS BANDERAS
- * ---------------------------------------------------------------------------
- * Con «solo España» apagado la tabla es mundial, y ahí la bandera **es un
- * dato**, no un adorno: distingue las filas. Con el filtro encendido son todas
- * españolas y la columna sobra, así que se esconde. Es la misma regla que en
- * la tabla de la RFEE, donde no hay banderas porque las 1.235 filas son
- * españolas y sería el mismo icono repetido.
+ * Se pide un grupo a la vez (el más grande son ~1.250 filas): el de arranque
+ * viene pintado del servidor y cambiar de arma pide sólo ese grupo, con sus
+ * marcas olímpicas y la persona de cada fila (`completarTablaFie`).
  */
 export function TablaRankingFie({
   grupos,
@@ -76,7 +58,7 @@ export function TablaRankingFie({
   grupos: GrupoClasificacion[];
   inicial: { format: FormatoClasificacion } & RankingGroupKey;
   /** El grupo de arranque, ya resuelto en el servidor. */
-  primeraTabla: TablaClasificacionFie | null;
+  primeraTabla: TablaFieCompleta | null;
   mios: string[];
   /** Acción de servidor que trae un grupo. */
   cargar: (p: {
@@ -84,21 +66,24 @@ export function TablaRankingFie({
     weapon: RankingGroupKey['weapon'];
     gender: RankingGroupKey['gender'];
     category: RankingGroupKey['category'];
-  }) => Promise<TablaClasificacionFie | null>;
+  }) => Promise<TablaFieCompleta | null>;
 }) {
+  const router = useRouter();
+  const ruta = usePathname();
+  const parametros = useSearchParams();
   const [format, setFormat] = React.useState<FormatoClasificacion>(inicial.format);
   const [grupo, setGrupo] = React.useState<RankingGroupKey>({
     weapon: inicial.weapon,
     gender: inicial.gender,
     category: inicial.category,
   });
-  const [tabla, setTabla] = React.useState<TablaClasificacionFie | null>(primeraTabla);
+  const [tabla, setTabla] = React.useState<TablaFieCompleta | null>(primeraTabla);
   const [cargando, setCargando] = React.useState(false);
   const [soloEspana, setSoloEspana] = React.useState(false);
+  const [jjooPedido, setJjooPedido] = React.useState(() => parametros.get('jjoo') === '1');
   const [busqueda, setBusqueda] = React.useState('');
   const [tope, setTope] = React.useState(PASO);
 
-  /** Las combinaciones que existen PARA EL FORMATO elegido. */
   const gruposDelFormato = React.useMemo(
     () => grupos.filter((g) => g.format === format),
     [grupos, format],
@@ -136,11 +121,7 @@ export function TablaRankingFie({
       disponibles[0];
     if (!destino) return;
     setFormat(f);
-    setGrupo({
-      weapon: destino.weapon,
-      gender: destino.gender,
-      category: destino.category,
-    });
+    setGrupo({ weapon: destino.weapon, gender: destino.gender, category: destino.category });
     void pedir(f, destino);
   };
 
@@ -156,20 +137,38 @@ export function TablaRankingFie({
             (parcial.category ? g.category === parcial.category : true),
         ) ?? gruposDelFormato[0]);
     if (!destino) return;
-    const siguiente = {
-      weapon: destino.weapon,
-      gender: destino.gender,
-      category: destino.category,
-    };
+    const siguiente = { weapon: destino.weapon, gender: destino.gender, category: destino.category };
     setGrupo(siguiente);
     void pedir(format, siguiente);
   };
 
   const porEquipos = format === 'EQUIPOS';
+  const olimpica = tabla?.olimpica ?? null;
+  // Fuera de las pruebas olímpicas el `?jjoo=1` se ignora y el conmutador no se pinta.
+  const soloJjoo = jjooPedido && olimpica !== null;
+
+  const cambiarJjoo = (activo: boolean) => {
+    setJjooPedido(activo);
+    const siguiente = new URLSearchParams(parametros.toString());
+    if (activo) siguiente.set('jjoo', '1');
+    else siguiente.delete('jjoo');
+    const consulta = siguiente.toString();
+    router.replace(consulta ? `${ruta}?${consulta}` : ruta, { scroll: false });
+  };
+
+  const anotacionDe = React.useCallback(
+    (r: FilaFie) => (porEquipos ? olimpica?.equipos[r.pais ?? ''] : olimpica?.individual[String(r.fieId)]),
+    [olimpica, porEquipos],
+  );
+
+  const conJjoo = React.useMemo(() => {
+    if (!olimpica) return [];
+    const base = (tabla?.rows ?? []).filter((r) => !soloEspana || r.pais === 'ESP');
+    return ordenarSoloJjoo(base, (r) => ({ anotacion: anotacionDe(r), posicion: r.position }));
+  }, [tabla, olimpica, soloEspana, anotacionDe]);
 
   const filtradas = React.useMemo(() => {
-    let f = tabla?.rows ?? [];
-    if (soloEspana) f = f.filter((r) => r.pais === 'ESP');
+    let f = soloJjoo ? conJjoo : (tabla?.rows ?? []).filter((r) => !soloEspana || r.pais === 'ESP');
     if (busqueda) {
       f = f.filter(
         (r) =>
@@ -179,29 +178,49 @@ export function TablaRankingFie({
       );
     }
     return f;
-  }, [tabla, soloEspana, busqueda]);
+  }, [tabla, soloEspana, soloJjoo, conJjoo, busqueda]);
 
   /**
    * Buscando o filtrando se enseña TODO lo que casa, sin «ver más»: quien
-   * escribe un nombre quiere ese nombre, y esconderlo detrás de un botón
-   * porque va en el puesto 907 convierte el buscador en un adorno.
+   * escribe un nombre quiere ese nombre.
    */
-  const recorta = !busqueda && !soloEspana;
+  const recorta = !busqueda && !soloEspana && !soloJjoo;
   const visibles = recorta ? filtradas.slice(0, tope) : filtradas;
   const quedan = filtradas.length - visibles.length;
-
-  const hayPruebas = (tabla?.rows ?? []).some((f) => f.eventCount !== null);
   const conBandera = !soloEspana;
+
+  const interruptores = (
+    <>
+      {/* Interruptor y no pastilla: «España» no es una categoría más. */}
+      <label className="flex min-h-[44px] cursor-pointer items-center gap-2.5 text-sm">
+        <Switch checked={soloEspana} onCheckedChange={setSoloEspana} aria-label="Enseñar solo España" />
+        <span className={cn(soloEspana ? 'text-foreground' : 'text-muted-foreground')}>
+          Solo España
+          {tabla ? (
+            <span className="ml-1.5 text-muted-foreground tabular-nums">
+              ({tabla.espanoles} de {tabla.rows.length})
+            </span>
+          ) : null}
+        </span>
+      </label>
+      {olimpica ? <FiltroOlimpico activo={soloJjoo} onCambio={cambiarJjoo} cuantos={conJjoo.length} /> : null}
+      {cargando ? (
+        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          Cargando la clasificación…
+        </span>
+      ) : null}
+    </>
+  );
 
   return (
     <div className="ranking flex min-w-0 flex-col gap-4">
-      {/* Individual o selecciones. Las dos clasificaciones de la FIE. */}
       <ToggleGroup
         type="single"
         variant="outline"
         value={format}
         onValueChange={(v) => v && cambiarFormato(v as FormatoClasificacion)}
-        aria-label="Qué clasificación mundial"
+        aria-label="Qué clasificación internacional"
         spacing={1}
         className="w-full sm:w-auto"
       >
@@ -220,45 +239,12 @@ export function TablaRankingFie({
         busqueda={busqueda}
         onBuscar={setBusqueda}
         etiquetaBusqueda={porEquipos ? 'Buscar un país' : 'Buscar un tirador'}
+        despues={interruptores}
       />
-
-      {/*
-        «Solo España», apagado de entrada.
-
-        Va con `Switch` y no con otra pastilla: es un interruptor de encendido y
-        apagado, no una elección entre dos cosas, y mezclarlo con los selectores
-        de arma haría dudar de si «España» es una categoría más.
-      */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <label className="flex min-h-[44px] cursor-pointer items-center gap-2.5 text-sm">
-          <Switch
-            checked={soloEspana}
-            onCheckedChange={setSoloEspana}
-            aria-label="Enseñar solo España"
-          />
-          <span className={cn(soloEspana ? 'text-foreground' : 'text-muted-foreground')}>
-            Solo España
-            {tabla ? (
-              <span className="ml-1.5 text-muted-foreground">
-                ({tabla.espanoles} de {tabla.rows.length})
-              </span>
-            ) : null}
-          </span>
-        </label>
-
-        {cargando ? (
-          <span className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" aria-hidden />
-            Cargando la clasificación…
-          </span>
-        ) : null}
-      </div>
 
       {tabla ? (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-filete-alto pt-2 text-xs text-muted-foreground">
-          <span>{porEquipos
-            ? 'Ranking mundial de selecciones de la FIE'
-            : 'Ranking mundial individual de la FIE'}</span>
+          <span>{porEquipos ? 'Ranking internacional de selecciones · FIE' : 'Ranking internacional individual · FIE'}</span>
           <span>Temporada {tabla.season}</span>
           {tabla.actualizadoEl ? <span>Leído {formatDateEs(tabla.actualizadoEl)}</span> : null}
           {tabla.sourceUrl ? (
@@ -272,181 +258,51 @@ export function TablaRankingFie({
         </div>
       ) : null}
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            {/* «Mundial» y no «#»: el número no es el puesto en esta lista. */}
-            <TableHead className="w-14 pl-0 text-right text-xs sm:w-16 sm:text-sm">Mundial</TableHead>
-            {conBandera ? <TableHead className="hidden w-20 sm:table-cell">País</TableHead> : null}
-            <TableHead>{porEquipos ? 'Selección' : 'Tirador'}</TableHead>
-            {hayPruebas && !porEquipos ? (
-              <TableHead className="hidden w-20 text-right sm:table-cell">
-                Pruebas
-              </TableHead>
-            ) : null}
-            <TableHead className="w-14 pr-0 text-right text-xs sm:w-20 sm:text-sm">Puntos</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {visibles.map((fila) => (
-            <Fila
-              key={`${fila.fieId}-${fila.position ?? 'sc'}`}
-              fila={fila}
-              marca={marcaDe(fila, mios)}
-              conBandera={conBandera}
-              conPruebas={hayPruebas && !porEquipos}
-              porEquipos={porEquipos}
-            />
-          ))}
-        </TableBody>
-      </Table>
+      {visibles.length > 0 ? (
+        <ol
+          aria-label={porEquipos ? 'Ranking internacional de selecciones' : 'Ranking internacional individual'}
+          className="grid w-full min-w-0 max-w-3xl gap-px overflow-hidden rounded-xl border bg-border"
+        >
+          {visibles.map((fila) => {
+            const mio = fila.athleteId !== null && mios.includes(fila.athleteId);
+            return (
+              <FilaLinea
+                key={`${fila.fieId}-${fila.position ?? 'sc'}`}
+                puesto={fila.position}
+                nombre={porEquipos ? (fila.paisNombre ?? fila.pais ?? '—') : (fila.nombre ?? `FIE ${fila.fieId}`)}
+                personaId={porEquipos ? null : (tabla?.personas[String(fila.fieId)] ?? null)}
+                enlaceExterno={porEquipos ? null : fila.fichaUrl}
+                pais={conBandera || porEquipos ? fila.pais : null}
+                puntos={fila.points}
+                mio={mio}
+                resaltada={fila.pais === 'ESP'}
+                sinRetrato={porEquipos}
+                tras={anotacionDe(fila)?.estado ? (
+                  <BurbujaOlimpica anotacion={anotacionDe(fila)} fechaRanking={olimpica?.fechaRanking ?? null} compacta className="shrink-0" />
+                ) : undefined}
+              />
+            );
+          })}
+        </ol>
+      ) : null}
 
       {filtradas.length === 0 && !cargando ? (
         <p className="medida text-sm text-muted-foreground">
           {busqueda
             ? 'Ningún nombre coincide. Prueba otro nombre o país.'
-            : soloEspana
-              ? 'España no tiene a nadie clasificado en esta prueba. Apaga «solo España» para ver el resto del mundo.'
-              : 'La FIE no publica clasificación de esta prueba.'}
+            : soloJjoo
+              ? 'Nadie de esta lista entra hoy ni está cerca de entrar en los Juegos.'
+              : soloEspana
+                ? 'España no tiene a nadie clasificado en esta prueba. Apaga «Solo España» para ver el resto.'
+                : 'La FIE no publica clasificación de esta prueba.'}
         </p>
       ) : null}
 
       {quedan > 0 ? (
-        <Button
-          variant="outline"
-          className="h-11 w-full"
-          onClick={() => setTope(tope + PASO)}
-        >
+        <Button variant="outline" className="h-11 w-full" onClick={() => setTope(tope + PASO)}>
           Ver {Math.min(quedan, PASO)} más de {filtradas.length}
         </Button>
       ) : null}
     </div>
-  );
-}
-
-/**
- * Qué se marca y con qué fuerza.
- *
- * Tres niveles, porque son tres preguntas distintas en una tabla mundial:
- *
- *  - **`espanol`**: la fila es de España. En una lista con 136 países es LA
- *    señal que se busca, así que va con el fondo rojo tenue.
- *  - **`nuestro`**: además está en esta aplicación, o sea que es alguien de
- *    quien se siguen plazos e inscripciones. El puesto en rojo.
- *  - **`mio`**: y además es de quien está mirando. En negrita y con el
- *    distintivo «Tú» al lado, igual que en la tabla nacional: en una lista de
- *    mil nombres ni el color ni la negrita solos bastan para encontrarse, y el
- *    estado no puede comunicarse solo por color.
- */
-function marcaDe(
-  fila: FilaFie,
-  mios: string[],
-): { espanol: boolean; nuestro: boolean; mio: boolean } {
-  return {
-    espanol: fila.pais === 'ESP',
-    nuestro: fila.athleteId !== null,
-    mio: fila.athleteId !== null && mios.includes(fila.athleteId),
-  };
-}
-
-function Fila({
-  fila,
-  marca,
-  conBandera,
-  conPruebas,
-  porEquipos,
-}: {
-  fila: FilaFie;
-  marca: { espanol: boolean; nuestro: boolean; mio: boolean };
-  conBandera: boolean;
-  conPruebas: boolean;
-  porEquipos: boolean;
-}) {
-  return (
-    <TableRow className={cn(marca.espanol && 'bg-marcado hover:bg-accent')}>
-      <TableCell className="pl-0 text-right align-top">
-        <span
-          className={cn(
-            'cifra text-2xl',
-            marca.nuestro ? 'text-primary-text' : 'text-foreground',
-          )}
-        >
-          {fila.position ?? '—'}
-        </span>
-      </TableCell>
-
-      {conBandera ? (
-        <TableCell className="hidden align-top sm:table-cell">
-          <BanderaPais pais={fila.pais} tamaño="fila" />
-        </TableCell>
-      ) : null}
-
-      <TableCell className="whitespace-normal align-top">
-        {porEquipos ? (
-          /*
-            En selecciones la fila ES el país, y la FIE lo publica en inglés y
-            en mayúsculas («HONG KONG, CHINA»). Se escribe tal cual: traducir
-            nombres de país a mano es la clase de tabla que se queda vieja.
-          */
-          <span className={cn('min-w-0', marca.espanol && 'font-semibold')}>
-            {fila.paisNombre ?? fila.pais ?? '—'}
-          </span>
-        ) : fila.fichaUrl ? (
-          <a
-            href={fila.fichaUrl}
-            target="_blank"
-            rel="noreferrer"
-            className={cn(
-              'inline-flex min-h-[44px] min-w-0 items-center gap-1.5 whitespace-normal hover:underline',
-              marca.mio && 'font-semibold',
-            )}
-          >
-            <span className="min-w-0 break-words">{fila.nombre ?? `FIE ${fila.fieId}`}</span>
-            <ExternalLink
-              className="size-3 shrink-0 text-muted-foreground"
-              aria-hidden
-            />
-          </a>
-        ) : (
-          <span className={cn(marca.mio && 'font-semibold')}>
-            {fila.nombre ?? `FIE ${fila.fieId}`}
-          </span>
-        )}
-        {marca.mio ? (
-          <Badge
-            variant="outline"
-            className="ml-2 border-primary/50 align-middle text-primary-text"
-          >
-            Tú
-          </Badge>
-        ) : null}
-        {conBandera ? (
-          <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground sm:hidden">
-            <BanderaPais pais={fila.pais} tamaño="fila" />
-            <span className="min-w-0 break-words">{fila.paisNombre ?? fila.pais ?? 'País no publicado'}</span>
-          </span>
-        ) : null}
-        {/* Las pruebas, cuando la columna está escondida en el móvil. */}
-        {conPruebas && fila.eventCount !== null ? (
-          <span className="block text-xs text-muted-foreground sm:hidden">
-            {fila.eventCount} {fila.eventCount === 1 ? 'prueba' : 'pruebas'}
-          </span>
-        ) : null}
-      </TableCell>
-
-      {conPruebas ? (
-        <TableCell className="hidden text-right align-top sm:table-cell">
-          <span className="cifra text-sm text-muted-foreground">
-            {fila.eventCount ?? '—'}
-          </span>
-        </TableCell>
-      ) : null}
-
-      <TableCell className="pr-0 text-right align-top">
-        <span className="cifra font-medium">
-          {fila.points === null ? '—' : puntos(fila.points)}
-        </span>
-      </TableCell>
-    </TableRow>
   );
 }

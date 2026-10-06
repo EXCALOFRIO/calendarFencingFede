@@ -16,6 +16,8 @@ import {
 } from './skermo-results';
 import { SKERMO_BASE_URL } from './skermo';
 import { fetchText } from '../fetcher';
+import type { Db } from '@/db/d1/runtime';
+import type { officialRankingEntry as OfficialRankingEntryTable } from '@/db/schema';
 
 /**
  * RANKING NACIONAL OFICIAL DE LA RFEE.
@@ -54,6 +56,37 @@ import { fetchText } from '../fetcher';
  *   tiradores y una función serverless muere a los 300 s. Lo que no entra
  *   hoy entra mañana.
  * - Lo que aun así no empareje se queda en la cola para una persona.
+ *
+ * -------------------------------------------------------------------------
+ * QUIEN SALE DE LA LISTA, SALE DE LA TABLA (solo en la temporada en curso)
+ * -------------------------------------------------------------------------
+ * Las filas sin cambios no se reescriben, así que `updated_at` no sirve para
+ * saber quién sigue en el ranking. Y el lector (`ranking-nacional.ts`) toma
+ * "no está en la tabla oficial" como "no tiene puesto": una fila olvidada de
+ * alguien que Skermo ya no lista le daría un puesto que no tiene. Por eso,
+ * tras leer un grupo (arma × género × categoría) se borran las filas de ESE
+ * grupo y ESA temporada que no aparecieron en la lectura. Solo cuando:
+ *
+ * - la temporada leída es la que Skermo marca como actual. Las cerradas no
+ *   cambian y no se tocan nunca, ni aunque se lean a mano;
+ * - la petición respondió, trajo al menos una fila y TODAS se leyeron y
+ *   validaron (ninguna a cuarentena, ninguna descartada por el parser). Una
+ *   lectura vacía, caída o a medias no prueba que nadie se haya ido;
+ * - la categoría se sabe normalizar (si no, el grupo entero no se escribe).
+ *
+ * Válvula de seguridad: una respuesta puede parecer completa (200, todas las
+ * filas válidas) y traer una lista recortada por un filtro, una caché a
+ * medias o un cambio de la web. Si en un grupo faltan más de
+ * `MAX_BAJAS_SIN_SOSPECHA` (10) tiradores Y son más del `MAX_FRACCION_BAJAS`
+ * (25 %) de lo guardado, ese grupo no se toca: se anota en la nota y en
+ * `gruposConBajaSospechosa`, y lo mira una persona. Las bajas de cada
+ * semana son unas pocas; decenas a la vez son casi siempre la fuente.
+ *
+ * Se borran solo los ausentes, calculados contra lo ya leído en el paso 5:
+ * si no falta nadie no se lanza ninguna sentencia. Repetirlo no borra más.
+ * La tabla no tiene triggers de guarda ni de capacidad (los de
+ * `0002_guardia_deportiva.sql` son de `sport_ranking_*`), así que el DELETE
+ * no necesita ningún permiso de escritura previo.
  */
 
 export const RANKING_FEDERATION = 'RFEE';
@@ -237,6 +270,100 @@ export async function rankingContentHash(row: {
   );
 }
 
+// ------------------------------------------------- Ausentes de la lista ---
+
+export type LecturaDeGrupo = {
+  weapon: RankingCombo['weapon'];
+  gender: RankingCombo['gender'];
+  categoryRaw: string;
+  /** Respondió, trajo filas y todas pasaron el parser y la validación. */
+  completa: boolean;
+  presentes: readonly string[];
+};
+
+/** Una baja es sospechosa si supera A LA VEZ estos dos umbrales. */
+export const MAX_BAJAS_SIN_SOSPECHA = 10;
+export const MAX_FRACCION_BAJAS = 0.25;
+
+/** Clave de grupo y tirador, la misma que usa el paso 5 de la ingestión. */
+export function claveFilaRanking(
+  weapon: string,
+  gender: string,
+  categoryRaw: string,
+  skermoAthleteId: string,
+): string {
+  return `${weapon}|${gender}|${categoryRaw}|${skermoAthleteId}`;
+}
+
+/**
+ * Borra, de la temporada en curso, las filas de cada grupo leído entero que
+ * ya no aparecen en Skermo. `guardadas` son las claves (`claveFilaRanking`)
+ * de lo que había en la tabla para esa temporada antes de escribir: con ellas
+ * se calculan los ausentes sin otra lectura y sin sentencia si no falta nadie.
+ * Devuelve cuántas filas se borraron.
+ */
+export async function borrarAusentesDelRanking(
+  db: Db,
+  tabla: typeof OfficialRankingEntryTable,
+  opciones: {
+    skermoSeasonId: string;
+    temporadaEnCurso: boolean;
+    lecturas: readonly LecturaDeGrupo[];
+    guardadas: Iterable<string>;
+    /** Recibe la descripción de cada grupo con una baja sospechosa. */
+    alSospechar?: (descripcion: string) => void;
+  },
+): Promise<number> {
+  if (!opciones.temporadaEnCurso) return 0;
+  const { and, eq } = await import('drizzle-orm');
+
+  const guardadasPorGrupo = new Map<string, string[]>();
+  for (const clave of opciones.guardadas) {
+    const corte = clave.lastIndexOf('|');
+    const grupo = clave.slice(0, corte);
+    const lista = guardadasPorGrupo.get(grupo) ?? [];
+    lista.push(clave.slice(corte + 1));
+    guardadasPorGrupo.set(grupo, lista);
+  }
+
+  let borradas = 0;
+  for (const lectura of opciones.lecturas) {
+    if (!lectura.completa || lectura.presentes.length === 0) continue;
+    const grupo = `${lectura.weapon}|${lectura.gender}|${lectura.categoryRaw}`;
+    const presentes = new Set(lectura.presentes);
+    const ausentes = (guardadasPorGrupo.get(grupo) ?? []).filter(
+      (id) => id && !presentes.has(id),
+    );
+    if (ausentes.length === 0) continue;
+    const total = guardadasPorGrupo.get(grupo)?.length ?? 0;
+    if (
+      ausentes.length > MAX_BAJAS_SIN_SOSPECHA &&
+      ausentes.length > total * MAX_FRACCION_BAJAS
+    ) {
+      opciones.alSospechar?.(
+        `${lectura.weapon.toLowerCase()} ${lectura.gender} ${lectura.categoryRaw}: ` +
+          `faltan ${ausentes.length} de ${total}, no se borra`,
+      );
+      continue;
+    }
+
+    const resultado = await db
+      .delete(tabla)
+      .where(
+        and(
+          eq(tabla.skermoSeasonId, opciones.skermoSeasonId),
+          eq(tabla.weapon, lectura.weapon),
+          eq(tabla.gender, lectura.gender),
+          eq(tabla.categoryRaw, lectura.categoryRaw),
+          inArray(tabla.skermoAthleteId, ausentes),
+        ),
+      )
+      .returning({ id: tabla.id });
+    borradas += resultado.length;
+  }
+  return borradas;
+}
+
 // ------------------------------------------------------------- Ingestión ---
 
 export type RankingIngestOptions = {
@@ -270,6 +397,10 @@ export type RankingIngestStats = {
   emparejadas: number;
   /** Filas que se quedan en la cola para que las resuelva una persona. */
   sinEmparejar: number;
+  /** Filas de la temporada en curso borradas porque Skermo ya no las lista. */
+  itemsDeleted: number;
+  /** Grupos donde faltaban demasiados para fiarse: no se borró nada. */
+  gruposConBajaSospechosa: number;
   note: string | null;
 };
 
@@ -324,6 +455,8 @@ export async function ingestRankingRfee(
     licenciasResueltas: 0,
     emparejadas: 0,
     sinEmparejar: 0,
+    itemsDeleted: 0,
+    gruposConBajaSospechosa: 0,
     note: null,
   };
 
@@ -356,6 +489,7 @@ export async function ingestRankingRfee(
     combo: RankingCombo;
     url: string;
     filas: RankingRowValida[];
+    completa: boolean;
   }[] = [];
   const cuarentena: RankingQuarantine[] = [];
   const fallos: string[] = [];
@@ -370,7 +504,9 @@ export async function ingestRankingRfee(
 
     try {
       const { body } = await fetchText(url, { timeoutMs: 60_000 });
-      const { rows, rowsSeen } = parseSkermoNationalRanking(body, { federationCode });
+      const { rows, rowsSeen, mismatches } = parseSkermoNationalRanking(body, {
+        federationCode,
+      });
       stats.itemsSeen += rowsSeen;
 
       if (rowsSeen === 0) {
@@ -382,7 +518,16 @@ export async function ingestRankingRfee(
       const clave = `${temporada.label}|${combo.weapon}|${combo.gender}|${combo.categoryRaw}`;
       const { valid, quarantined } = validateRankingRows(rows, { clave });
       cuarentena.push(...quarantined);
-      leidas.push({ combo, url, filas: valid });
+      leidas.push({
+        combo,
+        url,
+        filas: valid,
+        completa:
+          rowsSeen > 0 &&
+          rows.length === rowsSeen &&
+          mismatches === 0 &&
+          quarantined.length === 0,
+      });
     } catch (error) {
       // Una combinación caída no puede tumbar las otras 59.
       fallos.push(
@@ -483,7 +628,7 @@ export async function ingestRankingRfee(
     .where(eq(officialRankingEntry.skermoSeasonId, temporada.value));
   for (const e of existentes) {
     hashesGuardados.set(
-      `${e.weapon}|${e.gender}|${e.categoryRaw}|${e.skermoAthleteId}`,
+      claveFilaRanking(e.weapon, e.gender, e.categoryRaw, e.skermoAthleteId ?? ''),
       e.contentHash,
     );
   }
@@ -609,6 +754,23 @@ export async function ingestRankingRfee(
       });
   }
 
+  // --- 6b. Quien ya no está en la lista de la temporada en curso ---
+  const bajasSospechosas: string[] = [];
+  stats.itemsDeleted = await borrarAusentesDelRanking(db, officialRankingEntry, {
+    skermoSeasonId: temporada.value,
+    temporadaEnCurso: temporada.selected === true,
+    lecturas: leidas.map((l) => ({
+      weapon: l.combo.weapon,
+      gender: l.combo.gender,
+      categoryRaw: l.combo.categoryRaw,
+      completa: l.completa && mapCategory(l.combo.categoryRaw) !== null,
+      presentes: l.filas.map((f) => f.skermoAthleteId),
+    })),
+    guardadas: hashesGuardados.keys(),
+    alSospechar: (d) => bajasSospechosas.push(d),
+  });
+  stats.gruposConBajaSospechosa = bajasSospechosas.length;
+
   // --- 7. Cuarentena ---
   for (const lote of lotesDeInsercion(cuarentena, ingestQuarantine)) {
     if (lote.length === 0) continue;
@@ -631,6 +793,8 @@ export async function ingestRankingRfee(
     `${stats.licenciasResueltas} licencias nuevas resueltas`,
     `${stats.emparejadas} filas emparejadas por licencia`,
     `${stats.sinEmparejar} a la cola de emparejar`,
+    `${stats.itemsDeleted} filas retiradas por no estar ya en la lista`,
+    ...bajasSospechosas,
   ];
   if (pendientes > 0) {
     partes.push(

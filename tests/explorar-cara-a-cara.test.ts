@@ -348,7 +348,7 @@ describe('rivales', () => {
         {
           cuando: /FROM sport_bout b/,
           filas: [
-            { id: UUID_B, clave: 'marta ruiz', nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3 },
+            { id: UUID_B, clave: 'marta ruiz', nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3, victorias: 2, derrotas: 1 },
             { id: UUID_C, clave: 'nora diaz', nombre: 'Nora Diaz', pais: null, asaltos: 1 },
           ],
         },
@@ -356,7 +356,7 @@ describe('rivales', () => {
     });
     const r = await listarRivales(ctx, { personaId: UUID_A, limite: 1 });
     if (r.estado !== 'ok') throw new Error(r.estado);
-    expect(r.items).toEqual([{ id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3 }]);
+    expect(r.items).toEqual([{ id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA', asaltos: 3, victorias: 2, derrotas: 1 }]);
     expect(r.siguiente).toBeTruthy();
     expect(texto()).toMatch(/c\.format = 'INDIVIDUAL'/);
     for (const k of clavesDe(r)) expect(CLAVES_PRIVADAS).not.toContain(k);
@@ -368,12 +368,13 @@ describe('rivales', () => {
       await listarRivales(ctx, { personaId: UUID_A, limite: 1, temporada: '2024-2025', cursor: r.siguiente! }),
     ).toEqual({ estado: 'cursor_invalido' });
 
+    // De más a menos asaltos; el cursor lleva (asaltos, nombre, id) y se compara tras contar.
     const siguiente = await listarRivales(ctx, { personaId: UUID_A, limite: 1, cursor: r.siguiente! });
-    expect(siguiente.estado).toBe('ok');
-    // De más a menos asaltos; el cursor lleva (asaltos, nombre, id) y se compara tras agrupar.
-    const ultima = sentencias.filter((s) => /ORDER BY sum\(x\.n\) DESC/.test(s.text)).at(-1)!;
-    expect(ultima.text).toMatch(/HAVING \(-sum\(x\.n\), coalesce\(cp\.name_normalized, ''\), cp\.id\) >/);
-    expect(ultima.params).toEqual(expect.arrayContaining([-3, 'marta ruiz', UUID_B]));
+    if (siguiente.estado !== 'ok') throw new Error(siguiente.estado);
+    expect(siguiente.items.map((x) => x.id)).toEqual([UUID_C]);
+    expect(siguiente.siguiente).toBeNull();
+    // Mismos marcadores que el cara a cara: sólo asaltos individuales.
+    expect(sentencias.some((s) => /max\(b\.score_a, b\.score_b\) <= \d+/.test(s.text))).toBe(true);
   });
 
   it('un cursor de la ordenación alfabética anterior ya no vale', async () => {

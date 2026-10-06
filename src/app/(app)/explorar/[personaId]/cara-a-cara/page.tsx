@@ -1,8 +1,9 @@
 import { redirect } from 'next/navigation';
+import { Suspense } from 'react';
+import { RelevosCaraACaraDiferido } from '@/components/explorar/relevos';
 import {
   CabeceraCaraACara,
   CaraACaraCompleto,
-  ChipsCaraACara,
   ElegirRival,
   EstadoCaraACara,
 } from '@/components/explorar/cara-a-cara';
@@ -13,6 +14,7 @@ import { cargarCaraACaraPantalla } from '@/lib/sport/explorar/cara-a-cara-pantal
 import { construirUrlCaraACara, leerCriteriosCaraACara } from '@/lib/sport/explorar/cara-a-cara-url';
 import { personaDeRuta } from '@/lib/sport/explorar/ficha-url';
 import { contextoReal } from '@/lib/sport/explorar/real';
+import { cargarRelevosCaraACara } from '@/lib/sport/explorar/relevos';
 import { opcionesTemporada } from '@/lib/sport/explorar/url';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { titular } from '@/lib/utils';
@@ -70,6 +72,9 @@ export default async function Pagina({
   ) : null;
 
   if (vista.tipo === 'ok') {
+    const { yo, rival } = vista.datos.personas;
+    // Aparte y sin esperarla: los relevos no suman al balance de asaltos.
+    const relevos = cargarRelevosCaraACara(contextoReal(), yo.id, rival.id, criterios);
     return (
       <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-4">
         <CabeceraCaraACara datos={vista.datos} criterios={criterios} />
@@ -89,6 +94,9 @@ export default async function Pagina({
             ) : null
           }
         />
+        <Suspense fallback={null}>
+          <RelevosCaraACaraDiferido promesa={relevos} yo={yo} rival={rival} />
+        </Suspense>
       </div>
     );
   }
@@ -101,12 +109,7 @@ export default async function Pagina({
         <h1 className="text-2xl sm:text-3xl">Cara a cara</h1>
       )}
 
-      {vista.tipo === 'elegir' && persona ? (
-        <div className="flex flex-col gap-3">
-          {filtros}
-          <ChipsCaraACara personaId={persona.id} criterios={criterios} />
-        </div>
-      ) : null}
+      {vista.tipo === 'elegir' ? filtros : null}
 
       {vista.tipo === 'elegir' ? (
         <ElegirRival persona={vista.persona} rivales={vista.rivales} otros={vista.otros} criterios={criterios} />

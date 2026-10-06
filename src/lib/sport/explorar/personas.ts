@@ -2,6 +2,8 @@ import { sql, type SQL } from 'drizzle-orm';
 import { filas, type ContextoExplorador } from './contexto';
 import type { Genero } from './tipos';
 import { listaUuid } from './filtros-sql';
+import { anioNacimientoPublico } from './anio-publico';
+import { hoyMadrid } from '@/lib/callups/fechas';
 
 /** Cuántas fusiones A→B→C se siguen antes de dar la cadena por rota. */
 export const SALTOS = 3;
@@ -76,11 +78,17 @@ export type CabeceraPersona = {
   anioNacimiento: number | null;
 };
 
-/** Sólo las columnas deportivas públicas de la persona: nada de ficha ni cuenta. */
+/**
+ * Sólo las columnas deportivas públicas de la persona: nada de ficha ni cuenta.
+ * El año de nacimiento sale `null` si puede ser menor (`anioNacimientoPublico`);
+ * `sinFiltrar` es sólo para la ficha, que decide ella misma con su veto.
+ */
 export async function leerCabeceras(
   db: ContextoExplorador['db'],
   ids: readonly string[],
+  opciones: { hoy?: string; sinFiltrar?: boolean } = {},
 ): Promise<Map<string, CabeceraPersona>> {
+  const hoy = opciones.hoy ?? hoyMadrid();
   const mapa = new Map<string, CabeceraPersona>();
   if (ids.length === 0) return mapa;
   const lista = listaUuid(ids);
@@ -102,7 +110,9 @@ export async function leerCabeceras(
       nombre: r.nombre,
       pais: r.pais,
       genero: r.genero,
-      anioNacimiento: r.anioNacimiento === null ? null : Number(r.anioNacimiento),
+      anioNacimiento: opciones.sinFiltrar
+        ? (r.anioNacimiento === null ? null : Number(r.anioNacimiento))
+        : anioNacimientoPublico(r.anioNacimiento, hoy),
     });
   }
   return mapa;
