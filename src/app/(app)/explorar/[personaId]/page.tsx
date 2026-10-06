@@ -1,10 +1,11 @@
 import { redirect } from 'next/navigation';
-import { EstadoFicha, FichaCompleta, VolverAExplorar } from '@/components/explorar/ficha-deportiva';
+import { EstadoFicha, FichaCompleta } from '@/components/explorar/ficha-deportiva';
 import { ControlFavoritoFicha } from '@/components/explorar/favoritos';
 import { getSessionProfile } from '@/lib/auth/session';
 import { cargarEstadoFavorito } from '@/lib/sport/explorar/favoritos-pantalla';
 import { cargarFichaPantalla } from '@/lib/sport/explorar/ficha-pantalla';
 import { construirUrlFicha, leerCriteriosFicha, personaDeRuta } from '@/lib/sport/explorar/ficha-url';
+import { cargarExtrasPerfil, EXTRAS_VACIOS } from '@/lib/sport/explorar/perfil-extra';
 import { contextoReal } from '@/lib/sport/explorar/real';
 import { RUTA_EXPLORAR } from '@/lib/sport/explorar/url';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
@@ -36,21 +37,22 @@ export default async function Pagina({
   const personaId = personaDeRuta(segmento);
   const criterios = leerCriteriosFicha(consulta);
 
-  // Independientes entre sí: el estado de favorito no espera a la ficha.
-  const [vista, favorito] = personaId
+  // Independientes entre sí: ni el favorito ni los datos personales y el
+  // rendimiento esperan a la ficha (y si fallan, sólo se omiten).
+  const [vista, favorito, extras] = personaId
     ? await Promise.all([
         cargarFichaPantalla(contextoReal(), personaId, criterios),
         cargarEstadoFavorito(contextoReal(), personaId),
+        cargarExtrasPerfil(contextoReal(), personaId),
       ])
-    : ([{ tipo: 'entrada_invalida' }, { tipo: 'no_encontrada' }] as const);
+    : ([{ tipo: 'entrada_invalida' }, { tipo: 'no_encontrada' }, EXTRAS_VACIOS] as const);
   if (vista.tipo === 'sin_sesion' || favorito.tipo === 'sin_sesion') redirect('/entrar');
 
   const base = `${RUTA_EXPLORAR}/${personaId}`;
 
+  // La vuelta atrás la da la flecha global de la cabecera de la aplicación.
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <VolverAExplorar volver={criterios.volver} />
-
       {vista.tipo === 'ok' && personaId ? (
         <FichaCompleta
           ficha={vista.ficha}
@@ -58,6 +60,7 @@ export default async function Pagina({
           base={base}
           criterios={criterios}
           nivel="pagina"
+          extras={extras}
           acciones={
             <ControlFavoritoFicha
               estado={favorito}

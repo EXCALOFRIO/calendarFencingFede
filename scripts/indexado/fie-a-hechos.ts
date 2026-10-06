@@ -116,10 +116,15 @@ export function asaltosPorPrioridad(poules: unknown, cuadro: unknown): Prioridad
 
   const pools = (poules as { pools?: unknown })?.pools;
   if (Array.isArray(pools)) {
+    // Misma clave de ronda que `normalizarPoules`: la segunda vuelta repite los poolId.
+    const vueltas = new Map<number, number>();
     for (const poule of pools as Crudo[]) {
       const poolId = num(poule?.poolId);
       const filas = poule?.rows;
       if (poolId === null || !Array.isArray(filas)) continue;
+      const vuelta = (vueltas.get(poolId) ?? 0) + 1;
+      vueltas.set(poolId, vuelta);
+      const ronda = vuelta === 1 ? `P${poolId}` : `V${vuelta}P${poolId}`;
       for (let i = 0; i < filas.length; i += 1) {
         for (let j = i + 1; j < filas.length; j += 1) {
           const fi = filas[i] as Crudo;
@@ -137,7 +142,7 @@ export function asaltosPorPrioridad(poules: unknown, cuadro: unknown): Prioridad
             ceroCero += 1;
             continue;
           }
-          anadir(orientar('POULE', `P${poolId}`, idI, idJ, txt(fi?.name) ?? `FIE ${idI}`,
+          anadir(orientar('POULE', ronda, idI, idJ, txt(fi?.name) ?? `FIE ${idI}`,
             txt(fj?.name) ?? `FIE ${idJ}`, si, ij.v === true));
         }
       }

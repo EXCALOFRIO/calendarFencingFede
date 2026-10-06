@@ -3,6 +3,7 @@
 import { buscarDeportistas } from '@/lib/sport/explorar/busqueda';
 import { leerCaraACara, listarRivales } from '@/lib/sport/explorar/cara-a-cara';
 import { leerFicha, leerHistorial } from '@/lib/sport/explorar/ficha';
+import { cargarPaginaExplorar } from '@/lib/sport/explorar/pantalla';
 import { contextoReal } from '@/lib/sport/explorar/real';
 
 /**
@@ -18,6 +19,11 @@ import { contextoReal } from '@/lib/sport/explorar/real';
 
 export async function buscarDeportistasAccion(entrada: unknown) {
   return buscarDeportistas(contextoReal(), entrada);
+}
+
+/** «Ver más» de la lista completa: la página siguiente, con «Seguir» de cada persona. */
+export async function masDeportistasAccion(entrada: unknown) {
+  return cargarPaginaExplorar(contextoReal(), entrada);
 }
 
 export async function leerFichaAccion(entrada: unknown) {

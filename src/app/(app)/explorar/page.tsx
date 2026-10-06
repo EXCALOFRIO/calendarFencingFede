@@ -1,8 +1,6 @@
 import { redirect } from 'next/navigation';
-import { EnlaceEdiciones, EnlaceVolverAEdicion } from '@/components/explorar/ediciones';
-import { EnlaceFavoritos } from '@/components/explorar/favoritos';
+import { CabeceraExplorar } from '@/components/explorar/cabecera-explorar';
 import { FormularioFiltros } from '@/components/explorar/formulario-filtros';
-import { EnlaceSiguiendo } from '@/components/explorar/siguiendo';
 import {
   ChipsActivos,
   EstadoSinCoincidencias,
@@ -10,7 +8,7 @@ import {
   ListaDeportistas,
 } from '@/components/explorar/resultados';
 import { getSessionProfile } from '@/lib/auth/session';
-import { edicionDeRuta } from '@/lib/sport/explorar/edicion-url';
+import { NOMBRE_SECCION } from '@/lib/sport/explorar/nombre-seccion';
 import { cargarExplorar } from '@/lib/sport/explorar/pantalla';
 import { contextoReal } from '@/lib/sport/explorar/real';
 import {
@@ -23,7 +21,7 @@ import { PropuestasBuscador } from '@/components/explorar/buscador-social-fila';
 import { construirUrl, hayCriterios, leerCriterios, opcionesTemporada } from '@/lib/sport/explorar/url';
 
 export const dynamic = 'force-dynamic';
-export const metadata = { title: 'Explorar' };
+export const metadata = { title: NOMBRE_SECCION };
 
 /** Sugerencias de la pantalla vacía; `null` si fallan (la búsqueda sigue funcionando). */
 async function cargarPropuestas(ctx: ContextoExplorador): Promise<PersonaParaSeguir[] | null> {
@@ -67,7 +65,6 @@ export default async function Pagina({
   if (vista.tipo === 'sin_sesion') redirect('/entrar');
 
   const atajoEspana = perfil.role === 'coach' || perfil.role === 'admin';
-  const edicionAcotada = edicionDeRuta(criterios.edicionId);
   const hoy = new Date().toISOString().slice(0, 10);
 
   const contenido = vista.tipo === 'ok' ? (
@@ -75,6 +72,7 @@ export default async function Pagina({
       <EstadoSinCoincidencias criterios={criterios} />
     ) : (
       <ListaDeportistas
+        key={construirUrl(criterios, cursor)}
         items={vista.items}
         siguiente={vista.siguiente}
         cursorActual={cursor}
@@ -88,20 +86,8 @@ export default async function Pagina({
   );
 
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex min-w-0 flex-wrap items-end justify-between gap-x-6 gap-y-3 border-b pb-4">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h1 className="text-3xl leading-tight sm:text-4xl">Explorar</h1>
-          <p className="text-sm text-muted-foreground">
-            Encuentra deportistas, resultados y rankings publicados.
-          </p>
-        </div>
-        <nav aria-label="Colecciones de Explorar" className="flex flex-wrap items-center gap-x-5 gap-y-1">
-          <EnlaceSiguiendo siguiendo={siguiendo} />
-          <EnlaceEdiciones />
-          <EnlaceFavoritos />
-        </nav>
-      </header>
+    <div className="flex min-w-0 flex-col gap-4">
+      <CabeceraExplorar siguiendo={siguiendo} />
 
       <FormularioFiltros
         key={construirUrl(criterios, cursor)}
@@ -110,13 +96,8 @@ export default async function Pagina({
         atajoEspana={atajoEspana}
         profileId={perfil.profileId}
       >
-        <div className="flex min-w-0 flex-col gap-6">
-          {inicio ? null : (
-            <div className="flex flex-col gap-3">
-              <ChipsActivos criterios={criterios} />
-              {edicionAcotada ? <EnlaceVolverAEdicion edicionId={edicionAcotada} /> : null}
-            </div>
-          )}
+        <div className="flex min-w-0 flex-col gap-4">
+          {inicio ? null : <ChipsActivos criterios={criterios} />}
           {contenido}
         </div>
       </FormularioFiltros>

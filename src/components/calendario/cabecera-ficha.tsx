@@ -1,6 +1,6 @@
 'use client';
 
-import { MapPin } from 'lucide-react';
+import { Flag, MapPin } from 'lucide-react';
 import * as React from 'react';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -18,6 +18,7 @@ import {
   titular,
   titularTorneo,
 } from '@/lib/utils';
+import { torneoTerminado } from './ficha/terminado';
 
 /**
  * ===========================================================================
@@ -49,6 +50,7 @@ export function CabeceraFicha({ evento }: { evento: EventView }) {
   React.useEffect(() => setFallo(false), [evento.id]);
 
   const hayFoto = Boolean(evento.imageUrl) && !fallo;
+  const terminado = torneoTerminado(evento);
   const organismo = organismoDe(evento.source, evento.scope, evento.circuit);
   const tinte: string = {
     RFEE: 'from-org-rfee/40',
@@ -114,6 +116,17 @@ export function CabeceraFicha({ evento }: { evento: EventView }) {
           <Badge variant="outline">
             {CIRCUIT_LABEL[evento.circuit] ?? evento.circuit}
           </Badge>
+          {/*
+            Un torneo pasado se abre para ver quién ganó, y sin esta pastilla
+            la ficha se leía igual que la de uno por venir hasta llegar a la
+            barra de plazos en gris. Va con icono y palabra, no solo con color.
+          */}
+          {terminado ? (
+            <Badge variant="secondary" className="gap-1 bg-muted text-muted-foreground">
+              <Flag aria-hidden />
+              Terminada
+            </Badge>
+          ) : null}
         </div>
         <SheetTitle className="text-3xl leading-[0.95] sm:text-4xl">
           {titularTorneo(evento.name)}

@@ -18,17 +18,16 @@ import {
   urlVistaDelRival,
   type CriteriosCaraACara,
 } from '@/lib/sport/explorar/cara-a-cara-url';
+import type { EncuentroCaraACara } from '@/lib/sport/explorar/cara-a-cara';
 import { opcionesTemporada } from '@/lib/sport/explorar/url';
 import { CLAVES_PRIVADAS, UUID_A, UUID_B, UUID_C, clavesDe, crearContexto } from './helpers/explorar';
 
 const {
-  AsaltosCaraACara,
-  BalanceCaraACara,
   CabeceraCaraACara,
   CaraACaraCompleto,
-  CoberturaCaraACaraVista,
   ElegirRival,
   EstadoCaraACara,
+  rotuloMarcador,
 } = await import('@/components/explorar/cara-a-cara');
 const { EntradaCaraACara, FichaCompleta } = await import('@/components/explorar/ficha-deportiva');
 
@@ -209,7 +208,7 @@ describe('cargarCaraACaraPantalla: cara a cara', () => {
     expect(await cargarCaraACaraPantalla(roto, UUID_A, criterios())).toEqual({ tipo: 'error' });
   });
 
-  it('sólo cuenta individuales con marcador: las tres consultas excluyen equipos y marcadores empatados del listado', async () => {
+  it('sólo cuenta individuales con marcador: las consultas (también la de los gráficos) excluyen equipos', async () => {
     const { ctx, sentencias } = crearContexto({
       respuestas: respuestasH2h({
         resumen: { asaltos: 1, victorias: 1, derrotas: 0, sinDecidir: 0, tantosFavor: 5, tantosContra: 3 },
@@ -219,11 +218,20 @@ describe('cargarCaraACaraPantalla: cara a cara', () => {
     });
     await datosDe(cargarCaraACaraPantalla(ctx, UUID_A, criterios()));
     const lecturas = sentencias.filter((s) => /sport_bout|WITH comunes/.test(s.text) && !/RECURSIVE/.test(s.text));
-    expect(lecturas).toHaveLength(3);
+    // Resumen, asaltos y pruebas comunes, más la lectura de los gráficos del duelo.
+    expect(lecturas).toHaveLength(4);
     for (const s of lecturas) {
       expect(s.text).toMatch(/c\.format = 'INDIVIDUAL'/);
       expect(s.text).not.toMatch(/internal_ranking|ranking_snapshot|user_profile|email/i);
     }
+  });
+
+  it('con un filtro activo no se piden los gráficos, que cubren toda la historia', async () => {
+    const { ctx, sentencias } = crearContexto({ respuestas: respuestasH2h({ comunes: [comun()] }) });
+    const vista = await cargarCaraACaraPantalla(ctx, UUID_A, criterios({ fase: 'POULE' }));
+    expect(vista).toMatchObject({ tipo: 'ok', rendimiento: null });
+    const lecturas = sentencias.filter((s) => /sport_bout|WITH comunes/.test(s.text) && !/RECURSIVE/.test(s.text));
+    expect(lecturas).toHaveLength(3);
   });
 
   it('un asalto de poule guardado una vez se orienta a quien se consulta: el mismo duelo se invierte desde el rival', async () => {
@@ -263,14 +271,12 @@ describe('cargarCaraACaraPantalla: cara a cara', () => {
     expect(desdeB.resumen.asaltos).toBe(1);
     expect(desdeA.items).toHaveLength(desdeB.items.length);
 
-    const a = html(React.createElement(AsaltosCaraACara, { datos: desdeA, criterios: criterios() }));
-    const b = html(
-      React.createElement(AsaltosCaraACara, { datos: desdeB, criterios: criterios({ rival: UUID_A }) }),
-    );
-    expect(a).toMatch(/>5<\/span><span[^>]*>frente a<\/span><span[^>]*>3</);
-    expect(b).toMatch(/>3<\/span><span[^>]*>frente a<\/span><span[^>]*>5</);
-    expect(a).toContain('Victoria');
-    expect(b).toContain('Derrota');
+    const a = html(React.createElement(CabeceraCaraACara, { datos: desdeA, criterios: criterios() }));
+    const b = html(React.createElement(CabeceraCaraACara, { datos: desdeB, criterios: criterios({ rival: UUID_A }) }));
+    expect(a).toContain('aria-label="1 victoria y 0 derrotas de Lucia Garcia"');
+    expect(b).toContain('aria-label="0 victorias y 1 derrota de Marta Ruiz"');
+    expect(a).toContain('del más reciente: victoria"');
+    expect(b).toContain('del más reciente: derrota"');
   });
 
   it('la temporada y el rival de la URL viajan a la consulta', async () => {
@@ -666,218 +672,159 @@ describe('elegir rival conserva temporada, arma y fase', () => {
   });
 });
 
-describe('cara a cara: detalle de cada asalto', () => {
-  const datosBase = (extra: Partial<DatosCaraACara> = {}): DatosCaraACara => ({
-    estado: 'ok',
-    personas: {
-      yo: { id: UUID_A, nombre: 'Lucia Garcia', pais: 'ESP' },
-      rival: { id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA' },
-    },
-    resumen: { asaltos: 1, victorias: 1, derrotas: 0, sinDecidir: 0, tantosFavor: 5, tantosContra: 3 },
-    cobertura: {
-      estado: 'verificado',
-      exhaustivo: false,
-      pruebasComunes: 1,
-      pruebasConAsaltos: 1,
-      pruebasSinAsaltosPublicados: 0,
-      pruebasSinVerificar: 0,
-      pendientes: [],
-      pendientesTruncado: false,
-    },
-    items: [
-      {
-        id: 'b1',
-        marcador: { mios: 5, rival: 3 },
-        resultado: 'victoria',
-        torneo: { id: 'e1', nombre: 'GRAND PRIX DE PARIS' },
-        prueba: {
-          id: 'c1',
-          arma: 'ESPADA',
-          genero: 'F',
-          categoria: { codigo: 'ABS', raw: 'Senior' },
-          formato: 'INDIVIDUAL',
-        },
-        temporada: '2026',
-        fecha: '2026-03-02',
-        fase: 'TABLEAU',
-        rondaPublicada: 'A32',
-        enlace: 'https://fie.example.test/bout/1',
-      },
-    ],
-    siguiente: null,
-    ...extra,
-  });
-
-  it('cada fila informa marcador, torneo, prueba, fecha, temporada, fase, ronda publicada y enlace', () => {
-    const marcado = html(React.createElement(AsaltosCaraACara, { datos: datosBase(), criterios: criterios() }));
-    expect(marcado).toContain('Grand Prix de Paris');
-    expect(marcado).toContain('Espada femenino');
-    expect(marcado).toContain('Senior');
-    expect(marcado).toContain('FIE 2026');
-    expect(marcado).toContain('Eliminación directa');
-    expect(marcado).toContain('Ronda publicada: «A32»');
-    expect(marcado).toContain('href="https://fie.example.test/bout/1"');
-    expect(marcado).toContain('Victoria');
-  });
-
-  it('un campo ausente se dice ausente: sin fecha, sin ronda y sin enlace no se inventa nada', () => {
-    const datos = datosBase();
-    datos.items = [{ ...datos.items[0], fecha: null, rondaPublicada: '', enlace: null }];
-    const marcado = html(React.createElement(AsaltosCaraACara, { datos, criterios: criterios() }));
-    expect(marcado).toContain('Fecha no publicada');
-    expect(marcado).toContain('Ronda no publicada');
-    expect(marcado).not.toContain('href="http');
-  });
-
-  it('un enlace con esquema no web no se vuelve clicable', () => {
-    const datos = datosBase();
-    datos.items = [{ ...datos.items[0], enlace: 'javascript:alert(1)' }];
-    const marcado = html(React.createElement(AsaltosCaraACara, { datos, criterios: criterios() }));
-    expect(marcado).not.toContain('javascript:');
-  });
-
-  it('la poule se rotula como poule y la clave de la fuente se muestra tal cual', () => {
-    const datos = datosBase();
-    datos.items = [{ ...datos.items[0], fase: 'POULE', rondaPublicada: 'P2' }];
-    const marcado = html(React.createElement(AsaltosCaraACara, { datos, criterios: criterios() }));
-    expect(marcado).toContain('Poule');
-    expect(marcado).toContain('Ronda publicada: «P2»');
-  });
-
-  it('la paginación conserva rival y filtros, cambia sólo el cursor y vuelve a la primera página', () => {
-    const c = criterios({ temporada: '2027', cursor: 'actual' });
-    const marcado = html(
-      React.createElement(AsaltosCaraACara, { datos: datosBase({ siguiente: 'sig' }), criterios: c }),
-    );
-    expect(marcado).toContain(`rival=${UUID_B}&amp;temporada=2027&amp;cursor=sig#h2h-asaltos`);
-    expect(marcado).toContain(`href="/explorar/${UUID_A}/cara-a-cara?rival=${UUID_B}&amp;temporada=2027#h2h-asaltos"`);
-  });
-
-  it('si todos los asaltos terminaron igualados no hay ganador que listar, pero se cuentan', () => {
-    const datos = datosBase({
-      items: [],
-      resumen: { asaltos: 2, victorias: 0, derrotas: 0, sinDecidir: 2, tantosFavor: 8, tantosContra: 8 },
-    });
-    const marcado = html(React.createElement(AsaltosCaraACara, { datos, criterios: criterios() }));
-    expect(marcado).toContain('marcador igualado');
-    const balance = html(React.createElement(BalanceCaraACara, { datos }));
-    expect(balance).toContain('Marcador igualado, sin ganador');
-  });
-
-  it('el balance explica el alcance y el DTO no lleva datos privados', () => {
-    const datos = datosBase();
-    const marcado = html(React.createElement(BalanceCaraACara, { datos }));
-    expect(marcado).toContain('Victorias de Lucia Garcia');
-    expect(marcado).toContain('Victorias de Marta Ruiz');
-    expect(marcado).toContain('No es el balance de toda su carrera');
-    expect(marcado).toContain('una sola vez');
-    for (const k of clavesDe(datos)) expect(CLAVES_PRIVADAS).not.toContain(k);
-    expect(clavesDe(datos).has('ranking')).toBe(false);
-  });
-});
-
-describe('cara a cara: cobertura parcial no es cero', () => {
-  const cobertura = (extra: Partial<DatosCaraACara['cobertura']>): DatosCaraACara['cobertura'] => ({
-    estado: 'sin_pruebas_comunes',
+describe('cara a cara: cifras y cruces', () => {
+  const personas = {
+    yo: { id: UUID_A, nombre: 'GARCIA Lucia', pais: 'ESP' },
+    rival: { id: UUID_B, nombre: 'RUIZ Marta', pais: 'FRA' },
+  };
+  const cobertura: DatosCaraACara['cobertura'] = {
+    estado: 'parcial',
     exhaustivo: false,
-    pruebasComunes: 0,
-    pruebasConAsaltos: 0,
+    pruebasComunes: 2,
+    pruebasConAsaltos: 1,
     pruebasSinAsaltosPublicados: 0,
-    pruebasSinVerificar: 0,
+    pruebasSinVerificar: 1,
     pendientes: [],
     pendientesTruncado: false,
+  };
+  const encuentro = (extra: Partial<EncuentroCaraACara> = {}): EncuentroCaraACara => ({
+    pruebaId: 'c1',
+    edicionId: 'ed1',
+    torneo: 'Coupe du Monde par équipes',
+    fecha: '2026-03-02',
+    ciudad: 'PARIS',
+    pais: 'FRA',
+    arma: 'ESPADA',
+    genero: 'F',
+    categoria: 'ABS',
+    categoriaRaw: 'Senior',
+    formato: 'INDIVIDUAL',
+    temporada: '2026',
+    fuente: 'fie',
+    clasificacion: { tipo: 'COPA_MUNDO', etiqueta: 'Copa del Mundo', corta: 'Copa del Mundo', tono: 'org-fie' } as never,
+    puestos: { yo: 1, rival: 8, yoPublicado: null, rivalPublicado: null },
+    delante: 'yo',
+    asaltos: { total: 2, poule: { victorias: 1, derrotas: 0 }, directa: { victorias: 0, derrotas: 1 } },
+    marcadores: [
+      { fase: 'POULE', ronda: 'P3', mios: 5, rival: 3 },
+      { fase: 'TABLEAU', ronda: 'A8', mios: 12, rival: 15 },
+    ],
+    equivalentes: [],
     ...extra,
   });
-  const vacio = { asaltos: 0, victorias: 0, derrotas: 0, sinDecidir: 0, tantosFavor: 0, tantosContra: 0 };
-  const personas = {
-    yo: { id: UUID_A, nombre: 'Lucia Garcia', pais: 'ESP' },
-    rival: { id: UUID_B, nombre: 'Marta Ruiz', pais: 'FRA' },
-  };
-  const completo = (c: DatosCaraACara['cobertura']) =>
-    html(
-      React.createElement(CaraACaraCompleto, {
-        datos: { estado: 'ok', personas, resumen: vacio, cobertura: c, items: [], siguiente: null },
-        criterios: criterios(),
+  const datos = (extra: Partial<DatosCaraACara> = {}): DatosCaraACara => ({
+    estado: 'ok',
+    personas,
+    resumen: { asaltos: 2, victorias: 1, derrotas: 1, sinDecidir: 0, tantosFavor: 17, tantosContra: 18 },
+    cobertura,
+    items: [],
+    siguiente: null,
+    encuentros: [
+      encuentro(),
+      encuentro({
+        pruebaId: 'c2', edicionId: 'ed2', torneo: 'TNR ABS', fuente: 'rfee_pdf', fecha: '2025-11-02', ciudad: null,
+        puestos: { yo: null, rival: 3, yoPublicado: 'ABANDONO', rivalPublicado: null }, delante: null,
+        asaltos: { total: 0, poule: { victorias: 0, derrotas: 0 }, directa: { victorias: 0, derrotas: 0 } },
+        marcadores: [],
       }),
-    );
-
-  const PROHIBIDO = /nunca se enfrent|jamás|\b0\s*[-–a]\s*0\b|0 victorias/i;
-
-  it('sin pruebas comunes importadas: no hay balance ni «nunca se enfrentaron»', () => {
-    const marcado = completo(cobertura({}));
-    expect(marcado).toContain('Sin pruebas comunes importadas');
-    expect(marcado).toContain('no significa que no se hayan enfrentado');
-    expect(marcado).not.toMatch(PROHIBIDO);
-    expect(marcado).not.toContain('Victorias de');
-    expect(marcado).not.toContain('Pruebas comunes importadas</dt>');
+    ],
+    resumenEncuentros: {
+      competiciones: 2, conAmbosPuestos: 1, delanteYo: 1, delanteRival: 0, empates: 0,
+      poule: { victorias: 1, derrotas: 0 }, directa: { victorias: 0, derrotas: 1 }, ultimo: null, truncado: false,
+    },
+    ...extra,
   });
 
-  it('final sin asaltos publicados (caso París sin poules): dice que la fuente no publica asaltos', () => {
-    const marcado = completo(
-      cobertura({ estado: 'verificado', pruebasComunes: 1, pruebasSinAsaltosPublicados: 1 }),
-    );
-    expect(marcado).toContain('la fuente sólo da la clasificación final');
-    expect(marcado).toContain('Sin asaltos publicados por la fuente');
-    expect(marcado).not.toMatch(PROHIBIDO);
-    expect(marcado).not.toContain('Victorias de');
-  });
+  const SUPERFLUO = [
+    'Ronda publicada', 'Abrir en la fuente', 'Sin asalto entre las dos', 'Qué cubre', 'Qué se incluye',
+    'Cobertura parcial', 'asaltos importados', 'Últimos asaltos, del más reciente:', 'Aplicar', '«',
+  ];
 
-  it('prueba común sin leer: pendiente, con el torneo y el motivo', () => {
-    const marcado = completo(
-      cobertura({
-        estado: 'pendiente',
-        pruebasComunes: 1,
-        pruebasSinVerificar: 1,
-        pendientes: [
-          {
-            id: 'c9',
-            fuente: 'fie',
-            torneo: 'COPA DEL MUNDO',
-            arma: 'ESPADA',
-            genero: 'F',
-            categoria: 'ABS',
-            categoriaRaw: null,
-            temporada: '2026',
-            asaltos: 0,
-            estado: 'pendiente',
-          },
-        ],
-      }),
-    );
-    expect(marcado).toContain('Asaltos pendientes de leer');
+  it('cada cruce enlaza a su prueba con nombre, categoría y rondas legibles, y los dos puestos', () => {
+    const marcado = html(React.createElement(CaraACaraCompleto, { datos: datos(), criterios: criterios() }));
     expect(marcado).toContain('Copa del Mundo');
-    expect(marcado).toContain('Asaltos sin leer todavía');
-    expect(marcado).toContain('tampoco ausencia');
+    expect(marcado).not.toContain('par équipes');
+    expect(marcado).toContain('Absoluto');
+    expect(marcado).not.toContain('Senior');
+    expect(marcado).toContain('Poule');
+    expect(marcado).toContain('Cuartos');
+    expect(marcado).not.toMatch(/>P3<|>A8</);
+    expect(marcado).toContain(`href="/explorar/ediciones/ed1?prueba=c1&amp;persona=${UUID_A}"`);
+    expect(marcado).toContain(`href="/explorar/ediciones/ed2?prueba=c2&amp;persona=${UUID_A}"`);
+    expect(marcado).toContain('Lucia Garcia 1º, Marta Ruiz 8º');
+    expect(marcado).toContain('Lucia Garcia sin puesto, Marta Ruiz 3º');
+    expect(marcado).toContain('bg-amber-100');
+    expect(marcado).toContain('Asaltos disponibles en 1 de 2 pruebas comunes');
+    for (const texto of SUPERFLUO) expect(marcado).not.toContain(texto);
+    expect(marcado).not.toContain('GARCIA Lucia');
+  });
+
+  it('las cifras comparan clasificación, tocados, media y fases sin repetir el balance', () => {
+    const marcado = html(React.createElement(CaraACaraCompleto, { datos: datos(), criterios: criterios() }));
+    expect(marcado).toContain('Por delante');
+    expect(marcado).toContain('>Tocados<');
+    expect(marcado).toContain('>Media<');
+    expect(marcado).not.toMatch(/uppercase|tracking-/);
+    expect(marcado).toContain('8,5');
+    expect(marcado).toContain('9,0');
+    expect(marcado).toContain('>Poule<');
+    expect(marcado).toContain('>Directa<');
+    const soloPoule = html(React.createElement(CaraACaraCompleto, { datos: datos(), criterios: criterios({ fase: 'POULE' }) }));
+    expect(soloPoule).not.toContain('>Directa<');
+  });
+
+  it('las rondas se nombran en palabras, nunca con la clave de la fuente', () => {
+    const rotulo = (fase: 'POULE' | 'TABLEAU', ronda: string) => rotuloMarcador({ fase, ronda });
+    expect(rotulo('POULE', 'P3')).toBe('Poule');
+    expect(rotulo('POULE', 'V2P1')).toBe('Poule');
+    expect(rotulo('TABLEAU', 'A32')).toBe('Tabla de 32');
+    expect(rotulo('TABLEAU', 'A8')).toBe('Cuartos');
+    expect(rotulo('TABLEAU', 'A4')).toBe('Semifinal');
+    expect(rotulo('TABLEAU', 'A2')).toBe('Final');
+    expect(rotulo('TABLEAU', 'F')).toBe('Final');
+    expect(rotulo('TABLEAU', 'X?')).toBe('Directa');
+    expect(rotulo('TABLEAU', '')).toBe('Directa');
+  });
+
+  it('la cabecera da el balance, el reparto y los últimos resultados sin texto de relleno', () => {
+    const items = [
+      { id: 'b1', resultado: 'victoria' },
+      { id: 'b2', resultado: 'derrota' },
+    ] as DatosCaraACara['items'];
+    const marcado = html(React.createElement(CabeceraCaraACara, { datos: datos({ items }), criterios: criterios() }));
+    expect(marcado).toContain('aria-label="1 victoria y 1 derrota de Lucia Garcia"');
+    expect(marcado).toContain('aria-label="Lucia Garcia gana el 50 % de los asaltos decididos"');
+    expect(marcado).toContain('aria-label="Últimos asaltos, del más reciente: victoria, derrota"');
+    expect(marcado).not.toContain('Volver');
+    expect(marcado).toMatch(/<h1 class="[^"]*">Cara a cara<\/h1>/);
+    expect(marcado).toContain('<span class="text-xs text-muted-foreground">Últimos</span>');
+    expect(marcado).not.toMatch(/tracking-\[/);
+    expect(marcado).toContain('>Lucia Garcia<');
+    expect(marcado).toContain('>Marta Ruiz<');
+    expect(marcado).not.toContain('sr-only');
+    // Países distintos: se pinta la bandera de cada una.
+    expect(marcado).toContain('ESP');
+    expect(marcado).toContain('FRA');
+  });
+
+  it('sin pruebas comunes ni asaltos no hay cifras, ni balance, ni «nunca se enfrentaron»', () => {
+    const PROHIBIDO = /nunca se enfrent|jamás|\b0\s*[-–a]\s*0\b|0 victorias/i;
+    const vacio = datos({
+      resumen: { asaltos: 0, victorias: 0, derrotas: 0, sinDecidir: 0, tantosFavor: 0, tantosContra: 0 },
+      encuentros: [],
+      resumenEncuentros: undefined,
+    });
+    const marcado = html(React.createElement(CaraACaraCompleto, { datos: vacio, criterios: criterios() }));
+    expect(marcado).toContain('Sin pruebas comunes importadas con estos filtros.');
+    expect(marcado).not.toContain('>Tocados<');
     expect(marcado).not.toMatch(PROHIBIDO);
-  });
-
-  it('cobertura parcial con asaltos: muestra el balance y avisa de que puede estar incompleto', () => {
-    const datos: DatosCaraACara = {
-      estado: 'ok',
-      personas,
-      resumen: { asaltos: 2, victorias: 1, derrotas: 1, sinDecidir: 0, tantosFavor: 9, tantosContra: 9 },
-      cobertura: cobertura({ estado: 'parcial', pruebasComunes: 3, pruebasConAsaltos: 1, pruebasSinVerificar: 2 }),
-      items: [],
-      siguiente: null,
-    };
-    const marcado = html(React.createElement(CaraACaraCompleto, { datos, criterios: criterios() }));
-    expect(marcado).toContain('Cobertura parcial');
-    expect(marcado).toContain('El balance puede estar incompleto');
-    expect(marcado).toContain('Victorias de Lucia Garcia');
-  });
-
-  it('un conjunto verificado sólo promete lo importado, no la carrera', () => {
-    const marcado = html(
-      React.createElement(CoberturaCaraACaraVista, {
-        cobertura: cobertura({ estado: 'verificado', pruebasComunes: 2, pruebasConAsaltos: 2 }),
-        hayAsaltos: true,
-      }),
-    );
-    expect(marcado).toContain('no promete que estén todas las temporadas');
-    expect(marcado).not.toMatch(/\bcompleto\b.*carrera/i);
+    const cabecera = html(React.createElement(CabeceraCaraACara, { datos: vacio, criterios: criterios() }));
+    expect(cabecera).toContain('>vs<');
+    expect(cabecera).not.toMatch(PROHIBIDO);
   });
 
   it('cada estado de fallo se distingue de «sin asaltos»', () => {
+    const PROHIBIDO = /nunca se enfrent|jamás|\b0\s*[-–a]\s*0\b|0 victorias/i;
     for (const tipo of ['error', 'no_disponible', 'entrada_invalida', 'cursor_invalido', 'no_encontrada', 'misma_persona'] as const) {
       const marcado = html(
         React.createElement(EstadoCaraACara, { vista: { tipo }, personaId: UUID_A, criterios: criterios() }),
@@ -889,6 +836,12 @@ describe('cara a cara: cobertura parcial no es cero', () => {
       React.createElement(EstadoCaraACara, { vista: { tipo: 'error' }, personaId: UUID_A, criterios: criterios() }),
     );
     expect(error).toContain('no es que no haya asaltos');
+  });
+
+  it('el DTO no lleva datos privados', () => {
+    const d = datos();
+    for (const k of clavesDe(d)) expect(CLAVES_PRIVADAS).not.toContain(k);
+    expect(clavesDe(d).has('ranking')).toBe(false);
   });
 });
 
@@ -929,7 +882,7 @@ describe('cabecera y entradas al cara a cara', () => {
     const marcado = html(React.createElement(EntradaCaraACara, { ficha, nivel: 'seccion' }));
     expect(marcado).toContain(`href="/explorar/${UUID_A}/cara-a-cara"`);
     expect(marcado).toContain('Elegir un rival');
-    expect(marcado).toContain('Los encuentros por equipos, los BYE y las finales sin marcador no cuentan');
+    expect(marcado).toContain('asaltos individuales');
     expect(typeof FichaCompleta).toBe('function');
   });
 });

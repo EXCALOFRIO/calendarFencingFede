@@ -27,32 +27,24 @@ const detalle = () => aDetalleEstadistico([
 const pintar = (d: EstadisticasDeportista) =>
   renderToStaticMarkup(React.createElement(EstadisticasDeportistaVista, { detalle: d }));
 
-describe('desglose del historial en pestañas', () => {
-  it('pinta las tres pestañas en el HTML del servidor, con categorías publicadas y denominadores', () => {
+describe('desglose del historial por categoría', () => {
+  it('pinta una tarjeta por categoría normalizada, con pruebas, mejor puesto y podios', () => {
     const html = pintar(detalle());
-    expect(html).toContain('role="tablist"');
-    expect(html.match(/role="tab"/g)).toHaveLength(3);
-    expect(html.match(/role="tabpanel"/g)).toHaveLength(3);
-    expect(html).toContain('Tipo de torneo');
-    expect(html).toContain('Campeonato de España');
-    expect(html).toContain('Junior');
-    expect(html).toContain('+50');
-    expect(html).toContain('Tipo no publicado');
-    expect(html).toContain('Espada');
-    expect(html).toContain('2 de 3 pruebas importadas');
-    expect(html).toContain('1 de 3 pruebas importadas');
-    expect(html).toContain('3 de 3 pruebas importadas');
-    expect(html).toContain('no una carrera completa');
-    expect(html).toContain('Los equipos quedan fuera');
-    expect(html).not.toMatch(/<details|<select|bg-gold|text-gold/);
+    expect(html).toContain('Por categoría');
+    expect(html).toContain('data-categoria="M20"');
+    expect(html).toContain('data-categoria="VET"');
+    expect(html).not.toContain('Junior');
+    expect(html).not.toContain('+50');
+    expect(html.match(/data-categoria=/g)).toHaveLength(2);
+    expect(html).toContain('Podios');
+    expect(html).not.toMatch(/role="tab"|<details|<select/);
   });
 
-  it('las pestañas cumplen el objetivo táctil y un mejor puesto ausente no se pinta como cero', () => {
+  it('un mejor puesto ausente sale como raya, no como cero', () => {
     const html = pintar(detalle());
-    expect(html.match(/role="tab"[^>]*class="[^"]*min-h-11/g)).toHaveLength(3);
-    expect(html).toContain('No publicado');
-    expect(html).not.toMatch(/Mejor puesto<\/dt><dd[^>]*><span[^>]*>0º?<\/span>/);
-    expect(html).toContain('aria-hidden="true"');
+    const vet = html.slice(html.indexOf('data-categoria="VET"'));
+    expect(vet).toMatch(/Mejor<\/dt><dd[^>]*>—<\/dd>/);
+    expect(html).not.toMatch(/>0º</);
   });
 
   it('agrupa por un solo eje sin duplicar pruebas y conserva el mínimo del mejor puesto', () => {
@@ -62,32 +54,38 @@ describe('desglose del historial en pestañas', () => {
     const porTipo = agruparDesglose(detalle(), 'tipo');
     expect(porTipo.map((g) => g.tipo)).toEqual(['CTO_ESPANA', null]);
     expect(porTipo[1].mejorPuesto).toBeNull();
-    expect(agruparDesglose(detalle(), 'categoria').map((g) => g.categoria?.raw)).toEqual(['Junior', '+50']);
+    expect(agruparDesglose(detalle(), 'categoria').map((g) => g.categoria?.codigo)).toEqual(['M20', 'VET']);
   });
 
-  it('el contrato de 320 px envuelve texto y no fija anchos mínimos', () => {
+  it('dos literales de la misma categoría son una sola tarjeta', () => {
+    const d = aDetalleEstadistico([
+      agregado(),
+      agregado({ clase: 'categoria', tipo: 'TNR', categoria: 'ABS', categoriaRaw: 'Senior', arma: 'FLORETE', genero: 'F', pruebas: 2, mejorPuesto: 5 }),
+      agregado({ clase: 'categoria', tipo: 'TNR', categoria: 'ABS', categoriaRaw: 'S', arma: 'FLORETE', genero: 'F', pruebas: 1, mejorPuesto: 2 }),
+    ]);
+    const grupos = agruparDesglose(d, 'categoria');
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0]).toMatchObject({ pruebas: 3, mejorPuesto: 2 });
+    expect(grupos[0].categoria).toMatchObject({ codigo: 'ABS', raw: null });
+    expect(pintar(d).match(/data-categoria="ABS"/g)).toHaveLength(1);
+  });
+
+  it('el contrato de 320 px no fija anchos mínimos ni desborda en horizontal', () => {
     const html = pintar(detalle());
-    expect(html).toContain('break-words');
+    expect(html).toContain('min-w-0');
     expect(html).not.toMatch(/overflow-x|min-w-\[|width="(?:320|600|800)"/);
     expect(segmentosCronologia(detalle().resumen, 3)).toEqual({ conPuesto: 160, sinPuesto: 80 });
   });
 
-  it('indica conflictos y límites visibles, y no pinta métricas vacías como cero participaciones', () => {
-    const d = detalle();
-    const html = pintar({ ...d, resumen: { ...d.resumen, conflictos: 1 }, categoriasRecortadas: true });
-    expect(html).toContain('1 prueba con resultados en conflicto');
-    expect(html).toContain('120 grupos');
+  it('sin pruebas lo dice como ausencia, sin tarjetas vacías', () => {
     const vacio = pintar(aDetalleEstadistico([]));
     expect(vacio).toContain('role="status"');
-    expect(vacio).toContain('no equivale a cero participaciones ni a derrotas');
-    expect(vacio).not.toContain('role="tab"');
+    expect(vacio).not.toContain('data-categoria');
   });
 
   it('no añade paquetes de gráficos, estado de cliente propio ni movimiento', () => {
     const ruta = new URL('../src/components/explorar/estadisticas-deportista.tsx', import.meta.url);
     const fuente = readFileSync(ruta, 'utf8');
     expect(fuente).not.toMatch(/use client|useEffect|useState|recharts|chart\.js|animation|animate-/);
-    expect(fuente).toContain("from '@/components/ui/tabs'");
-    expect(fuente).toContain('forceMount');
   });
 });

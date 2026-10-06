@@ -9,6 +9,7 @@ import {
 import { ERROR_NO_AUTENTICADO, exigirPerfil, type ContextoExplorador } from './contexto';
 import { UUID_RE } from './cursor';
 import { leerCabeceras, resolverPersona } from './personas';
+import { leerRendimientoCaraACara, type RendimientoCaraACara } from './rendimiento';
 import type { DeportistaResumen, RivalResumen } from './tipos';
 
 /** Cuántas personas de la búsqueda por nombre se ofrecen aparte de los rivales confirmados. */
@@ -42,7 +43,12 @@ export type VistaCaraACara =
   | { tipo: 'misma_persona' }
   | { tipo: 'error' }
   | { tipo: 'elegir'; persona: PersonaCaraACara; rivales: RivalesVista; otros: OtrosVista | null }
-  | { tipo: 'ok'; datos: DatosCaraACara };
+  | {
+      tipo: 'ok';
+      datos: DatosCaraACara;
+      /** Gráficos del duelo; `null` con filtros activos (no los aplican) o si fallan. */
+      rendimiento?: RendimientoCaraACara | null;
+    };
 
 function esNoAutenticado(error: unknown): boolean {
   return error instanceof Error && error.message === ERROR_NO_AUTENTICADO;
@@ -87,6 +93,27 @@ async function leerOtrosVista(
   }
 }
 
+/**
+ * Los gráficos del duelo cubren toda la historia: no aceptan temporada, arma
+ * ni fase, así que con un filtro activo no se piden (contradirían las cifras
+ * filtradas). Son un añadido: si fallan, la pantalla sigue sin ellos.
+ */
+async function leerRendimientoVista(
+  ctx: ContextoExplorador,
+  personaId: string,
+  criterios: CriteriosCaraACara,
+): Promise<RendimientoCaraACara | null> {
+  if (criterios.temporada || criterios.arma || criterios.fase) return null;
+  try {
+    const r = await leerRendimientoCaraACara(ctx, { personaId, rivalId: criterios.rival });
+    return r.estado === 'ok' ? r.datos : null;
+  } catch (error) {
+    if (esNoAutenticado(error)) throw error;
+    registrar(error, 'el rendimiento del cara a cara no se pudo leer');
+    return null;
+  }
+}
+
 async function leerPersona(
   ctx: ContextoExplorador,
   personaId: string,
@@ -117,8 +144,11 @@ export async function cargarCaraACaraPantalla(
 
     if (criterios.rival) {
       if (!rivalValido(criterios.rival)) return { tipo: 'entrada_invalida' };
-      const r = await leerCaraACara(ctx, aEntradaCaraACara(personaId, criterios));
-      return r.estado === 'ok' ? { tipo: 'ok', datos: r } : { tipo: r.estado };
+      const [r, rendimiento] = await Promise.all([
+        leerCaraACara(ctx, aEntradaCaraACara(personaId, criterios)),
+        leerRendimientoVista(ctx, personaId, criterios),
+      ]);
+      return r.estado === 'ok' ? { tipo: 'ok', datos: r, rendimiento } : { tipo: r.estado };
     }
 
     if (!(await ctx.esquema()).identidad) return { tipo: 'no_disponible' };

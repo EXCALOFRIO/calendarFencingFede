@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleCheck,
+  Flag,
   SlidersHorizontal,
   X,
 } from 'lucide-react';
@@ -77,10 +78,19 @@ import {
   lecturaDelEvento,
   type LecturaDeEvento,
 } from '@/lib/entries/lectura';
+import type { PruebaPasada, TramoPasado } from '@/lib/queries/calendario-pasado-modelo';
+import {
+  claveDeTramo,
+  leerSaltoDeMes,
+  tramoDeMeses,
+  tramoPasadoDe,
+} from '@/lib/queries/calendario-pasado-tramo';
 import { CabeceraFicha } from './cabecera-ficha';
 import { FichaEvento } from './ficha-evento';
 import { LoQueViene, diasHasta, plazoDelEvento } from './lo-que-viene';
-import { ColumnaMes, FeedMovil } from './timeline';
+import { ResultadosPasados } from './pasado/resultados-pasados';
+import { ColumnaMes, FeedMovil, type EstadoDelMes } from './timeline';
+import type { PasadoDeTarjeta } from './tarjeta-bloque';
 import { agruparEnBloques, rangoRealDeEvento } from '@/lib/calendario/bloques';
 import {
   construirUrlCalendario,
@@ -213,7 +223,16 @@ export function VistaCalendario({
   solicitarInscripcion,
   cargarInscritos,
   inicial,
+  pasadoInicial = null,
+  cargarPasado,
 }: {
+  /**
+   * Lo ya celebrado del tramo con el que se abre, leído en el servidor. El de
+   * cualquier otro tramo se pide con `cargarPasado` al llegar a él.
+   */
+  pasadoInicial?: TramoPasado | null;
+  /** Lo ya celebrado de un tramo, con sus resultados de Explorar. */
+  cargarPasado?: (desde: string, hasta: string) => Promise<TramoPasado | null>;
   /**
    * Periodo y filtros con los que se reabre el calendario al volver de una
    * edición o una persona (ver `contexto-url.ts`). Sin él, se abre con lo suyo.
@@ -345,6 +364,99 @@ export function VistaCalendario({
    */
   const [direccion, setDireccion] = React.useState<-1 | 0 | 1>(0);
   const [abierto, setAbierto] = React.useState<EventView | null>(null);
+  /** El torneo pasado cuya hoja de resultados está abierta. */
+  const [abiertoPasado, setAbiertoPasado] = React.useState<EventView | null>(null);
+
+  /**
+   * ===========================================================================
+   * LO YA CELEBRADO, POR TRAMOS
+   * ===========================================================================
+   *
+   * `eventos` es de hoy en adelante. Lo anterior —los torneos del calendario
+   * ya tirados y lo que Explorar sabe de años en los que el calendario no
+   * existía— se pide al servidor por el tramo que se está mirando, una vez, y
+   * se guarda aquí: volver a septiembre después de mirar noviembre no vuelve a
+   * la red.
+   *
+   * Un tramo que falla se queda marcado como fallo, se dice en pantalla, y se
+   * reintenta la próxima vez que se llega a él.
+   */
+  const hoy = isoDeHoy();
+  const [tramos, setTramos] = React.useState<
+    Record<string, { estado: EstadoDelMes; datos: TramoPasado | null }>
+  >(() =>
+    pasadoInicial
+      ? { [claveDeTramo(pasadoInicial)]: { estado: 'listo', datos: pasadoInicial } }
+      : {},
+  );
+  const cuantosMeses = vista === 'mes' ? 1 : 3;
+  const tramoActual = React.useMemo(() => {
+    const t = tramoDeMeses(ancla.getFullYear(), ancla.getMonth(), cuantosMeses);
+    return tramoPasadoDe(t.desde, t.hasta, hoy);
+  }, [ancla, cuantosMeses, hoy]);
+
+  /** El tramo guardado que ya cubre `t`, si lo hay: un mes dentro de un trimestre ya leído. */
+  const cubiertoPor = React.useCallback(
+    (t: { desde: string; hasta: string }) =>
+      Object.values(tramos).find(
+        (x) => x.estado === 'listo' && x.datos && x.datos.desde <= t.desde && x.datos.hasta >= t.hasta,
+      ) ?? null,
+    [tramos],
+  );
+
+  const claveActual = tramoActual ? claveDeTramo(tramoActual) : null;
+  React.useEffect(() => {
+    if (!tramoActual || !claveActual || !cargarPasado) return;
+    if (cubiertoPor(tramoActual)) return;
+    const previo = tramos[claveActual];
+    if (previo && previo.estado !== 'fallo') return;
+    setTramos((t) => ({ ...t, [claveActual]: { estado: 'cargando', datos: null } }));
+    cargarPasado(tramoActual.desde, tramoActual.hasta)
+      .then((datos) =>
+        setTramos((t) => ({ ...t, [claveActual]: { estado: 'listo', datos } })),
+      )
+      .catch(() =>
+        setTramos((t) => ({ ...t, [claveActual]: { estado: 'fallo', datos: null } })),
+      );
+    // Solo al llegar a otro tramo: el propio `tramos` cambia con cada respuesta.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claveActual, cargarPasado]);
+
+  const estadoActual: EstadoDelMes =
+    !tramoActual || cubiertoPor(tramoActual) || !cargarPasado
+      ? 'listo'
+      : (tramos[claveActual!]?.estado ?? 'cargando');
+
+  /** Un mes del tramo se da por leído si empieza hoy o después, o si el tramo ya llegó. */
+  const estadoDelMes = React.useCallback(
+    (mes: string): EstadoDelMes => (`${mes}-01` >= hoy ? 'listo' : estadoActual),
+    [hoy, estadoActual],
+  );
+
+  /** Lo de hoy en adelante y todo lo ya celebrado que se ha ido leyendo, sin repetir. */
+  const { todos, resultadosPasados, importados } = React.useMemo(() => {
+    const vistos = new Set(eventos.map((e) => e.id));
+    const lista = [...eventos];
+    const resultados: Record<string, PruebaPasada[]> = {};
+    const deExplorar = new Set<string>();
+    for (const { datos } of Object.values(tramos)) {
+      if (!datos) continue;
+      Object.assign(resultados, datos.resultados);
+      for (const id of datos.importados) deExplorar.add(id);
+      for (const e of datos.eventos) {
+        if (vistos.has(e.id)) continue;
+        vistos.add(e.id);
+        lista.push(e);
+      }
+    }
+    return { todos: lista, resultadosPasados: resultados, importados: deExplorar };
+  }, [eventos, tramos]);
+
+  /** Un torneo que solo existe en Explorar se abre por sus resultados, no por una ficha de inscripción. */
+  const abrir = React.useCallback(
+    (e: EventView) => (importados.has(e.id) ? setAbiertoPasado(e) : setAbierto(e)),
+    [importados],
+  );
 
   /**
    * Quién va al torneo abierto.
@@ -411,7 +523,13 @@ export function VistaCalendario({
    * Aquí ya NO entra la búsqueda: buscar no esconde nada. Ver más abajo.
    */
   const filtrados = React.useMemo(() => {
-    return eventos
+    /*
+      Con todas las categorías marcadas no se filtra por categoría. Lo de otros
+      años trae categorías que la temporada actual no tiene (M23, M14…) y no
+      salen en el filtro; «todas» tiene que querer decir todas.
+    */
+    const todasLasCategorias = categorias.length >= categoriasDisponibles.length;
+    return todos
       .filter((e) => encajaEnElAmbito(e, ambito))
       .map((e) => ({
         ...e,
@@ -421,11 +539,11 @@ export function VistaCalendario({
             // Las pruebas por equipos mixtos no tienen género propio: se ven
             // siempre, porque descartarlas sería esconder competiciones.
             (c.gender === 'MIXTO' || generos.includes(c.gender as 'M' | 'F')) &&
-            categorias.includes(c.category),
+            (todasLasCategorias || categorias.includes(c.category)),
         ),
       }))
       .filter((e) => e.competitions.length > 0);
-  }, [eventos, ambito, armas, generos, categorias]);
+  }, [todos, ambito, armas, generos, categorias, categoriasDisponibles]);
 
   /**
    * BUSCAR TE LLEVA, NO TE ESCONDE.
@@ -518,6 +636,17 @@ export function VistaCalendario({
         tiradorId: tirador?.id,
       }),
     [vista, ancla, ambito, armas, generos, categorias, busqueda, tirador?.id],
+  );
+
+  /** Lo que las tarjetas necesitan para decir «Terminada» y enlazar sus resultados. */
+  const pasadoDeTarjeta = React.useMemo<PasadoDeTarjeta>(
+    () => ({
+      hoy,
+      resultados: resultadosPasados,
+      retorno: retornoCalendario,
+      onVer: setAbiertoPasado,
+    }),
+    [hoy, resultadosPasados, retornoCalendario],
   );
 
   /** Se cuentan pruebas, no torneos: es lo que de verdad se puede tirar. */
@@ -642,6 +771,12 @@ export function VistaCalendario({
   const [anioHoy, mesHoy] = hoyMadrid().split('-').map(Number);
   const enElMesActual =
     ancla.getFullYear() === anioHoy && ancla.getMonth() === mesHoy - 1;
+
+  /** «marzo 2019» escrito en el buscador: se ofrece ir a ese mes. */
+  const saltoDeMes = React.useMemo(
+    () => leerSaltoDeMes(busqueda, anioHoy),
+    [busqueda, anioHoy],
+  );
 
   /** ⌘K / Ctrl+K abre la paleta, como en cualquier herramienta de hoy. */
   React.useEffect(() => {
@@ -885,7 +1020,7 @@ export function VistaCalendario({
             }
             onSiguiente={() => setCual((p) => (p + 1) % coincidencias.length)}
             onLimpiar={() => setBusqueda('')}
-            onAbrir={setAbierto}
+            onAbrir={abrir}
           />
         </div>
       </div>
@@ -966,7 +1101,9 @@ export function VistaCalendario({
               mostrarArma={mostrarArma}
               mostrarGenero={mostrarGenero}
               mostrarCategoria={mostrarCategoria}
-              onAbrir={setAbierto}
+              onAbrir={abrir}
+              pasado={pasadoDeTarjeta}
+              estadoDelMes={estadoDelMes}
               /*
                 «Lo próximo, fuera de este mes» SOLO en la vista de un mes.
                 En el trimestre no tiene sentido y era la queja: la sección
@@ -981,7 +1118,7 @@ export function VistaCalendario({
                     eventos={fuera}
                     variante="apilada"
                     inscripciones={inscripciones}
-                    onAbrir={setAbierto}
+                    onAbrir={abrir}
                   />
                 ) : null
               }
@@ -1067,7 +1204,11 @@ export function VistaCalendario({
                     mostrarArma={mostrarArma}
                     mostrarGenero={mostrarGenero}
                     mostrarCategoria={mostrarCategoria}
-                    onAbrir={setAbierto}
+                    onAbrir={abrir}
+                    pasado={pasadoDeTarjeta}
+                    estado={estadoDelMes(
+                      `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`,
+                    )}
                   />
                 </div>
               ))}
@@ -1078,7 +1219,7 @@ export function VistaCalendario({
                   eventos={fuera}
                   variante="zonas"
                   inscripciones={inscripciones}
-                  onAbrir={setAbierto}
+                  onAbrir={abrir}
                 />
               ) : null}
             </div>
@@ -1107,11 +1248,36 @@ export function VistaCalendario({
               placeholder="Buscar un torneo o una sede"
             />
             <CommandList>
+              {/*
+                IR A UN MES CUALQUIERA, TAMBIÉN DE HACE AÑOS.
+
+                El calendario llega hacia atrás hasta donde llega Explorar, y
+                eso son décadas: a marzo de 2019 había que dar más de ochenta
+                toques a la flecha. Escribir «2019» o «marzo 2019» ofrece ir
+                directamente. Va arriba y aparte de las coincidencias.
+              */}
+              {saltoDeMes ? (
+                <CommandItem
+                  value={`ir-a-${saltoDeMes.anio}-${saltoDeMes.mes}`}
+                  onSelect={() => {
+                    const destino = new Date(saltoDeMes.anio, saltoDeMes.mes, 1);
+                    setDireccion(destino.getTime() > ancla.getTime() ? 1 : -1);
+                    setAncla(destino);
+                    setBusqueda('');
+                    setBuscando(false);
+                  }}
+                  className="min-h-[44px] gap-2 py-3 font-medium"
+                >
+                  <CalendarSearch className="size-4" aria-hidden />
+                  Ir a {nombreMes(new Date(saltoDeMes.anio, saltoDeMes.mes, 1)).toLowerCase()}
+                </CommandItem>
+              ) : null}
               {busqueda.trim() === '' ? (
                 <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                  Busca un torneo o una ciudad para ir a su mes.
+                  Busca un torneo o una ciudad para ir a su mes, o escribe un
+                  mes y un año («marzo 2019») para ir a él.
                 </div>
-              ) : coincidencias.length === 0 ? (
+              ) : saltoDeMes && coincidencias.length === 0 ? null : coincidencias.length === 0 ? (
                 <CommandEmpty>
                   Ningún torneo se llama así, ni se tira en esa ciudad.
                 </CommandEmpty>
@@ -1180,6 +1346,36 @@ export function VistaCalendario({
                 if (r.ok) toast.success(r.message);
                 else toast.error(r.error);
               }}
+            />
+          ) : null}
+        </SheetContent>
+      </Sheet>
+
+      {/*
+        La hoja de resultados de un torneo pasado: lo único que se abre para un
+        torneo que solo está en Explorar, y lo que abre «Resultados» cuando
+        detrás hay más de una edición. La cabecera es la misma de la ficha.
+      */}
+      <Sheet
+        open={abiertoPasado !== null}
+        onOpenChange={(o) => !o && setAbiertoPasado(null)}
+      >
+        <SheetContent className="w-full gap-0 overflow-y-auto p-0 sm:max-w-xl">
+          {abiertoPasado ? <CabeceraFicha evento={abiertoPasado} /> : null}
+          {abiertoPasado ? (
+            <ResultadosPasados
+              evento={abiertoPasado}
+              pruebas={resultadosPasados[abiertoPasado.id] ?? []}
+              retorno={retornoCalendario}
+              onAbrirFicha={
+                importados.has(abiertoPasado.id)
+                  ? undefined
+                  : () => {
+                      const evento = abiertoPasado;
+                      setAbiertoPasado(null);
+                      setAbierto(evento);
+                    }
+              }
             />
           ) : null}
         </SheetContent>
@@ -1286,9 +1482,14 @@ function FranjaDestacada({
   }
 
   const dias = diasHasta(evento.startDate);
-  const enMarcha = dias <= 0;
+  /*
+    Buscando, la coincidencia puede ser de hace años: un torneo de 2019 no está
+    «en marcha» por haber empezado antes de hoy.
+  */
+  const terminado = diasHasta(evento.endDate) < 0;
+  const enMarcha = dias <= 0 && !terminado;
   const organismo = organismoDe(evento.source, evento.scope, evento.circuit);
-  const plazo = plazoDelEvento(evento);
+  const plazo = terminado ? null : plazoDelEvento(evento);
   const circuito = CIRCUIT_SHORT[evento.circuit] ?? CIRCUIT_LABEL[evento.circuit] ?? null;
 
   return (
@@ -1328,15 +1529,24 @@ function FranjaDestacada({
           className="text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           onClick={() => onAbrir(evento)}
           aria-label={
-            enMarcha
-              ? `${titularTorneo(evento.name)}, en marcha. Abrir la ficha.`
-              : `Faltan ${dias} ${dias === 1 ? 'día' : 'días'} para ${titularTorneo(
-                  evento.name,
-                )}. Abrir la ficha.`
+            terminado
+              ? `${titularTorneo(evento.name)}, terminada. Abrir.`
+              : enMarcha
+                ? `${titularTorneo(evento.name)}, en marcha. Abrir la ficha.`
+                : `Faltan ${dias} ${dias === 1 ? 'día' : 'días'} para ${titularTorneo(
+                    evento.name,
+                  )}. Abrir la ficha.`
           }
         >
           <ItemMedia className="min-w-[2.4rem] flex-col items-start gap-0 self-center">
-            {enMarcha ? (
+            {terminado ? (
+              <>
+                <Flag className="size-5 text-muted-foreground" aria-hidden />
+                <span className="text-xs leading-none text-muted-foreground">
+                  terminada
+                </span>
+              </>
+            ) : enMarcha ? (
               /*
                 «Ahora» y no «Hoy»: a dos dedos hay un botón que dice «Hoy» y
                 lleva al mes en curso. Dos «Hoy» en la misma fila significando

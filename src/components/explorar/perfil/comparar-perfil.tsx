@@ -69,16 +69,11 @@ export function CompararPerfil({
   const quien = nombreVisible(nombre) || nombre;
 
   return (
-    <section aria-labelledby={`${id}-titulo`} className="flex min-w-0 flex-col gap-4 rounded-lg border bg-card p-4 sm:p-5">
-      <div className="flex min-w-0 flex-col gap-1">
-        <Encabezado id={`${id}-titulo`} className="flex items-center gap-2 text-lg leading-tight">
-          <Swords className="size-5 shrink-0" aria-hidden />
-          Comparar
-        </Encabezado>
-        <p className="text-sm text-muted-foreground">
-          Elige a otra persona para ver sus asaltos y competiciones en común con {quien}.
-        </p>
-      </div>
+    <section aria-labelledby={`${id}-titulo`} className="flex min-w-0 flex-col gap-3 rounded-xl border bg-card p-3 sm:p-5">
+      <Encabezado id={`${id}-titulo`} className="flex items-center gap-2 text-lg leading-tight">
+        <Swords className="size-5 shrink-0" aria-hidden />
+        Comparar
+      </Encabezado>
 
       <form
         action={rutaCaraACara(personaId)}
@@ -93,7 +88,7 @@ export function CompararPerfil({
           }
         }}
       >
-        <label htmlFor={`${id}-q`} className="sr-only">Buscar a otra persona</label>
+        <label htmlFor={`${id}-q`} className="sr-only">Buscar a otra persona para compararla con {quien}</label>
         <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
         <input
           id={`${id}-q`}
@@ -176,16 +171,16 @@ export function CompararPerfil({
       {rapidos.length > 0 ? (
         <div className="flex min-w-0 flex-col gap-2">
           <p className="text-xs text-muted-foreground">Rivales más habituales</p>
-          <ul className="-mx-4 flex min-w-0 snap-x gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0">
+          <ul className="flex min-w-0 flex-wrap gap-2">
             {rapidos.map((r) => (
-              <li key={r.id} className="shrink-0 snap-start">
+              <li key={r.id} className="min-w-0 max-w-full">
                 <Link
                   href={construirUrlCaraACara(personaId, { rival: r.id })}
                   prefetch={false}
-                  className="inline-flex min-h-11 items-center gap-2 rounded-full border bg-background py-1 pr-3.5 pl-1 text-sm hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                  className="inline-flex min-h-11 max-w-full items-center gap-2 rounded-full border bg-background py-1 pr-3.5 pl-1 text-sm hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
                 >
                   <AvatarAnillo nombre={nombreVisible(r.nombre)} tamano="sm" apagado />
-                  <span className="max-w-40 truncate font-medium">{nombreVisible(r.nombre)}</span>
+                  <span className="min-w-0 max-w-40 truncate font-medium">{nombreVisible(r.nombre)}</span>
                   <span className="cifra text-sm text-muted-foreground" title={`${r.asaltos} asaltos: ${r.victorias} ganados, ${r.derrotas} perdidos`}>
                     {r.victorias}–{r.derrotas}
                   </span>

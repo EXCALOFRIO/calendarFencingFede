@@ -203,8 +203,7 @@ describe('catálogo: URL y pantalla de servidor', () => {
     }
     expect(html).toContain('role="search"');
     expect(html).toContain('aria-label="Páginas del catálogo"');
-    expect(html).toContain('no significa que su clasificación esté completa');
-    expect(html).toContain('RFEE (PDF de resultados)');
+    expect(html).toContain('RFEE PDF');
     expect(html).toContain(`/explorar/ediciones/${UUID_A}`);
     expect(html).toContain('catalogo=%2Fexplorar%2Fediciones%3Fq%3DC%25C3%25B3rdoba');
     expect(html).toContain('cursor=siguiente');

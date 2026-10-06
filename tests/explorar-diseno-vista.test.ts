@@ -2,26 +2,16 @@ import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { Aclaracion, Celda, EnlaceFuente } from '@/components/explorar/piezas';
-import {
-  CabeceraFicha,
-  CoberturaFichaVista,
-  EstadisticasFicha,
-  RankingOficialFicha,
-} from '@/components/explorar/ficha-deportiva';
-import {
-  CabeceraCaraACara,
-  CoberturaCaraACaraVista,
-} from '@/components/explorar/cara-a-cara';
+import { CabeceraFicha, RankingCompacto } from '@/components/explorar/ficha-deportiva';
+import { CabeceraCaraACara } from '@/components/explorar/cara-a-cara';
 import { ClasificacionDePrueba, EdicionCompleta } from '@/components/explorar/ediciones';
 import type { DatosCaraACara } from '@/lib/sport/explorar/cara-a-cara-pantalla';
 import { CRITERIOS_CARA_A_CARA_VACIOS } from '@/lib/sport/explorar/cara-a-cara-url';
-import { CRITERIOS_FICHA_VACIOS } from '@/lib/sport/explorar/ficha-url';
 import type { EdicionDetalle, PruebaDeEdicion } from '@/lib/sport/explorar/edicion-modelo';
 import type { FichaDeportiva } from '@/lib/sport/explorar/tipos';
 import { UUID_A, UUID_B } from './helpers/explorar';
 
 const html = (nodo: React.ReactElement) => renderToStaticMarkup(nodo);
-const detalles = (salida: string) => salida.match(/<details\b[\s\S]*?<\/details>/g) ?? [];
 const sinDetalles = (salida: string) => salida.replace(/<details\b[\s\S]*?<\/details>/g, '');
 
 const ficha: FichaDeportiva = {
@@ -99,28 +89,31 @@ describe('Explorar: jerarquía y explicación progresiva', () => {
       acciones: React.createElement('button', { 'aria-label': 'Guardar ficha' }, 'Estrella'),
     }));
     expect(salida.indexOf(ficha.nombre)).toBeLessThan(salida.indexOf('Guardar ficha'));
-    expect(salida).not.toMatch(/truncate|line-clamp/);
+    expect(salida).not.toMatch(/<h1[^>]*(truncate|line-clamp)/);
     expect(sinDetalles(salida)).toContain('Posible menor de edad');
-    expect(salida).toContain('No se muestra');
   });
 
-  it('las cifras y la cobertura se leen antes de la metodología, sin inventar un mejor puesto', () => {
-    const salida = html(React.createElement(EstadisticasFicha, { ficha, nivel: 'pagina' }));
-    expect(salida.indexOf('<ul')).toBeLessThan(salida.indexOf('<details'));
-    expect(sinDetalles(salida)).toContain('Sin dato');
-    expect(sinDetalles(salida)).toContain('Conjunto cubierto: 2 pruebas');
-    expect(salida).toMatch(/class="cifra text-4xl/);
-    expect(detalles(salida)[0]).toContain('Una inscripción sin final no cuenta');
+  it('la cabecera omite lo que no se publica y no explica de dónde salen los datos', () => {
+    const salida = html(React.createElement(CabeceraFicha, { ficha }));
+    expect(salida).not.toMatch(/No publicado|No se muestra|Sobre esta ficha|También publicado como|Foto FIE|<details/);
+    expect(salida).not.toMatch(/Año de nacimiento|Club publicado/);
   });
 
-  it('los estados parciales permanecen visibles y no se repliegan con la metodología', () => {
-    const salida = html(React.createElement(CoberturaFichaVista, { cobertura: ficha.cobertura, nivel: 'pagina' }));
-    expect(sinDetalles(salida)).toContain('Parcial: 1 prueba');
-    expect(salida).toContain('nunca garantiza que estén todas las temporadas');
+  it('los datos personales salen como pastillas cortas, sin rótulos', () => {
+    const salida = html(React.createElement(CabeceraFicha, {
+      ficha: { ...ficha, esMenor: false },
+      datos: { nombreCompleto: 'Lucía García Fernández', edad: 24, mano: 'L', alturaCm: 171, club: { nombre: null, codigo: 'SAMA-M' } },
+    }));
+    expect(salida).toContain('Lucía García Fernández');
+    expect(salida).toContain('24 años');
+    expect(salida).toContain('Zurda');
+    expect(salida).toContain('171 cm');
+    expect(salida).toContain('SAMA-M');
+    expect(salida).not.toMatch(/Altura|Mano|Edad/);
   });
 
-  it('mantiene fuente y fecha de lectura visibles, sin disfrazar la fecha de publicación', () => {
-    const salida = html(React.createElement(RankingOficialFicha, {
+  it('el ranking oficial sólo sale si hay puesto, en una línea con fuente y temporada', () => {
+    const conPuesto = html(React.createElement(RankingCompacto, {
       ficha: {
         ...ficha,
         rankingOficial: {
@@ -142,17 +135,12 @@ describe('Explorar: jerarquía y explicación progresiva', () => {
           }],
         },
       },
-      base: `/explorar/${UUID_A}`,
-      criterios: CRITERIOS_FICHA_VACIOS,
       nivel: 'pagina',
     }));
-    const visible = sinDetalles(salida);
-    expect(visible).toContain('FIE (ranking mundial)');
-    expect(visible).toContain('Leída el');
-    expect(visible).toContain('Puntos no publicados');
-    expect(visible).not.toContain('Publicada el');
-    expect(visible).not.toMatch(/de \d+/);
-    expect(salida).toContain('Fecha de lectura, no de publicación');
+    expect(conPuesto).toContain('Ranking FIE');
+    expect(conPuesto).toMatch(/>12(<!-- -->)?º</);
+    expect(conPuesto).not.toMatch(/Leída el|Qué representa|Modalidad|Ver equipos|de \d+/);
+    expect(html(React.createElement(RankingCompacto, { ficha, nivel: 'pagina' }))).toBe('');
   });
 
   it('enlaces de fuente conservan 44 px también en escritorio y rechazan esquemas inseguros', () => {
@@ -172,41 +160,34 @@ describe('Explorar: jerarquía y explicación progresiva', () => {
     } as DatosCaraACara;
     const salida = html(React.createElement(CabeceraCaraACara, { datos, criterios: CRITERIOS_CARA_A_CARA_VACIOS }));
     expect(salida).toMatch(/<h1[^>]*>Cara a cara<\/h1>/);
-    expect(salida).toContain('Visto desde');
     expect(salida).toContain(ficha.nombre);
     expect(salida).toContain('Invertir perspectiva');
     expect(salida).toContain('aria-label="Verlo desde Marta Ruiz"');
+    // La persona consultada va siempre a la izquierda: su nombre antes que el del rival.
+    expect(salida.indexOf(ficha.nombre)).toBeLessThan(salida.indexOf('>Marta Ruiz<'));
   });
 
-  it('el aviso de cobertura parcial del cara a cara nunca queda dentro de details', () => {
-    const salida = html(React.createElement(CoberturaCaraACaraVista, {
-      hayAsaltos: true,
-      cobertura: {
-        estado: 'parcial',
-        pruebasComunes: 2,
-        pruebasConAsaltos: 1,
-        pruebasSinAsaltosPublicados: 0,
-        pruebasSinVerificar: 1,
-        pendientes: [],
-        pendientesTruncado: false,
-        exhaustivo: false,
+  it('la edición no inventa sede ni fechas que no se publicaron y avisa de la clasificación parcial', () => {
+    const salida = html(React.createElement(EdicionCompleta, {
+      edicion: {
+        ...edicion,
+        pruebaElegida: prueba.id,
+        clasificacion: {
+          pruebaId: prueba.id, fuente: 'fie', siguiente: null, otrasFuentes: [],
+          filas: [{ id: 'f1', puesto: 1, puestoPublicado: null, nombre: 'Ana', pais: null, club: null, personaId: null }],
+        },
       },
+      criterios: { prueba: '', cursor: '' },
     }));
-    expect(sinDetalles(salida)).toContain('Cobertura parcial');
-    expect(sinDetalles(salida)).toContain('El balance puede estar incompleto');
-  });
-
-  it('la edición presenta pares etiqueta/valor y mantiene ausencias y clasificación parcial', () => {
-    const salida = html(React.createElement(EdicionCompleta, { edicion, criterios: { prueba: '', cursor: '' } }));
-    expect(salida).toContain('<dl');
-    expect(salida).toContain('Ciudad no publicada');
-    expect(salida).toContain('País no publicado');
-    expect(salida).toContain('No publicadas');
+    expect(salida).toContain('Campeonato del Mediterráneo');
+    expect(salida).toContain('>Florete femenino<');
+    expect(salida).toContain('>Absoluto<');
+    expect(salida).not.toMatch(/Ciudad no publicada|lucide-map-pin|lucide-calendar-days/);
     expect(salida).toContain('Clasificación parcial');
     expect(salida).not.toContain('bg-accent/40');
   });
 
-  it('país y club quedan bajo el nombre en móvil, y un puesto sin número no pasa a ser cero', () => {
+  it('el club queda bajo el nombre, y un puesto sin número no pasa a ser cero', () => {
     const salida = html(React.createElement(ClasificacionDePrueba, {
       edicion,
       prueba,
@@ -227,11 +208,10 @@ describe('Explorar: jerarquía y explicación progresiva', () => {
         }],
       },
     }));
-    expect(salida).toContain('col-start-2');
-    expect(salida).toContain('md:col-start-3');
+    expect(salida).toContain('>Abandono<');
+    expect(salida).toContain('>Sala de Armas<');
     expect(salida).toContain('Sin puesto numérico');
-    expect(salida).toContain('Abandono');
-    expect(salida).toContain('Sin ficha deportiva vinculada');
+    expect(salida).not.toContain('<a ');
     expect(salida).not.toContain('>0<');
   });
 });

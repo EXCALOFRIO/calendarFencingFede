@@ -130,6 +130,7 @@ export type InformeDepuracion = {
   asaltosBorrados: number;
   paresSinAsaltosSkermo: number;
   competicionesBorradas: number;
+  edicionesBorradas: number;
   coberturasBorradas: number;
 };
 
@@ -145,7 +146,7 @@ export function depurarSolapes(db: DatabaseSync, umbral = 0.5): InformeDepuracio
   const lista = pares.skermo_rfee ?? [];
   const inf: InformeDepuracion = {
     pares: lista.length, paresAplicados: 0, paresOmitidosPdfMayor: 0, resultadosBorrados: 0, asaltosBorrados: 0,
-    paresSinAsaltosSkermo: 0, competicionesBorradas: 0, coberturasBorradas: 0,
+    paresSinAsaltosSkermo: 0, competicionesBorradas: 0, edicionesBorradas: 0, coberturasBorradas: 0,
   };
   if (lista.length === 0) return inf;
   const vinculados = db.prepare(`SELECT count(*) n FROM sport_result WHERE competition_id=? AND person_id IS NOT NULL`);
@@ -187,17 +188,21 @@ export function depurarSolapes(db: DatabaseSync, umbral = 0.5): InformeDepuracio
     const quedan = db.prepare(
       `SELECT (SELECT count(*) FROM sport_result WHERE competition_id=?) + (SELECT count(*) FROM sport_bout WHERE competition_id=?) n`,
     );
-    const comp = db.prepare(`SELECT source, season, competition_key k FROM sport_competition WHERE id=?`);
+    const comp = db.prepare(`SELECT source, season, competition_key k, edition_id e FROM sport_competition WHERE id=?`);
     const borrarCob = db.prepare(
       `DELETE FROM sport_import_coverage WHERE competition_id=? OR (source=? AND season=? AND competition_key=?)`,
     );
     const borrarComp = db.prepare(`DELETE FROM sport_competition WHERE id=?`);
+    const borrarEdicion = db.prepare(
+      `DELETE FROM sport_edition WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM sport_competition WHERE edition_id=?1)`,
+    );
     for (const id of pdfTocadas) {
       if (Number((quedan.get(id, id) as { n: number }).n) > 0) continue;
-      const c = comp.get(id) as { source: string; season: string; k: string };
+      const c = comp.get(id) as { source: string; season: string; k: string; e: string };
       inf.coberturasBorradas += Number(borrarCob.run(id, c.source, c.season, c.k).changes);
       borrarComp.run(id);
       inf.competicionesBorradas += 1;
+      inf.edicionesBorradas += Number(borrarEdicion.run(c.e).changes);
     }
     db.exec('COMMIT');
   } catch (e) {

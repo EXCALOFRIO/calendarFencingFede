@@ -6,6 +6,7 @@ import {
   gte,
   isNull,
   like,
+  lt,
   lte,
   not,
   or,
@@ -218,8 +219,19 @@ export type CalendarFilters = {
   from?: string;
   to?: string;
   search?: string;
-  /** Incluir lo ya celebrado. Por defecto no: a nadie le interesa el pasado. */
+  /**
+   * Incluir lo ya celebrado. Por defecto no: la pantalla principal carga el
+   * futuro de una vez y el pasado se pide por tramos al navegar hacia atrás
+   * (`calendario-pasado.ts`), porque una temporada terminada pesa lo mismo que
+   * la que viene y casi nadie la mira.
+   */
   includePast?: boolean;
+  /**
+   * Solo lo que acabó ANTES de este día (`end_date < endBefore`). Es la otra
+   * mitad del corte de `includePast`: el tramo pasado y el futuro no se
+   * solapan y ningún torneo llega dos veces al navegador.
+   */
+  endBefore?: string;
   limit?: number;
   /**
    * Enseñar también las filas de la FIE que ya están colapsadas dentro de su
@@ -358,6 +370,7 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
   } else if (filters.from) {
     conditions.push(gte(event.endDate, filters.from));
   }
+  if (filters.endBefore) conditions.push(lt(event.endDate, filters.endBefore));
   if (filters.to) conditions.push(lte(event.startDate, filters.to));
   if (filters.scope?.length) conditions.push(inArray(event.scope, filters.scope));
   if (filters.search?.trim()) {

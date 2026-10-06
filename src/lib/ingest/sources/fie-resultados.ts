@@ -407,6 +407,43 @@ function tiradoresRetirados(filas: readonly { matches: (z.infer<typeof celdaPoul
 /** Estados FIE de quien pierde sin disputar: abandono, baja médica, exclusión, no presentado. */
 const ESTADO_RETIRADA = /^(A|M|N|E|F|MED|DNF|DNS|EXC)$/;
 
+type FilaPoule = z.infer<typeof poulesSchema>['pools'][number]['rows'][number];
+
+/**
+ * Columna de la matriz de cada fila. Cuando la FIE quita la fila de un tirador
+ * retirado de la poule, las celdas de las demás conservan el orden original
+ * (7 columnas para 6 filas) y la celda vacía de la diagonal de cada fila ya no
+ * está en su índice. Esa celda vacía da la columna de cada fila; las columnas
+ * vacías en todas las filas son las del tirador quitado. `null` si no se puede
+ * deducir sin ambigüedad (se usa entonces el orden de filas).
+ */
+export function columnasPoule(filas: readonly Pick<FilaPoule, 'matches'>[]): number[] | null {
+  const n = filas.length;
+  const ancho = Math.max(0, ...filas.map((f) => f.matches.length));
+  const identidad = filas.every((f, i) => f.matches.length <= n && !f.matches[i]);
+  if (identidad || n < 2) return null;
+  const vacias = filas.map((f) => {
+    const s = new Set<number>();
+    for (let c = 0; c < ancho; c += 1) if (!f.matches[c]) s.add(c);
+    return s;
+  });
+  const comunes = new Set([...vacias[0]].filter((c) => vacias.every((s) => s.has(c))));
+  const columnas: number[] = [];
+  for (const s of vacias) {
+    const propias = [...s].filter((c) => !comunes.has(c));
+    if (propias.length !== 1) return null;
+    columnas.push(propias[0]);
+  }
+  return new Set(columnas).size === n ? columnas : null;
+}
+
+/** Filas con `matches[j]` = celda contra la fila `j`, deshaciendo el desfase de `columnasPoule`. */
+export function realinearPoule<T extends Pick<FilaPoule, 'matches'>>(filas: readonly T[]): T[] {
+  const columnas = columnasPoule(filas);
+  if (!columnas) return [...filas];
+  return filas.map((f) => ({ ...f, matches: columnas.map((c) => f.matches[c] ?? null) }));
+}
+
 export function normalizarPoules(
   entrada: unknown,
   opciones: { individual: boolean },
@@ -418,8 +455,13 @@ export function normalizarPoules(
   let publicados = 0;
 
   const vistos = new Set<string>();
+  // Con dos vueltas de poules la FIE repite los poolId (1..n, 1..n): la segunda vuelta es
+  // `V2P<n>`, como en Engarde y en los PDF RFEE, para no mezclar dos poules en una ronda.
+  const vueltas = new Map<number, number>();
   for (const poule of r.data.pools) {
-    const filas = poule.rows;
+    const vuelta = (vueltas.get(poule.poolId) ?? 0) + 1;
+    vueltas.set(poule.poolId, vuelta);
+    const filas = realinearPoule(poule.rows);
     const retirados = tiradoresRetirados(filas);
     for (let i = 0; i < filas.length; i += 1) {
       for (let j = i + 1; j < filas.length; j += 1) {
@@ -464,7 +506,7 @@ export function normalizarPoules(
           excluidos[chequeo.reason === 'missing_fencer' ? 'sinId' : 'incoherente'] += 1;
           continue;
         }
-        const ronda = `P${poule.poolId}`;
+        const ronda = vuelta === 1 ? `P${poule.poolId}` : `V${vuelta}P${poule.poolId}`;
         const clave = `${ronda}|${chequeo.fencerARef}|${chequeo.fencerBRef}`;
         if (vistos.has(clave)) {
           excluidos.duplicado += 1;

@@ -1,3 +1,4 @@
+import { FileText } from 'lucide-react';
 import type { ComputedDeadline, DeadlineStatus } from '@/lib/deadlines';
 import { cn, formatEur } from '@/lib/utils';
 
@@ -51,8 +52,8 @@ type Props = {
    * comunica solo por color y quien use lector de pantalla no ve la barra. La
    * ficha del torneo lo apaga cuando el estado ya está escrito —con su palabra
    * y su color— en el marcador de la banda: la misma frase dos veces en cuatro
-   * centímetros no informa, ocupa. Lo que nunca se apaga es el aviso de las
-   * fechas estimadas, que es otra cosa.
+   * centímetros no informa, ocupa. Las fechas estimadas siguen marcadas con
+   * su subrayado y su `title`, que es otra cosa.
    */
   conEstado?: boolean;
 };
@@ -146,13 +147,9 @@ function fechaHito(d: Date): { dia: string; hora: string | null } {
 }
 
 export function BarraPlazos({ plazos, estado, conEstado = true }: Props) {
-  if (plazos.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        La fuente no publica plazo para esta prueba.
-      </p>
-    );
-  }
+  // Sin plazo publicado no se pinta nada: lo que no se publica no se rellena
+  // con avisos (`UI.md`, 2 bis).
+  if (plazos.length === 0) return null;
 
   const tramos = construirTramos(plazos, new Date());
   const tono = TONO_ESTADO[estado.state];
@@ -271,6 +268,11 @@ export function BarraPlazos({ plazos, estado, conEstado = true }: Props) {
                 */}
                 <span
                   data-plazo="fecha"
+                  title={
+                    t.cierra?.origin === 'CALCULADO'
+                      ? 'Fechas estimadas según la normativa, no publicadas'
+                      : undefined
+                  }
                   className={cn(
                     'max-w-full break-words',
                     t.cierra?.origin === 'CALCULADO' &&
@@ -278,6 +280,8 @@ export function BarraPlazos({ plazos, estado, conEstado = true }: Props) {
                   )}
                 >
                   {dia}
+                  {/* El `title` no llega al móvil ni a todos los lectores de pantalla. */}
+                  {t.cierra?.origin === 'CALCULADO' ? <span className="sr-only"> (estimada)</span> : null}
                 </span>
                 {hora ? <span data-plazo="hora" className="max-w-full break-words">{hora}</span> : null}
               </div>
@@ -296,57 +300,37 @@ export function BarraPlazos({ plazos, estado, conEstado = true }: Props) {
         frase es la información y manda ella.
       */}
       {/*
-        Cuando la ficha ya escribe el estado en su marcador, aquí solo queda lo
-        que el marcador NO puede decir: qué significa el subrayado de puntos. Y
-        si hay un problema, la frase vuelve entera, porque entonces es la
-        información y no el adorno.
+        Qué significa el subrayado de puntos ya no es una frase debajo de la
+        barra (`UI.md`, 2 bis: sin frases explicativas): va en el `title` de
+        cada fecha estimada, que es donde se pregunta.
       */}
-      {conEstado || estado.hasEstimates ? (
+      {conEstado ? (
         <p
           className={cn(
             'text-xs text-muted-foreground',
-            conEstado && grita && 'text-sm font-medium text-current sm:text-xs',
+            grita && 'text-sm font-medium text-current sm:text-xs',
           )}
         >
-          {conEstado ? estado.label : null}
-          {estado.hasEstimates ? (
-            <span className="text-muted-foreground">
-              {/*
-                Sin la frase de estado delante, esto abre la línea y abre con
-                mayúscula.
-
-                Y dice «subrayadas de puntos», no «de puntos» a secas: en una
-                aplicación de esgrima **«puntos» son los del ranking**, así que
-                «las fechas de puntos» se leía como si hablara de la
-                puntuación. Visto en la captura de la ficha, no deducido.
-              */}
-              {conEstado ? '. Las ' : 'Las '}
-              fechas subrayadas de puntos son estimadas según la normativa, no
-              publicadas
-            </span>
-          ) : null}
+          {estado.label}
         </p>
       ) : null}
 
       {/*
         De qué circular sale el importe. Sin esto, «+15 €» es una cifra que
-        alguien se ha inventado; con el documento delante, es una norma.
+        alguien se ha inventado; con el documento delante, es una norma. Va
+        como un icono de documento, sin el nombre de la circular a la vista.
       */}
-      {plazos[0]?.sourceDocument ? (
-        <p className="text-xs text-muted-foreground">
-          {plazos[0].sourceUrl ? (
-            <a
-              href={plazos[0].sourceUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="underline decoration-dotted underline-offset-2 hover:text-foreground"
-            >
-              {plazos[0].sourceDocument}
-            </a>
-          ) : (
-            plazos[0].sourceDocument
-          )}
-        </p>
+      {plazos[0]?.sourceUrl ? (
+        <a
+          href={plazos[0].sourceUrl}
+          target="_blank"
+          rel="noreferrer"
+          title={plazos[0].sourceDocument ?? undefined}
+          className="inline-flex size-8 items-center justify-center self-start rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <FileText className="size-4" aria-hidden />
+          <span className="sr-only">{plazos[0].sourceDocument ?? 'Circular'}</span>
+        </a>
       ) : null}
     </div>
   );

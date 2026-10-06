@@ -219,9 +219,9 @@ describe('un plazo calculado nunca se presenta igual que uno publicado', () => {
     expect(fuente).toMatch(/origin === 'CALCULADO'/);
     // Y lo marca de una forma que se ve.
     expect(fuente).toContain('decoration-dotted');
-    // Con su leyenda, o la marca no significa nada.
+    // Con su explicación en cada fecha (sin frase debajo, `UI.md` 2 bis), o la marca no significa nada.
     expect(fuente).toMatch(/estimadas seg[úu]n la normativa/);
-    expect(fuente).toContain('hasEstimates');
+    expect(fuente).toMatch(/className="sr-only">\s*\(estimada\)/);
   });
 
   it('en el .ics el estimado lleva su aviso y el publicado no', async () => {

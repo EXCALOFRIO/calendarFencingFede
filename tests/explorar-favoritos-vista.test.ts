@@ -119,7 +119,7 @@ describe('lista de favoritos: vista', () => {
     const leidos = leerCriteriosFicha(Object.fromEntries(new URL(href, 'http://x.test').searchParams));
     expect(leidos.volver).toBe('/explorar/favoritos?cursor=tok-1');
     expect(sinEscapar(salida)).toContain('href="/explorar/favoritos?cursor=tok-2"');
-    expect(salida).toContain('Volver a la primera página');
+    expect(salida).toContain('Primera página');
   });
 
   it('una persona retirada o sin cuenta ni resultados se puede abrir igual', () => {
@@ -127,9 +127,7 @@ describe('lista de favoritos: vista', () => {
       favorito({ pais: null, genero: null, anioNacimiento: null, armas: [], resultadosImportados: 0 }),
     ]);
     expect(salida).toContain(`href="/explorar/${UUID_A}`);
-    expect(salida).toContain('País no publicado');
-    expect(salida).toContain('Sin pruebas importadas');
-    expect(salida).toContain('Ninguna clasificación importada');
+    expect(salida).not.toMatch(/no publicado|importad/i);
   });
 
   it('un homónimo se distingue y cada fila lleva su propio control, ya como Favorito', () => {
@@ -138,7 +136,7 @@ describe('lista de favoritos: vista', () => {
       favorito({ id: UUID_B, nombre: 'Otra Persona' }),
     ]);
     expect(salida).toContain('2 personas con este nombre');
-    expect(salida).toContain('nacimiento 1999');
+    expect(salida).toContain('n. 1999');
     expect(salida.match(/data-estado="favorito"/g)).toHaveLength(2);
     expect(salida).toContain('aria-label="Quitar de favoritos: Lucía García"');
     expect(salida).toContain('aria-label="Quitar de favoritos: Otra Persona"');
@@ -151,17 +149,14 @@ describe('lista de favoritos: vista', () => {
     expect(salida).not.toMatch(/ranking interno|snapshot|email|correo/i);
   });
 
-  it('dice que es privada y que no avisa, sin prometer notificaciones', () => {
+  it('no promete notificaciones', () => {
     const salida = lista([favorito()]);
-    expect(salida).toMatch(/privada/);
-    expect(salida).toMatch(/no le avisa ni te avisa/);
     expect(salida).not.toMatch(/te avisaremos|recibirás|activar (las )?alertas|notificaciones? (de|cuando)/i);
   });
 
   it('la paginación sin más páginas lo dice y no ofrece «ver más»', () => {
     const salida = lista([favorito()]);
-    expect(salida).toContain('No hay más favoritos.');
-    expect(salida).not.toContain('Ver más favoritos');
+    expect(salida).not.toContain('Ver más');
   });
 });
 
@@ -180,7 +175,7 @@ describe('lista de favoritos: estados distintos', () => {
 
   it('una página vacía con cursor (se quitó a quien había) lleva a la primera, no dice «sin favoritos»', () => {
     const salida = estado(OK_VACIO, 'tok');
-    expect(salida).toContain('Esta página ya no tiene favoritos');
+    expect(salida).toContain('Página vacía');
     expect(salida).not.toContain('Aún no has guardado a nadie');
     expect(salida).toContain('href="/explorar/favoritos"');
   });
@@ -311,7 +306,8 @@ describe('Favoritos alcanzable sin otro destino principal', () => {
   });
 
   it('Explorar y el perfil incluyen el enlace', () => {
-    expect(readFileSync('src/app/(app)/explorar/page.tsx', 'utf8')).toContain('<EnlaceFavoritos');
+    expect(readFileSync('src/app/(app)/explorar/page.tsx', 'utf8')).toContain('<CabeceraExplorar');
+    expect(readFileSync('src/components/explorar/cabecera-explorar.tsx', 'utf8')).toContain('href={RUTA_FAVORITOS}');
     expect(readFileSync('src/app/(app)/perfil/page.tsx', 'utf8')).toContain('<EnlaceFavoritos');
   });
 

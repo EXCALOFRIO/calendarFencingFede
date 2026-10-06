@@ -43,6 +43,10 @@ describe('retrato accesible sin salto de tamaño', () => {
     expect(codigo).toContain('referrerPolicy="no-referrer"');
     expect(codigo).toContain('onError={() => { setCargada(false); setFoto(null); }}');
     expect(codigo).toContain('fotoPublicadaValida');
+    expect(codigo).toContain('decoding="async"');
+    // Ancho según el tamaño pintado, y la respuesta reutilizable por la caché HTTP privada.
+    expect(codigo).toContain('retratoAncho(foto.src, anchoRetratoPara(medida))');
+    expect(codigo).not.toContain("cache: 'no-store'");
     expect(codigo).not.toMatch(/next\/image|localStorage|sessionStorage|console\.|animate-/);
   });
 });

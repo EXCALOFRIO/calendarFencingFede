@@ -191,24 +191,24 @@ describe('modelo y vista de las sugerencias', () => {
     expect(textoMotivo(s)).toBe('Coinciden en 3 pruebas');
   });
 
-  it('cada tarjeta enlaza a la ficha y al cara a cara, sin foto ni año de nacimiento', () => {
+  it('cada tarjeta enlaza a la ficha y al cara a cara, con el motivo y el balance en una pastilla corta', () => {
     const sugeridos = aTiradoresSugeridos([fila({ asaltos: 6, victorias: 4, derrotas: 2, club: 'Club Esgrima Madrid' })]);
     const html = renderToStaticMarkup(React.createElement(SugeridosPerfil, { personaId: UUID_A, sugeridos, nivel: 'pagina' }));
     expect(html).toContain(`href="/explorar/${UUID_B}"`);
     expect(html).toContain(`/explorar/${UUID_A}/cara-a-cara?rival=${UUID_B}`);
-    expect(html).toContain('Rival frecuente');
+    expect(html).toContain('Rival frecuente · 4–2');
     expect(html).toContain('Marta Ruiz');
-    // La única imagen es la bandera: ni retrato ni petición de foto.
+    // La foto la pide el cliente al verse (el servidor veta a posibles menores): en el HTML sólo hay iniciales y bandera.
     expect(html).not.toMatch(/<img(?![^>]*\/banderas\/)/);
-    expect(html).not.toContain('/foto');
-    expect(html).not.toContain('·');
+    // Sin carrusel: rejilla que envuelve.
+    expect(html).not.toMatch(/overflow-x|snap-x/);
   });
 
-  it('sin sugerencias no pinta nada; si la lectura falla lo dice', () => {
+  it('sin sugerencias no pinta nada; si la lectura falla lo dice en corto', () => {
     const vacio = renderToStaticMarkup(React.createElement(SugeridosPerfil, { personaId: UUID_A, sugeridos: [], nivel: 'pagina' }));
     expect(vacio).toBe('');
     const fallo = renderToStaticMarkup(React.createElement(SugeridosPerfil, { personaId: UUID_A, sugeridos: null, nivel: 'pagina' }));
-    expect(fallo).toContain('No se han podido leer las sugerencias');
+    expect(fallo).toContain('No se han podido cargar');
   });
 });
 
@@ -223,7 +223,7 @@ describe('destacados del perfil', () => {
     expect(mejorTemporada([temporada('2025-2026', 1, 1)])).toBeNull();
   });
 
-  it('sólo lleva lo importado: medallas con texto y títulos de España del desglose por tipo', () => {
+  it('sólo lleva lo importado: los títulos de España del desglose por tipo, sin repetir el medallero de la cabecera', () => {
     const perfil = {
       resumen: { oros: 2, platas: 0, bronces: 1, finales: 3, pruebas: 10, conPuesto: 10, mejorPuesto: 1 },
       asaltos: null, temporadas: [], ranking: { actual: null, mejor: null },
@@ -231,7 +231,7 @@ describe('destacados del perfil', () => {
     const lista = destacadosPerfil(perfil, [
       { tipo: 'CTO_ESPANA', clasificaciones: 2, mejorPuesto: 1, podios: 2, victorias: 1, sinPuestoNumerico: 0 },
     ] as never);
-    expect(lista.map((d) => d.clave)).toEqual(['oros', 'bronces', 'espana']);
+    expect(lista.map((d) => d.clave)).toEqual(['espana']);
     expect(lista.find((d) => d.clave === 'espana')).toMatchObject({ cifra: '1', rotulo: 'Campeón de España' });
   });
 });

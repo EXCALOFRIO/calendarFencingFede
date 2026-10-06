@@ -3,8 +3,9 @@ import { ERROR_VISTA_CADUCADA } from '@/lib/auth/read-only';
 import { ERROR_NO_AUTENTICADO } from '@/lib/sport/explorar/contexto';
 import { perfil, UUID_A } from './helpers/explorar';
 
-const control = vi.hoisted(() => ({ contexto: vi.fn(), lector: vi.fn() }));
+const control = vi.hoisted(() => ({ contexto: vi.fn(), lector: vi.fn(), cubo: vi.fn() }));
 vi.mock('@/lib/sport/explorar/real', () => ({ contextoReal: control.contexto }));
+vi.mock('@/lib/storage', () => ({ r2Bucket: control.cubo }));
 vi.mock('@/lib/sport/explorar/foto', () => ({ leerFotoDeportista: control.lector }));
 const { GET } = await import('@/app/api/explorar/deportistas/[id]/foto/route');
 const solicitar = (query = '', id = UUID_A) => GET(
@@ -13,7 +14,8 @@ const solicitar = (query = '', id = UUID_A) => GET(
 );
 
 beforeEach(() => {
-  control.contexto.mockReset(); control.lector.mockReset();
+  control.contexto.mockReset(); control.lector.mockReset(); control.cubo.mockReset();
+  control.cubo.mockReturnValue(null);
   control.contexto.mockReturnValue({ perfil: async () => perfil() });
   control.lector.mockResolvedValue({ estado: 'foto_no_publicada' });
 });
@@ -54,16 +56,31 @@ describe('ruta privada de metadatos oficiales', () => {
     expect(control.lector).not.toHaveBeenCalled();
   });
 
-  it('entrada inválida/no disponible conserva el estado correcto y nunca se cachea', async () => {
-    for (const [estado, status] of [['entrada_invalida', 400], ['no_disponible', 503], ['foto_no_publicada', 200]] as const) {
+  it('sólo lo definitivo se reutiliza, y sólo en el navegador con sesión; los errores nunca', async () => {
+    for (const [estado, status, cache] of [
+      ['entrada_invalida', 400, 'private, no-store'],
+      ['no_disponible', 503, 'private, no-store'],
+      ['foto_no_publicada', 200, 'private, max-age=3600'],
+    ] as const) {
       control.lector.mockResolvedValueOnce({ estado });
       const respuesta = await solicitar();
       expect(respuesta.status).toBe(status);
-      expect(respuesta.headers.get('cache-control')).toBe('private, no-store');
+      expect(respuesta.headers.get('cache-control')).toBe(cache);
       expect(respuesta.headers.get('vary')).toBe('Cookie');
       expect(respuesta.headers.get('x-content-type-options')).toBe('nosniff');
       expect(respuesta.headers.get('content-type')).toContain('application/json');
     }
+  });
+
+  it('con R2 pasa un almacén de marcas; sin binding (local, Vitest) sigue sin él', async () => {
+    await solicitar();
+    expect(control.lector.mock.calls[0][2].almacen).toBeNull();
+    const cubo = { get: vi.fn(async () => null), put: vi.fn(async () => ({})) };
+    control.cubo.mockReturnValue(cubo);
+    await solicitar();
+    const almacen = control.lector.mock.calls[1][2].almacen;
+    expect(await almacen.leer('fotos/fie/1.json')).toBeNull();
+    expect(cubo.get).toHaveBeenCalledWith('fotos/fie/1.json');
   });
 
   it('perder sesión durante la lectura es 401, error interno es 503 sin detalles', async () => {

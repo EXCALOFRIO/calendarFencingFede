@@ -19,8 +19,10 @@ const TAMANOS = {
 } as const;
 
 /**
- * Iniciales dentro de un anillo, para listas y carruseles. No pide foto: cada
- * retrato FIE cuesta dos peticiones externas, y en una lista se multiplican.
+ * Iniciales dentro de un anillo, para listas y carruseles. No pide foto: es un
+ * componente de servidor sin `personaId`, y cada retrato cuesta una petición a
+ * nuestra ruta (más dos a la FIE si no está resuelto en R2). Donde haga falta
+ * foto en una lista, `FotoDeportista` con `tamano="lista"` la pide al verse.
  * `apagado` cambia el degradado por un filete para quien no es el
  * protagonista de la pantalla.
  */

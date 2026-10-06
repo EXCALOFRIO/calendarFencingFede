@@ -2,6 +2,7 @@ import { LogOut } from 'lucide-react';
 import { salir } from './salir';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { BotonAtras } from '@/components/boton-atras';
 import { Marca } from '@/components/marca';
 import { NavEscritorio, NavMovil } from '@/components/nav';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -111,6 +112,7 @@ export default async function AppLayout({
       */}
       <header className="sticky top-0 z-30 border-b bg-card">
         <div className="ancho-app flex h-14 items-center gap-4 px-4">
+          <BotonAtras />
           <Link href="/" className="flex shrink-0 items-center gap-2.5">
             {/*
               La marca va con `titulo` en el móvil y sin él en el escritorio:

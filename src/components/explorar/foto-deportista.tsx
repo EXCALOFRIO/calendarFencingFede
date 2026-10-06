@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { fotoPublicadaValida, type FotoPublicada } from '@/lib/sport/explorar/foto-contrato';
+import {
+  anchoRetratoPara, fotoPublicadaValida, retratoAncho, type FotoPublicada,
+} from '@/lib/sport/explorar/foto-contrato';
 import { inicialesVisibles } from '@/lib/sport/nombre-visible';
 import { cn } from '@/lib/utils';
 import { ANILLO, ANILLO_APAGADO } from './avatar-anillo';
@@ -13,8 +15,9 @@ async function pedirFoto(personaId: string, signal?: AbortSignal): Promise<FotoP
   const abortar = () => controlador.abort();
   signal?.addEventListener('abort', abortar);
   try {
+    // Sin `no-store`: la ruta marca como reutilizable una hora sólo lo definitivo.
     const respuesta = await fetch(`/api/explorar/deportistas/${encodeURIComponent(personaId)}/foto`, {
-      cache: 'no-store', credentials: 'same-origin', signal: controlador.signal,
+      credentials: 'same-origin', signal: controlador.signal,
       headers: { Accept: 'application/json' },
     });
     if (!respuesta.ok || !respuesta.headers.get('content-type')?.startsWith('application/json')) return null;
@@ -34,13 +37,13 @@ async function pedirFoto(personaId: string, signal?: AbortSignal): Promise<FotoP
 }
 
 /**
- * En una lista cada retrato cuesta lecturas en D1 y dos peticiones a la FIE:
- * se pide sólo al quedar a la vista y tras una pausa (al escribir, las filas
- * cambian antes), como mucho tres a la vez, y la respuesta (también «sin
- * foto») se recuerda mientras dure la página.
+ * En una lista cada retrato cuesta lecturas en D1 y, si la FIE no está ya
+ * resuelta en R2, dos peticiones a la FIE: se pide sólo al quedar a la vista y
+ * tras una pausa (al escribir, las filas cambian antes), como mucho seis a la
+ * vez, y la respuesta (también «sin foto») se recuerda mientras dure la página.
  */
 const ESPERA_FOTO_LISTA = 350;
-const MAX_FOTOS_A_LA_VEZ = 3;
+const MAX_FOTOS_A_LA_VEZ = 6;
 const MAX_FOTOS_RECORDADAS = 300;
 const fotosLista = new Map<string, Promise<FotoPublicada | null>>();
 const turnos: (() => void)[] = [];
@@ -106,6 +109,8 @@ function Retrato({
   const caja = useRef<HTMLDivElement>(null);
   const medida = MEDIDAS[tamano];
   const iniciales = inicialesVisibles(nombre) || '—';
+  // El avatar de 44-48 px no necesita los 16 KB del retrato de 320: con 96 bastan 2 KB.
+  const src = foto ? retratoAncho(foto.src, anchoRetratoPara(medida)) ?? foto.src : undefined;
 
   useEffect(() => {
     if (tamano === 'lista') {
@@ -151,7 +156,7 @@ function Retrato({
               // Imagen nativa a propósito: Next no debe copiar ni optimizar fotos FIE.
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={foto.src}
+                src={src}
                 alt=""
                 width={medida}
                 height={medida}
@@ -175,7 +180,7 @@ function Retrato({
         <div className={cn(ANILLO, 'p-[3px]')}>
           <div className="rounded-full bg-background p-[3px]">
             <Avatar
-              className="size-20 sm:size-36"
+              className="size-20 max-[359px]:size-16 sm:size-36"
               aria-hidden={decorativa || undefined}
               role={decorativa ? undefined : 'img'}
               aria-label={decorativa ? undefined : cargada ? `Foto oficial de ${nombre}, FIE` : 'Foto no publicada'}
@@ -186,11 +191,13 @@ function Retrato({
                 // Imagen nativa a propósito: Next no debe copiar ni optimizar fotos FIE.
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={foto.src}
+                  src={src}
                   alt=""
                   width={medida}
                   height={medida}
-                  loading="lazy"
+                  // Cabecera de la ficha: siempre a la vista, sin esperar al observador de lazy.
+                  loading="eager"
+                  fetchPriority="high"
                   decoding="async"
                   referrerPolicy="no-referrer"
                   className={`absolute inset-0 size-full object-cover ${cargada ? '' : 'invisible'}`}
@@ -226,7 +233,7 @@ function Retrato({
           // Imagen nativa a propósito: Next no debe copiar ni optimizar fotos FIE.
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={foto.src}
+            src={src}
             alt=""
             width={medida}
             height={medida}

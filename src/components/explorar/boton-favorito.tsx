@@ -25,6 +25,21 @@ export function mensajeSeguir(cambio: CambioFavorito | null | undefined, nombre:
   return cambio.mensaje;
 }
 
+/**
+ * Aspecto de «Seguir» en todo Explorar, como en una red social: lleno para
+ * seguir y apagado, con su marca, para «Siguiendo». El tamaño lo pone cada uso.
+ */
+export function clasesSeguir(siguiendo: boolean, error = false): string {
+  return cn(
+    'inline-flex shrink-0 items-center justify-center gap-1 rounded-lg font-semibold whitespace-nowrap transition-colors motion-reduce:transition-none',
+    error
+      ? 'bg-transparent text-danger ring-1 ring-danger/50 ring-inset'
+      : siguiendo
+        ? 'bg-secondary text-foreground ring-1 ring-filete-alto ring-inset group-hover:bg-accent'
+        : 'bg-primary text-primary-foreground group-hover:bg-primary/90',
+  );
+}
+
 /** Destino del foco tras quitar desde la lista, cuando la fila desaparece. */
 export const ID_ENCABEZADO_FAVORITOS = 'favoritos-resultados';
 
@@ -87,26 +102,26 @@ export function BotonFavorito({
         // «Seguir» es el mismo favorito privado. El rótulo cambia como en
         // cualquier red social, así que no lleva `aria-pressed` (anunciaría el
         // estado dos veces); el nombre accesible empieza por el texto visible.
-        <Button
+        <button
           type="button"
-          variant={optimista ? 'outline' : 'default'}
           onClick={alternar}
           aria-disabled={pendiente}
           aria-busy={pendiente}
           title={optimista ? `Dejar de seguir a ${nombre}` : `Seguir a ${nombre}: es privado y no le avisa`}
           data-estado={optimista ? 'favorito' : 'sin-guardar'}
           className={cn(
-            'min-h-11 w-full cursor-pointer px-2 aria-disabled:cursor-wait sm:px-4',
-            optimista && 'border-primary-text bg-marcado font-semibold text-primary-text hover:bg-marcado hover:text-primary-text',
-            pendiente && 'opacity-70',
+            'group relative w-full cursor-pointer rounded-lg outline-none aria-disabled:cursor-wait',
+            'focus-visible:ring-[3px] focus-visible:ring-ring/50',
           )}
         >
-          {optimista ? <UserCheck className="size-4" aria-hidden /> : <UserPlus className="size-4" aria-hidden />}
-          {optimista ? 'Siguiendo' : 'Seguir'}
+          <span className={cn(clasesSeguir(optimista), 'h-11 w-full px-4 text-sm', pendiente && 'opacity-70')}>
+            {optimista ? <UserCheck className="size-4" aria-hidden /> : <UserPlus className="size-4" aria-hidden />}
+            {optimista ? 'Siguiendo' : 'Seguir'}
+          </span>
           <span className="sr-only">
             {optimista ? `: toca para dejar de seguir a ${nombre}` : ` a ${nombre}`}
           </span>
-        </Button>
+        </button>
       ) : (
       <Button
         type="button"

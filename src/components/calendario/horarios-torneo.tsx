@@ -1,15 +1,22 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
 import type { CompetitionView, DatoExtraidoView, EventView } from '@/lib/queries/calendar';
 import {
   CATEGORY_LABEL,
   CATEGORY_SHORT,
-  GENDER_SHORT,
-  WEAPON_SHORT,
+  GENDER_LABEL,
+  WEAPON_LABEL,
   cn,
 } from '@/lib/utils';
+
+import {
+  leerHora,
+  mismoReloj,
+  siglasHuso,
+  useHusoDispositivo,
+} from '@/lib/huso-dispositivo';
 import { CitaConvocatoria, MarcaConvocatoria, huecoDe } from './datos-convocatoria';
+import { HoraEnTuHuso } from './ficha/horas';
 
 /**
  * ===========================================================================
@@ -27,32 +34,29 @@ import { CitaConvocatoria, MarcaConvocatoria, huecoDe } from './datos-convocator
  *   «pon los horarios de cada prueba, no solo inicio, y de cada día, por cuál
  *    competición, son varios días»
  *
- * Así que se enseña el torneo entero: una fila por día y por prueba, con TODOS
- * los hitos que se sepan de cada una. En la Copa del Mundo de Lima eso es:
+ * Así que se enseña el torneo entero como una línea de tiempo: un titular por
+ * día y debajo cada hito con su hora y la prueba a la que va. En Takamatsu:
  *
- *   mié 7 oct               16:00 acreditación
- *   jue 8 oct               07:30 apertura
- *   vie 9 oct  FLO M Jún    09:00 poules
- *   vie 9 oct  FLO M        17:00 final
- *   dom 11 oct FLO M · eq.  09:00 equipos
+ *   Jue 15 oct
+ *     07:00  Apertura y control de armas · Florete masculino   00:00 tu hora
+ *     09:00  Poules y primeras directas · Florete masculino    02:00
+ *     13:00  Control de armas y acreditación · Florete femenino
+ *
+ * Dentro del día van **por hora**: cada fila dice su prueba, así que mezclar
+ * armas no confunde y es como se vive el día en el pabellón. A igual hora,
+ * el orden de la competición (se abre, se verifica, se llama, se tira).
  *
  * ---------------------------------------------------------------------------
- * DE DÓNDE SALE CADA HORA
+ * DE DÓNDE SALE CADA HORA, Y EN QUÉ HUSO ESTÁ
  * ---------------------------------------------------------------------------
- * De dos sitios, y se distinguen en pantalla:
- *
  *  · las **columnas publicadas** de la prueba (`installation_open`,
- *    `call_time`, `scratch_time`, `start_time`), que es lo poco que publica
- *    Skermo. Van en blanco y sin marca;
- *  · lo **leído de la convocatoria**, que es casi todo en los torneos
- *    internacionales. Va en gris, con la marca de documento leído, y al tocarlo
- *    sale la frase literal del PDF.
+ *    `call_time`, `scratch_time`, `start_time`), sin marca;
+ *  · lo **leído de la convocatoria**, con la marca de documento leído; al
+ *    tocar la fila sale la frase literal del PDF.
  *
- * Los hitos van en el orden del día de competición, no por hora: se acredita,
- * se abre la instalación, se verifica el material, se llama, se cierra el
- * scratch, se tiran las poules y se tira el cuadro. Ordenarlos por hora
- * mezclaría la final de las 17:00 de un arma con las poules de las 09:00 de
- * otra y dejaría de leerse como un día.
+ * Las dos están en **hora de la sede**, que es como las escribe quien
+ * organiza. Si el dispositivo está en otro reloj, cada fila lleva al lado la
+ * misma hora convertida, y la cabecera dice cuál es cuál.
  *
  * ---------------------------------------------------------------------------
  * LO QUE NO SE HACE
@@ -62,19 +66,19 @@ import { CitaConvocatoria, MarcaConvocatoria, huecoDe } from './datos-convocator
  * una hora inventada la paga alguien llegando tarde.
  */
 
-/** Los hitos de un día de competición, en el orden en que ocurren. */
-const HITOS: [rotulo: string, campo: string][] = [
-  ['acreditación', 'accreditation'],
-  ['apertura', 'installation_open'],
-  ['material', 'weapon_control'],
-  ['llamada', 'call_time'],
-  ['scratch', 'scratch_time'],
-  ['poules', 'pools_start'],
-  ['inicio', 'start_time'],
-  ['semifinales', 'semifinals_start'],
-  ['final', 'final_start'],
-  ['equipos', 'teams_start'],
-];
+/** Los campos de un día de competición, en el orden en que ocurren. */
+const HITOS = [
+  'accreditation',
+  'installation_open',
+  'weapon_control',
+  'call_time',
+  'scratch_time',
+  'pools_start',
+  'start_time',
+  'semifinals_start',
+  'final_start',
+  'teams_start',
+] as const;
 
 /** Qué columna publicada corresponde a cada campo, cuando hay una. */
 function horaPublicada(prueba: CompetitionView, campo: string): string | null {
@@ -92,116 +96,238 @@ function horaPublicada(prueba: CompetitionView, campo: string): string | null {
   }
 }
 
-type Hito = { rotulo: string; hora: string; dato: DatoExtraidoView | null };
-
-type FilaDia = {
-  fecha: string;
+export type HitoHorario = {
+  /** Campo base (`pools_start`), sin el sufijo de día y prueba. */
+  campo: string;
+  rotulo: string;
+  hora: string;
+  dato: DatoExtraidoView | null;
   /** `null` cuando el hito es del torneo y no de una prueba concreta. */
   prueba: CompetitionView | null;
-  hitos: Hito[];
+  /** A qué va: «Florete femenino · equipos», o lo que diga el PDF si es del torneo. */
+  aQue: string | null;
 };
 
-const DIA_LARGO = new Intl.DateTimeFormat('es-ES', {
-  weekday: 'short',
-  day: 'numeric',
-  month: 'short',
-  timeZone: 'Europe/Madrid',
-});
+export type DiaHorario = { fecha: string; hitos: HitoHorario[] };
 
-/** «vie 9 oct», sin los puntos que Intl pone en algunos meses. */
-function diaLargo(iso: string): string {
-  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
-  return DIA_LARGO.format(new Date(Date.UTC(y, m - 1, d, 12))).replace(/\./g, '');
+function aplanar(texto: string): string {
+  return texto
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[’']/g, ' ')
+    .toLowerCase();
 }
 
-function etiquetaPrueba(p: CompetitionView): string {
-  const categoria =
-    CATEGORY_SHORT[p.category] ??
-    CATEGORY_LABEL[p.category as keyof typeof CATEGORY_LABEL] ??
-    p.category;
-  return `${WEAPON_SHORT[p.weapon]} ${GENDER_SHORT[p.gender]} ${categoria}${
+/**
+ * El nombre del hito en castellano, con lo que añade la propia frase.
+ *
+ * El campo dice qué tipo de hora es (`pools_start`) y la frase dice el resto:
+ * «09:00 Women's Foil Pools & Preliminary DE tableau» son las poules **y las
+ * primeras directas**, y «T64 starting time» es el cuadro de 64. Se lee solo
+ * lo que cambia el significado; si la frase no dice nada de eso, queda el
+ * nombre del campo.
+ */
+export function rotuloDeHito(campo: string, dato: DatoExtraidoView | null): string {
+  const texto = aplanar(`${dato?.cita ?? ''} ${dato?.prueba ?? ''}`);
+  const cuadro = texto.match(/\bt\s?(8|16|32|64|128|256)\b/)?.[1];
+  const siHaceFalta = /if necessary|si (es|fuera) necesario|si procede|si hace falta/.test(texto)
+    ? ' (si hace falta)'
+    : '';
+
+  switch (campo) {
+    case 'accreditation':
+      return 'Acreditación';
+    case 'installation_open':
+      return /weapon control|control de (armas|material)|verificacion/.test(texto)
+        ? 'Apertura y control de armas'
+        : 'Apertura del pabellón';
+    case 'weapon_control':
+      return /registration|acreditacion|registro|inscripcion/.test(texto)
+        ? 'Control de armas y acreditación'
+        : 'Control de armas';
+    case 'call_time':
+      return 'Llamada';
+    case 'scratch_time':
+      return 'Cierre del scratch';
+    case 'pools_start':
+      return /preliminary|de tableau|direct elimination|eliminacion directa|directas/.test(texto)
+        ? 'Poules y primeras directas'
+        : 'Poules';
+    case 'start_time':
+      if (/training|entrenamiento|entrainement/.test(texto)) return 'Entrenamiento';
+      return cuadro ? `Cuadro de ${cuadro}${siHaceFalta}` : `Inicio${siHaceFalta}`;
+    case 'semifinals_start':
+      return 'Semifinales';
+    case 'final_start':
+      return /\bfinals\b|\bfinales\b/.test(texto) ? 'Finales' : 'Final';
+    case 'teams_start':
+      return cuadro ? `Cuadro de ${cuadro}${siHaceFalta}` : `Comienzo${siHaceFalta}`;
+    default:
+      return campo;
+  }
+}
+
+/** «Florete femenino», «Florete masculino · equipos»; con categoría si el torneo tiene varias. */
+export function nombreCortoDePrueba(p: CompetitionView, conCategoria: boolean): string {
+  const categoria = conCategoria
+    ? ` ${
+        CATEGORY_SHORT[p.category] ??
+        CATEGORY_LABEL[p.category as keyof typeof CATEGORY_LABEL] ??
+        p.category
+      }`
+    : '';
+  return `${WEAPON_LABEL[p.weapon]} ${GENDER_LABEL[p.gender].toLowerCase()}${categoria}${
     p.format === 'EQUIPOS' ? ' · equipos' : ''
   }`;
 }
 
 /**
- * Construye las filas: un día y una prueba por fila.
+ * A qué va un hito del torneo que el reparto no pudo atribuir a una prueba.
  *
- * Los hitos del evento que no se pudieron atribuir a ninguna prueba —«7:30
- * Venue Open», que vale para todo el torneo— salen con `prueba: null` y en su
- * día, antes de las pruebas de ese mismo día. Es lo honesto: `repartirDatos`
- * no los atribuyó porque el documento no dice a cuál van, y ponerlos dentro de
+ * Solo se dice lo que el PDF dice con claridad: «Team Event» son los equipos.
+ * Lo demás («Training available in the sub-arena») ya lo cuenta el rótulo, y
+ * repetir el texto en inglés al lado sería el ruido que se está quitando.
+ */
+function aQueDelTorneo(textoPrueba: string | null): string | null {
+  if (!textoPrueba) return null;
+  const t = aplanar(textoPrueba);
+  if (/\bteams?\b|\bequipos?\b|\bequipes\b/.test(t)) return 'Equipos';
+  if (/\bindividual\b|\bindividuel\b/.test(t)) return 'Individual';
+  return null;
+}
+
+function minutosDe(hora: string): number {
+  const hm = leerHora(hora);
+  return hm ? hm[0] * 60 + hm[1] : 24 * 60;
+}
+
+/**
+ * Los días del torneo con sus hitos, y qué datos del PDF se han usado.
+ *
+ * `usados` existe para la lista de «otros datos» del final de la ficha: lo que
+ * entra aquí ya se ve con su cita y no se repite allí; lo que no entra —una
+ * hora sin día, o la segunda lectura del mismo hito— sigue estando allí.
+ *
+ * Los hitos que no se pudieron atribuir a ninguna prueba —«7:30 Venue Open»,
+ * que vale para todo el torneo— van en su día sin prueba: `repartirDatos` no
+ * los atribuyó porque el documento no dice a cuál van, y ponerlos dentro de
  * una prueba sería adivinar.
  */
-function filasPorDia(evento: EventView): FilaDia[] {
-  const filas = new Map<string, FilaDia>();
+export function horariosDelTorneo(evento: EventView): {
+  dias: DiaHorario[];
+  usados: Set<string>;
+} {
+  const porDia = new Map<string, HitoHorario[]>();
+  const vistos = new Set<string>();
+  const usados = new Set<string>();
+  const conCategoria = new Set(evento.competitions.map((c) => c.category)).size > 1;
 
-  const anota = (
-    fecha: string | null,
-    prueba: CompetitionView | null,
-    hito: Hito,
-  ) => {
+  const anota = (fecha: string | null, hito: HitoHorario) => {
     if (!fecha) return;
-    const clave = `${fecha}|${prueba?.id ?? ''}`;
-    const fila = filas.get(clave) ?? { fecha, prueba, hitos: [] };
-    // Un mismo rótulo dos veces en el mismo día y la misma prueba es el mismo
-    // hito leído de dos documentos: se queda el primero, que es el que ganó en
-    // `huecoDe`, y el otro sigue en la lista de frases del PDF.
-    if (!fila.hitos.some((h) => h.rotulo === hito.rotulo)) fila.hitos.push(hito);
-    filas.set(clave, fila);
+    // El mismo hito el mismo día y en la misma prueba es una lectura repetida
+    // de dos documentos: se queda la primera.
+    const clave = `${fecha}|${hito.prueba?.id ?? ''}|${hito.campo}`;
+    if (vistos.has(clave)) return;
+    vistos.add(clave);
+    if (hito.dato) usados.add(hito.dato.id);
+    const lista = porDia.get(fecha) ?? [];
+    lista.push(hito);
+    porDia.set(fecha, lista);
   };
 
   for (const prueba of evento.competitions) {
-    for (const [rotulo, campo] of HITOS) {
+    const aQue = nombreCortoDePrueba(prueba, conCategoria);
+    for (const campo of HITOS) {
       const publicada = horaPublicada(prueba, campo);
       if (publicada) {
-        anota(prueba.competitionDate, prueba, { rotulo, hora: publicada, dato: null });
+        anota(prueba.competitionDate, {
+          campo,
+          rotulo: rotuloDeHito(campo, null),
+          hora: publicada,
+          dato: null,
+          prueba,
+          aQue,
+        });
         continue;
       }
       /*
         Puede haber VARIOS del mismo campo en días distintos: el control de
         material de Takamatsu está el 14 para el florete masculino y el 15 para
         el femenino. Así que no vale `huecoDe`, que devuelve uno: se recorren
-        todos los que hay de ese campo y cada uno va a su día.
+        todos y cada uno va a su día.
       */
-      const leidos = prueba.datosExtraidos.filter(
-        (d) => d.campo === campo || d.campo.startsWith(`${campo}.`),
-      );
-      for (const d of leidos) {
-        anota(d.fecha ?? prueba.competitionDate, prueba, {
-          rotulo,
+      for (const d of prueba.datosExtraidos) {
+        if (d.campo !== campo && !d.campo.startsWith(`${campo}.`)) continue;
+        anota(d.fecha ?? prueba.competitionDate, {
+          campo,
+          rotulo: rotuloDeHito(campo, d),
           hora: d.valor,
           dato: d,
+          prueba,
+          aQue,
         });
       }
     }
   }
 
-  // Y los del torneo, sin prueba asignada.
-  for (const [rotulo, campo] of HITOS) {
-    const leidos = evento.datosExtraidos.filter(
-      (d) => d.campo === campo || d.campo.startsWith(`${campo}.`),
-    );
-    for (const d of leidos) anota(d.fecha, null, { rotulo, hora: d.valor, dato: d });
+  for (const campo of HITOS) {
+    for (const d of evento.datosExtraidos) {
+      if (d.campo !== campo && !d.campo.startsWith(`${campo}.`)) continue;
+      /*
+        La misma hora del mismo hito ya está en una prueba de ese día: es el
+        mismo dato leído sin prueba (la circular de un TNR repite «Llamada
+        08:30» en la cabecera y en la tabla). Dos filas iguales, una con prueba
+        y otra sin ella, se leían como dos llamadas distintas.
+      */
+      const repetido = (porDia.get(d.fecha ?? '') ?? []).some(
+        (h) => h.prueba !== null && h.campo === campo && h.hora.trim() === d.valor.trim(),
+      );
+      if (repetido) {
+        usados.add(d.id);
+        continue;
+      }
+      anota(d.fecha, {
+        campo,
+        rotulo: rotuloDeHito(campo, d),
+        hora: d.valor,
+        dato: d,
+        prueba: null,
+        aQue: aQueDelTorneo(d.prueba),
+      });
+    }
   }
 
   const orden = new Map(evento.competitions.map((c, i) => [c.id, i]));
-  return [...filas.values()]
-    .map((f) => ({
-      ...f,
-      // Dentro de la fila, el orden del día de competición.
-      hitos: f.hitos.sort(
+  const dias = [...porDia.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([fecha, hitos]) => ({
+      fecha,
+      hitos: hitos.sort(
         (a, b) =>
-          HITOS.findIndex(([r]) => r === a.rotulo) -
-          HITOS.findIndex(([r]) => r === b.rotulo),
+          minutosDe(a.hora) - minutosDe(b.hora) ||
+          HITOS.indexOf(a.campo as (typeof HITOS)[number]) -
+            HITOS.indexOf(b.campo as (typeof HITOS)[number]) ||
+          (a.prueba ? (orden.get(a.prueba.id) ?? 99) : -1) -
+            (b.prueba ? (orden.get(b.prueba.id) ?? 99) : -1),
       ),
-    }))
-    .sort(
-      (a, b) =>
-        a.fecha.localeCompare(b.fecha) ||
-        (a.prueba ? (orden.get(a.prueba.id) ?? 99) : -1) -
-          (b.prueba ? (orden.get(b.prueba.id) ?? 99) : -1),
-    );
+    }));
+  return { dias, usados };
+}
+
+const DIA = new Intl.DateTimeFormat('es-ES', {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+  timeZone: 'UTC',
+});
+
+/** «Jue 16 oct», sin los puntos ni la coma que pone Intl. */
+export function tituloDeDia(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+  const texto = DIA.format(new Date(Date.UTC(y, m - 1, d, 12)))
+    .replace(/\./g, '')
+    .replace(',', '');
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
 }
 
 export function HorariosTorneo({
@@ -212,85 +338,120 @@ export function HorariosTorneo({
   /** La prueba que está seleccionada arriba, para destacar sus filas. */
   prueba: CompetitionView | null;
 }) {
-  const filas = filasPorDia(evento);
+  const huso = useHusoDispositivo();
+  const { dias } = horariosDelTorneo(evento);
 
-  if (filas.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Los horarios no están publicados. Suelen salir en la convocatoria unos
-        días antes.
-      </p>
-    );
-  }
+  // Sin horas publicadas no hay recuadro ni frase que lo diga (`UI.md`, 2 bis).
+  if (dias.length === 0) return null;
 
-  /** Si todo cae el mismo día, el día no distingue nada y sobra la etiqueta. */
-  const variosDias = new Set(filas.map((f) => f.fecha)).size > 1;
+  const husoSede = evento.timezone;
+  /**
+   * Solo hay dos columnas cuando los relojes no coinciden. Sin huso de la
+   * sede no se convierte nada: se enseña la hora tal cual la escribe la
+   * convocatoria, que es hora local, y no se dice de dónde porque no se sabe.
+   */
+  const dosRelojes =
+    husoSede !== null && !mismoReloj(husoSede, huso, evento.startDate);
 
   return (
-    <div className="flex flex-col divide-y divide-filete overflow-hidden rounded-md border border-t-filete bg-card">
-      {filas.map((f) => {
-        const esLaSuya = prueba !== null && f.prueba?.id === prueba.id;
-        return (
-          <div
-            key={`${f.fecha}|${f.prueba?.id ?? ''}`}
+    <section
+      aria-label="Horario"
+      className="flex flex-col overflow-hidden rounded-lg border border-filete bg-card"
+    >
+      {/*
+        La cabecera es la de una tabla: el titular en la columna del texto y,
+        encima de cada columna de horas, su rótulo diminuto —las siglas del
+        huso de la sede y «tu hora»—. Sustituye a «Hora local de Japón (JST)
+        | Tu hora (CEST)», que era una frase para decir dos palabras.
+      */}
+      <header className="grid grid-cols-[3.25rem_minmax(0,1fr)_auto] items-baseline gap-x-3 border-b border-b-filete px-3 py-2">
+        <span className="text-[11px] text-muted-foreground">
+          {dosRelojes && husoSede ? siglasHuso(husoSede, evento.startDate) : null}
+        </span>
+        <h4 className="text-base leading-none sm:text-sm">Horario</h4>
+        <span className="text-right text-[11px] text-muted-foreground">
+          {dosRelojes ? 'tu hora' : null}
+        </span>
+      </header>
+
+      <ol className="flex flex-col">
+        {dias.map((dia) => (
+          <li key={dia.fecha} className="border-b border-b-filete last:border-b-0">
+            <h5 className="cifra px-3 pt-2.5 pb-1 text-sm text-muted-foreground">
+              {tituloDeDia(dia.fecha)}
+            </h5>
+            <ul className="flex flex-col pb-1.5">
+              {dia.hitos.map((h) => (
+                <FilaHito
+                  key={`${h.prueba?.id ?? ''}|${h.campo}|${h.hora}|${h.dato?.id ?? ''}`}
+                  hito={h}
+                  fecha={dia.fecha}
+                  husoSede={dosRelojes ? husoSede : null}
+                  destacada={prueba !== null && h.prueba?.id === prueba.id}
+                />
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function FilaHito({
+  hito,
+  fecha,
+  husoSede,
+  destacada,
+}: {
+  hito: HitoHorario;
+  fecha: string;
+  /** `null` = no hay que convertir. */
+  husoSede: string | null;
+  destacada: boolean;
+}) {
+  const sinRevisar = hito.dato !== null && hito.dato.estado !== 'aprobado';
+  return (
+    <li
+      className={cn(
+        'border-l-2 border-l-transparent',
+        /* La prueba que se está mirando, con el filete rojo a la izquierda:
+           es la señal que el resto de la aplicación usa para «esto es lo
+           tuyo», y no depende solo del color porque además es una arista. */
+        destacada && 'border-l-primary bg-primary/5',
+      )}
+    >
+      <CitaConvocatoria dato={hito.dato} className="mx-0 w-full rounded-none px-0">
+        <div className="grid w-full grid-cols-[3.25rem_minmax(0,1fr)_auto] items-baseline gap-x-3 px-3 py-1.5">
+          <span
             className={cn(
-              'flex flex-col gap-1.5 px-3 py-2.5 sm:flex-row sm:items-baseline sm:gap-4',
-              /* La prueba que se está mirando, con el filete rojo a la
-                 izquierda: es la misma señal que el resto de la aplicación usa
-                 para «esto es lo tuyo», y no depende solo del color porque
-                 además es una arista. */
-              esLaSuya && 'border-l-2 border-l-primary bg-primary/5 pl-[10px]',
+              'cifra text-lg leading-none sm:text-base',
+              sinRevisar && 'text-muted-foreground',
             )}
           >
-            {/*
-              `min-w` y no `w`: con ancho fijo, la pastilla «FLO M M20 ·
-              equipos» se salía de la columna y se comía el hueco, así que
-              «09:00» quedaba pegado al texto. Visto en la captura de Lima.
-              Así las columnas siguen alineadas cuando los rótulos son cortos
-              —que es lo que hace que esto se lea como una tabla— y crecen
-              cuando uno es largo, en vez de solaparse.
-            */}
-            <div className="flex shrink-0 items-baseline gap-2 sm:min-w-44">
-              {variosDias ? (
-                <span className="cifra text-sm whitespace-nowrap">
-                  {diaLargo(f.fecha)}
-                </span>
+            {hito.hora}
+          </span>
+          <span className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-base leading-snug sm:text-sm">
+              {hito.rotulo}
+              {hito.dato ? (
+                <MarcaConvocatoria className="ml-1.5 size-3 align-baseline text-muted-foreground/70" />
               ) : null}
-              {f.prueba ? (
-                <Badge variant="outline" className="whitespace-nowrap text-xs">
-                  {etiquetaPrueba(f.prueba)}
-                </Badge>
-              ) : (
-                <span className="text-xs text-muted-foreground">todo el torneo</span>
-              )}
-            </div>
-
-            <div className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1">
-              {f.hitos.map((h) => (
-                <CitaConvocatoria key={h.rotulo} dato={h.dato}>
-                  <span className="flex items-baseline gap-1.5">
-                    <span
-                      className={cn(
-                        'cifra text-base leading-none sm:text-sm',
-                        h.dato && h.dato.estado !== 'aprobado'
-                          ? 'text-muted-foreground'
-                          : '',
-                      )}
-                    >
-                      {h.hora}
-                    </span>
-                    <span className="flex items-center gap-1 text-xs leading-none text-muted-foreground">
-                      {h.dato ? <MarcaConvocatoria className="opacity-70" /> : null}
-                      {h.rotulo}
-                    </span>
-                  </span>
-                </CitaConvocatoria>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-    </div>
+            </span>
+            {hito.aQue ? (
+              <span className="text-sm leading-snug text-muted-foreground sm:text-xs">
+                {hito.aQue}
+              </span>
+            ) : null}
+          </span>
+          {husoSede ? (
+            <HoraEnTuHuso fecha={fecha} hora={hito.hora} husoSede={husoSede} />
+          ) : (
+            <span />
+          )}
+        </div>
+      </CitaConvocatoria>
+    </li>
   );
 }
 
@@ -306,19 +467,49 @@ export function HorariosTorneo({
  * Va debajo de la dirección y con su propio rótulo, porque quien llega a la
  * dirección del recinto y no sabe esto se queda fuera.
  */
-export function AccesoAlPabellon({ evento }: { evento: EventView }) {
+export function AccesoAlPabellon({
+  evento,
+  direccion = null,
+}: {
+  evento: EventView;
+  /** La dirección que ya se enseña: si el acceso la repite, no sale. */
+  direccion?: string | null;
+}) {
   const acceso = huecoDe(evento.datosExtraidos, 'venue_access', evento.city);
-  if (!acceso) return null;
+  if (!acceso || !accesoCreible(acceso.valor) || accesoRepiteDireccion(acceso.valor, direccion)) {
+    return null;
+  }
 
   return (
     <CitaConvocatoria dato={acceso}>
       <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
         <span className="text-muted-foreground">Se entra por</span>
         <span className="min-w-0 text-foreground">
-          <MarcaConvocatoria className="mr-1.5 opacity-70" />
           {acceso.valor}
+          <MarcaConvocatoria className="ml-1.5 text-muted-foreground" />
         </span>
       </p>
     </CitaConvocatoria>
   );
+}
+
+/**
+ * ¿El acceso dice lo mismo que la dirección? En Samsun el dossier escribe la
+ * misma calle en «dirección» y en «acceso», y la ficha la repetía dos líneas
+ * más abajo con otro rótulo.
+ */
+export function accesoRepiteDireccion(acceso: string, direccion: string | null): boolean {
+  if (!direccion) return false;
+  const a = aplanar(acceso).replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const d = aplanar(direccion).replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  return a === d || d.includes(a) || a.includes(d);
+}
+
+/**
+ * Un acceso que es el nombre de una prueba no es un acceso. En un TNR de
+ * Medina del Campo se leyó «Se entra por: ESPADA MASCULINO», que es el rótulo
+ * de la columna de al lado en la circular.
+ */
+export function accesoCreible(acceso: string): boolean {
+  return !/^\s*(espada|florete|sable|epee|foil|sabre)\b[\s\w’']*$/i.test(aplanar(acceso));
 }

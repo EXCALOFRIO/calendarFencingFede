@@ -248,13 +248,9 @@ describe('cobertura de resultados por fuente', () => {
       ],
     });
     const r = await leerEdicionesDeEvento(ctx, { eventoId: UUID_A });
-    if (r.estado !== 'ok' || !r.ediciones[0]) throw new Error('se esperaba ok');
-    const marcado = html(
-      React.createElement(PruebasDeEdicion, {
-        edicion: { ...r.ediciones[0], pruebaDesconocida: false, clasificacion: null },
-        seleccionada: '',
-      }),
-    );
+    if (r.estado !== 'ok' || !r.ediciones[0]?.pruebasDetalle[0]) throw new Error('se esperaba ok');
+    const { estado, importados } = r.ediciones[0].pruebasDetalle[0].resultados;
+    const marcado = html(React.createElement(EstadoResultadosPrueba, { estado, importados }));
     expect(marcado).toContain('Clasificación importada');
     expect(marcado).not.toContain('Clasificación parcial');
   });
@@ -413,7 +409,7 @@ describe('pantallas de ediciones', () => {
     }
     expect(marcado).toContain(`href="/explorar/ediciones/${ED_JO}"`);
     expect(marcado).toContain(`href="/explorar/ediciones/${ED_CM}"`);
-    expect(marcado).toMatch(/Ninguna edición de esta serie está importada todavía/);
+    expect(marcado).toContain('Sin ediciones.');
     expect(marcado).not.toContain('/perfil');
   });
 
@@ -429,23 +425,20 @@ describe('pantallas de ediciones', () => {
     expect(error).toContain('Reintentar');
   });
 
-  it('cada prueba enlaza a su clasificación y a Explorar con edición, formato y categoría', () => {
+  it('el selector lleva a cada prueba con un botón, marca la elegida y no dice la categoría en bruto', () => {
     const edicionDetalle = {
       ...resumen(ED_JO, 'Jeux Olympiques Paris 2024', 'juegos_olimpicos'),
       pruebasDetalle: [pruebaDto(), pruebaDto({ id: UUID_B, resultados: { estado: 'pendiente', importados: 0 }, formato: 'EQUIPOS' })],
       pruebaDesconocida: false,
       clasificacion: null,
     };
-    const marcado = html(React.createElement(PruebasDeEdicion, { edicion: edicionDetalle, seleccionada: '' }));
-    expect(marcado).toContain(`href="${construirUrlEdicion(ED_JO, { prueba: PRUEBA })}"`.replace(/&/g, '&amp;'));
-    expect(marcado).toContain('edicionId=' + ED_JO);
-    expect(marcado).toContain('formato=INDIVIDUAL');
-    expect(marcado).toContain('formato=EQUIPOS');
-    expect(marcado).toContain('categoriaRaw=Senior');
-    expect(marcado).toContain('Individuales');
-    expect(marcado).toContain('Por equipos');
-    // La prueba sin puestos importados no ofrece una clasificación vacía.
-    expect(marcado.match(/>Ver la clasificación</g)).toHaveLength(1);
+    const marcado = html(React.createElement(PruebasDeEdicion, { edicion: edicionDetalle, seleccionada: PRUEBA }));
+    expect(marcado).toContain(`href="${construirUrlEdicion(ED_JO, { prueba: PRUEBA })}"`);
+    expect(marcado).toContain(`href="${construirUrlEdicion(ED_JO, { prueba: UUID_B })}"`);
+    expect(marcado).toMatch(/aria-current="true"[^>]*>Individual</);
+    expect(marcado).toContain('>Equipos<');
+    expect(marcado).not.toContain('Senior');
+    expect(marcado).not.toContain('Ver la clasificación');
   });
 
   it('una edición sin pruebas dice que no se inventan', () => {
@@ -460,7 +453,7 @@ describe('pantallas de ediciones', () => {
         seleccionada: '',
       }),
     );
-    expect(marcado).toMatch(/No se inventan pruebas/);
+    expect(marcado).toContain('Sin pruebas.');
   });
 
   const clasificacion = (filas: unknown[], extra: Record<string, unknown> = {}) => ({
@@ -473,7 +466,8 @@ describe('pantallas de ediciones', () => {
   });
 
   it('la fila vinculada abre la ficha deportiva con retorno y no /perfil; la no vinculada no es un enlace', () => {
-    const volver = construirUrlEdicion(ED_JO, { prueba: PRUEBA });
+    // La ficha vuelve a la misma prueba con esa persona resaltada.
+    const volver = construirUrlEdicion(ED_JO, { prueba: PRUEBA, persona: UUID_C });
     const marcado = html(
       React.createElement(ClasificacionDePrueba, {
         edicion: resumen(ED_JO, 'Jeux Olympiques Paris 2024', 'juegos_olimpicos'),
@@ -488,8 +482,8 @@ describe('pantallas de ediciones', () => {
     expect(marcado).toContain(`href="/explorar/${UUID_C}?volver=${encodeURIComponent(volver).replace(/&/g, '&amp;')}"`);
     expect(marcado).not.toContain('/perfil');
     expect(marcado.match(/<a /g)).toHaveLength(1);
-    expect(marcado).toContain('Sin ficha deportiva vinculada');
-    expect(marcado).toContain('<span class="sr-only">Puesto </span>');
+    expect(marcado).toContain('<span class="sr-only">Oro, puesto </span>');
+    expect(marcado).toContain('<span class="sr-only">Plata, puesto </span>');
     expect(marcado).not.toContain('aria-label="Puesto');
   });
 
@@ -506,7 +500,7 @@ describe('pantallas de ediciones', () => {
       }),
     );
     expect(marcado).toContain(`prueba=${PRUEBA}&amp;cursor=c2`);
-    expect(marcado).toContain('Volver al principio');
+    expect(marcado).toContain('Primeros puestos');
   });
 
   it('EdicionCompleta enseña la serie y avisa de una prueba que no es de la edición', () => {
@@ -522,8 +516,8 @@ describe('pantallas de ediciones', () => {
       }),
     );
     expect(marcado).toContain('Juegos Mediterráneos');
-    expect(marcado).toMatch(/no pertenece a esta edición/);
-    expect(marcado).toContain('Volver a las ediciones');
+    expect(marcado).toMatch(/no es de esta edición/);
+    expect(marcado).not.toContain('Volver a');
   });
 
   it('cada estado de error de edición tiene su propio mensaje', () => {
@@ -531,7 +525,7 @@ describe('pantallas de ediciones', () => {
       html(React.createElement(EstadoEdicion, { vista: { tipo } })),
     );
     expect(new Set(textos).size).toBe(5);
-    expect(textos[4]).toMatch(/no es que no haya resultados/);
+    expect(textos[4]).toMatch(/No se ha podido leer/);
   });
 });
 

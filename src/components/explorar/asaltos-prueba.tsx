@@ -1,6 +1,8 @@
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
+import type { CSSProperties } from 'react';
 import { BanderaPais } from '@/components/bandera';
-import { rutaFichaConRetorno } from '@/lib/sport/explorar/ficha-url';
+import { etiquetaCortaRonda } from '@/lib/sport/explorar/ediciones-asaltos';
 import type {
   AsaltoDePrueba,
   PouleDePrueba,
@@ -9,16 +11,58 @@ import type {
 } from '@/lib/sport/explorar/tipos-busqueda';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { cn } from '@/lib/utils';
-import { Nota } from './piezas';
+import type { EnlaceFicha } from './prueba/enlaces';
+import {
+  huecosCuadro,
+  inicioPorDefecto,
+  nombreCorto,
+  resaltado,
+  separarRondas,
+  ventanaRondas,
+  type Filtro,
+  type Ventana,
+} from './prueba/logica';
+
+/**
+ * Poules y cuadro de una prueba, sin estado propio: la vista de la prueba
+ * decide qué rondas se ven y a quién se resalta. Nada desborda en horizontal:
+ * en móvil la poule es una lista y el cuadro enseña dos rondas en lugar de tres.
+ */
 
 const ENLACE_NOMBRE =
   'rounded-sm underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
 
-function Nombre({ t, volver, className }: { t: { personaId: string | null; nombre: string }; volver: string; className?: string }) {
-  const texto = nombreVisible(t.nombre);
-  if (!t.personaId) return <span className={cn('break-words', className)}>{texto}</span>;
+const SIN_FILTRO: Filtro = { consulta: '' };
+
+function Nombre({
+  t,
+  enlace,
+  corto = false,
+  className,
+}: {
+  t: { personaId: string | null; nombre: string };
+  enlace?: EnlaceFicha;
+  corto?: boolean;
+  className?: string;
+}) {
+  const completo = nombreVisible(t.nombre);
+  const texto = corto ? nombreCorto(t.nombre) : completo;
+  const titulo = texto === completo ? undefined : completo;
+  if (!t.personaId || !enlace) {
+    return (
+      <span title={titulo} className={cn('truncate', className)}>
+        {texto}
+      </span>
+    );
+  }
   return (
-    <Link href={rutaFichaConRetorno(t.personaId, volver)} prefetch={false} className={cn(ENLACE_NOMBRE, 'break-words', className)}>
+    <Link
+      href={enlace(t.personaId)}
+      prefetch={false}
+      title={titulo}
+      aria-label={titulo ? `Ficha de ${completo}` : undefined}
+      className={cn(ENLACE_NOMBRE, 'truncate', className)}
+    >
       {texto}
     </Link>
   );
@@ -26,77 +70,159 @@ function Nombre({ t, volver, className }: { t: { personaId: string | null; nombr
 
 /* --------------------------------------------------------------------- poules */
 
-function Poule({ poule, volver }: { poule: PouleDePrueba; volver: string }) {
-  const id = `poule-${poule.ronda}`;
+const firma = (n: number) => (n > 0 ? `+${n}` : String(n));
+
+export function idPoule(ronda: string): string {
+  return `poule-${ronda.replace(/[^A-Za-z0-9_-]/g, '')}`;
+}
+
+const COLUMNAS_LISTA = 'grid-cols-[1rem_minmax(0,1fr)_repeat(3,1.5rem)_2rem]';
+
+function Poule({ poule, enlace, filtro }: { poule: PouleDePrueba; enlace?: EnlaceFicha; filtro: Filtro }) {
+  const id = idPoule(poule.ronda);
+  const marcada = poule.filas.some((f) => resaltado(f, filtro));
   return (
-    <section aria-labelledby={id} className="flex min-w-0 flex-col gap-2">
-      <h3 id={id} className="text-lg leading-tight">{poule.etiqueta}</h3>
-      <div className="overflow-x-auto rounded-lg border bg-card">
-        <table className="w-full min-w-max border-collapse text-sm">
-          <caption className="sr-only">
-            {poule.etiqueta}: tantos de cada fila contra cada columna. V indica victoria.
-          </caption>
-          <thead>
-            <tr className="border-b bg-secondary text-xs text-muted-foreground">
-              <th scope="col" className="px-2 py-2 text-right font-medium">#</th>
-              <th scope="col" className="px-3 py-2 text-left font-medium">Tirador</th>
-              {poule.filas.map((_, i) => (
-                <th key={i} scope="col" className="w-9 px-1 py-2 text-center font-medium">
-                  <span className="sr-only">Contra el </span>{i + 1}
-                </th>
-              ))}
-              <th scope="col" className="px-2 py-2 text-center font-medium"><abbr title="Victorias">V</abbr></th>
-              <th scope="col" className="px-2 py-2 text-center font-medium"><abbr title="Tocados dados">TD</abbr></th>
-              <th scope="col" className="px-2 py-2 text-center font-medium"><abbr title="Tocados recibidos">TR</abbr></th>
-              <th scope="col" className="px-2 py-2 text-center font-medium"><abbr title="Índice (TD − TR)">Ind</abbr></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {poule.filas.map((f, i) => {
-              const indice = f.tocados - f.recibidos;
-              return (
-                <tr key={f.clave}>
-                  <td className="cifra px-2 py-2 text-right text-muted-foreground">{i + 1}</td>
-                  <th scope="row" className="px-3 py-2 text-left font-normal">
-                    <span className="flex min-w-0 items-center gap-2">
-                      {f.pais ? <BanderaPais pais={f.pais} /> : null}
-                      <Nombre t={f} volver={volver} className="font-medium" />
-                    </span>
-                  </th>
-                  {f.celdas.map((c, j) => (
-                    <td
-                      key={j}
-                      className={cn(
-                        'cifra border-l px-1 py-2 text-center',
-                        i === j && 'bg-muted',
-                        c?.victoria && 'font-semibold text-ok',
-                      )}
-                    >
-                      {i === j ? <span className="sr-only">—</span> : c ? `${c.victoria ? 'V' : ''}${c.tantos}` : <span className="text-muted-foreground">·</span>}
-                    </td>
-                  ))}
-                  <td className="cifra border-l px-2 py-2 text-center font-semibold">{f.victorias}</td>
-                  <td className="cifra px-2 py-2 text-center">{f.tocados}</td>
-                  <td className="cifra px-2 py-2 text-center">{f.recibidos}</td>
-                  <td className="cifra px-2 py-2 text-center">{indice > 0 ? `+${indice}` : indice}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+    <section
+      id={id}
+      aria-labelledby={`${id}-titulo`}
+      data-resaltado={marcada ? 'true' : undefined}
+      className={cn(
+        'flex min-w-0 scroll-mt-24 flex-col overflow-hidden rounded-lg border bg-card',
+        marcada && 'border-primary ring-1 ring-primary',
+      )}
+    >
+      <header className="flex items-baseline justify-between gap-2 border-b px-3 py-1.5">
+        <h3 id={`${id}-titulo`} className="text-base leading-tight">{poule.etiqueta}</h3>
+        <span className="text-xs text-muted-foreground">{poule.filas.length}</span>
+      </header>
+
+      {/* Móvil: una fila por tirador con sus cifras; la matriz no cabe. */}
+      <div className="sm:hidden">
+        <div aria-hidden className={cn('grid gap-x-1.5 px-3 pt-1.5 text-[0.6875rem] text-muted-foreground', COLUMNAS_LISTA)}>
+          <span />
+          <span />
+          <span className="text-center">V</span>
+          <span className="text-center">TD</span>
+          <span className="text-center">TR</span>
+          <span className="text-right">Ind</span>
+        </div>
+        <ol className="divide-y" aria-label={poule.etiqueta}>
+          {poule.filas.map((f, i) => (
+            <li
+              key={f.clave}
+              className={cn(
+                'grid min-h-10 items-center gap-x-1.5 px-3 py-1 text-sm',
+                COLUMNAS_LISTA,
+                resaltado(f, filtro) && 'bg-marcado',
+              )}
+            >
+              <span className="cifra text-right text-muted-foreground">{i + 1}</span>
+              <span className="flex min-w-0 items-center gap-1.5">
+                {f.pais ? <BanderaPais pais={f.pais} soloBandera /> : null}
+                <Nombre t={f} enlace={enlace} corto className="min-w-0 font-medium" />
+              </span>
+              <span className="cifra text-center font-semibold">
+                {f.victorias}
+                <span className="sr-only"> victorias de {f.asaltos},</span>
+              </span>
+              <span className="cifra text-center">
+                <span className="sr-only">tocados dados </span>
+                {f.tocados}
+              </span>
+              <span className="cifra text-center text-muted-foreground">
+                <span className="sr-only">tocados recibidos </span>
+                {f.recibidos}
+              </span>
+              <span className="cifra text-right">
+                <span className="sr-only">índice </span>
+                {firma(f.tocados - f.recibidos)}
+              </span>
+            </li>
+          ))}
+        </ol>
       </div>
+
+      {/* Desde sm: la matriz completa, con columnas fijas para que nunca se salga. */}
+      <table className="hidden w-full table-fixed border-collapse text-sm sm:table">
+        <caption className="sr-only">
+          {poule.etiqueta}: tantos de cada fila contra cada columna. V indica victoria.
+        </caption>
+        <colgroup>
+          <col className="w-7" />
+          <col />
+          {poule.filas.map((f) => (
+            <col key={f.clave} className="w-8" />
+          ))}
+          <col className="w-8" />
+          <col className="w-9" />
+          <col className="w-9" />
+          <col className="w-10" />
+        </colgroup>
+        <thead>
+          <tr className="text-xs text-muted-foreground">
+            <th scope="col" className="py-1.5 pr-1 text-right font-medium">#</th>
+            <th scope="col" className="px-2 py-1.5 text-left font-medium"><span className="sr-only">Tirador</span></th>
+            {poule.filas.map((f, i) => (
+              <th key={f.clave} scope="col" className="py-1.5 text-center font-medium">
+                <span className="sr-only">Contra el </span>{i + 1}
+              </th>
+            ))}
+            <th scope="col" className="py-1.5 text-center font-medium"><abbr title="Victorias">V</abbr></th>
+            <th scope="col" className="py-1.5 text-center font-medium"><abbr title="Tocados dados">TD</abbr></th>
+            <th scope="col" className="py-1.5 text-center font-medium"><abbr title="Tocados recibidos">TR</abbr></th>
+            <th scope="col" className="py-1.5 pr-2 text-right font-medium"><abbr title="Índice (TD − TR)">Ind</abbr></th>
+          </tr>
+        </thead>
+        <tbody>
+          {poule.filas.map((f, i) => (
+            <tr key={f.clave} className={cn('border-t', resaltado(f, filtro) && 'bg-marcado')}>
+              <td className="cifra py-1.5 pr-1 text-right text-muted-foreground">{i + 1}</td>
+              <th scope="row" className="px-2 py-1.5 text-left font-normal">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  {f.pais ? <BanderaPais pais={f.pais} /> : null}
+                  <Nombre t={f} enlace={enlace} className="min-w-0 font-medium" />
+                </span>
+              </th>
+              {f.celdas.map((c, j) => (
+                <td
+                  key={j}
+                  className={cn(
+                    'cifra border-l py-1.5 text-center text-xs',
+                    i === j && 'bg-muted',
+                    c?.victoria ? 'font-semibold text-ok' : 'text-muted-foreground',
+                  )}
+                >
+                  {i === j ? <span className="sr-only">—</span> : c ? `${c.victoria ? 'V' : ''}${c.tantos}` : '·'}
+                </td>
+              ))}
+              <td className="cifra border-l py-1.5 text-center font-semibold">{f.victorias}</td>
+              <td className="cifra py-1.5 text-center">{f.tocados}</td>
+              <td className="cifra py-1.5 text-center text-muted-foreground">{f.recibidos}</td>
+              <td className="cifra py-1.5 pr-2 text-right">{firma(f.tocados - f.recibidos)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </section>
   );
 }
 
-export function PoulesDePrueba({ poules, volver }: { poules: PouleDePrueba[]; volver: string }) {
+export function PoulesDePrueba({
+  poules,
+  enlace,
+  filtro = SIN_FILTRO,
+}: {
+  poules: PouleDePrueba[];
+  enlace?: EnlaceFicha;
+  filtro?: Filtro;
+}) {
   if (poules.length === 0) {
-    return <Nota>No hay asaltos de poule importados para esta prueba. No significa que no se hayan disputado.</Nota>;
+    return <p className="text-sm text-muted-foreground">Sin poules.</p>;
   }
   return (
-    <div className="grid gap-6 xl:grid-cols-2">
+    <div className="grid gap-3 lg:grid-cols-2">
       {poules.map((p) => (
-        <Poule key={p.ronda} poule={p} volver={volver} />
+        <Poule key={p.ronda} poule={p} enlace={enlace} filtro={filtro} />
       ))}
     </div>
   );
@@ -104,12 +230,21 @@ export function PoulesDePrueba({ poules, volver }: { poules: PouleDePrueba[]; vo
 
 /* --------------------------------------------------------------------- cuadro */
 
-function Lado({ t, gana, volver }: { t: TiradorAsalto; gana: boolean; volver: string }) {
+/** Columnas del cuadro: dos en móvil, tres desde `sm`. */
+export const COLUMNAS_CUADRO = { movil: 2, escritorio: 3 } as const;
+
+function Lado({ t, gana, enlace, marcado }: { t: TiradorAsalto; gana: boolean; enlace?: EnlaceFicha; marcado: boolean }) {
   return (
-    <div className={cn('flex min-h-9 items-center gap-2 px-3 py-1.5', gana ? 'font-semibold' : 'text-muted-foreground')}>
-      {t.pais ? <BanderaPais pais={t.pais} /> : <span className="w-7" aria-hidden />}
-      <Nombre t={t} volver={volver} className={cn('min-w-0 flex-1 text-sm', gana && 'text-foreground')} />
-      <span className={cn('cifra text-base tabular-nums', gana && 'text-foreground')}>
+    <div
+      className={cn(
+        'flex min-h-8 min-w-0 items-center gap-1.5 px-2 sm:min-h-9',
+        gana ? 'font-semibold text-foreground' : 'text-muted-foreground',
+        marcado && 'bg-marcado',
+      )}
+    >
+      {t.pais ? <BanderaPais pais={t.pais} soloBandera /> : null}
+      <Nombre t={t} enlace={enlace} corto className="min-w-0 flex-1 text-[0.8125rem]" />
+      <span className="cifra shrink-0 text-sm tabular-nums">
         {gana ? <span className="sr-only">ganó con </span> : null}
         {t.tantos}
       </span>
@@ -117,40 +252,208 @@ function Lado({ t, gana, volver }: { t: TiradorAsalto; gana: boolean; volver: st
   );
 }
 
-function Asalto({ a, volver }: { a: AsaltoDePrueba; volver: string }) {
-  const ganaA = a.a.tantos > a.b.tantos;
-  const ganaB = a.b.tantos > a.a.tantos;
+export function idAsalto(id: string): string {
+  return `asalto-${id}`;
+}
+
+function Asalto({ a, enlace, filtro, ronda }: { a: AsaltoDePrueba; enlace?: EnlaceFicha; filtro: Filtro; ronda: string }) {
+  const marcadoA = resaltado(a.a, filtro);
+  const marcadoB = resaltado(a.b, filtro);
   return (
-    <li className="divide-y overflow-hidden rounded-md border bg-card">
-      <Lado t={a.a} gana={ganaA} volver={volver} />
-      <Lado t={a.b} gana={ganaB} volver={volver} />
-    </li>
+    <div
+      id={idAsalto(a.id)}
+      data-resaltado={marcadoA || marcadoB ? 'true' : undefined}
+      className={cn(
+        'min-w-0 scroll-mt-24 divide-y overflow-hidden rounded-md border bg-card',
+        (marcadoA || marcadoB) && 'border-primary ring-1 ring-primary',
+      )}
+    >
+      <span className="sr-only">{ronda}: </span>
+      <Lado t={a.a} gana={a.a.tantos > a.b.tantos} enlace={enlace} marcado={marcadoA} />
+      <Lado t={a.b} gana={a.b.tantos > a.a.tantos} enlace={enlace} marcado={marcadoB} />
+    </div>
   );
 }
 
-export function CuadroDePrueba({ cuadro, volver }: { cuadro: RondaCuadro[]; volver: string }) {
-  if (cuadro.length === 0) {
-    return <Nota>No hay asaltos de eliminación directa importados para esta prueba.</Nota>;
-  }
+/** Botón redondo de 36 px a la vista con 44 px de área táctil. */
+const FLECHA =
+  'group inline-flex size-11 items-center justify-center rounded-full focus-visible:outline-none disabled:pointer-events-none';
+const FLECHA_VISIBLE =
+  'inline-flex size-9 items-center justify-center rounded-full border border-input bg-secondary text-foreground transition-colors group-hover:bg-accent group-focus-visible:ring-[3px] group-focus-visible:ring-ring/50 group-disabled:opacity-35 motion-reduce:transition-none';
+
+function Flechas({
+  desde,
+  puedeAtras,
+  puedeAdelante,
+  onInicio,
+  className,
+}: Ventana & { onInicio?: (inicio: number) => void; className?: string }) {
   return (
-    <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
-      <ol className="flex flex-col gap-6 md:flex-row md:gap-4" aria-label="Cuadro de eliminación directa">
-        {cuadro.map((r) => (
-          <li key={r.ronda} className="flex min-w-0 flex-col gap-2 md:w-64 md:shrink-0">
-            <h3 className="flex items-baseline justify-between gap-2 border-b pb-1.5 text-base">
-              <span>{r.etiqueta}</span>
-              <span className="text-xs text-muted-foreground">
-                {r.asaltos.length === 1 ? '1 asalto' : `${r.asaltos.length} asaltos`}
-              </span>
-            </h3>
-            <ul className="flex flex-col gap-2 md:h-full md:justify-around">
-              {r.asaltos.map((a) => (
-                <Asalto key={a.id} a={a} volver={volver} />
-              ))}
-            </ul>
-          </li>
-        ))}
-      </ol>
+    <div className={cn('-mr-1 items-center', className)}>
+      <button type="button" className={FLECHA} disabled={!puedeAtras} onClick={() => onInicio?.(desde - 1)} aria-label="Ronda anterior">
+        <span className={FLECHA_VISIBLE}>
+          <ChevronLeft className="size-4" aria-hidden />
+        </span>
+      </button>
+      <button type="button" className={FLECHA} disabled={!puedeAdelante} onClick={() => onInicio?.(desde + 1)} aria-label="Ronda siguiente">
+        <span className={FLECHA_VISIBLE}>
+          <ChevronRight className="size-4" aria-hidden />
+        </span>
+      </button>
+    </div>
+  );
+}
+
+const COLUMNAS_MOVIL = ['grid-cols-1', 'grid-cols-1', 'grid-cols-2'] as const;
+const COLUMNAS_ESCRITORIO = ['sm:grid-cols-1', 'sm:grid-cols-1', 'sm:grid-cols-2', 'sm:grid-cols-3'] as const;
+
+type Sitio = { columna: number; fila: string } | null;
+
+/**
+ * Dónde va la casilla `k` de la ronda `i` en una ventana: cada ronda ocupa el
+ * doble de filas que la anterior y se centra en ellas, así el asalto queda a
+ * la altura del par del que sale. La fila 1 es la de los rótulos.
+ */
+function sitio(v: Ventana, i: number, k: number): Sitio {
+  if (i < v.desde || i >= v.hasta) return null;
+  const alto = 2 ** (i - v.desde);
+  return { columna: i - v.desde + 1, fila: `${2 + k * alto} / span ${alto}` };
+}
+
+/** Posición por anchura con variables CSS: las clases son fijas, los números no. */
+const POSICION =
+  'self-center [grid-column:var(--col-m)] [grid-row:var(--fila-m)] sm:[grid-column:var(--col-e)] sm:[grid-row:var(--fila-e)]';
+
+function visibilidad(m: Sitio, e: Sitio): string {
+  return cn(m ? 'block' : 'hidden', e ? 'sm:block' : 'sm:hidden');
+}
+
+function estilo(m: Sitio, e: Sitio): CSSProperties {
+  return {
+    '--col-m': m?.columna,
+    '--fila-m': m?.fila,
+    '--col-e': e?.columna,
+    '--fila-e': e?.fila,
+  } as CSSProperties;
+}
+
+/**
+ * Cuadro de eliminación directa por ventanas de rondas, de la mayor a la
+ * final, en una sola rejilla: las filas se ajustan a lo que contienen, así un
+ * exento de la primera columna visible ocupa poco y el cuadro sigue alineado.
+ */
+export function CuadroDePrueba({
+  cuadro,
+  enlace,
+  filtro = SIN_FILTRO,
+  inicio: pedido,
+  onInicio,
+}: {
+  cuadro: RondaCuadro[];
+  enlace?: EnlaceFicha;
+  filtro?: Filtro;
+  /**
+   * Primera ronda visible (0 = la mayor); sin dar, la mayor del cuadro
+   * principal. Se recorta para no pasar de la final.
+   */
+  inicio?: number;
+  onInicio?: (inicio: number) => void;
+}) {
+  if (cuadro.length === 0) {
+    return <p className="text-sm text-muted-foreground">Sin directas.</p>;
+  }
+  const { principales, otras } = separarRondas(cuadro);
+  const huecos = huecosCuadro(principales);
+  const inicio = pedido ?? inicioPorDefecto(principales);
+  const movil = ventanaRondas(principales.length, inicio, COLUMNAS_CUADRO.movil);
+  const escritorio = ventanaRondas(principales.length, inicio, COLUMNAS_CUADRO.escritorio);
+  const rotulo = (v: Ventana) =>
+    `${etiquetaCortaRonda(principales[v.desde])} – ${etiquetaCortaRonda(principales[v.hasta - 1])}`;
+
+  return (
+    <div className="flex min-w-0 flex-col gap-3">
+      {principales.length > 0 ? (
+        <>
+          <div className="flex items-center justify-between gap-3">
+            <p className="min-w-0 truncate text-sm text-muted-foreground" aria-live="polite">
+              <span className="sm:hidden">{rotulo(movil)}</span>
+              <span className="hidden sm:inline">{rotulo(escritorio)}</span>
+            </p>
+            <Flechas {...movil} onInicio={onInicio} className="flex sm:hidden" />
+            <Flechas {...escritorio} onInicio={onInicio} className="hidden sm:flex" />
+          </div>
+          <div
+            role="list"
+            aria-label="Cuadro de eliminación directa"
+            className={cn(
+              'grid gap-x-2 gap-y-1.5 sm:gap-x-4 sm:gap-y-2',
+              COLUMNAS_MOVIL[Math.min(principales.length, 2)],
+              COLUMNAS_ESCRITORIO[Math.min(principales.length, 3)],
+            )}
+          >
+            {principales.map((r, i) => {
+              const m = sitio(movil, i, 0) && { columna: i - movil.desde + 1, fila: '1' };
+              const e = sitio(escritorio, i, 0) && { columna: i - escritorio.desde + 1, fila: '1' };
+              return (
+                <h3
+                  key={`rotulo-${r.ronda}`}
+                  aria-hidden
+                  style={estilo(m, e)}
+                  className={cn(
+                    'flex items-baseline justify-between gap-2 border-b pb-1 text-sm leading-tight',
+                    visibilidad(m, e),
+                    '[grid-column:var(--col-m)] [grid-row:1] sm:[grid-column:var(--col-e)]',
+                  )}
+                >
+                  <span className="truncate">{etiquetaCortaRonda(r)}</span>
+                </h3>
+              );
+            })}
+            {principales.flatMap((r, i) =>
+              huecos[i].map((a, k) => {
+                const m = sitio(movil, i, k);
+                const e = sitio(escritorio, i, k);
+                if (!m && !e) return null;
+                if (!a) {
+                  // Sólo la primera columna visible necesita marcar el hueco; en
+                  // las demás, la rejilla ya deja su sitio.
+                  const primeraM = m && i === movil.desde ? m : null;
+                  const primeraE = e && i === escritorio.desde ? e : null;
+                  if (!primeraM && !primeraE) return null;
+                  return (
+                    <div
+                      key={`hueco-${r.ronda}-${k}`}
+                      aria-hidden
+                      style={estilo(primeraM, primeraE)}
+                      className={cn('h-4', visibilidad(primeraM, primeraE), POSICION)}
+                    />
+                  );
+                }
+                return (
+                  <div
+                    key={a.id}
+                    role="listitem"
+                    style={estilo(m, e)}
+                    className={cn('min-w-0', visibilidad(m, e), POSICION)}
+                  >
+                    <Asalto a={a} enlace={enlace} filtro={filtro} ronda={r.etiqueta} />
+                  </div>
+                );
+              }),
+            )}
+          </div>
+        </>
+      ) : null}
+      {otras.map((r) => (
+        <section key={r.ronda} aria-label={r.etiqueta} className="flex flex-col gap-1.5">
+          <h3 className="border-b pb-1 text-sm">{r.etiqueta}</h3>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {r.asaltos.map((a) => (
+              <Asalto key={a.id} a={a} enlace={enlace} filtro={filtro} ronda={r.etiqueta} />
+            ))}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }

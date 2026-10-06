@@ -1,11 +1,11 @@
 'use client';
 
+import { Check } from 'lucide-react';
 import { useOptimistic, useState, useTransition } from 'react';
 import {
   guardarFavoritoAccion,
   quitarFavoritoAccion,
 } from '@/app/(app)/explorar/favoritos-acciones';
-import { Button } from '@/components/ui/button';
 import { alternarFavorito } from '@/lib/sport/explorar/favorito-alternar';
 import {
   type LecturaFavorito,
@@ -15,7 +15,7 @@ import {
   resolverOperacion,
 } from '@/lib/sport/explorar/favorito-estado';
 import { cn } from '@/lib/utils';
-import { mensajeSeguir } from './boton-favorito';
+import { clasesSeguir, mensajeSeguir } from './boton-favorito';
 
 /**
  * «Seguir» compacto para las filas del buscador: el mismo favorito privado y
@@ -60,26 +60,33 @@ export function BotonSeguirCompacto({
   const error = cambio?.resultado === 'error';
   return (
     <span className={cn('relative shrink-0', className)}>
-      <Button
+      {/* La pastilla mide 32 px, pero el botón ocupa los 44 px de alto de un toque. */}
+      <button
         type="button"
-        size="sm"
-        variant={optimista ? 'outline' : 'default'}
         onClick={alternar}
         aria-disabled={pendiente}
         aria-busy={pendiente}
         title={optimista ? `Dejar de seguir a ${nombre}` : `Seguir a ${nombre}: es privado y no le avisa`}
         data-estado={optimista ? 'favorito' : 'sin-guardar'}
-        className={cn(
-          'min-w-[5.5rem] cursor-pointer rounded-lg px-2.5 text-[0.8125rem] font-semibold aria-disabled:cursor-wait sm:min-w-[6.25rem] sm:px-3 sm:text-sm',
-          optimista && 'border-filete-alto bg-transparent text-foreground hover:bg-accent',
-          pendiente && 'opacity-70',
-        )}
+        className="group relative flex h-11 cursor-pointer items-center rounded-lg outline-none aria-disabled:cursor-wait"
       >
-        {error ? 'Reintentar' : optimista ? 'Siguiendo' : 'Seguir'}
+        <span
+          className={cn(
+            clasesSeguir(optimista, error),
+            'h-8 gap-1 rounded-full px-3 text-sm group-focus-visible:ring-[3px] group-focus-visible:ring-ring/50',
+            pendiente && 'opacity-70',
+          )}
+        >
+          {error ? 'Reintentar' : optimista ? (
+            // En 320 px «Siguiendo» se come el nombre: queda la marca, y la palabra para el lector.
+            <span className="max-[359px]:sr-only">Siguiendo</span>
+          ) : 'Seguir'}
+          {optimista && !error ? <Check className="size-3.5" strokeWidth={2.5} aria-hidden /> : null}
+        </span>
         <span className="sr-only">
           {optimista ? `: toca para dejar de seguir a ${nombre}` : ` a ${nombre}`}
         </span>
-      </Button>
+      </button>
       <span role="status" className="sr-only">
         {pendiente ? 'Guardando el cambio…' : cambio && !error ? mensajeSeguir(cambio, nombre) : ''}
       </span>

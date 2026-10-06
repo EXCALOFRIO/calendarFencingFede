@@ -9,6 +9,10 @@ import { requestEntry } from '@/lib/entries/actions';
 import { inscritosDelEvento } from './inscritos';
 import { ENTRY_STATUS_LABEL, type EntryStatus } from '@/lib/entries/state-machine';
 import { getCurrentSeason, getDataFreshness, listEvents } from '@/lib/queries/calendar';
+import { cargarTramoPasado } from '@/lib/queries/calendario-pasado';
+import { tramoDeMeses, tramoPasadoDe } from '@/lib/queries/calendario-pasado-tramo';
+import { hoyMadrid } from '@/lib/callups/fechas';
+import { pasadoDelTramo } from './calendario-pasado';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +35,27 @@ export default async function CalendarioPage({
   // Periodo y filtros con los que se vuelve desde una edición o una persona.
   const inicial = leerContextoCalendario((await searchParams) ?? {});
 
-  const [eventos, atletas, temporada, frescura] = await Promise.all([
+  /**
+   * LO YA CELEBRADO DEL TRAMO CON EL QUE SE ABRE, Y SOLO ESO.
+   *
+   * El resto del pasado lo pide la vista al navegar hacia atrás. Se adelanta
+   * aquí el del tramo de arranque porque casi siempre lo hay —el día 5, los
+   * cuatro primeros días del mes ya pasaron, y con ellos el fin de semana del
+   * 3 y 4 de octubre con cinco competiciones— y porque al volver desde una
+   * edición de 2019 el calendario tiene que abrirse ya pintado, no vacío
+   * esperando a la red. Un fallo aquí no tumba la pantalla: la vista lo vuelve
+   * a pedir.
+   */
+  const hoy = hoyMadrid();
+  const [anioInicial, mesInicial] = (inicial.mes ?? hoy.slice(0, 7)).split('-').map(Number);
+  const arranque = tramoDeMeses(
+    anioInicial,
+    mesInicial - 1,
+    (inicial.vista ?? 'trimestre') === 'mes' ? 1 : 3,
+  );
+  const tramoInicial = tramoPasadoDe(arranque.desde, arranque.hasta, hoy);
+
+  const [eventos, atletas, temporada, frescura, pasadoInicial] = await Promise.all([
     /**
      * Solo nacional e internacional.
      *
@@ -44,6 +68,11 @@ export default async function CalendarioPage({
     getManagedAthletes(perfil.profileId),
     getCurrentSeason(),
     getDataFreshness(),
+    tramoInicial
+      ? cargarTramoPasado({ ...tramoInicial, hoy, scope: ['NACIONAL', 'INTERNACIONAL'] }).catch(
+          () => null,
+        )
+      : null,
   ]);
 
   const tiradores: TiradorOpcion[] = atletas.map((a) => ({
@@ -127,6 +156,8 @@ export default async function CalendarioPage({
       }
       solicitarInscripcion={requestEntry}
       cargarInscritos={inscritosDelEvento}
+      pasadoInicial={pasadoInicial}
+      cargarPasado={pasadoDelTramo}
     />
   );
 }

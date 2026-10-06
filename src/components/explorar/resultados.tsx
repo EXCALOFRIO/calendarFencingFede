@@ -1,31 +1,36 @@
-import { ChevronRight, Medal, SearchX, TriangleAlert, Trophy, Users, X } from 'lucide-react';
+'use client';
+
+import { ChevronRight, LoaderCircle, SearchX, TriangleAlert, X } from 'lucide-react';
 import Link from 'next/link';
-import { BanderaPais } from '@/components/bandera';
-import { Badge } from '@/components/ui/badge';
+import * as React from 'react';
+import { masDeportistasAccion } from '@/app/(app)/explorar/acciones';
 import { Button } from '@/components/ui/button';
 import { rutaFichaConRetorno } from '@/lib/sport/explorar/ficha-url';
-import type { VistaExplorar } from '@/lib/sport/explorar/pantalla';
+import type { DeportistaListado, VistaExplorar } from '@/lib/sport/explorar/pantalla';
+import { CLASES_MEDALLA, COLOR_MEDALLA, type Medalla } from '@/lib/sport/explorar/presentacion';
 import type { DeportistaResumen } from '@/lib/sport/explorar/tipos';
 import { TRAYECTORIA_VACIA, type TrayectoriaPersona } from '@/lib/sport/explorar/tipos-busqueda';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import {
   RUTA_EXPLORAR,
+  aEntrada,
   chipsActivos,
   construirUrl,
   hayCriterios,
-  rutaFicha,
   type CriteriosExplorar,
 } from '@/lib/sport/explorar/url';
-import { GENDER_LABEL, WEAPON_LABEL, cn, titular } from '@/lib/utils';
-import { AvatarAnillo } from './avatar-anillo';
-import { Aclaracion, Celda, Nota, fechaLegible } from './piezas';
+import { cn } from '@/lib/utils';
+import { CLASE_LISTA_PERFILES, CLASE_VER_MAS, FilaPerfil } from './buscador-social-fila';
+import { BotonSeguirCompacto } from './buscador-social-seguir';
 
-/** Filtros activos como enlaces que los quitan uno a uno. */
+/** Filtros activos como pastillas de una línea que los quitan uno a uno. */
 export function ChipsActivos({ criterios }: { criterios: CriteriosExplorar }) {
-  const chips = chipsActivos(criterios);
+  const todos = chipsActivos(criterios);
+  // El nombre solo ya está a la vista en la barra de búsqueda (con su X); como pastilla repetiría lo mismo.
+  const chips = todos.length === 1 && todos[0].clave === 'q' ? [] : todos;
   if (chips.length === 0) return null;
   return (
-    <ul aria-label="Filtros activos" className="flex flex-wrap gap-2">
+    <ul aria-label="Filtros activos" className="flex min-w-0 flex-wrap gap-2">
       {chips.map((chip) => (
         <li key={chip.clave} className="min-w-0 max-w-full">
           <Link
@@ -33,14 +38,14 @@ export function ChipsActivos({ criterios }: { criterios: CriteriosExplorar }) {
             prefetch={false}
             aria-label={`Quitar filtro ${chip.etiqueta}: ${chip.valor}${chip.fechaInvalida ? ' (fecha no válida)' : ''}`}
             className={cn(
-              'inline-flex min-h-11 max-w-full flex-wrap items-center gap-1.5 rounded-full border bg-secondary px-3 text-sm hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+              'inline-flex h-9 max-w-full items-center gap-1.5 rounded-full border bg-secondary pr-2 pl-3 text-[0.8125rem] whitespace-nowrap hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
               chip.fechaInvalida && 'border-danger/40',
             )}
           >
-            <span className="text-muted-foreground">{chip.etiqueta}</span>
-            <span className="max-w-48 min-w-0 py-1 font-medium break-words">{chip.valor}</span>
-            {chip.fechaInvalida ? <span className="text-xs text-danger">no válida</span> : null}
-            <X className="size-3.5 shrink-0" aria-hidden />
+            <span className="shrink-0 text-muted-foreground">{chip.etiqueta}</span>
+            <span className="min-w-0 truncate font-medium">{chip.valor}</span>
+            {chip.fechaInvalida ? <span className="shrink-0 text-xs text-danger">no válida</span> : null}
+            <X className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           </Link>
         </li>
       ))}
@@ -48,124 +53,79 @@ export function ChipsActivos({ criterios }: { criterios: CriteriosExplorar }) {
   );
 }
 
-const METALES = [
-  { clave: 'oros', etiqueta: 'Oro', plural: 'Oros' },
-  { clave: 'platas', etiqueta: 'Plata', plural: 'Platas' },
-  { clave: 'bronces', etiqueta: 'Bronce', plural: 'Bronces' },
-] as const;
+const METALES: { medalla: Medalla; clave: 'oros' | 'platas' | 'bronces'; uno: string; varios: string }[] = [
+  { medalla: 'oro', clave: 'oros', uno: 'oro', varios: 'oros' },
+  { medalla: 'plata', clave: 'platas', uno: 'plata', varios: 'platas' },
+  { medalla: 'bronce', clave: 'bronces', uno: 'bronce', varios: 'bronces' },
+];
 
-/** Medallas individuales con texto: el color de la medalla no es la única señal. */
-function Medallero({ t }: { t: TrayectoriaPersona }) {
+/** Medallas individuales en pastillas mínimas; el número y el texto oculto dicen el metal, no sólo el color. */
+function Medallas({ t }: { t: TrayectoriaPersona }) {
   const metales = METALES.filter((m) => t[m.clave] > 0);
   if (metales.length === 0) return null;
   return (
-    <span className="flex flex-wrap gap-1.5">
-      <span className="sr-only">Medallas individuales: </span>
+    <span className="flex shrink-0 items-center gap-1">
       {metales.map((m) => (
-        <Badge key={m.clave} variant="outline" className="gap-1 px-2 py-0.5 text-xs">
-          <Medal className="size-3 text-muted-foreground" aria-hidden />
-          <span className="cifra">{t[m.clave]}</span>
-          <span>{t[m.clave] === 1 ? m.etiqueta : m.plural}</span>
-        </Badge>
+        <span
+          key={m.clave}
+          className={cn('inline-flex h-[1.125rem] items-center gap-1 rounded-full border px-1.5 text-[0.6875rem] leading-none font-semibold tabular-nums', CLASES_MEDALLA[m.medalla])}
+        >
+          <span aria-hidden="true" className="size-1.5 rounded-full" style={{ backgroundColor: COLOR_MEDALLA[m.medalla] }} />
+          {t[m.clave]}
+          <span className="sr-only"> {t[m.clave] === 1 ? m.uno : m.varios}</span>
+        </span>
       ))}
     </span>
   );
 }
 
-type FilaBuscada = DeportistaResumen & { trayectoria?: TrayectoriaPersona };
+/** Sin trayectoria (lecturas antiguas o pruebas) la fila sólo enseña la actividad. */
+type FilaBuscada = DeportistaResumen & Partial<Pick<DeportistaListado, 'trayectoria' | 'seguida'>>;
 
 function FilaDeportista({ d, volver }: { d: FilaBuscada; volver: string }) {
-  const homonimo = d.mismoNombre > 1;
   const t = d.trayectoria ?? TRAYECTORIA_VACIA;
+  const nombre = nombreVisible(d.nombre) || d.nombre;
+  const homonimo = d.mismoNombre > 1;
   return (
-    <li>
-      {/* Las marcas `data-*` son las de las filas del buscador: su contenedor
-          (BuscadorSocial) apunta la ficha abierta en Recientes y recorre las
-          filas con las flechas. */}
-      <Link
-        href={rutaFichaConRetorno(d.id, volver)}
-        prefetch={false}
-        data-fila-perfil=""
-        data-persona={d.id}
-        data-nombre={d.nombre}
-        data-pais={d.pais ?? ''}
-        className="group grid min-h-11 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-3 px-4 py-4 hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset md:grid-cols-[auto_minmax(0,2fr)_minmax(0,1.4fr)_auto] md:items-center md:gap-x-5"
-      >
-        <AvatarAnillo nombre={nombreVisible(d.nombre)} tamano="md" apagado={d.resultadosImportados === 0} className="self-start" />
-
-        <span className="flex min-w-0 flex-col gap-1.5">
-          <span className="text-base leading-tight font-semibold break-words">{nombreVisible(d.nombre)}</span>
-          <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            {d.pais ? <BanderaPais pais={d.pais} conNombre /> : <span>País no publicado</span>}
-            <span>
-              {d.genero ? GENDER_LABEL[d.genero] : 'Género no publicado'}
-              {homonimo && d.anioNacimiento !== null ? `, nacimiento ${d.anioNacimiento}` : ''}
-            </span>
-          </span>
-          {d.armas.length > 0 ? (
-            <span className="flex flex-wrap gap-1.5">
-              <span className="sr-only">Armas: </span>
-              {d.armas.map((a) => (
-                <Badge key={a} variant="secondary">{WEAPON_LABEL[a]}</Badge>
-              ))}
-            </span>
-          ) : (
-            <span className="text-xs text-muted-foreground">Sin pruebas importadas</span>
-          )}
-          {d.alias ? (
-            <span className="text-xs text-muted-foreground">Coincide con el alias «{d.alias}»</span>
-          ) : null}
-          {homonimo ? (
-            <span className="inline-flex items-start gap-1.5 text-xs text-warn">
-              <Users className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-              <span>
-                {d.mismoNombre} personas con este nombre: comprueba país, año y armas antes de abrir la ficha.
-              </span>
-            </span>
-          ) : null}
+    <FilaPerfil
+      p={{ id: d.id, nombre: d.nombre, pais: d.pais, armas: d.armas, resultados: d.resultadosImportados, alias: d.alias }}
+      href={rutaFichaConRetorno(d.id, volver)}
+      meta={homonimo ? (
+        <span className="text-warn" title={`${d.mismoNombre} personas con este nombre`}>
+          {d.anioNacimiento !== null ? `n. ${d.anioNacimiento}` : 'Homónimo'}
+          <span className="sr-only">: hay {d.mismoNombre} personas con este nombre</span>
         </span>
-
-        <span className="col-span-2 flex min-w-0 flex-col gap-2 md:col-span-1">
-          {t.ultima ? (
-            <Celda etiqueta="Última competición">
-              <span className="text-sm leading-snug break-words">{titular(t.ultima.torneo)}</span>
-              {t.ultima.fecha ? (
-                <span className="text-xs text-muted-foreground">{fechaLegible(t.ultima.fecha)}</span>
-              ) : null}
-            </Celda>
-          ) : null}
-          {t.mejorPuesto !== null || t.oros + t.platas + t.bronces > 0 ? (
-            <span className="flex flex-wrap items-center gap-2">
-              {t.mejorPuesto !== null ? (
-                <span className="inline-flex items-center gap-1.5 text-sm">
-                  <Trophy className="size-3.5 text-muted-foreground" aria-hidden />
-                  <span className="text-muted-foreground">Mejor resultado</span>
-                  <span className="cifra font-semibold">{t.mejorPuesto}.º</span>
-                </span>
-              ) : null}
-              <Medallero t={t} />
-            </span>
-          ) : null}
-        </span>
-
-        <span className="col-span-2 flex items-baseline gap-1.5 border-t pt-3 md:col-span-1 md:flex-col md:items-end md:gap-0.5 md:border-t-0 md:pt-0 md:text-right">
-          {d.resultadosImportados > 0 ? (
-            <>
-              <span className="cifra text-3xl leading-none">{d.resultadosImportados}</span>
-              <span className="text-xs text-muted-foreground">
-                {d.resultadosImportados === 1 ? 'clasificación' : 'clasificaciones'}
-              </span>
-            </>
-          ) : (
-            <span className="text-sm text-muted-foreground">Ninguno importado</span>
-          )}
-          <ChevronRight className="ml-auto size-4 self-center text-muted-foreground group-hover:text-foreground md:hidden" aria-hidden />
-        </span>
-      </Link>
-    </li>
+      ) : undefined}
+      detalle={<Medallas t={t} />}
+      accion={typeof d.seguida === 'boolean' ? (
+        <BotonSeguirCompacto personaId={d.id} nombre={nombre} inicial={d.seguida} lectura={d} />
+      ) : (
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+      )}
+    />
   );
 }
 
+/** Añade `nuevas` a `actuales` sin repetir persona y sin cambiar el orden de lo ya pintado. */
+export function anadirSinRepetir<T extends { id: string }>(actuales: readonly T[], nuevas: readonly T[]): T[] {
+  const vistas = new Set(actuales.map((d) => d.id));
+  const resultado = [...actuales];
+  for (const d of nuevas) {
+    if (vistas.has(d.id)) continue;
+    vistas.add(d.id);
+    resultado.push(d);
+  }
+  return resultado;
+}
+
+type EstadoMas = 'reposo' | 'cargando' | 'error';
+
+/**
+ * Lista completa de una búsqueda. «Ver más» pide la página siguiente con el
+ * cursor de la última y la añade debajo: sin navegar, sin repetir a nadie y
+ * en el mismo orden (el cursor es por clave, así que las páginas no se
+ * solapan). Sin JavaScript, el mismo botón es un enlace a esa página.
+ */
 export function ListaDeportistas({
   items,
   siguiente,
@@ -177,49 +137,87 @@ export function ListaDeportistas({
   cursorActual: string | undefined;
   criterios: CriteriosExplorar;
 }) {
-  // La ficha vuelve a esta misma página de esta misma búsqueda, no a la lista desnuda.
+  const [lista, setLista] = React.useState<FilaBuscada[]>(items);
+  const [cursor, setCursor] = React.useState(siguiente);
+  const [estado, setEstado] = React.useState<EstadoMas>('reposo');
+  const contenedor = React.useRef<HTMLUListElement>(null);
+  // La ficha vuelve a esta misma búsqueda; lo añadido con «Ver más» se vuelve a pedir al volver.
   const volver = construirUrl(criterios, cursorActual);
+
+  async function verMas(e: React.MouseEvent<HTMLAnchorElement>) {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    if (!cursor || estado === 'cargando') return;
+    setEstado('cargando');
+    const antes = lista.length;
+    try {
+      const r = await masDeportistasAccion(aEntrada(criterios, cursor));
+      if (r.tipo !== 'ok') {
+        setEstado('error');
+        return;
+      }
+      setLista((actual) => anadirSinRepetir(actual, r.items));
+      setCursor(r.siguiente);
+      setEstado('reposo');
+      // El foco pasa a la primera fila nueva: el botón puede desaparecer y el teclado seguiría donde estaba.
+      requestAnimationFrame(() => {
+        contenedor.current?.querySelectorAll<HTMLElement>('[data-fila-perfil]')[antes]?.focus({ preventScroll: true });
+      });
+    } catch {
+      setEstado('error');
+    }
+  }
+
+  const n = lista.length;
   return (
-    <section aria-labelledby="explorar-resultados" className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b pb-3">
-        <h2 id="explorar-resultados" className="text-2xl sm:text-3xl">Deportistas</h2>
-        <p role="status" className="text-sm text-muted-foreground">
-          {items.length === 1 ? '1 deportista' : `${items.length} deportistas`} en esta página
-          {siguiente ? ', hay más' : ''}.
+    <section aria-labelledby="explorar-resultados" className="flex min-w-0 flex-col gap-1 lg:max-w-2xl">
+      <div className="flex min-h-11 items-center justify-between gap-3 px-0.5 sm:px-3">
+        <h2 id="explorar-resultados" className="text-base font-semibold tracking-normal">Deportistas</h2>
+        <p role="status" className="text-xs text-muted-foreground tabular-nums">
+          {n.toLocaleString('es-ES')}{cursor ? '+' : ''}
+          <span className="sr-only">{n === 1 ? ' deportista' : ' deportistas'}{cursor ? ', hay más' : ''}</span>
         </p>
       </div>
 
-      <ul className="divide-y overflow-hidden rounded-md border bg-card" aria-label="Deportistas encontrados">
-        {items.map((d) => (
+      {cursorActual ? (
+        <Link
+          href={construirUrl(criterios)}
+          prefetch={false}
+          className="px-0.5 py-2 text-sm text-primary-text underline-offset-4 hover:underline sm:px-3"
+        >
+          Ir a los primeros resultados
+        </Link>
+      ) : null}
+
+      <ul ref={contenedor} className={CLASE_LISTA_PERFILES} aria-label="Deportistas encontrados">
+        {lista.map((d) => (
           <FilaDeportista key={d.id} d={d} volver={volver} />
         ))}
       </ul>
 
-      <nav aria-label="Páginas de resultados" className="flex flex-wrap items-center gap-3">
-        {cursorActual ? (
-          <Button asChild variant="outline">
-            <Link href={construirUrl(criterios)} prefetch={false}>
-              Volver a la primera página
+      <div className="flex flex-col items-center gap-2 px-0.5 pt-3 sm:px-3">
+        {cursor ? (
+          <Button asChild variant="secondary" className={CLASE_VER_MAS}>
+            <Link
+              href={construirUrl(criterios, cursor)}
+              prefetch={false}
+              rel="next"
+              aria-disabled={estado === 'cargando'}
+              onClick={verMas}
+            >
+              {estado === 'cargando' ? (
+                <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden />
+              ) : null}
+              {estado === 'cargando' ? 'Cargando…' : 'Ver más'}
             </Link>
           </Button>
         ) : null}
-        {siguiente ? (
-          <Button asChild variant="outline">
-            <Link href={construirUrl(criterios, siguiente)} prefetch={false} rel="next">
-              Ver más deportistas
-            </Link>
-          </Button>
-        ) : (
-          <p className="text-sm text-muted-foreground">No hay más resultados con estos criterios.</p>
-        )}
-      </nav>
-
-      <Aclaracion titulo="Sobre las clasificaciones importadas">
-        <Nota>
-          Los resultados importados son las clasificaciones finales ya cargadas de las fuentes oficiales.
-          Que una persona tenga cero no significa que no haya competido: puede faltar por importar.
-        </Nota>
-      </Aclaracion>
+        {estado === 'error' ? (
+          <p role="alert" className="text-center text-sm text-danger">
+            No se han podido cargar más.
+          </p>
+        ) : null}
+      </div>
     </section>
   );
 }
@@ -238,13 +236,13 @@ function Aviso({
   return (
     <section
       role={alerta ? 'alert' : 'status'}
-      className="flex flex-col items-start gap-2 rounded-md border bg-card px-4 py-5"
+      className="flex min-w-0 flex-col items-start gap-2 rounded-2xl border bg-card px-4 py-5 lg:max-w-2xl"
     >
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         {icono}
-        <h2 className="text-xl">{titulo}</h2>
+        <h2 className="text-lg leading-tight">{titulo}</h2>
       </div>
-      <div className="flex flex-col items-start gap-3 text-sm text-muted-foreground medida">{children}</div>
+      <div className="flex min-w-0 flex-col items-start gap-3 text-sm text-muted-foreground medida">{children}</div>
     </section>
   );
 }
@@ -260,20 +258,19 @@ export function EstadoSinLista({
   switch (vista.tipo) {
     case 'sin_criterio':
       return (
-        <Aviso icono={<SearchX className="size-5 text-muted-foreground" aria-hidden />} titulo="Empieza por un nombre o un filtro">
+        <Aviso icono={<SearchX className="size-5 shrink-0 text-muted-foreground" aria-hidden />} titulo="Busca a alguien">
           <p>
             {criterios.q
-              ? 'Con una sola letra no hay búsqueda posible. Escribe al menos dos letras del nombre, o elige un arma, un torneo o una temporada.'
-              : 'Busca por nombre o alias, o elige un filtro. Puedes consultar también a deportistas sin cuenta o retirados.'}
+              ? 'Escribe al menos dos letras.'
+              : 'Escribe un nombre o elige un filtro.'}
           </p>
         </Aviso>
       );
     case 'entrada_invalida':
       return (
-        <Aviso alerta icono={<TriangleAlert className="size-5 text-warn" aria-hidden />} titulo="Algún filtro no es válido">
+        <Aviso alerta icono={<TriangleAlert className="size-5 shrink-0 text-warn" aria-hidden />} titulo="Algún filtro no es válido">
           <p>
-            La búsqueda no se ha hecho porque un valor de la dirección no se entiende (un arma, una
-            fecha o un intervalo al revés). Esto no significa que no haya resultados.
+            No se ha buscado.
           </p>
           <Button asChild variant="outline">
             <Link href={RUTA_EXPLORAR} prefetch={false}>
@@ -284,31 +281,23 @@ export function EstadoSinLista({
       );
     case 'cursor_invalido':
       return (
-        <Aviso alerta icono={<TriangleAlert className="size-5 text-warn" aria-hidden />} titulo="Esta página ya no corresponde a la búsqueda">
-          <p>El enlace de página es de otra búsqueda o ha caducado. Vuelve a la primera página de esta búsqueda.</p>
+        <Aviso alerta icono={<TriangleAlert className="size-5 shrink-0 text-warn" aria-hidden />} titulo="Página caducada">
           <Button asChild variant="outline">
             <Link href={reintentar} prefetch={false}>
-              Volver a la primera página
+              Ir a los primeros resultados
             </Link>
           </Button>
         </Aviso>
       );
     case 'no_disponible':
       return (
-        <Aviso alerta icono={<TriangleAlert className="size-5 text-warn" aria-hidden />} titulo="El buscador aún no está activo">
-          <p>
-            Los datos deportivos todavía no están preparados en esta instalación, así que no se ha
-            podido consultar a nadie. No es que no haya coincidencias.
-          </p>
+        <Aviso alerta icono={<TriangleAlert className="size-5 shrink-0 text-warn" aria-hidden />} titulo="Búsqueda no disponible">
+          <p>Aún no está activa en esta instalación.</p>
         </Aviso>
       );
     case 'error':
       return (
-        <Aviso alerta icono={<TriangleAlert className="size-5 text-danger" aria-hidden />} titulo="No se ha podido hacer la búsqueda">
-          <p>
-            Ha fallado la consulta, no es que no haya resultados. Inténtalo de nuevo; si sigue
-            fallando, avisa a la dirección técnica.
-          </p>
+        <Aviso alerta icono={<TriangleAlert className="size-5 shrink-0 text-danger" aria-hidden />} titulo="Ha fallado la búsqueda">
           <Button asChild variant="outline">
             <Link href={reintentar} prefetch={false}>
               Reintentar
@@ -323,11 +312,8 @@ export function EstadoSinLista({
 
 export function EstadoSinCoincidencias({ criterios }: { criterios: CriteriosExplorar }) {
   return (
-    <Aviso icono={<SearchX className="size-5 text-muted-foreground" aria-hidden />} titulo="Nadie coincide con estos criterios">
-      <p>
-        Las búsquedas por nombre ignoran acentos y mayúsculas. Prueba con menos palabras, con
-        otro apellido o quitando algún filtro.
-      </p>
+    <Aviso icono={<SearchX className="size-5 shrink-0 text-muted-foreground" aria-hidden />} titulo="Nadie coincide">
+      <p>Prueba con menos palabras o menos filtros.</p>
       {hayCriterios(criterios) ? (
         <Button asChild variant="outline">
           <Link href={RUTA_EXPLORAR} prefetch={false}>

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { quitarGuardia } from '../scripts/indexado/comun';
-import { desvincularColisionesPdf, unificarPersonas } from '../scripts/indexado/unificar-personas';
+import { borrarEdicionesVacias, desvincularColisionesPdf, unificarPersonas } from '../scripts/indexado/unificar-personas';
 
 function crearBase(): DatabaseSync {
   const db = new DatabaseSync(':memory:');
@@ -188,6 +188,16 @@ describe('unificar-personas', () => {
     // La persona individual del mismo nombre sigue vinculada a su puesto individual.
     expect(fila(db, `SELECT person_id IS NOT NULL v FROM sport_result WHERE source_fact_key='pdf:2'`)).toEqual({ v: 1 });
     expect(unificarPersonas(db).equipos).toEqual({ resultados: 0, asaltosLado: 0, personasBorradas: 0 });
+  });
+
+  it('borra las ediciones que se quedaron sin pruebas y deja las demás', () => {
+    const db = fixture();
+    db.exec(`INSERT INTO sport_edition (id, source, season, tournament_key, name) VALUES
+      ('evacia', 'rfee_pdf', '2023-2024', 'pdf:vacia', 'TNR ABS');`);
+    expect(unificarPersonas(db).edicionesVacias).toBe(1);
+    expect(fila(db, `SELECT count(*) n FROM sport_edition WHERE id='evacia'`)).toEqual({ n: 0 });
+    expect(fila(db, `SELECT count(*) n FROM sport_edition WHERE id IN ('ef', 'ep')`)).toEqual({ n: 2 });
+    expect(borrarEdicionesVacias(db)).toBe(0);
   });
 
   it('desvincula los puestos de una misma persona repetida en una prueba individual PDF', () => {

@@ -4,10 +4,13 @@ import { clasificarSerie, SERIES_COMPLEMENTARIAS, type SerieComplementaria } fro
 import { exigirPerfil, filas, type ContextoExplorador } from './contexto';
 import { codificarCursor, decodificarCursor, UUID_RE } from './cursor';
 import {
+  agruparPruebas,
   enlacesDePrueba,
   estadoResultados,
   FUENTE_FIE,
   lecturasDePuestos,
+  pruebaDeId,
+  pruebaPorDefecto,
   type Clasificacion,
   type EdicionDetalle,
   type EdicionResumen,
@@ -15,8 +18,7 @@ import {
   type FilaEnlace,
   type PruebaDeEdicion,
 } from './edicion-modelo';
-import { leerAsaltosDePrueba } from './ediciones-asaltos';
-import { LIMITE_MAXIMO } from './entrada';
+import { leerAsaltosDeGrupo } from './ediciones-asaltos';
 import type { AsaltosDePrueba } from './tipos-busqueda';
 import { listaUuid, plegarSql } from './filtros-sql';
 import type { Arma, Formato, Genero } from './tipos';
@@ -31,6 +33,12 @@ const LIMITE_EDICIONES_SERIE = 200;
 const LIMITE_PRUEBAS = 200;
 const LIMITE_EDICIONES_EVENTO = 6;
 const CLASE_CLASIFICACION = 'clasificacion-edicion';
+/**
+ * La clasificación se lee entera de una vez (una prueba FIE ronda los 400
+ * puestos): el buscador de la página la recorre en el cliente. Por encima se
+ * pagina con el cursor.
+ */
+export const LIMITE_CLASIFICACION = 1000;
 
 const uuid = z.string().regex(UUID_RE);
 
@@ -39,7 +47,7 @@ export const esquemaEdicion = z
     edicionId: uuid,
     prueba: uuid.optional(),
     cursor: z.string().min(1).max(600).optional(),
-    limite: z.number().int().min(1).max(LIMITE_MAXIMO).optional(),
+    limite: z.number().int().min(1).max(LIMITE_CLASIFICACION).optional(),
   })
   .strict();
 
@@ -134,6 +142,7 @@ type FilaPrueba = {
   fuente: string;
   pruebaCalendarioId: string | null;
   importados: number;
+  asaltos?: number;
 };
 
 type FilaLectura = {
@@ -159,6 +168,7 @@ export function aPrueba(
     fecha: f.fecha,
     fuente: f.fuente,
     pruebaCalendarioId: f.pruebaCalendarioId,
+    asaltos: Number(f.asaltos ?? 0),
     resultados: {
       estado: estadoResultados(
         importados,
@@ -189,7 +199,8 @@ async function leerPruebas(
              c.gender AS genero, c.category AS categoria, c.category_raw AS "categoriaRaw",
              c.format AS formato, c.competition_date AS fecha, c.source AS fuente,
              c.event_competition_id AS "pruebaCalendarioId",
-             (SELECT count(*) FROM sport_result r WHERE r.competition_id = c.id) AS importados
+             (SELECT count(*) FROM sport_result r WHERE r.competition_id = c.id) AS importados,
+             (SELECT count(*) FROM sport_bout b WHERE b.competition_id = c.id) AS asaltos
       FROM sport_competition c
       WHERE c.edition_id IN (${ids})
       ORDER BY c.edition_id, c.competition_date NULLS LAST, c.format, c.weapon,
@@ -223,6 +234,7 @@ async function leerPruebas(
     actuales.push(dto);
     porEdicion.set(f.edicionId, actuales);
   }
+  for (const [id, lista] of porEdicion) porEdicion.set(id, agruparPruebas(lista));
   return porEdicion;
 }
 
@@ -287,9 +299,11 @@ type FilaPuesto = {
 };
 
 /**
- * Una edición con todas sus pruebas y, si se pide una, su clasificación
- * paginada por posición. La clasificación sale de UNA fuente (la que más puestos
- * tiene) para no mezclar dos lecturas de la misma prueba; las demás se avisan.
+ * Una edición con todas sus pruebas (agrupadas, ver `agruparPruebas`) y la
+ * clasificación, poules y cuadro de la prueba pedida o, sin pedir ninguna, de
+ * la primera con puestos. La clasificación sale de UNA fuente (la que más
+ * puestos tiene) para no mezclar dos lecturas de la misma prueba; las demás se avisan.
+ * El cursor de página sólo vale con la prueba escrita en la petición.
  * Una fila lleva `personaId` sólo si el resultado está vinculado a una persona
  * deportiva: nunca se busca por nombre ni se usa una cuenta.
  */
@@ -320,15 +334,18 @@ export async function leerEdicion(ctx: ContextoExplorador, entrada: unknown): Pr
   if (!cabecera) return { estado: 'no_encontrada' };
 
   const pruebasDetalle = (await leerPruebas(ctx, [edicionId])).get(edicionId) ?? [];
-  const elegida = prueba ? pruebasDetalle.find((p) => p.id === prueba) : undefined;
+  // Una parte de una prueba agrupada abre la prueba entera; sin pedir ninguna
+  // se abre la primera con puestos. Una prueba ajena no abre otra en su lugar.
+  const elegida = prueba ? pruebaDeId(pruebasDetalle, prueba) : pruebaPorDefecto(pruebasDetalle);
 
   let clasificacion: Clasificacion | null = null;
   let asaltos: AsaltosEdicion = null;
   if (elegida) {
+    const huellaElegida = { edicionId, prueba: elegida.id };
     [clasificacion, asaltos] = await Promise.all([
-      leerClasificacion(ctx, elegida.id, huella, clave, pedido ?? LIMITE_MAXIMO),
+      leerClasificacion(ctx, elegida.id, huellaElegida, clave, pedido ?? LIMITE_CLASIFICACION),
       // Poules y cuadro son un extra: si fallan, la clasificación se sigue viendo.
-      leerAsaltosDePrueba(ctx, elegida.id).catch((error: unknown) => {
+      leerAsaltosDeGrupo(ctx, elegida.miembros ?? [elegida.id]).catch((error: unknown) => {
         console.error('[explorar] los asaltos de la prueba no se pudieron leer:', error instanceof Error ? error.name : 'desconocido');
         return 'error' as const;
       }),
@@ -343,6 +360,7 @@ export async function leerEdicion(ctx: ContextoExplorador, entrada: unknown): Pr
       pruebaDesconocida: Boolean(prueba) && !elegida,
       clasificacion,
       asaltos,
+      pruebaElegida: elegida?.id ?? null,
     },
   };
 }

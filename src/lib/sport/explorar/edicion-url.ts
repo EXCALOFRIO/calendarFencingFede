@@ -29,7 +29,18 @@ export type CriteriosEdicion = {
   origen?: string;
   /** Búsqueda del catálogo de origen, con filtros y página ya saneados. */
   catalogo?: string;
+  /** Persona deportiva que se resalta (y a la que se lleva) en las tres vistas. */
+  persona?: string;
+  /** Vista de la prueba con la que se abre la página. */
+  vista?: VistaPrueba;
 };
+
+export const VISTAS_PRUEBA = ['clasificacion', 'poules', 'directas'] as const;
+export type VistaPrueba = (typeof VISTAS_PRUEBA)[number];
+
+function esVista(valor: string): valor is VistaPrueba {
+  return (VISTAS_PRUEBA as readonly string[]).includes(valor);
+}
 
 export const CRITERIOS_EDICION_VACIOS: CriteriosEdicion = { prueba: '', cursor: '' };
 
@@ -46,22 +57,29 @@ export function leerCriteriosEdicion(params: Parametros): CriteriosEdicion {
   const prueba = primero(params.prueba);
   const origen = sanitizarRetornoCalendario(primero(params.origen));
   const catalogo = sanitizarRetornoCatalogo(primero(params.catalogo));
+  const persona = primero(params.persona);
+  const vista = primero(params.vista);
   return {
     prueba: UUID_RE.test(prueba) ? prueba.toLowerCase() : '',
     cursor: primero(params.cursor).slice(0, LONGITUD_MAXIMA_CURSOR),
     ...(origen ? { origen } : {}),
     ...(catalogo ? { catalogo } : {}),
+    ...(UUID_RE.test(persona) ? { persona: persona.toLowerCase() } : {}),
+    ...(esVista(vista) ? { vista } : {}),
   };
 }
 
 /**
  * Cambiar de prueba cambia la consulta: el cursor nunca viaja a otra
  * clasificación. El origen del calendario sí viaja siempre: no es parte de la consulta.
+ * La vista por defecto (clasificación) no se escribe.
  */
 export function construirUrlEdicion(edicionId: string, c: Partial<CriteriosEdicion> = {}): string {
   const params = new URLSearchParams();
   if (c.prueba) params.set('prueba', c.prueba);
   if (c.cursor) params.set('cursor', c.cursor);
+  if (c.vista && c.vista !== 'clasificacion' && esVista(c.vista)) params.set('vista', c.vista);
+  if (c.persona && UUID_RE.test(c.persona)) params.set('persona', c.persona.toLowerCase());
   const origen = sanitizarRetornoCalendario(c.origen);
   if (origen) params.set('origen', origen);
   const catalogo = sanitizarRetornoCatalogo(c.catalogo);
@@ -89,6 +107,8 @@ export function sanitizarRetornoEdicion(crudo: string): string {
     cursor: consulta.get('cursor') ?? undefined,
     origen: consulta.get('origen') ?? undefined,
     catalogo: consulta.get('catalogo') ?? undefined,
+    persona: consulta.get('persona') ?? undefined,
+    vista: consulta.get('vista') ?? undefined,
   });
   return construirUrlEdicion(edicion, criterios);
 }

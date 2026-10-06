@@ -9,10 +9,12 @@ export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Edición' };
 
 /**
- * Una edición con sus pruebas, el estado de sus resultados, los enlaces
- * comprobados y, al elegir una prueba, su clasificación paginada. Cada fila
- * vinculada abre la ficha deportiva de esa persona (nunca una cuenta) y la
- * ficha vuelve aquí con la misma prueba y página.
+ * Una edición con un selector de sus pruebas y la clasificación, las poules y
+ * las directas de la elegida (`prueba=`; sin ella, la primera con puestos).
+ * `vista=` abre poules o directas y `persona=` resalta a esa persona en las
+ * tres vistas. Cada nombre vinculado abre la ficha deportiva de esa persona
+ * (nunca una cuenta) y la ficha vuelve aquí con la misma prueba, vista y
+ * persona resaltada.
  *
  * La guarda de sesión va aquí además de en el layout porque la ruta se puede
  * abrir escribiendo la dirección; nada se consulta antes de ella.

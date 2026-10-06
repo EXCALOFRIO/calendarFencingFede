@@ -23,7 +23,7 @@ import { rutaFicha } from '@/lib/sport/explorar/url';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { cn, titular } from '@/lib/utils';
 import { AvatarAnillo } from '../avatar-anillo';
-import { Aclaracion, Bloque, Nota, fechaLegible, type Nivel } from '../piezas';
+import { Bloque, fechaLegible, type Nivel } from '../piezas';
 import { Cifra, Metrica, SinDato } from './piezas-perfil';
 
 const ICONOS: Record<ClaveCuriosidad, LucideIcon> = {
@@ -99,7 +99,7 @@ function TarjetaCuriosidad({ personaId, c, nivel }: { personaId: string; c: Curi
   const b = c.balance;
   return (
     <li
-      className="flex w-[17.5rem] min-w-0 shrink-0 snap-start flex-col gap-3 rounded-md border bg-card px-4 py-4 sm:w-auto sm:rounded-none sm:border-0 sm:px-5"
+      className="flex min-w-0 flex-col gap-3 bg-card px-4 py-4 sm:px-5"
       data-curiosidad={c.clave}
     >
       <span className="flex items-center gap-2.5">
@@ -112,14 +112,13 @@ function TarjetaCuriosidad({ personaId, c, nivel }: { personaId: string; c: Curi
         <span className="cifra text-4xl leading-none whitespace-nowrap">{cifra}</span>
         <span className="text-xs text-muted-foreground">{unidad}</span>
       </p>
-      <p className="text-sm leading-snug break-words">{fraseCuriosidad(c)}</p>
+      {/* El rival y el balance ya van abajo: la frase sólo aporta algo cuando nombra el asalto. */}
       {c.marcador ? (
-        <p className="-mt-1 text-xs text-muted-foreground">
-          {c.marcador.fecha ? fechaLegible(c.marcador.fecha) : 'Fecha no publicada'}
+        <p className="text-sm leading-snug break-words">
+          {fraseCuriosidad(c)}
+          {c.marcador.fecha ? <span className="block text-xs text-muted-foreground">{fechaLegible(c.marcador.fecha)}</span> : null}
         </p>
       ) : null}
-      {/* En el carrusel móvil las tarjetas se estiran a la más alta: el hueco
-          queda al final y no entre la frase y el rival. */}
       <div className="flex min-w-0 flex-col gap-2 border-t pt-3 sm:mt-auto">
         <div className="flex min-w-0 items-center gap-2">
           <Link
@@ -137,7 +136,7 @@ function TarjetaCuriosidad({ personaId, c, nivel }: { personaId: string; c: Curi
             href={construirUrlCaraACara(personaId, { rival: c.rival.id })}
             prefetch={false}
             aria-label={`Cara a cara con ${nombre}`}
-            className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-sm text-primary-text hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+            className="relative inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
           >
             <Swords className="size-4" aria-hidden />
             Cara a cara
@@ -176,23 +175,11 @@ export function CuriosidadesPerfil({
   return (
     <Bloque id="ficha-curiosidades" titulo="Curiosidades" nivel={nivel}>
       <ul
-        className={cn(
-          // En móvil, carrusel horizontal; desde `sm`, rejilla con filetes.
-          '-mx-4 flex min-w-0 snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-2',
-          'sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-px sm:overflow-visible sm:border-y sm:bg-border sm:px-0 sm:pb-0 lg:grid-cols-3',
-        )}
+        className="grid min-w-0 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-2 lg:grid-cols-3"
         aria-label="Curiosidades de sus asaltos"
       >
         {stats.curiosidades.map((c) => <TarjetaCuriosidad key={c.clave} personaId={personaId} c={c} nivel={nivel} />)}
       </ul>
-      <Aclaracion titulo="De dónde salen las curiosidades">
-        <Nota>
-          Se calculan con los asaltos individuales importados frente a rivales identificados
-          ({stats.rivalesDistintos} {stats.rivalesDistintos === 1 ? 'rival distinto' : 'rivales distintos'}).
-          Las que comparan proporciones piden al menos tres asaltos con el mismo rival. Un asalto
-          con marcador igualado no cuenta como victoria ni como derrota.
-        </Nota>
-      </Aclaracion>
     </Bloque>
   );
 }

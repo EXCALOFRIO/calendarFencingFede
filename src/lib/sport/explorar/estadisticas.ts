@@ -88,7 +88,8 @@ export function agruparDesglose(
 ): GrupoDesglose[] {
   const grupos = new Map<string, GrupoDesglose>();
   for (const c of detalle.porCategoria) {
-    const clave = eje === 'tipo' ? `t:${c.tipo ?? ''}` : eje === 'categoria' ? `c:${c.categoria.codigo}|${c.categoria.raw ?? ''}` : `a:${c.arma}`;
+    // La categoría se agrupa por su código: «S», «SENIOR» y «ABS» son la misma.
+    const clave = eje === 'tipo' ? `t:${c.tipo ?? ''}` : eje === 'categoria' ? `c:${c.categoria.codigo}` : `a:${c.arma}`;
     const previo = grupos.get(clave);
     if (!previo) {
       grupos.set(clave, {
@@ -97,7 +98,7 @@ export function agruparDesglose(
         sinFecha: c.sinFecha, desde: c.desde, hasta: c.hasta,
         clave,
         tipo: eje === 'tipo' ? c.tipo : null,
-        categoria: eje === 'categoria' ? c.categoria : null,
+        categoria: eje === 'categoria' ? { codigo: c.categoria.codigo, raw: null } : null,
         arma: eje === 'arma' ? c.arma : null,
       });
       continue;

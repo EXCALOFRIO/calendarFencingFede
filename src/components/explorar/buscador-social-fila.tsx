@@ -12,9 +12,10 @@ import { BotonSeguirCompacto } from './buscador-social-seguir';
 import { FotoDeportista } from './foto-deportista';
 
 /**
- * Fila de perfil del buscador social: retrato, nombre, país y armas, y una
- * línea de actividad. El enlace y el botón son hermanos (un botón no puede ir
- * dentro de un enlace): la fila es un flex con los dos.
+ * Fila de perfil del buscador social: retrato, nombre y una sola línea pequeña
+ * con bandera, lo visual (medallas, motivo) y como mucho un dato corto. El
+ * enlace y el botón son hermanos (un botón no puede ir dentro de un enlace):
+ * la fila es un flex con los dos.
  */
 export type PerfilFila = {
   id: string;
@@ -24,35 +25,63 @@ export type PerfilFila = {
   resultados?: number;
   ultimaFecha?: string | null;
   alias?: string | null;
-  /** Sustituye la línea de actividad (p. ej. «Rival frecuente tuyo»). */
+  /** Motivo corto de una sugerencia («Rival frecuente», «30º FIE»), en pastilla. */
   motivo?: string;
 };
 
-export function lineaActividad(p: Pick<PerfilFila, 'resultados' | 'ultimaFecha'>): string | null {
-  if (typeof p.resultados !== 'number') return null;
-  if (p.resultados === 0) return 'Sin competiciones importadas';
-  const n = `${p.resultados.toLocaleString('es-ES')} ${p.resultados === 1 ? 'competición' : 'competiciones'}`;
-  const anio = p.ultimaFecha && /^\d{4}/.test(p.ultimaFecha) ? p.ultimaFecha.slice(0, 4) : null;
-  return anio ? `${n} · última ${anio}` : n;
+/**
+ * El único dato corto de la fila: el arma si sólo hay una (lo que más
+ * distingue a dos homónimos), si no el número de pruebas, y si no las armas.
+ */
+export function datoCorto(p: Pick<PerfilFila, 'armas' | 'resultados'>): string | null {
+  const armas = p.armas ?? [];
+  if (armas.length === 1) return WEAPON_LABEL[armas[0]];
+  if (typeof p.resultados === 'number' && p.resultados > 0) {
+    return `${p.resultados.toLocaleString('es-ES')} ${p.resultados === 1 ? 'prueba' : 'pruebas'}`;
+  }
+  return armas.length > 0 ? armas.map((a) => WEAPON_LABEL[a]).join(', ') : null;
 }
 
 export const CLASE_LISTA_PERFILES = 'flex min-w-0 flex-col';
+
+/** «Ver más» en pastilla compacta; el `::before` estira el toque a 44 px sin agrandar el dibujo. */
+export const CLASE_VER_MAS =
+  "relative h-9 rounded-full px-5 text-sm font-semibold before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']";
+
+export function PastillaMotivo({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex h-5 min-w-0 items-center rounded-full bg-secondary px-2 text-[0.6875rem] leading-none font-medium text-foreground/80">
+      <span className="truncate">{children}</span>
+    </span>
+  );
+}
 
 export function FilaPerfil({
   p,
   href = rutaFicha(p.id),
   accion,
   idEnlace,
+  meta,
+  detalle,
 }: {
   p: PerfilFila;
   href?: string;
   /** Botón al final de la fila: Seguir, o quitar de recientes. */
   accion?: React.ReactNode;
   idEnlace?: string;
+  /** Sustituye el dato corto (p. ej. el año de un homónimo). */
+  meta?: React.ReactNode;
+  /** Piezas visuales tras la bandera (p. ej. las medallas). */
+  detalle?: React.ReactNode;
 }) {
   const nombre = nombreVisible(p.nombre) || p.nombre;
-  const armas = p.armas ?? [];
-  const actividad = p.motivo ?? lineaActividad(p);
+  const dato = meta ?? (p.alias && !p.motivo ? (
+    <>
+      <span className="sr-only">También como </span>
+      <span aria-hidden="true">«</span>{p.alias}<span aria-hidden="true">»</span>
+    </>
+  ) : datoCorto(p));
+  const hayLinea = p.pais || detalle || p.motivo || dato;
   return (
     <li className="relative flex min-w-0 items-center gap-2 rounded-xl px-0.5 hover:bg-accent/50 has-[a:focus-visible]:bg-accent/50 sm:px-3">
       <Link
@@ -63,26 +92,19 @@ export function FilaPerfil({
         data-persona={p.id}
         data-nombre={p.nombre}
         data-pais={p.pais ?? ''}
-        className="flex min-h-16 min-w-0 flex-1 items-center gap-3 rounded-lg py-2 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-lg py-1 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <FotoDeportista personaId={p.id} nombre={nombre} tamano="lista" apagado={p.resultados === 0} />
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="truncate text-[0.9375rem] leading-tight font-semibold">{nombre}</span>
-          {p.pais || armas.length > 0 ? (
-            <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+          {hayLinea ? (
+            // Sin el recorte, las medallas de quien tiene muchas montan sobre el botón de Seguir.
+            <span className="flex min-w-0 items-center gap-1.5 overflow-hidden py-px text-xs leading-none whitespace-nowrap text-muted-foreground">
               {p.pais ? <BanderaPais pais={p.pais} className="shrink-0" /> : null}
-              {armas.length > 0 ? (
-                <span className="truncate">
-                  <span className="sr-only">Armas: </span>
-                  {p.pais ? <span aria-hidden="true">· </span> : null}
-                  {armas.map((a) => WEAPON_LABEL[a]).join(', ')}
-                </span>
-              ) : null}
+              {detalle}
+              {p.motivo ? <PastillaMotivo>{p.motivo}</PastillaMotivo> : null}
+              {dato && !p.motivo ? <span className="min-w-0 truncate">{dato}</span> : null}
             </span>
-          ) : null}
-          {actividad ? <span className="truncate text-xs text-muted-foreground">{actividad}</span> : null}
-          {p.alias && !p.motivo ? (
-            <span className="truncate text-xs text-muted-foreground">Publicado también como {p.alias}</span>
           ) : null}
         </span>
       </Link>
@@ -127,14 +149,14 @@ export function PropuestasBuscador({
   if (propuestas === null) {
     return (
       <p className={cn('px-0.5 text-sm text-muted-foreground sm:px-3', className)}>
-        No se han podido leer las sugerencias para seguir. Busca a quien quieras por su nombre.
+        No se han podido leer las sugerencias.
       </p>
     );
   }
   if (propuestas.length === 0) return null;
   return (
     <section aria-labelledby="explorar-propuestas" className={cn('flex min-w-0 flex-col gap-1', className)}>
-      <EncabezadoSeccion id="explorar-propuestas" titulo="Sugerencias para seguir" />
+      <EncabezadoSeccion id="explorar-propuestas" titulo="Sugerencias" />
       <ul className={CLASE_LISTA_PERFILES} aria-labelledby="explorar-propuestas">
         {propuestas.map((p) => (
           <FilaPerfil

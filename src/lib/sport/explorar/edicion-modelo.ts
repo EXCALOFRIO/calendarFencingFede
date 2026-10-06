@@ -215,7 +215,149 @@ export type PruebaDeEdicion = {
   pruebaCalendarioId: string | null;
   resultados: { estado: EstadoResultados; importados: number };
   enlaces: EnlaceDto[];
+  /** Asaltos importados (poules y directas) de la prueba; sin el dato se toma 0. */
+  asaltos?: number;
+  /**
+   * Pruebas de la misma edición que publican la misma prueba por partes (un
+   * PDF con la clasificación y otro con las poules, por ejemplo). Incluye la
+   * propia; sin agrupar, sólo está ella.
+   */
+  miembros?: string[];
 };
+
+/* ------------------------------------------------------- pruebas agrupadas */
+
+type ClavePrueba = Pick<PruebaDeEdicion, 'arma' | 'genero' | 'categoria' | 'formato' | 'fecha'>;
+
+function claveDePrueba(p: ClavePrueba): string {
+  return [p.arma, p.genero, p.categoria.codigo, p.categoria.raw ?? '', p.formato, p.fecha ?? ''].join('|');
+}
+
+/**
+ * Une las pruebas que son la misma prueba publicada por trozos. Las fuentes en
+ * PDF parten a veces una prueba en varias filas (clasificación, poules y
+ * cuadro sueltos) con el mismo arma, género, categoría, formato y día. Dos
+ * filas con puestos importados son pruebas distintas (grupos por año de
+ * nacimiento, por ejemplo) y nunca se unen; las que no tienen puestos se
+ * suman a la única con puestos o, si no hay ninguna, a la de más asaltos.
+ * Si hay varias con puestos, las sueltas no se pueden atribuir y se quedan
+ * como están. El orden de la lista se respeta.
+ */
+export function agruparPruebas(pruebas: readonly PruebaDeEdicion[]): PruebaDeEdicion[] {
+  const porClave = new Map<string, PruebaDeEdicion[]>();
+  for (const p of pruebas) {
+    const k = claveDePrueba(p);
+    porClave.set(k, [...(porClave.get(k) ?? []), p]);
+  }
+  const absorbidas = new Map<string, string[]>();
+  const fuera = new Set<string>();
+  for (const grupo of porClave.values()) {
+    if (grupo.length < 2) continue;
+    const conPuestos = grupo.filter((p) => p.resultados.importados > 0);
+    if (conPuestos.length > 1) continue;
+    const cabeza =
+      conPuestos[0] ??
+      [...grupo].sort((x, y) => (y.asaltos ?? 0) - (x.asaltos ?? 0))[0];
+    absorbidas.set(cabeza.id, [cabeza.id, ...grupo.filter((p) => p.id !== cabeza.id).map((p) => p.id)]);
+    for (const p of grupo) if (p.id !== cabeza.id) fuera.add(p.id);
+  }
+  return pruebas
+    .filter((p) => !fuera.has(p.id))
+    .map((p) => {
+      const miembros = absorbidas.get(p.id) ?? [p.id];
+      const asaltos = pruebas.filter((o) => miembros.includes(o.id)).reduce((n, o) => n + (o.asaltos ?? 0), 0);
+      return { ...p, miembros, asaltos };
+    });
+}
+
+/** La prueba agrupada que contiene a `id` (sea la cabeza o una parte), o `undefined`. */
+export function pruebaDeId(pruebas: readonly PruebaDeEdicion[], id: string): PruebaDeEdicion | undefined {
+  return pruebas.find((p) => p.id === id) ?? pruebas.find((p) => p.miembros?.includes(id));
+}
+
+export type DimensionPrueba = 'formato' | 'arma' | 'genero' | 'categoria';
+
+export type OpcionSelector = { valor: string; pruebaId: string; activa: boolean };
+
+export type FilaSelector =
+  | { dimension: DimensionPrueba; opciones: OpcionSelector[] }
+  /** Varias pruebas con el mismo arma, género, categoría y formato (días o grupos distintos). */
+  | { dimension: 'variante'; opciones: (OpcionSelector & { prueba: PruebaDeEdicion })[] };
+
+const DIMENSIONES: readonly DimensionPrueba[] = ['formato', 'arma', 'genero', 'categoria'];
+/** Al cambiar una dimensión se busca la prueba que conserve más de las otras, por este peso. */
+const PESO_DIMENSION: Record<DimensionPrueba, number> = { formato: 8, arma: 4, genero: 2, categoria: 1 };
+const ORDEN_VALOR: Partial<Record<DimensionPrueba, readonly string[]>> = {
+  formato: ['INDIVIDUAL', 'EQUIPOS'],
+  arma: ['ESPADA', 'FLORETE', 'SABLE'],
+  genero: ['M', 'F', 'MIXTO'],
+};
+
+export function valorDimension(p: Pick<PruebaDeEdicion, 'arma' | 'genero' | 'categoria' | 'formato'>, d: DimensionPrueba): string {
+  return d === 'categoria' ? p.categoria.codigo : p[d];
+}
+
+/**
+ * Filas del selector de pruebas: una por dimensión con más de un valor en la
+ * edición, y cada opción apunta a una prueba real. Cambiar una dimensión lleva
+ * a la prueba que más se parece a la elegida en las demás; nunca se ofrece una
+ * combinación que la edición no tiene. `ordenCategoria` ordena las categorías.
+ */
+export function selectorDePruebas(
+  pruebas: readonly PruebaDeEdicion[],
+  elegida: PruebaDeEdicion,
+  ordenCategoria: (codigo: string) => number = () => 0,
+): FilaSelector[] {
+  const filasSelector: FilaSelector[] = [];
+  for (const d of DIMENSIONES) {
+    const valores = [...new Set(pruebas.map((p) => valorDimension(p, d)))];
+    if (valores.length < 2) continue;
+    const orden = ORDEN_VALOR[d];
+    valores.sort((x, y) =>
+      orden
+        ? orden.indexOf(x) - orden.indexOf(y)
+        : ordenCategoria(x) - ordenCategoria(y) || x.localeCompare(y),
+    );
+    const propio = valorDimension(elegida, d);
+    filasSelector.push({
+      dimension: d,
+      opciones: valores.map((valor) => {
+        if (valor === propio) return { valor, pruebaId: elegida.id, activa: true };
+        let mejor: PruebaDeEdicion | undefined;
+        let puntos = -1;
+        for (const p of pruebas) {
+          if (valorDimension(p, d) !== valor) continue;
+          const parecido = DIMENSIONES.reduce(
+            (n, o) => n + (o !== d && valorDimension(p, o) === valorDimension(elegida, o) ? PESO_DIMENSION[o] : 0),
+            0,
+          );
+          if (parecido > puntos) {
+            mejor = p;
+            puntos = parecido;
+          }
+        }
+        return { valor, pruebaId: mejor?.id ?? elegida.id, activa: false };
+      }),
+    });
+  }
+  const gemelas = pruebas.filter((p) => DIMENSIONES.every((d) => valorDimension(p, d) === valorDimension(elegida, d)));
+  if (gemelas.length > 1) {
+    filasSelector.push({
+      dimension: 'variante',
+      opciones: gemelas.map((p) => ({ valor: p.id, pruebaId: p.id, activa: p.id === elegida.id, prueba: p })),
+    });
+  }
+  return filasSelector;
+}
+
+/** Con qué prueba se abre la edición: la primera con puestos y, si no hay, la primera con asaltos. */
+export function pruebaPorDefecto(pruebas: readonly PruebaDeEdicion[]): PruebaDeEdicion | undefined {
+  return (
+    pruebas.find((p) => p.resultados.importados > 0) ??
+    pruebas.find((p) => (p.asaltos ?? 0) > 0) ??
+    pruebas[0]
+  );
+}
 
 export type EdicionResumen = {
   id: string;
@@ -257,4 +399,9 @@ export type EdicionDetalle = EdicionResumen & {
   /** La prueba pedida no pertenece a la edición. */
   pruebaDesconocida: boolean;
   clasificacion: Clasificacion | null;
+  /**
+   * Prueba (agrupada) que se enseña: la pedida o, sin pedir ninguna, la
+   * primera con puestos. `null` o ausente = ninguna.
+   */
+  pruebaElegida?: string | null;
 };

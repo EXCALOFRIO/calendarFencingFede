@@ -10,6 +10,7 @@ import {
   quitarFavorito,
 } from './favoritos';
 import { FECHA_EDICION } from './asaltos-orientados-sql';
+import { listaUuid } from './filtros-sql';
 import { clasificarCompeticion } from './tipo-competicion';
 import type {
   EntradaSiguiendo,
@@ -285,6 +286,22 @@ export function sqlConteoSiguiendo(profileId: string) {
     SELECT count(DISTINCT coalesce(p.merged_into_person_id, p.id)) AS n
     FROM sport_favorite f CROSS JOIN sport_person p ON p.id = f.person_id
     WHERE f.profile_id = ${profileId}`;
+}
+
+/** De `ids` (personas raíz), las que sigue la cuenta, aunque guardara a una fundida en ellas. */
+export function sqlSeguidasEntre(profileId: string, ids: readonly string[]) {
+  return sql`
+    SELECT DISTINCT coalesce(p.merged_into_person_id, p.id) AS id
+    FROM sport_favorite f CROSS JOIN sport_person p ON p.id = f.person_id
+    WHERE f.profile_id = ${profileId}
+      AND coalesce(p.merged_into_person_id, p.id) IN (${listaUuid(ids)})`;
+}
+
+/** Personas de `ids` que sigue la cuenta de la sesión. */
+export async function seguidasEntre(ctx: ContextoExplorador, ids: readonly string[]): Promise<Set<string>> {
+  const perfil = await exigirPerfil(ctx);
+  if (ids.length === 0) return new Set();
+  return new Set(filas<{ id: string }>(await ctx.db.execute(sqlSeguidasEntre(perfil.profileId, ids))).map((f) => f.id));
 }
 
 /** «Siguiendo N» de la cuenta de la sesión (personas raíz distintas). */

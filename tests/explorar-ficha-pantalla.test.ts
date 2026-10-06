@@ -17,12 +17,10 @@ import { CLAVES_PRIVADAS, UUID_A, UUID_B, UUID_C, clavesDe, crearContexto, perso
 
 const {
   CabeceraFicha,
-  CoberturaFichaVista,
-  EstadisticasFicha,
   EstadoFicha,
   FichaCompleta,
   HistorialFicha,
-  RankingOficialFicha,
+  RankingCompacto,
 } = await import('@/components/explorar/ficha-deportiva');
 
 /**
@@ -187,7 +185,7 @@ describe('cargarFichaPantalla: ficha de otra persona', () => {
         nivel: 'pagina',
       }),
     );
-    expect(html).toContain('no dice si la persona sigue compitiendo');
+    expect(html).toContain('Retirado Extranjero');
     expect(html).not.toMatch(/ha dejado de competir|jubilad|retirad[oa] de la competición/i);
   });
 
@@ -302,9 +300,10 @@ describe('menores y ausencia honesta', () => {
         nivel: 'pagina',
       }),
     );
-    expect(html).toContain('no equivale a cero participaciones ni a derrotas');
-    expect(html).toContain('no significa que no haya competido');
-    expect(html).toContain('Ningún resultado importado todavía');
+    expect(html).toContain('No hay puestos finales importados');
+    // Sin pruebas no se pintan cifras ni medallas a cero.
+    expect(html).not.toContain('aria-label="Medallas y hitos"');
+    expect(html).not.toContain('aria-label="En cifras"');
     expect(html).not.toMatch(/0 derrotas|0 victorias/);
   });
 });
@@ -340,112 +339,27 @@ const entrada = (temporada: string, puesto: number | null, fuente = 'fie_tirador
 
 const html = (nodo: React.ReactElement) => renderToStaticMarkup(nodo);
 
-describe('estadísticas y cobertura', () => {
-  it('indican el conjunto cubierto, agrupan por tipo documentado y dejan el resto sin tipo', () => {
-    const salida = html(
-      React.createElement(EstadisticasFicha, {
-        nivel: 'pagina',
-        ficha: ficha({
-          estadisticas: {
-            conjunto: 'clasificaciones_individuales',
-            porTipo: [
-              { tipo: 'SEN_WC', clasificaciones: 3, mejorPuesto: 1, podios: 2, victorias: 1, sinPuestoNumerico: 0 },
-              { tipo: null, clasificaciones: 2, mejorPuesto: null, podios: 0, victorias: 0, sinPuestoNumerico: 2 },
-            ],
-          },
-          cobertura: { resultadosImportados: 5, pruebasConResultado: 5, ediciones: 4, lecturas: [], historiaCompleta: false },
-        }),
-      }),
-    );
-    expect(salida).toContain('Copa del Mundo Absoluta');
-    expect(salida).toContain('Sin tipo documentado');
-    expect(salida).toContain('Conjunto cubierto: 5 pruebas con');
-    expect(salida).toContain('4 ediciones');
-    expect(salida).toContain('Una inscripción sin final no cuenta como participación');
-    expect(salida).toContain('nunca se deduce del título');
-    // Mejor puesto ausente es «Sin dato», no 0.
-    expect(salida).toContain('Sin dato');
-  });
-
-  it('muestra el estado de lectura por tipo de dato y que completo no garantiza todo el histórico', () => {
-    const salida = html(
-      React.createElement(CoberturaFichaVista, {
-        nivel: 'pagina',
-        cobertura: {
-          resultadosImportados: 4,
-          pruebasConResultado: 4,
-          ediciones: 3,
-          historiaCompleta: false,
-          lecturas: [
-            { hecho: 'ranking', estado: 'completo', pruebas: 3 },
-            { hecho: 'pools', estado: 'pendiente', pruebas: 2 },
-            { hecho: 'tableau', estado: 'parcial', pruebas: 1 },
-          ],
-        },
-      }),
-    );
-    expect(salida).toContain('Leído completo: 3 pruebas');
-    expect(salida).toContain('Pendiente de leer: 2 pruebas');
-    expect(salida).toContain('Parcial: 1 prueba');
-    expect(salida).toContain('nunca garantiza que estén todas las temporadas');
-  });
-});
-
 describe('ranking oficial en la ficha', () => {
-  const ranking = (entradas: EntradaRankingOficial[], temporada: string | null, disponibles: string[], criterios: Partial<CriteriosFicha> = {}) =>
+  const ranking = (entradas: EntradaRankingOficial[], temporada: string | null) =>
     html(
-      React.createElement(RankingOficialFicha, {
+      React.createElement(RankingCompacto, {
         nivel: 'pagina',
-        base: '/explorar/x',
-        criterios: { ...CRITERIOS_FICHA_VACIOS, ...criterios },
-        ficha: ficha({
-          rankingOficial: { temporada, formato: 'INDIVIDUAL', temporadasDisponibles: disponibles, entradas },
-        }),
+        ficha: ficha({ rankingOficial: { temporada, formato: 'INDIVIDUAL', temporadasDisponibles: [], entradas } }),
       }),
     );
 
-  it('atribuye el puesto a su temporada y fuente, y enlaza cada temporada disponible', () => {
-    const a = ranking([entrada('2025', 9)], '2025', ['2026', '2025']);
-    const b = ranking([entrada('2026', 14)], '2026', ['2026', '2025']);
-    expect(a).toContain('FIE 2025');
-    expect(a).toContain('FIE (ranking mundial)');
-    expect(a).toContain('>9<');
-    expect(b).toContain('FIE 2026');
-    expect(b).toContain('>14<');
-    expect(a).not.toContain('>14<');
-    expect(a).toContain('href="/explorar/x?ranking=2026#ficha-ranking"');
-    expect(a).toContain('aria-current="true"');
-    expect(a).toContain('No es el puesto');
+  it('atribuye el puesto a su temporada y fuente, con el total y los puntos publicados', () => {
+    const salida = ranking([entrada('2026', 14)], '2026');
+    expect(salida).toContain('id="ficha-ranking"');
+    expect(salida).toMatch(/>14(<!-- -->)?º</);
+    expect(salida).toContain('FIE 2026');
+    expect(salida).toContain('de 300');
+    expect(salida).toContain('12.500 puntos');
   });
 
-  it('sin fecha publicada dice «Leída el», aclara que no es situación a fin de temporada y no habla de última comprobación', () => {
-    const salida = ranking([entrada('2025', 9)], '2025', ['2025']);
-    expect(salida).toContain('Leída el');
-    expect(salida).toContain('no la situación a final de temporada');
-    expect(salida).not.toMatch(/Publicada el|última comprobación|comprobad[oa] el|actualizad[oa]/i);
-  });
-
-  it('una fecha realmente publicada por la fuente se presenta como publicada', () => {
-    const e = { ...entrada('2025', 9), fecha: { sourcePublishedOn: '2025-06-01', observedOn: '2026-05-10', baseLectura: false } };
-    const salida = ranking([e], '2025', ['2025']);
-    expect(salida).toContain('Publicada el');
-    expect(salida).not.toContain('Leída el');
-  });
-
-  it('un puesto null no es cero; sin entrada en la temporada no se usa la de otra', () => {
-    const nulo = ranking([entrada('2025', null)], '2025', ['2025']);
-    expect(nulo).toContain('La fuente no le asigna puesto');
-    expect(nulo).toContain('Puntos no publicados');
-    expect(nulo).not.toMatch(/>0</);
-    const ausente = ranking([], '2024', ['2025', '2024']);
-    expect(ausente).toContain('No figura en las listas importadas de FIE 2024');
-    expect(ausente).toContain('No se le atribuye la de otra temporada');
-  });
-
-  it('sin ningún ranking importado lo dice como ausencia, no como no clasificada', () => {
-    const salida = ranking([], null, []);
-    expect(salida).toContain('Puede faltar por importar');
-    expect(salida).not.toContain('Leída el');
+  it('un puesto null no se pinta como cero y sin puestos no hay bloque', () => {
+    expect(ranking([entrada('2025', null)], '2025')).toBe('');
+    expect(ranking([], null)).toBe('');
   });
 });
 
@@ -497,14 +411,10 @@ describe('historial en la ficha', () => {
       }),
     );
     expect(salida).toContain('Copa del Mundo Madrid');
-    expect(salida).toContain('FIE 2026');
-    expect(salida).toContain('RFEE 2025-2026');
     expect(salida).toContain('Abandono');
-    expect(salida).toContain('Fecha no publicada');
-    // El tipo va como pastilla de color (deducido del nombre si el calendario no lo documenta).
-    expect(salida).toContain('data-tipo="COPA_MUNDO"');
+    // La fila abre la prueba dentro de su edición.
+    expect(salida).toMatch(/href="[^"]*e1[^"]*prueba=c1[^"]*"/);
     expect(salida).not.toContain('Tipo de torneo sin documentar');
-    expect(salida).toContain('Una inscripción sin final no');
     expect(salida).toContain('<h3');
   });
 
@@ -522,7 +432,7 @@ describe('historial en la ficha', () => {
     });
     expect(salida).toContain('href="/perfil?ranking=2025&amp;cursor=tok-2#historial"');
     expect(salida).toContain('href="/perfil?ranking=2025#historial"');
-    expect(render(historial({ items: [item()] }))).toContain('No hay más resultados importados');
+    expect(render(historial({ items: [item()] }))).not.toContain('rel="next"');
   });
 
   it('sin resultados y cursor inválido son estados distintos', () => {
@@ -619,11 +529,8 @@ describe('rutas y perfil', () => {
         conTitulo: false,
       }),
     );
-    expect(salida).toContain('Es tu ficha deportiva');
+    expect(salida).toContain('Tu ficha');
     expect(salida).toContain('Copa del Mundo Madrid');
-    expect(salida).toContain('Copa del Mundo Absoluta');
-    expect(salida).toContain('Desglose por torneo, categoría y arma');
-    expect(salida).toContain('1 de 1 pruebas importadas');
     // Cabecera tipo perfil y marcador: el nombre formateado, el año a año y el mano a mano.
     expect(salida).toContain('Lucia Garcia');
     expect(salida).toContain('Año a año');
@@ -631,7 +538,7 @@ describe('rutas y perfil', () => {
     expect(salida).toContain('Sin asaltos importados');
     expect(salida).toContain(`href="/explorar/${UUID_A}/cara-a-cara"`);
     expect(salida).toContain('FIE 2026');
-    expect(salida).toContain('>14<');
+    expect(salida).toMatch(/>14(<!-- -->)?º</);
     expect(salida).not.toContain('<h1');
     expect(salida).not.toMatch(/cuenta@example|token-privado/);
   });

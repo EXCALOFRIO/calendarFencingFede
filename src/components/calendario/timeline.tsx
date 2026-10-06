@@ -1,6 +1,6 @@
 'use client';
 
-import { CalendarOff } from 'lucide-react';
+import { CalendarOff, Loader2 } from 'lucide-react';
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,7 +12,7 @@ import {
 } from '@/lib/calendario/bloques';
 import type { EventView } from '@/lib/queries/calendar';
 import { cn } from '@/lib/utils';
-import { DivisorHueco, TarjetaBloque } from './tarjeta-bloque';
+import { DivisorHueco, TarjetaBloque, type PasadoDeTarjeta } from './tarjeta-bloque';
 
 /**
  * ===========================================================================
@@ -48,7 +48,14 @@ type Comun = {
   mostrarGenero: boolean;
   mostrarCategoria: boolean;
   onAbrir: (e: EventView) => void;
+  pasado?: PasadoDeTarjeta;
 };
+
+/**
+ * Cómo está lo ya celebrado de un mes: `listo` también cuando no hay nada que
+ * pedir (un mes futuro). Solo con `listo` se puede decir «sin competiciones».
+ */
+export type EstadoDelMes = 'listo' | 'cargando' | 'fallo';
 
 /**
  * UNA COLUMNA DE MES, EN ESCRITORIO.
@@ -63,18 +70,22 @@ export function ColumnaMes({
   mes,
   bloques,
   conTitulo,
+  estado = 'listo',
   ...comun
 }: {
   anio: number;
   mes: number;
   bloques: Bloque[];
   conTitulo: boolean;
+  /** Si lo ya celebrado del mes está aún en camino. */
+  estado?: EstadoDelMes;
 } & Comun) {
   const items = React.useMemo(() => itemsDelMes(bloques, anio, mes), [bloques, anio, mes]);
 
   return (
     <section
       aria-label={nombreDeMes(anio, mes)}
+      aria-busy={estado === 'cargando' || undefined}
       data-mes={`${anio}-${String(mes + 1).padStart(2, '0')}`}
       data-bloques={items.filter((i) => i.tipo === 'bloque').length}
       /*
@@ -93,15 +104,44 @@ export function ColumnaMes({
       ) : null}
 
       {items.length === 0 ? (
-        <MesVacioEscritorio anio={anio} mes={mes} />
+        <MesVacioEscritorio anio={anio} mes={mes} estado={estado} />
       ) : (
-        <ul className="flex min-w-0 flex-col border-t border-filete-alto">
-          {items.map((item) => (
-            <ItemDeLista key={claveDeItem(item)} item={item} variante="zonas" {...comun} />
-          ))}
-        </ul>
+        <>
+          <ul className="flex min-w-0 flex-col border-t border-filete-alto">
+            {items.map((item) => (
+              <ItemDeLista key={claveDeItem(item)} item={item} variante="zonas" {...comun} />
+            ))}
+          </ul>
+          <AvisoPasado estado={estado} />
+        </>
       )}
     </section>
+  );
+}
+
+/**
+ * Lo ya celebrado aún en camino, o que no llegó, debajo de lo que sí hay. Un
+ * mes con media lista no puede parecer un mes completo.
+ */
+function AvisoPasado({ estado }: { estado: EstadoDelMes }) {
+  if (estado === 'listo') return null;
+  return (
+    <p
+      role={estado === 'fallo' ? 'alert' : 'status'}
+      className="flex items-center gap-2 py-2 text-xs text-muted-foreground"
+    >
+      {estado === 'cargando' ? (
+        <>
+          <Loader2
+            className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
+            aria-hidden
+          />
+          Cargando…
+        </>
+      ) : (
+        'No se pudo cargar'
+      )}
+    </p>
   );
 }
 
@@ -159,18 +199,47 @@ function ItemDeLista({
  * Así que la casilla no explica nada. Dice que aquí no hay nada cargado, que
  * es lo único que nos consta, y se calla. Por eso también se ha ido
  * `esPretemporada()`: no había forma honesta de usarla.
+ *
+ * Y por la misma honestidad, mientras lo ya celebrado del mes está en camino
+ * no se dice «sin competiciones»: se dice que se está buscando. Era el fallo de
+ * septiembre de 2026, que decía «Sin competiciones cargadas» con 72 torneos en
+ * la base, solo porque ya había pasado.
  */
-function MesVacioEscritorio({ anio, mes }: { anio: number; mes: number }) {
+function MesVacioEscritorio({
+  anio,
+  mes,
+  estado,
+}: {
+  anio: number;
+  mes: number;
+  estado: EstadoDelMes;
+}) {
   const nombre = nombreDeMes(anio, mes, false);
   return (
     <div className="flex min-h-[10rem] flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-6 text-center">
-      <CalendarOff className="size-8 opacity-20" aria-hidden />
-      <p className="medida text-xs text-muted-foreground">
-        Sin competiciones cargadas en {nombre.toLowerCase()}. Consulta otro mes
-        o cambia los filtros.
+      {estado === 'cargando' ? (
+        <Loader2
+          className="size-8 animate-spin opacity-30 motion-reduce:animate-none"
+          aria-hidden
+        />
+      ) : (
+        <CalendarOff className="size-8 opacity-20" aria-hidden />
+      )}
+      <p
+        role={estado === 'fallo' ? 'alert' : estado === 'cargando' ? 'status' : undefined}
+        className="medida text-xs text-muted-foreground"
+      >
+        {textoDeMesVacio(nombre, estado)}
       </p>
     </div>
   );
+}
+
+function textoDeMesVacio(nombre: string, estado: EstadoDelMes): string {
+  const mes = nombre.toLowerCase();
+  if (estado === 'cargando') return 'Cargando…';
+  if (estado === 'fallo') return 'No se pudo cargar';
+  return `Sin competiciones cargadas en ${mes}. Consulta otro mes o cambia los filtros.`;
 }
 
 /**
@@ -211,6 +280,7 @@ export function FeedMovil({
   meses,
   bloques,
   pie,
+  estadoDelMes,
   ...comun
 }: {
   /** Los meses que se están mirando, en orden. Uno o tres. */
@@ -218,6 +288,8 @@ export function FeedMovil({
   bloques: Bloque[];
   /** Lo que va detrás del calendario: «lo próximo, fuera de este mes». */
   pie?: React.ReactNode;
+  /** Si lo ya celebrado de cada mes (`AAAA-MM`) está aún en camino. */
+  estadoDelMes?: (mes: string) => EstadoDelMes;
 } & Comun) {
   const porMes = React.useMemo(
     () => meses.map((m) => ({ ...m, items: itemsDelMes(bloques, m.anio, m.mes) })),
@@ -227,6 +299,8 @@ export function FeedMovil({
   const idBase = React.useId();
   const ancla = (m: { anio: number; mes: number }) =>
     `${idBase}-${m.anio}-${m.mes}`.replace(/:/g, '');
+  const estadoDe = (m: { anio: number; mes: number }): EstadoDelMes =>
+    estadoDelMes?.(`${m.anio}-${String(m.mes + 1).padStart(2, '0')}`) ?? 'listo';
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -315,18 +389,21 @@ export function FeedMovil({
             </h2>
 
             {m.items.length === 0 ? (
-              <MesVacioMovil anio={m.anio} mes={m.mes} />
+              <MesVacioMovil anio={m.anio} mes={m.mes} estado={estadoDe(m)} />
             ) : (
-              <ul className="flex min-w-0 flex-col border-t border-filete-alto">
-                {m.items.map((item) => (
-                  <ItemDeLista
-                    key={claveDeItem(item)}
-                    item={item}
-                    variante="apilada"
-                    {...comun}
-                  />
-                ))}
-              </ul>
+              <>
+                <ul className="flex min-w-0 flex-col border-t border-filete-alto">
+                  {m.items.map((item) => (
+                    <ItemDeLista
+                      key={claveDeItem(item)}
+                      item={item}
+                      variante="apilada"
+                      {...comun}
+                    />
+                  ))}
+                </ul>
+                <AvisoPasado estado={estadoDe(m)} />
+              </>
             )}
           </section>
         ))}
@@ -348,15 +425,33 @@ export function FeedMovil({
  * que un mes lleno, hay que desplazarse por la nada para llegar a octubre, que
  * es justo lo que se está arreglando.
  */
-function MesVacioMovil({ anio, mes }: { anio: number; mes: number }) {
+function MesVacioMovil({
+  anio,
+  mes,
+  estado,
+}: {
+  anio: number;
+  mes: number;
+  estado: EstadoDelMes;
+}) {
   const nombre = nombreDeMes(anio, mes, false);
   return (
     <div className="mb-2 flex items-center gap-2.5 rounded-lg border border-dashed px-3 py-3">
-      <CalendarOff className="size-5 shrink-0 opacity-20" aria-hidden />
-      <p className="min-w-0 text-xs">
-        <span className="text-muted-foreground">
-          Sin competiciones cargadas en {nombre.toLowerCase()}.
-        </span>
+      {estado === 'cargando' ? (
+        <Loader2
+          className="size-5 shrink-0 animate-spin opacity-30 motion-reduce:animate-none"
+          aria-hidden
+        />
+      ) : (
+        <CalendarOff className="size-5 shrink-0 opacity-20" aria-hidden />
+      )}
+      <p
+        role={estado === 'fallo' ? 'alert' : estado === 'cargando' ? 'status' : undefined}
+        className="min-w-0 text-xs text-muted-foreground"
+      >
+        {estado === 'listo'
+          ? `Sin competiciones cargadas en ${nombre.toLowerCase()}.`
+          : textoDeMesVacio(nombre, estado)}
       </p>
     </div>
   );

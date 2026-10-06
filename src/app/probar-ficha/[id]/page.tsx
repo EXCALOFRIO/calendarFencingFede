@@ -1,16 +1,10 @@
 import { notFound, redirect } from 'next/navigation';
 import { getSessionProfile } from '@/lib/auth/session';
+import { CabeceraFicha } from '@/components/calendario/cabecera-ficha';
 import { FichaEvento } from '@/components/calendario/ficha-evento';
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
-import { Badge } from '@/components/ui/badge';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { listEvents } from '@/lib/queries/calendar';
 import { inscritosPublicados } from '@/lib/queries/inscritos-union';
-import { CIRCUIT_LABEL, organismoDe, titularTorneo } from '@/lib/utils';
 
 /**
  * BANCO DE PRUEBAS DE LA FICHA. Solo en desarrollo.
@@ -51,22 +45,12 @@ export default async function BancoDePruebasFicha({
   if (!evento) notFound();
 
   const oficiales = await inscritosPublicados(id);
-  const organismo = organismoDe(evento.source, evento.scope, evento.circuit);
 
   return (
     <Sheet open>
       <SheetContent className="w-full gap-0 overflow-y-auto p-0 sm:max-w-xl">
-        <SheetHeader className="gap-2 px-4 pt-4 pb-0">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Badge variant="secondary">{organismo}</Badge>
-            <Badge variant="outline">
-              {CIRCUIT_LABEL[evento.circuit] ?? evento.circuit}
-            </Badge>
-          </div>
-          <SheetTitle className="text-3xl leading-[0.95] sm:text-4xl">
-            {titularTorneo(evento.name)}
-          </SheetTitle>
-        </SheetHeader>
+        {/* La misma cabecera que abre el calendario, con su «Terminada». */}
+        <CabeceraFicha evento={evento} />
 
         <FichaEvento
           evento={evento}

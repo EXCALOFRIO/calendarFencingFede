@@ -1,5 +1,3 @@
-import { ArrowLeft } from 'lucide-react';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import {
   CabeceraCaraACara,
@@ -9,12 +7,14 @@ import {
   EstadoCaraACara,
 } from '@/components/explorar/cara-a-cara';
 import { FiltrosCaraACara } from '@/components/explorar/filtros-cara-a-cara';
+import { SeccionRendimientoCaraACara } from '@/components/explorar/graficos/seccion-rendimiento-cara-a-cara';
 import { getSessionProfile } from '@/lib/auth/session';
 import { cargarCaraACaraPantalla } from '@/lib/sport/explorar/cara-a-cara-pantalla';
 import { construirUrlCaraACara, leerCriteriosCaraACara } from '@/lib/sport/explorar/cara-a-cara-url';
 import { personaDeRuta } from '@/lib/sport/explorar/ficha-url';
 import { contextoReal } from '@/lib/sport/explorar/real';
-import { RUTA_EXPLORAR, opcionesTemporada, rutaFicha } from '@/lib/sport/explorar/url';
+import { opcionesTemporada } from '@/lib/sport/explorar/url';
+import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { titular } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -51,7 +51,6 @@ export default async function Pagina({
   if (vista.tipo === 'sin_sesion') redirect('/entrar');
 
   const hoy = new Date().toISOString().slice(0, 10);
-  const conFiltros = vista.tipo === 'ok' || vista.tipo === 'elegir';
   // Con rival, la persona canónica sale del DTO; sin rival, de la cabecera leída.
   const persona =
     vista.tipo === 'ok' ? vista.datos.personas.yo : vista.tipo === 'elegir' ? vista.persona : null;
@@ -60,49 +59,56 @@ export default async function Pagina({
   if (persona && personaId && persona.id !== personaId) {
     redirect(construirUrlCaraACara(persona.id, { ...criterios, cursor: '' }));
   }
-  const atras = persona ? rutaFicha(persona.id) : RUTA_EXPLORAR;
+  const nombre = persona ? nombreVisible(persona.nombre) || titular(persona.nombre) : '';
+  const filtros = persona ? (
+    <FiltrosCaraACara
+      key={JSON.stringify(criterios)}
+      personaId={persona.id}
+      criterios={criterios}
+      temporadas={opcionesTemporada(hoy)}
+    />
+  ) : null;
+
+  if (vista.tipo === 'ok') {
+    return (
+      <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-4">
+        <CabeceraCaraACara datos={vista.datos} criterios={criterios} />
+        {filtros}
+        <CaraACaraCompleto
+          datos={vista.datos}
+          criterios={criterios}
+          rendimiento={
+            vista.rendimiento ? (
+              <SeccionRendimientoCaraACara
+                datos={vista.rendimiento}
+                yo={vista.datos.personas.yo}
+                rival={vista.datos.personas.rival}
+                titulo="Evolución"
+                sinResumen
+              />
+            ) : null
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
-      <nav aria-label="Volver">
-        <Link
-          href={atras}
-          className="inline-flex min-h-11 items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-        >
-          <ArrowLeft className="size-4" aria-hidden />
-          {persona ? `Volver a la ficha de ${titular(persona.nombre)}` : 'Volver a Explorar'}
-        </Link>
-      </nav>
-
-      {vista.tipo === 'ok' && persona ? (
-        <CabeceraCaraACara datos={vista.datos} criterios={criterios} />
-      ) : vista.tipo === 'elegir' ? (
-        <header className="flex flex-col gap-1">
-          <h1 className="text-2xl break-words sm:text-3xl">Cara a cara de {titular(vista.persona.nombre)}</h1>
-          <p className="medida text-sm text-muted-foreground">
-            Elige un rival para ver sus asaltos individuales, poule y eliminación directa, con el
-            marcador desde la ficha de {titular(vista.persona.nombre)}.
-          </p>
-        </header>
+      {vista.tipo === 'elegir' ? (
+        <h1 className="text-2xl break-words sm:text-3xl">Cara a cara de {nombre}</h1>
       ) : (
         <h1 className="text-2xl sm:text-3xl">Cara a cara</h1>
       )}
 
-      {conFiltros && persona ? (
+      {vista.tipo === 'elegir' && persona ? (
         <div className="flex flex-col gap-3">
-          <FiltrosCaraACara
-            key={JSON.stringify(criterios)}
-            personaId={persona.id}
-            criterios={criterios}
-            temporadas={opcionesTemporada(hoy)}
-          />
+          {filtros}
           <ChipsCaraACara personaId={persona.id} criterios={criterios} />
         </div>
       ) : null}
 
-      {vista.tipo === 'ok' ? (
-        <CaraACaraCompleto datos={vista.datos} criterios={criterios} />
-      ) : vista.tipo === 'elegir' ? (
+      {vista.tipo === 'elegir' ? (
         <ElegirRival persona={vista.persona} rivales={vista.rivales} otros={vista.otros} criterios={criterios} />
       ) : (
         <EstadoCaraACara vista={vista} personaId={personaId} criterios={criterios} />

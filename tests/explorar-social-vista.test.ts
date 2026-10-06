@@ -111,7 +111,7 @@ describe('pastillas de competición', () => {
     expect(corta).toContain('data-tono="primary"');
     expect(corta).toContain('>Mundial<');
     expect(corta).toContain(`title="${cm.etiqueta}"`);
-    expect(corta).toContain('Júnior (M20)');
+    expect(corta).toMatch(/>M20</);
     const larga = html(React.createElement(EtiquetaTipoCompeticion, { clasificacion: cm, larga: true }));
     expect(larga).not.toContain('title=');
     expect(larga).toContain(cm.etiqueta);
@@ -176,7 +176,7 @@ describe('curiosidades y fases en Rivales', () => {
 });
 
 describe('Internacional y nacional', () => {
-  it('un grupo de radios con Total marcado y un panel por ámbito con su desglose', async () => {
+  it('una tarjeta por ámbito y el reparto por tipo de competición', async () => {
     const f = fixture();
     f.persona(YO, 'YO');
     f.prueba('cm', { nombre: 'Coupe du Monde', fecha: '2026-01-10' });
@@ -187,13 +187,8 @@ describe('Internacional y nacional', () => {
     if (r.estado !== 'ok') throw new Error(r.estado);
     const salida = html(React.createElement(AmbitoPerfil, { ambito: r.datos, nivel: 'pagina' }));
     expect(salida).toContain('id="ficha-ambito"');
-    for (const clave of ['total', 'internacional', 'nacional']) {
-      expect(salida).toContain(`id="ficha-ambito-${clave}"`);
-      expect(salida).toContain(`data-ambito="${clave}"`);
-      expect(salida).toContain(`group-has-[#ficha-ambito-${clave}:checked]/ambito:flex`);
-    }
-    expect(salida.match(/type="radio"/g)).toHaveLength(3);
-    expect(salida).toMatch(/id="ficha-ambito-total"[^>]*checked=""|checked=""[^>]*id="ficha-ambito-total"/);
+    for (const clave of ['internacional', 'nacional']) expect(salida).toContain(`data-ambito="${clave}"`);
+    expect(salida).not.toContain('type="radio"');
     expect(salida).toContain('data-tipo="COPA_MUNDO"');
     expect(salida).toContain('data-tipo="TNR"');
     const vacio = { ...r.datos, total: { ...r.datos.total, competiciones: 0 } };
@@ -226,7 +221,7 @@ describe('URL de Siguiendo', () => {
 });
 
 describe('pantalla Siguiendo', () => {
-  it('con seguidas: tarjetas con persona, prueba y pastillas, y «Cargar más» con el cursor', async () => {
+  it('con seguidas: tarjetas con persona, prueba y pastillas, y «Ver más» con el cursor', async () => {
     const f = fixture();
     f.persona(RIVAL, 'MARTIN RUIZ Ana');
     for (let i = 1; i <= 3; i++) {
@@ -244,13 +239,13 @@ describe('pantalla Siguiendo', () => {
     const salida = html(React.createElement(FeedSiguiendo, { items: vista.items, siguiente: 'CUR', criterios }));
     expect(salida).toContain(`href="/explorar/${RIVAL}"`);
     expect(salida).toContain('href="/explorar/siguiendo?cursor=CUR"');
-    expect(salida).toContain('Cargar más');
+    expect(salida).toContain('Ver más');
     expect(salida).toContain('data-tipo="COPA_MUNDO"');
     const fin = html(React.createElement(FeedSiguiendo, { items: vista.items, siguiente: null, criterios: { cursor: 'X', soloMedallas: true } }));
-    expect(fin).toContain('No hay más resultados importados.');
+    expect(fin).not.toContain('Ver más');
     expect(fin).toContain('href="/explorar/siguiendo?medallas=1"');
     const cabecera = html(React.createElement(CabeceraSiguiendo, { siguiendo: 1, criterios }));
-    expect(cabecera).toContain('persona seguida');
+    expect(cabecera).toContain('seguida');
     expect(cabecera).toContain('aria-current="page"');
     expect(html(React.createElement(EnlaceSiguiendo, { siguiendo: 1 }))).toContain('href="/explorar/siguiendo"');
     expect(html(React.createElement(EnlaceSiguiendo, { siguiendo: null }))).not.toMatch(/cifra/);
@@ -264,12 +259,12 @@ describe('pantalla Siguiendo', () => {
     if (vista.tipo !== 'ok') throw new Error(vista.tipo);
     expect(vista.sinResultados).toBe(true);
     expect(vista.sugeridos?.map((s) => [s.id, s.motivo])).toEqual([
-      [ESTRELLA, '1º ranking FIE, espada masculino'],
-      [OTRO, '4º ranking FIE, espada masculino'],
+      [ESTRELLA, '1º FIE'],
+      [OTRO, '4º FIE'],
     ]);
     const salida = html(React.createElement(EstadoSiguiendo, { vista, criterios: { cursor: '', soloMedallas: false }, siguiendo: 0 }));
     expect(salida).toContain('Aún no sigues a nadie');
-    expect(salida).toContain('Tiradores para empezar');
+    expect(salida).toContain('>Sugerencias<');
     expect(salida).toContain(`href="/explorar/${ESTRELLA}"`);
     expect(salida).toContain('Seguir');
   });
@@ -283,7 +278,7 @@ describe('pantalla Siguiendo', () => {
     if (vista.tipo !== 'ok') throw new Error(vista.tipo);
     expect(vista.sugeridos?.map((s) => s.id)).toEqual([OTRO]);
     const salida = html(React.createElement(EstadoSiguiendo, { vista, criterios: { cursor: '', soloMedallas: false }, siguiendo: 1 }));
-    expect(salida).toContain('Sin resultados importados');
+    expect(salida).toContain('Sin resultados');
     expect(salida).not.toContain('Aún no sigues a nadie');
   });
 
@@ -310,7 +305,7 @@ describe('pantalla Siguiendo', () => {
     expect(await cargarSiguiendo(roto, {})).toEqual({ tipo: 'error' });
     const criterios = { cursor: '', soloMedallas: false };
     expect(html(React.createElement(EstadoSiguiendo, { vista: { tipo: 'cursor_invalido' }, criterios, siguiendo: 1 })))
-      .toContain('Esta página ya no corresponde a tu feed');
+      .toContain('Página caducada');
     expect(html(React.createElement(EstadoSiguiendo, { vista: { tipo: 'error' }, criterios, siguiendo: 1 })))
       .toContain('role="alert"');
     expect(html(React.createElement(EstadoSiguiendo, { vista: { tipo: 'no_disponible' }, criterios, siguiendo: null })))

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { leerFotoOficial, LIMITES_FOTO } from '@/lib/sport/explorar/foto-fuente';
-import { fotoPublicadaValida, urlFotoOriginal, urlRetratoOficial } from '@/lib/sport/explorar/foto-contrato';
+import { leerFotoOficial, LIMITES_FOTO, resolverFotoOficial } from '@/lib/sport/explorar/foto-fuente';
+import {
+  anchoRetratoPara, fotoPublicadaValida, retratoAncho, urlFotoOriginal, urlRetratoOficial,
+} from '@/lib/sport/explorar/foto-contrato';
 
 const ORIGINAL = 'https://static.fie.org/portraits/sintetico.jpg';
 const SRC = `https://fie.org/cdn-cgi/image/width=320,quality=80,format=auto/${ORIGINAL}`;
@@ -146,6 +148,83 @@ describe('contrato y política del lector oficial', () => {
     expect(fetch).not.toHaveBeenCalled();
     const error = vi.fn<typeof globalThis.fetch>().mockRejectedValue(new Error('Detalle privado'));
     expect(await leerFotoOficial(123, DIA, { fetch: error })).toBeNull();
+  });
+});
+
+describe('ausencia definitiva frente a fallo pasajero', () => {
+  it('publicada informa el peso del HEAD para medir, sin cambiar el contrato público', async () => {
+    expect(await resolverFotoOficial(123, DIA, { fetch: simular(perfil(), imagen()) })).toEqual({
+      tipo: 'publicada', foto: { src: SRC, fichaUrl: 'https://fie.org/athletes/123' }, bytes: 3000,
+    });
+  });
+
+  it.each([
+    ['ficha 404', () => simular(new Response(null, { status: 404 }))],
+    ['ficha 410', () => simular(new Response(null, { status: 410 }))],
+    ['sin imagen', () => simular(perfil({ image: null }))],
+    ['otro ID', () => simular(perfil({ id: 124 }))],
+    ['posible menor', () => simular(perfil({ date: '2010-01-01' }))],
+    ['redirección ajena', () => simular(redireccion('https://otro.test/ficha'))],
+    ['imagen 404', () => simular(perfil(), new Response(null, { status: 404 }))],
+    ['imagen SVG', () => simular(perfil(), imagen({ 'content-type': 'image/svg+xml' }))],
+  ])('%s es sin_foto: se puede recordar', async (_caso, fetch) => {
+    expect(await resolverFotoOficial(123, DIA, { fetch: fetch() })).toEqual({ tipo: 'sin_foto' });
+  });
+
+  it.each([
+    ['ficha 503', () => simular(new Response(null, { status: 503 }))],
+    ['ficha 429', () => simular(new Response(null, { status: 429 }))],
+    ['desafío HTML', () => simular(new Response('<html/>', { headers: { 'content-type': 'text/html' } }))],
+    ['JSON cortado', () => simular(new Response('{', { headers: { 'content-type': 'application/json' } }))],
+    ['imagen 502', () => simular(perfil(), new Response(null, { status: 502 }))],
+    ['HEAD sin tamaño', () => simular(perfil(), new Response(null, { headers: { 'content-type': 'image/jpeg' } }))],
+    ['error de red', () => vi.fn<typeof fetch>().mockRejectedValue(new Error('red'))],
+  ])('%s es fallo: nunca se recuerda como ausencia', async (_caso, fetch) => {
+    expect(await resolverFotoOficial(123, DIA, { fetch: fetch() })).toEqual({ tipo: 'fallo' });
+  });
+
+  it('ID inválido es sin_foto sin red; petición ya cancelada es fallo', async () => {
+    const fetch = simular();
+    expect(await resolverFotoOficial(0, DIA, { fetch })).toEqual({ tipo: 'sin_foto' });
+    const controlador = new AbortController();
+    controlador.abort();
+    expect(await resolverFotoOficial(123, DIA, { fetch, signal: controlador.signal })).toEqual({ tipo: 'fallo' });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('el tiempo agotado es fallo', async () => {
+    vi.useFakeTimers();
+    const pendiente = resolverFotoOficial(123, DIA, {
+      fetch: vi.fn<typeof globalThis.fetch>().mockImplementation(() => new Promise(() => {})),
+    });
+    await vi.advanceTimersByTimeAsync(LIMITES_FOTO.tiempoMs);
+    expect(await pendiente).toEqual({ tipo: 'fallo' });
+  });
+});
+
+describe('anchos del redimensionador de la FIE', () => {
+  const MINI = SRC.replace('width=320', 'width=96');
+
+  it('sólo 96 y 320, que son los que ya pide el resto de la aplicación', () => {
+    expect(urlRetratoOficial(MINI)).not.toBeNull();
+    for (const ancho of [95, 97, 192, 640]) {
+      expect(urlRetratoOficial(SRC.replace('width=320', `width=${ancho}`))).toBeNull();
+    }
+    expect(fotoPublicadaValida({ src: MINI, fichaUrl: 'https://fie.org/athletes/123' })).toBe(true);
+  });
+
+  it('cambia el ancho sin tocar el original, ni siquiera sus acentos codificados', () => {
+    expect(retratoAncho(SRC, 96)).toBe(MINI);
+    expect(retratoAncho(MINI, 320)).toBe(SRC);
+    const acentos = SRC.replace('sintetico', 'sint%C3%A9tico');
+    expect(retratoAncho(acentos, 96)).toBe(MINI.replace('sintetico', 'sint%C3%A9tico'));
+    expect(retratoAncho('https://otro.test/a.jpg', 96)).toBeNull();
+    expect(retratoAncho(SRC, 640 as 96)).toBeNull();
+  });
+
+  it('96 px para avatares de hasta 48 px CSS (2x), 320 para el resto', () => {
+    expect([44, 48].map(anchoRetratoPara)).toEqual([96, 96]);
+    expect([49, 96, 120, 144].map(anchoRetratoPara)).toEqual([320, 320, 320, 320]);
   });
 });
 

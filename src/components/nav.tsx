@@ -37,9 +37,9 @@ type Destino = {
  *
  * Cuántos hay, por papel (sin «Normativa», ver más abajo):
  *
- *   tirador             Calendario · Mi estado · Explorar · Ranking
- *   seleccionador       Calendario · Explorar · Ranking
- *   dirección técnica   Calendario · Explorar · Ranking · Gestión
+ *   tirador             Calendario · Mi estado · Buscar · Ranking
+ *   seleccionador       Calendario · Buscar · Ranking
+ *   dirección técnica   Calendario · Buscar · Ranking · Gestión
  *
  * Cuatro o cinco caben en la barra del móvil a 393 px con la etiqueta
  * entera, y desde que «Normativa» salió de la barra ya nadie llega a seis:
@@ -90,7 +90,7 @@ const DESTINOS: Destino[] = [
     roles: ['athlete'],
   },
   /*
-    «EXPLORAR» ES PARA TODOS LOS PAPELES.
+    «BUSCAR» (RUTA /explorar) ES PARA TODOS LOS PAPELES.
 
     Es el buscador de deportistas (retirados y sin cuenta incluidos), común a
     cualquier cuenta con sesión. Va justo antes del ranking porque son las dos
@@ -99,8 +99,8 @@ const DESTINOS: Destino[] = [
   */
   {
     href: '/explorar',
-    etiqueta: 'Explorar',
-    corta: 'Explorar',
+    etiqueta: 'Buscar',
+    corta: 'Buscar',
     icono: Search,
   },
   /*
@@ -204,16 +204,18 @@ export function NavEscritorio({ role }: { role: Role }) {
     <nav aria-label="Secciones" className="hidden items-center gap-0.5 lg:flex">
       {visibles(role).map((destino) => {
         const es = activo(pathname, destino.href);
+        const Icono = destino.icono;
         return (
           <Link
             key={destino.href}
             href={destino.href}
             aria-current={es ? 'page' : undefined}
             className={cn(
-              'inline-flex min-h-[44px] min-w-[44px] items-center rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+              'inline-flex min-h-[44px] min-w-[44px] items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
               es ? ACTIVO : INACTIVO,
             )}
           >
+            <Icono className="size-4" aria-hidden />
             {destino.etiqueta}
           </Link>
         );

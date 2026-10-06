@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  aEncuentros,
   estadoAsaltosPrueba,
   leerCaraACara,
+  leerMarcadores,
   listarRivales,
   resumirCobertura,
   type PruebaComun,
 } from '@/lib/sport/explorar/cara-a-cara';
 import { codificarCursor } from '@/lib/sport/explorar/cursor';
+import { createD1Database } from '@/db/d1/runtime';
+import { localD1 } from '@/db/d1/testing';
 import {
   CLAVES_PRIVADAS,
   UUID_A,
@@ -382,5 +386,182 @@ describe('rivales', () => {
     const { ctx } = crearContexto({ respuestas: sinFusiones });
     const r = await listarRivales(ctx, { personaId: UUID_A });
     expect(r).toMatchObject({ estado: 'ok', items: [], sinResultados: true, siguiente: null });
+  });
+});
+
+describe('pruebas comunes repetidas por dos fuentes', () => {
+  const S = '\u001f';
+  const R = '\u001e';
+  const fila = (extra: Record<string, unknown>) => ({
+    id: 'x', fuente: 'skermo_rfee', torneo: 'TNR ABS', arma: 'FLORETE' as const, genero: 'M' as const,
+    categoria: 'ABS', categoriaRaw: null, formato: 'INDIVIDUAL' as const, temporada: '2023-2024',
+    lecturas: '', equivalencia: null, edicionId: 'ed', fecha: '2024-03-03', asaltos: 0,
+    ...extra,
+  });
+
+  it('el mismo TNR con dos nombres y los mismos puestos cuenta una vez, con los asaltos de cualquiera', () => {
+    const { encuentros, resumen } = aEncuentros([
+      fila({ id: 'pdf', fuente: 'rfee_pdf', torneo: 'TNR ABS', puestoYo: 15, puestoRival: 19, asaltos: 1, directaV: 1, marcadores: `TABLEAU${S}A32${S}15${S}13` }),
+      fila({ id: 'skermo', torneo: 'TNR ABS (3/3)', puestoYo: 15, puestoRival: 19 }),
+    ], false);
+    expect(encuentros).toHaveLength(1);
+    expect(encuentros[0]).toMatchObject({
+      pruebaId: 'pdf', equivalentes: ['skermo'], delante: 'yo',
+      puestos: { yo: 15, rival: 19 },
+      marcadores: [{ fase: 'TABLEAU', ronda: 'A32', mios: 15, rival: 13 }],
+    });
+    expect(resumen).toMatchObject({ competiciones: 1, conAmbosPuestos: 1, delanteYo: 1, directa: { victorias: 1, derrotas: 0 } });
+  });
+
+  it('una lectura con la clasificación y otra «sin puesto» con la poule se funden: puestos de una, asaltos de la otra', () => {
+    const { encuentros } = aEncuentros([
+      fila({ id: 'clasif', torneo: 'CAMPEONATO DE ESPAÑA ABSOLUTO', fecha: '2024-06-08', puestoYo: 8, puestoRival: 11 }),
+      fila({
+        id: 'poule', fuente: 'rfee_pdf', torneo: 'CAMPEONATO DE ESPAÑA ABSOLUTO', fecha: '2024-06-09',
+        asaltos: 1, pouleD: 1, marcadores: `POULE${S}P3${S}1${S}5`,
+      }),
+    ], false);
+    expect(encuentros).toHaveLength(1);
+    expect(encuentros[0]).toMatchObject({
+      pruebaId: 'clasif', fecha: '2024-06-08', puestos: { yo: 8, rival: 11 }, delante: 'yo',
+      asaltos: { total: 1, poule: { victorias: 0, derrotas: 1 } },
+      marcadores: [{ fase: 'POULE', ronda: 'P3', mios: 1, rival: 5 }],
+    });
+  });
+
+  it('no funde pruebas distintas: otro día, otra categoría, otra arma, puestos que se contradicen o sin puestos en ninguna', () => {
+    const { encuentros } = aEncuentros([
+      fila({ id: 'base', puestoYo: 15, puestoRival: 19 }),
+      fila({ id: 'dos-dias', fecha: '2024-03-05', puestoYo: 15, puestoRival: 19 }),
+      fila({ id: 'm23', categoria: 'M23', puestoYo: 15, puestoRival: 19 }),
+      fila({ id: 'espada', arma: 'ESPADA', puestoYo: 15, puestoRival: 19 }),
+      fila({ id: 'satelite', fecha: '2024-03-02', puestoYo: 32, puestoRival: 48 }),
+      fila({ id: 'medio', fecha: '2024-03-02', puestoYo: 15, puestoRival: 20 }),
+      fila({ id: 'sin-a', fecha: '2025-01-01', asaltos: 1 }),
+      fila({ id: 'sin-b', fecha: '2025-01-01', asaltos: 1 }),
+    ], false);
+    expect(encuentros.map((e) => e.pruebaId)).toEqual(['base', 'dos-dias', 'm23', 'espada', 'satelite', 'medio', 'sin-a', 'sin-b']);
+  });
+
+  it('a un día y con un solo puesto en común también es la misma prueba, y el puesto que falta se completa', () => {
+    const { encuentros } = aEncuentros([
+      fila({ id: 'a', fecha: '2024-03-04', puestoYo: 15, puestoRival: null }),
+      fila({ id: 'b', fecha: '2024-03-03', puestoYo: 15, puestoRival: 19 }),
+    ], false);
+    expect(encuentros.map((e) => [e.pruebaId, e.puestos.yo, e.puestos.rival, e.delante])).toEqual([['b', 15, 19, 'yo']]);
+  });
+
+  it('los marcadores se leen en orden de torneo y el filtro de fase los limita', () => {
+    const texto = [`TABLEAU${S}A2${S}15${S}14`, `POULE${S}P1${S}5${S}2`, `TABLEAU${S}A16${S}15${S}9`, 'roto'].join(R);
+    expect(leerMarcadores(texto).map((m) => m.ronda)).toEqual(['P1', 'A16', 'A2']);
+    expect(leerMarcadores(null)).toEqual([]);
+    const { encuentros } = aEncuentros([fila({ asaltos: 3, puestoYo: 1, puestoRival: 2, marcadores: texto })], false, 'POULE');
+    expect(encuentros[0].marcadores.map((m) => m.ronda)).toEqual(['P1']);
+  });
+
+  it('descarta las lecturas repetidas salvo la que aporta los asaltos, aunque no sea la base', () => {
+    const misma = aEncuentros([
+      fila({ id: 'pdf', fuente: 'rfee_pdf', puestoYo: 15, puestoRival: 19, asaltos: 1, directaV: 1 }),
+      fila({ id: 'skermo', torneo: 'TNR ABS (3/3)', puestoYo: 15, puestoRival: 19, asaltos: 1, directaV: 1 }),
+      fila({ id: 'sola', fecha: '2025-01-01', puestoYo: 3, puestoRival: 5, asaltos: 1 }),
+    ], false);
+    expect(misma.encuentros.map((e) => e.pruebaId)).toEqual(['pdf', 'sola']);
+    expect(misma.descartadas).toEqual(['skermo']);
+
+    const repartida = aEncuentros([
+      fila({ id: 'clasif', puestoYo: 8, puestoRival: 11 }),
+      fila({ id: 'poule', fuente: 'rfee_pdf', asaltos: 1, pouleD: 1 }),
+    ], false);
+    expect(repartida.encuentros[0].pruebaId).toBe('clasif');
+    expect(repartida.descartadas).toEqual(['clasif']);
+    expect(aEncuentros([fila({ id: 'sola', puestoYo: 1, puestoRival: 2 })], false).descartadas).toEqual([]);
+  });
+
+  it('el resumen y la lista de asaltos excluyen las lecturas descartadas; sin repetidas no hay exclusión', async () => {
+    const repetidas = [
+      comun({ id: 'pdf', fuente: 'rfee_pdf', formato: 'INDIVIDUAL', fecha: '2024-03-03', puestoYo: 15, puestoRival: 19, asaltos: 1 }),
+      comun({ id: 'skermo', fuente: 'skermo_rfee', formato: 'INDIVIDUAL', fecha: '2024-03-04', puestoYo: 15, puestoRival: 19, asaltos: 1 }),
+    ];
+    const { ctx, sentencias } = crearContexto({ respuestas: respuestasH2h({ comunes: repetidas }) });
+    const r = await leerCaraACara(ctx, { personaId: UUID_A, rivalId: UUID_B });
+    if (r.estado !== 'ok') throw new Error(r.estado);
+    expect(r.encuentros).toHaveLength(1);
+    const deAsaltos = sentencias.filter((s) => /count\(\*\) FILTER|ORDER BY coalesce\(b\.occurred_on/.test(s.text));
+    expect(deAsaltos).toHaveLength(2);
+    for (const s of deAsaltos) {
+      expect(s.text).toMatch(/b\.competition_id NOT IN \(SELECT value FROM json_each/);
+      expect(s.params).toContain(JSON.stringify(['skermo']));
+    }
+
+    const unica = crearContexto({ respuestas: respuestasH2h({ comunes: [comun()] }) });
+    await leerCaraACara(unica.ctx, { personaId: UUID_A, rivalId: UUID_B });
+    expect(unica.texto()).not.toMatch(/NOT IN/);
+  });
+
+  it('un relevo publicado dentro de una prueba individual no cuenta como asalto en ninguna consulta', async () => {
+    const { ctx, sentencias } = crearContexto({ respuestas: respuestasH2h({}) });
+    await leerCaraACara(ctx, { personaId: UUID_A, rivalId: UUID_B });
+    const consultas = sentencias.filter((s) => /count\(\*\) FILTER|ORDER BY coalesce\(b\.occurred_on|WITH comunes/.test(s.text));
+    expect(consultas).toHaveLength(3);
+    for (const s of consultas) expect(s.text).toContain('max(b.score_a, b.score_b) <= 15');
+    const comunes = consultas.find((s) => /WITH comunes/.test(s.text))!;
+    expect(comunes.text).toMatch(/duelos AS MATERIALIZED \([\s\S]*max\(b\.score_a, b\.score_b\) <= 15[\s\S]*GROUP BY b\.competition_id/);
+  });
+
+  it('la consulta de pruebas comunes trae los marcadores orientados y el formato', async () => {
+    const { ctx, sentencias } = crearContexto({ respuestas: respuestasH2h({}) });
+    await leerCaraACara(ctx, { personaId: UUID_A, rivalId: UUID_B });
+    const comunes = sentencias.find((s) => /WITH comunes/.test(s.text))!;
+    expect(comunes.text).toMatch(/group_concat\(b\.phase \|\| char\(31\)/);
+    expect(comunes.text).toMatch(/c\.format AS formato/);
+  });
+});
+describe('cara a cara contra SQLite real: repetidas y relevos', () => {
+  it('el mismo duelo publicado por dos fuentes cuenta una vez y un relevo no cuenta', async () => {
+    const local = localD1();
+    try {
+      const s = local.sqlite;
+      const ctx = { ...crearContexto().ctx, db: createD1Database(local.binding) };
+      for (const [id, nombre] of [[UUID_A, 'Lucia Garcia'], [UUID_B, 'Marta Ruiz']]) {
+        s.prepare(`INSERT INTO sport_person (id,display_name,name_normalized,country_code,gender,birth_year)
+          VALUES (?,?,?,'ESP','F',2000)`).run(id, nombre, nombre.toLowerCase());
+      }
+      const prueba = (id: string, fuente: string, nombre: string, fecha: string) => {
+        s.prepare(`INSERT INTO sport_edition (id,source,season,tournament_key,name,start_date)
+          VALUES (?,?,'2023-2024',?,?,?)`).run(`ed-${id}`, fuente, `ed-${id}`, nombre, fecha);
+        s.prepare(`INSERT INTO sport_competition (id,edition_id,source,season,competition_key,weapon,gender,category,format,competition_date)
+          VALUES (?,?,?,'2023-2024',?,'FLORETE','F','ABS','INDIVIDUAL',?)`).run(id, `ed-${id}`, fuente, id, fecha);
+      };
+      const puesto = (prueba: string, fuente: string, persona: string, n: number) => {
+        s.prepare(`INSERT INTO sport_result (id,competition_id,source,source_fact_key,person_id,source_name,source_country_code,position,content_hash)
+          VALUES (?,?,?,?,?,'Nombre','ESP',?,'hash')`).run(`${prueba}-${persona}`, prueba, fuente, `${prueba}-${persona}`, persona, n);
+      };
+      const asalto = s.prepare(`INSERT INTO sport_bout
+        (id,competition_id,source,phase,round_key,fencer_a_ref,fencer_b_ref,fencer_a_person_id,fencer_b_person_id,
+        fencer_a_name,fencer_b_name,score_a,score_b,content_hash)
+        VALUES (?,?,?,?,?,'a','b',?,?,'A','B',?,?,'hash')`);
+      prueba('pdf', 'rfee_pdf', 'TNR ABS', '2024-03-03');
+      prueba('skermo', 'skermo_rfee', 'TNR ABS (3/3)', '2024-03-04');
+      for (const [p, f] of [['pdf', 'rfee_pdf'], ['skermo', 'skermo_rfee']]) {
+        puesto(p, f, UUID_A, 15);
+        puesto(p, f, UUID_B, 19);
+        asalto.run(`${p}-poule`, p, f, 'POULE', 'P3', UUID_A, UUID_B, 5, 3);
+        asalto.run(`${p}-directa`, p, f, 'TABLEAU', 'A32', UUID_B, UUID_A, 15, 13);
+      }
+      asalto.run('pdf-relevo', 'pdf', 'rfee_pdf', 'TABLEAU', 'A16', UUID_A, UUID_B, 45, 40);
+
+      const r = await leerCaraACara(ctx, { personaId: UUID_A, rivalId: UUID_B });
+      if (r.estado !== 'ok') throw new Error(r.estado);
+      expect(r.encuentros).toHaveLength(1);
+      expect(r.encuentros![0]).toMatchObject({
+        asaltos: { total: 2, poule: { victorias: 1, derrotas: 0 }, directa: { victorias: 0, derrotas: 1 } },
+      });
+      expect(r.encuentros![0].marcadores).toHaveLength(2);
+      expect(r.resumen).toEqual({ asaltos: 2, victorias: 1, derrotas: 1, sinDecidir: 0, tantosFavor: 18, tantosContra: 18 });
+      expect(r.items.map((a) => a.marcador)).toHaveLength(2);
+      expect(new Set(r.items.map((a) => a.prueba.id)).size).toBe(1);
+    } finally {
+      local.close();
+    }
   });
 });

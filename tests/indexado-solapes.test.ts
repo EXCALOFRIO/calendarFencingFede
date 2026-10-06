@@ -73,7 +73,7 @@ describe('depurarSolapes', () => {
     const inf = depurarSolapes(db);
     expect(inf).toEqual({
       pares: 4, paresAplicados: 3, paresOmitidosPdfMayor: 1, resultadosBorrados: 5, asaltosBorrados: 2,
-      paresSinAsaltosSkermo: 1, competicionesBorradas: 1, coberturasBorradas: 2,
+      paresSinAsaltosSkermo: 1, competicionesBorradas: 1, edicionesBorradas: 0, coberturasBorradas: 2,
     });
     // cq: quedan p4 y el puesto sin vincular; el asalto p1-p4 sigue porque p4 no está en skermo.
     expect(filas(db, `SELECT person_id p FROM sport_result WHERE competition_id='cq' ORDER BY p`)).toEqual([{ p: null }, { p: 'p4' }]);
@@ -86,6 +86,15 @@ describe('depurarSolapes', () => {
     // cv tiene más puestos vinculados que cw: no se toca.
     expect(filas(db, `SELECT count(*) n FROM sport_result WHERE competition_id='cv'`)).toEqual([{ n: 2 }]);
     expect(filas(db, `SELECT count(*) n FROM sport_result WHERE source='skermo_rfee'`)).toEqual([{ n: 6 }]);
+  });
+
+  it('borra también la edición que se queda sin pruebas', () => {
+    const db = fixture();
+    db.exec(`INSERT INTO sport_edition (id, source, season, tournament_key, name, start_date)
+        VALUES ('ep2', 'rfee_pdf', '2024-2025', 'pdf:y', 'TNR PDF 2', '2025-01-12');
+      UPDATE sport_competition SET edition_id='ep2' WHERE id='cr';`);
+    expect(depurarSolapes(db)).toMatchObject({ competicionesBorradas: 1, edicionesBorradas: 1 });
+    expect(filas(db, `SELECT id FROM sport_edition WHERE source='rfee_pdf' ORDER BY id`)).toEqual([{ id: 'ep' }]);
   });
 
   it('es idempotente', () => {

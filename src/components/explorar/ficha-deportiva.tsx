@@ -1,33 +1,33 @@
-import { ArrowLeft, ExternalLink, Info, Swords, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, ExternalLink, ShieldCheck, Swords, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { rutaCaraACara } from '@/lib/sport/explorar/cara-a-cara-url';
-import {
-  estadoLectura,
-  etiquetaHecho,
-  etiquetaTipo,
-  explicacionSinVinculo,
-  fuenteRanking,
-  fuenteResultado,
-} from '@/lib/sport/explorar/etiquetas';
-import { RUTA_EDICIONES, rutaEdicion } from '@/lib/sport/explorar/edicion-url';
+import { explicacionSinVinculo } from '@/lib/sport/explorar/etiquetas';
+import { EXTRAS_VACIOS, type DatosPersonales, type ExtrasPerfil } from '@/lib/sport/explorar/perfil-extra';
+import { RUTA_EDICIONES } from '@/lib/sport/explorar/edicion-url';
 import { RUTA_FAVORITOS } from '@/lib/sport/explorar/favoritos-url';
+import { porcentajeVictorias } from '@/lib/sport/explorar/perfil-modelo';
+import { CLASES_MEDALLA, CONTORNO_MEDALLA, categoriaVisible, type Medalla } from '@/lib/sport/explorar/presentacion';
+import { enlacePruebaPerfil, nombreListaPerfil, type FilaListaPerfil } from '@/lib/sport/explorar/resultados-perfil';
+import { tipoPorNombre } from '@/lib/sport/explorar/tipo-competicion';
 import type { FichaConPerfil } from '@/lib/sport/explorar/tipos-perfil';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Aclaracion, Bloque, Celda, Dato, EnlaceFuente, Nota, enlaceSeguro, fechaLegible, type Nivel } from './piezas';
+import { Bloque, Nota, enlaceSeguro, type Nivel } from './piezas';
 import { AvatarAnillo } from './avatar-anillo';
-import { EtiquetasCompeticion, clasificarResultado } from './etiqueta-competicion';
+import { clasificarResultado } from './etiqueta-competicion';
 import { AmbitoPerfil } from './perfil/ambito-perfil';
+import { CategoriasPerfil } from './perfil/categorias-perfil';
 import { BalanceFasesRivales, CuriosidadesPerfil } from './perfil/curiosidades-perfil';
 import { EstadisticasDeportistaVista } from './estadisticas-deportista';
 import { FotoDeportista } from './foto-deportista';
 import { CifrasPerfil } from './perfil/cifras-perfil';
-import { DestacadosPerfil } from './perfil/destacados-perfil';
+import { destacadosPerfil, rotuloRanking } from './perfil/destacados-perfil';
+import { SeccionRendimiento } from './graficos/seccion-rendimiento';
 import { CompararPerfil } from './perfil/comparar-perfil';
-import { InsigniaPuesto, partesFecha } from './perfil/piezas-perfil';
+import { FilaResultado } from './perfil/fila-resultado';
+import { PuntoMedalla } from './perfil/medallas';
 import { ResultadosPerfilVista } from './perfil/resultados-perfil';
 import { ManoAMano } from './perfil/rivales-perfil';
 import { SugeridosPerfil } from './perfil/sugeridos-perfil';
@@ -39,540 +39,342 @@ import {
   type CriteriosFicha,
 } from '@/lib/sport/explorar/ficha-url';
 import type { HistorialVista, VistaFicha } from '@/lib/sport/explorar/ficha-pantalla';
-import type {
-  CoberturaFicha,
-  EntradaRankingOficial,
-  EstadisticaPorTipo,
-  FichaDeportiva,
-  ResultadoHistorial,
-} from '@/lib/sport/explorar/tipos';
+import type { FichaDeportiva, ResultadoHistorial } from '@/lib/sport/explorar/tipos';
 import { etiquetaTemporada } from '@/lib/sport/explorar/url';
-import {
-  CATEGORY_LABEL,
-  GENDER_LABEL,
-  WEAPON_LABEL,
-  cn,
-  titular,
-} from '@/lib/utils';
+import { WEAPON_LABEL, cn, titular } from '@/lib/utils';
 
 /**
  * Ficha deportiva de una persona indexada.
  *
  * Sólo lleva lo que trae `FichaDeportiva`: hechos deportivos publicados. No hay
- * ninguna lectura de cuenta, correo, tutor, consentimiento ni licencia, y una
- * fecha que la fuente no publica se dice «no publicada»: nunca se rellena con
- * una por defecto ni se cuenta como cero.
+ * ninguna lectura de cuenta, correo, tutor, consentimiento ni licencia, y lo
+ * que la fuente no publica no se pinta: nunca se rellena con un cero.
  */
 
 /* ------------------------------------------------------------------ cabecera */
 
-function DatoCabecera({
-  etiqueta,
-  children,
-  className,
-}: {
-  etiqueta: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
+function Contador({ etiqueta, valor }: { etiqueta: string; valor: number }) {
   return (
-    <div className={cn('flex min-w-0 flex-col gap-1 bg-card px-4 py-3 sm:px-6', className)}>
-      <dt className="text-xs text-muted-foreground">{etiqueta}</dt>
-      <dd className="min-w-0 text-sm break-words">{children}</dd>
+    <div className="flex min-w-0 flex-col items-center gap-1">
+      <dd className="cifra text-[1.75rem] leading-none whitespace-nowrap sm:text-4xl">{valor.toLocaleString('es-ES')}</dd>
+      <dt className="max-w-full truncate text-[0.625rem] leading-none tracking-tight text-muted-foreground sm:text-xs sm:tracking-normal">{etiqueta}</dt>
     </div>
   );
 }
 
-const plegar = (texto: string) =>
-  texto.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('es').split(/\s+/).sort().join(' ');
+const MEDALLAS: { m: Medalla; uno: string; varios: string }[] = [
+  { m: 'oro', uno: 'Oro', varios: 'Oros' },
+  { m: 'plata', uno: 'Plata', varios: 'Platas' },
+  { m: 'bronce', uno: 'Bronce', varios: 'Bronces' },
+];
 
-function Contador({ etiqueta, valor, ayuda }: { etiqueta: string; valor: number | null; ayuda?: string }) {
-  return (
-    <div className="flex min-w-0 flex-col items-center gap-0.5 sm:items-start">
-      <dt className="order-2 max-w-full truncate text-[0.6875rem] leading-tight text-muted-foreground sm:text-xs">{etiqueta}</dt>
-      <dd className="order-1 cifra text-3xl leading-none sm:text-4xl" title={ayuda}>
-        {valor === null ? (
-          <>
-            <span aria-hidden="true">—</span>
-            <span className="sr-only">sin dato</span>
-          </>
-        ) : valor.toLocaleString('es-ES')}
-      </dd>
-    </div>
-  );
-}
+type Ficha = { clave: string; cifra: string; rotulo: string; detalle?: string; resaltado?: boolean };
+
+const BALDOSA = 'flex min-w-0 flex-col justify-center gap-1 rounded-xl border px-2.5 py-2 max-[359px]:px-2';
 
 /**
- * Los cuatro contadores de la cabecera. Un asalto que no se pudo leer sale
- * como raya, nunca como cero.
+ * Medallas con el color de su metal y, en la misma rejilla, los hitos
+ * (ranking, títulos, mejor temporada). Envuelve en filas de tres en móvil:
+ * nada se desplaza en horizontal.
  */
-function ContadoresFicha({ perfil }: { perfil: NonNullable<FichaConPerfil['perfil']> }) {
-  const r = perfil.resumen;
-  const a = perfil.asaltos;
+export function MedallasCabecera({
+  oros,
+  platas,
+  bronces,
+  hitos = [],
+}: {
+  oros: number;
+  platas: number;
+  bronces: number;
+  hitos?: readonly Ficha[];
+}) {
+  const n: Record<Medalla, number> = { oro: oros, plata: platas, bronce: bronces };
   return (
-    <dl className="grid min-w-0 grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))] gap-2 sm:flex sm:gap-8" aria-label="En cifras">
-      <Contador etiqueta={r.pruebas === 1 ? 'Competición' : 'Competiciones'} valor={r.pruebas} ayuda="Pruebas individuales con resultado importado" />
-      <Contador etiqueta="Asaltos" valor={a ? a.total.asaltos : null} ayuda="Asaltos individuales importados" />
-      <Contador etiqueta="Rivales" valor={a?.rivales ?? null} ayuda="Rivales distintos identificados en esos asaltos" />
-      <Contador etiqueta="Medallas" valor={r.oros + r.platas + r.bronces} />
+    <dl className="grid min-w-0 grid-cols-3 gap-1.5 sm:grid-cols-6 sm:gap-2" aria-label="Medallas y hitos">
+      {MEDALLAS.map(({ m, uno, varios }) => (
+        <div
+          key={m}
+          data-medalla={m}
+          className={cn(BALDOSA, n[m] > 0 ? CLASES_MEDALLA[m] : 'border-filete-alto text-muted-foreground')}
+        >
+          <dd className="flex items-center gap-1.5">
+            <PuntoMedalla medalla={m} className={cn('size-2.5', n[m] === 0 && 'opacity-40')} />
+            <span className="cifra text-2xl leading-none">{n[m]}</span>
+          </dd>
+          <dt className="truncate text-[0.6875rem] leading-none font-medium">{n[m] === 1 ? uno : varios}</dt>
+        </div>
+      ))}
+      {hitos.map((h) => (
+        <div key={h.clave} data-hito={h.clave} className={cn(BALDOSA, 'bg-background/40', h.resaltado ? CONTORNO_MEDALLA.oro : 'border-filete-alto')}>
+          <dd className="cifra truncate text-2xl leading-none" title={h.detalle}>{h.cifra}</dd>
+          <dt className="line-clamp-2 text-[0.6875rem] leading-tight font-medium break-words hyphens-auto text-muted-foreground max-[359px]:line-clamp-3 max-[359px]:text-[0.625rem] max-[359px]:wrap-anywhere" title={h.detalle ? `${h.rotulo} · ${h.detalle}` : h.rotulo}>
+            {h.rotulo}
+          </dt>
+        </div>
+      ))}
     </dl>
   );
 }
 
+function Pastilla({ children, className, title }: { children: React.ReactNode; className?: string; title?: string }) {
+  return (
+    <li
+      title={title}
+      className={cn('inline-flex h-6 max-w-full min-w-0 items-center rounded-full border border-filete-alto px-2.5 text-xs whitespace-nowrap', className)}
+    >
+      <span className="truncate">{children}</span>
+    </li>
+  );
+}
+
+/** Edad por año de nacimiento, sin fecha exacta: la que se cumple este año. */
+function edadDe(anio: number | null): number | null {
+  if (anio === null) return null;
+  const edad = new Date().getFullYear() - anio;
+  return edad > 0 && edad < 120 ? edad : null;
+}
+
+const MANO = { L: 'Zurdo', R: 'Diestro' } as const;
+
+/** Acciones compactas: pastillas de 36 px de alto; el área táctil la da el hueco entre ellas. */
+const ACCION = 'h-9 min-h-9 rounded-full px-3 text-sm';
+
 /**
- * Cabecera tipo perfil social: retrato FIE con anillo, contadores, nombre en
- * formato «Nombre Apellidos», país, club, armas y las acciones de la ficha
- * (cara a cara, favorito y perfil FIE). Un posible menor no lleva retrato,
- * año ni enlace a la FIE: sólo sus iniciales.
+ * Cabecera tipo perfil social: retrato con anillo, nombre completo, bandera,
+ * armas y datos sueltos en pastillas (edad, mano, altura, club; lo que no hay
+ * no sale). Debajo, cuatro cifras grandes, medallas e hitos en rejilla y las
+ * acciones en una sola fila. Un posible menor no lleva retrato ni enlace a
+ * la FIE.
  */
 export function CabeceraFicha({
   ficha,
   titulo = true,
   acciones,
+  datos = null,
 }: {
   ficha: FichaConPerfil;
   titulo?: boolean;
   /** Controles propios de la cuenta que mira, como guardar en favoritos. */
   acciones?: React.ReactNode;
+  datos?: DatosPersonales | null;
 }) {
-  const nombre = nombreVisible(ficha.nombre) || ficha.nombre;
+  const nombre = datos?.nombreCompleto || nombreVisible(ficha.nombre) || ficha.nombre;
   const perfil = ficha.perfil;
-  const propio = plegar(nombre);
-  // Un alias que sólo cambia el orden o las mayúsculas del nombre no aporta nada.
-  const alias = ficha.alias.filter((a) => plegar(nombreVisible(a)) !== propio);
   const enlaceFie = ficha.esMenor ? null : enlaceSeguro(perfil?.enlaceFie ?? null);
+  // La lectura por prueba ya funde las copias de dos fuentes: cuenta igual que la lista.
+  const total = perfil?.ambito?.total;
+  const competiciones = total ? total.competiciones : perfil?.resumen.pruebas ?? null;
+  const medallas = total ?? perfil?.resumen;
+  const rivales = perfil?.rivalesStats?.rivalesDistintos ?? perfil?.asaltos?.rivales ?? null;
+  const asaltos = perfil?.asaltos && perfil.asaltos.total.asaltos > 0 ? perfil.asaltos.total.asaltos : null;
+  const cifras = [
+    competiciones ? { etiqueta: competiciones === 1 ? 'Prueba' : 'Pruebas', valor: competiciones } : null,
+    asaltos !== null ? { etiqueta: 'Asaltos', valor: asaltos } : null,
+    rivales ? { etiqueta: 'Rivales', valor: rivales } : null,
+    medallas && competiciones ? { etiqueta: 'Medallas', valor: medallas.oros + medallas.platas + medallas.bronces } : null,
+  ].filter((c) => c !== null);
+
+  const pct = porcentajeVictorias(perfil?.asaltos?.total);
+  const hitos: Ficha[] = perfil
+    ? [
+        ...(pct !== null ? [{ clave: 'ganados', cifra: `${pct}%`, rotulo: 'Ganados' }] : []),
+        ...destacadosPerfil(perfil, ficha.estadisticas.porTipo),
+      ].slice(0, 3)
+    : [];
+
+  const edad = datos?.edad ?? edadDe(ficha.anioNacimiento);
+  const mujer = ficha.genero === 'F';
+  const club = datos?.club?.nombre
+    ? { texto: titular(datos.club.nombre), codigo: false }
+    : perfil?.club
+      ? { texto: titular(perfil.club.nombre), codigo: false }
+      : datos?.club?.codigo
+        ? { texto: datos.club.codigo, codigo: true }
+        : null;
+
   return (
-    <header className="flex min-w-0 flex-col border-y border-t-filete-alto bg-card">
-      <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-4 px-4 pt-5 pb-4 sm:gap-x-10 sm:px-6 sm:pt-7 sm:pb-6">
-        <div className="col-start-1 row-start-1 self-start sm:row-span-3">
-          {ficha.esMenor ? (
-            <AvatarAnillo nombre={nombre} tamano="lg" apagado />
-          ) : (
-            <FotoDeportista personaId={ficha.id} nombre={nombre} tamano="heroe" decorativa />
-          )}
-        </div>
-
-        <div className="col-span-2 row-start-2 min-w-0 border-y py-3 sm:col-span-1 sm:col-start-2 sm:border-0 sm:py-0">
-          {perfil ? <ContadoresFicha perfil={perfil} /> : null}
-        </div>
-
-        <div className="col-start-2 row-start-1 flex min-w-0 flex-col gap-2 self-center sm:self-start">
+    <header className="flex min-w-0 flex-col gap-4 rounded-2xl border bg-card px-4 pt-5 pb-4 max-[359px]:px-3 sm:gap-5 sm:px-6 sm:pt-6">
+      <div className="flex min-w-0 items-center gap-4 sm:gap-6">
+        {ficha.esMenor ? (
+          <AvatarAnillo nombre={nombre} tamano="lg" apagado />
+        ) : (
+          // El sello «Foto FIE» del retrato es el único span hijo directo: aquí no se enseña.
+          <FotoDeportista personaId={ficha.id} nombre={nombre} tamano="heroe" decorativa className="[&>span]:hidden" />
+        )}
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
           {titulo ? (
-            <h1 className="min-w-0 text-3xl leading-[0.95] break-words sm:text-5xl lg:text-6xl">{nombre}</h1>
+            <h1 className="min-w-0 text-[1.75rem] leading-[0.95] break-words sm:text-5xl">{nombre}</h1>
           ) : (
-            <p className="min-w-0 font-display text-3xl leading-[0.95] break-words sm:text-5xl">{nombre}</p>
+            <p className="min-w-0 font-display text-[1.75rem] leading-[0.95] break-words sm:text-5xl">{nombre}</p>
           )}
-          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
+          <ul className="flex min-w-0 flex-wrap items-center gap-1.5" aria-label="Datos">
             {ficha.pais ? (
-              <BanderaPais pais={ficha.pais} tamaño="ficha" />
-            ) : (
-              <span className="text-muted-foreground">País no publicado</span>
-            )}
-            {perfil?.club ? (
-              <span className="min-w-0 break-words" title={`Club publicado más reciente, según ${fuenteResultado(perfil.club.fuente)}`}>
-                {titular(perfil.club.nombre)}
-              </span>
+              <li className="inline-flex shrink-0">
+                <BanderaPais pais={ficha.pais} tamaño="ficha" />
+              </li>
             ) : null}
-          </div>
-          {(perfil?.armas.length ?? 0) > 0 || ficha.esPropia ? (
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              {perfil?.armas.map((arma) => (
-                <Badge key={arma} variant="outline" className="h-7 px-3 text-sm">
-                  {WEAPON_LABEL[arma]}
-                </Badge>
-              ))}
-              {ficha.esPropia ? <Badge variant="secondary" className="h-7 px-3">Es tu ficha deportiva</Badge> : null}
-            </div>
-          ) : null}
-        </div>
-
-        <div
-          className={cn(
-            'col-span-2 row-start-3 grid min-w-0 grid-cols-2 gap-2 sm:col-span-1 sm:col-start-2 sm:flex sm:flex-wrap',
-          )}
-        >
-          {/* Tres botones no caben con su rótulo a 393 px: el principal ocupa la fila. */}
-          <Button asChild className={cn('min-h-11 px-2 sm:px-4', enlaceFie && acciones && 'col-span-2')}>
-            <Link href={rutaCaraACara(ficha.id)} prefetch={false}>
-              <Swords aria-hidden />
-              Cara a cara
-            </Link>
-          </Button>
-          {acciones ? <div className="min-w-0 sm:min-w-32">{acciones}</div> : null}
-          {enlaceFie ? (
-            <Button asChild variant="outline" className="min-h-11 px-2 sm:px-4">
-              <a href={enlaceFie} target="_blank" rel="noopener noreferrer">
-                Perfil FIE
-                <ExternalLink aria-hidden />
-              </a>
-            </Button>
-          ) : null}
+            {perfil?.armas.map((arma) => (
+              <Pastilla key={arma} className="font-medium text-foreground">{WEAPON_LABEL[arma]}</Pastilla>
+            ))}
+            {edad !== null ? <Pastilla className="text-muted-foreground">{edad} años</Pastilla> : null}
+            {datos?.mano ? (
+              <Pastilla className="text-muted-foreground">
+                {datos.mano === 'L' ? (mujer ? 'Zurda' : MANO.L) : mujer ? 'Diestra' : MANO.R}
+              </Pastilla>
+            ) : null}
+            {datos?.alturaCm ? <Pastilla className="text-muted-foreground">{datos.alturaCm} cm</Pastilla> : null}
+            {club ? (
+              <Pastilla
+                title={club.texto}
+                className={cn('text-muted-foreground', club.codigo && 'font-mono text-[0.6875rem] tracking-wide uppercase')}
+              >
+                {club.texto}
+              </Pastilla>
+            ) : null}
+            {ficha.esMenor ? (
+              <Pastilla className="gap-1 text-muted-foreground">
+                <ShieldCheck className="mr-1 inline size-3.5 align-[-2px]" aria-hidden />
+                Posible menor de edad
+              </Pastilla>
+            ) : null}
+            {ficha.esPropia ? <Pastilla className="border-primary-text/50 text-primary-text">Tu ficha</Pastilla> : null}
+          </ul>
         </div>
       </div>
 
-      {perfil ? <DestacadosPerfil perfil={perfil} porTipo={ficha.estadisticas.porTipo} /> : null}
-
-      <dl className="grid grid-cols-2 gap-px border-t bg-border sm:grid-cols-4">
-        <DatoCabecera etiqueta="Club publicado más reciente">
-          {perfil?.club ? (
-            <>
-              {titular(perfil.club.nombre)}
-              <span className="block text-xs text-muted-foreground">{fuenteResultado(perfil.club.fuente)}</span>
-            </>
-          ) : (
-            <span className="text-muted-foreground">No publicado</span>
-          )}
-        </DatoCabecera>
-        <DatoCabecera etiqueta="Año de nacimiento">
-          {ficha.anioNacimiento !== null ? (
-            <span className="cifra text-xl">{ficha.anioNacimiento}</span>
-          ) : (
-            <span className="text-muted-foreground">{ficha.esMenor ? 'No se muestra' : 'No publicado'}</span>
-          )}
-        </DatoCabecera>
-        <DatoCabecera etiqueta="Género">
-          {ficha.genero ? GENDER_LABEL[ficha.genero] : <span className="text-muted-foreground">No publicado</span>}
-        </DatoCabecera>
-        <DatoCabecera etiqueta="También publicado como">
-          {alias.length > 0 ? alias.join(', ') : <span className="text-muted-foreground">Sin otras formas</span>}
-        </DatoCabecera>
-      </dl>
-
-      {ficha.esMenor ? (
-        <p className="flex items-start gap-2 border-t px-4 py-3 text-sm text-muted-foreground sm:px-6">
-          <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <span className="medida">
-            Posible menor de edad: esta ficha enseña sólo resultados deportivos publicados por las
-            federaciones. No hay foto, fecha de nacimiento, contacto ni datos de tutores.
-          </span>
-        </p>
+      {cifras.length > 0 ? (
+        <dl
+          className="grid min-w-0 auto-cols-fr grid-flow-col gap-2 border-y py-3 sm:justify-start sm:gap-10 sm:border-0 sm:py-0"
+          aria-label="En cifras"
+        >
+          {cifras.map((c) => <Contador key={c.etiqueta} etiqueta={c.etiqueta} valor={c.valor} />)}
+        </dl>
       ) : null}
-      <div className="border-t px-4 sm:px-6">
-        <Aclaracion titulo="Sobre esta ficha">
-          <Nota>
-            La ficha no dice si la persona sigue compitiendo: sólo recoge lo que han publicado las
-            fuentes. Que no tenga cuenta en la aplicación no significa que esté retirada. Junta todos
-            los resultados de las fichas fusionadas de esta persona, de la FIE, de la RFEE y de Skermo.
-          </Nota>
-        </Aclaracion>
+
+      {medallas && competiciones ? <MedallasCabecera oros={medallas.oros} platas={medallas.platas} bronces={medallas.bronces} hitos={hitos} /> : null}
+
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <Button asChild variant="secondary" size="sm" className={ACCION}>
+          <Link href={rutaCaraACara(ficha.id)} prefetch={false}>
+            <Swords aria-hidden />
+            Cara a cara
+          </Link>
+        </Button>
+        {acciones ? (
+          // El control de Seguir trae su propio alto de 44 px: aquí se iguala a las otras pastillas.
+          <div className="min-w-0 [&_button]:rounded-full [&_button>span:first-child]:h-9 [&_button>span:first-child]:rounded-full [&_button>span:first-child]:px-3.5">
+
+            {acciones}
+          </div>
+        ) : null}
+        {enlaceFie ? (
+          <Button asChild variant="outline" size="sm" className={ACCION}>
+            <a href={enlaceFie} target="_blank" rel="noopener noreferrer" title="Perfil en la FIE">
+              FIE
+              <ExternalLink aria-hidden />
+            </a>
+          </Button>
+        ) : null}
       </div>
     </header>
   );
 }
 
-/* -------------------------------------------------------------- estadísticas */
-
-function FilaEstadistica({ e }: { e: EstadisticaPorTipo }) {
-  const sinDato = <span className="text-sm text-muted-foreground">Sin dato</span>;
-  return (
-    <li className="grid grid-cols-2 gap-x-4 gap-y-4 px-4 py-5 sm:grid-cols-3 md:grid-cols-[minmax(0,2fr)_repeat(5,minmax(0,1fr))] md:items-center">
-      <span className="col-span-2 min-w-0 font-medium break-words sm:col-span-3 md:col-span-1">{etiquetaTipo(e.tipo)}</span>
-      <Celda etiqueta="Clasificaciones con puesto">
-        <span className="cifra text-4xl leading-none">{e.clasificaciones}</span>
-      </Celda>
-      <Celda etiqueta="Mejor puesto">
-        {e.mejorPuesto !== null ? <span className="cifra text-4xl leading-none">{e.mejorPuesto}</span> : sinDato}
-      </Celda>
-      <Celda etiqueta="Podios">
-        <span className="cifra text-4xl leading-none">{e.podios}</span>
-      </Celda>
-      <Celda etiqueta="Victorias">
-        <span className="cifra text-4xl leading-none">{e.victorias}</span>
-      </Celda>
-      <Celda etiqueta="Sin puesto numérico">
-        <Dato>{e.sinPuestoNumerico}</Dato>
-      </Celda>
-    </li>
-  );
-}
-
-export function EstadisticasFicha({ ficha, nivel }: { ficha: FichaDeportiva; nivel: Nivel }) {
-  if (ficha.estadisticas.detalle) {
-    return (
-      <Bloque id="ficha-estadisticas" titulo="Desglose por torneo, categoría y arma" nivel={nivel}>
-        <EstadisticasDeportistaVista detalle={ficha.estadisticas.detalle} />
-      </Bloque>
-    );
-  }
-  const { porTipo } = ficha.estadisticas;
-  const { pruebasConResultado, ediciones } = ficha.cobertura;
-  return (
-    <Bloque id="ficha-estadisticas" titulo="Estadísticas por tipo de torneo" nivel={nivel}>
-      {porTipo.length === 0 ? (
-        <p role="status" className="medida text-sm text-muted-foreground">
-          No hay clasificaciones individuales importadas. Puede que falte importar esa información;
-          no equivale a cero participaciones ni a derrotas.
-        </p>
-      ) : (
-        <>
-          <ul className="divide-y border-y bg-card" aria-label="Estadísticas por tipo de torneo">
-            {porTipo.map((e) => (
-              <FilaEstadistica key={e.tipo ?? 'sin-tipo'} e={e} />
-            ))}
-          </ul>
-          <Nota>
-            Conjunto cubierto: {pruebasConResultado} {pruebasConResultado === 1 ? 'prueba' : 'pruebas'} con
-            resultado importado, de {ediciones} {ediciones === 1 ? 'edición' : 'ediciones'}.
-          </Nota>
-        </>
-      )}
-      <Aclaracion titulo="Cómo se cuentan las estadísticas">
-        <Nota>
-          Cuentan sólo clasificaciones individuales con resultado publicado, una por prueba. Una
-          inscripción sin final no cuenta como participación. El tipo sale del calendario cuando lo
-          documenta; si no, la prueba va a «Sin tipo documentado» y nunca se deduce del título.
-        </Nota>
-      </Aclaracion>
-    </Bloque>
-  );
-}
-
 /* ------------------------------------------------------------- ranking oficial */
 
-function FilaRanking({ e }: { e: EntradaRankingOficial }) {
-  const categoria = CATEGORY_LABEL[e.categoria.codigo as keyof typeof CATEGORY_LABEL] ?? e.categoria.codigo;
+/** Puestos del ranking oficial de la temporada más reciente, si figura en alguno. */
+export function RankingCompacto({ ficha, nivel }: { ficha: FichaDeportiva; nivel: Nivel }) {
+  const entradas = ficha.rankingOficial.entradas.filter((e) => e.puesto !== null);
+  if (entradas.length === 0) return null;
   return (
-    <li className="grid grid-cols-2 gap-x-4 gap-y-4 px-4 py-5 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)] md:items-center">
-      <span className="col-span-2 flex min-w-0 flex-col gap-1 md:col-span-1">
-        <span className="font-medium break-words">
-          {WEAPON_LABEL[e.arma]} {GENDER_LABEL[e.genero].toLowerCase()}, {categoria}
-        </span>
-        <span className="text-xs text-muted-foreground break-words">
-          {fuenteRanking(e.fuente)}, {etiquetaTemporada(e.temporada)}
-          {e.categoria.raw ? `, publicada como «${e.categoria.raw}»` : ''}
-        </span>
-      </span>
-      <Celda etiqueta="Puesto en la lista">
-        {e.puesto !== null ? (
-          <span className="flex items-baseline gap-1.5">
-            <span className="cifra text-4xl leading-none">{e.puesto}</span>
-            {e.totalPublicado !== null ? (
-              <span className="text-xs text-muted-foreground">de {e.totalPublicado}</span>
-            ) : null}
-          </span>
-        ) : (
-          <span className="text-sm text-muted-foreground">La fuente no le asigna puesto</span>
-        )}
-      </Celda>
-      <Celda etiqueta="Puntos">
-        {e.puntos !== null ? (
-          <span className="cifra text-3xl leading-none break-all">{e.puntos}</span>
-        ) : (
-          <span className="text-sm text-muted-foreground">Puntos no publicados</span>
-        )}
-      </Celda>
-      <Celda etiqueta="Fecha de la lista" className="col-span-2 md:col-span-1">
-        {e.fecha.sourcePublishedOn ? (
-          <Dato>Publicada el {fechaLegible(e.fecha.sourcePublishedOn)}</Dato>
-        ) : (
-          <>
-            <Dato>Leída el {fechaLegible(e.fecha.observedOn)}</Dato>
-            <Aclaracion titulo="Fecha de lectura, no de publicación">
-              <Nota>
-                La fuente no publica la fecha de la lista. «Leída el» es el día en que se obtuvo, no la
-                situación a final de temporada.
-              </Nota>
-            </Aclaracion>
-          </>
-        )}
-        <EnlaceFuente url={e.enlace} etiqueta="Ver la lista en la fuente" />
-      </Celda>
-    </li>
-  );
-}
-
-export function RankingOficialFicha({
-  ficha,
-  base,
-  criterios,
-  nivel,
-}: {
-  ficha: FichaDeportiva;
-  base: string;
-  criterios: CriteriosFicha;
-  nivel: Nivel;
-}) {
-  const r = ficha.rankingOficial;
-  const otro = r.formato === 'INDIVIDUAL' ? 'EQUIPOS' : 'INDIVIDUAL';
-  return (
-    <Bloque id="ficha-ranking" titulo="Ranking oficial publicado" nivel={nivel}>
-      <Aclaracion titulo="Qué representa este ranking">
-        <Nota>
-          Es la lista que publica cada federación para una temporada y una modalidad. No es el puesto
-          de un torneo ni ningún cálculo propio de esta aplicación. Cada puesto pertenece a la lista,
-          temporada y fuente que se indican.
-        </Nota>
-      </Aclaracion>
-
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <p className="text-sm">
-          Modalidad: <strong>{r.formato === 'INDIVIDUAL' ? 'individual' : 'por equipos'}</strong>
-        </p>
-        <Button asChild variant="outline" size="sm">
-          <Link
-            href={construirUrlFicha(
-              base,
-              { ranking: criterios.ranking, formato: otro, volver: criterios.volver },
-              'ficha-ranking',
-            )}
-            prefetch={false}
-            scroll={false}
+    <Bloque id="ficha-ranking" titulo="Ranking" nivel={nivel}>
+      <ul className="grid min-w-0 gap-2 sm:grid-cols-2">
+        {entradas.map((e) => (
+          <li
+            key={`${e.fuente}-${e.arma}-${e.genero}-${e.categoria.codigo}-${e.categoria.raw}-${e.formato}`}
+            className="flex min-w-0 items-center gap-3 rounded-xl border bg-card px-4 py-3"
           >
-            Ver {otro === 'EQUIPOS' ? 'equipos' : 'individual'}
-          </Link>
-        </Button>
-      </div>
-
-      {r.temporadasDisponibles.length > 0 ? (
-        <nav aria-label="Temporadas con ranking oficial" className="flex flex-wrap gap-2">
-          {r.temporadasDisponibles.map((t) => {
-            const actual = t === r.temporada;
-            return (
-              <Link
-                key={t}
-                href={construirUrlFicha(
-                  base,
-                  { ranking: t, formato: criterios.formato, volver: criterios.volver },
-                  'ficha-ranking',
-                )}
-                prefetch={false}
-                scroll={false}
-                aria-current={actual ? 'true' : undefined}
-                className={cn(
-                  'inline-flex min-h-11 items-center rounded-full border px-3 text-sm hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
-                  actual && 'border-primary-text bg-marcado font-semibold text-primary-text',
-                )}
-              >
-                {etiquetaTemporada(t)}
-                {actual ? <span className="sr-only"> (mostrada)</span> : null}
-              </Link>
-            );
-          })}
-        </nav>
-      ) : null}
-
-      {r.temporada === null ? (
-        <p role="status" className="medida text-sm text-muted-foreground">
-          No hay ninguna lista oficial importada en la que figure esta persona
-          {r.formato === 'EQUIPOS' ? ' como equipo' : ''}. Puede faltar por importar; no significa
-          que no esté clasificada.
-        </p>
-      ) : r.entradas.length === 0 ? (
-        <p role="status" className="medida text-sm text-muted-foreground">
-          No figura en las listas importadas de {etiquetaTemporada(r.temporada)}. No se le atribuye la
-          de otra temporada.
-        </p>
-      ) : (
-        <ul className="divide-y border-y bg-card" aria-label={`Ranking oficial ${etiquetaTemporada(r.temporada)}`}>
-          {r.entradas.map((e) => (
-            <FilaRanking key={`${e.fuente}-${e.arma}-${e.genero}-${e.categoria.raw}-${e.formato}`} e={e} />
-          ))}
-        </ul>
-      )}
+            <span className="cifra text-3xl leading-none">{e.puesto}º</span>
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate text-sm font-medium">
+                {rotuloRanking(e.fuente)} · {WEAPON_LABEL[e.arma]} {categoriaVisible(e.categoria.codigo).toLowerCase()}
+              </span>
+              <span className="truncate text-xs text-muted-foreground">
+                {etiquetaTemporada(e.temporada)}
+                {e.totalPublicado !== null ? ` · de ${e.totalPublicado}` : ''}
+                {e.puntos !== null ? ` · ${e.puntos} puntos` : ''}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
     </Bloque>
   );
 }
 
 /* ------------------------------------------------------------------ historial */
 
-function FilaHistorial({ r }: { r: ResultadoHistorial }) {
-  const categoria = CATEGORY_LABEL[r.prueba.categoria.codigo as keyof typeof CATEGORY_LABEL] ?? r.prueba.categoria.codigo;
-  const fecha = r.fecha ? partesFecha(r.fecha) : null;
-  return (
-    <li className="flex min-w-0 flex-col gap-3 bg-card px-4 pt-4 pb-2 sm:px-5">
-      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4">
-        <div className="flex min-w-0 flex-col gap-1">
-          <span className="text-xs text-muted-foreground">
-            {fecha ? (
-              <time dateTime={r.fecha ?? undefined}>
-                <span className="cifra text-base text-foreground">{fecha.dia}</span> {fecha.mes} {fecha.anio}
-              </time>
-            ) : r.fecha ? (
-              <span className="break-all">{r.fecha}</span>
-            ) : 'Fecha no publicada'}
-          </span>
-          <Link
-            href={rutaEdicion(r.torneo.id)}
-            prefetch={false}
-            className="w-fit max-w-full font-medium leading-snug break-words underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-          >
-            {titular(r.torneo.nombre)}
-          </Link>
-          <EtiquetasCompeticion clasificacion={clasificarResultado(r)} categoria={r.prueba.categoria.codigo} />
-          <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            {r.torneo.pais ? <BanderaPais pais={r.torneo.pais} /> : null}
-            <span className="break-words">{r.torneo.ciudad ? titular(r.torneo.ciudad) : 'Sede no publicada'}</span>
-          </span>
-        </div>
-        <InsigniaPuesto puesto={r.puesto} puestoPublicado={r.puestoPublicado} />
-      </div>
-      <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-2 border-t pt-3 text-xs">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <dt className="text-muted-foreground">Prueba</dt>
-          <dd className="break-words">
-            {WEAPON_LABEL[r.prueba.arma]} {GENDER_LABEL[r.prueba.genero].toLowerCase()}, {categoria}
-            {r.prueba.categoria.raw ? ` («${r.prueba.categoria.raw}»)` : ''}
-            {r.prueba.formato === 'EQUIPOS' ? ', equipos' : ''}
-          </dd>
-        </div>
-        <div className="flex min-w-0 flex-col gap-0.5">
-          {/* El tipo va en la pastilla de arriba; repetirlo aquí lo contradecía cuando sale del nombre. */}
-          <dt className="text-muted-foreground">Temporada</dt>
-          <dd className="break-words">{etiquetaTemporada(r.temporada)}</dd>
-        </div>
-        {r.puntosOficiales ? (
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <dt className="text-muted-foreground">Puntos</dt>
-            <dd className="cifra text-base">{r.puntosOficiales}</dd>
-          </div>
-        ) : null}
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <dt className="text-muted-foreground">Fuente</dt>
-          <dd className="break-words">{fuenteResultado(r.fuente)}</dd>
-        </div>
-      </dl>
-      <div className="mt-auto -mb-1">
-        <EnlaceFuente url={r.enlace} etiqueta="Abrir en la fuente" />
-      </div>
-    </li>
-  );
+function aFila(r: ResultadoHistorial, personaId: string): FilaListaPerfil {
+  const c = clasificarResultado(r);
+  const nombre = nombreListaPerfil(r.torneo.nombre, r.prueba.formato, r.fuente);
+  return {
+    id: r.id,
+    href: enlacePruebaPerfil(r.torneo.id, r.prueba.id, personaId),
+    fuenteUrl: enlaceSeguro(r.enlace),
+    fuente: r.fuente,
+    nombre,
+    tipoEnNombre: tipoPorNombre(nombre) === c.tipo,
+    fecha: r.fecha,
+    temporada: r.temporada,
+    temporadaEtiqueta: etiquetaTemporada(r.temporada),
+    clasificacion: { tipo: c.tipo, etiqueta: c.etiqueta, corta: c.corta, tono: c.tono, ambito: c.ambito, orden: c.orden },
+    categoria: r.prueba.categoria.codigo,
+    arma: r.prueba.arma,
+    genero: r.prueba.genero,
+    pais: r.torneo.pais,
+    ciudad: r.torneo.ciudad,
+    puesto: r.puesto,
+    puestoPublicado: r.puestoPublicado,
+    asaltos: null,
+  };
 }
 
+/**
+ * Historial paginado de la ficha, para cuando no hay lectura por prueba (sólo
+ * equipos, o esa lectura falló). Las filas son las mismas que en el perfil.
+ */
 export function HistorialFicha({
   historial,
   base,
   criterios,
   nivel,
   enPestana = false,
+  personaId,
 }: {
   historial: HistorialVista;
   base: string;
   criterios: CriteriosFicha;
   nivel: Nivel;
   enPestana?: boolean;
+  /** Persona a resaltar en la prueba; sin ella se toma la del primer segmento de `base`. */
+  personaId?: string;
 }) {
+  const persona = personaId ?? base.split('/').filter(Boolean).at(-1) ?? '';
   return (
     <Bloque id="historial" titulo="Resultados" nivel={nivel} tituloOculto={enPestana}>
-      <Aclaracion titulo="Resultados publicados, del más reciente al más antiguo">
-        <Nota>
-          Puestos finales publicados, del más reciente al más antiguo. Una inscripción sin final no
-          aparece aquí: no es un resultado ni una participación clasificada.
-        </Nota>
-      </Aclaracion>
       {historial.tipo === 'ok' ? (
         historial.sinResultados ? (
           <p role="status" className="medida text-sm text-muted-foreground">
-            No hay puestos finales importados para esta persona. Puede que las fuentes no los publiquen o
-            que falte procesarlos; no significa que no haya competido.
+            No hay puestos finales importados para esta persona.
           </p>
         ) : (
           <>
             <ol
-              className="grid min-w-0 gap-px border-y bg-border md:grid-cols-2 md:[&>li:last-child:nth-child(odd)]:col-span-2"
+              className="grid min-w-0 gap-px overflow-hidden rounded-xl border bg-border"
               aria-label="Resultados, del más reciente al más antiguo"
             >
               {historial.items.map((r) => (
-                <FilaHistorial key={r.id} r={r} />
+                <FilaResultado key={r.id} r={aFila(r, persona)} />
               ))}
             </ol>
             <nav aria-label="Páginas del historial" className="flex flex-wrap items-center gap-3">
@@ -609,14 +411,12 @@ export function HistorialFicha({
                     Ver resultados anteriores
                   </Link>
                 </Button>
-              ) : (
-                <p className="text-sm text-muted-foreground">No hay más resultados importados.</p>
-              )}
+              ) : null}
             </nav>
           </>
         )
       ) : (
-        <div role="alert" className="flex items-start gap-2 rounded-md border bg-card px-4 py-4 text-sm">
+        <div role="alert" className="flex items-start gap-2 rounded-xl border bg-card px-4 py-4 text-sm">
           <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden />
           <p className="medida">
             {historial.tipo === 'cursor_invalido'
@@ -631,50 +431,6 @@ export function HistorialFicha({
   );
 }
 
-/* ------------------------------------------------------------------ cobertura */
-
-export function CoberturaFichaVista({ cobertura, nivel }: { cobertura: CoberturaFicha; nivel: Nivel }) {
-  return (
-    <Bloque id="ficha-cobertura" titulo="Qué cubre esta ficha" nivel={nivel}>
-      <p className="text-sm">
-        {cobertura.resultadosImportados === 0 ? (
-          <>Ningún resultado importado todavía.</>
-        ) : (
-          <>
-            {cobertura.resultadosImportados}{' '}
-            {cobertura.resultadosImportados === 1 ? 'resultado importado' : 'resultados importados'} en{' '}
-            {cobertura.pruebasConResultado} {cobertura.pruebasConResultado === 1 ? 'prueba' : 'pruebas'} de{' '}
-            {cobertura.ediciones} {cobertura.ediciones === 1 ? 'edición' : 'ediciones'}.
-          </>
-        )}
-      </p>
-      {cobertura.lecturas.length > 0 ? (
-        <ul className="divide-y border-y bg-card" aria-label="Estado de lectura por tipo de dato">
-          {cobertura.lecturas.map((l) => {
-            const estado = estadoLectura(l.hecho, l.estado);
-            return (
-              <li
-                key={`${l.hecho}-${l.estado}`}
-                className="grid gap-x-4 gap-y-1 px-3 py-3 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,3fr)] md:items-center"
-              >
-                <span className="font-medium">{etiquetaHecho(l.hecho)}</span>
-                <span className="text-sm">
-                  {estado.texto}: {l.pruebas} {l.pruebas === 1 ? 'prueba' : 'pruebas'}
-                </span>
-                <span className="text-xs text-muted-foreground">{estado.ayuda}</span>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
-      <Nota>
-        «Leído completo» es por fuente y tipo de dato. La aplicación carga el histórico de forma
-        progresiva: una ficha nunca garantiza que estén todas las temporadas ni todas las pruebas.
-      </Nota>
-    </Bloque>
-  );
-}
-
 /* ------------------------------------------------------------------ cara a cara */
 
 /**
@@ -684,14 +440,9 @@ export function CoberturaFichaVista({ cobertura, nivel }: { cobertura: Cobertura
 export function EntradaCaraACara({ ficha, nivel }: { ficha: FichaDeportiva; nivel: Nivel }) {
   return (
     <Bloque id="ficha-cara-a-cara" titulo="Cara a cara" nivel={nivel}>
-      <Nota>Consulta los asaltos individuales publicados frente a otro deportista.</Nota>
-      <Aclaracion titulo="Qué asaltos se incluyen">
-        <Nota>
-          Compara a {nombreVisible(ficha.nombre) || ficha.nombre} con otra persona en asaltos individuales ya importados:
-          poule y eliminación directa, con el marcador visto desde esta ficha. Los encuentros por
-          equipos, los BYE y las finales sin marcador no cuentan.
-        </Nota>
-      </Aclaracion>
+      <Nota>
+        Compara a {nombreVisible(ficha.nombre) || ficha.nombre} con otro deportista en sus asaltos individuales.
+      </Nota>
       <div>
         <Button asChild variant="outline">
           <Link href={rutaCaraACara(ficha.id)} prefetch={false}>
@@ -714,6 +465,7 @@ export function FichaCompleta({
   nivel,
   conTitulo = true,
   acciones,
+  extras = EXTRAS_VACIOS,
 }: {
   ficha: FichaConPerfil;
   historial: HistorialVista;
@@ -722,41 +474,53 @@ export function FichaCompleta({
   nivel: Nivel;
   conTitulo?: boolean;
   acciones?: React.ReactNode;
+  /** Datos personales y rendimiento; cada uno se omite si no se pudo leer. */
+  extras?: ExtrasPerfil;
 }) {
   const perfil = ficha.perfil;
+  const rendimiento = extras.rendimiento && extras.rendimiento.vistas.todo.total.competiciones > 0 ? extras.rendimiento : null;
   const conRivales = perfil?.rivalesStats && perfil.rivalesStats.total.asaltos > 0 ? perfil.rivalesStats : null;
   // Las tres pestañas se pintan siempre en el HTML (forceMount) y la inactiva
   // sólo se oculta: los anclajes #historial y la lectura sin JS siguen funcionando.
-  const panel = 'flex min-w-0 flex-col gap-8 pt-4 data-[state=inactive]:hidden';
+  const panel = 'flex min-w-0 flex-col gap-8 pt-5 data-[state=inactive]:hidden';
   return (
-    <div className="flex min-w-0 flex-col gap-8">
-      <CabeceraFicha ficha={ficha} titulo={conTitulo} acciones={acciones} />
-      {perfil ? <SugeridosPerfil personaId={ficha.id} sugeridos={perfil.sugeridos} nivel={nivel} /> : null}
+    <div className="flex min-w-0 flex-col gap-6">
+      <CabeceraFicha ficha={ficha} titulo={conTitulo} acciones={acciones} datos={extras.datos} />
       <Tabs defaultValue="resultados" className="min-w-0 gap-0">
         <TabsList variant="line" aria-label="Secciones de la ficha" className="w-full justify-start gap-0 border-b p-0">
-          <TabsTrigger value="resultados" className="flex-1 px-4 sm:flex-none">Resultados</TabsTrigger>
-          <TabsTrigger value="temporadas" className="flex-1 px-4 sm:flex-none">Temporadas</TabsTrigger>
-          <TabsTrigger value="rivales" className="flex-1 px-4 sm:flex-none">Rivales</TabsTrigger>
+          <TabsTrigger value="resultados" className="flex-1 px-2 sm:flex-none sm:px-4">Resultados</TabsTrigger>
+          <TabsTrigger value="estadisticas" className="flex-1 px-2 sm:flex-none sm:px-4">Rendimiento</TabsTrigger>
+          <TabsTrigger value="rivales" className="flex-1 px-2 sm:flex-none sm:px-4">Rivales</TabsTrigger>
         </TabsList>
         <TabsContent value="resultados" forceMount className={panel}>
           {/* Sin pruebas individuales (sólo equipos, o la lectura falló) queda el historial paginado de siempre. */}
           {perfil?.resultados && perfil.resultados.items.length > 0 ? (
-            <ResultadosPerfilVista resultados={perfil.resultados} base={base} criterios={criterios} nivel={nivel} />
+            <ResultadosPerfilVista personaId={ficha.id} resultados={perfil.resultados} base={base} criterios={criterios} nivel={nivel} />
           ) : (
-            <HistorialFicha historial={historial} base={base} criterios={criterios} nivel={nivel} enPestana />
+            <HistorialFicha historial={historial} base={base} criterios={criterios} nivel={nivel} enPestana personaId={ficha.id} />
           )}
         </TabsContent>
-        <TabsContent value="temporadas" forceMount className={panel}>
-          {perfil ? (
+        <TabsContent value="estadisticas" forceMount className={panel}>
+          {rendimiento ? (
+            <>
+              <RankingCompacto ficha={ficha} nivel={nivel} />
+              {/* Cifras, evolución, temporadas, tipo y categoría con Todo / Internacional / Nacional. */}
+              <SeccionRendimiento datos={rendimiento} nivel={nivel} tituloOculto />
+            </>
+          ) : perfil ? (
             <>
               <CifrasPerfil perfil={perfil} />
               {perfil.ambito ? <AmbitoPerfil ambito={perfil.ambito} nivel={nivel} /> : null}
-              <AnioAAnio perfil={perfil} nivel={nivel} enPestana />
+              {perfil.ambito ? (
+                <CategoriasPerfil categorias={perfil.ambito.porCategoria} nivel={nivel} />
+              ) : ficha.estadisticas.detalle ? (
+                <EstadisticasDeportistaVista detalle={ficha.estadisticas.detalle} nivel={nivel} />
+              ) : null}
+              <RankingCompacto ficha={ficha} nivel={nivel} />
+              <AnioAAnio perfil={perfil} nivel={nivel} />
             </>
           ) : (
-            <p role="status" className="medida text-sm text-muted-foreground">
-              No se ha podido leer el resumen por temporadas. Los resultados siguen en su pestaña.
-            </p>
+            <p role="status" className="text-sm text-muted-foreground">No se han podido cargar.</p>
           )}
         </TabsContent>
         <TabsContent value="rivales" forceMount className={panel}>
@@ -784,9 +548,7 @@ export function FichaCompleta({
           )}
         </TabsContent>
       </Tabs>
-      <EstadisticasFicha ficha={ficha} nivel={nivel} />
-      <RankingOficialFicha ficha={ficha} base={base} criterios={criterios} nivel={nivel} />
-      <CoberturaFichaVista cobertura={ficha.cobertura} nivel={nivel} />
+      {perfil ? <SugeridosPerfil personaId={ficha.id} sugeridos={perfil.sugeridos} nivel={nivel} /> : null}
     </div>
   );
 }

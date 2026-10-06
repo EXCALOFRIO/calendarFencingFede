@@ -36,6 +36,7 @@ import {
   type CriteriosExplorar,
   type OpcionTemporada,
 } from '@/lib/sport/explorar/url';
+import { categoriaVisible } from '@/lib/sport/explorar/presentacion';
 import { CATEGORY_LABEL, GENDER_LABEL, WEAPON_LABEL, cn, esFechaIsoReal } from '@/lib/utils';
 
 type Opcion = { valor: string; etiqueta: string };
@@ -48,7 +49,7 @@ const NOMBRE_FUENTE: Record<OpcionTemporada['fuente'], string> = {
 
 export const ARMAS: Opcion[] = Object.entries(WEAPON_LABEL).map(([valor, etiqueta]) => ({ valor, etiqueta }));
 const GENEROS: Opcion[] = Object.entries(GENDER_LABEL).map(([valor, etiqueta]) => ({ valor, etiqueta }));
-const CATEGORIAS: Opcion[] = Object.entries(CATEGORY_LABEL).map(([valor, etiqueta]) => ({ valor, etiqueta }));
+const CATEGORIAS: Opcion[] = Object.keys(CATEGORY_LABEL).map((valor) => ({ valor, etiqueta: categoriaVisible(valor) }));
 const AMBITOS: Opcion[] = [
   { valor: 'NACIONAL', etiqueta: 'Nacional' },
   { valor: 'INTERNACIONAL', etiqueta: 'Internacional' },
@@ -95,7 +96,7 @@ export function CampoSelect({
         value={valor === '' ? CUALQUIERA : valor}
         onValueChange={(v) => onChange(v === CUALQUIERA ? '' : v)}
       >
-        <SelectTrigger id={id} className="min-h-11 w-full bg-secondary">
+        <SelectTrigger id={id} className="min-h-11 w-full min-w-0 bg-secondary">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -319,8 +320,8 @@ export function FormularioFiltros({
               ) : null}
             </div>
             {/* Montado aunque esté plegado: los campos conservan su estado y la URL inválida se ve al abrir. */}
-            <CollapsibleContent forceMount id="explorar-panel-filtros" className="rounded-2xl border bg-card p-4 data-[state=closed]:hidden sm:p-5">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <CollapsibleContent forceMount id="explorar-panel-filtros" className="min-w-0 rounded-2xl border bg-card p-3 data-[state=closed]:hidden sm:p-5 lg:max-w-4xl">
+              <div className="grid min-w-0 grid-cols-2 gap-3 lg:grid-cols-4">
                 <CampoSelect
                   id="explorar-arma"
                   etiqueta="Arma"
@@ -353,8 +354,17 @@ export function FormularioFiltros({
                   textoVacio="Todos"
                   onChange={(ambito) => poner({ ambito })}
                 />
+                <CampoSelect
+                  id="explorar-temporada"
+                  etiqueta="Temporada"
+                  valor={borrador.temporada}
+                  opciones={temporadaFueraDeLista}
+                  grupos={gruposTemporada}
+                  textoVacio="Todas"
+                  onChange={(temporada) => poner({ temporada })}
+                />
                 <div className="flex min-w-0 flex-col gap-1.5">
-                  <Label htmlFor="explorar-pais">País (tres letras)</Label>
+                  <Label htmlFor="explorar-pais">País</Label>
                   <Input
                     id="explorar-pais"
                     value={borrador.nacionalidad}
@@ -368,21 +378,12 @@ export function FormularioFiltros({
                   />
                   <p
                     id="explorar-pais-ayuda"
-                    className={errores.nacionalidad ? 'text-xs text-danger' : 'text-xs text-muted-foreground'}
+                    className={errores.nacionalidad ? 'text-xs text-danger' : 'sr-only'}
                   >
-                    {errores.nacionalidad ?? 'Código FIE, por ejemplo ESP, FRA o ITA.'}
+                    {errores.nacionalidad ?? 'Código FIE de tres letras, por ejemplo ESP, FRA o ITA.'}
                   </p>
                 </div>
-                <CampoSelect
-                  id="explorar-temporada"
-                  etiqueta="Temporada"
-                  valor={borrador.temporada}
-                  opciones={temporadaFueraDeLista}
-                  grupos={gruposTemporada}
-                  textoVacio="Todas"
-                  onChange={(temporada) => poner({ temporada })}
-                />
-                <div className="flex min-w-0 flex-col gap-1.5 sm:col-span-2">
+                <div className="col-span-2 flex min-w-0 flex-col gap-1.5">
                   <Label htmlFor="explorar-torneo">Torneo</Label>
                   <Input
                     id="explorar-torneo"
@@ -396,7 +397,7 @@ export function FormularioFiltros({
                   />
                   <p
                     id="explorar-torneo-ayuda"
-                    className={errores.torneo ? 'text-xs text-danger' : 'text-xs text-muted-foreground'}
+                    className={errores.torneo ? 'text-xs text-danger' : 'sr-only'}
                   >
                     {errores.torneo ?? 'Con temporada o fechas, sólo cuenta la edición de ese periodo.'}
                   </p>
@@ -419,7 +420,7 @@ export function FormularioFiltros({
                 />
               </div>
               <div className="mt-4 flex justify-end">
-                <Button type="submit" disabled={pendiente} className="w-full rounded-full sm:w-auto">
+                <Button type="submit" disabled={pendiente} className="w-full rounded-xl font-semibold sm:w-auto sm:px-6">
                   Aplicar filtros
                 </Button>
               </div>

@@ -1,13 +1,22 @@
 import { ERROR_VISTA_CADUCADA } from '@/lib/auth/read-only';
+import { r2Bucket } from '@/lib/storage';
 import { ERROR_NO_AUTENTICADO } from '@/lib/sport/explorar/contexto';
 import { contextoReal } from '@/lib/sport/explorar/real';
 import { leerFotoDeportista } from '@/lib/sport/explorar/foto';
+import { almacenR2 } from '@/lib/sport/explorar/fotos/cache';
 
 const headers = {
   'Cache-Control': 'private, no-store',
   Vary: 'Cookie',
   'X-Content-Type-Options': 'nosniff',
 };
+
+/**
+ * Una respuesta definitiva (foto o «no publicada») se puede reutilizar una
+ * hora en el navegador de quien ya tiene sesión: sólo contiene enlaces
+ * públicos de la FIE. `private` impide que la guarde un intermediario.
+ */
+const headersCacheables = { ...headers, 'Cache-Control': 'private, max-age=3600' };
 
 /**
  * Devuelve metadatos, no píxeles: servir la foto desde nuestro dominio
@@ -25,13 +34,13 @@ export async function GET(
       return Response.json({ estado: 'entrada_invalida' }, { status: 400, headers });
     }
     const { id } = await params;
+    const cubo = r2Bucket();
     const resultado = await leerFotoDeportista(
-      { ...ctx, perfil: async () => perfil }, id, { signal: request.signal },
+      { ...ctx, perfil: async () => perfil }, id,
+      { signal: request.signal, almacen: cubo ? almacenR2(cubo) : null },
     );
-    return Response.json(resultado, {
-      status: resultado.estado === 'entrada_invalida' ? 400 : resultado.estado === 'no_disponible' ? 503 : 200,
-      headers,
-    });
+    const status = resultado.estado === 'entrada_invalida' ? 400 : resultado.estado === 'no_disponible' ? 503 : 200;
+    return Response.json(resultado, { status, headers: status === 200 ? headersCacheables : headers });
   } catch (error) {
     const autenticacion = error instanceof Error && (
       error.message === ERROR_NO_AUTENTICADO ||

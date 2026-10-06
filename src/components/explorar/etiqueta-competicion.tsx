@@ -1,5 +1,6 @@
 import { TIPOS_FIE } from '@/lib/sport/explorar/estadisticas-tipo';
-import { clasificarCompeticion, etiquetaCategoria } from '@/lib/sport/explorar/tipo-competicion';
+import { categoriaVisible } from '@/lib/sport/explorar/presentacion';
+import { clasificarCompeticion } from '@/lib/sport/explorar/tipo-competicion';
 import type { ClasificacionCompeticion, TonoTipo } from '@/lib/sport/explorar/tipos-social';
 import type { ResultadoHistorial } from '@/lib/sport/explorar/tipos';
 import { cn } from '@/lib/utils';
@@ -52,7 +53,7 @@ export function EtiquetaTipoCompeticion({
 export function EtiquetaCategoria({ codigo, className }: { codigo: string; className?: string }) {
   return (
     <span className={cn(PASTILLA, 'border-filete-alto bg-card font-medium text-foreground', className)}>
-      <span className="truncate">{etiquetaCategoria(codigo)}</span>
+      <span className="truncate">{categoriaVisible(codigo)}</span>
     </span>
   );
 }

@@ -4,14 +4,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { HistorialVista } from '@/lib/sport/explorar/ficha-pantalla';
 import {
-  CRITERIOS_FICHA_VACIOS,
   construirUrlFicha,
   leerCriteriosFicha,
   rutaFichaConRetorno,
   sanitizarRetorno,
-  type CriteriosFicha,
 } from '@/lib/sport/explorar/ficha-url';
-import type { FichaDeportiva } from '@/lib/sport/explorar/tipos';
 import {
   CRITERIOS_VACIOS,
   construirUrl,
@@ -26,7 +23,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 const { ListaDeportistas } = await import('@/components/explorar/resultados');
-const { HistorialFicha, RankingOficialFicha, VolverAExplorar } = await import(
+const { HistorialFicha, VolverAExplorar } = await import(
   '@/components/explorar/ficha-deportiva'
 );
 
@@ -159,53 +156,6 @@ describe('sanitización del retorno local', () => {
 });
 
 describe('cambio de modalidad y enlaces de ficha conservan el contexto', () => {
-  const ficha = (r: Partial<FichaDeportiva['rankingOficial']>) =>
-    ({
-      id: UUID_A,
-      rankingOficial: {
-        temporada: '2024',
-        formato: 'INDIVIDUAL',
-        temporadasDisponibles: ['2025', '2024'],
-        entradas: [],
-        ...r,
-      },
-    }) as unknown as FichaDeportiva;
-  const ranking = (r: Partial<FichaDeportiva['rankingOficial']>, c: Partial<CriteriosFicha>) =>
-    html(
-      React.createElement(RankingOficialFicha, {
-        nivel: 'pagina',
-        base: '/explorar/x',
-        criterios: { ...CRITERIOS_FICHA_VACIOS, ...c },
-        ficha: ficha(r),
-      }),
-    );
-
-  it('Ver equipos conserva la temporada elegida y descarta el cursor del historial', () => {
-    const salida = ranking({}, { ranking: '2024', formato: 'INDIVIDUAL', cursor: 'tok' });
-    expect(salida).toContain('href="/explorar/x?ranking=2024&amp;formato=EQUIPOS#ficha-ranking"');
-    expect(salida).not.toContain('cursor=');
-  });
-
-  it('al invertir vuelve a individual con la misma temporada', () => {
-    const salida = ranking({ formato: 'EQUIPOS' }, { ranking: '2024', formato: 'EQUIPOS' });
-    expect(salida).toContain('href="/explorar/x?ranking=2024&amp;formato=INDIVIDUAL#ficha-ranking"');
-    expect(salida).toContain('Ver individual');
-  });
-
-  it('sin temporada elegida el cambio de modalidad no inventa ninguna', () => {
-    const salida = ranking({ temporadasDisponibles: [] }, {});
-    expect(salida).toContain('href="/explorar/x?formato=EQUIPOS#ficha-ranking"');
-    expect(salida).not.toContain('ranking=2');
-  });
-
-  it('el cambio de modalidad y las temporadas arrastran el retorno a Explorar', () => {
-    const volver = '/explorar?q=garcia&cursor=tok-1';
-    const salida = ranking({}, { ranking: '2024', volver });
-    const codificado = 'volver=%2Fexplorar%3Fq%3Dgarcia%26cursor%3Dtok-1';
-    expect(salida).toContain(`ranking=2024&amp;formato=EQUIPOS&amp;${codificado}#ficha-ranking`);
-    expect(salida).toContain(`ranking=2025&amp;${codificado}#ficha-ranking`);
-  });
-
   it('la paginación del historial conserva ranking, modalidad y retorno', () => {
     const historial: HistorialVista = { tipo: 'ok', items: [itemHistorial], siguiente: 'tok-2', sinResultados: false };
     const volver = '/explorar?q=garcia';
@@ -231,9 +181,9 @@ describe('cambio de modalidad y enlaces de ficha conservan el contexto', () => {
 });
 
 describe('la ruta de la ficha usa el retorno sin tocar la política de acceso', () => {
-  it('lee el retorno de la URL y no sustituye el botón Atrás del navegador', () => {
+  it('deja la vuelta a la flecha global de la cabecera y no sustituye el botón Atrás del navegador', () => {
     const fuente = readFileSync('src/app/(app)/explorar/[personaId]/page.tsx', 'utf8');
-    expect(fuente).toContain('<VolverAExplorar volver={criterios.volver}');
+    expect(fuente).not.toContain('<VolverAExplorar');
     expect(fuente).not.toMatch(/history\.back|router\.back|'use client'/);
     expect(fuente.indexOf("redirect('/entrar')")).toBeLessThan(fuente.indexOf('cargarFichaPantalla(contextoReal'));
   });

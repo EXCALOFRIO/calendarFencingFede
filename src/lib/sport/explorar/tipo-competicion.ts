@@ -103,7 +103,7 @@ const REGLAS: [RegExp, TipoCompeticion][] = [
   [/\b(grand prix|gran premio)\b/, 'GRAN_PREMIO'],
   [/\b(satel+ite|satelite)\b/, 'SATELITE'],
   [/\b(european circuit|circuit europeen|circuito europeo|eurofence|efc|u ?23 circuit)\b/, 'CIRCUITO_EUROPEO'],
-  [/\b(campeonato|cto)( de)? espana\b/, 'CTO_ESPANA'],
+  [/\b(campeonato|cto)( de)? esp(ana)?\b/, 'CTO_ESPANA'],
   [/\b(tnr|torneo nacional( de)? ranking)\b/, 'TNR'],
   [/\b(liga master|tlm)\b/, 'LIGA_MASTER'],
   [/\b(liga|division)\b/, 'LIGA_CLUBES'],
@@ -134,15 +134,24 @@ export type DatosCompeticion = {
   fuenteEvento?: string | null;
 };
 
+/** Tipo que dice el propio nombre, sin mirar calendario, fuente ni país; `null` si el nombre no lo dice. */
+export function tipoPorNombre(nombre: string): TipoCompeticion | null {
+  const texto = plegarNombre(nombre);
+  for (const [patron, tipo] of REGLAS) if (patron.test(texto)) return tipo;
+  return null;
+}
+
 function tipoDe(d: DatosCompeticion): TipoCompeticion {
   const documentado = tipoConProcedencia(d.fuenteEvento ?? null, d.circuitoEvento ?? null);
   if (documentado && POR_CIRCUITO[documentado]) return POR_CIRCUITO[documentado];
-  const texto = plegarNombre(d.nombre);
-  for (const [patron, tipo] of REGLAS) if (patron.test(texto)) return tipo;
+  const porNombre = tipoPorNombre(d.nombre);
+  if (porNombre) return porNombre;
   if (d.fuente === 'skermo_regional' || d.ambitoEvento === 'AUTONOMICO') return 'AUTONOMICO';
   if (d.fuente === 'fie' || d.ambitoEvento === 'INTERNACIONAL') return 'INTERNACIONAL_OTRO';
   if (d.pais && d.pais !== 'ESP') return 'INTERNACIONAL_OTRO';
   if (d.fuente === 'rfee_pdf' || d.fuente.startsWith('skermo') || d.ambitoEvento === 'NACIONAL') return 'NACIONAL_OTRO';
+  // Engarde aloja torneos de todo el mundo: sólo con sede española (o sin sede) es nacional.
+  if (d.fuente === 'engarde') return 'NACIONAL_OTRO';
   return 'OTRO';
 }
 
@@ -155,9 +164,31 @@ function ambitoDe(tipo: TipoCompeticion, d: DatosCompeticion): AmbitoCompeticion
   return 'nacional';
 }
 
+const MEDITERRANEO = /\b(mediterrane[oa]s?|mediterranee|mediterranean|mediterraneens?)\b/;
+
+/**
+ * Subtipos con nombre propio dentro de un tipo genérico. El `tipo` no cambia
+ * (la unión `TipoCompeticion` es cerrada y la usan filtros y tablas): sólo la
+ * etiqueta, para que el Campeonato y los Juegos del Mediterráneo no salgan
+ * como «Continental» o «Juegos».
+ */
+export const SUBTIPOS_COMPETICION = {
+  CTO_MEDITERRANEO: { etiqueta: 'Campeonato del Mediterráneo', corta: 'Mediterráneo' },
+  JUEGOS_MEDITERRANEOS: { etiqueta: 'Juegos Mediterráneos', corta: 'J. Mediterráneos' },
+} as const;
+
+export type SubtipoCompeticion = keyof typeof SUBTIPOS_COMPETICION;
+
+export function subtipoCompeticion(tipo: TipoCompeticion, nombre: string): SubtipoCompeticion | null {
+  if (tipo !== 'CTO_CONTINENTAL' && tipo !== 'JUEGOS_MULTIDEPORTE') return null;
+  if (!MEDITERRANEO.test(plegarNombre(nombre))) return null;
+  return tipo === 'CTO_CONTINENTAL' ? 'CTO_MEDITERRANEO' : 'JUEGOS_MEDITERRANEOS';
+}
+
 export function clasificarCompeticion(d: DatosCompeticion): ClasificacionCompeticion {
   const tipo = tipoDe(d);
-  const def = TIPOS_COMPETICION[tipo];
+  const subtipo = subtipoCompeticion(tipo, d.nombre);
+  const def = subtipo ? { ...TIPOS_COMPETICION[tipo], ...SUBTIPOS_COMPETICION[subtipo] } : TIPOS_COMPETICION[tipo];
   return {
     tipo,
     etiqueta: def.etiqueta,

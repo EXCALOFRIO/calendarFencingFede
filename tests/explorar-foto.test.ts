@@ -3,6 +3,7 @@ import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core';
 import type { SQL } from 'drizzle-orm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { leerFotoDeportista, MAX_MIEMBROS_FOTO } from '@/lib/sport/explorar/foto';
+import { olvidarFotosEnMemoria, type AlmacenMarcas } from '@/lib/sport/explorar/fotos/cache';
 import type { ContextoExplorador } from '@/lib/sport/explorar/contexto';
 import { perfil, UUID_A, UUID_B, UUID_C } from './helpers/explorar';
 
@@ -11,7 +12,7 @@ import { perfil, UUID_A, UUID_B, UUID_C } from './helpers/explorar';
  * El esquema sintético contiene sólo las columnas que lee esta función.
  */
 const memorias: DatabaseSync[] = [];
-afterEach(() => { memorias.splice(0).forEach((m) => m.close()); });
+afterEach(() => { memorias.splice(0).forEach((m) => m.close()); olvidarFotosEnMemoria(); });
 
 function escenario(opciones: { autenticada?: boolean; esquema?: boolean } = {}) {
   const memoria = new DatabaseSync(':memory:');
@@ -56,7 +57,7 @@ function escenario(opciones: { autenticada?: boolean; esquema?: boolean } = {}) 
     externo(id = UUID_A, valor = '123', estado = 'CONFIRMADO', esquema = 'fie_addr_id', fuente = 'fie') {
       memoria.prepare('INSERT INTO sport_external_id VALUES (?, ?, ?, ?, ?)').run(id, esquema, fuente, valor, estado);
     },
-    leer(id: unknown = UUID_A) { return leerFotoDeportista(ctx, id, { fetch }); },
+    leer(id: unknown = UUID_A, almacen?: AlmacenMarcas) { return leerFotoDeportista(ctx, id, { fetch, almacen }); },
   };
 }
 
@@ -172,6 +173,37 @@ describe('identidad exacta de retratos', () => {
     const s = escenario(); s.persona(); s.persona(UUID_B, UUID_A, 2010); s.externo();
     expect(await s.leer()).toEqual({ estado: 'foto_no_publicada' });
     expect(s.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('caché de la respuesta FIE', () => {
+  it('la identidad se comprueba siempre; sólo la consulta externa sale de R2', async () => {
+    const s = escenario(); s.persona(); s.externo();
+    const datos = new Map<string, string>();
+    const almacen: AlmacenMarcas = {
+      leer: async (clave) => datos.get(clave) ?? null,
+      guardar: async (clave, json) => { datos.set(clave, json); },
+    };
+    expect((await s.leer(UUID_A, almacen)).estado).toBe('publicada');
+    expect([...datos.keys()]).toEqual(['fotos/fie/123.json']);
+    olvidarFotosEnMemoria();
+    const consultasAntes = s.consultas.length;
+    expect((await s.leer(UUID_A, almacen)).estado).toBe('publicada');
+    expect(s.fetch).toHaveBeenCalledTimes(2);
+    expect(s.consultas.length).toBeGreaterThan(consultasAntes);
+  });
+
+  it('una marca en caché no salta el veto: otro grupo con el mismo ID sigue bloqueando', async () => {
+    const s = escenario(); s.persona(); s.externo();
+    expect((await s.leer()).estado).toBe('publicada');
+    s.persona(UUID_B); s.externo(UUID_B);
+    expect(await s.leer()).toEqual({ estado: 'foto_no_publicada' });
+  });
+
+  it('un fallo pasajero de la FIE es no_disponible, no «no publicada» (que sí se cachea)', async () => {
+    const s = escenario(); s.persona(); s.externo();
+    s.fetch.mockImplementation(async () => new Response(null, { status: 503 }));
+    expect(await s.leer()).toEqual({ estado: 'no_disponible' });
   });
 });
 

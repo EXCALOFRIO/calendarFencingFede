@@ -1,8 +1,10 @@
-import { Rss, TriangleAlert, UserPlus, Users } from 'lucide-react';
+import { Rss, Search, TriangleAlert, UserPlus, Users } from 'lucide-react';
 import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
 import { Button } from '@/components/ui/button';
 import { rutaEdicion } from '@/lib/sport/explorar/edicion-url';
+import { NOMBRE_SECCION } from '@/lib/sport/explorar/nombre-seccion';
+import { CLASES_MEDALLA, categoriaVisible, medallaDe, nombrePrueba } from '@/lib/sport/explorar/presentacion';
 import type { PersonaParaSeguir, VistaSiguiendo } from '@/lib/sport/explorar/siguiendo-pantalla';
 import {
   RUTA_SIGUIENDO,
@@ -13,11 +15,10 @@ import type { EntradaSiguiendo } from '@/lib/sport/explorar/tipos-social';
 import { RUTA_EXPLORAR, rutaFicha } from '@/lib/sport/explorar/url';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { GENDER_LABEL, WEAPON_LABEL, cn, titular } from '@/lib/utils';
-import { AvatarAnillo } from './avatar-anillo';
-import { BotonFavorito } from './boton-favorito';
-import { EtiquetasCompeticion } from './etiqueta-competicion';
-import { Aclaracion, Nota } from './piezas';
-import { InsigniaPuesto, partesFecha } from './perfil/piezas-perfil';
+import { CLASE_LISTA_PERFILES, CLASE_VER_MAS, FilaPerfil } from './buscador-social-fila';
+import { BotonSeguirCompacto } from './buscador-social-seguir';
+import { EtiquetaTipoCompeticion } from './etiqueta-competicion';
+import { partesFecha } from './perfil/piezas-perfil';
 
 /**
  * Feed «Siguiendo»: los últimos resultados publicados de las personas que
@@ -48,71 +49,87 @@ const PRUEBA_GENERO: Record<string, string> = { M: 'masculina', F: 'femenina', M
 function textoPrueba(p: EntradaSiguiendo['prueba']): string {
   const arma = WEAPON_LABEL[p.arma as keyof typeof WEAPON_LABEL] ?? p.arma;
   const genero = PRUEBA_GENERO[p.genero] ?? GENDER_LABEL[p.genero as keyof typeof GENDER_LABEL]?.toLowerCase() ?? '';
-  return `${arma} ${genero}${p.formato === 'EQUIPOS' ? ', equipos' : ''}`.trim();
+  return `${arma} ${genero}${p.formato === 'EQUIPOS' ? ' por equipos' : ''}`.trim();
 }
 
+/** Día y mes; el año sólo si no es el actual, para que el nombre quepa en la misma línea. */
 function Fecha({ iso }: { iso: string | null }) {
-  if (!iso) return <span>Fecha no publicada</span>;
+  if (!iso) return <span>Sin fecha</span>;
   const f = partesFecha(iso);
   return f ? (
-    <time dateTime={iso}>{f.dia} {f.mes} {f.anio}</time>
+    <time dateTime={iso} title={`${f.dia} ${f.mes} ${f.anio}`}>
+      {f.dia} {f.mes}{f.anio === String(new Date().getFullYear()) ? '' : ` ${f.anio}`}
+    </time>
   ) : (
-    <span className="break-all">{iso}</span>
+    <span>{iso.slice(0, 10)}</span>
   );
 }
 
+/** Puesto en un disco del color de su medalla; fuera del podio, neutro. */
+function DiscoPuesto({ e }: { e: EntradaSiguiendo }) {
+  const medalla = medallaDe(e.puesto);
+  return (
+    <span
+      className={cn(
+        'flex size-11 shrink-0 items-center justify-center rounded-full border text-sm leading-none font-semibold tabular-nums',
+        medalla ? CLASES_MEDALLA[medalla] : 'border-filete-alto bg-secondary text-foreground',
+      )}
+    >
+      {e.puesto !== null ? (
+        <>
+          <span aria-hidden="true">{e.puesto}.º</span>
+          <span className="sr-only">Puesto {e.puesto}{e.participantes > 0 ? ` de ${e.participantes}` : ''}</span>
+        </>
+      ) : (
+        <>
+          <span aria-hidden="true">–</span>
+          <span className="sr-only">{e.puestoLiteral ?? 'Sin puesto publicado'}</span>
+        </>
+      )}
+    </span>
+  );
+}
+
+const ENLACE_FILA = 'min-w-0 truncate rounded-sm underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
+
+/** Una entrada del feed: puesto, persona y fecha, prueba y una línea con tipo, arma y categoría. */
 export function TarjetaSiguiendo({ e }: { e: EntradaSiguiendo }) {
   const nombre = nombreVisible(e.persona.nombre) || e.persona.nombre;
+  const torneo = nombrePrueba({ nombre: e.prueba.torneo, formato: e.prueba.formato, fuente: e.prueba.fuente });
+  const detalle = [
+    textoPrueba(e.prueba),
+    e.prueba.categoria ? categoriaVisible(e.prueba.categoria) : null,
+    e.puesto !== null && e.participantes > 0 ? `de ${e.participantes}` : null,
+  ].filter(Boolean).join(' · ');
   return (
     <li className="min-w-0">
-      <article className="flex h-full min-w-0 flex-col gap-3 rounded-md border bg-card px-4 py-4 sm:px-5" aria-label={`${nombre}, ${e.prueba.torneo}`}>
-        <header className="flex min-w-0 items-center gap-3">
-          <Link
-            href={rutaFicha(e.persona.id)}
-            prefetch={false}
-            className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-sm underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-          >
-            <AvatarAnillo nombre={nombre} tamano="sm" />
-            <span className="flex min-w-0 flex-col gap-0.5">
-              <span className="line-clamp-2 leading-tight font-semibold break-words">{nombre}</span>
-              {e.persona.pais ? <BanderaPais pais={e.persona.pais} /> : null}
-            </span>
-          </Link>
-          <span className="shrink-0 text-xs text-muted-foreground">
-            <Fecha iso={e.fecha} />
-          </span>
-        </header>
-
-        <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 border-t pt-3">
-          <InsigniaPuesto puesto={e.puesto} puestoPublicado={e.puestoLiteral} />
-          <div className="flex min-w-0 flex-col gap-1.5">
-            {/* El disco ya dice el puesto (y la medalla); aquí sólo entre cuántos. */}
-            {e.puesto !== null && e.participantes > 0 ? (
-              <span className="text-sm text-muted-foreground">
-                Entre <strong className="cifra text-lg text-foreground">{e.participantes}</strong>{' '}
-                {e.participantes === 1 ? 'participante' : 'participantes'}
-              </span>
-            ) : null}
-            <Link
-              href={rutaEdicion(e.prueba.edicionId)}
-              prefetch={false}
-              className="w-fit max-w-full leading-snug font-medium break-words underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-            >
-              {titular(e.prueba.torneo)}
+      <article className="flex min-w-0 items-start gap-3 px-3 py-3 sm:px-4" aria-label={`${nombre}, ${torneo}`}>
+        <DiscoPuesto e={e} />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <Link href={rutaFicha(e.persona.id)} prefetch={false} className={cn(ENLACE_FILA, 'py-0.5 text-[0.9375rem] leading-tight font-semibold')}>
+              {nombre}
             </Link>
-            <span className="text-xs text-muted-foreground break-words">
-              {textoPrueba(e.prueba)}
-              {e.prueba.ciudad ? `, ${titular(e.prueba.ciudad)}` : ''}
+            {e.persona.pais ? <BanderaPais pais={e.persona.pais} className="shrink-0" /> : null}
+            <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+              <Fecha iso={e.fecha} />
             </span>
           </div>
+          <Link href={rutaEdicion(e.prueba.edicionId)} prefetch={false} className={cn(ENLACE_FILA, 'py-0.5 text-sm leading-snug')}>
+            {torneo}
+            {e.prueba.ciudad ? <span className="text-muted-foreground"> · {titular(e.prueba.ciudad)}</span> : null}
+          </Link>
+          <div className="flex min-w-0 items-center gap-1.5 pt-0.5 text-xs whitespace-nowrap text-muted-foreground">
+            <EtiquetaTipoCompeticion clasificacion={e.clasificacion} className="h-5 px-2 text-[0.6875rem]" />
+            <span className="min-w-0 truncate">{detalle}</span>
+          </div>
         </div>
-        <EtiquetasCompeticion clasificacion={e.clasificacion} categoria={e.prueba.categoria} />
       </article>
     </li>
   );
 }
 
-/** Todos / Sólo medallas, como enlaces: funciona sin JavaScript y queda en la URL. */
+/** Todos / Solo medallas, como enlaces: funciona sin JavaScript y queda en la URL. */
 function FiltroMedallas({ soloMedallas }: { soloMedallas: boolean }) {
   const opcion = (activa: boolean, href: string, texto: string) => (
     <Link
@@ -120,16 +137,16 @@ function FiltroMedallas({ soloMedallas }: { soloMedallas: boolean }) {
       prefetch={false}
       aria-current={activa ? 'page' : undefined}
       className={cn(
-        'inline-flex min-h-11 items-center gap-1.5 rounded-full px-4 text-sm text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
-        activa && 'bg-marcado font-semibold text-primary-text hover:text-primary-text',
+        'inline-flex h-9 min-w-0 flex-1 items-center justify-center rounded-full px-4 text-sm whitespace-nowrap text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+        activa && 'bg-secondary font-semibold text-foreground',
       )}
     >
       {texto}
     </Link>
   );
   return (
-    <nav aria-label="Filtrar el feed" className="inline-flex w-fit gap-1 rounded-full border bg-card p-1">
-      {opcion(!soloMedallas, construirUrlSiguiendo(), 'Todos los resultados')}
+    <nav aria-label="Filtrar el feed" className="flex w-full max-w-xs gap-1 rounded-full border bg-card p-1">
+      {opcion(!soloMedallas, construirUrlSiguiendo(), 'Todos')}
       {opcion(soloMedallas, construirUrlSiguiendo({ soloMedallas: true }), 'Solo medallas')}
     </nav>
   );
@@ -145,61 +162,32 @@ export function FeedSiguiendo({
   criterios: CriteriosSiguiendo;
 }) {
   return (
-    <section aria-labelledby={ID_ENCABEZADO_SIGUIENDO} className="flex min-w-0 flex-col gap-4">
+    <section aria-labelledby={ID_ENCABEZADO_SIGUIENDO} className="flex min-w-0 flex-col gap-3 lg:max-w-2xl">
       <h2 id={ID_ENCABEZADO_SIGUIENDO} className="sr-only">
         {criterios.soloMedallas ? 'Medallas de las personas que sigues' : 'Últimos resultados de las personas que sigues'}
       </h2>
-      <ol className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3" aria-label="Resultados, del más reciente al más antiguo">
+      <ol className="flex min-w-0 flex-col divide-y overflow-hidden rounded-2xl border bg-card" aria-label="Resultados, del más reciente al más antiguo">
         {items.map((e) => <TarjetaSiguiendo key={e.id} e={e} />)}
       </ol>
-      <nav aria-label="Páginas del feed" className="flex flex-wrap items-center gap-3">
-        {criterios.cursor ? (
-          <Button asChild variant="outline">
-            <Link href={construirUrlSiguiendo({ soloMedallas: criterios.soloMedallas })} prefetch={false}>
-              Volver a lo más reciente
-            </Link>
-          </Button>
-        ) : null}
+      <nav aria-label="Páginas del feed" className="flex min-w-0 flex-col items-center gap-2">
         {siguiente ? (
-          <Button asChild variant="outline">
+          <Button asChild variant="secondary" className={cn(CLASE_VER_MAS, 'self-center')}>
             <Link
               href={construirUrlSiguiendo({ soloMedallas: criterios.soloMedallas, cursor: siguiente })}
               prefetch={false}
               rel="next"
             >
-              Cargar más
+              Ver más
             </Link>
           </Button>
-        ) : (
-          <p className="text-sm text-muted-foreground">No hay más resultados importados.</p>
-        )}
+        ) : null}
+        {criterios.cursor ? (
+          <Link href={construirUrlSiguiendo({ soloMedallas: criterios.soloMedallas })} prefetch={false} className={cn(ENLACE, 'self-center')}>
+            Lo más reciente
+          </Link>
+        ) : null}
       </nav>
     </section>
-  );
-}
-
-function TarjetaPropuesta({ p }: { p: PersonaParaSeguir }) {
-  const nombre = nombreVisible(p.nombre) || p.nombre;
-  return (
-    <li className="w-[9.5rem] shrink-0 snap-start sm:w-44">
-      {/* `relative`: los textos `sr-only` del botón son absolutos y, sin un
-          ancestro posicionado, ensanchan la página fuera del carrusel. */}
-      <article className="relative flex h-full min-w-0 flex-col items-center gap-2 rounded-md border bg-card px-3 pt-4 pb-3 text-center">
-        <Link
-          href={rutaFicha(p.id)}
-          prefetch={false}
-          className="flex min-h-11 w-full min-w-0 flex-col items-center gap-2 rounded-md underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-        >
-          <AvatarAnillo nombre={nombre} tamano="md" />
-          <span className="line-clamp-2 min-h-10 text-sm leading-5 font-medium break-words">{nombre}</span>
-        </Link>
-        <span className="flex min-h-5 items-center justify-center">{p.pais ? <BanderaPais pais={p.pais} /> : null}</span>
-        <span className="text-xs leading-snug text-muted-foreground">{p.motivo}</span>
-        <div className="mt-auto w-full">
-          <BotonFavorito personaId={p.id} nombre={nombre} inicial={false} lectura={p} variante="perfil" />
-        </div>
-      </article>
-    </li>
   );
 }
 
@@ -215,12 +203,12 @@ function Aviso({
   alerta?: boolean;
 }) {
   return (
-    <section role={alerta ? 'alert' : 'status'} className="flex flex-col items-start gap-2 rounded-md border bg-card px-4 py-5">
-      <div className="flex items-center gap-2">
+    <section role={alerta ? 'alert' : 'status'} className="flex min-w-0 flex-col items-start gap-2 rounded-2xl border bg-card px-4 py-5 lg:max-w-2xl">
+      <div className="flex min-w-0 items-center gap-2">
         {icono}
-        <h2 id={ID_ENCABEZADO_SIGUIENDO} className="text-xl">{titulo}</h2>
+        <h2 id={ID_ENCABEZADO_SIGUIENDO} className="text-lg leading-tight">{titulo}</h2>
       </div>
-      <div className="flex flex-col items-start gap-3 text-sm text-muted-foreground medida">{children}</div>
+      <div className="flex min-w-0 flex-col items-start gap-3 text-sm text-muted-foreground medida">{children}</div>
     </section>
   );
 }
@@ -228,25 +216,32 @@ function Aviso({
 const BUSCAR = (
   <Button asChild variant="outline">
     <Link href={RUTA_EXPLORAR} prefetch={false}>
-      Buscar en Explorar
+      <Search aria-hidden />
+      {NOMBRE_SECCION}
     </Link>
   </Button>
 );
 
+/** Propuestas para un feed vacío, como filas de perfil con «Seguir» (sin carrusel). */
 export function PropuestasParaSeguir({ sugeridos }: { sugeridos: PersonaParaSeguir[] | null | undefined }) {
   if (sugeridos === undefined) return null;
   if (sugeridos === null) {
-    return <p className="text-sm text-muted-foreground">No se han podido leer las propuestas. Busca a quien quieras en Explorar.</p>;
+    return <p className="text-sm text-muted-foreground">No se han podido leer las sugerencias.</p>;
   }
   if (sugeridos.length === 0) return null;
   return (
-    <section aria-labelledby="siguiendo-propuestas" className="flex min-w-0 flex-col gap-3">
-      <h2 id="siguiendo-propuestas" className="text-xl">Tiradores para empezar</h2>
-      <ul
-        className="-mx-4 flex min-w-0 snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0"
-        aria-label="Tiradores para seguir"
-      >
-        {sugeridos.map((p) => <TarjetaPropuesta key={p.id} p={p} />)}
+    <section aria-labelledby="siguiendo-propuestas" className="flex min-w-0 flex-col gap-1 lg:max-w-2xl">
+      <h2 id="siguiendo-propuestas" className="flex min-h-11 items-center px-0.5 text-base font-semibold tracking-normal sm:px-3">
+        Sugerencias
+      </h2>
+      <ul className={CLASE_LISTA_PERFILES} aria-label="Tiradores para seguir">
+        {sugeridos.map((p) => (
+          <FilaPerfil
+            key={p.id}
+            p={p}
+            accion={<BotonSeguirCompacto personaId={p.id} nombre={nombreVisible(p.nombre) || p.nombre} inicial={false} lectura={p} />}
+          />
+        ))}
       </ul>
     </section>
   );
@@ -267,35 +262,27 @@ export function EstadoSiguiendo({
     case 'ok': {
       if (criterios.cursor) {
         return (
-          <Aviso icono={<Rss className="size-5 text-muted-foreground" aria-hidden />} titulo="No hay más resultados">
-            <p>Esta página ya no tiene resultados. Puede que hayas dejado de seguir a alguien.</p>
+          <Aviso icono={<Rss className="size-5 shrink-0 text-muted-foreground" aria-hidden />} titulo="No hay más resultados">
             <Button asChild variant="outline">
-              <Link href={primera} prefetch={false}>Volver a lo más reciente</Link>
+              <Link href={primera} prefetch={false}>Lo más reciente</Link>
             </Button>
           </Aviso>
         );
       }
       const nadie = siguiendo === 0;
       return (
-        <div className="flex min-w-0 flex-col gap-6">
+        <div className="flex min-w-0 flex-col gap-4">
           <Aviso
-            icono={nadie ? <UserPlus className="size-5 text-muted-foreground" aria-hidden /> : <Users className="size-5 text-muted-foreground" aria-hidden />}
+            icono={nadie ? <UserPlus className="size-5 shrink-0 text-muted-foreground" aria-hidden /> : <Users className="size-5 shrink-0 text-muted-foreground" aria-hidden />}
             titulo={nadie
               ? 'Aún no sigues a nadie'
               : criterios.soloMedallas
                 ? 'Ninguna medalla todavía'
-                : 'Sin resultados importados'}
+                : 'Sin resultados'}
           >
-            <p>
-              {nadie
-                ? 'Sigue a tiradores desde su ficha y aquí verás sus últimos resultados. Es privado: nadie recibe un aviso.'
-                : criterios.soloMedallas
-                  ? 'Las personas que sigues no tienen medallas importadas. Prueba con todos los resultados.'
-                  : 'Las personas que sigues todavía no tienen resultados importados. No significa que no compitan.'}
-            </p>
             {criterios.soloMedallas && !nadie ? (
               <Button asChild variant="outline">
-                <Link href={construirUrlSiguiendo()} prefetch={false}>Ver todos los resultados</Link>
+                <Link href={construirUrlSiguiendo()} prefetch={false}>Ver todos</Link>
               </Button>
             ) : BUSCAR}
           </Aviso>
@@ -305,27 +292,22 @@ export function EstadoSiguiendo({
     }
     case 'cursor_invalido':
       return (
-        <Aviso alerta icono={<TriangleAlert className="size-5 text-warn" aria-hidden />} titulo="Esta página ya no corresponde a tu feed">
-          <p>El enlace de página ha caducado o es de otro filtro. No se ha tocado nada.</p>
+        <Aviso alerta icono={<TriangleAlert className="size-5 shrink-0 text-warn" aria-hidden />} titulo="Página caducada">
           <Button asChild variant="outline">
-            <Link href={primera} prefetch={false}>Volver a lo más reciente</Link>
+            <Link href={primera} prefetch={false}>Lo más reciente</Link>
           </Button>
         </Aviso>
       );
     case 'no_disponible':
       return (
-        <Aviso alerta icono={<TriangleAlert className="size-5 text-warn" aria-hidden />} titulo="Siguiendo aún no está activo">
-          <p>
-            Los datos deportivos todavía no están preparados en esta instalación, así que no se ha
-            podido leer el feed. No significa que esté vacío.
-          </p>
+        <Aviso alerta icono={<TriangleAlert className="size-5 shrink-0 text-warn" aria-hidden />} titulo="Siguiendo aún no está activo">
+          <p>Aún no está activo en esta instalación.</p>
         </Aviso>
       );
     case 'entrada_invalida':
     case 'error':
       return (
-        <Aviso alerta icono={<TriangleAlert className="size-5 text-danger" aria-hidden />} titulo="No se ha podido abrir el feed">
-          <p>Ha fallado la consulta; no significa que no haya resultados. Inténtalo de nuevo.</p>
+        <Aviso alerta icono={<TriangleAlert className="size-5 shrink-0 text-danger" aria-hidden />} titulo="No se ha podido abrir el feed">
           <Button asChild variant="outline">
             <Link href={construirUrlSiguiendo(criterios)} prefetch={false}>Reintentar</Link>
           </Button>
@@ -337,26 +319,17 @@ export function EstadoSiguiendo({
 /** Cabecera común del feed: título, número de seguidas y filtro. */
 export function CabeceraSiguiendo({ siguiendo, criterios }: { siguiendo: number | null; criterios: CriteriosSiguiendo }) {
   return (
-    <header className="flex min-w-0 flex-col gap-4 border-b pb-4">
-      <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-        <h1 className="text-3xl leading-tight sm:text-4xl">Siguiendo</h1>
+    <header className="flex min-w-0 flex-col gap-3">
+      <div className="flex min-w-0 items-baseline justify-between gap-3">
+        <h1 className="text-3xl leading-none sm:text-4xl">Siguiendo</h1>
         {siguiendo !== null ? (
-          <p className="text-sm text-muted-foreground">
-            <strong className="cifra text-xl text-foreground">{siguiendo.toLocaleString('es-ES')}</strong>{' '}
-            {siguiendo === 1 ? 'persona seguida' : 'personas seguidas'}
+          <p className="shrink-0 text-sm text-muted-foreground">
+            <strong className="font-semibold text-foreground tabular-nums">{siguiendo.toLocaleString('es-ES')}</strong>{' '}
+            {siguiendo === 1 ? 'seguida' : 'seguidas'}
           </p>
         ) : null}
       </div>
-      <p className="medida text-sm text-muted-foreground">
-        Los últimos resultados publicados de los tiradores que sigues, del más reciente al más antiguo.
-      </p>
       <FiltroMedallas soloMedallas={criterios.soloMedallas} />
-      <Aclaracion titulo="Privacidad de Siguiendo">
-        <Nota>
-          Seguir es privado y sólo lo ves tú: la persona no recibe ningún aviso y no aparece en ninguna
-          lista pública. Son los mismos que tienes en Mis favoritos.
-        </Nota>
-      </Aclaracion>
     </header>
   );
 }

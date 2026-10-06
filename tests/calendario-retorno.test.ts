@@ -174,22 +174,24 @@ describe('el origen del calendario recorre edición → persona → favorito →
     const principio = construirUrlEdicion(UUID_A, { prueba: UUID_B, origen });
     expect(marcado).toContain(`href="${escapado(siguiente)}"`);
     expect(marcado).toContain(`href="${escapado(principio)}"`);
-    const volver = construirUrlEdicion(UUID_A, { prueba: UUID_B, cursor: 'c0', origen });
+    const volver = construirUrlEdicion(UUID_A, { prueba: UUID_B, cursor: 'c0', origen, persona: UUID_C });
     expect(marcado).toContain(escapado(`/explorar/${UUID_C}?volver=${encodeURIComponent(volver)}`));
   });
 
-  it('las filas de prueba conservan el origen al abrir la clasificación', () => {
+  it('los botones del selector de prueba conservan el origen', () => {
+    const equipos = { ...prueba, id: UUID_C, formato: 'EQUIPOS' as const };
     const marcado = html(
       React.createElement(PruebasDeEdicion, {
-        edicion: { ...resumen, pruebasDetalle: [prueba], pruebaDesconocida: false, clasificacion: null },
-        seleccionada: '',
+        edicion: { ...resumen, pruebasDetalle: [prueba, equipos], pruebaDesconocida: false, clasificacion: null },
+        seleccionada: UUID_B,
         origen,
       }),
     );
     expect(marcado).toContain(`href="${escapado(construirUrlEdicion(UUID_A, { prueba: UUID_B, origen }))}"`);
+    expect(marcado).toContain(`href="${escapado(construirUrlEdicion(UUID_A, { prueba: UUID_C, origen }))}"`);
   });
 
-  it('la ficha vuelve a la edición con el origen intacto y la edición ofrece volver al calendario con sus criterios', () => {
+  it('la ficha vuelve a la edición con el origen intacto, y la edición lo conserva sin enlaces de vuelta propios', () => {
     const edicionUrl = construirUrlEdicion(UUID_A, { prueba: UUID_B, cursor: 'c0', origen });
     const ruta = rutaFichaConRetorno(UUID_C, edicionUrl);
     const consulta = Object.fromEntries(new URL(ruta, 'http://x').searchParams);
@@ -208,8 +210,8 @@ describe('el origen del calendario recorre edición → persona → favorito →
         criterios,
       }),
     );
-    expect(pagina).toContain('Volver al calendario');
-    expect(pagina).toContain(`href="${escapado(origen)}"`);
+    // Volver es la flecha de la cabecera: la página no repite enlaces de vuelta.
+    expect(pagina).not.toContain('Volver a');
     expect(leerContextoCalendario(Object.fromEntries(new URL(criterios.origen ?? '', 'http://x').searchParams))).toEqual(
       CONTEXTO,
     );
@@ -222,8 +224,7 @@ describe('el origen del calendario recorre edición → persona → favorito →
         criterios: { prueba: '', cursor: '' },
       }),
     );
-    expect(pagina).not.toContain('Volver al calendario');
-    expect(pagina).toContain('Volver a las ediciones');
+    expect(pagina).not.toContain('Volver a');
   });
 
   it('la ficha acepta como retorno una edición con origen de calendario incluso con prueba y cursor largos', () => {
@@ -246,7 +247,7 @@ describe('el calendario recuerda y recupera su contexto', () => {
     expect(vista).toMatch(/construirUrlCalendario\(\{/);
     expect(vista).toMatch(/retornoCalendario=\{retornoCalendario\}/);
     expect(leerFuente('src/components/calendario/ficha-evento.tsx')).toMatch(
-      /<BandaResultados eventoId=\{evento\.id\} retorno=\{retornoCalendario\}/,
+      /<ResultadosTorneo\s+eventoId=\{evento\.id\}\s+retorno=\{retornoCalendario\}/,
     );
     const pagina = leerFuente('src/app/(app)/page.tsx');
     expect(pagina.indexOf('requireProfile()')).toBeLessThan(pagina.indexOf('leerContextoCalendario('));

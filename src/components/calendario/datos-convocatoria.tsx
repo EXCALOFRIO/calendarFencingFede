@@ -120,23 +120,19 @@ export function CitaConvocatoria({
           </blockquote>
 
           {/*
-            Sin revisar no se explica con un párrafo: ya lo dice la etiqueta
-            «Sin verificar» de arriba, y debajo está la cita literal del PDF
-            con el botón para abrirlo, que es lo que de verdad sirve para
-            comprobarlo. El aviso largo era la misma cosa dicha tres veces.
+            Ni párrafo para «sin revisar» ni para «comprobado por una persona»:
+            lo dice la pastilla de arriba, y la cita con el botón del PDF es lo
+            que sirve para comprobarlo (`UI.md`, 2 bis).
           */}
-          {dato.estado === 'aprobado' ? (
-            <p className="text-xs text-muted-foreground">
-              Leído de la convocatoria y comprobado por una persona.
-            </p>
-          ) : null}
-
-          <Button variant="outline" size="sm" className="w-full" asChild>
-            <a href={dato.documento.url} target="_blank" rel="noreferrer">
+          <Button variant="outline" size="sm" className="max-w-full self-start rounded-full" asChild>
+            <a
+              href={dato.documento.url}
+              target="_blank"
+              rel="noreferrer"
+              title={dato.documento.titulo ? titularDocumento(dato.documento.titulo) : undefined}
+            >
               <ExternalLink />
-              {dato.documento.titulo
-                ? titularDocumento(dato.documento.titulo)
-                : 'Abrir la convocatoria'}
+              PDF
             </a>
           </Button>
         </div>
@@ -162,10 +158,10 @@ export function CitaConvocatoria({
  *    lo que queda cuando la circular no lo dice. Un botón que promete el
  *    pabellón y abre el centro de una ciudad es peor que no tener botón.
  *
- * Lo descartado **no se esconde**: sigue en el desplegable con todo lo que se
- * leyó, con su cita. Lo que no hace es ocupar el sitio del dato bueno.
+ * Lo descartado **no se esconde**: sigue en «Otros datos de la convocatoria»,
+ * con su cita. Lo que no hace es ocupar el sitio del dato bueno.
  */
-function creible(dato: DatoExtraidoView, ciudad: string | null): boolean {
+export function creible(dato: DatoExtraidoView, ciudad: string | null): boolean {
   /*
     La moneda, también como código ISO: las convocatorias de la FIE escriben
     «Individual entry: 80 EUR» y «Individual competition: EUR 80», sin el

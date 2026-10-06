@@ -190,6 +190,7 @@ describe('vista de resultados', () => {
       base: `/explorar/${YO}`,
       criterios,
       nivel: 'pagina',
+      personaId: YO,
     }));
 
   it('con los dos ámbitos ofrece el selector en la URL y filtra la lista', () => {
@@ -202,7 +203,7 @@ describe('vista de resultados', () => {
     expect(todo).toContain('rel="noopener noreferrer"');
     const nacional = vista(f, { ...CRITERIOS_FICHA_VACIOS, ambito: 'nacional' });
     expect(nacional).toMatch(/tnr abs madrid/i);
-    expect(nacional).not.toMatch(/coupe du monde/i);
+    expect(nacional).not.toMatch(/copa del mundo|coupe du monde/i);
     expect(nacional).toMatch(/aria-current="page"[^>]*data-ambito="nacional"/);
   });
 
@@ -213,7 +214,7 @@ describe('vista de resultados', () => {
     f.resultado('cm', YO, 4);
     const salida = vista(f, { ...CRITERIOS_FICHA_VACIOS, ambito: 'nacional' });
     expect(salida).not.toContain('Ámbito de los resultados');
-    expect(salida).toMatch(/coupe du monde/i);
+    expect(salida).toMatch(/copa del mundo/i);
   });
 });
 
@@ -313,11 +314,12 @@ describe('cara a cara: rivales y cruces', () => {
       React.createElement(ResumenEncuentrosVista, { datos, resumen: datos.resumenEncuentros! }),
       React.createElement(EncuentrosCaraACara, { datos, encuentros: datos.encuentros! }),
     ));
-    expect(html).toContain('Todas las veces que os habéis cruzado');
-    expect(html).toMatch(/terminó por delante/);
-    expect(html).toContain('En eliminación directa');
-    expect(html).toContain('href="/explorar/ediciones/ed-cm"');
-    expect(html).toContain('Sin asalto entre las dos');
+    expect(html).toContain('id="h2h-cruces"');
+    expect(html).toContain('aria-label="Por delante: Yo 1, Rival 1, de 2"');
+    // «Grand Prix Doha» es común pero sin asalto entre las dos.
+    expect(html).toContain('Asaltos disponibles en 3 de 4 pruebas comunes');
+    expect(html).toContain('>15–9<');
+    expect(html).toContain(`href="/explorar/ediciones/ed-cm?prueba=cm&amp;persona=${YO}"`);
   });
 });
 

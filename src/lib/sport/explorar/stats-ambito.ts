@@ -5,7 +5,13 @@ import { exigirPerfil, filas, type ContextoExplorador } from './contexto';
 import { UUID_RE } from './cursor';
 import { listaUuid } from './filtros-sql';
 import { resolverPersona } from './personas';
-import { clasificarCompeticion, etiquetaCategoria, ordenCategoria, TIPOS_COMPETICION } from './tipo-competicion';
+import {
+  clasificarCompeticion,
+  etiquetaCategoria,
+  ordenCategoria,
+  PUESTO_SIN_CLASIFICAR,
+  TIPOS_COMPETICION,
+} from './tipo-competicion';
 import type {
   AmbitoCompeticion,
   EstadisticasPorAmbito,
@@ -108,6 +114,62 @@ export type FilaPruebaAmbito = Partial<FilaPresentacionPrueba> & {
   recibidos: number;
 };
 
+function clasificarFila(f: FilaPruebaAmbito) {
+  return clasificarCompeticion({
+    nombre: f.torneo, fuente: f.fuente, pais: f.pais,
+    ambitoEvento: f.ambitoEvento, circuitoEvento: f.circuitoEvento, fuenteEvento: f.fuenteEvento,
+  });
+}
+
+const conPuesto = (f: FilaPruebaAmbito) =>
+  f.puestoResultado != null && Number(f.puestoResultado) > 0 && Number(f.puestoResultado) < PUESTO_SIN_CLASIFICAR;
+
+/**
+ * Funde la misma prueba publicada por dos fuentes sin enlace de calendario
+ * común (Skermo y el PDF de la RFEE, o Engarde): mismo día, arma, género,
+ * categoría y ámbito, y fuentes distintas. Una persona no tira dos pruebas
+ * individuales de la misma categoría y arma el mismo día. Se queda la fila con
+ * puesto (y, a igualdad, la que trae asaltos); los asaltos son los de la copia
+ * que más tenga, sin sumar: suelen ser los mismos asaltos. Dos puestos
+ * distintos dejan la prueba sin puesto consensuado.
+ */
+export function fundirPruebasRepetidas(rows: readonly FilaPruebaAmbito[]): FilaPruebaAmbito[] {
+  const salida: FilaPruebaAmbito[] = [];
+  const grupos = new Map<string, { i: number; fuentes: Set<string> }[]>();
+  for (const f of rows) {
+    if (!f.fecha || !f.arma || !f.genero) {
+      salida.push(f);
+      continue;
+    }
+    const clave = [f.fecha, f.arma, f.genero, f.categoria, clasificarFila(f).ambito].join('|');
+    const fuente = f.fuenteResultado ?? f.fuente;
+    const candidatos = grupos.get(clave) ?? [];
+    const g = candidatos.find((c) => !c.fuentes.has(fuente));
+    if (!g) {
+      candidatos.push({ i: salida.length, fuentes: new Set([fuente]) });
+      grupos.set(clave, candidatos);
+      salida.push(f);
+      continue;
+    }
+    g.fuentes.add(fuente);
+    const previa = salida[g.i];
+    const nuevaGana = (conPuesto(f) && !conPuesto(previa))
+      || (conPuesto(f) === conPuesto(previa) && Number(f.asaltos) > Number(previa.asaltos));
+    const base = nuevaGana ? f : previa;
+    const otra = nuevaGana ? previa : f;
+    const asaltos = Number(otra.asaltos) > Number(base.asaltos) ? otra : base;
+    const puestos = [previa.puesto, f.puesto].filter((p): p is number => p != null).map(Number);
+    const contradicen = conPuesto(previa) && conPuesto(f) && Number(previa.puestoResultado) !== Number(f.puestoResultado);
+    salida[g.i] = {
+      ...base,
+      puesto: contradicen ? null : puestos.length > 0 ? puestos[0] : null,
+      asaltos: asaltos.asaltos, victorias: asaltos.victorias, derrotas: asaltos.derrotas,
+      dados: asaltos.dados, recibidos: asaltos.recibidos,
+    };
+  }
+  return salida;
+}
+
 function vacio(clave: string, etiqueta: string): ResumenCompeticiones {
   return {
     clave, etiqueta, competiciones: 0, oros: 0, platas: 0, bronces: 0, medallas: 0, finales: 0,
@@ -158,11 +220,8 @@ export function aEstadisticasPorAmbito(rows: readonly FilaPruebaAmbito[]): Estad
     return r;
   };
 
-  for (const f of rows.slice(0, LIMITE_PRUEBAS_AMBITO)) {
-    const c = clasificarCompeticion({
-      nombre: f.torneo, fuente: f.fuente, pais: f.pais,
-      ambitoEvento: f.ambitoEvento, circuitoEvento: f.circuitoEvento, fuenteEvento: f.fuenteEvento,
-    });
+  for (const f of fundirPruebasRepetidas(rows.slice(0, LIMITE_PRUEBAS_AMBITO))) {
+    const c = clasificarFila(f);
     const ambito = ambitos[c.ambito];
     let tipo = tipos.get(c.tipo);
     if (!tipo) tipos.set(c.tipo, (tipo = { ...vacio(c.tipo, c.etiqueta), tono: c.tono }));

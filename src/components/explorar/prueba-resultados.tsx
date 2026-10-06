@@ -7,7 +7,8 @@ import {
   type EstadoResultados,
   type PruebaDeEdicion,
 } from '@/lib/sport/explorar/edicion-modelo';
-import { CATEGORY_LABEL, GENDER_LABEL, WEAPON_LABEL, cn } from '@/lib/utils';
+import { categoriaVisible } from '@/lib/sport/explorar/presentacion';
+import { GENDER_LABEL, WEAPON_LABEL, cn } from '@/lib/utils';
 
 /**
  * Piezas de lectura de una prueba con resultados, compartidas por la página de
@@ -24,11 +25,18 @@ const ICONO_ESTADO: Record<EstadoResultados, { icono: typeof CircleCheck; tono: 
   conflicto: { icono: TriangleAlert, tono: 'text-warn' },
 };
 
-/** Nombre de la prueba: arma, género y categoría tal y como la publica la fuente. */
+/** «Espada femenina», «Florete masculino»: el género concuerda con el arma. */
+export function armaYGenero(p: Pick<PruebaDeEdicion, 'arma' | 'genero'>): string {
+  const genero = GENDER_LABEL[p.genero].toLowerCase();
+  return `${WEAPON_LABEL[p.arma]} ${p.arma === 'ESPADA' ? genero.replace(/o$/, 'a') : genero}`;
+}
+
+/**
+ * Nombre de la prueba: arma, género, categoría y formato. La categoría es el
+ * código normalizado («Absoluto», «M20»), nunca el literal de la fuente («S», «SENIOR»).
+ */
 export function nombreDePrueba(p: Pick<PruebaDeEdicion, 'arma' | 'genero' | 'categoria' | 'formato'>): string {
-  const categoria =
-    p.categoria.raw ?? CATEGORY_LABEL[p.categoria.codigo as keyof typeof CATEGORY_LABEL] ?? p.categoria.codigo;
-  return `${WEAPON_LABEL[p.arma]} ${GENDER_LABEL[p.genero].toLowerCase()} · ${categoria} · ${
+  return `${armaYGenero(p)} · ${categoriaVisible(p.categoria.codigo)} · ${
     p.formato === 'EQUIPOS' ? 'equipos' : 'individual'
   }`;
 }

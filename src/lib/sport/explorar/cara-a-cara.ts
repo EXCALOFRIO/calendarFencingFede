@@ -8,7 +8,9 @@ import {
   LIMITE_POR_DEFECTO,
   normalizarConsulta,
 } from './entrada';
+import { MAX_TOCADOS_INDIVIDUAL } from './asaltos-orientados-sql';
 import { condicionesPrueba, listaUuid, unionesPrueba, y } from './filtros-sql';
+import { rondaCuadro } from './ediciones-asaltos';
 import { leerCabeceras, resolverPersona, SALTOS } from './personas';
 import { clasificarCompeticion, PUESTO_SIN_CLASIFICAR } from './tipo-competicion';
 import type { ClasificacionCompeticion } from './tipos-social';
@@ -136,21 +138,38 @@ const RIVAL = (a: readonly string[]) =>
 
 type FiltrosH2h = ReturnType<typeof filtrosPrueba> & { fase?: 'POULE' | 'TABLEAU' };
 
+/** Un relevo de equipos publicado dentro de una prueba individual no es un asalto. */
+const MARCADOR_INDIVIDUAL = sql.raw(`max(b.score_a, b.score_b) <= ${MAX_TOCADOS_INDIVIDUAL}`);
+
+/**
+ * `descartadas`: lecturas repetidas de una prueba ya contada (ver
+ * `aEncuentros`); sus asaltos son los mismos otra vez y no se cuentan.
+ */
 function condicionesH2h(
   yo: readonly string[],
   rival: readonly string[],
   f: FiltrosH2h,
+  descartadas: readonly string[],
 ): SQL[] {
   const condiciones = [
     sql`c.format = 'INDIVIDUAL'`,
+    MARCADOR_INDIVIDUAL,
     parejaDe(yo, rival),
     ...condicionesPrueba(f, FECHA_ASALTO),
   ];
   if (f.fase) condiciones.push(sql`b.phase = ${f.fase}`);
+  if (descartadas.length > 0) {
+    condiciones.push(sql`b.competition_id NOT IN (${listaUuid(descartadas)})`);
+  }
   return condiciones;
 }
 
-export function sqlResumenAsaltos(yo: readonly string[], rival: readonly string[], f: FiltrosH2h) {
+export function sqlResumenAsaltos(
+  yo: readonly string[],
+  rival: readonly string[],
+  f: FiltrosH2h,
+  descartadas: readonly string[] = [],
+) {
   return sql`
     SELECT count(*) AS asaltos,
            count(*) FILTER (WHERE mios > rival) AS victorias,
@@ -160,7 +179,7 @@ export function sqlResumenAsaltos(yo: readonly string[], rival: readonly string[
     FROM (
       SELECT ${MIOS(yo)} AS mios, ${RIVAL(yo)} AS rival
       FROM sport_bout b ${unionesPrueba('b')}
-      WHERE ${y(condicionesH2h(yo, rival, f))}
+      WHERE ${y(condicionesH2h(yo, rival, f, descartadas))}
     ) s`;
 }
 
@@ -170,10 +189,11 @@ export function sqlAsaltos(
   f: FiltrosH2h,
   limite: number,
   clave: readonly (string | number)[] | null,
+  descartadas: readonly string[] = [],
 ) {
   // Un marcador empatado no tiene ganador: cuenta como «sin decidir» en el
   // resumen y no se lista como victoria ni derrota.
-  const condiciones = [...condicionesH2h(yo, rival, f), sql`b.score_a <> b.score_b`];
+  const condiciones = [...condicionesH2h(yo, rival, f, descartadas), sql`b.score_a <> b.score_b`];
   if (clave) {
     condiciones.push(
       sql`(${FECHA_ORDEN_ASALTO}, b.id) < (${String(clave[0])}, ${String(clave[1])})`,
@@ -224,13 +244,15 @@ export function sqlPruebasComunes(
              coalesce(sum(b.phase = 'POULE' AND ${MIOS(yo)} > ${RIVAL(yo)}), 0) AS "pouleV",
              coalesce(sum(b.phase = 'POULE' AND ${MIOS(yo)} < ${RIVAL(yo)}), 0) AS "pouleD",
              coalesce(sum(b.phase = 'TABLEAU' AND ${MIOS(yo)} > ${RIVAL(yo)}), 0) AS "directaV",
-             coalesce(sum(b.phase = 'TABLEAU' AND ${MIOS(yo)} < ${RIVAL(yo)}), 0) AS "directaD"
-      FROM sport_bout b WHERE ${parejaDe(yo, rival)}
+             coalesce(sum(b.phase = 'TABLEAU' AND ${MIOS(yo)} < ${RIVAL(yo)}), 0) AS "directaD",
+             -- Separadores de control: una clave de ronda publicada puede llevar cualquier signo visible.
+             group_concat(b.phase || char(31) || coalesce(b.round_key, '') || char(31) || ${MIOS(yo)} || char(31) || ${RIVAL(yo)}, char(30)) AS marcadores
+      FROM sport_bout b WHERE ${parejaDe(yo, rival)} AND ${MARCADOR_INDIVIDUAL}
       GROUP BY b.competition_id
     )
     SELECT c.id AS id, c.source AS fuente, e.name AS torneo, c.weapon AS arma,
            c.gender AS genero, c.category AS categoria, c.category_raw AS "categoriaRaw",
-           c.season AS temporada, coalesce(d.asaltos, 0) AS asaltos,
+           c.format AS formato, c.season AS temporada, coalesce(d.asaltos, 0) AS asaltos,
            (SELECT coalesce(group_concat(cov.fact_kind || ':' || cov.status, ','), '')
             FROM sport_import_coverage cov
             WHERE cov.competition_id = c.id AND cov.fact_kind IN ('pools', 'tableau', 'pdf')) AS lecturas,
@@ -239,7 +261,8 @@ export function sqlPruebasComunes(
            ev0.source AS "fuenteEvento", coalesce(c.competition_date, e.start_date) AS fecha,
            p.yo AS "puestoYo", p."yoRaw" AS "puestoYoRaw", p.rival AS "puestoRival", p."rivalRaw" AS "puestoRivalRaw",
            coalesce(d."pouleV", 0) AS "pouleV", coalesce(d."pouleD", 0) AS "pouleD",
-           coalesce(d."directaV", 0) AS "directaV", coalesce(d."directaD", 0) AS "directaD"
+           coalesce(d."directaV", 0) AS "directaV", coalesce(d."directaD", 0) AS "directaD",
+           d.marcadores AS marcadores
     FROM comunes cm
     JOIN sport_competition c ON c.id = cm.competition_id
     JOIN sport_edition e ON e.id = c.edition_id
@@ -258,6 +281,15 @@ function puestoReal(v: unknown): number | null {
 
 export type BalanceFase = { victorias: number; derrotas: number };
 
+/** Un asalto entre las dos dentro de una prueba, con el marcador visto desde la persona consultada. */
+export type MarcadorEncuentro = {
+  fase: 'POULE' | 'TABLEAU';
+  /** Clave de ronda publicada (`P3`, `A32`…); vacía si la fuente no la da. */
+  ronda: string;
+  mios: number;
+  rival: number;
+};
+
 /** Una prueba individual en la que coincidieron, con el puesto de cada una y sus asaltos. */
 export type EncuentroCaraACara = {
   pruebaId: string;
@@ -270,6 +302,7 @@ export type EncuentroCaraACara = {
   genero: Genero;
   categoria: string;
   categoriaRaw: string | null;
+  formato: Formato | null;
   temporada: string;
   fuente: string;
   clasificacion: ClasificacionCompeticion;
@@ -283,6 +316,10 @@ export type EncuentroCaraACara = {
   /** Quién terminó por delante; `null` si falta el puesto de alguna. */
   delante: 'yo' | 'rival' | 'empate' | null;
   asaltos: { total: number; poule: BalanceFase; directa: BalanceFase };
+  /** Los mismos asaltos uno a uno: poule primero y después el cuadro, de la tabla más grande a la final. */
+  marcadores: MarcadorEncuentro[];
+  /** Otras lecturas de la misma prueba fundidas en esta (otra fuente, otro nombre). */
+  equivalentes: string[];
 };
 
 export type ResumenEncuentros = {
@@ -308,6 +345,7 @@ type FilaEncuentro = FilaComun & {
   circuitoEvento?: string | null;
   fuenteEvento?: string | null;
   fecha?: string | null;
+  formato?: Formato | null;
   puestoYo?: number | null;
   puestoYoRaw?: string | null;
   puestoRival?: number | null;
@@ -316,7 +354,34 @@ type FilaEncuentro = FilaComun & {
   pouleD?: number;
   directaV?: number;
   directaD?: number;
+  /** `fase␟ronda␟mios␟rival` separados por `␞` (ver `sqlPruebasComunes`). */
+  marcadores?: string | null;
 };
+
+function ordenMarcador(m: MarcadorEncuentro): number {
+  if (m.fase === 'POULE') return Number.MAX_SAFE_INTEGER;
+  return rondaCuadro(m.ronda).tamano ?? 0;
+}
+
+export function leerMarcadores(texto: string | null | undefined): MarcadorEncuentro[] {
+  if (!texto) return [];
+  return texto
+    .split('\u001e')
+    .map((parte) => parte.split('\u001f'))
+    .filter((p) => p.length === 4 && (p[0] === 'POULE' || p[0] === 'TABLEAU'))
+    .map(([fase, ronda, mios, rival]) => ({
+      fase: fase as MarcadorEncuentro['fase'],
+      ronda,
+      mios: Number(mios),
+      rival: Number(rival),
+    }))
+    .filter((m) => Number.isFinite(m.mios) && Number.isFinite(m.rival))
+    .sort((a, b) => ordenMarcador(b) - ordenMarcador(a));
+}
+
+function delanteDe(yo: number | null, rival: number | null): EncuentroCaraACara['delante'] {
+  return yo === null || rival === null ? null : yo < rival ? 'yo' : yo > rival ? 'rival' : 'empate';
+}
 
 function aEncuentro(f: FilaEncuentro): EncuentroCaraACara {
   const yo = puestoReal(f.puestoYo);
@@ -333,6 +398,7 @@ function aEncuentro(f: FilaEncuentro): EncuentroCaraACara {
     genero: f.genero,
     categoria: f.categoria,
     categoriaRaw: f.categoriaRaw,
+    formato: f.formato ?? null,
     temporada: f.temporada,
     fuente: f.fuente,
     clasificacion: clasificarCompeticion({
@@ -345,47 +411,118 @@ function aEncuentro(f: FilaEncuentro): EncuentroCaraACara {
       yoPublicado: yo === null ? f.puestoYoRaw ?? null : null,
       rivalPublicado: rival === null ? f.puestoRivalRaw ?? null : null,
     },
-    delante: yo === null || rival === null ? null : yo < rival ? 'yo' : yo > rival ? 'rival' : 'empate',
+    delante: delanteDe(yo, rival),
     asaltos: {
       total: n(f.asaltos),
       poule: { victorias: n(f.pouleV), derrotas: n(f.pouleD) },
       directa: { victorias: n(f.directaV), derrotas: n(f.directaD) },
     },
+    marcadores: leerMarcadores(f.marcadores),
+    equivalentes: [],
   };
 }
 
-function normalizarTorneo(nombre: string): string {
-  return nombre.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/gi, ' ').trim().toLowerCase();
+const UN_DIA = 86_400_000;
+
+function diasEntre(a: string, b: string): number {
+  return Math.abs(Date.parse(`${a.slice(0, 10)}T00:00:00Z`) - Date.parse(`${b.slice(0, 10)}T00:00:00Z`)) / UN_DIA;
+}
+
+const tienePuesto = (e: EncuentroCaraACara) => e.puestos.yo !== null || e.puestos.rival !== null;
+
+/**
+ * Dos lecturas de la misma prueba sin enlace de calendario: dos fuentes
+ * nacionales (skermo_rfee y rfee_pdf) la publican con nombres distintos
+ * («TNR ABS» y «TNR ABS (3/3)») y a veces una fecha de diferencia, o una
+ * trae la clasificación y la otra sólo la poule. Hace falta el mismo arma,
+ * género, categoría y formato a un día como mucho y puestos que no se
+ * contradigan. Que una tenga puestos y la otra ninguno basta; si ninguna
+ * los tiene no hay nada que indique que es la misma prueba (dos torneos de
+ * un fin de semana) y no se funden.
+ */
+export function mismaPrueba(a: EncuentroCaraACara, b: EncuentroCaraACara): boolean {
+  if (!a.fecha || !b.fecha || diasEntre(a.fecha, b.fecha) > 1) return false;
+  if (a.arma !== b.arma || a.genero !== b.genero || a.categoria !== b.categoria || a.formato !== b.formato) {
+    return false;
+  }
+  if (!tienePuesto(a) || !tienePuesto(b)) return tienePuesto(a) !== tienePuesto(b);
+  const casan = (x: number | null, y: number | null) => x === null || y === null || x === y;
+  const iguales = (x: number | null, y: number | null) => x !== null && x === y;
+  return casan(a.puestos.yo, b.puestos.yo) && casan(a.puestos.rival, b.puestos.rival)
+    && (iguales(a.puestos.yo, b.puestos.yo) || iguales(a.puestos.rival, b.puestos.rival));
+}
+
+const peso = (x: EncuentroCaraACara) => (x.delante ? 1_000_000 : 0) + x.asaltos.total;
+
+const ordenar = (lecturas: readonly EncuentroCaraACara[]) => [...lecturas].sort((a, b) => peso(b) - peso(a));
+
+/** La lectura cuyos asaltos cuentan; los de las demás son los mismos otra vez. */
+function lecturaConAsaltos(orden: readonly EncuentroCaraACara[]): EncuentroCaraACara {
+  return orden.find((e) => e.asaltos.total > 0) ?? orden[0];
 }
 
 /**
- * Encuentros sin duplicados: dos fuentes de la misma prueba del calendario
- * cuentan una vez. Se queda la fila con los dos puestos y, a igualdad, la
- * de más asaltos; el orden (más reciente primero) es el de la consulta.
+ * Una prueba a partir de sus lecturas. La base (nombre, enlace, fuente) es la
+ * que tiene los dos puestos y, a igualdad, más asaltos; un puesto que le
+ * falte se toma de otra lectura. Los asaltos no se suman (serían los mismos
+ * dos veces): son los de la primera lectura, en ese orden, que tenga alguno.
  */
-export function aEncuentros(rows: readonly FilaEncuentro[], truncado: boolean): {
+function fundir(lecturas: readonly EncuentroCaraACara[]): EncuentroCaraACara {
+  const orden = ordenar(lecturas);
+  const [base] = orden;
+  const yo = orden.find((e) => e.puestos.yo !== null)?.puestos.yo ?? null;
+  const rival = orden.find((e) => e.puestos.rival !== null)?.puestos.rival ?? null;
+  const conAsaltos = lecturaConAsaltos(orden);
+  return {
+    ...base,
+    puestos: {
+      yo,
+      rival,
+      yoPublicado: yo === null ? orden.find((e) => e.puestos.yoPublicado)?.puestos.yoPublicado ?? null : null,
+      rivalPublicado: rival === null ? orden.find((e) => e.puestos.rivalPublicado)?.puestos.rivalPublicado ?? null : null,
+    },
+    delante: delanteDe(yo, rival),
+    asaltos: conAsaltos.asaltos,
+    marcadores: conAsaltos.marcadores,
+    equivalentes: orden.slice(1).map((e) => e.pruebaId),
+  };
+}
+
+/**
+ * Encuentros sin duplicados: dos lecturas de la misma prueba (mismo enlace de
+ * calendario o `mismaPrueba`) cuentan una vez. El orden (más reciente
+ * primero) es el de la consulta. Con `fase`, los marcadores de cada prueba se
+ * limitan a esa fase, como el balance.
+ *
+ * `descartadas` son las lecturas cuyos asaltos no cuentan por repetir los de
+ * otra lectura de la misma prueba: el resumen y la lista de asaltos las
+ * excluyen para no contar dos veces el mismo duelo.
+ */
+export function aEncuentros(
+  rows: readonly FilaEncuentro[],
+  truncado: boolean,
+  fase?: MarcadorEncuentro['fase'],
+): {
   encuentros: EncuentroCaraACara[];
   resumen: ResumenEncuentros;
+  descartadas: string[];
 } {
-  const elegidas = new Map<string, { i: number; e: EncuentroCaraACara }>();
-  const porHuella = new Map<string, string>();
-  rows.forEach((f, i) => {
+  const grupos: { claves: Set<string>; lecturas: EncuentroCaraACara[]; fusion: EncuentroCaraACara }[] = [];
+  for (const f of rows) {
     const e = aEncuentro(f);
-    let clave = f.equivalencia ? `cal:${f.equivalencia}` : `sport:${f.id}`;
-    // Dos fuentes nacionales (p. ej. skermo_rfee y rfee_pdf) publican la misma
-    // prueba sin enlace de calendario. Mismo día, misma prueba y los mismos dos
-    // puestos sólo pasa si es la misma competición.
-    if (e.delante && e.fecha) {
-      const huella = [e.fecha, e.arma, e.genero, e.categoria, normalizarTorneo(e.torneo), e.puestos.yo, e.puestos.rival].join('|');
-      const vista = porHuella.get(huella);
-      if (vista && vista !== clave) clave = vista;
-      else porHuella.set(huella, clave);
+    const clave = f.equivalencia ? `cal:${f.equivalencia}` : null;
+    const grupo = grupos.find((g) => (clave !== null && g.claves.has(clave)) || mismaPrueba(g.fusion, e));
+    if (grupo) {
+      grupo.lecturas.push(e);
+      if (clave) grupo.claves.add(clave);
+      grupo.fusion = fundir(grupo.lecturas);
+    } else {
+      grupos.push({ claves: new Set(clave ? [clave] : []), lecturas: [e], fusion: e });
     }
-    const previa = elegidas.get(clave);
-    const peso = (x: EncuentroCaraACara) => (x.delante ? 1_000_000 : 0) + x.asaltos.total;
-    if (!previa || peso(e) > peso(previa.e)) elegidas.set(clave, { i: previa?.i ?? i, e });
-  });
-  const encuentros = [...elegidas.values()].sort((a, b) => a.i - b.i).map((x) => x.e);
+  }
+  const encuentros = grupos.map((g) =>
+    fase ? { ...g.fusion, marcadores: g.fusion.marcadores.filter((m) => m.fase === fase) } : g.fusion,
+  );
   const resumen: ResumenEncuentros = {
     competiciones: encuentros.length,
     conAmbosPuestos: 0, delanteYo: 0, delanteRival: 0, empates: 0,
@@ -404,7 +541,12 @@ export function aEncuentros(rows: readonly FilaEncuentro[], truncado: boolean): 
     resumen.directa.victorias += e.asaltos.directa.victorias;
     resumen.directa.derrotas += e.asaltos.directa.derrotas;
   }
-  return { encuentros, resumen };
+  const descartadas = grupos.flatMap((g) => {
+    if (g.lecturas.length < 2) return [];
+    const cuenta = lecturaConAsaltos(ordenar(g.lecturas)).pruebaId;
+    return g.lecturas.map((l) => l.pruebaId).filter((id) => id !== cuenta);
+  });
+  return { encuentros, resumen, descartadas };
 }
 
 type FilaAsalto = {
@@ -496,10 +638,8 @@ export async function leerCaraACara(
   if (yo.canonicaId === rival.canonicaId) return { estado: 'misma_persona' };
 
   const limite = pedido ?? LIMITE_POR_DEFECTO;
-  const [cabeceras, resumenRows, asaltosRows, comunesRows] = await Promise.all([
+  const [cabeceras, comunesRows] = await Promise.all([
     leerCabeceras(ctx.db, [yo.canonicaId, rival.canonicaId]),
-    ctx.db.execute(sqlResumenAsaltos(yo.ids, rival.ids, filtros)),
-    ctx.db.execute(sqlAsaltos(yo.ids, rival.ids, filtros, limite, clave)),
     ctx.db.execute(sqlPruebasComunes(yo.ids, rival.ids, filtros)),
   ]);
 
@@ -507,14 +647,23 @@ export async function leerCaraACara(
   const cabRival = cabeceras.get(rival.canonicaId);
   if (!cabYo || !cabRival) return { estado: 'no_encontrada' };
 
+  const comunes = filas<FilaEncuentro>(comunesRows);
+  const truncado = comunes.length > MAX_COMUNES;
+  const { encuentros, resumen: resumenEncuentros, descartadas } = aEncuentros(
+    comunes.slice(0, MAX_COMUNES),
+    truncado,
+    filtros.fase,
+  );
+
+  // Después de las pruebas comunes: sus lecturas repetidas no deben contar dos veces cada asalto.
+  const [resumenRows, asaltosRows] = await Promise.all([
+    ctx.db.execute(sqlResumenAsaltos(yo.ids, rival.ids, filtros, descartadas)),
+    ctx.db.execute(sqlAsaltos(yo.ids, rival.ids, filtros, limite, clave, descartadas)),
+  ]);
   const [r] = filas<Record<string, number>>(resumenRows);
   const asaltos = filas<FilaAsalto>(asaltosRows);
   const pagina = asaltos.slice(0, limite);
   const ultima = pagina[pagina.length - 1];
-
-  const comunes = filas<FilaEncuentro>(comunesRows);
-  const truncado = comunes.length > MAX_COMUNES;
-  const { encuentros, resumen: resumenEncuentros } = aEncuentros(comunes.slice(0, MAX_COMUNES), truncado);
   const pruebas = comunes.slice(0, MAX_COMUNES).map<PruebaComun>((c) => {
     const n = Number(c.asaltos);
     return {

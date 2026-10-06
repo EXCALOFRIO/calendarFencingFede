@@ -3,7 +3,7 @@ import { exigirPerfil, filas, type ContextoExplorador } from './contexto';
 import { UUID_RE } from './cursor';
 import { listaUuid } from './filtros-sql';
 import { SALTOS } from './personas';
-import { leerFotoOficial } from './foto-fuente';
+import { fotoFieConCache, type AlmacenMarcas } from './fotos/cache';
 import type { ResultadoFoto } from './foto-contrato';
 
 export const MAX_MIEMBROS_FOTO = 64;
@@ -54,11 +54,15 @@ async function grupoAcotado(
   return null;
 }
 
-/** Lectura autenticada sin nombres/alias/licencias, escrituras, R2 ni caché compartida. */
+/**
+ * Lectura autenticada sin nombres/alias/licencias ni escrituras en D1. La
+ * identidad y el veto de menores se comprueban en cada petición; sólo la
+ * respuesta de la FIE por ID se recuerda (ver `fotos/cache.ts`).
+ */
 export async function leerFotoDeportista(
   ctx: ContextoExplorador,
   personaId: unknown,
-  opciones: { fetch?: typeof fetch; signal?: AbortSignal } = {},
+  opciones: { fetch?: typeof fetch; signal?: AbortSignal; almacen?: AlmacenMarcas | null } = {},
 ): Promise<ResultadoFoto> {
   await exigirPerfil(ctx);
   if (typeof personaId !== 'string' || !UUID_RE.test(personaId)) return { estado: 'entrada_invalida' };
@@ -86,6 +90,8 @@ export async function leerFotoDeportista(
       AND person_id NOT IN (${listaUuid(grupo.map((p) => p.id))})
     LIMIT 1`));
   if (conflicto.length > 0) return SIN_FOTO;
-  const foto = await leerFotoOficial(Number(ids[0].valor), ctx.hoy(), opciones);
-  return foto ? { estado: 'publicada', foto } : SIN_FOTO;
+  const { foto, definitivo } = await fotoFieConCache(Number(ids[0].valor), ctx.hoy(), opciones);
+  if (foto) return { estado: 'publicada', foto };
+  // Un fallo pasajero no se presenta como «no publicada»: esa sí se cachea.
+  return definitivo ? SIN_FOTO : { estado: 'no_disponible' };
 }

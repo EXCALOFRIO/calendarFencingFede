@@ -1,9 +1,11 @@
 'use client';
 
-import { Search } from 'lucide-react';
+import { Check, ChevronDown, Search } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
+import { Command, CommandGroup, CommandItem, CommandList } from '@/components/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -12,23 +14,143 @@ import {
   type CriteriosCaraACara,
 } from '@/lib/sport/explorar/cara-a-cara-url';
 import type { OpcionTemporada } from '@/lib/sport/explorar/url';
+import { cn } from '@/lib/utils';
 import { ARMAS, CampoSelect, agruparTemporadas } from './formulario-filtros';
 
-/**
- * Filtros del cara a cara. El borrador vive en el estado del formulario y
- * sólo al aplicar se escribe en la URL con `router.push`: Atrás vuelve a la
- * consulta anterior y cada cambio empieza en la primera página. La página
- * remonta este componente (`key`) cuando cambia la URL.
- */
-export function FiltrosCaraACara({
-  personaId,
-  criterios,
-  temporadas,
-}: {
+type Props = {
   personaId: string;
   criterios: CriteriosCaraACara;
   temporadas: OpcionTemporada[];
+};
+
+/**
+ * Filtros del cara a cara. Con rival elegido son tres pastillas en una fila
+ * que se aplican al elegir; sin rival, el formulario de búsqueda de
+ * rival. En los dos casos la URL se escribe con `router.push`: Atrás vuelve a
+ * la consulta anterior y cada cambio empieza en la primera página. La página
+ * remonta este componente (`key`) cuando cambia la URL.
+ */
+export function FiltrosCaraACara(props: Props) {
+  return props.criterios.rival ? <FiltrosCompactos {...props} /> : <BuscarRival {...props} />;
+}
+
+type OpcionPastilla = { valor: string; etiqueta: string };
+type GrupoPastilla = { etiqueta?: string; opciones: OpcionPastilla[] };
+
+/**
+ * Pastilla de filtro: sin valor dice su nombre; con valor, el elegido,
+ * resaltado. Al elegir se cierra y se aplica. El botón mide 44 px de alto
+ * (área táctil) y la pastilla visible, 36.
+ */
+function PastillaFiltro({
+  etiqueta,
+  todas,
+  valor,
+  grupos,
+  onElegir,
+}: {
+  etiqueta: string;
+  /** Rótulo de la opción que quita el filtro. */
+  todas: string;
+  valor: string;
+  grupos: GrupoPastilla[];
+  onElegir: (valor: string) => void;
 }) {
+  const [abierta, setAbierta] = React.useState(false);
+  const elegida = grupos.flatMap((g) => g.opciones).find((o) => o.valor === valor);
+  const elegir = (v: string) => {
+    setAbierta(false);
+    if (v !== valor) onElegir(v);
+  };
+  return (
+    <Popover open={abierta} onOpenChange={setAbierta}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          aria-label={elegida ? `${etiqueta}: ${elegida.etiqueta}` : etiqueta}
+          className="group h-11 min-w-0 px-0 hover:bg-transparent"
+        >
+          <span
+            className={cn(
+              'inline-flex h-9 w-full min-w-0 items-center justify-between gap-1.5 rounded-full border bg-card pr-2.5 pl-3.5 text-sm transition-colors group-hover:bg-secondary',
+              elegida ? 'border-primary-text/60 font-medium text-foreground' : 'border-filete-alto font-normal text-muted-foreground',
+            )}
+          >
+            <span className="truncate">{elegida?.etiqueta ?? etiqueta}</span>
+            <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          </span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-56 p-0">
+        <Command>
+          <CommandList>
+            <CommandGroup>
+              <CommandItem value={`__${todas}`} data-marcado={valor === ''} onSelect={() => elegir('')}>
+                <Check className={cn('size-4', valor === '' ? 'opacity-100' : 'opacity-0')} aria-hidden />
+                {todas}
+              </CommandItem>
+            </CommandGroup>
+            {grupos.map((g, i) => (
+              <CommandGroup key={g.etiqueta ?? i} heading={g.etiqueta}>
+                {g.opciones.map((o) => (
+                  <CommandItem key={o.valor} value={o.valor} data-marcado={o.valor === valor} onSelect={() => elegir(o.valor)}>
+                    <Check className={cn('size-4', o.valor === valor ? 'opacity-100' : 'opacity-0')} aria-hidden />
+                    {o.etiqueta}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ))}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Temporada, arma y fase en una sola fila de pastillas que se aplican al elegir. */
+function FiltrosCompactos({ personaId, criterios, temporadas }: Props) {
+  const router = useRouter();
+  const [pendiente, empezar] = React.useTransition();
+  const { sueltas, grupos } = agruparTemporadas(temporadas, criterios.temporada);
+  const poner = (parcial: Partial<CriteriosCaraACara>) =>
+    empezar(() => router.push(construirUrlCaraACara(personaId, { ...criterios, ...parcial, cursor: '', q: '' })));
+
+  return (
+    <div
+      role="search"
+      aria-label="Filtros del cara a cara"
+      aria-busy={pendiente}
+      className={cn(
+        'grid grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 transition-opacity sm:flex sm:justify-end',
+        pendiente && 'opacity-60',
+      )}
+    >
+      <PastillaFiltro
+        etiqueta="Temporada"
+        todas="Todas las temporadas"
+        valor={criterios.temporada}
+        grupos={[...(sueltas.length > 0 ? [{ opciones: sueltas }] : []), ...grupos.filter((g) => g.opciones.length > 0)]}
+        onElegir={(temporada) => poner({ temporada })}
+      />
+      <PastillaFiltro
+        etiqueta="Arma"
+        todas="Todas las armas"
+        valor={criterios.arma}
+        grupos={[{ opciones: ARMAS }]}
+        onElegir={(arma) => poner({ arma })}
+      />
+      <PastillaFiltro
+        etiqueta="Fase"
+        todas="Poule y directa"
+        valor={criterios.fase}
+        grupos={[{ opciones: FASE_FILTRO.map((f) => ({ valor: f.valor, etiqueta: f.valor === 'TABLEAU' ? 'Directa' : f.etiqueta })) }]}
+        onElegir={(fase) => poner({ fase })}
+      />
+    </div>
+  );
+}
+
+function BuscarRival({ personaId, criterios, temporadas }: Props) {
   const router = useRouter();
   const [pendiente, empezar] = React.useTransition();
   const [borrador, setBorrador] = React.useState(criterios);

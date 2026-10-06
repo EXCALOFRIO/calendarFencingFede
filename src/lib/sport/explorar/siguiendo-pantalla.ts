@@ -6,7 +6,6 @@ import { resolverPersonaPropia } from './propietario';
 import { contarSiguiendo, leerFeedSiguiendo } from './seguidos';
 import { sqlTiradoresSugeridos, type FilaSugerido } from './sugeridos';
 import type { EntradaSiguiendo } from './tipos-social';
-import { GENDER_LABEL, WEAPON_LABEL } from '@/lib/utils';
 import type { Arma, Genero } from './tipos';
 
 /** Persona propuesta para empezar a seguir cuando el feed está vacío. */
@@ -103,10 +102,10 @@ export async function leerPropuestasParaSeguir(ctx: ContextoExplorador): Promise
           id: s.id,
           nombre: s.nombre,
           pais: s.pais,
-          motivo: s.motivo === 'rival_frecuente' ? 'Rival frecuente tuyo'
-            : s.motivo === 'mismo_club' ? 'De tu club'
-            : s.motivo === 'asaltos' ? 'Habéis tirado juntos'
-            : 'Coincidís en pruebas',
+          motivo: s.motivo === 'rival_frecuente' ? 'Rival frecuente'
+            : s.motivo === 'mismo_club' ? 'Tu club'
+            : s.motivo === 'asaltos' ? 'Rival'
+            : 'Mismas pruebas',
         }));
       }
     }
@@ -119,7 +118,7 @@ export async function leerPropuestasParaSeguir(ctx: ContextoExplorador): Promise
       id: d.id,
       nombre: d.nombre,
       pais: d.pais,
-      motivo: `${Number(d.puesto)}º ranking FIE, ${WEAPON_LABEL[d.arma]?.toLowerCase() ?? d.arma} ${GENDER_LABEL[d.genero]?.toLowerCase() ?? ''}`.trim(),
+      motivo: `${Number(d.puesto)}º FIE`,
     }));
 }
 

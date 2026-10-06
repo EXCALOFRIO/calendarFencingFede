@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { filas, type ContextoExplorador } from './contexto';
+import { listaUuid } from './filtros-sql';
 import type {
   AsaltoDePrueba,
   AsaltosDePrueba,
@@ -19,7 +20,15 @@ import type {
 /** Una prueba de 300 tiradores ronda los 1.500 asaltos; por encima se corta y se avisa. */
 export const MAX_ASALTOS_PRUEBA = 2000;
 
-export function sqlAsaltosDePrueba(pruebaId: string) {
+/**
+ * `paisesDe` son las pruebas cuyos puestos dan el país de cada tirador: en una
+ * prueba publicada por partes, el PDF de poules no trae la clasificación.
+ */
+export function sqlAsaltosDePrueba(pruebaId: string, paisesDe: readonly string[] = [pruebaId]) {
+  const paises =
+    paisesDe.length === 1 && paisesDe[0] === pruebaId
+      ? sql`pr.competition_id = ${pruebaId}`
+      : sql`pr.competition_id IN (${listaUuid(paisesDe)})`;
   return sql`
     WITH fuente AS (
       SELECT b.source AS fuente FROM sport_bout b
@@ -29,7 +38,7 @@ export function sqlAsaltosDePrueba(pruebaId: string) {
     paises AS (
       SELECT pr.person_id AS persona, max(pr.source_country_code) AS pais
       FROM sport_result pr
-      WHERE pr.competition_id = ${pruebaId} AND pr.person_id IS NOT NULL
+      WHERE ${paises} AND pr.person_id IS NOT NULL
       GROUP BY pr.person_id
     )
     SELECT b.id AS id, b.source AS fuente, b.phase AS fase, b.round_key AS ronda,
@@ -80,7 +89,9 @@ export function etiquetaTamano(n: number): string {
  */
 export function rondaCuadro(clave: string): { tamano: number | null; etiqueta: string } {
   const k = clave.trim().toUpperCase();
-  const tabla = /^[AT](\d{1,3})$/.exec(k);
+  // La FIE publica `A…` para el cuadro previo y `B…` para el principal cuando
+  // la prueba tiene los dos (Copas del Mundo): `B64` es la tabla de 64 de verdad.
+  const tabla = /^[ABT](\d{1,3})$/.exec(k);
   if (tabla) {
     const n = Number(tabla[1]);
     return { tamano: n, etiqueta: etiquetaTamano(n) };
@@ -90,6 +101,23 @@ export function rondaCuadro(clave: string): { tamano: number | null; etiqueta: s
   if (k === 'QF' || k === 'CF') return { tamano: 8, etiqueta: 'Cuartos de final' };
   if (k === 'C2') return { tamano: null, etiqueta: 'Tercer puesto' };
   return { tamano: null, etiqueta: `Ronda ${clave}` };
+}
+
+/** Rótulo corto de una ronda del cuadro, para la cabecera de cada columna. */
+export function etiquetaCortaRonda(r: { tamano: number | null; etiqueta: string }): string {
+  if (r.etiqueta.startsWith('Previa')) return r.etiqueta;
+  switch (r.tamano) {
+    case 2:
+      return 'Final';
+    case 4:
+      return 'Semifinal';
+    case 8:
+      return 'Cuartos';
+    case 16:
+      return 'Octavos';
+    default:
+      return r.etiqueta;
+  }
 }
 
 /** Clave de ronda publicada en palabras, para listas de asaltos sueltos. */
@@ -137,6 +165,10 @@ function ganador(f: FilaAsaltoPrueba): string | null {
   return a > b ? f.refA : f.refB;
 }
 
+function esPrincipalFie(ronda: string): boolean {
+  return /^B\d{1,3}$/i.test(ronda.trim());
+}
+
 /**
  * Ordena cada ronda del cuadro como se dibuja: empezando por la final, los
  * dos asaltos de la ronda anterior que ganaron sus finalistas van en ese
@@ -150,10 +182,18 @@ export function ordenarCuadro(rows: readonly FilaAsaltoPrueba[]): RondaCuadro[] 
     lista.push(f);
     porRonda.set(f.ronda, lista);
   }
+  // Con cuadro principal (`B…`), el previo (`A…`) va antes que él: la cadena
+  // desde la final es B2 … B64, A64 … A256.
+  const conPrincipal = [...porRonda.keys()].some(esPrincipalFie);
+  const tramo = (ronda: string) => (conPrincipal && esPrincipalFie(ronda) ? 1 : 0);
   const conTamano = [...porRonda.keys()]
-    .map((ronda) => ({ ronda, ...rondaCuadro(ronda) }))
+    .map((ronda) => {
+      const r = rondaCuadro(ronda);
+      const previa = conPrincipal && !esPrincipalFie(ronda) && r.tamano !== null;
+      return { ronda, tamano: r.tamano, etiqueta: previa ? `Previa · ${r.etiqueta}` : r.etiqueta };
+    })
     .filter((r): r is { ronda: string; tamano: number; etiqueta: string } => r.tamano !== null)
-    .sort((x, y) => x.tamano - y.tamano);
+    .sort((x, y) => tramo(y.ronda) - tramo(x.ronda) || x.tamano - y.tamano);
 
   const ordenadas = new Map<string, FilaAsaltoPrueba[]>();
   let siguiente: FilaAsaltoPrueba[] | null = null;
@@ -269,6 +309,66 @@ export async function leerAsaltosDePrueba(
     fuente: visibles[0].fuente,
     poules: matricesPoule(visibles.filter((f) => f.fase === 'POULE')),
     cuadro: ordenarCuadro(visibles.filter((f) => f.fase === 'TABLEAU')),
+    truncado,
+  };
+}
+
+type ConteoFase = { prueba: string; fase: string; n: number };
+
+/**
+ * De qué parte de una prueba agrupada sale cada fase: la que más asaltos tiene
+ * de esa fase; a igualdad, la primera de `miembros` (la que da los puestos).
+ * Dos partes con la misma fase suelen ser copias del mismo PDF: se toma una.
+ */
+export function partePorFase(miembros: readonly string[], conteos: readonly ConteoFase[]): Map<string, string> {
+  const mejor = new Map<string, { prueba: string; n: number }>();
+  for (const id of miembros) {
+    for (const c of conteos) {
+      if (c.prueba !== id) continue;
+      const actual = mejor.get(c.fase);
+      if (!actual || Number(c.n) > actual.n) mejor.set(c.fase, { prueba: id, n: Number(c.n) });
+    }
+  }
+  return new Map([...mejor].map(([fase, m]) => [fase, m.prueba]));
+}
+
+/**
+ * Asaltos de una prueba agrupada (ver `agruparPruebas`): poules de la parte
+ * con más poules y cuadro de la parte con más cuadro, con los países que dan
+ * los puestos de cualquiera de ellas. Con un solo miembro es `leerAsaltosDePrueba`.
+ */
+export async function leerAsaltosDeGrupo(
+  ctx: ContextoExplorador,
+  miembros: readonly string[],
+): Promise<AsaltosDePrueba | null> {
+  if (miembros.length === 0) return null;
+  if (miembros.length === 1) return leerAsaltosDePrueba(ctx, miembros[0]);
+  const conteos = filas<ConteoFase>(
+    await ctx.db.execute(sql`
+      SELECT b.competition_id AS prueba, b.phase AS fase, count(*) AS n
+      FROM sport_bout b
+      WHERE b.competition_id IN (${listaUuid(miembros)})
+      GROUP BY b.competition_id, b.phase`),
+  );
+  const partes = partePorFase(miembros, conteos);
+  if (partes.size === 0) return null;
+  const porParte = new Map<string, FilaAsaltoPrueba[]>();
+  for (const parte of new Set(partes.values())) {
+    porParte.set(parte, filas<FilaAsaltoPrueba>(await ctx.db.execute(sqlAsaltosDePrueba(parte, miembros))));
+  }
+  const de = (fase: string) => {
+    const parte = partes.get(fase);
+    return parte ? (porParte.get(parte) ?? []).filter((f) => f.fase === fase) : [];
+  };
+  const poules = de('POULE');
+  const cuadro = de('TABLEAU');
+  const todas = [...poules, ...cuadro];
+  if (todas.length === 0) return null;
+  const truncado = [...porParte.values()].some((rows) => rows.length > MAX_ASALTOS_PRUEBA);
+  return {
+    fuente: todas[0].fuente,
+    poules: matricesPoule(poules.slice(0, MAX_ASALTOS_PRUEBA)),
+    cuadro: ordenarCuadro(cuadro.slice(0, MAX_ASALTOS_PRUEBA)),
     truncado,
   };
 }

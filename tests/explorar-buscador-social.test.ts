@@ -2,7 +2,7 @@ import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { BuscadorSocial, estadoBuscador } from '@/components/explorar/buscador-social';
-import { FilaPerfil, PropuestasBuscador, lineaActividad } from '@/components/explorar/buscador-social-fila';
+import { FilaPerfil, PropuestasBuscador, datoCorto } from '@/components/explorar/buscador-social-fila';
 import {
   MAX_RECIENTES,
   anadirReciente,
@@ -58,12 +58,12 @@ describe('estado del buscador social', () => {
     expect(estadoBuscador('zabal', 'zabala')).toEqual({ vivo: 'zabal', corto: false });
   });
 
-  it('línea de actividad: competiciones y año de la última', () => {
-    expect(lineaActividad({ resultados: 103, ultimaFecha: '2026-03-01' })).toBe('103 competiciones · última 2026');
-    expect(lineaActividad({ resultados: 1, ultimaFecha: null })).toBe('1 competición');
-    expect(lineaActividad({ resultados: 12500, ultimaFecha: '2019-01-01' })).toBe('12.500 competiciones · última 2019');
-    expect(lineaActividad({ resultados: 0 })).toBe('Sin competiciones importadas');
-    expect(lineaActividad({})).toBeNull();
+  it('dato corto: un arma, si no el número de pruebas, si no las armas', () => {
+    expect(datoCorto({ armas: ['ESPADA'], resultados: 103 })).toBe('Espada');
+    expect(datoCorto({ armas: ['ESPADA', 'FLORETE'], resultados: 1 })).toBe('1 prueba');
+    expect(datoCorto({ resultados: 12500 })).toBe('12.500 pruebas');
+    expect(datoCorto({ armas: ['ESPADA', 'SABLE'], resultados: 0 })).toBe('Espada, Sable');
+    expect(datoCorto({ resultados: 0 })).toBeNull();
   });
 });
 
@@ -106,16 +106,17 @@ describe('vista del buscador social', () => {
     );
     expect(html).toContain(`data-persona="${A}"`);
     expect(html).toContain('data-pais="ESP"');
-    expect(html).toContain('103 competiciones · última 2026');
+    expect(html).toContain('>Espada<');
+    expect(html).not.toContain('competiciones');
     expect(html).toMatch(/<\/a><button/);
   });
 
   it('las propuestas para seguir son filas con «Seguir»; si fallan se dice sin romper la página', () => {
     const html = renderToStaticMarkup(React.createElement(PropuestasBuscador, {
-      propuestas: [{ id: A, nombre: 'ZABALA Juan', pais: 'ESP', motivo: '3º ranking FIE, espada masculino' }],
+      propuestas: [{ id: A, nombre: 'ZABALA Juan', pais: 'ESP', motivo: '3º FIE' }],
     }));
-    expect(html).toContain('Sugerencias para seguir');
-    expect(html).toContain('3º ranking FIE, espada masculino');
+    expect(html).toContain('>Sugerencias<');
+    expect(html).toContain('3º FIE');
     expect(html).toContain('Seguir');
     expect(renderToStaticMarkup(React.createElement(PropuestasBuscador, { propuestas: null })))
       .toContain('No se han podido leer las sugerencias');

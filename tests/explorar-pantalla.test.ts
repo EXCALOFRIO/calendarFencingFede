@@ -18,7 +18,7 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/explorar',
 }));
 
-const { ChipsActivos, EstadoSinCoincidencias, EstadoSinLista, ListaDeportistas } = await import(
+const { ChipsActivos, EstadoSinCoincidencias, EstadoSinLista, ListaDeportistas, anadirSinRepetir } = await import(
   '@/components/explorar/resultados'
 );
 const { FormularioFiltros } = await import('@/components/explorar/formulario-filtros');
@@ -194,7 +194,7 @@ describe('filtros combinados y cursor', () => {
 });
 
 describe('vista de resultados', () => {
-  const lista = (items: DeportistaResumen[], extra: Record<string, unknown> = {}) =>
+  const lista = (items: React.ComponentProps<typeof ListaDeportistas>['items'], extra: Record<string, unknown> = {}) =>
     renderToStaticMarkup(
       React.createElement(ListaDeportistas, {
         items,
@@ -214,8 +214,8 @@ describe('vista de resultados', () => {
     expect(html).toContain(`href="/explorar/${UUID_A}?volver=%2Fexplorar%3Fq%3Dgarcia"`);
     expect(html).toContain(`href="/explorar/${UUID_B}?volver=%2Fexplorar%3Fq%3Dgarcia"`);
     expect(html).toContain('2 personas con este nombre');
-    expect(html).toContain('nacimiento 2001');
-    expect(html).toContain('nacimiento 1994');
+    expect(html).toContain('n. 2001');
+    expect(html).toContain('n. 1994');
   });
 
   it('cada fila lleva lo que el buscador guarda en Recientes al abrirla, dentro de su contenedor', () => {
@@ -236,29 +236,48 @@ describe('vista de resultados', () => {
     expect(lista([resumen({ anioNacimiento: 2001, mismoNombre: 1 })])).not.toContain('2001');
   });
 
-  it('indica alias coincidente, sin resultados importados y país o género no publicados', () => {
+  it('indica el alias coincidente y que no hay resultados importados, sin líneas vacías', () => {
     const html = lista([
       resumen({ alias: 'GARCIA PEREZ Lucia', resultadosImportados: 0, armas: [], pais: null, genero: null }),
     ]);
-    expect(html).toContain('Coincide con el alias');
-    expect(html).toContain('Ninguno importado');
-    expect(html).toContain('Sin pruebas importadas');
-    expect(html).toContain('País no publicado');
-    expect(html).toContain('Género no publicado');
+    expect(html).toContain('También como </span><span aria-hidden="true">«</span>GARCIA PEREZ Lucia');
+    expect(html).not.toContain('Sin competiciones importadas');
+    expect(html).not.toContain('País no publicado');
   });
 
-  it('la fila no lleva ranking, puntos ni puestos, sólo clasificaciones importadas', () => {
+  it('la fila no lleva ranking, puntos ni puestos, ni frases de actividad', () => {
     const html = lista([resumen()]);
     expect(html).not.toMatch(/ranking oficial|puntos|puesto|cálculo/i);
-    expect(html).toContain('clasificaciones');
+    expect(html).not.toContain('competiciones');
+  });
+
+  it('las medallas van con su número y su metal escrito, no sólo con el color', () => {
+    const html = lista([{ ...resumen(), trayectoria: { ultima: null, mejorPuesto: 1, oros: 2, platas: 0, bronces: 1 } }]);
+    expect(html).toMatch(/>2<span class="sr-only"> oros<\/span>/);
+    expect(html).toMatch(/>1<span class="sr-only"> bronce<\/span>/);
+    expect(html).not.toContain('platas');
+  });
+
+  it('«Seguir» sólo aparece si se sabe si la cuenta ya sigue a la persona', () => {
+    expect(lista([{ ...resumen(), seguida: true }])).toContain('data-estado="favorito"');
+    expect(lista([{ ...resumen(), seguida: false }])).toContain('data-estado="sin-guardar"');
+    expect(lista([resumen()])).not.toContain('data-estado');
+  });
+
+  it('«Ver más» añade sin repetir a nadie y sin reordenar lo ya pintado', () => {
+    const a = { id: 'a' };
+    const b = { id: 'b' };
+    const c = { id: 'c' };
+    expect(anadirSinRepetir([a, b], [b, c]).map((x) => x.id)).toEqual(['a', 'b', 'c']);
+    expect(anadirSinRepetir([a], []).map((x) => x.id)).toEqual(['a']);
   });
 
   it('enlaza la página siguiente con cursor y la primera página al continuar', () => {
     const html = lista([resumen()], { siguiente: 'tok-2', cursorActual: 'tok-1' });
     expect(html).toContain('/explorar?q=garcia&amp;cursor=tok-2');
     expect(html).toContain('href="/explorar?q=garcia"');
-    expect(html).not.toContain('No hay más resultados');
-    expect(lista([resumen()])).toContain('No hay más resultados');
+    expect(html).toContain('Ver más');
+    expect(lista([resumen()])).not.toContain('Ver más');
   });
 
   it('error, filtro inválido y no disponible no dicen que no haya coincidencias', () => {

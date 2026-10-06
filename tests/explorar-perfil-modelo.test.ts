@@ -193,12 +193,13 @@ const perfilCompleto = () =>
   );
 
 describe('vistas del perfil', () => {
-  it('la cabecera de un adulto enseña club, armas, año y enlace FIE; la de un menor no', () => {
+  it('la cabecera de un adulto enseña club, armas, edad y enlace FIE; la de un menor no', () => {
     const adulto: FichaConPerfil = { ...fichaBase(), perfil: perfilCompleto() };
     const html = renderToStaticMarkup(React.createElement(CabeceraFicha, { ficha: adulto }));
     expect(html).toContain('Ana Perez');
     expect(html).toContain('Florete');
-    expect(html).toContain('1990');
+    expect(html).toMatch(/Cercle d(&#x27;|')Escrime de Paris/i);
+    expect(html).toMatch(new RegExp(`>${new Date().getFullYear() - 1990}(<!-- -->)? años<`));
     expect(html).toContain('https://fie.org/athletes/4242');
     expect(html).toContain('Cara a cara');
 
@@ -208,14 +209,16 @@ describe('vistas del perfil', () => {
     expect(salida).not.toContain('fie.org/athletes');
     // La única imagen permitida es la bandera del país.
     expect(salida).not.toMatch(/<img(?![^>]*\/banderas\/)/);
-    expect(salida).toContain('No se muestra');
+    expect(salida).not.toContain('1990');
     expect(salida).toContain('Posible menor de edad');
   });
 
   it('las cifras enseñan balance y porcentaje sólo con asaltos, y «sin dato» cuando faltan', () => {
     const html = renderToStaticMarkup(React.createElement(CifrasPerfil, { perfil: perfilCompleto() }));
-    expect(html).toContain('60');
-    expect(html).toMatch(/6\s*–\s*4|6–4/);
+    expect(html).toMatch(/>10</);
+    expect(html).toContain('6 V · 4 D');
+    expect(html).toMatch(/>67<span[^>]*>%/);
+    expect(html).toMatch(/>50<span[^>]*>%/);
     const vacio = renderToStaticMarkup(
       React.createElement(CifrasPerfil, { perfil: construirPerfil(filasVacias(), fichaBase()) }),
     );

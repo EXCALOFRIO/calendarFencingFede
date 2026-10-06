@@ -185,6 +185,7 @@ export function BanderaPais({
   pais,
   tamaño = 'fila',
   conNombre = false,
+  soloBandera = false,
   className,
 }: {
   /** El país tal y como lo guarda la base: ISO de dos letras, o `null`. */
@@ -192,6 +193,11 @@ export function BanderaPais({
   tamaño?: TamañoBandera;
   /** Escribe el nombre del país al lado del código. */
   conNombre?: boolean;
+  /**
+   * Sólo la bandera, sin la pastilla del código, para columnas estrechas. Sin
+   * fichero de bandera se pinta el código como siempre. No afecta a `conNombre`.
+   */
+  soloBandera?: boolean;
   className?: string;
 }) {
   if (!pais?.trim()) return null;
@@ -284,6 +290,15 @@ export function BanderaPais({
 
   if (!conNombre) {
     if (!bandera) return pastilla;
+    if (soloBandera) {
+      // El código se queda para lectores de pantalla y en el rótulo emergente.
+      return (
+        <span title={nombre ?? codigo} suppressHydrationWarning className={cn('inline-flex shrink-0', className)}>
+          {bandera}
+          <span className="sr-only">{codigo}</span>
+        </span>
+      );
+    }
     return (
       <span className={cn('inline-flex items-center gap-1.5', className)}>
         {bandera}

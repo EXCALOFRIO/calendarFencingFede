@@ -20,9 +20,13 @@ import {
   plazoDe,
   sedeDe,
 } from '@/lib/calendario/rotulos';
+import { rangoRealDeEvento } from '@/lib/calendario/bloques';
+import { hoyMadrid } from '@/lib/callups/fechas';
 import { colorDeOrganismo, type ColorOrganismo } from '@/lib/colores';
 import type { EventView } from '@/lib/queries/calendar';
+import type { PruebaPasada } from '@/lib/queries/calendario-pasado-modelo';
 import { cn, organismoDe, titularTorneo } from '@/lib/utils';
+import { PieResultados, Terminada } from './pasado/resultados-pasados';
 
 /**
  * ===========================================================================
@@ -75,6 +79,25 @@ import { cn, organismoDe, titularTorneo } from '@/lib/utils';
 
 export type VarianteTarjeta = 'zonas' | 'apilada';
 
+/**
+ * Lo que una tarjeta necesita saber del pasado: qué día es hoy —para decir
+ * «Terminada»—, los resultados de Explorar de cada torneo y adónde vuelve quien
+ * salga a una edición.
+ */
+export type PasadoDeTarjeta = {
+  hoy: string;
+  resultados: Record<string, PruebaPasada[]>;
+  /** El calendario tal y como se está mirando, para volver desde la edición. */
+  retorno?: string;
+  /** Abre la hoja de resultados cuando hay más de una edición detrás. */
+  onVer: (e: EventView) => void;
+};
+
+/** ¿Ya se tiró? Por el rango real de lo que se está mirando, no por el cartel. */
+export function estaTerminado(evento: EventView, hoy: string): boolean {
+  return rangoRealDeEvento(evento).hasta < hoy;
+}
+
 export function TarjetaBloque({
   bloque,
   variante,
@@ -85,6 +108,7 @@ export function TarjetaBloque({
   mostrarGenero,
   mostrarCategoria,
   onAbrir,
+  pasado,
 }: {
   bloque: Bloque;
   variante: VarianteTarjeta;
@@ -98,9 +122,17 @@ export function TarjetaBloque({
   mostrarGenero: boolean;
   mostrarCategoria: boolean;
   onAbrir: (e: EventView) => void;
+  /** Sin él, la tarjeta sigue diciendo «Terminada», pero no enseña resultados. */
+  pasado?: PasadoDeTarjeta;
 }) {
   const principal = bloque.eventos[0];
-  const color = colorDe(principal);
+  const hoy = pasado?.hoy ?? hoyMadrid();
+  /*
+    El bloque entero se apaga solo cuando ya pasó todo él. Un fin de semana con
+    el sábado jugado y el domingo por jugar sigue siendo «lo de ahora».
+  */
+  const bloqueTerminado = bloque.rango.hasta < hoy;
+  const color = bloqueTerminado ? apagado(colorDe(principal)) : colorDe(principal);
   const capsula = capsulaDeFecha(bloque.rango);
   const ocupa = diasSemanaOcupados(bloque.rango);
   const entreSemana = esEntreSemana(bloque.rango);
@@ -115,6 +147,8 @@ export function TarjetaBloque({
     mostrarGenero,
     mostrarCategoria,
     onAbrir,
+    hoy,
+    pasado,
   };
 
   /*
@@ -168,6 +202,7 @@ export function TarjetaBloque({
             ocupa={ocupa}
             color={color}
             entreSemana={entreSemana}
+            terminado={bloqueTerminado}
           />
           {/* El filete vertical que separa las dos zonas. Tenue a propósito:
               divide, no encierra. */}
@@ -175,7 +210,10 @@ export function TarjetaBloque({
             {multiple ? (
               <CuerpoMultiple bloque={bloque} {...comun} />
             ) : (
-              <CuerpoUnico evento={principal} {...comun} />
+              <>
+                <CuerpoUnico evento={principal} {...comun} />
+                <PieDeEvento evento={principal} pasado={pasado} hoy={hoy} />
+              </>
             )}
           </div>
         </div>
@@ -188,17 +226,22 @@ export function TarjetaBloque({
               ocupa={ocupa}
               color={color}
               entreSemana={entreSemana}
+              terminado={bloqueTerminado}
               {...comun}
             />
           ) : (
-            <ApiladaUnica
-              evento={principal}
-              capsula={capsula}
-              ocupa={ocupa}
-              color={color}
-              entreSemana={entreSemana}
-              {...comun}
-            />
+            <>
+              <ApiladaUnica
+                evento={principal}
+                capsula={capsula}
+                ocupa={ocupa}
+                color={color}
+                entreSemana={entreSemana}
+                terminado={bloqueTerminado}
+                {...comun}
+              />
+              <PieDeEvento evento={principal} pasado={pasado} hoy={hoy} />
+            </>
           )}
         </div>
       )}
@@ -224,6 +267,21 @@ function colorDe(evento: EventView): ColorOrganismo {
 }
 
 /**
+ * EL PASADO, EN GRIS Y SIN VELO.
+ *
+ * Lo terminado tiene que leerse como tal de un vistazo y sin competir con lo
+ * que viene. La salida fácil era `opacity-60` en la tarjeta, y está prohibida
+ * aquí por lo mismo que cualquier alfa (ver la cabecera del fichero): deja
+ * pasar la retícula del lienzo por dentro. Así que se apaga con colores
+ * opacos: las píldoras de los días pasan a gris, la cifra y el nombre a
+ * `muted-foreground`, y el filete y la pastilla del organismo se quedan, que
+ * son los que dicen de quién era el torneo.
+ */
+function apagado(c: ColorOrganismo): ColorOrganismo {
+  return { ...c, superficie: 'bg-muted-foreground', textoSobreSuperficie: 'text-card' };
+}
+
+/**
  * LA CÁPSULA DE FECHA.
  *
  * El rango en grande, el mes en pequeño, los días de la semana debajo y las
@@ -241,15 +299,22 @@ function Capsula({
   ocupa,
   color,
   entreSemana,
+  terminado,
 }: {
   capsula: { dias: string; mes: string; semana: string };
   ocupa: boolean[];
   color: ColorOrganismo;
   entreSemana: boolean;
+  terminado: boolean;
 }) {
   return (
     <div className="flex w-[6.75rem] shrink-0 flex-col items-center justify-center gap-1 px-1.5 py-2">
-      <span className="cifra text-4xl leading-none text-foreground">
+      <span
+        className={cn(
+          'cifra text-4xl leading-none',
+          terminado ? 'text-muted-foreground' : 'text-foreground',
+        )}
+      >
         {capsula.dias}
       </span>
       <span className="text-xs font-medium leading-none text-muted-foreground">
@@ -486,6 +551,48 @@ function Plazo({ evento, clase }: { evento: EventView; clase?: string }) {
   );
 }
 
+/**
+ * «Terminada» en el sitio del plazo. Un torneo ya tirado no tiene plazo que
+ * vigilar, y «Inscripción cerrada» en gris se leía como «llegas tarde» en vez
+ * de como «esto ya pasó».
+ */
+function EstadoDelEvento({
+  evento,
+  hoy,
+  clase,
+}: {
+  evento: EventView;
+  hoy: string;
+  clase?: string;
+}) {
+  if (estaTerminado(evento, hoy)) return <Terminada clase={clase} />;
+  return <Plazo evento={evento} clase={clase} />;
+}
+
+/** Quién ganó y «Resultados», debajo del torneo ya tirado. */
+function PieDeEvento({
+  evento,
+  pasado,
+  hoy,
+  clase,
+}: {
+  evento: EventView;
+  pasado?: PasadoDeTarjeta;
+  hoy: string;
+  clase?: string;
+}) {
+  if (!pasado || !estaTerminado(evento, hoy)) return null;
+  return (
+    <PieResultados
+      evento={evento}
+      pruebas={pasado.resultados[evento.id]}
+      retorno={pasado.retorno}
+      onVer={pasado.onVer}
+      clase={clase}
+    />
+  );
+}
+
 function estaInscrito(evento: EventView, inscripciones: Record<string, string>) {
   return evento.competitions.some((c) => inscripciones[c.id]);
 }
@@ -496,6 +603,8 @@ type Comun = {
   mostrarGenero: boolean;
   mostrarCategoria: boolean;
   onAbrir: (e: EventView) => void;
+  hoy: string;
+  pasado?: PasadoDeTarjeta;
 };
 
 /**
@@ -511,19 +620,27 @@ function CuerpoUnico({
   mostrarGenero,
   mostrarCategoria,
   onAbrir,
+  hoy,
 }: { evento: EventView } & Comun) {
   const inscrito = estaInscrito(evento, inscripciones);
+  const terminado = estaTerminado(evento, hoy);
   return (
     <Button
       variant="ghost"
       type="button"
       data-barra="torneo"
+      data-terminado={terminado || undefined}
       onClick={() => onAbrir(evento)}
       className="flex h-auto w-full min-w-0 cursor-pointer flex-col items-stretch gap-2 rounded-none px-3 py-3 text-left whitespace-normal transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-      aria-label={`${titularTorneo(evento.name)}. Abrir la ficha.`}
+      aria-label={`${titularTorneo(evento.name)}${terminado ? ', terminada' : ''}. Abrir la ficha.`}
     >
       <span className="flex w-full min-w-0 items-start gap-2">
-        <span className="min-w-0 flex-1 text-sm font-semibold leading-snug">
+        <span
+          className={cn(
+            'min-w-0 flex-1 text-sm font-semibold leading-snug',
+            terminado && 'text-muted-foreground',
+          )}
+        >
           {titularTorneo(evento.name)}
         </span>
         {inscrito ? <Inscrito clase="mt-px" /> : null}
@@ -539,7 +656,7 @@ function CuerpoUnico({
           mostrarGenero={mostrarGenero}
           mostrarCategoria={mostrarCategoria}
         />
-        <Plazo evento={evento} />
+        <EstadoDelEvento evento={evento} hoy={hoy} />
       </span>
     </Button>
   );
@@ -608,6 +725,8 @@ function CuerpoMultiple({
   mostrarGenero,
   mostrarCategoria,
   onAbrir,
+  hoy,
+  pasado,
 }: { bloque: Bloque } & Comun) {
   const [todos, setTodos] = React.useState(false);
   const visibles = todos ? bloque.eventos : bloque.eventos.slice(0, TOPE);
@@ -620,16 +739,19 @@ function CuerpoMultiple({
       </span>
 
       {visibles.map((evento, i) => (
-        <FilaEvento
-          key={evento.id}
-          evento={evento}
-          conFilete={i > 0}
-          inscrito={estaInscrito(evento, inscripciones)}
-          mostrarArma={mostrarArma}
-          mostrarGenero={mostrarGenero}
-          mostrarCategoria={mostrarCategoria}
-          onAbrir={onAbrir}
-        />
+        <React.Fragment key={evento.id}>
+          <FilaEvento
+            evento={evento}
+            conFilete={i > 0}
+            inscrito={estaInscrito(evento, inscripciones)}
+            mostrarArma={mostrarArma}
+            mostrarGenero={mostrarGenero}
+            mostrarCategoria={mostrarCategoria}
+            onAbrir={onAbrir}
+            hoy={hoy}
+          />
+          <PieDeEvento evento={evento} pasado={pasado} hoy={hoy} clase="border-t-0 pl-1" />
+        </React.Fragment>
       ))}
 
       {ocultos > 0 ? (
@@ -661,6 +783,7 @@ function FilaEvento({
   mostrarGenero,
   mostrarCategoria,
   onAbrir,
+  hoy,
 }: {
   evento: EventView;
   conFilete: boolean;
@@ -669,21 +792,29 @@ function FilaEvento({
   mostrarGenero: boolean;
   mostrarCategoria: boolean;
   onAbrir: (e: EventView) => void;
+  hoy: string;
 }) {
+  const terminado = estaTerminado(evento, hoy);
   return (
     <Button
       variant="ghost"
       type="button"
       data-barra="torneo"
+      data-terminado={terminado || undefined}
       onClick={() => onAbrir(evento)}
       className={cn(
         'flex h-auto w-full min-w-0 cursor-pointer flex-col items-stretch gap-1.5 rounded-none px-1 py-2 text-left whitespace-normal transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
         conFilete && 'border-t border-filete',
       )}
-      aria-label={`${titularTorneo(evento.name)}. Abrir la ficha.`}
+      aria-label={`${titularTorneo(evento.name)}${terminado ? ', terminada' : ''}. Abrir la ficha.`}
     >
       <span className="flex w-full min-w-0 items-start gap-2">
-        <span className="min-w-0 flex-1 text-sm font-semibold leading-snug">
+        <span
+          className={cn(
+            'min-w-0 flex-1 text-sm font-semibold leading-snug',
+            terminado && 'text-muted-foreground',
+          )}
+        >
           {titularTorneo(evento.name)}
         </span>
         {inscrito ? <Inscrito clase="mt-px" /> : null}
@@ -697,7 +828,7 @@ function FilaEvento({
           mostrarGenero={mostrarGenero}
           mostrarCategoria={mostrarCategoria}
         />
-        <Plazo evento={evento} />
+        <EstadoDelEvento evento={evento} hoy={hoy} />
       </span>
     </Button>
   );
@@ -726,16 +857,23 @@ function FilaEvento({
 function FilaFecha({
   capsula,
   clase,
+  terminado = false,
   children,
 }: {
   capsula: { dias: string; mes: string; semana: string };
   clase?: string;
+  terminado?: boolean;
   children?: React.ReactNode;
 }) {
   return (
     <span className={cn('flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-2', clase)}>
       <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-1">
-        <span className="cifra text-4xl leading-none text-foreground">
+        <span
+          className={cn(
+            'cifra text-4xl leading-none',
+            terminado ? 'text-muted-foreground' : 'text-foreground',
+          )}
+        >
           {capsula.dias}
         </span>
         <span className="text-xs font-medium leading-none text-muted-foreground">
@@ -761,30 +899,46 @@ function ApiladaUnica({
   mostrarGenero,
   mostrarCategoria,
   onAbrir,
+  hoy,
+  terminado: bloqueTerminado,
 }: {
   evento: EventView;
   capsula: { dias: string; mes: string; semana: string };
   ocupa: boolean[];
   color: ColorOrganismo;
   entreSemana: boolean;
+  terminado: boolean;
 } & Comun) {
   const inscrito = estaInscrito(evento, inscripciones);
+  const terminado = estaTerminado(evento, hoy);
   return (
     <Button
       variant="ghost"
       type="button"
       data-agenda="tarjeta"
       data-barra="torneo"
+      data-terminado={terminado || undefined}
       onClick={() => onAbrir(evento)}
       className="flex h-auto w-full min-w-0 cursor-pointer flex-col items-stretch gap-2 rounded-none px-3 py-3 text-left whitespace-normal transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-      aria-label={`${titularTorneo(evento.name)}. Abrir la ficha.`}
+      aria-label={`${titularTorneo(evento.name)}${terminado ? ', terminada' : ''}. Abrir la ficha.`}
     >
-      <FilaFecha capsula={capsula}>
-        {inscrito ? <Inscrito /> : <Plazo evento={evento} />}
+      <FilaFecha capsula={capsula} terminado={bloqueTerminado}>
+        {terminado ? (
+          <Terminada />
+        ) : inscrito ? (
+          <Inscrito />
+        ) : (
+          <Plazo evento={evento} />
+        )}
         {entreSemana ? <EntreSemana /> : null}
       </FilaFecha>
 
-      <span className="w-full min-w-0 text-sm font-semibold leading-snug">
+      <span
+        className={cn(
+          'w-full min-w-0 text-sm font-semibold leading-snug',
+          terminado && 'text-muted-foreground',
+        )}
+      >
         {titularTorneo(evento.name)}
       </span>
 
@@ -829,12 +983,16 @@ function ApiladaMultiple({
   mostrarGenero,
   mostrarCategoria,
   onAbrir,
+  hoy,
+  pasado,
+  terminado: bloqueTerminado,
 }: {
   bloque: Bloque;
   capsula: { dias: string; mes: string; semana: string };
   ocupa: boolean[];
   color: ColorOrganismo;
   entreSemana: boolean;
+  terminado: boolean;
 } & Comun) {
   const [todos, setTodos] = React.useState(false);
   const visibles = todos ? bloque.eventos : bloque.eventos.slice(0, TOPE);
@@ -842,7 +1000,7 @@ function ApiladaMultiple({
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5 px-2.5 py-2">
-      <FilaFecha capsula={capsula}>
+      <FilaFecha capsula={capsula} terminado={bloqueTerminado}>
         {entreSemana ? <EntreSemana /> : null}
         <PildorasSemana ocupa={ocupa} color={color} />
       </FilaFecha>
@@ -851,39 +1009,50 @@ function ApiladaMultiple({
         <span className="cifra text-2xl text-foreground">{bloque.eventos.length}</span> torneos coinciden
       </span>
 
-      {visibles.map((evento, k) => (
-        <Button
-          variant="ghost"
-          key={evento.id}
-          type="button"
-          data-agenda="tarjeta"
-          data-barra="torneo"
-          onClick={() => onAbrir(evento)}
-          className={cn(
-            'flex h-auto w-full min-w-0 cursor-pointer flex-col items-stretch gap-2 rounded-none px-1 py-2 text-left whitespace-normal transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-            k > 0 && 'border-t border-filete',
-          )}
-          aria-label={`${titularTorneo(evento.name)}. Abrir la ficha.`}
-        >
-          <span className="flex w-full min-w-0 items-start gap-2">
-            <span className="min-w-0 flex-1 text-sm font-semibold leading-snug">
-              {titularTorneo(evento.name)}
-            </span>
-            {estaInscrito(evento, inscripciones) ? <Inscrito clase="mt-px" /> : null}
-          </span>
-          <Sede evento={evento} />
-          <span className="flex w-full min-w-0 flex-wrap items-center gap-1">
-            <PastillaCircuito evento={evento} />
-            <PastillasPrueba
-              evento={evento}
-              mostrarArma={mostrarArma}
-              mostrarGenero={mostrarGenero}
-              mostrarCategoria={mostrarCategoria}
-            />
-            <Plazo evento={evento} />
-          </span>
-        </Button>
-      ))}
+      {visibles.map((evento, k) => {
+        const terminado = estaTerminado(evento, hoy);
+        return (
+          <React.Fragment key={evento.id}>
+            <Button
+              variant="ghost"
+              type="button"
+              data-agenda="tarjeta"
+              data-barra="torneo"
+              data-terminado={terminado || undefined}
+              onClick={() => onAbrir(evento)}
+              className={cn(
+                'flex h-auto w-full min-w-0 cursor-pointer flex-col items-stretch gap-2 rounded-none px-1 py-2 text-left whitespace-normal transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+                k > 0 && 'border-t border-filete',
+              )}
+              aria-label={`${titularTorneo(evento.name)}${terminado ? ', terminada' : ''}. Abrir la ficha.`}
+            >
+              <span className="flex w-full min-w-0 items-start gap-2">
+                <span
+                  className={cn(
+                    'min-w-0 flex-1 text-sm font-semibold leading-snug',
+                    terminado && 'text-muted-foreground',
+                  )}
+                >
+                  {titularTorneo(evento.name)}
+                </span>
+                {estaInscrito(evento, inscripciones) ? <Inscrito clase="mt-px" /> : null}
+              </span>
+              <Sede evento={evento} />
+              <span className="flex w-full min-w-0 flex-wrap items-center gap-1">
+                <PastillaCircuito evento={evento} />
+                <PastillasPrueba
+                  evento={evento}
+                  mostrarArma={mostrarArma}
+                  mostrarGenero={mostrarGenero}
+                  mostrarCategoria={mostrarCategoria}
+                />
+                <EstadoDelEvento evento={evento} hoy={hoy} />
+              </span>
+            </Button>
+            <PieDeEvento evento={evento} pasado={pasado} hoy={hoy} clase="border-t-0 pl-1" />
+          </React.Fragment>
+        );
+      })}
 
       {ocultos > 0 ? (
         <Button

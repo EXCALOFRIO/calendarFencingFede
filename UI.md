@@ -33,6 +33,38 @@ La pantalla principal **es el calendario**. Todo lo demás es secundario.
 7. **Sin `console.log` ni datos personales en logs.**
 8. Cero `any`. `npx tsc --noEmit` tiene que quedar en 0 errores.
 
+## 2 bis. Aplicación de móvil con poco texto
+
+Petición literal: *«hay mucho texto en general por toda la interfaz, para una
+interfaz móvil es horrible; mira Instagram, no te pone de dónde son las
+fuentes todo el rato»*. Es una aplicación para el móvil y manda sobre lo
+demás:
+
+1. **Sin frases explicativas.** Nada de «Sólo cuentan resultados
+   importados», «La fuente se leyó entera», «No significa que…», «Qué cubre
+   esta ficha», «Qué representa este ranking» ni bloques de cobertura. Los
+   datos hablan solos.
+2. **Sin procedencia a la vista.** Ni «Foto: FIE», ni «Fuente: Skermo», ni
+   «Abrir en la fuente: …» en cada fila. Como mucho, un icono pequeño de
+   enlace externo donde de verdad sirva (resultados oficiales de una prueba).
+3. **Lo que no se publica no se pinta.** Un campo sin dato desaparece; no se
+   escribe «No publicado» (esto sustituye a la regla 3 de arriba en
+   pantalla: no se inventa nada, pero tampoco se rellena con avisos).
+4. **Rótulos de una a tres palabras.** Títulos de sección cortos
+   («Rivales», «Historial»), sin subtítulo que los explique.
+5. **Visual antes que texto:** fotos o iniciales, banderas, colores de
+   medalla (`presentacion.ts`), pastillas de tipo, barras y puntos V/D.
+   Cifra grande + rótulo diminuto.
+6. **Botones compactos.** Altura de control normal (`size="sm"` o `default`
+   de shadcn), icono + palabra, `rounded-full` en acciones secundarias. Nada
+   de botones gordos a todo el ancho salvo la acción principal de la
+   pantalla, y el objetivo táctil de 44 px se consigue con el área, no con
+   el tamaño visual.
+7. **Sin carruseles con barra de scroll horizontal.** Rejillas que envuelven
+   o listas verticales; si hay más, «Ver más».
+8. **Filas de una línea** con `truncate`/`min-w-0`; la segunda línea, si la
+   hay, pequeña y apagada.
+
 ## 3. Tokens (definidos en `src/app/globals.css`, no se inventan otros)
 
 | Token | Para qué |

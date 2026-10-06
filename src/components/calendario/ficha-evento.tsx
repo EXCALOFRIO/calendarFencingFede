@@ -11,18 +11,6 @@ import {
 import * as React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from '@/components/ui/empty';
 import {
   Item,
   ItemActions,
@@ -39,19 +27,30 @@ import type {
   DatoExtraidoView,
   EventView,
 } from '@/lib/queries/calendar';
-import { mapsLinks, timezoneInfo } from '@/lib/travel';
-import { BandaResultados } from './banda-resultados';
+import { mapsLinks } from '@/lib/travel';
+
 import { BarraPlazos } from './barra-plazos';
-import { AccesoAlPabellon, HorariosTorneo } from './horarios-torneo';
+import { AccesoAlPabellon, HorariosTorneo, horariosDelTorneo } from './horarios-torneo';
 import {
   CitaConvocatoria,
   MarcaConvocatoria,
-  contradiccion,
   enlacesDeConvocatoria,
-  huecoDe,
   nombreDeEnlace,
   plazosDeConvocatoria,
 } from './datos-convocatoria';
+import {
+  OtrosDatos,
+  ParDato,
+  Tarjeta,
+  TarjetaInscripcion,
+  TarjetaOrganiza,
+  organizaDe,
+  otrosDatosDe,
+  sedeDe,
+} from './ficha/datos-ficha';
+import { RelojSede } from './ficha/horas';
+import { ResultadosTorneo } from './ficha/resultados-torneo';
+import { torneoTerminado } from './ficha/terminado';
 import {
   CATEGORY_LABEL,
   CATEGORY_SHORT,
@@ -62,7 +61,6 @@ import {
   WEAPON_SHORT,
   cn,
   formatDateEs,
-  formatEur,
   titular,
   titularDocumento,
 } from '@/lib/utils';
@@ -88,17 +86,21 @@ import type { TiradorOpcion } from './vista';
  * Quedan **cuatro bandas**, y cada fusión responde a una pregunta entera en
  * vez de a un campo:
  *
- *   1. **Plazo de inscripción** — la barra de tramos, la cuota y los importes
- *      del papel. Antes: «Plazo» + la cuota perdida dentro de «La prueba».
- *      Cuánto queda y cuánto cuesta son la misma decisión.
- *   2. **Dónde y cuándo** — pabellón, dirección, mapa, diferencia horaria y la
- *      línea del día con las horas. Antes: «Cómo llegar» + «Horario». Las dos
- *      son lo mismo: dónde tengo que estar y a qué hora.
+ *   1. **Inscripción** — la barra de tramos y, debajo, las condiciones: cuotas,
+ *      cupos, edad mínima, forma de pago y requisitos. Antes: «Plazo» + la
+ *      cuota perdida dentro de «La prueba». Cuánto queda y cuánto cuesta son
+ *      la misma decisión.
+ *   2. **Dónde y cuándo** — la sede con su mapa, la hora de allí y la tuya, y
+ *      el horario día a día. Antes: «Cómo llegar» + «Horario». Las dos son lo
+ *      mismo: dónde tengo que estar y a qué hora.
  *   3. **¿Estás dentro?** — la lista oficial de inscritos. Antes «Quién va»,
  *      con un rótulo que no era la pregunta que se viene a hacer.
- *   4. **Convocatoria y fuentes** — documentos, retransmisión, enlaces del
- *      PDF y procedencia. Antes: «Documentos» + «En directo» + «De dónde
- *      sale», tres bandas de una línea cada una.
+ *   4. **Convocatoria y fuentes** — documentos, retransmisión, quién organiza,
+ *      enlaces del PDF y procedencia. Antes: «Documentos» + «En directo» +
+ *      «De dónde sale», tres bandas de una línea cada una.
+ *
+ * Cuando el torneo ya se ha tirado, la inscripción no le importa a nadie y
+ * arriba van los **Resultados**, con el podio de cada prueba.
  *
  * Y desaparecieron dos apartados sin perder información: «Pruebas» es ahora el
  * selector de arriba, que es un control y no una sección; y «La prueba»
@@ -242,43 +244,6 @@ function Banda({
   );
 }
 
-/**
- * Un par rótulo/valor de la ficha: rótulo apagado y pequeño encima, valor en
- * blanco y grande debajo. Nunca al revés — es la jerarquía de cualquier ficha
- * de deportista que funcione.
- *
- * Cuando el valor viene de un PDF, `dato` lo convierte en tocable y sale la
- * frase literal de la que se sacó.
- */
-function Par({
-  rotulo,
-  valor,
-  dato,
-  className,
-}: {
-  rotulo: string;
-  valor: React.ReactNode;
-  dato?: DatoExtraidoView | null;
-  className?: string;
-}) {
-  return (
-    <CitaConvocatoria dato={dato ?? null} className={cn('py-0.5', className)}>
-      <div className="flex min-w-0 flex-col">
-        <span className="text-sm text-muted-foreground sm:text-xs">{rotulo}</span>
-        <span
-          className={cn(
-            'text-base font-medium sm:text-sm',
-            dato && dato.estado !== 'aprobado' && 'text-muted-foreground',
-          )}
-        >
-          {dato ? <MarcaConvocatoria className="mr-1.5 opacity-70" /> : null}
-          {valor}
-        </span>
-      </div>
-    </CitaConvocatoria>
-  );
-}
-
 const TONO = {
   verde: { texto: 'text-ok', palabra: 'a tiempo' },
   ambar: { texto: 'text-warn', palabra: 'atención' },
@@ -345,6 +310,7 @@ export function FichaEvento({
   }, [suya, evento.competitions]);
 
   const prueba = evento.competitions.find((c) => c.id === elegida) ?? null;
+  const terminado = torneoTerminado(evento);
 
   return (
     <div className="flex flex-col gap-4 px-4 pt-2 pb-10">
@@ -442,10 +408,24 @@ export function FichaEvento({
         </ToggleGroup>
       ) : null}
 
+      {/*
+        Solo en un torneo ya tirado, y la banda se pinta sola o no se pinta:
+        sin podio ni enlace oficial no existe (ver `ficha/resultados-torneo.tsx`).
+        Antes iba al final para todos los torneos con «sin edición vinculada»,
+        que era una frase en cada ficha y nunca un resultado.
+      */}
+      {terminado ? (
+        <ResultadosTorneo
+          eventoId={evento.id}
+          retorno={retornoCalendario}
+          pruebaElegida={prueba?.id ?? null}
+        />
+      ) : null}
+
       {prueba ? (
         <>
-          <BandaPlazo evento={evento} prueba={prueba} />
-          <BandaDondeYCuando evento={evento} prueba={prueba} />
+          {terminado ? null : <BandaPlazo evento={evento} prueba={prueba} />}
+          <BandaDondeYCuando evento={evento} prueba={prueba} principal={!terminado} />
           <BandaEstasDentro
             evento={evento}
             prueba={prueba}
@@ -456,23 +436,23 @@ export function FichaEvento({
       ) : null}
 
       <BandaConvocatoria evento={evento} prueba={prueba} />
-
-      <BandaResultados eventoId={evento.id} retorno={retornoCalendario} />
     </div>
   );
 }
+
 
 // ---------------------------------------------------------------------------
 // 1 · El plazo, que es lo que se viene a mirar
 // ---------------------------------------------------------------------------
 
 /**
- * Cuánto queda y cuánto cuesta, juntos.
+ * Cuánto queda, cuánto cuesta y qué piden, juntos.
  *
  * La cuota vivía en «La prueba», cuatro bandas más abajo, con la misma letra
  * que el formato y el género. Y es la otra mitad de la pregunta del plazo: si
  * me paso de hoy, ¿cuánto me cuesta? Con `+15 €` dibujado en la barra y la
- * cuota base fuera de la pantalla no se podía sumar.
+ * cuota base fuera de la pantalla no se podía sumar. Por eso la banda se llama
+ * «Inscripción» y no «Plazo»: lleva el plazo y las condiciones.
  */
 function BandaPlazo({
   evento,
@@ -501,7 +481,7 @@ function BandaPlazo({
 
   return (
     <Banda
-      titulo="Plazo de inscripción"
+      titulo="Inscripción"
       cifra={hayCuenta ? dias : undefined}
       rotulo={
         hayCuenta ? `${dias === 1 ? 'día' : 'días'}, ${tono.palabra}` : undefined
@@ -521,14 +501,12 @@ function BandaPlazo({
         conEstado={!hayCuenta}
       />
 
-      <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="text-sm text-muted-foreground">Cuota de inscripción</span>
-        {prueba.feeEur !== null ? (
-          <span className="cifra text-3xl">{formatEur(prueba.feeEur)}</span>
-        ) : (
-          <span className="text-sm text-muted-foreground">no publicada</span>
-        )}
-      </p>
+      {/*
+        Cuotas, cupos, edad mínima, forma de pago y requisitos, juntos: es lo
+        que hay que saber antes de apuntarse, y venía repartido entre esta
+        banda y una lista de frases del PDF al final de la ficha.
+      */}
+      <TarjetaInscripcion evento={evento} prueba={prueba} />
 
       {/*
         Un plazo que aparece en la convocatoria y no en el calendario. No entra
@@ -537,14 +515,15 @@ function BandaPlazo({
         alojamiento va antes que todo lo demás.
       */}
       {plazosDelPapel.map((d) => (
-        <CitaConvocatoria key={d.id} dato={d}>
-          <p className="text-sm text-muted-foreground">
-            <MarcaConvocatoria className="mr-1.5 opacity-70" />
-            La convocatoria menciona otra fecha límite:{' '}
-            <span className="tabular-nums">{fechaSuelta(d.valor)}</span>
-            {conceptoDe(d) ? ` (${conceptoDe(d)})` : ''}.
-          </p>
-        </CitaConvocatoria>
+        <ParDato
+          key={d.id}
+          linea={{
+            clave: d.id,
+            rotulo: conceptoDe(d) ? `Plazo · ${conceptoDe(d)}` : 'Otro plazo',
+            valor: fechaSuelta(d.valor),
+            dato: d,
+          }}
+        />
       ))}
     </Banda>
   );
@@ -585,41 +564,14 @@ function fechaSuelta(valor: string): string {
 function BandaDondeYCuando({
   evento,
   prueba,
+  principal,
 }: {
   evento: EventView;
   prueba: CompetitionView;
+  /** ¿«Cómo llegar» es la acción principal de la ficha? Solo si está por venir. */
+  principal: boolean;
 }) {
-  /**
-   * ¿Hay sede de verdad, o el campo «sede» repite la ciudad?
-   *
-   * Varias fuentes rellenan la sede con el nombre de la ciudad cuando todavía
-   * no se sabe el pabellón. Si se toma al pie de la letra, la ficha pone «San
-   * Salvador» dos veces seguidas y el botón promete llevarte a un pabellón que
-   * no existe.
-   */
-  const normaliza = (v: string) =>
-    v
-      .normalize('NFD')
-      .replace(/\p{Diacritic}/gu, '')
-      .trim()
-      .toLowerCase();
-  const sedePublicada =
-    evento.venue && (!evento.city || normaliza(evento.venue) !== normaliza(evento.city))
-      ? evento.venue
-      : null;
-
-  const sedeLeida = sedePublicada
-    ? null
-    : huecoDe(evento.datosExtraidos, 'venue', evento.city);
-  const sede = sedePublicada ?? sedeLeida?.valor ?? null;
-
-  const direccionLeida = evento.venueAddress
-    ? null
-    : huecoDe(evento.datosExtraidos, 'venue_address', evento.city);
-  const direccion = evento.venueAddress ?? direccionLeida?.valor ?? null;
-
-  // Cuando la fuente ya publica la sede pero el papel dice otra, se dice.
-  const otraSede = contradiccion(evento.datosExtraidos, 'venue', sedePublicada);
+  const { sede, sedeLeida, direccion, direccionLeida, otraSede, extras } = sedeDe(evento);
 
   /**
    * Los mapas se calculan con la sede QUE SE ESTÁ ENSEÑANDO, incluida la que
@@ -634,175 +586,125 @@ function BandaDondeYCuando({
     geoLat: evento.geoLat,
     geoLon: evento.geoLon,
   });
-  const huso = timezoneInfo(evento.timezone, evento.startDate, evento.endDate);
 
+  const haySede = Boolean(sede || direccion || mapas || evento.officialSite);
+  // Sin sede, sin horario y sin huso no queda nada que enseñar: ni el titular.
+  if (!haySede && !evento.timezone && horariosDelTorneo(evento).dias.length === 0) return null;
 
   return (
     <Banda titulo="Dónde y cuándo">
-      {/*
-        El pabellón. Valor grande, rótulo pequeño encima, y la ciudad con su
-        código de país al lado: cuando exista `src/components/bandera.tsx` (es
-        de otro agente) el código se cambia por la bandera y aquí no hay que
-        tocar nada más.
-      */}
-      {sede ? (
-        <CitaConvocatoria dato={sedeLeida}>
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="text-sm text-muted-foreground sm:text-xs">
-              Pabellón
-            </span>
-            <span
-              className={cn(
-                'text-lg leading-tight font-medium sm:text-base',
-                sedeLeida && sedeLeida.estado !== 'aprobado'
-                  ? 'text-muted-foreground'
-                  : '',
-              )}
-            >
-              {sedeLeida ? (
-                <MarcaConvocatoria className="mr-1.5 opacity-70" />
-              ) : null}
-              {titular(sede)}
-            </span>
+      {haySede ? (
+      <Tarjeta titulo="Sede">
+        {sede ? (
+          <CitaConvocatoria dato={sedeLeida}>
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <span className="text-sm text-muted-foreground sm:text-xs">Pabellón</span>
+              <span className="text-lg leading-tight font-medium sm:text-base">
+                {titular(sede)}
+                {sedeLeida ? (
+                  <MarcaConvocatoria className="ml-1.5 size-3.5 text-muted-foreground" />
+                ) : null}
+              </span>
+            </div>
+          </CitaConvocatoria>
+        ) : null}
+
+        {/*
+          Dónde está eso, con la bandera delante: el patrón «bandera + ciudad,
+          país» de la ficha de torneo de la FIE. Solo aparece cuando hay
+          pabellón o dirección; sin eso sería repetir la ciudad que la
+          cabecera ya escribe.
+
+          `titular()` también en la dirección: las convocatorias la escriben en
+          mayúsculas («CARRER DE DANIEL BALACIART S/N») y en pantalla eso se
+          lee como un grito, no como una calle.
+        */}
+        {sede || direccion ? (
+          <CitaConvocatoria dato={direccionLeida}>
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+              <BanderaPais pais={evento.country} tamaño="ficha" />
+              <span className="min-w-0 break-words">
+                {direccion ? titular(direccion) : evento.city ? titular(evento.city) : null}
+                {direccionLeida ? <MarcaConvocatoria className="ml-1.5" /> : null}
+              </span>
+            </p>
+          </CitaConvocatoria>
+        ) : null}
+
+        {/*
+          Si el PDF nombra otra sede, manda la publicada; la otra queda como
+          un dato más, sin frase que explique de dónde sale.
+        */}
+        {otraSede ? (
+          <ParDato
+            linea={{ clave: otraSede.id, rotulo: 'Otra sede', valor: titular(otraSede.valor), dato: otraSede }}
+          />
+        ) : null}
+
+        {/*
+          POR DÓNDE SE ENTRA, que no es la dirección del recinto. Petición
+          literal: *«si sabemos ya por dónde es el acceso, ponlo directo»*. En
+          Lima el pabellón es «VELODROMO - CAR VIDENA (GATE 7)» y la entrada
+          está en otra calle.
+        */}
+        <AccesoAlPabellon evento={evento} direccion={direccion} />
+
+        {extras.length > 0 ? (
+          <div className="grid grid-cols-2 items-start gap-x-4 gap-y-2">
+            {extras.map((l) => (
+              <ParDato key={l.clave} linea={l} />
+            ))}
           </div>
-        </CitaConvocatoria>
-      ) : (
-        /*
-          Sin pabellón NO se rellena el hueco. Y se dice quién no lo publica:
-          «todavía no está publicada» en una Copa del Mundo hace pensar que
-          falla la aplicación, cuando lo que pasa es que la FIE no lo publica
-          nunca.
-        */
-        <p className="text-sm text-muted-foreground">
-          {evento.scope === 'INTERNACIONAL'
-            ? 'La organización internacional no publica el pabellón.'
-            : 'La sede todavía no está publicada.'}
-        </p>
-      )}
+        ) : null}
+
+        {/*
+          La acción principal de la ficha, y la única con el color de acento y
+          a todo el ancho en el móvil, mientras el torneo está por venir. Una
+          vez tirado, la principal es ver los resultados y el mapa pasa a ser
+          un botón compacto más. Sin pabellón el botón dice «Mapa» y no «Cómo
+          llegar»: llevar al centro de una ciudad extranjera prometiendo el
+          pabellón es peor que no tener botón.
+        */}
+        {mapas || evento.officialSite ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {mapas ? (
+              <Button
+                size={principal ? 'default' : 'sm'}
+                variant={principal ? 'default' : 'outline'}
+                className={cn(principal ? 'w-full sm:w-fit' : 'rounded-full')}
+                asChild
+              >
+                <a href={mapas.google} target="_blank" rel="noreferrer">
+                  <Navigation />
+                  {sede ? 'Cómo llegar' : 'Mapa'}
+                </a>
+              </Button>
+            ) : null}
+            {evento.officialSite ? (
+              <Button variant="outline" size="sm" className="rounded-full" asChild>
+                <a href={evento.officialSite} target="_blank" rel="noreferrer">
+                  <ExternalLink />
+                  Web
+                </a>
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </Tarjeta>
+      ) : null}
 
       {/*
-        Dónde está eso, con la bandera delante.
-
-        Es el patrón de la ficha de torneo de la FIE —«bandera + ciudad,
-        país»— y lo pidió el usuario con esas palabras. La bandera es de otro
-        agente (`src/components/bandera.tsx`) y **no es un emoji**: en Windows
-        los indicadores regionales se pintan como dos letras sueltas, así que
-        es el código de tres de la FIE en pastilla, que se lee igual en las
-        tres plataformas.
-
-        Esta línea solo aparece cuando hay pabellón o dirección, o sea cuando
-        de verdad es «la dirección de la sede». Sin eso sería repetir la
-        ciudad que la cabecera ya escribe.
+        Qué hora es allí y qué hora es donde estás, ya convertida. Sustituye a
+        «7 horas más que en España (allí van adelantados)», que obligaba a
+        hacer la cuenta y daba por hecho que quien mira está en España. Ver
+        `ficha/horas.tsx`.
       */}
-      {sede || direccion ? (
-        <CitaConvocatoria dato={direccionLeida}>
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-            <BanderaPais pais={evento.country} tamaño="ficha" />
-            <span className="min-w-0">
-              {evento.city ? titular(evento.city) : null}
-              {/*
-                `titular()` también en la dirección: las convocatorias la
-                escriben en mayúsculas («CARRER DE DANIEL BALACIART S/N») y en
-                pantalla eso se lee como un grito, no como una calle.
-              */}
-              {direccion ? (
-                <>
-                  {evento.city ? ' · ' : null}
-                  {direccionLeida ? (
-                    <MarcaConvocatoria className="mr-1 opacity-70" />
-                  ) : null}
-                  {titular(direccion)}
-                </>
-              ) : null}
-            </span>
-          </p>
-        </CitaConvocatoria>
-      ) : null}
-
-      {otraSede ? (
-        <CitaConvocatoria dato={otraSede}>
-          <p className="text-sm text-muted-foreground">
-            <MarcaConvocatoria className="mr-1.5 opacity-70" />
-            La convocatoria dice «{otraSede.valor}». Manda lo que publica la
-            fuente.
-          </p>
-        </CitaConvocatoria>
-      ) : null}
+      <RelojSede evento={evento} />
 
       {/*
-        POR DÓNDE SE ENTRA, que no es la dirección del recinto.
-
-        Se estaba leyendo del PDF y se quedaba en la lista de frases del final,
-        plegada. Petición literal: *«si sabemos ya por dónde es el acceso,
-        ponlo directo»*. Y no es un adorno: en Lima el pabellón es «VELODROMO -
-        CAR VIDENA (GATE 7)» y la entrada está en otra calle.
-      */}
-      <AccesoAlPabellon evento={evento} />
-
-      {/*
-        La acción principal de la ficha, y la única con el color de acento.
-        Cuando no hay pabellón el botón lleva a la ciudad y lo dice en su
-        propio texto: un botón que promete el pabellón y abre el centro de una
-        ciudad extranjera es peor que no tener botón.
-      */}
-      {mapas || evento.officialSite ? (
-        <ButtonGroup className="w-full max-w-md">
-          {mapas ? (
-            <Button className="flex-1" asChild>
-              <a href={mapas.google} target="_blank" rel="noreferrer">
-                <Navigation />
-                {sede ? 'Cómo llegar' : 'Abrir la ciudad en el mapa'}
-              </a>
-            </Button>
-          ) : null}
-          {evento.officialSite ? (
-            <Button variant="outline" asChild>
-              <a href={evento.officialSite} target="_blank" rel="noreferrer">
-                Web del torneo
-                <ExternalLink />
-              </a>
-            </Button>
-          ) : null}
-        </ButtonGroup>
-      ) : null}
-
-      {huso && (huso.diffHours !== 0 || huso.dstChangeDuringTrip) ? (
-        <p className="text-sm text-muted-foreground">
-          {huso.label}. Allí son las{' '}
-          {/*
-            La hora de allí es un reloj, y un reloj rompe la hidratación: el
-            servidor pinta «00:48», el navegador hidrata un segundo después y
-            puede leer «00:49». React lo cazaba como error #418 —«el texto del
-            servidor no coincide»— en producción, y al no coincidir **rehace
-            ese trozo del árbol ya pintado**, que es de donde salen saltos de
-            maquetación tardíos.
-
-            `suppressHydrationWarning` es la salida que React documenta justo
-            para marcas de tiempo: se queda con la del servidor y no rehace
-            nada. Que el minuto pueda ir un segundo atrasado da igual; lo que
-            se quiere saber es si allí es de noche.
-          */}
-          <span
-            suppressHydrationWarning
-            className="tabular-nums text-foreground"
-          >
-            {huso.localTimeNow}
-          </span>
-          .
-          {huso.dstNote ? (
-            <span className="mt-1 block text-warn">{huso.dstNote}</span>
-          ) : null}
-        </p>
-      ) : null}
-      {/*
-        LOS HORARIOS, DÍA A DÍA Y PRUEBA A PRUEBA.
-
-        Aquí había UNA línea con los cuatro hitos de la prueba seleccionada, y
-        se quedaba corta en cuanto el torneo dura más de un día, que es
-        siempre: en las Copas del Mundo y en muchos TNR la individual es
-        viernes y sábado y los equipos el domingo. Ahora se enseña el torneo
-        entero, con todos los hitos que se sepan de cada prueba y de cada día,
-        y la prueba que se está mirando va destacada. Ver `horarios-torneo.tsx`.
+        LOS HORARIOS, DÍA A DÍA. El torneo entero, con todos los hitos que se
+        sepan de cada prueba y de cada día, en hora de la sede y en la tuya; la
+        prueba que se está mirando va destacada. Ver `horarios-torneo.tsx`.
       */}
       <HorariosTorneo evento={evento} prueba={prueba} />
     </Banda>
@@ -870,9 +772,9 @@ export function BandaEstasDentro({
     inscritos === null
       ? null
       : oficiales.length > 0
-        ? { n: oficiales.length, rotulo: 'en la lista oficial' }
+        ? { n: oficiales.length, rotulo: 'inscritos' }
         : prueba.registrationCount && prueba.registrationCount > 0
-          ? { n: prueba.registrationCount, rotulo: 'según la organización' }
+          ? { n: prueba.registrationCount, rotulo: 'inscritos' }
           : null;
 
   /**
@@ -882,9 +784,8 @@ export function BandaEstasDentro({
    */
   const avisoDeFallo =
     inscritos !== null && fallo ? (
-      <p role="alert" className="text-sm text-muted-foreground sm:text-xs">
-        La última lectura falló: se enseña la anterior, que puede estar
-        desactualizada.
+      <p role="alert" className="text-sm text-warn sm:text-xs">
+        La última lectura falló.
       </p>
     ) : null;
 
@@ -895,53 +796,25 @@ export function BandaEstasDentro({
       rotulo={conteo?.rotulo}
     >
       {inscritos === null && fallo ? (
-        <p role="alert" className="text-base text-muted-foreground sm:text-sm">
-          No se ha podido leer la lista de inscritos. Que no se vea nadie aquí
-          no significa que no haya inscritos: vuelve a abrir la ficha.
+        <p role="alert" className="text-base text-warn sm:text-sm">
+          No se ha podido leer la lista de inscritos.
         </p>
       ) : inscritos === null ? (
         <div className="flex flex-col gap-2" aria-busy>
           <Skeleton className="h-9 w-full" />
           <Skeleton className="h-9 w-4/5" />
-          <span className="text-sm text-muted-foreground">
-            Mirando quién va…
-          </span>
+          <span className="sr-only">Mirando quién va…</span>
         </div>
       ) : oficiales.length === 0 ? (
         <>
-        {/*
-          El estado vacío, a la izquierda y compacto. Centrado medía 190 px en
-          un iPhone para decir dos frases, y además era el único bloque
-          centrado de una ficha entera alineada a la izquierda: se leía como
-          pegado de otra pantalla.
-
-          `text-pretty` a mano: `Empty` trae `text-balance`, que iguala el
-          largo de las líneas y en un panel estrecho parte la frase en cuatro
-          renglones cortos con la caja medio vacía. Balancear sirve para un
-          titular de tres palabras, no para dos frases.
-        */}
-        <Empty className="items-start border p-4 text-left text-pretty md:p-4">
-          <EmptyHeader className="max-w-none items-start gap-1 text-left">
-            {inscritos?.estados[prueba.id] === 'vacia' ? (
-              <>
-                <EmptyTitle className="text-base">Lista vacía</EmptyTitle>
-                <EmptyDescription>
-                  La organización ya publica la lista y todavía no hay nadie
-                  inscrito en esta prueba.
-                </EmptyDescription>
-              </>
-            ) : (
-              <>
-                <EmptyTitle className="text-base">Todavía no hay lista</EmptyTitle>
-                <EmptyDescription>
-                  {SOURCE_LABEL[evento.source] ?? evento.source} publica los
-                  inscritos cuando se cierra el plazo. En cuanto la publique,
-                  aquí sale tu nombre aunque te haya apuntado otra persona.
-                </EmptyDescription>
-              </>
-            )}
-          </EmptyHeader>
-        </Empty>
+          {/*
+            Vacío en una línea y sin explicar por qué: `UI.md`, 2 bis. Lo que
+            importa es la respuesta —no hay lista, o está vacía—, no quién la
+            publica ni cuándo.
+          */}
+          <p className="text-base text-muted-foreground sm:text-sm">
+            {inscritos?.estados[prueba.id] === 'vacia' ? 'Lista vacía' : 'Todavía no hay lista'}
+          </p>
         {avisoDeFallo}
         </>
       ) : (
@@ -986,19 +859,15 @@ export function BandaEstasDentro({
             <Button
               variant="outline"
               size="sm"
-              className="w-full sm:w-fit"
+              className="self-start rounded-full"
               onClick={() => setTodos(true)}
             >
-              Ver los {oficiales.length} inscritos
+              <ChevronDown />
+              Ver todos ({oficiales.length})
             </Button>
           ) : null}
 
           {avisoDeFallo}
-
-          <p className="text-sm text-muted-foreground sm:text-xs">
-            Inscritos publicados por las organizaciones. Estar inscrito no
-            significa estar convocado ni haber competido.
-          </p>
         </>
       )}
     </Banda>
@@ -1015,13 +884,12 @@ export function BandaEstasDentro({
  * Tres bandas de una línea cada una —«Documentos», «En directo», «De dónde
  * sale»— eran tres filetes y tres rótulos para enseñar dos enlaces. Aquí van
  * juntos, en filas iguales con su icono, que es lo que son: cosas que se
- * abren. Los enlaces que trae el PDF entran en la misma lista **como
- * botones**, no como URLs pegadas.
+ * abren. Quién organiza y los enlaces que trae el PDF van debajo, los
+ * enlaces **como botones con su dominio**, no como URLs pegadas.
  *
- * Al final, plegado, todo lo que se leyó de la convocatoria con su cita. Es la
- * red de seguridad del apartado: cualquier dato extraído que no tenga hueco
- * propio en la ficha sigue estando aquí, comprobable, y nada se enseña sin la
- * frase de la que sale.
+ * Al final, plegado, lo que se leyó de la convocatoria y no tiene sitio en
+ * ningún otro grupo de la ficha. Es la red de seguridad: ningún dato extraído
+ * desaparece, y ninguno sale dos veces (ver `ficha/datos-ficha.tsx`).
  */
 function BandaConvocatoria({
   evento,
@@ -1030,21 +898,22 @@ function BandaConvocatoria({
   evento: EventView;
   prueba: CompetitionView | null;
 }) {
-  // Las cifras extraídas conservan su cita y su estado, también los importes:
-  // nunca se presentan como cuota oficial sin confirmación.
-  const leidos = [
-    ...evento.datosExtraidos,
-    ...(prueba?.datosExtraidos ?? []),
-  ];
   const enlaces = enlacesDeConvocatoria(evento.datosExtraidos);
+  const otros = otrosDatosDe(evento, prueba);
   const fuentes = enlacesDeFuente(evento);
+  const organiza = organizaDe(evento);
+  const hayAlgo =
+    evento.documents.length > 0 ||
+    evento.liveLinks.length > 0 ||
+    enlaces.length > 0 ||
+    otros.length > 0 ||
+    fuentes.length > 0 ||
+    organiza.quien !== null ||
+    organiza.direccion !== null;
+  if (!hayAlgo) return null;
 
   return (
-    <Banda
-      titulo="Convocatoria"
-      cifra={leidos.length > 0 ? leidos.length : undefined}
-      rotulo={leidos.length > 0 ? 'datos leídos del PDF' : undefined}
-    >
+    <Banda titulo="Convocatoria">
       {evento.documents.length > 0 || evento.liveLinks.length > 0 ? (
         <ItemGroup className="gap-1">
           {evento.documents.map((d) => (
@@ -1090,93 +959,52 @@ function BandaConvocatoria({
           ))}
 
         </ItemGroup>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          Esta fuente no publica convocatoria ni dossier para este torneo.
-        </p>
-      )}
+      ) : null}
+
+      <TarjetaOrganiza evento={evento} />
 
       {/*
-        Los enlaces que trae el PDF, en botones y no en URLs pegadas. Van en
-        pastilla pequeña y no en fila completa: son de la convocatoria y sin
+        Los enlaces que trae el PDF, en botones con el nombre del destino y no
+        en URLs pegadas: «kotoden.co.jp», no
+        «https://www.kotoden.co.jp/publichtm/bus/limousine/index-en.html». Van
+        en pastilla pequeña y no en fila completa: son de la convocatoria y sin
         verificar, así que no pueden pesar lo mismo que el documento oficial
-        que está justo encima.
+        que está justo encima. Al tocar la marca sale la frase del PDF.
       */}
       {enlaces.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {enlaces.map((d) => (
-            <Button
-              key={d.id}
-              variant="outline"
-              size="sm"
-              className="text-muted-foreground"
-              asChild
-            >
-              <a href={urlAbsoluta(d.valor)} target="_blank" rel="noreferrer">
-                <MarcaConvocatoria />
-                {nombreDeEnlace(d)}
-                <ExternalLink />
-              </a>
-            </Button>
-          ))}
-        </div>
+        <Tarjeta titulo="Enlaces">
+          <ul className="flex flex-wrap items-center gap-1.5">
+            {enlaces.map((d) => (
+              <li key={d.id} className="flex min-w-0 items-center">
+                <Button variant="outline" size="sm" className="min-w-0 max-w-full rounded-full" asChild>
+                  <a
+                    href={urlAbsoluta(d.valor)}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={d.valor}
+                  >
+                    <ExternalLink />
+                    <span className="truncate">{nombreDeEnlace(d)}</span>
+                  </a>
+                </Button>
+                <CitaConvocatoria dato={d} className="mx-0 px-1.5">
+                  <span className="flex size-8 items-center justify-center text-muted-foreground">
+                    <MarcaConvocatoria />
+                  </span>
+                </CitaConvocatoria>
+              </li>
+            ))}
+          </ul>
+        </Tarjeta>
       ) : null}
 
-      {leidos.length > 0 ? (
-        <Collapsible className="group/collapsible">
-          <CollapsibleTrigger asChild>
-            <Button variant="ghost" size="sm" className="w-full justify-start px-2">
-              <MarcaConvocatoria />
-              Ver las {leidos.length} frases del PDF
-              <ChevronDown className="ml-auto transition-transform group-data-[state=open]/collapsible:rotate-180" />
-            </Button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="pt-1">
-            <ul className="flex flex-col divide-y rounded-md border">
-              {leidos.map((d) => (
-                <li key={d.id} className="flex flex-col gap-1 px-3 py-2">
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                    <span className="text-sm text-muted-foreground sm:text-xs">
-                      {d.etiqueta}
-                      {d.prueba ? ` · ${titular(d.prueba)}` : ''}
-                    </span>
-                    {/*
-                      El VALOR pasa por `titular()` y la CITA no. Suena a
-                      incoherencia y es justo lo contrario: el valor es un dato
-                      que se va a leer, y las convocatorias lo escriben todo en
-                      mayúsculas; la cita es la prueba de que el dato existe, y
-                      una prueba retocada no prueba nada.
-                    */}
-                    <span
-                      className={cn(
-                        'min-w-0 text-base font-medium sm:text-sm',
-                        d.estado === 'aprobado' ? '' : 'text-muted-foreground',
-                      )}
-                    >
-                      {titular(d.valor)}
-                    </span>
-                  </div>
-                  <blockquote className="border-l-2 pl-2 text-xs leading-snug text-muted-foreground">
-                    «{d.cita.trim()}»
-                  </blockquote>
-                  {d.pisadoPorPublicado ? (
-                    <p className="text-xs text-muted-foreground">
-                      La fuente ya publica este dato; manda el publicado.
-                    </p>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-            <p className="medida pt-2 text-sm text-muted-foreground sm:text-xs">
-              Cada dato va con la frase original del PDF para poder mirarlo en
-              el documento.
-            </p>
-          </CollapsibleContent>
-        </Collapsible>
-      ) : null}
+      <OtrosDatos datos={otros} />
 
       {/*
-        Procedencia. Las DOS fuentes cuando el torneo llega por dos caminos:
+        Procedencia, en pastillas calladas con el nombre de la fuente y nada
+        más (`UI.md`, 2 bis: sin «Ver en…» ni «Publicado como…»; el nombre
+        tal y como lo publica va en el `title`). Las DOS fuentes cuando el
+        torneo llega por dos caminos:
         una Copa del Mundo aparece en el calendario de la RFEE y en el de la
         FIE y aquí se enseña como una sola tarjeta. Los dos enlaces tienen que
         estar: el de Skermo porque es donde se inscribe un español, y el de la
@@ -1186,27 +1014,23 @@ function BandaConvocatoria({
         nombre de la fuente lleva delante su escudo y esto no cambia más.
       */}
       {fuentes.length > 0 ? (
-        <ButtonGroup className="flex-wrap">
+        <div className="flex flex-wrap items-center gap-1.5">
           {fuentes.map((f) => (
-            <Button key={f.source} variant="outline" size="sm" asChild>
-              <a href={f.url} target="_blank" rel="noreferrer">
-                Ver en {SOURCE_LABEL[f.source] ?? f.source}
+            <Button
+              key={f.source}
+              variant="ghost"
+              size="sm"
+              className="rounded-full text-muted-foreground"
+              asChild
+            >
+              <a href={f.url} target="_blank" rel="noreferrer" title={evento.name}>
                 <ExternalLink />
+                {SOURCE_LABEL[f.source] ?? f.source}
               </a>
             </Button>
           ))}
-        </ButtonGroup>
+        </div>
       ) : null}
-
-      {/*
-        El nombre tal y como lo publica la fuente, en mayúsculas y sin
-        retocar: es lo que hay que buscar si alguien va al original. Va en la
-        letra más pequeña de la ficha porque es procedencia, no información.
-      */}
-      <p className="text-xs text-muted-foreground">
-        Publicado como «{evento.name}» en{' '}
-        {SOURCE_LABEL[evento.source] ?? evento.source}.
-      </p>
     </Banda>
   );
 }
