@@ -221,6 +221,18 @@ El usuario autorizó desplegar y subir los commits a GitHub después de validar.
 Las pruebas de carga y navegador se mantuvieron locales: no se hicieron
 contra producción.
 
+Desplegado el código del commit `2c295b5` en la versión de Cloudflare
+`8c3e8aee-c0e8-4171-88f0-3be8b3ed396c`. Comprobado con un navegador aislado:
+acceso público visible, rutas privadas con redirección, APIs sin sesión con
+401, manifest standalone con cuatro iconos y `sw.js` con `no-cache`.
+
+La integración final de acceso y PWA pasó 115 pruebas, TypeScript y build.
+Los arneses hidratados comprobaron diez escenarios de instalación y 24
+capturas del formulario (pegado, autofill simulado, ceros, edición, errores,
+pendiente y movimiento reducido). No se usaron códigos ni cuentas reales
+en esos arneses. Queda pendiente la prueba física del teclado/autofill y de
+la instalación en Safari/iPhone y Chrome/Android.
+
 Se retiraron 5.840 capturas e informes generados (2,51 GiB), conservando 180
 informes pequeños fuera del repositorio. Los resultados nuevos de QA se
 excluyen de Git. Se mantiene `capturas/capturar.mjs`, enlazado desde npm.
