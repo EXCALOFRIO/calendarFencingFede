@@ -250,9 +250,15 @@ describe('precarga por intención y sin esqueletos', () => {
   it('ni la barra ni la campana precargan al pintarse', () => {
     for (const f of ['src/components/nav.tsx', 'src/components/sistema/barra-inferior.tsx', 'src/components/notificaciones/campana-cliente.tsx']) {
       const fuente = readFileSync(f, 'utf8');
-      expect(fuente).toContain('prefetch={intencion}');
-      expect(fuente).toMatch(/onPointerEnter=\{avisar\}[\s\S]*onPointerDown=\{avisar\}[\s\S]*onFocus=\{avisar\}/);
+      expect(fuente).toContain('<EnlacePrecarga');
+      expect(fuente).not.toContain('prefetch={true}');
     }
+    const enlace = readFileSync('src/components/sistema/enlace-precarga.tsx', 'utf8');
+    expect(enlace).toContain('useState<string | null>(null)');
+    expect(enlace).toContain('prefetch={intencion === destino}');
+    expect(enlace).toContain("e.pointerType === 'mouse'");
+    expect(enlace).toContain("matches(':focus-visible')");
+    expect(enlace).toContain('ahorrarDatos()');
   });
 
   it('Explorar, Buscar y Siguiendo no tienen loading.tsx ni esqueletos', () => {

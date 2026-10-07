@@ -1,15 +1,14 @@
 'use client';
 
 import { Bell } from 'lucide-react';
-import Link from 'next/link';
+import { EnlacePrecarga } from '@/components/sistema/enlace-precarga';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { CAJA_TACTIL, clasesCirculo } from './control';
+import { crearContadorAvisos, INTERVALO_AVISOS_MS } from './contador-cliente';
 
 const RUTA = '/notificaciones';
-/** Con la pestaña visible; oculta no se pregunta nada. */
-const CADA_MS = 60_000;
 
 export function etiquetaCampana(n: number): string {
   return n === 0 ? 'Notificaciones' : `Notificaciones, ${n} sin leer`;
@@ -20,101 +19,86 @@ export function etiquetaCampana(n: number): string {
  * montadas (la de la cabecera del móvil y la del escritorio; una de las dos
  * está oculta por CSS): una sola petición en vuelo, un solo temporizador.
  */
-const oyentes = new Set<(n: number) => void>();
-let enVuelo: Promise<void> | null = null;
-let ultimaPeticion = 0;
+let suscripciones = 0;
 let parar: (() => void) | null = null;
-/** Dos campanas que se montan a la vez piden una vez. */
-const ENTRE_PETICIONES_MS = 1_500;
-
-function refrescar(): Promise<void> {
-  if (enVuelo) return enVuelo;
-  if (Date.now() - ultimaPeticion < ENTRE_PETICIONES_MS) return Promise.resolve();
-  enVuelo = (async () => {
-    try {
-      const r = await fetch('/api/notificaciones', { cache: 'no-store', credentials: 'same-origin' });
-      if (!r.ok) return;
-      const datos = (await r.json()) as { noLeidas?: unknown };
-      if (typeof datos.noLeidas === 'number' && Number.isFinite(datos.noLeidas)) {
-        for (const o of oyentes) o(datos.noLeidas as number);
-      }
-    } catch {
-      // Sin red se queda el último número conocido.
-    } finally {
-      ultimaPeticion = Date.now();
-      enVuelo = null;
-    }
-  })();
-  return enVuelo;
-}
+const contador = crearContadorAvisos({
+  async obtener(signal) {
+    const r = await fetch('/api/notificaciones', { cache: 'no-store', credentials: 'same-origin', signal });
+    if (!r.ok) return null;
+    const datos = await r.json() as { noLeidas?: unknown };
+    return typeof datos.noLeidas === 'number' ? datos.noLeidas : null;
+  },
+});
 
 function arrancar(): () => void {
   let temporizador: ReturnType<typeof setInterval> | null = null;
+  const refrescar = (forzar = false) => {
+    if (document.visibilityState === 'visible' && navigator.onLine !== false) void contador.refrescar(forzar);
+  };
   const programar = () => {
     if (temporizador) clearInterval(temporizador);
-    temporizador = document.visibilityState === 'visible' ? setInterval(() => void refrescar(), CADA_MS) : null;
+    temporizador = document.visibilityState === 'visible' ? setInterval(() => refrescar(), INTERVALO_AVISOS_MS) : null;
   };
   const alCambiar = () => {
-    if (document.visibilityState === 'visible') void refrescar();
+    refrescar();
     programar();
   };
   const alMensaje = (e: MessageEvent) => {
-    if ((e.data as { tipo?: string } | null)?.tipo === 'notificacion') {
-      ultimaPeticion = 0;
-      void refrescar();
-    }
+    if ((e.data as { tipo?: string } | null)?.tipo === 'notificacion') refrescar(true);
   };
+  const alVolver = () => refrescar(true);
   programar();
   document.addEventListener('visibilitychange', alCambiar);
+  window.addEventListener('online', alVolver);
   navigator.serviceWorker?.addEventListener('message', alMensaje);
   return () => {
     if (temporizador) clearInterval(temporizador);
     document.removeEventListener('visibilitychange', alCambiar);
+    window.removeEventListener('online', alVolver);
     navigator.serviceWorker?.removeEventListener('message', alMensaje);
   };
 }
 
 /**
  * El botón de la campana con su punto. Arranca con el número que pinta el
- * servidor y se mantiene al día solo: al volver a la pestaña, cada minuto
- * mientras se ve, al cambiar de pantalla y cuando el trabajador de servicio
- * avisa de que ha llegado un push.
+ * servidor y se mantiene al día al volver a la pestaña, cada minuto mientras
+ * se ve y cuando llega un push. Cambiar de ruta no repite la consulta.
  */
-export function CampanaCliente({ inicial, className }: { inicial: number; className?: string }) {
+export function CampanaCliente({ inicial, cuenta, lectura = 0, className }: {
+  inicial: number;
+  /** Sin cuenta (maquetas SSR) no se hace ninguna petición. */
+  cuenta?: string;
+  lectura?: number;
+  className?: string;
+}) {
   const [noLeidas, setNoLeidas] = React.useState(inicial);
-  const [intencion, setIntencion] = React.useState(false);
-  const avisar = () => setIntencion(true);
   const pathname = usePathname();
 
   React.useEffect(() => {
     setNoLeidas(inicial);
-  }, [inicial]);
+    if (cuenta) contador.lecturaServidor(cuenta, { numero: inicial, revision: lectura });
+  }, [inicial, lectura, cuenta]);
 
   React.useEffect(() => {
-    oyentes.add(setNoLeidas);
-    if (oyentes.size === 1) parar = arrancar();
+    if (!cuenta) return;
+    const quitar = contador.suscribir(cuenta, { numero: inicial, revision: lectura }, setNoLeidas);
+    suscripciones += 1;
+    if (suscripciones === 1) parar = arrancar();
     return () => {
-      oyentes.delete(setNoLeidas);
-      if (oyentes.size === 0) {
+      quitar();
+      suscripciones -= 1;
+      if (suscripciones === 0) {
         parar?.();
         parar = null;
       }
     };
-  }, []);
-
-  React.useEffect(() => {
-    void refrescar();
-  }, [pathname]);
+  }, [cuenta, inicial, lectura]);
 
   const activa = pathname === RUTA;
   return (
-    <Link
+    <EnlacePrecarga
       href={RUTA}
       // Por intención: la campana se pinta en todas las cabeceras y precargarla al verla sería un render de servidor por pantalla.
-      prefetch={intencion}
-      onPointerEnter={avisar}
-      onPointerDown={avisar}
-      onFocus={avisar}
       aria-label={etiquetaCampana(noLeidas)}
       aria-current={activa ? 'page' : undefined}
       data-no-leidas={noLeidas}
@@ -129,6 +113,6 @@ export function CampanaCliente({ inicial, className }: { inicial: number; classN
           <span aria-hidden data-punto className="absolute top-[6px] right-[7px] size-[7px] rounded-full bg-primary ring-2 ring-background" />
         ) : null}
       </span>
-    </Link>
+    </EnlacePrecarga>
   );
 }

@@ -1,0 +1,49 @@
+.contenedor {
+  /* Flujo normal, nunca superpuesto a formularios ni a la navegación fija. */
+  padding: 16px max(16px, env(safe-area-inset-right)) calc(96px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+
+.tarjeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  max-width: 720px;
+  margin-inline: auto;
+  padding: 16px;
+  border: 1px solid var(--border, #454751);
+  border-radius: 12px;
+  background: var(--card, #191b22);
+  color: var(--foreground, #f6f6f7);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.texto { flex: 1 1 240px; min-width: 0; }
+.texto h2 { margin: 0 0 4px; font-size: 16px; font-weight: 650; }
+.texto p { margin: 0; }
+.acciones { display: flex; flex-wrap: wrap; gap: 8px; }
+.acciones button {
+  min-height: 48px;
+  min-width: 48px;
+  padding: 10px 14px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 600;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+.acciones .principal {
+  background: var(--foreground, #f6f6f7);
+  color: var(--background, #0e0f13);
+}
+.acciones button:active { opacity: .75; }
+.acciones button:focus-visible { outline: 2px solid var(--foreground, #f6f6f7); outline-offset: 4px; }
+.acciones button:disabled { opacity: .65; cursor: wait; }
+.instrucciones { flex-basis: 100%; margin: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .acciones button { transition: none; }
+}

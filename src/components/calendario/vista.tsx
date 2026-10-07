@@ -17,6 +17,7 @@ import { Boton, BotonIcono } from '@/components/sistema/boton';
 import { ChipFiltro, FilaChips } from '@/components/sistema/chip-filtro';
 import { HojaInferior } from '@/components/sistema/hoja-inferior';
 import { TransicionContenido } from '@/components/sistema/transicion';
+import { ahorrarDatos } from '@/components/sistema/red-cliente';
 import { Button } from '@/components/ui/button';
 import {
   Command,
@@ -571,8 +572,8 @@ export function VistaCalendario({
    *
    * Un solo manejador para toda la pantalla, por delegación: cada tarjeta lleva
    * `data-evento`. Con ratón espera a que el puntero se pare un instante sobre
-   * la tarjeta (pasar por encima de diez no pide diez fichas); con el dedo y el
-   * teclado, al momento.
+   * la tarjeta (pasar por encima de diez no pide diez fichas); con teclado,
+   * al momento. Un gesto táctil puede ser scroll: no especula.
    */
   const porId = React.useMemo(() => new Map(todos.map((e) => [e.id, e])), [todos]);
   const temporizadorFicha = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -580,11 +581,14 @@ export function VistaCalendario({
     (destino: EventTarget | null, esperaMs: number) => {
       if (temporizadorFicha.current) clearTimeout(temporizadorFicha.current);
       temporizadorFicha.current = null;
+      if (ahorrarDatos()) return;
       const id = destino instanceof Element ? destino.closest('[data-evento]')?.getAttribute('data-evento') : null;
       const evento = id ? porId.get(id) : undefined;
       if (!evento || importados.has(evento.id)) return;
       if (esperaMs === 0) precargarFicha(evento);
-      else temporizadorFicha.current = setTimeout(() => precargarFicha(evento), esperaMs);
+      else temporizadorFicha.current = setTimeout(() => {
+        if (!ahorrarDatos()) precargarFicha(evento);
+      }, esperaMs);
     },
     [porId, importados],
   );
@@ -893,9 +897,19 @@ export function VistaCalendario({
       ),
     );
   const intencionDePaso = (paso: number) => ({
-    onPointerEnter: () => precargarPaso(paso),
-    onTouchStart: () => precargarPaso(paso),
-    onFocus: () => precargarPaso(paso),
+    onPointerEnter: (e: React.PointerEvent<HTMLButtonElement>) => {
+      if (e.pointerType !== 'mouse' || ahorrarDatos()) return;
+      if (temporizadorFicha.current) clearTimeout(temporizadorFicha.current);
+      temporizadorFicha.current = setTimeout(() => {
+        if (!ahorrarDatos()) precargarPaso(paso);
+      }, 120);
+    },
+    onPointerLeave: () => {
+      if (temporizadorFicha.current) clearTimeout(temporizadorFicha.current);
+    },
+    onFocus: (e: React.FocusEvent<HTMLButtonElement>) => {
+      if (e.currentTarget.matches(':focus-visible') && !ahorrarDatos()) precargarPaso(paso);
+    },
   });
 
   // El mes de hoy en hora española: el día 1 a la una de la mañana, el huso
@@ -936,8 +950,15 @@ export function VistaCalendario({
   return (
     <div
       className="calendario flex min-h-0 min-w-0 flex-1 flex-col gap-3"
-      onPointerOver={(e) => intencionDeFicha(e.target, e.pointerType === 'touch' ? 0 : 120)}
-      onFocus={(e) => intencionDeFicha(e.target, 0)}
+      onPointerOver={(e) => {
+        if (e.pointerType === 'mouse') intencionDeFicha(e.target, 120);
+      }}
+      onPointerOut={() => {
+        if (temporizadorFicha.current) clearTimeout(temporizadorFicha.current);
+      }}
+      onFocus={(e) => {
+        if (e.target.matches(':focus-visible')) intencionDeFicha(e.target, 0);
+      }}
     >
       {/*
         EL TÍTULO DE LA PANTALLA ESTÁ EN LA CABECERA COMPACTA.

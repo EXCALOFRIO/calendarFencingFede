@@ -1,8 +1,9 @@
 'use client';
 
-import Link, { useLinkStatus } from 'next/link';
+import { useLinkStatus } from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo } from 'react';
+import { EnlacePrecarga } from '@/components/sistema/enlace-precarga';
 import { leerFichaPropia, useFichaPropia } from '@/components/explorar/perfil/ficha-propia';
 import { DESTINOS_APP, esRutaNeutra, hayBusqueda, pestanaDeRuta } from '@/components/navegacion-app';
 import { useRetratoPropio } from '@/components/retrato-propio';
@@ -167,20 +168,14 @@ function PastillaEscritorio({
   alSalir: () => void;
 }) {
   const router = useRouterOpcional();
-  const [intencion, setIntencion] = useState(false);
   const es = destino.clave === activa;
   const toque = toquePestana(pathname, destino, activa);
-  const avisar = () => setIntencion(true);
   return (
-    <Link
+    <EnlacePrecarga
       href={href}
-      prefetch={intencion}
       transitionTypes={toque.accion === 'navegar' ? toque.tipos : undefined}
       aria-current={es ? 'page' : undefined}
       data-pestana={destino.clave}
-      onPointerEnter={avisar}
-      onPointerDown={avisar}
-      onFocus={avisar}
       onClick={(e) => {
         if (!es) alSalir();
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
@@ -189,7 +184,7 @@ function PastillaEscritorio({
       className="group relative flex h-[44px] items-center rounded-full outline-none [-webkit-tap-highlight-color:transparent]"
     >
       <ContenidoPastilla destino={destino} es={es} />
-    </Link>
+    </EnlacePrecarga>
   );
 }
 

@@ -4,11 +4,11 @@ import { contarNoLeidas } from '@/lib/notificaciones/bandeja';
 import { CampanaCliente } from './campana-cliente';
 
 /** Una consulta por petición aunque la campana se pinte en dos cabeceras (móvil y escritorio). */
-const noLeidasDe = cache(async (profileId: string): Promise<number> => {
+const noLeidasDe = cache(async (profileId: string): Promise<{ numero: number; lectura: number }> => {
   try {
-    return await contarNoLeidas(db, profileId);
+    return { numero: await contarNoLeidas(db, profileId), lectura: Date.now() };
   } catch {
-    return 0;
+    return { numero: 0, lectura: Date.now() };
   }
 });
 
@@ -24,5 +24,5 @@ const noLeidasDe = cache(async (profileId: string): Promise<number> => {
  */
 export async function CampanaNotificaciones({ profileId, className }: { profileId: string; className?: string }) {
   const noLeidas = await noLeidasDe(profileId);
-  return <CampanaCliente inicial={noLeidas} className={className} />;
+  return <CampanaCliente inicial={noLeidas.numero} lectura={noLeidas.lectura} cuenta={profileId} className={className} />;
 }

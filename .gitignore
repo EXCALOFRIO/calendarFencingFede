@@ -14,8 +14,12 @@ coverage
 .env.*
 !.env.example
 
-# Capturas: el script sí se versiona, las imágenes no.
-capturas/*.png
+# Capturas e informes regenerables: sólo se versiona la herramienta.
+/capturas/*
+!/capturas/capturar.mjs
+/test-results/
+/playwright-report/
+/tests/perf/resultados-opt-cliente/
 
 # Cloudflare
 .wrangler

@@ -5,11 +5,8 @@ import type { MetadataRoute } from 'next';
  * EL MANIFIESTO: LO QUE HACE QUE SE PUEDA INSTALAR EN EL MÓVIL
  * ===========================================================================
  *
- * Sin esto, en Android no aparece «Instalar aplicación» en ningún sitio. En
- * iPhone «Añadir a pantalla de inicio» sí funcionaba ya —Safari se conforma
- * con `apple-mobile-web-app-capable` y el `apple-touch-icon`, que están en el
- * `layout.tsx` desde el principio—, pero sin manifiesto abría con la barra
- * de Safari encima y no como una aplicación.
+ * Describe nombre, iconos y apertura standalone. El navegador decide si
+ * ofrece instalación; en iPhone se añade desde Compartir en Safari.
  *
  * Es una ruta y no un fichero estático porque Next lo publica así
  * (`app/manifest.ts` → `/manifest.webmanifest`) y de paso queda tipado: un
@@ -42,6 +39,8 @@ import type { MetadataRoute } from 'next';
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
+    // Identidad estable, equivalente al start_url anterior; no crea otra app.
+    id: '/',
     name: 'CalendarFencing',
     /* Lo que cabe debajo del icono en la pantalla de inicio: doce caracteres. */
     short_name: 'CalendarF',

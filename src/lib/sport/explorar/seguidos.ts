@@ -165,21 +165,28 @@ export function sqlFeedSiguiendo(
       FROM candidatos k CROSS JOIN sport_competition c ON c.id = k.prueba
     ), previas AS MATERIALIZED (
       SELECT * FROM unicos u WHERE u.copia = 1 ${posicion}
-    ), pagina AS (
+    ), pagina AS MATERIALIZED (
       SELECT * FROM previas p ${yaMostrada}
       ORDER BY p.fecha_orden DESC, p.resultado DESC
       LIMIT ${limite + 1}
+    ), conteos AS MATERIALIZED (
+      -- Caché de conteos sólo durante esta sentencia: varias personas de la
+      -- página comparten prueba. Sin KV, caducidades ni otra ida a D1.
+      SELECT pruebas.prueba,
+             (SELECT count(*) FROM sport_result x WHERE x.competition_id = pruebas.prueba) AS participantes
+      FROM (SELECT DISTINCT prueba FROM pagina) pruebas
     )
     SELECT pg.resultado AS id, pg.fecha_orden AS "fechaOrden", (SELECT fecha FROM umbral) AS umbral,
            coalesce(r.occurred_on, c.competition_date, e.start_date) AS fecha,
            CASE WHEN r.position > 0 THEN r.position END AS puesto, r.position_raw AS "puestoLiteral",
-           (SELECT count(*) FROM sport_result x WHERE x.competition_id = pg.prueba) AS participantes,
+           tot.participantes AS participantes,
            p.id AS "personaId", p.display_name AS nombre, p.country_code AS pais,
            c.id AS "pruebaId", e.id AS "edicionId", e.name AS torneo, e.city AS ciudad,
            e.country_code AS "paisEdicion", c.weapon AS arma, c.gender AS genero,
            c.category AS categoria, c.format AS formato, c.source AS fuente,
            ev0.scope AS "ambitoEvento", ev0.circuit AS "circuitoEvento", ev0.source AS "fuenteEvento"
     FROM pagina pg
+    CROSS JOIN conteos tot ON tot.prueba = pg.prueba
     CROSS JOIN sport_result r ON r.id = pg.resultado
     CROSS JOIN sport_person p ON p.id = pg.canonica
     CROSS JOIN sport_competition c ON c.id = pg.prueba

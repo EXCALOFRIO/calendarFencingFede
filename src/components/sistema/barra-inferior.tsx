@@ -1,6 +1,7 @@
 'use client';
 
-import Link, { useLinkStatus } from 'next/link';
+import { useLinkStatus } from 'next/link';
+import { EnlacePrecarga } from './enlace-precarga';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -18,7 +19,7 @@ import { recordarSiEsSuya, resolverToque, useRouterOpcional, type DeLaPestana } 
  * destino con `retrato` pinta esa foto (24 px) en vez del icono en cuanto
  * carga, con un aro fino cuando está marcado.
  *
- * La precarga es por intención (puntero encima, dedo abajo o foco): las
+ * La precarga es por intención (ratón detenido o foco de teclado): las
  * pantallas son dinámicas y precargarlas todas al pintar la barra serían
  * cuatro renderizados de servidor por visita.
  *
@@ -143,23 +144,17 @@ function Pestana({
   alSalir: () => void;
 }) {
   const router = useRouterOpcional();
-  const [intencion, setIntencion] = useState(false);
   const es = destino.clave === activa;
   const toque = toquePestana(pathname, destino, activa);
   const nombre = destino.insignia ? `${destino.etiqueta}, con novedades` : destino.etiqueta;
-  const avisar = () => setIntencion(true);
 
   return (
-    <Link
+    <EnlacePrecarga
       href={href}
-      prefetch={intencion}
       transitionTypes={toque.accion === 'navegar' ? toque.tipos : undefined}
       aria-label={conRotulo ? undefined : nombre}
       aria-current={es ? 'page' : undefined}
       data-pestana={destino.clave}
-      onPointerEnter={avisar}
-      onPointerDown={avisar}
-      onFocus={avisar}
       onClick={(e) => {
         if (!es) alSalir();
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
@@ -177,7 +172,7 @@ function Pestana({
           {destino.etiqueta}
         </span>
       ) : null}
-    </Link>
+    </EnlacePrecarga>
   );
 }
 

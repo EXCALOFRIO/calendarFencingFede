@@ -44,14 +44,26 @@ export function BuscadorCompeticiones({
   const entrada = React.useRef<HTMLInputElement>(null);
   const [pendiente, empezar] = React.useTransition();
   const [texto, setTexto] = React.useState(criterios.q);
+  const temporizador = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const envio = React.useRef<string | null>(null);
+  const urlActual = urlCatalogo(criterios);
+  const criteriosActuales = React.useRef(criterios);
+  React.useEffect(() => { criteriosActuales.current = criterios; }, [criterios]);
 
   const navegar = React.useCallback((c: CriteriosCatalogo, reemplazar: boolean) => {
+    clearTimeout(temporizador.current);
     const url = urlCatalogo(c);
+    if (envio.current === url) return;
+    envio.current = url;
     empezar(() => {
       if (reemplazar) router.replace(url, { scroll: false });
       else router.push(url, { scroll: false });
     });
   }, [router]);
+  React.useEffect(() => {
+    // La transición terminada (también si falla) permite volver a intentar.
+    if (!pendiente) envio.current = null;
+  }, [pendiente, urlActual]);
 
   // Lo escrito manda mientras el campo tiene el foco; si no, la URL (Atrás, un enlace).
   React.useEffect(() => {
@@ -62,9 +74,10 @@ export function BuscadorCompeticiones({
   React.useEffect(() => {
     const q = texto.replace(/\s+/g, ' ').trim();
     if (q === criterios.q.trim()) return;
-    const t = setTimeout(() => navegar({ ...criterios, q }, true), ESPERA_COMPETICIONES);
+    const t = setTimeout(() => navegar({ ...criteriosActuales.current, q }, true), ESPERA_COMPETICIONES);
+    temporizador.current = t;
     return () => clearTimeout(t);
-  }, [texto, criterios, navegar]);
+  }, [texto, criterios.q, urlActual, navegar]);
 
   const poner = (parcial: Partial<CriteriosCatalogo>) => navegar({ ...criterios, q: texto.trim(), ...parcial }, false);
   const filtros = hayFiltrosCatalogo(criterios);

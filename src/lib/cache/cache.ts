@@ -63,6 +63,18 @@ export function crearCache(entorno: EntornoCache) {
   const ahora = entorno.ahora ?? Date.now;
   const registrar = entorno.registrar ?? (() => {});
   const enVuelo = new Map<string, Promise<unknown>>();
+  // Deduplicar sólo el cálculo no basta: una ráfaga fría hacía N lecturas KV de
+  // cada clave antes de llegar al mismo cálculo. No se retienen valores.
+  const lecturas = new Map<string, Promise<Entrada | null>>();
+  async function leer(almacen: Almacen, id: string): Promise<Entrada | null> {
+    let trabajo = lecturas.get(id);
+    if (!trabajo) {
+      trabajo = almacen.leer(id).catch(() => null);
+      lecturas.set(id, trabajo);
+    }
+    try { return await trabajo; }
+    finally { if (lecturas.get(id) === trabajo) lecturas.delete(id); }
+  }
 
   function definir<P extends readonly ParteClave[], T>(def: DefinicionCache<P, T>): Cacheado<P, T> {
     claveCache(def.espacio, 'v', []); // valida el espacio al definir, no en la primera petición
@@ -86,7 +98,7 @@ export function crearCache(entorno: EntornoCache) {
         const entrada: Entrada = { k: clave.completa, v, creado: t, frescoHasta: t + def.frescoMs, caduca: t + def.caducaMs };
         entorno.esperar(Promise.all([
           almacen.escribir(clave.id, entrada),
-          almacen.escribir(alias.id, { ...entrada, k: alias.completa }),
+          ...(def.anteriorMientrasRevalida === false ? [] : [almacen.escribir(alias.id, { ...entrada, k: alias.completa })]),
         ]));
         registrar({ tipo: 'calculada', espacio: def.espacio });
         return valor;
@@ -127,7 +139,7 @@ export function crearCache(entorno: EntornoCache) {
       }
       const t = ahora();
 
-      const entrada = await almacen.leer(clave.id).catch(() => null);
+      const entrada = await leer(almacen, clave.id);
       if (entrada && entrada.k === clave.completa && entrada.caduca > t) {
         const fresca = entrada.frescoHasta > t;
         if (!fresca) revalidar(almacen, clave, alias, parametros);
@@ -136,7 +148,7 @@ export function crearCache(entorno: EntornoCache) {
       }
 
       if (def.anteriorMientrasRevalida !== false) {
-        const anterior = await almacen.leer(alias.id).catch(() => null);
+        const anterior = await leer(almacen, alias.id);
         if (anterior && anterior.k === alias.completa && anterior.caduca > t) {
           revalidar(almacen, clave, alias, parametros);
           registrar({ tipo: 'anterior', espacio: def.espacio });

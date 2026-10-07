@@ -5,8 +5,8 @@ import { getSessionProfile } from '@/lib/auth/session';
 import { COOKIE_VISTA_PREVIA } from '@/lib/auth/preview-token';
 import { COOKIE_ACCESO_QA } from '@/lib/auth/qa-token';
 import { FondoCompeticion } from '@/components/acceso/fondo-competicion';
+import { FormularioAcceso, type EstadoAcceso } from '@/components/acceso/formulario-acceso';
 import { Marca } from '@/components/marca';
-import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -28,7 +28,7 @@ export const metadata = { title: 'Entrar' };
  * custodiamos ninguna contraseña.
  */
 
-async function enviarCodigo(formData: FormData) {
+async function enviarCodigo(_estado: EstadoAcceso, formData: FormData): Promise<EstadoAcceso> {
   'use server';
 
   if ((await cookies()).has(COOKIE_VISTA_PREVIA) || (await cookies()).has(COOKIE_ACCESO_QA)) redirect('/vista-previa');
@@ -36,7 +36,7 @@ async function enviarCodigo(formData: FormData) {
     .trim()
     .toLowerCase();
 
-  if (!email) redirect('/entrar?error=falta-email');
+  if (!email) return { error: ERRORES['falta-email'] };
 
   // Same invitation, origin and persistent limits as direct HTTP. Always
   // advance to the same screen: no invitation-existence oracle in the UI.
@@ -76,14 +76,14 @@ async function leerCorreoEnCurso(): Promise<string> {
   return (await cookies()).get(COOKIE_CORREO)?.value ?? '';
 }
 
-async function verificarCodigo(formData: FormData) {
+async function verificarCodigo(_estado: EstadoAcceso, formData: FormData): Promise<EstadoAcceso> {
   'use server';
 
   if ((await cookies()).has(COOKIE_VISTA_PREVIA) || (await cookies()).has(COOKIE_ACCESO_QA)) redirect('/vista-previa');
   // El correo sale de la cookie, no de un campo oculto que el navegador pueda
   // cambiar: así el código verificado es el del correo al que se envió.
   const email = (await leerCorreoEnCurso()).trim().toLowerCase();
-  const otp = String(formData.get('otp') ?? '').trim();
+  const otp = String(formData.get('otp') ?? '').replace(/\s/g, '');
 
   if (!email) redirect('/entrar?error=caducado');
 
@@ -92,34 +92,27 @@ async function verificarCodigo(formData: FormData) {
     headers: await headers(),
   }).catch(() => null);
   if (!entrada) {
-    redirect('/entrar?paso=codigo&error=codigo');
+    // Devuelve solo el error genérico: conserva el campo en memoria, no en URL/cookie.
+    return { error: ERRORES.codigo };
   }
 
   (await cookies()).delete({ name: COOKIE_CORREO, path: '/entrar' });
   redirect('/');
 }
 
-/** Campo de texto. 16 px en móvil: por debajo, iOS hace zoom al enfocar. */
-function Campo(props: React.ComponentProps<'input'>) {
-  return (
-    <input
-      {...props}
-      className="h-11 w-full rounded-md border bg-background px-3 text-base outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring sm:text-sm"
-    />
-  );
-}
+async function reenviarCodigo(): Promise<EstadoAcceso> {
+  'use server';
 
-function Etiqueta(props: React.ComponentProps<'label'>) {
-  return <label {...props} className="text-sm font-medium text-muted-foreground" />;
-}
-
-/** Aviso en línea. El color nunca va solo: siempre lleva el texto. */
-function Aviso({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-      {children}
-    </p>
-  );
+  if ((await cookies()).has(COOKIE_VISTA_PREVIA) || (await cookies()).has(COOKIE_ACCESO_QA)) redirect('/vista-previa');
+  const email = (await leerCorreoEnCurso()).trim().toLowerCase();
+  if (!email) redirect('/entrar?error=caducado');
+  // Mismo proveedor, origen y límites persistentes. Ni el resultado ni el
+  // mensaje distinguen invitación, límite alcanzado o fallo del proveedor.
+  await getAuth().api.sendVerificationOTP({
+    body: { email, type: 'sign-in' },
+    headers: await headers(),
+  }).catch(() => {});
+  return { aviso: 'Si el correo está invitado, recibirás otro código.' };
 }
 
 const ERRORES: Record<string, string> = {
@@ -143,7 +136,7 @@ export default async function EntrarPage({
   const correoEnCurso = esPasoCodigo ? await leerCorreoEnCurso() : '';
 
   return (
-    <main className="grid min-h-dvh lg:grid-cols-[1.1fr_1fr]">
+    <main className="grid min-h-svh content-start lg:grid-cols-[1.1fr_1fr]">
       {/*
         Mitad de presentación.
 
@@ -154,7 +147,7 @@ export default async function EntrarPage({
         reduce a la marca y una línea, que es lo que cabe sin empujar el
         formulario fuera de la pantalla.
       */}
-      <section className="flex flex-col justify-between gap-8 border-b px-6 py-8 lg:border-b-0 lg:border-r lg:px-12 lg:py-12">
+      <section className="flex flex-col justify-between gap-4 border-b px-6 py-6 lg:gap-8 lg:border-b-0 lg:border-r lg:px-12 lg:py-12">
         <div className="flex items-center gap-2.5">
           <Marca className="size-7" />
           {/*
@@ -187,13 +180,13 @@ export default async function EntrarPage({
           es **anclar el bloque** para que la columna no se lea como «fotos
           arriba, texto abajo» con un hueco en medio.
         */}
-        <div className="medida flex flex-col gap-4 rounded-md border-t border-t-filete bg-card p-5 sm:p-6">
-          <h1 className="text-4xl leading-[0.95] sm:text-5xl lg:text-6xl">
+        <div className="medida flex flex-col gap-4 rounded-md border-t border-t-filete bg-card p-4 lg:p-6">
+          <h1 className="text-2xl leading-tight lg:text-6xl lg:leading-[0.95]">
             Todo el calendario
             <br />
             en un solo sitio
           </h1>
-          <p className="text-sm text-muted-foreground sm:text-base">
+          <p className="hidden text-sm text-muted-foreground lg:block lg:text-base">
             La RFEE, la FIE y el circuito europeo, filtrados por tu arma, tu
             género y tu categoría. Con los plazos marcados y las convocatorias
             de la selección.
@@ -202,68 +195,28 @@ export default async function EntrarPage({
       </section>
 
       {/* Mitad del formulario. */}
-      <section className="flex items-center justify-center px-4 py-10 lg:px-10">
+      <section className="flex items-center justify-center px-4 py-6 lg:min-h-svh lg:px-10 lg:py-10">
         <div className="w-full max-w-sm">
-          <Card>
+          <Card className="gap-6 rounded-xl shadow-none">
             <CardHeader>
-              <CardTitle>
-                {esPasoCodigo ? 'Escribe el código' : 'Entrar con tu correo'}
+              <CardTitle className="text-2xl">
+                {esPasoCodigo ? 'Mira tu correo' : 'Entra al calendario'}
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="break-words leading-5">
                 {esPasoCodigo
-                  ? `Si tu correo está invitado, recibirás un código de 6 cifras en ${correoEnCurso}. Caduca en 5 minutos.`
-                  : 'Te mandamos un código de un solo uso. No hace falta contraseña.'}
+                  ? `Si tu correo está invitado, recibirás un código en ${correoEnCurso}.`
+                  : 'Tu temporada, en un solo sitio.'}
               </CardDescription>
             </CardHeader>
 
-            <CardContent className="flex flex-col gap-4">
-              {error ? <Aviso>{error}</Aviso> : null}
-
-              {esPasoCodigo ? (
-                <form action={verificarCodigo} className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-1.5">
-                    <Etiqueta htmlFor="otp">Código</Etiqueta>
-                    <input
-                      id="otp"
-                      name="otp"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      pattern="[0-9]{6}"
-                      minLength={6}
-                      maxLength={6}
-                      placeholder="000000"
-                      required
-                      autoFocus
-                      className="cifra h-14 w-full rounded-md border bg-background px-3 text-center text-3xl tracking-[0.35em] outline-none placeholder:text-muted-foreground/40 focus-visible:ring-2 focus-visible:ring-ring"
-                    />
-                  </div>
-                  <Button type="submit" size="lg" className="h-11">
-                    Entrar
-                  </Button>
-                  <Button variant="ghost" size="sm" className="h-11" asChild>
-                    <a href="/entrar">Usar otro correo</a>
-                  </Button>
-                </form>
-              ) : (
-                <form action={enviarCodigo} className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-1.5">
-                    <Etiqueta htmlFor="email">Correo electrónico</Etiqueta>
-                    <Campo
-                      id="email"
-                      name="email"
-                      type="email"
-                      inputMode="email"
-                      autoComplete="email"
-                      placeholder="tu@correo.es"
-                      required
-                      autoFocus
-                    />
-                  </div>
-                  <Button type="submit" size="lg" className="h-11">
-                    Enviarme un código
-                  </Button>
-                </form>
-              )}
+            <CardContent>
+              <FormularioAcceso
+                key={esPasoCodigo ? 'codigo' : 'correo'}
+                pasoCodigo={esPasoCodigo}
+                accion={esPasoCodigo ? verificarCodigo : enviarCodigo}
+                reenviar={reenviarCodigo}
+                errorInicial={error}
+              />
             </CardContent>
           </Card>
 

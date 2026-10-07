@@ -8,6 +8,7 @@ import {
 import { inicialesVisibles } from '@/lib/sport/nombre-visible';
 import { cn } from '@/lib/utils';
 import { ANILLO, ANILLO_APAGADO } from './avatar-anillo';
+import { ahorrarDatos } from '@/components/sistema/red-cliente';
 
 /** `null` = definitivo sin foto; `undefined` = fallo pasajero, que no se recuerda. */
 async function pedirFoto(personaId: string): Promise<FotoPublicada | null | undefined> {
@@ -82,13 +83,13 @@ async function pedirLote(ids: readonly string[]): Promise<Map<string, FotoLote> 
  * definitiva (también «sin foto») se recuerda aquí y, entre páginas, en la
  * caché del navegador. En listas se pide sólo al quedar a la vista y tras una
  * pausa (al escribir, las filas cambian antes); las filas que aparecen a la vez
- * se juntan en lotes de hasta `MAX_POR_LOTE`, y como mucho van seis peticiones
+ * se juntan en lotes de hasta `MAX_POR_LOTE`, y como mucho van dos peticiones
  * a la vez. Lo que el lote no resuelve (`pendiente`) se pide una a una.
  */
 const ESPERA_FOTO_LISTA = 350;
 const ESPERA_LOTE = 20;
 const MAX_POR_LOTE = 24;
-const MAX_FOTOS_A_LA_VEZ = 6;
+const MAX_FOTOS_A_LA_VEZ = 2;
 const MAX_FOTOS_RECORDADAS = 300;
 const fotos = new Map<string, Promise<FotoPublicada | null>>();
 const turnos: (() => void)[] = [];
@@ -134,7 +135,7 @@ function conTurno<T>(tarea: () => Promise<T>): Promise<T> {
         turnos.shift()?.();
       });
     };
-    if (enCurso < MAX_FOTOS_A_LA_VEZ) empezar();
+    if (enCurso < (ahorrarDatos() ? 1 : MAX_FOTOS_A_LA_VEZ)) empezar();
     else turnos.push(empezar);
   });
 }
@@ -218,6 +219,7 @@ function Retrato({
   const medida = MEDIDAS[tamano];
   const iniciales = inicialesVisibles(nombre) || '—';
   const enLista = tamano === 'lista' || tamano === 'fila';
+  const prioritaria = tamano === 'heroe' || tamano === 'perfil';
   // El avatar de 44-48 px no necesita los 16 KB del retrato de 320: con 96 bastan 2 KB.
   const src = foto ? retratoAncho(foto.src, anchoRetratoPara(medida)) ?? foto.src : undefined;
 
@@ -225,27 +227,31 @@ function Retrato({
     if (resueltaEnServidor) return;
     let vigente = true;
     const poner = (f: FotoPublicada | null) => { if (vigente && f) setFoto(f); };
-    if (!enLista) {
+    if (prioritaria) {
       void fotoDe(personaId, true).then(poner);
       return () => { vigente = false; };
     }
     let espera: ReturnType<typeof setTimeout> | undefined;
-    const cargar = () => {
-      espera = setTimeout(() => { void fotoDe(personaId).then(poner); }, ESPERA_FOTO_LISTA);
-    };
     const nodo = caja.current;
+    let observador: IntersectionObserver | undefined;
+    const cargar = () => {
+      clearTimeout(espera);
+      espera = setTimeout(() => {
+        observador?.disconnect();
+        void fotoDe(personaId).then(poner);
+      }, ahorrarDatos() ? 700 : ESPERA_FOTO_LISTA);
+    };
     if (!nodo || typeof IntersectionObserver === 'undefined') {
       cargar();
       return () => { vigente = false; clearTimeout(espera); };
     }
-    const observador = new IntersectionObserver((entradas) => {
-      if (!entradas.some((e) => e.isIntersecting)) return;
-      observador.disconnect();
-      cargar();
-    }, { rootMargin: '120px' });
+    observador = new IntersectionObserver((entradas) => {
+      if (entradas.some((e) => e.isIntersecting)) cargar();
+      else clearTimeout(espera);
+    }, { rootMargin: ahorrarDatos() ? '0px' : '120px' });
     observador.observe(nodo);
-    return () => { vigente = false; observador.disconnect(); clearTimeout(espera); };
-  }, [personaId, enLista, resueltaEnServidor]);
+    return () => { vigente = false; observador?.disconnect(); clearTimeout(espera); };
+  }, [personaId, prioritaria, resueltaEnServidor]);
 
   const rotulo = decorativa ? undefined : cargada ? `Foto de ${nombre}` : 'Foto no publicada';
   const imagen = foto ? (
@@ -258,7 +264,7 @@ function Retrato({
       height={medida}
       // La cabecera de la ficha está siempre a la vista: sin esperar al lazy.
       loading={tamano === 'heroe' ? 'eager' : 'lazy'}
-      fetchPriority={tamano === 'heroe' ? 'high' : undefined}
+      fetchPriority={tamano === 'heroe' ? 'high' : 'low'}
       decoding="async"
       referrerPolicy="no-referrer"
       className={`absolute inset-0 size-full object-cover ${cargada ? '' : 'invisible'}`}
@@ -306,7 +312,7 @@ function Retrato({
   }
 
   return (
-    <div className={cn('shrink-0', className)} style={{ width: medida }}>
+    <div ref={caja} className={cn('shrink-0', className)} style={{ width: medida }}>
       <Avatar
         style={{ width: medida, height: medida }}
         className="border border-border"

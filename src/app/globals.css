@@ -1,6 +1,9 @@
-@import 'tailwindcss';
+@import 'tailwindcss' source(none);
 @import 'tw-animate-css';
 @import '../components/sistema/sistema.css';
+
+/* Sólo la aplicación: las capturas, pruebas y documentación no añaden CSS al móvil. */
+@source '../';
 
 @custom-variant dark (&:is(.dark *));
 
