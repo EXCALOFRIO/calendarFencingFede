@@ -60,7 +60,7 @@ export function LineaTemporal({
     ? marcas
     : marcasRedondas(min, tope).map((v) => ({ valor: v, rotulo: decimal(v).replace(/,0$/, '') }));
   return (
-    <Lectura inicial={inicial} className={className}>
+    <Lectura inicial={inicial} datos={series.flatMap((s) => s.lecturas ?? [])} className={className}>
       <div role="img" aria-label={titulo} className="flex min-w-0 flex-col gap-1">
         <div className={cn('relative mt-3', ALTO[alto])}>
           <Guias

@@ -1,3 +1,4 @@
+import { SENTENCIAS_PAISES } from './pais-indice-sql';
 import { SALTOS } from './personas';
 
 /**
@@ -106,3 +107,10 @@ export const SENTENCIAS_INDICE: readonly string[] = [
     ${VERSION_INDICE},
     cast(strftime('%s', 'now') AS integer) * 1000)`,
 ];
+
+/**
+ * Lo que `scripts/indice-explorar.ts` reconstruye tras cada lote: el índice de
+ * palabras y los agregados por país (0018, `pais-indice-sql.ts`). Las pruebas y
+ * ayudas que sólo tienen la 0004 siguen usando `SENTENCIAS_INDICE`.
+ */
+export const SENTENCIAS_RECONSTRUCCION: readonly string[] = [...SENTENCIAS_INDICE, ...SENTENCIAS_PAISES];

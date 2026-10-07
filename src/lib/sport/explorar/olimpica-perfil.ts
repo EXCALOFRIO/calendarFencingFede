@@ -59,10 +59,15 @@ export async function leerOlimpicaPerfil(actuales: readonly MejorMundial[] | und
 /**
  * Las filas sénior individuales de la clasificación FIE vigente de varias
  * personas (y de las fichas fusionadas en ellas), por su `fie_addr_id`
- * confirmado. Mismo recorrido que `sqlClasificacionFieDePersonas`: grupo a
- * grupo por la clave única, sin barrer la tabla.
+ * confirmado. Mismo recorrido que `sqlClasificacionFieDePersonas`: entra por
+ * `fie_clasificacion_fie_idx (fie_id, season)` (migración 0015), unas filas
+ * por persona. El recorrido anterior, grupo a grupo por la clave única, leía
+ * la temporada entera (~11.700 filas) en cada búsqueda y en cada tecla de las
+ * sugerencias.
  */
 export function sqlPlazasFieDePersonas(ids: readonly string[]) {
+  // CROSS JOIN: con un JOIN libre SQLite prefiere recorrer la temporada por
+  // `fie_clasificacion_grupo_idx` aunque exista el índice por fie_id.
   return sql`
     WITH pedidas AS MATERIALIZED (
       SELECT p.id AS persona, p.id AS miembro FROM sport_person p WHERE p.id IN (${listaUuid(ids)})
@@ -72,16 +77,11 @@ export function sqlPlazasFieDePersonas(ids: readonly string[]) {
       SELECT DISTINCT d.persona, CAST(x.value AS INTEGER) AS fie
       FROM pedidas d CROSS JOIN sport_external_id x ON x.person_id = d.miembro
       WHERE x.scheme = 'fie_addr_id' AND x.link_status = 'CONFIRMADO'
-    ), g AS MATERIALIZED (
-      -- Sólo columnas del índice fie_clasificacion_key: filtrar aquí por category obliga a leer las ~11.500 filas.
-      SELECT DISTINCT season, weapon, gender, category_raw FROM fie_clasificacion
-      WHERE season = (SELECT max(season) FROM fie_clasificacion) AND gender IN ('M', 'F')
     )
     SELECT ids.persona AS persona, f.weapon AS arma, f.gender AS genero, f.fie_id AS "fieId"
-    FROM g CROSS JOIN ids CROSS JOIN fie_clasificacion f
-      ON f.season = g.season AND f.weapon = g.weapon AND f.gender = g.gender
-     AND f.category_raw = g.category_raw AND f.format = 'INDIVIDUAL' AND f.fie_id = ids.fie
-    WHERE f.position IS NOT NULL AND f.category = 'ABS'`;
+    FROM ids CROSS JOIN fie_clasificacion f
+      ON f.fie_id = ids.fie AND f.season = (SELECT max(season) FROM fie_clasificacion)
+    WHERE f.format = 'INDIVIDUAL' AND f.gender IN ('M', 'F') AND f.position IS NOT NULL AND f.category = 'ABS'`;
 }
 
 /**

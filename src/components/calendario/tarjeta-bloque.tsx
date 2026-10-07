@@ -665,7 +665,6 @@ function CuerpoUnico({
       data-terminado={terminado || undefined}
       onClick={() => onAbrir(evento)}
       className="flex h-auto w-full min-w-0 cursor-pointer flex-col items-stretch gap-2 rounded-none px-3 py-3 text-left whitespace-normal transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-      aria-label={`${titularTorneo(evento.name)}${terminado ? ', terminada' : ''}. Abrir la ficha.`}
     >
       <span className="flex w-full min-w-0 items-start gap-2">
         <span
@@ -842,7 +841,6 @@ function FilaEvento({
         'flex h-auto w-full min-w-0 cursor-pointer flex-col items-stretch gap-1.5 rounded-none px-1 py-2 text-left whitespace-normal transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
         conFilete && 'border-t border-filete',
       )}
-      aria-label={`${titularTorneo(evento.name)}${terminado ? ', terminada' : ''}. Abrir la ficha.`}
     >
       <span className="flex w-full min-w-0 items-start gap-2">
         <span
@@ -955,7 +953,6 @@ function ApiladaUnica({
       data-terminado={terminado || undefined}
       onClick={() => onAbrir(evento)}
       className="flex h-auto w-full min-w-0 cursor-pointer flex-col items-stretch gap-2 rounded-none px-3 py-3 text-left whitespace-normal transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-      aria-label={`${titularTorneo(evento.name)}${terminado ? ', terminada' : ''}. Abrir la ficha.`}
     >
       <FilaFecha capsula={capsula} terminado={bloqueTerminado}>
         {terminado ? (
@@ -1053,7 +1050,6 @@ function ApiladaMultiple({
                 'flex h-auto w-full min-w-0 cursor-pointer flex-col items-stretch gap-2 rounded-none px-1 py-2 text-left whitespace-normal transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                 k > 0 && 'border-t border-filete',
               )}
-              aria-label={`${titularTorneo(evento.name)}${terminado ? ', terminada' : ''}. Abrir la ficha.`}
             >
               <span className="flex w-full min-w-0 items-start gap-2">
                 <span

@@ -15,6 +15,11 @@
    */
   "name": "calendario-fie-fede",
 
+  // Sin URLs de vista previa por versión (`<version>-calendario-fie-fede…`):
+  // servirían versiones antiguas con los bindings de producción. `workers_dev`
+  // no se toca: es la URL de producción.
+  "preview_urls": false,
+
   // Punto de entrada PROPIO, no el generado. `worker/index.ts` reexporta el
   // `fetch` que produce OpenNext y añade el manejador `scheduled` que
   // sustituye a los crons de Vercel. Ver worker/index.ts.
@@ -83,6 +88,17 @@
   },
 
   /**
+   * Smart Placement: a server-rendered page makes several sequential D1
+   * queries (a cold profile up to ~45), and each one pays the round trip
+   * between the edge location and the database. Cloudflare moves the Worker
+   * next to D1 once it has seen enough traffic; static assets and KV reads are
+   * unaffected. `"mode": "off"` undoes it without a code change.
+   */
+  "placement": {
+    "mode": "smart"
+  },
+
+  /**
    * Límites de peticiones (Rate Limiting API de Workers). Los aplica
    * `src/lib/seguridad/limites.ts` desde worker/index.ts antes de servir.
    * `namespace_id` es un entero elegido aquí, único en la CUENTA (no hay que
@@ -93,7 +109,12 @@
    * muchas personas comparten IP, y cada entrada son dos POST; detrás siguen
    * los límites exactos de D1 (5 envíos/min e IP, 1/min por correo).
    * IP_SESION: tope por IP de las rutas que cuentan por sesión, para que
-   * inventarse una cookie nueva en cada petición no estrene contador.
+   * inventarse una cookie nueva en cada petición no estrene contador; 3000 y
+   * no 600 porque un pabellón con wifi compartida o CGNAT es una sola IP.
+   * ACCIONES: todo POST fuera de /api/ (salvo el de /entrar, que es acceso),
+   * lleve o no la cabecera Next-Action.
+   * PAGINAS: por IP, lo que no cae en ninguna otra regla (páginas, peticiones
+   * RSC, /api/notificaciones…); es el freno general frente a un rastreo.
    */
   "ratelimits": [
     { "name": "LIMITE_ACCESO", "namespace_id": "84101", "simple": { "limit": 20, "period": 60 } },
@@ -103,7 +124,8 @@
     { "name": "LIMITE_FOTOS", "namespace_id": "84105", "simple": { "limit": 120, "period": 60 } },
     { "name": "LIMITE_ARCHIVOS", "namespace_id": "84106", "simple": { "limit": 30, "period": 60 } },
     { "name": "LIMITE_ACCIONES", "namespace_id": "84107", "simple": { "limit": 120, "period": 60 } },
-    { "name": "LIMITE_IP_SESION", "namespace_id": "84108", "simple": { "limit": 600, "period": 60 } }
+    { "name": "LIMITE_IP_SESION", "namespace_id": "84108", "simple": { "limit": 3000, "period": 60 } },
+    { "name": "LIMITE_PAGINAS", "namespace_id": "84109", "simple": { "limit": 1200, "period": 60 } }
   ],
 
   /**

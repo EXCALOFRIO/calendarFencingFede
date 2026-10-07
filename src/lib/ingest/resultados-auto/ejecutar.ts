@@ -32,7 +32,7 @@ import {
 } from './fuentes';
 import {
   consumoDelDia, DIA, HORA, leerUnidad, margenLedger, migracionAplicada, NUNCA, sentenciaCierre, sentenciaRevision,
-  sentenciasAlta, sentenciasConsumo, tablaExiste, unidadesPendientes, type EstadoUnidad, type Unidad,
+  sentenciaAjusteConsumo, sentenciasAlta, sentenciasConsumo, tablaExiste, unidadesPendientes, type EstadoUnidad, type Unidad,
 } from './estado';
 import { sentenciasEventos, sentenciasIndiceExplorar, sentenciasPerfil } from './posteriores';
 import { extraerPdfConIa, type ClienteIa } from './ia';
@@ -131,10 +131,29 @@ export async function ejecutarResultadosAuto(d: DepsResultadosAuto): Promise<Res
       cliente: iaCliente,
       puede: () => iaLlamadasHoy < cfg.iaMaxLlamadasDia && iaNeuronasHoy < cfg.iaMaxNeuronasDia,
       disponibles: () => cfg.iaMaxNeuronasDia - iaNeuronasHoy,
-      anotar: (n: number) => { iaLlamadasHoy += 1; iaNeuronasHoy += n; r.ia.llamadas += 1; r.ia.neuronas += n; },
+      // La llamada y el peor caso de neuronas se apuntan en D1 antes de llamar; tras la respuesta
+      // solo se corrige la diferencia. El resumen final ya no vuelve a sumar la IA.
+      reservar: async (peorCaso: number) => {
+        try {
+          await lectura.escribirPropias(sentenciasConsumo(inicio, { ia_llamadas: 1, ia_neuronas: peorCaso }));
+        } catch {
+          return false;
+        }
+        iaLlamadasHoy += 1; iaNeuronasHoy += peorCaso; r.ia.llamadas += 1; r.ia.neuronas += peorCaso;
+        return true;
+      },
+      ajustar: async (reservadas: number, reales: number) => {
+        const delta = Math.trunc(reales) - reservadas;
+        if (delta === 0) return;
+        iaNeuronasHoy += delta; r.ia.neuronas += delta;
+        try {
+          await lectura.escribirPropias([sentenciaAjusteConsumo(inicio, 'ia_neuronas', delta)]);
+        } catch { /* queda apuntado el peor caso: de más, nunca de menos */ }
+      },
     } : null,
   };
   try {
+    await anclarCursorAvisos(lectura, inicio, registro);
     try {
       await descubrir(ctx);
     } catch (e) {
@@ -161,12 +180,31 @@ export async function ejecutarResultadosAuto(d: DepsResultadosAuto): Promise<Res
       const ledger1 = await margenLedger(lectura, d.presupuestoBytes);
       r.bytesLedger = Math.max(0, ledger1.contabilizado - ledger0.contabilizado);
       await lectura.escribirPropias(sentenciasConsumo(inicio, {
-        filas: r.filas, bytes_ledger: r.bytesLedger, peticiones: r.peticiones, ia_llamadas: r.ia.llamadas, ia_neuronas: r.ia.neuronas,
+        filas: r.filas, bytes_ledger: r.bytesLedger, peticiones: r.peticiones,
       }));
       await lectura.escribirPropias([{ sql: `delete from resultado_auto_evento where creado_en < ?`, params: [inicio - 120 * DIA] }]);
     } catch { /* counters are best effort; caps are re-read next pass */ }
   }
   return r;
+}
+
+/**
+ * The notifier starts its cursor at max(id) the first time it runs, and it runs after the pass
+ * (trasIngesta). Without a cursor in place before this pass writes, the events of the first pass
+ * that writes anything would be skipped and never notified.
+ */
+export async function anclarCursorAvisos(lectura: BaseResultados, ahora: number, registro: Pick<Console, 'warn'>) {
+  try {
+    if (!(await tablaExiste(lectura, 'notificacion_cursor'))) return;
+    await lectura.escribirPropias([{
+      sql: `insert into notificacion_cursor (fuente, ultimo_id, actualizado_en)
+        select 'resultado_auto_evento', coalesce(max(id), 0), ? from resultado_auto_evento where true
+        on conflict (fuente) do nothing`,
+      params: [ahora],
+    }]);
+  } catch (e) {
+    registro.warn(`[resultados-auto] cursor de avisos no anclado: ${String((e as Error)?.message ?? e).slice(0, 120)}`);
+  }
 }
 
 type Ctx = {
@@ -183,7 +221,10 @@ type Ctx = {
   presupuestoBytes: number;
   filasDia: () => number;
   resumen: ResumenResultadosAuto;
-  ia: { cliente: ClienteIa; puede: () => boolean; disponibles: () => number; anotar: (n: number) => void } | null;
+  ia: {
+    cliente: ClienteIa; puede: () => boolean; disponibles: () => number;
+    reservar: (peorCaso: number) => Promise<boolean>; ajustar: (reservadas: number, reales: number) => Promise<void>;
+  } | null;
 };
 
 const msDe = (fecha: string) => Date.parse(`${fecha}T00:00:00Z`);
@@ -335,6 +376,7 @@ async function procesar(c: Ctx, u: Unidad): Promise<'seguir' | 'parar'> {
     if (agotada) await c.lectura.escribirPropias([sentenciaRevision(u.clave, 'errores_repetidos', { motivo, escrito: filas > 0 }, c.ahora)]);
     await c.lectura.escribirPropias([sentenciaCierre(u, { ...res, detalle: motivo, ahora: c.ahora })]);
     c.resumen.detalle.push({ clave: u.clave, estado: res.estado, motivo, filas });
+    if (remoto) c.resumen.status = motivo;
     return remoto ? 'parar' : 'seguir';
   }
   await c.lectura.escribirPropias([sentenciaCierre(u, { ...res, detalle: res.motivo, ahora: c.ahora })]);
@@ -531,14 +573,21 @@ function elegirPorNombres(candidatas: readonly HechosPrueba[], objetivo: { id: s
 /** IA sobre el texto del PDF; null si no se llamó o no pasó la validación estricta (queda en revisión). */
 async function conIa(c: Ctx, u: Unidad, p: LecturaPdfAuto, pruebas: (PruebaFecha & { fecha: string })[]): Promise<HechosPrueba[] | null> {
   if (!c.ia || !c.ia.puede()) return null;
+  const ia = c.ia;
   const fechaCatalogo = (x: PruebaFecha) => pruebas.find((q) => q.weapon === x.weapon && q.gender === x.gender && q.category === x.category && q.format === x.format)?.fecha ?? null;
-  const res = await extraerPdfConIa(c.ia.cliente, {
+  const reserva: { neuronas: number | null } = { neuronas: null };
+  const res = await extraerPdfConIa(ia.cliente, {
     url: p.lectura.url, sha256: p.lectura.sha256 ?? '', docId: p.docId, season: u.temporada, textos: p.textos,
     editionName: p.hechos[0]?.edition.name ?? null, editionStart: p.hechos[0]?.edition.startDate ?? null,
     editionEnd: p.hechos[0]?.edition.endDate ?? null, fechaCatalogo, maxCaracteres: c.cfg.iaMaxCaracteres,
-    neuronasDisponibles: c.ia.disponibles(),
+    neuronasDisponibles: ia.disponibles(),
+    reservar: async (peorCaso) => {
+      const ok = await ia.reservar(peorCaso);
+      if (ok) reserva.neuronas = peorCaso;
+      return ok;
+    },
   });
-  if (res.ok || res.llamada) c.ia.anotar(res.neuronas);
+  if (reserva.neuronas !== null && (res.ok || res.llamada)) await ia.ajustar(reserva.neuronas, res.neuronas);
   if (res.ok) {
     c.resumen.ia.aceptadas += 1;
     return res.validacion.hechos;

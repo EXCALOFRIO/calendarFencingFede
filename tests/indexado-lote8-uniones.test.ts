@@ -156,4 +156,22 @@ describe('separar-uniones: uniones pasadas que las reglas ya no permiten', () =>
     // Idempotente.
     expect(separarUnionesPorNombre(db).miembros.separados).toBe(0);
   });
+
+  it('una unión revisada a mano (`revision_manual`) se queda, y también las filas que trajo', () => {
+    const db = crearBase();
+    persona(db, 'marco', 'MARCO NUNO GONZALEZ PEÑAS', { licencia: 'MPG1' });
+    persona(db, 'pdf', 'PEÑAS GONZALEZ Marco Nuno', { alias: 'rfee_pdf', fundida: 'marco' });
+    db.prepare(`INSERT INTO sport_link_candidate (source, source_ref, source_name, person_id, status, evidence)
+      VALUES ('revision_manual', 'pdf', 'PEÑAS GONZALEZ Marco Nuno', 'marco', 'CONFIRMADO', 'revision_manual:pdf_apellidos_invertidos')`).run();
+    prueba(db, 'p1', 'rfee_pdf');
+    prueba(db, 'p2', 'rfee_pdf');
+    const a = puesto(db, 'p1', 'rfee_pdf', 'PEÑAS GONZALEZ Marco Nuno', { persona: 'pdf' });
+    const b = puesto(db, 'p2', 'rfee_pdf', 'PEÑAS GONZALEZ Marco Nuno', { persona: 'marco' });
+    const inf = separarUnionesPorNombre(db);
+    expect(uno(db, `SELECT merged_into_person_id m FROM sport_person WHERE id = 'pdf'`)).toEqual({ m: 'marco' });
+    expect(inf.miembros.separados).toBe(0);
+    expect(personaDe(db, a)).toBe('marco');
+    expect(personaDe(db, b)).toBe('marco');
+    expect(inf.filas.puestos).toBe(0);
+  });
 });

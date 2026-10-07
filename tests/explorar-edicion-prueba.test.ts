@@ -6,7 +6,6 @@ import {
   huecosCuadro,
   inicioPorDefecto,
   inicioParaRonda,
-  nombreCorto,
   resaltado,
   ultimaRondaResaltada,
   ventanaRondas,
@@ -27,6 +26,7 @@ import {
 import { etiquetaCortaRonda, ordenarCuadro, partePorFase, rondaCuadro, type FilaAsaltoPrueba } from '@/lib/sport/explorar/ediciones-asaltos';
 import { leerEdicion } from '@/lib/sport/explorar/ediciones';
 import type { AsaltoDePrueba, RondaCuadro } from '@/lib/sport/explorar/tipos-busqueda';
+import { nombreCompacto } from '@/lib/sport/nombre-visible';
 import { UUID_A, UUID_B, UUID_C, crearContexto } from './helpers/explorar';
 
 const { CuadroDePrueba, PoulesDePrueba } = await import('@/components/explorar/asaltos-prueba');
@@ -47,7 +47,7 @@ const asalto = (id: string, a: [string, number], b: [string, number], ronda = 'A
   a: tirador(a[0], a[1]),
   b: tirador(b[0], b[1]),
 });
-const ronda = (clave: string, tamano: number, asaltos: AsaltoDePrueba[], etiqueta = `Tabla de ${tamano}`): RondaCuadro => ({
+const ronda = (clave: string, tamano: number, asaltos: AsaltoDePrueba[], etiqueta = `Tablón de ${tamano}`): RondaCuadro => ({
   ronda: clave,
   etiqueta,
   tamano,
@@ -78,8 +78,8 @@ describe('ventana de rondas del cuadro', () => {
 
   it('abre en el cuadro principal y deja el previo de la FIE a la izquierda', () => {
     const rondas = [
-      ronda('A128', 128, [], 'Previa · Tabla de 128'),
-      ronda('A64', 64, [], 'Previa · Tabla de 64'),
+      ronda('A128', 128, [], 'Previa · Tablón de 128'),
+      ronda('A64', 64, [], 'Previa · Tablón de 64'),
       ronda('B64', 64, []),
       ronda('B32', 32, []),
     ];
@@ -149,9 +149,10 @@ describe('buscador de la prueba', () => {
     expect(vistaInicial(undefined, { clasificacion: false, poules: true, directas: true })).toBe('directas');
   });
 
-  it('el nombre corto del cuadro es apellido e inicial cuando la fuente los separa', () => {
-    expect(nombreCorto('KANO Koki')).toBe('Kano K.');
-    expect(nombreCorto('JUAN PEREZ GARCIA')).toBe('Juan Perez Garcia');
+  it('el nombre del cuadro es el compacto común: primer apellido e inicial cuando la fuente los separa', () => {
+    expect(nombreCompacto('KANO Koki')).toBe('Kano K.');
+    expect(nombreCompacto('ZABALA GUTIERREZ Juan')).toBe('Zabala J.');
+    expect(nombreCompacto('JUAN PEREZ GARCIA')).toBe('Juan Perez Garcia');
   });
 });
 
@@ -162,7 +163,7 @@ describe('rondas de la FIE con cuadro previo y principal', () => {
   });
 
   it('B… es el cuadro principal y A… su previa, en ese orden hacia la final', () => {
-    expect(rondaCuadro('B16')).toEqual({ tamano: 16, etiqueta: 'Tabla de 16' });
+    expect(rondaCuadro('B16')).toEqual({ tamano: 16, etiqueta: 'Tablón de 16' });
     const cuadro = ordenarCuadro([
       fila('1', 'A4', 'X', 'Y', 15, 3),
       fila('2', 'B4', 'X', 'Z', 15, 9),
@@ -174,8 +175,8 @@ describe('rondas de la FIE con cuadro previo y principal', () => {
   });
 
   it('rótulos cortos de columna', () => {
-    expect([64, 16, 8, 4, 2].map((n) => etiquetaCortaRonda({ tamano: n, etiqueta: `Tabla de ${n}` }))).toEqual([
-      'Tabla de 64',
+    expect([64, 16, 8, 4, 2].map((n) => etiquetaCortaRonda({ tamano: n, etiqueta: `Tablón de ${n}` }))).toEqual([
+      'Tablón de 64',
       'Octavos',
       'Cuartos',
       'Semifinal',
@@ -393,7 +394,7 @@ describe('vistas de la prueba en pantalla', () => {
     const volver = construirUrlEdicion(UUID_A, { prueba: UUID_B, persona: UUID_C });
     expect(marcado).toContain(`href="/explorar/${UUID_C}?volver=${encodeURIComponent(volver).replace(/&/g, '&amp;')}"`);
     expect(marcado).toContain('Oro, puesto');
-    expect(marcado.match(/<a /g)).toHaveLength(1);
+    expect(marcado.match(/<a (?![^>]*data-enlace)/g)).toHaveLength(1);
   });
 
   it('la página no repite textos de estado ni enlaces de búsqueda, y la categoría nunca sale en bruto', () => {

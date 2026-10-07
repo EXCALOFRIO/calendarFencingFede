@@ -88,7 +88,7 @@ export function MisTiradores({
                         // Se ve de 26 px; el pseudoelemento lleva el área táctil a 44.
                         "relative min-h-0! min-w-0! after:absolute after:inset-x-0 after:-inset-y-[9px] after:content-['']",
                         'inline-flex h-[26px] min-w-0 max-w-full items-center gap-1.5 rounded-full border border-filete-alto px-2 text-[12px] leading-none',
-                        'hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+                        'hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
                         // Sin puesto se atenúa con el color de texto secundario, no con opacidad: el contraste sigue en 4,5:1.
                         'disabled:cursor-default disabled:text-muted-foreground disabled:hover:bg-transparent',
                         'aria-pressed:border-primary/50 aria-pressed:bg-marcado aria-pressed:text-primary-text',

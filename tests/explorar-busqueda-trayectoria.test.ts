@@ -154,7 +154,7 @@ describe('poules y cuadro de una prueba', () => {
   });
 
   it('etiqueta las claves de ronda publicadas en palabras', () => {
-    expect(etiquetaRonda('TABLEAU', 'A64')).toBe('Tabla de 64');
+    expect(etiquetaRonda('TABLEAU', 'A64')).toBe('Tablón de 64');
     expect(etiquetaRonda('TABLEAU', 'A2')).toBe('Final');
     expect(etiquetaRonda('TABLEAU', 'C2')).toBe('Tercer puesto');
     expect(etiquetaRonda('POULE', 'V2P3')).toBe('Vuelta 2, poule 3');

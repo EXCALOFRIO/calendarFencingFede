@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { construirAvisosResultados, type LineaResultado } from '@/lib/notificaciones/agrupar';
-import { agruparBandeja, contarNoLeidas, guardarAvisos, leerBandeja, abrirAviso, type FilaBandeja } from '@/lib/notificaciones/bandeja';
+import {
+  agruparBandeja, contarNoLeidas, contarPruebasRecientes, guardarAvisos, leerBandeja, abrirAviso, MAX_PRUEBAS_POR_HORA, type FilaBandeja,
+} from '@/lib/notificaciones/bandeja';
 import { construirAvisosCalendario, type EventoCalendario } from '@/lib/notificaciones/calendario';
 import { compararLecturas, registrarLecturasPerfil, personasVinculadas } from '@/lib/notificaciones/perfil';
 import { generarClavesVapid } from '@/lib/notificaciones/push/vapid';
 import {
   consumirEventosIngesta, encolarEventosDeportivos, notificarEventosDeportivos, notificarResultadosNuevos, procesarEventosPendientes,
 } from '@/lib/notificaciones/resultados';
-import { guardarSuscripcion, listarSuscripciones, MAX_FALLOS, enviarASuscripciones, validarSuscripcion } from '@/lib/notificaciones/suscripciones';
+import {
+  CONCURRENCIA_PUSH, guardarSuscripcion, listarSuscripciones, MAX_FALLOS, MAX_SUSCRIPCIONES_POR_PERFIL, enviarASuscripciones, validarSuscripcion,
+} from '@/lib/notificaciones/suscripciones';
 import { PREFERENCIAS_POR_DEFECTO, type Preferencias } from '@/lib/notificaciones/tipos';
 import { baseNotificaciones, suscripcionNavegador } from './helpers/notificaciones';
 
@@ -80,15 +84,33 @@ describe('resultados publicados: agrupación y deduplicación', () => {
     const deSeguidora = b.avisos(seguidora);
     expect(deSeguidora).toHaveLength(1);
     expect(deSeguidora[0].tipo).toBe('seguidos');
-    expect(JSON.parse(String(deSeguidora[0].datos)).lineas.map((l: { nombre: string }) => l.nombre)).toEqual(['Carla Ruiz', 'Lucía García']);
+    // Lucía (2011) puede ser menor: a quien solo la sigue no le llega su resultado.
+    expect(JSON.parse(String(deSeguidora[0].datos)).lineas.map((l: { nombre: string }) => l.nombre)).toEqual(['Carla Ruiz']);
     expect(b.avisos(ajeno)).toHaveLength(0);
     expect(b.avisos(revocada)).toHaveLength(0);
+  });
+
+  it('«Siguiendo» no avisa de un posible menor ni de alguien sin año; si una ficha fundida es menor, tampoco', async () => {
+    const b = (base = baseNotificaciones());
+    const yo = b.perfil('Yo');
+    const adulta = b.persona('Ana Adulta', { anio: 1995 });
+    const sinAnio = b.persona('Sin Año', { anio: null });
+    const limite = b.persona('Cumple Dieciocho', { anio: 2008 });
+    const mezclada = b.persona('Mezcla Adulta', { anio: 1990 });
+    b.persona('Mezcla Joven', { anio: 2012, fundidaEn: mezclada });
+    for (const p of [adulta, sinAnio, limite, mezclada]) b.seguir(yo, p);
+    const prueba = b.prueba('Torneo');
+    for (const [i, p] of [adulta, sinAnio, limite, mezclada].entries()) b.resultado(prueba.id, p, i + 1);
+    await procesarDespues(b, [{ tipo: 'resultados_publicados', competitionId: prueba.id }]);
+    const [aviso] = b.avisos(yo);
+    expect(aviso.titulo).toBe('Ana Adulta: 1.º en Espada femenino M17');
+    expect(JSON.parse(String(aviso.datos)).lineas.map((l: { nombre: string }) => l.nombre)).toEqual(['Ana Adulta']);
   });
 
   it('el mismo evento otra vez, u otro de las mismas personas, no repite ni empuja de nuevo', async () => {
     const { b, madre, prueba, pLucia } = escenario();
     const claves = await vapid();
-    await guardarSuscripcion(b.db, madre, await suscripcionNavegador('https://push.example.test/madre'));
+    await guardarSuscripcion(b.db, madre, await suscripcionNavegador('https://fcm.googleapis.com/fcm/send/madre'));
     const red = fetch201();
     const primero = await notificarEventosDeportivos(b.db, [{ tipo: 'resultados_publicados', competitionId: prueba.id }], { vapid: claves, fetch: red.f, ahora: AHORA });
     expect(primero.push.enviadas).toBe(1);
@@ -200,13 +222,15 @@ describe('eventos de la ingesta automática (resultado_auto_evento)', () => {
     const r = await notificarResultadosNuevos(b.db, { vapid: null, ahora: AHORA });
     expect(r.leidos).toBe(2);
     expect(b.avisos(madre).map((a) => a.tipo)).toEqual(['perfil']);
-    expect(b.avisos(seguidora).map((a) => a.tipo)).toEqual(['seguidos']);
+    // La seguidora solo sigue a Lucía entre las personas del evento, y Lucía puede ser menor.
+    expect(b.avisos(seguidora)).toEqual([]);
     expect(b.sqlite.prepare(`SELECT ultimo_id FROM notificacion_cursor WHERE fuente = 'resultado_auto_evento'`).get()!.ultimo_id).toBe(3);
 
     evento.run('prueba_publicada', prueba.id, null);
     const otra = await notificarResultadosNuevos(b.db, { vapid: null, ahora: AHORA });
     expect(otra.leidos).toBe(1);
-    expect(otra.guardados).toHaveLength(0);
+    // La prueba entera sí trae a Carla (adulta), que la seguidora también sigue.
+    expect(otra.guardados.map((g) => g.aviso.profileId)).toEqual([seguidora]);
     expect(b.avisos()).toHaveLength(2);
   });
 });
@@ -237,7 +261,7 @@ describe('preferencias', () => {
     b.preferencia(madre, 'canal:campana', false);
     b.preferencia(seguidora, 'canal:campana', false);
     b.preferencia(seguidora, 'canal:push', false);
-    await guardarSuscripcion(b.db, madre, await suscripcionNavegador('https://push.example.test/madre'));
+    await guardarSuscripcion(b.db, madre, await suscripcionNavegador('https://fcm.googleapis.com/fcm/send/madre'));
     const red = fetch201();
     const r = await notificarEventosDeportivos(b.db, [{ tipo: 'resultados_publicados', competitionId: prueba.id }], { vapid: await vapid(), fetch: red.f, ahora: AHORA });
     expect(r.push.enviadas).toBe(1);
@@ -250,7 +274,7 @@ describe('preferencias', () => {
   it('push apagado: aviso en la campana y nada al móvil', async () => {
     const { b, madre, prueba } = escenario();
     b.preferencia(madre, 'canal:push', false);
-    await guardarSuscripcion(b.db, madre, await suscripcionNavegador('https://push.example.test/madre'));
+    await guardarSuscripcion(b.db, madre, await suscripcionNavegador('https://fcm.googleapis.com/fcm/send/madre'));
     const red = fetch201();
     await notificarEventosDeportivos(b.db, [{ tipo: 'resultados_publicados', competitionId: prueba.id }], { vapid: await vapid(), fetch: red.f, ahora: AHORA });
     expect(red.llamadas).toHaveLength(0);
@@ -278,7 +302,7 @@ describe('suscripciones caducadas', () => {
     const b = (base = baseNotificaciones());
     const yo = b.perfil('Yo');
     for (const nombre of ['ok', 'gone', 'notfound', 'rechazo', 'caido']) {
-      await guardarSuscripcion(b.db, yo, await suscripcionNavegador(`https://push.example.test/${nombre}`));
+      await guardarSuscripcion(b.db, yo, await suscripcionNavegador(`https://fcm.googleapis.com/fcm/send/${nombre}`));
     }
     const estado: Record<string, number> = { ok: 201, gone: 410, notfound: 404, rechazo: 403, caido: 503 };
     const red = (async (url: string) => new Response(null, { status: estado[url.split('/').pop()!] })) as unknown as typeof fetch;
@@ -286,7 +310,7 @@ describe('suscripciones caducadas', () => {
     const mensaje = { titulo: 't', cuerpo: 'c', url: '/notificaciones', etiqueta: 'e' };
     const subs = await listarSuscripciones(b.db, [yo]);
     const r = await enviarASuscripciones(b.db, subs.map((s) => ({ suscripcion: s, mensaje })), claves, { fetch: red, ahora: AHORA });
-    expect(r).toEqual({ enviadas: 1, caducadasBorradas: 2, rechazadas: 1, errores: 1 });
+    expect(r).toEqual({ enviadas: 1, caducadasBorradas: 2, rechazadas: 1, errores: 1, omitidas: 0 });
     const quedan = (await listarSuscripciones(b.db, [yo])).map((s) => s.endpoint.split('/').pop()).sort();
     expect(quedan).toEqual(['caido', 'ok', 'rechazo']);
     for (let i = 1; i < MAX_FALLOS; i++) {
@@ -300,7 +324,7 @@ describe('suscripciones caducadas', () => {
     const b = (base = baseNotificaciones());
     const a = b.perfil('A');
     const c = b.perfil('C');
-    const sub = await suscripcionNavegador('https://push.example.test/uno');
+    const sub = await suscripcionNavegador('https://fcm.googleapis.com/fcm/send/uno');
     await guardarSuscripcion(b.db, a, sub);
     await guardarSuscripcion(b.db, c, sub);
     expect(await listarSuscripciones(b.db, [a])).toHaveLength(0);
@@ -309,6 +333,80 @@ describe('suscripciones caducadas', () => {
     expect(validarSuscripcion({ ...sub, p256dh: 'AAAA' })).toBeNull();
     expect(validarSuscripcion({ ...sub, auth: 'AAAA' })).toBeNull();
     expect(validarSuscripcion({ ...sub, dispositivo: 'x'.repeat(200) })!.dispositivo).toHaveLength(80);
+    expect(validarSuscripcion({ ...sub, endpoint: 'https://push.example.test/uno' })).toBeNull();
+  });
+
+  it('como mucho diez dispositivos por cuenta: al suscribir el undécimo se va el más antiguo', async () => {
+    const b = (base = baseNotificaciones());
+    const yo = b.perfil('Yo');
+    const otra = b.perfil('Otra');
+    await guardarSuscripcion(b.db, otra, await suscripcionNavegador('https://fcm.googleapis.com/fcm/send/otra'), AHORA);
+    for (let i = 0; i < MAX_SUSCRIPCIONES_POR_PERFIL + 2; i++) {
+      await guardarSuscripcion(b.db, yo, await suscripcionNavegador(`https://fcm.googleapis.com/fcm/send/d${i}`), new Date(AHORA.getTime() + i * 1000));
+    }
+    const mias = (await listarSuscripciones(b.db, [yo])).map((s) => s.endpoint.split('/').pop());
+    expect(mias).toHaveLength(MAX_SUSCRIPCIONES_POR_PERFIL);
+    expect(mias).not.toContain('d0');
+    expect(mias).not.toContain('d1');
+    expect(mias[0]).toBe(`d${MAX_SUSCRIPCIONES_POR_PERFIL + 1}`);
+    expect(await listarSuscripciones(b.db, [otra])).toHaveLength(1);
+    // Volver a suscribir uno que ya estaba no quita a nadie más.
+    await guardarSuscripcion(b.db, yo, await suscripcionNavegador('https://fcm.googleapis.com/fcm/send/d5'), new Date(AHORA.getTime() + 60_000));
+    expect(await listarSuscripciones(b.db, [yo])).toHaveLength(MAX_SUSCRIPCIONES_POR_PERFIL);
+  });
+
+  it('una suscripción guardada con un host que ya no se admite se borra sin llamarla', async () => {
+    const b = (base = baseNotificaciones());
+    const yo = b.perfil('Yo');
+    const sub = await suscripcionNavegador('https://fcm.googleapis.com/fcm/send/buena');
+    await guardarSuscripcion(b.db, yo, sub);
+    b.sqlite.prepare(`INSERT INTO notificacion_suscripcion (id, profile_id, endpoint, p256dh, auth, creada_en, fallos)
+      VALUES ('vieja', ?, 'https://169.254.169.254/latest', ?, ?, 1, 0)`).run(yo, sub.p256dh, sub.auth);
+    const red = fetch201();
+    const subs = await listarSuscripciones(b.db, [yo]);
+    const mensaje = { titulo: 't', cuerpo: 'c', url: '/notificaciones', etiqueta: 'e' };
+    const r = await enviarASuscripciones(b.db, subs.map((s) => ({ suscripcion: s, mensaje })), await vapid(), { fetch: red.f, ahora: AHORA });
+    expect(r).toMatchObject({ enviadas: 1, caducadasBorradas: 1 });
+    expect(red.llamadas).toEqual([sub.endpoint]);
+    expect((await listarSuscripciones(b.db, [yo])).map((s) => s.id)).not.toContain('vieja');
+  });
+
+  it('envía en paralelo con un tope de concurrencia y deja sin intentar lo que pasa del tope por pasada', async () => {
+    const b = (base = baseNotificaciones());
+    const yo = b.perfil('Yo');
+    for (let i = 0; i < 10; i++) await guardarSuscripcion(b.db, yo, await suscripcionNavegador(`https://fcm.googleapis.com/fcm/send/p${i}`));
+    let enVuelo = 0;
+    let maximo = 0;
+    const red = (async () => {
+      enVuelo++;
+      maximo = Math.max(maximo, enVuelo);
+      await new Promise((r) => setTimeout(r, 5));
+      enVuelo--;
+      return new Response(null, { status: 201 });
+    }) as unknown as typeof fetch;
+    const subs = await listarSuscripciones(b.db, [yo]);
+    const mensaje = { titulo: 't', cuerpo: 'c', url: '/notificaciones', etiqueta: 'e' };
+    const r = await enviarASuscripciones(b.db, subs.map((s) => ({ suscripcion: s, mensaje })), await vapid(), {
+      fetch: red, ahora: AHORA, concurrencia: 3, maxEnvios: 8,
+    });
+    expect(r).toEqual({ enviadas: 8, caducadasBorradas: 0, rechazadas: 0, errores: 0, omitidas: 2 });
+    expect(maximo).toBeGreaterThan(1);
+    expect(maximo).toBeLessThanOrEqual(3);
+    expect(CONCURRENCIA_PUSH).toBe(6);
+  });
+
+  it('las pruebas de la última hora se cuentan por cuenta', async () => {
+    const b = (base = baseNotificaciones());
+    const yo = b.perfil('Yo');
+    const otra = b.perfil('Otra');
+    const prueba = (profileId: string, t: Date) => guardarAvisos(b.db, [{
+      profileId, tipo: 'prueba', clave: `prueba:${t.getTime()}`, grupo: 'prueba', titulo: 'Prueba', cuerpo: '', url: '/notificaciones', datos: null,
+    }], new Map(), t);
+    await prueba(yo, new Date(AHORA.getTime() - 2 * 3_600_000));
+    for (let i = 0; i < MAX_PRUEBAS_POR_HORA; i++) await prueba(yo, new Date(AHORA.getTime() - i * 60_000));
+    await prueba(otra, AHORA);
+    expect(await contarPruebasRecientes(b.db, yo, AHORA)).toBe(MAX_PRUEBAS_POR_HORA);
+    expect(await contarPruebasRecientes(b.db, otra, AHORA)).toBe(1);
   });
 });
 
@@ -333,7 +431,8 @@ describe('cambios de perfil: ranking y estado olímpico', () => {
     expect(aviso.tipo).toBe('perfil');
     expect(aviso.titulo).toBe('Cambios en el perfil de Marta García');
     expect(aviso.cuerpo).toBe('Ranking nacional · Espada femenino M17: 5.º (antes 8.º); Estado olímpico · Espada femenino absoluto: en plaza olímpica (antes cerca de la plaza olímpica)');
-    expect(aviso.url).toBe(`/explorar/${pMarta}`);
+    // Ranking y plaza olímpica: se abre la sección Ranking del perfil.
+    expect(aviso.url).toBe(`/explorar/${pMarta}/ranking`);
     expect((await registrarLecturasPerfil(b.db, personas, leer('2025-2026|5', 'clasificado'), AHORA)).guardados).toHaveLength(0);
     expect((await registrarLecturasPerfil(b.db, personas, leer('2025-2026|5'), AHORA)).cambios).toBe(0);
     expect(b.avisos(madre)).toHaveLength(1);

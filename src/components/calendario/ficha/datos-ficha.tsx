@@ -506,11 +506,12 @@ export function LineaDireccion({
           target="_blank"
           rel="noreferrer"
           title={texto}
-          aria-label={`${texto}: abrir en el mapa`}
           className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-md text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           {contenido}
           <Navigation className="size-4 shrink-0 text-primary-text" aria-hidden />
+          {/* Detrás de la dirección visible, no en un aria-label que la tape (WCAG 2.5.3). */}
+          <span className="sr-only">: abrir en el mapa (se abre en otra pestaña)</span>
         </a>
       ) : (
         <p title={texto} className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 text-sm text-muted-foreground">

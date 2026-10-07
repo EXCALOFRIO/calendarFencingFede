@@ -3,32 +3,53 @@ import { RUTA_EXPLORAR } from './url';
 export const RUTA_EDICIONES = `${RUTA_EXPLORAR}/ediciones`;
 
 export const FUENTES_CATALOGO = [
-  { valor: 'fie', etiqueta: 'FIE' },
-  { valor: 'efc', etiqueta: 'EFC' },
-  { valor: 'skermo_rfee', etiqueta: 'RFEE / Skermo HTML' },
-  { valor: 'rfee_pdf', etiqueta: 'RFEE PDF' },
+  { valor: 'fie', etiqueta: 'Internacional' },
+  { valor: 'efc', etiqueta: 'Europeo' },
+  { valor: 'skermo_rfee', etiqueta: 'Nacional' },
+  { valor: 'rfee_pdf', etiqueta: 'Nacional (PDF)' },
   { valor: 'engarde', etiqueta: 'Engarde' },
 ] as const;
 
-export type CriteriosCatalogo = { q: string; fuente: string; temporada: string };
+/** El orden es el de la URL. `desde` y `hasta` son años; `temporada` sigue valiendo en enlaces antiguos. */
+export const CLAVES_CATALOGO = ['q', 'fuente', 'arma', 'categoria', 'desde', 'hasta', 'temporada'] as const;
+export type ClaveCatalogo = (typeof CLAVES_CATALOGO)[number];
+export type CriteriosCatalogo = Record<ClaveCatalogo, string>;
+
+export const CRITERIOS_CATALOGO_VACIOS: CriteriosCatalogo = {
+  q: '', fuente: '', arma: '', categoria: '', desde: '', hasta: '', temporada: '',
+};
+
+const LIMITES: Record<ClaveCatalogo, number> = { q: 100, fuente: 40, arma: 10, categoria: 10, desde: 4, hasta: 4, temporada: 9 };
+const EN_MAYUSCULAS: ReadonlySet<ClaveCatalogo> = new Set(['arma', 'categoria']);
+
 type Parametros = Record<string, string | string[] | undefined>;
 
 export function leerCriteriosCatalogo(params: Parametros) {
   const primero = (valor: string | string[] | undefined, limite: number) =>
     ((Array.isArray(valor) ? valor[0] : valor) ?? '').trim().slice(0, limite + 1);
-  return {
-    criterios: {
-      q: primero(params.q, 100),
-      fuente: primero(params.fuente, 40),
-      temporada: primero(params.temporada, 9),
-    },
-    cursor: primero(params.cursor, 600) || undefined,
-  };
+  const criterios = { ...CRITERIOS_CATALOGO_VACIOS };
+  for (const clave of CLAVES_CATALOGO) {
+    const valor = primero(params[clave], LIMITES[clave]);
+    criterios[clave] = EN_MAYUSCULAS.has(clave) ? valor.toUpperCase() : valor;
+  }
+  return { criterios, cursor: primero(params.cursor, 600) || undefined };
+}
+
+/** Lo que entra en la consulta: sólo lo rellenado. */
+export function entradaCatalogo(criterios: CriteriosCatalogo, cursor?: string): Record<string, string> {
+  const entrada: Record<string, string> = {};
+  for (const clave of CLAVES_CATALOGO) if (criterios[clave]) entrada[clave] = criterios[clave];
+  if (cursor) entrada.cursor = cursor;
+  return entrada;
+}
+
+export function hayFiltrosCatalogo(criterios: CriteriosCatalogo): boolean {
+  return CLAVES_CATALOGO.some((clave) => clave !== 'q' && criterios[clave] !== '');
 }
 
 export function urlCatalogo(criterios: CriteriosCatalogo, cursor?: string): string {
   const params = new URLSearchParams();
-  for (const clave of ['q', 'fuente', 'temporada'] as const) {
+  for (const clave of CLAVES_CATALOGO) {
     if (criterios[clave]) params.set(clave, criterios[clave]);
   }
   if (cursor) params.set('cursor', cursor);
@@ -36,20 +57,26 @@ export function urlCatalogo(criterios: CriteriosCatalogo, cursor?: string): stri
   return `${RUTA_EDICIONES}${texto ? `?${texto}` : ''}`;
 }
 
+const VALIDOS: Partial<Record<ClaveCatalogo, (v: string) => boolean>> = {
+  fuente: (v) => FUENTES_CATALOGO.some((f) => f.valor === v),
+  arma: (v) => ['FLORETE', 'ESPADA', 'SABLE'].includes(v),
+  categoria: (v) => /^(M\d{1,2}|ABS|VET)$/.test(v),
+  desde: (v) => /^(19|20)\d{2}$/.test(v),
+  hasta: (v) => /^(19|20)\d{2}$/.test(v),
+  temporada: (v) => /^\d{4}(?:-\d{4})?$/.test(v),
+};
+
 /** Sólo el índice local y sus filtros conocidos, nunca un destino arbitrario. */
 export function sanitizarRetornoCatalogo(crudo: string | undefined): string {
   if (!crudo || crudo.length > 4096 || /[\r\n\0#]/.test(crudo) ||
     (crudo !== RUTA_EDICIONES && !crudo.startsWith(`${RUTA_EDICIONES}?`))) return '';
   const params = new URLSearchParams(crudo.slice(RUTA_EDICIONES.length));
-  const { criterios, cursor } = leerCriteriosCatalogo({
-    q: params.get('q') ?? undefined,
-    fuente: params.get('fuente') ?? undefined,
-    temporada: params.get('temporada') ?? undefined,
-    cursor: params.get('cursor') ?? undefined,
-  });
-  if (criterios.q.length > 100 ||
-    (criterios.fuente && !FUENTES_CATALOGO.some((f) => f.valor === criterios.fuente)) ||
-    (criterios.temporada && !/^\d{4}(?:-\d{4})?$/.test(criterios.temporada)) ||
-    (cursor && cursor.length > 600)) return '';
+  const { criterios, cursor } = leerCriteriosCatalogo(Object.fromEntries(
+    [...CLAVES_CATALOGO, 'cursor'].map((clave) => [clave, params.get(clave) ?? undefined]),
+  ));
+  if (criterios.q.length > 100 || (cursor && cursor.length > 600)) return '';
+  for (const [clave, valido] of Object.entries(VALIDOS) as [ClaveCatalogo, (v: string) => boolean][]) {
+    if (criterios[clave] && !valido(criterios[clave])) return '';
+  }
   return urlCatalogo(criterios, cursor);
 }

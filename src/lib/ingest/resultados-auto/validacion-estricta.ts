@@ -155,6 +155,28 @@ export function veredictoEstricto(v: ResultadoValidacion, crudo: unknown): Fallo
       fallos.push({ prueba: k, motivo: m });
     }
   }
+  fallos.push(...pruebasRepetidas(v.hechos));
+  return fallos;
+}
+
+/**
+ * The model may return the same event twice: `claveCompeticion` gives the copy a `~2` key, so both
+ * would be written. Same attributes and at least half of the fencers in common is a repeat.
+ */
+function pruebasRepetidas(hechos: readonly HechosPrueba[]): FalloEstricto[] {
+  const fallos: FalloEstricto[] = [];
+  const vistas: { base: string; nombres: Set<string>; clave: string }[] = [];
+  for (const h of hechos) {
+    const clave = h.competition.competitionKey;
+    const base = clave.replace(/~\d+$/, '');
+    const nombres = new Set(h.results.map((r) => compacto(r.name)));
+    for (const o of vistas) {
+      if (o.base !== base || nombres.size === 0 || o.nombres.size === 0) continue;
+      const comunes = [...nombres].filter((n) => o.nombres.has(n)).length;
+      if (comunes * 2 >= Math.min(nombres.size, o.nombres.size)) fallos.push({ prueba: clave, motivo: 'prueba_repetida', detalle: o.clave });
+    }
+    vistas.push({ base, nombres, clave });
+  }
   return fallos;
 }
 

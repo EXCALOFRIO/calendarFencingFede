@@ -79,7 +79,7 @@ export function etiquetaTamano(n: number): string {
   if (n === 2) return 'Final';
   if (n === 4) return 'Semifinales';
   if (n === 8) return 'Cuartos de final';
-  return `Tabla de ${n}`;
+  return `Tablón de ${n}`;
 }
 
 /**

@@ -58,8 +58,8 @@ export function Donut({
         </span>
       </div>
       <figcaption className="flex flex-col leading-tight">
-        <span className="text-[0.6875rem] font-medium text-foreground">{rotulo}</span>
-        {detalle ? <span className="text-[0.6875rem] text-muted-foreground tabular-nums">{detalle}</span> : null}
+        <span className="text-[12px] font-medium text-foreground">{rotulo}</span>
+        {detalle ? <span className="text-[12px] text-muted-foreground tabular-nums">{detalle}</span> : null}
       </figcaption>
     </figure>
   );

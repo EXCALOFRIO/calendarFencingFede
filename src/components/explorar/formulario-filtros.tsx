@@ -1,30 +1,10 @@
 'use client';
 
-import { ChevronDown, SlidersHorizontal } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
-import { CampoFecha } from '@/components/admin/campo-fecha';
+import { ChipFiltro, FilaChips } from '@/components/sistema/chip-filtro';
 import { BuscadorSocial } from './buscador-social';
-import { ACTIVO } from '@/components/nav';
-
-import { Button } from '@/components/ui/button';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   RUTA_EXPLORAR,
   CLAVES_CRITERIO,
@@ -36,8 +16,10 @@ import {
   type CriteriosExplorar,
   type OpcionTemporada,
 } from '@/lib/sport/explorar/url';
-import { categoriaVisible } from '@/lib/sport/explorar/presentacion';
-import { CATEGORY_LABEL, GENDER_LABEL, WEAPON_LABEL, cn, esFechaIsoReal } from '@/lib/utils';
+import { CLAVES_FILTRO_TIRADOR } from '@/lib/sport/explorar/filtros-buscar';
+import { categoriaVisible, ordenCategoriaVisible } from '@/lib/sport/explorar/presentacion';
+import { CATEGORY_LABEL, GENDER_LABEL, WEAPON_LABEL, esFechaIsoReal } from '@/lib/utils';
+import { ChipOpciones, ChipPais } from './buscador-filtros';
 
 type Opcion = { valor: string; etiqueta: string };
 type Grupo = { etiqueta: string; opciones: Opcion[] };
@@ -48,94 +30,11 @@ const NOMBRE_FUENTE: Record<OpcionTemporada['fuente'], string> = {
 };
 
 export const ARMAS: Opcion[] = Object.entries(WEAPON_LABEL).map(([valor, etiqueta]) => ({ valor, etiqueta }));
-const GENEROS: Opcion[] = Object.entries(GENDER_LABEL).map(([valor, etiqueta]) => ({ valor, etiqueta }));
-const CATEGORIAS: Opcion[] = Object.keys(CATEGORY_LABEL).map((valor) => ({ valor, etiqueta: categoriaVisible(valor) }));
-const ORGANIZADORES_OPCIONES: Opcion[] = [
-  { valor: 'FIE', etiqueta: 'FIE' },
-  { valor: 'EFC', etiqueta: 'EFC' },
-  { valor: 'RFEE', etiqueta: 'RFEE' },
-];
-const AMBITOS: Opcion[] = [
-  { valor: 'NACIONAL', etiqueta: 'Nacional' },
-  { valor: 'INTERNACIONAL', etiqueta: 'Internacional' },
-  { valor: 'AUTONOMICO', etiqueta: 'Autonómico' },
-];
-
-/** Radix no admite un valor vacío en una opción: este centinela significa «sin filtro». */
-const CUALQUIERA = 'cualquiera';
-
-/**
- * Píldora de 32 px dibujados dentro de un control de 44 de alto: el área
- * táctil no cambia, pero no se ve grande (la regla global de 44 px se cumple
- * en el botón, no en el dibujo).
- */
-const TOQUE = 'group flex h-[44px] min-w-0 items-center rounded-full outline-none disabled:cursor-wait disabled:opacity-60';
-const PILDORA =
-  'inline-flex h-[32px] items-center gap-1 rounded-full border bg-card px-3 text-[13px] font-medium whitespace-nowrap transition-colors group-hover:bg-accent group-focus-visible:ring-[3px] group-focus-visible:ring-ring/50';
-
-const CLAVES_AVANZADAS = [
-  'categoria',
-  'ambito',
-  'organizador',
-  'nacionalidad',
-  'temporada',
-  'torneo',
-  'desde',
-  'hasta',
-] as const;
-
-/** Lo que cuenta el botón «Filtros»: todo lo que se elige en su panel. */
-const CLAVES_FILTRO = ['arma', 'genero', ...CLAVES_AVANZADAS] as const;
-
-export function CampoSelect({
-  id,
-  etiqueta,
-  valor,
-  opciones,
-  grupos = [],
-  textoVacio,
-  onChange,
-}: {
-  id: string;
-  etiqueta: string;
-  valor: string;
-  opciones: Opcion[];
-  grupos?: Grupo[];
-  textoVacio: string;
-  onChange: (valor: string) => void;
-}) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <Label htmlFor={id}>{etiqueta}</Label>
-      <Select
-        value={valor === '' ? CUALQUIERA : valor}
-        onValueChange={(v) => onChange(v === CUALQUIERA ? '' : v)}
-      >
-        <SelectTrigger id={id} className="min-h-[40px] w-full min-w-0 bg-secondary">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={CUALQUIERA}>{textoVacio}</SelectItem>
-          {opciones.map((o) => (
-            <SelectItem key={o.valor} value={o.valor}>
-              {o.etiqueta}
-            </SelectItem>
-          ))}
-          {grupos.map((g) => (
-            <SelectGroup key={g.etiqueta}>
-              <SelectLabel>{g.etiqueta}</SelectLabel>
-              {g.opciones.map((o) => (
-                <SelectItem key={o.valor} value={o.valor}>
-                  {o.etiqueta}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
+/** Un tirador es masculino o femenino; «Mixto» sólo existe en pruebas. */
+const GENEROS: Opcion[] = Object.entries(GENDER_LABEL).filter(([v]) => v !== 'MIXTO').map(([valor, etiqueta]) => ({ valor, etiqueta }));
+const CATEGORIAS: Opcion[] = Object.keys(CATEGORY_LABEL)
+  .sort((a, b) => ordenCategoriaVisible(a) - ordenCategoriaVisible(b))
+  .map((valor) => ({ valor, etiqueta: categoriaVisible(valor) }));
 
 /**
  * Opciones del selector de temporada: un grupo por fuente y, aparte, la
@@ -196,24 +95,24 @@ export function prepararBusqueda(c: CriteriosExplorar): PreparacionBusqueda {
 }
 
 /**
- * Buscador de Explorar: la barra de perfiles en vivo (`BuscadorSocial`) y, tras
- * el botón «Filtros», todos los filtros de la búsqueda completa. El borrador
- * vive en el estado del formulario y sólo al buscar (Intro, «Ver todos los
- * resultados» o «Aplicar filtros») se escribe en la URL con `router.push`: así
- * el botón Atrás vuelve a la búsqueda anterior y cada búsqueda empieza en la
- * primera página. La página remonta este componente (`key`) cuando cambia la
+ * Buscador de tiradores: la barra de perfiles en vivo (`BuscadorSocial`) y
+ * una fila de chips (arma, género, categoría, país y, para quien dirige,
+ * «Solo España»). Cada chip abre una hoja y elegir aplica el filtro al momento
+ * con `router.push`: Atrás vuelve a la búsqueda anterior y cada búsqueda
+ * empieza en la primera página. El texto se envía con Intro o con «Ver todos
+ * los resultados». La página remonta este componente (`key`) cuando cambia la
  * URL. `children` es el contenido de la página (lista completa o pantalla de
  * inicio), que se sustituye por los perfiles en vivo mientras se escribe.
  */
 export function FormularioFiltros({
   criterios,
-  temporadas,
   atajoEspana,
   profileId,
   children,
 }: {
   criterios: CriteriosExplorar;
-  temporadas: OpcionTemporada[];
+  /** Temporadas que ofrecía el panel antiguo; los tiradores ya no se filtran por temporada. */
+  temporadas?: OpcionTemporada[];
   atajoEspana: boolean;
   /** Cuenta de la sesión: separa los recientes de cada cuenta en el navegador. */
   profileId?: string;
@@ -224,31 +123,20 @@ export function FormularioFiltros({
   const [borrador, setBorrador] = React.useState<CriteriosExplorar>(criterios);
   const [avisar, setAvisar] = React.useState(false);
 
-  const filtrosActivos = CLAVES_FILTRO.filter((k) => criterios[k] !== '').length;
-  // Una URL con un filtro inválido abre el panel: el error no puede quedar plegado.
-  const [abierto, setAbierto] = React.useState(() => Object.keys(erroresDe(criterios)).length > 0);
-
+  const filtrosActivos = CLAVES_FILTRO_TIRADOR.filter((k) => criterios[k] !== '').length;
   const errores = erroresDe(borrador);
-  const hayErrores = Object.keys(errores).length > 0;
-
-  const poner = (parcial: Partial<CriteriosExplorar>) =>
-    setBorrador((actual) => ({ ...actual, ...parcial }));
 
   const buscar = (siguiente: CriteriosExplorar) => {
+    setBorrador(siguiente);
     const preparada = prepararBusqueda(siguiente);
     if (!preparada.ok) {
       setAvisar(true);
-      setAbierto(true);
       return;
     }
     setAvisar(false);
     empezar(() => router.push(preparada.url));
   };
-
-  const { sueltas: temporadaFueraDeLista, grupos: gruposTemporada } = agruparTemporadas(
-    temporadas,
-    borrador.temporada,
-  );
+  const poner = (parcial: Partial<CriteriosExplorar>) => buscar({ ...borrador, ...parcial });
 
   const espanaActiva = borrador.nacionalidad === 'ESP';
 
@@ -257,7 +145,7 @@ export function FormularioFiltros({
       action={RUTA_EXPLORAR}
       method="get"
       role="search"
-      aria-label="Buscar deportistas"
+      aria-label="Buscar tiradores"
       aria-busy={pendiente}
       className="flex min-w-0 flex-col"
       onSubmit={(e) => {
@@ -270,184 +158,50 @@ export function FormularioFiltros({
       ))}
       <BuscadorSocial
         valor={borrador.q}
-        onChange={(q) => poner({ q })}
+        onChange={(q) => setBorrador((actual) => ({ ...actual, q }))}
         qUrl={criterios.q}
         volverDe={(q) => construirUrl({ ...criterios, q })}
         profileId={profileId}
         avisoFiltros={filtrosActivos > 0}
         pendiente={pendiente}
         herramientas={(
-          <Collapsible open={abierto} onOpenChange={setAbierto} className="flex min-w-0 flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-x-1.5">
-              <CollapsibleTrigger asChild>
-                <button type="button" aria-controls="explorar-panel-filtros" className={TOQUE}>
-                  <span className={cn(PILDORA, filtrosActivos > 0 && 'border-primary-text text-primary-text')}>
-                    <SlidersHorizontal className="size-[15px]" aria-hidden />
-                    Filtros
-                    {filtrosActivos > 0 ? (
-                      <span aria-hidden="true" className="cifra inline-flex min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[12px] leading-[18px] text-primary-foreground">
-                        {filtrosActivos}
-                      </span>
-                    ) : null}
-                    <span className="sr-only">
-                      {filtrosActivos > 0 ? `, ${filtrosActivos} ${filtrosActivos === 1 ? 'activo' : 'activos'}` : ''}
-                    </span>
-                    <ChevronDown
-                      className={cn('size-[15px]', abierto ? 'rotate-180 transition-transform motion-reduce:transition-none' : 'transition-transform motion-reduce:transition-none')}
-                      aria-hidden
-                    />
-                  </span>
-                </button>
-              </CollapsibleTrigger>
+          <div className="flex min-w-0 flex-col gap-2">
+            <FilaChips etiqueta="Filtros de tiradores">
+              <ChipOpciones etiqueta="Arma" valor={borrador.arma} opciones={ARMAS} textoTodas="Todas" disabled={pendiente} onElegir={(arma) => poner({ arma })} />
+              <ChipOpciones etiqueta="Género" valor={borrador.genero} opciones={GENEROS} textoTodas="Todos" disabled={pendiente} onElegir={(genero) => poner({ genero })} />
+              <ChipOpciones etiqueta="Categoría" valor={borrador.categoria} opciones={CATEGORIAS} textoTodas="Todas" disabled={pendiente} onElegir={(categoria) => poner({ categoria })} />
+              <ChipPais valor={borrador.nacionalidad} disabled={pendiente} onElegir={(nacionalidad) => poner({ nacionalidad })} />
               {atajoEspana ? (
-                <>
-                  <button
-                    type="button"
-                    aria-pressed={espanaActiva}
-                    aria-describedby="explorar-espana-ayuda"
-                    disabled={pendiente}
-                    className={TOQUE}
-                    onClick={() => {
-                      const siguiente = alternarEspana(borrador);
-                      setBorrador(siguiente);
-                      buscar(siguiente);
-                    }}
-                  >
-                    <span className={cn(PILDORA, espanaActiva && ACTIVO)}>Solo España</span>
-                  </button>
-                  <p id="explorar-espana-ayuda" className="sr-only">
-                    Todas las personas españolas indexadas, tengan cuenta o no, estén activas o retiradas. Combínalo con arma o categoría.
-                  </p>
-                </>
+                <ChipFiltro
+                  marcado={espanaActiva}
+                  aria-describedby="explorar-espana-ayuda"
+                  disabled={pendiente}
+                  onClick={() => buscar(alternarEspana(borrador))}
+                >
+                  Solo España
+                </ChipFiltro>
               ) : null}
               {hayCriterios({ ...criterios, q: '' }) ? (
-                <Link href={construirUrl({ ...CRITERIOS_VACIOS, q: criterios.q })} prefetch={false} className={TOQUE}>
-                  <span className={cn(PILDORA, 'border-transparent bg-transparent text-primary-text')}>Quitar filtros</span>
+                <Link
+                  href={construirUrl({ ...CRITERIOS_VACIOS, q: criterios.q })}
+                  prefetch={false}
+                  className="relative inline-flex h-[32px] shrink-0 items-center px-[4px] text-[13px] font-semibold whitespace-nowrap text-primary-text outline-none after:absolute after:inset-x-0 after:top-1/2 after:h-[44px] after:-translate-y-1/2 after:content-[''] focus-visible:ring-[3px] focus-visible:ring-ring"
+                >
+                  Quitar filtros
                 </Link>
               ) : null}
-            </div>
-            {/* Montado aunque esté plegado: los campos conservan su estado y la URL inválida se ve al abrir. */}
-            <CollapsibleContent forceMount id="explorar-panel-filtros" className="min-w-0 rounded-2xl border bg-card p-3 data-[state=closed]:hidden sm:p-5 lg:max-w-4xl">
-              <div className="grid min-w-0 grid-cols-2 gap-3 lg:grid-cols-4">
-                <CampoSelect
-                  id="explorar-arma"
-                  etiqueta="Arma"
-                  valor={borrador.arma}
-                  opciones={ARMAS}
-                  textoVacio="Todas"
-                  onChange={(arma) => poner({ arma })}
-                />
-                <CampoSelect
-                  id="explorar-genero"
-                  etiqueta="Género"
-                  valor={borrador.genero}
-                  opciones={GENEROS}
-                  textoVacio="Todos"
-                  onChange={(genero) => poner({ genero })}
-                />
-                <CampoSelect
-                  id="explorar-categoria"
-                  etiqueta="Categoría"
-                  valor={borrador.categoria}
-                  opciones={CATEGORIAS}
-                  textoVacio="Todas"
-                  onChange={(categoria) => poner({ categoria })}
-                />
-                <CampoSelect
-                  id="explorar-ambito"
-                  etiqueta="Ámbito"
-                  valor={borrador.ambito}
-                  opciones={AMBITOS}
-                  textoVacio="Todos"
-                  onChange={(ambito) => poner({ ambito })}
-                />
-                <CampoSelect
-                  id="explorar-organizador"
-                  etiqueta="Organizador"
-                  valor={borrador.organizador}
-                  opciones={ORGANIZADORES_OPCIONES}
-                  textoVacio="Todos"
-                  onChange={(organizador) => poner({ organizador })}
-                />
-                <CampoSelect
-                  id="explorar-temporada"
-                  etiqueta="Temporada"
-                  valor={borrador.temporada}
-                  opciones={temporadaFueraDeLista}
-                  grupos={gruposTemporada}
-                  textoVacio="Todas"
-                  onChange={(temporada) => poner({ temporada })}
-                />
-                <div className="flex min-w-0 flex-col gap-1.5">
-                  <Label htmlFor="explorar-pais">País</Label>
-                  <Input
-                    id="explorar-pais"
-                    value={borrador.nacionalidad}
-                    maxLength={3}
-                    autoComplete="off"
-                    autoCapitalize="characters"
-                    placeholder="ESP"
-                    aria-invalid={Boolean(errores.nacionalidad)}
-                    aria-describedby="explorar-pais-ayuda"
-                    onChange={(e) => poner({ nacionalidad: e.target.value.replace(/[^a-z]/gi, '').toUpperCase() })}
-                  />
-                  <p
-                    id="explorar-pais-ayuda"
-                    className={errores.nacionalidad ? 'text-xs text-danger' : 'sr-only'}
-                  >
-                    {errores.nacionalidad ?? 'Tres letras: ESP, FRA o ITA.'}
-                  </p>
-                </div>
-                <div className="col-span-2 flex min-w-0 flex-col gap-1.5">
-                  <Label htmlFor="explorar-torneo">Torneo</Label>
-                  <Input
-                    id="explorar-torneo"
-                    value={borrador.torneo}
-                    maxLength={80}
-                    autoComplete="off"
-                    placeholder="Parte del nombre del torneo"
-                    aria-invalid={Boolean(errores.torneo)}
-                    aria-describedby="explorar-torneo-ayuda"
-                    onChange={(e) => poner({ torneo: e.target.value })}
-                  />
-                  <p
-                    id="explorar-torneo-ayuda"
-                    className={errores.torneo ? 'text-xs text-danger' : 'sr-only'}
-                  >
-                    {errores.torneo ?? 'Con temporada o fechas, sólo cuenta la edición de ese periodo.'}
-                  </p>
-                </div>
-                <CampoFecha
-                  id="explorar-desde"
-                  etiqueta="Desde"
-                  valorIso={borrador.desde}
-                  onChange={(desde) => poner({ desde })}
-                  conservarInvalido
-                  ayuda="Opcional."
-                />
-                <CampoFecha
-                  id="explorar-hasta"
-                  etiqueta="Hasta"
-                  valorIso={borrador.hasta}
-                  onChange={(hasta) => poner({ hasta })}
-                  conservarInvalido
-                  ayuda="Opcional."
-                />
-              </div>
-              <div className="mt-4 flex justify-end">
-                <Button type="submit" disabled={pendiente} className="w-full rounded-xl font-semibold sm:w-auto sm:px-6">
-                  Aplicar filtros
-                </Button>
-              </div>
-            </CollapsibleContent>
-            {avisar && hayErrores ? (
+            </FilaChips>
+            {atajoEspana ? (
+              <p id="explorar-espana-ayuda" className="sr-only">
+                Todas las personas españolas indexadas, tengan cuenta o no, estén activas o retiradas. Combínalo con arma o categoría.
+              </p>
+            ) : null}
+            {avisar && Object.keys(errores).length > 0 ? (
               <p role="alert" className="text-sm text-danger">
                 {Object.values(errores).join(' ')}
               </p>
-            ) : errores.intervalo ? (
-              <p className="text-sm text-danger">{errores.intervalo}</p>
             ) : null}
-          </Collapsible>
+          </div>
         )}
       >
         {children}

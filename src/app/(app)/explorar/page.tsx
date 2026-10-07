@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { CabeceraInicio, EstadoSiguiendo, FeedSiguiendo } from '@/components/explorar/siguiendo';
 import { getSessionProfile } from '@/lib/auth/session';
+import { fuentesPropuestasCompartidas } from '@/lib/sport/explorar/cache-real';
 import { cargarInicio } from '@/lib/sport/explorar/inicio-pantalla';
 import { construirUrlInicio } from '@/lib/sport/explorar/inicio-url';
 import { NOMBRE_SECCION } from '@/lib/sport/explorar/nombre-seccion';
@@ -50,7 +51,7 @@ export default async function Pagina({
   const { vista, siguiendo } = await cargarInicio(ctx, {
     cursor: criterios.cursor || undefined,
     soloMedallas: criterios.soloMedallas,
-  });
+  }, fuentesPropuestasCompartidas(ctx));
   if (vista.tipo === 'sin_sesion') redirect('/entrar');
 
   return (

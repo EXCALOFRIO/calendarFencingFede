@@ -4,7 +4,7 @@
  * pantalla y la cabecera de escritorio alrededor del contenido real de
  * Calendario, Explorar, Buscar, Ranking, Tú y Notificaciones.
  *
- *   $env:PERF_DB = "$env:USERPROFILE\calendario-datos\calendario-trabajo\nuevo10.sqlite"
+ *   $env:PERF_DB = "$env:USERPROFILE\calendario-datos\calendario-trabajo\nuevo11.sqlite"
  *   $env:SONDA_DIR = 'ola2a'
  *   npx tsx --import ./tests/ui/auditoria-sonda.mts tests/ui/ola2a.mts
  *
@@ -35,7 +35,7 @@ import type { SessionProfile } from '@/lib/auth/session';
 import { bindingDeLectura } from './d1-lectura.mts';
 
 const RAIZ = process.cwd();
-process.env.PERF_DB ??= path.join(homedir(), 'calendario-datos', 'calendario-trabajo', 'nuevo10.sqlite');
+process.env.PERF_DB ??= path.join(homedir(), 'calendario-datos', 'calendario-trabajo', 'nuevo11.sqlite');
 const BASE = process.env.PERF_DB;
 const SALIDA = path.join(RAIZ, 'capturas', 'ola2a', 'despues');
 
@@ -51,7 +51,7 @@ const { CabeceraApp } = await import('@/components/cabecera-app');
 const { CabeceraEscritorio } = await import('@/components/cabecera-escritorio');
 const { NavMovil } = await import('@/components/nav');
 const { CampanaCliente } = await import('@/components/notificaciones/campana-cliente');
-const { BandejaNotificaciones, CabeceraNotificaciones } = await import('@/components/notificaciones/bandeja');
+const { AccionesNotificaciones, BandejaNotificaciones } = await import('@/components/notificaciones/bandeja');
 const { agruparBandeja } = await import('@/lib/notificaciones/bandeja');
 const { VistaCalendario } = await import('@/components/calendario/vista');
 const { listEvents, getDataFreshness } = await import('@/lib/queries/calendar');
@@ -185,7 +185,7 @@ const paginas = new Map<string, string>();
   ];
   const secciones = agruparBandeja(filas as never, new Date(ahora), ahora - (ahora % 86_400_000));
   paginas.set('notificaciones', documento(css, '/notificaciones', h('div', { className: 'mx-auto flex w-full max-w-2xl min-w-0 flex-col gap-4' },
-    h(CabeceraNotificaciones, { hayNoLeidas: true, marcarTodas: nada as never }),
+    h(AccionesNotificaciones, { hayNoLeidas: true, marcarTodas: nada as never }),
     h(BandejaNotificaciones, { secciones, ahora, abrir: nada as never }))));
 }
 

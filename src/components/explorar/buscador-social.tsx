@@ -24,8 +24,12 @@ import {
   FilaPerfil,
 } from './buscador-social-fila';
 import { BotonSeguirCompacto } from './buscador-social-seguir';
+import { FilaPais } from './buscador-paises';
+import { buscarPaises } from '@/lib/sport/explorar/paises';
 
 type Sugerida = EstadoSugerencias['items'][number];
+
+const MAX_PAISES_VIVO = 3;
 
 /** Espera tras la última tecla: corta, porque cada consulta lee unos pocos miles de filas. */
 const ESPERA_SOCIAL = 160;
@@ -162,6 +166,8 @@ export function BuscadorSocial({
   ));
   const { recientes, anadir, quitar, borrar } = useRecientes(profileId);
   const { vivo, corto } = estadoBuscador(valor, qUrl);
+  // Los países son una lista fija: se filtran aquí mismo, sin esperar a la red.
+  const paises = React.useMemo(() => (vivo ? buscarPaises(vivo, MAX_PAISES_VIVO) : []), [vivo]);
 
   React.useEffect(() => {
     if (vivo) solicitante.buscar(vivo);
@@ -219,7 +225,7 @@ export function BuscadorSocial({
           placeholder="Buscar tiradores"
           aria-controls="explorar-perfiles"
           aria-describedby="explorar-q-estado"
-          className="h-[40px] min-h-[40px] w-full rounded-xl border border-transparent bg-secondary pr-[40px] pl-[38px] text-[16px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [&::-webkit-search-cancel-button]:appearance-none"
+          className="h-[40px] min-h-[40px] w-full rounded-xl border border-transparent bg-secondary pr-[40px] pl-[38px] text-[16px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring [&::-webkit-search-cancel-button]:appearance-none"
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.nativeEvent.isComposing) return;
@@ -231,7 +237,7 @@ export function BuscadorSocial({
           <button
             type="button"
             aria-label="Borrar búsqueda"
-            className="absolute top-1/2 right-0 flex size-[44px] -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="absolute top-1/2 right-0 flex size-[44px] -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring"
             onClick={() => { onChange(''); entrada.current?.focus(); }}
           >
             <X className="size-[18px]" aria-hidden />
@@ -246,8 +252,17 @@ export function BuscadorSocial({
       </p>
 
       <div ref={lista} id="explorar-perfiles" className="min-w-0" onKeyDown={teclaLista} onClick={clicLista}>
+        {vivo && paises.length > 0 ? (
+          <section aria-labelledby="explorar-paises-vivo" className="mb-2 flex min-w-0 flex-col gap-1 lg:max-w-2xl">
+            <EncabezadoSeccion id="explorar-paises-vivo" titulo="Países" />
+            <ul className="flex min-w-0 flex-col">
+              {paises.map((p) => <FilaPais key={p.codigo} pais={p} className="px-0.5 sm:px-3" />)}
+            </ul>
+          </section>
+        ) : null}
         {vivo ? (
           <section aria-label={`Perfiles para «${vivo}»`} className="flex min-w-0 flex-col gap-1 lg:max-w-2xl">
+            {paises.length > 0 ? <EncabezadoSeccion id="explorar-tiradores-vivo" titulo="Tiradores" /> : null}
             {items.length > 0 ? (
               <ul className={cn(CLASE_LISTA_PERFILES, cargando && 'opacity-80')}>
                 {items.map((p) => (
@@ -268,22 +283,10 @@ export function BuscadorSocial({
               </ul>
             ) : resultado.estado === 'ok' || resultado.estado === 'error' ? (
               <p className="px-0.5 py-3 text-sm text-muted-foreground sm:px-3">{mensaje}</p>
-            ) : (
-              <ul aria-hidden="true" className={CLASE_LISTA_PERFILES}>
-                {[0, 1, 2, 3].map((i) => (
-                  <li key={i} className="flex min-h-[56px] items-center gap-3 px-0.5 sm:px-3">
-                    <span className="size-[48px] shrink-0 rounded-full bg-secondary" />
-                    <span className="flex flex-1 flex-col gap-2">
-                      <span className="h-3.5 w-2/5 rounded bg-secondary" />
-                      <span className="h-3 w-3/5 rounded bg-secondary" />
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
+            ) : null}
             <button
               type="submit"
-              className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl px-0.5 text-left text-[14px] font-medium text-primary-text outline-none hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:px-3"
+              className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl px-0.5 text-left text-[14px] font-medium text-primary-text outline-none hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring sm:px-3"
             >
               <span>Ver todos los resultados de «{vivo}»</span>
               <ArrowRight className="size-[16px] shrink-0" aria-hidden />
@@ -301,7 +304,7 @@ export function BuscadorSocial({
                 <EncabezadoSeccion id="explorar-recientes" titulo="Recientes">
                   <button
                     type="button"
-                    className="flex h-[44px] items-center px-1 text-[13px] font-semibold text-primary-text outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    className="flex h-[44px] items-center px-1 text-[13px] font-semibold text-primary-text outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring"
                     onClick={borrar}
                   >
                     Borrar todo

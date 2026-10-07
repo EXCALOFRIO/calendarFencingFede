@@ -4,7 +4,7 @@
  *
  *   node node_modules/tsx/dist/cli.mjs scripts/indexado/cargar-hechos.ts \
  *     [--db <nuevo.sqlite>] [--base <base.sqlite>] [--hechos <carpeta>] \
- *     [--carpetas fie,fie-antiguo,pdf-lector,pdf-droid] [--informe <json>]
+ *     [--carpetas fie,fie-antiguo,pdf-lector,pdf-droid] [--informe <json>] [--sin-genero-clave]
  *
  * Si `--db` no existe se crea copiando `--base`. Reglas:
  *  - Upsert por (source, season, tournament_key), (source, season, competition_key),
@@ -20,6 +20,9 @@
  *    nueva es `completo` y tiene al menos tantas filas. Con claves estables (ID
  *    FIE, licencia) una extracción parcial se fusiona sin borrar; con claves de
  *    posición en el PDF se conserva lo existente.
+ *  - Engarde: el sexo del fichero se contrasta con el código de la clave (`genero-clave.ts`);
+ *    sólo se cambia al del código si los nombres de pila de la clasificación lo confirman, y
+ *    queda anotado en `generoClave` del informe (con `--sin-genero-clave` no se contrasta).
  */
 import { copyFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -34,6 +37,7 @@ import {
 import {
   ahora,
   argumento,
+  bandera,
   BASE_POR_DEFECTO,
   CARPETA_TRABAJO,
   contar,
@@ -49,6 +53,7 @@ import {
   uuid,
 } from './comun';
 import { consistenciaCuadro, pesoCuadro, type AsaltoCuadro } from './cuadro-consistencia';
+import { decidirGeneroClave, diccionarioGeneroDeBase, type AccionGeneroClave, type DecisionGeneroClave } from './genero-clave';
 
 import {
   ambitoFirma,
@@ -126,7 +131,14 @@ export type InformeCarga = {
   secciones: Contadores;
   avisos: Record<string, number>;
   asaltosPdfDuplicados: { antes: number; despues: number };
+  /** Pruebas de Engarde con el sexo del fichero contrario al código de la clave (`genero-clave.ts`). */
+  generoClave: InformeGeneroClave[];
   segundos: number;
+};
+
+export type InformeGeneroClave = {
+  season: string; competitionKey: string; accion: AccionGeneroClave; fichero: string; genero: string; codigo: string | null;
+  votos: DecisionGeneroClave['votos'];
 };
 
 function filasSeccion(h: HechosPrueba, s: Seccion): number {
@@ -225,11 +237,31 @@ class Cargador {
    * El lector actual también emite `~n` cuando un documento trae varias tablas de la
    * misma prueba (1ª fase y fase final); esas partes tienen fichero propio y no se absorben.
    */
+  /** Pruebas de Engarde cuyo género no coincide con el código de la clave (`genero-clave.ts`). */
+  readonly generosClave: InformeGeneroClave[] = [];
+
   constructor(
     private readonly db: DatabaseSync,
     private readonly loteFilas = 25_000,
     private readonly pruebasConHechos: ReadonlySet<string> = new Set(),
+    private readonly diccionarioGenero: ReadonlyMap<string, 'M' | 'F'> | null = null,
   ) {}
+
+  /**
+   * El sexo del fichero de Engarde contra el código de la clave: con `corregido` (los nombres de
+   * pila confirman el código) se usa el del código; con `dudoso` o `desmentido` se deja y se avisa.
+   */
+  private revisarGeneroClave(h: HechosPrueba): HechosPrueba {
+    if (!this.diccionarioGenero || h.source !== 'engarde') return h;
+    const c = h.competition;
+    const d = decidirGeneroClave({ competitionKey: c.competitionKey, weapon: c.weapon, gender: c.gender, nombres: h.results.map((r) => r.name) },
+      this.diccionarioGenero);
+    if (d.accion !== 'corregido' && d.accion !== 'dudoso' && d.accion !== 'desmentido') return h;
+    this.aviso(`genero_clave_${d.accion}`);
+    this.generosClave.push({ season: h.edition.season, competitionKey: c.competitionKey, accion: d.accion, fichero: d.fichero, genero: d.genero,
+      codigo: d.codigo?.codigo ?? null, votos: d.votos });
+    return d.accion === 'corregido' ? { ...h, competition: { ...c, gender: d.genero as HechosPrueba['competition']['gender'] } } : h;
+  }
 
   private q(sql: string): StatementSync {
     return (this.st[sql] ??= this.db.prepare(sql));
@@ -279,7 +311,7 @@ class Cargador {
       }
       return h;
     };
-    const h0 = leer(principal);
+    const h0 = this.revisarGeneroClave(leer(principal));
     const edicionId = this.upsertEdicion(h0);
     const comp = this.upsertCompeticion(h0, edicionId);
     const divisiones = h0.source === 'rfee_pdf' ? this.absorberDivisiones(comp) : [];
@@ -883,7 +915,11 @@ class Cargador {
 }
 
 /** Lee la cabecera de cada fichero, agrupa por prueba y aplica cada grupo. */
-export function cargarHechos(db: DatabaseSync, entradas: readonly EntradaHechos[]): InformeCarga {
+export function cargarHechos(
+  db: DatabaseSync, entradas: readonly EntradaHechos[],
+  /** `diccionarioGenero`: nombres de pila → género, para contrastar el sexo de Engarde con su clave (sin él no se contrasta). */
+  opciones: { diccionarioGenero?: ReadonlyMap<string, 'M' | 'F'> | null } = {},
+): InformeCarga {
   const inicio = Date.now();
   const informe: InformeCarga = {
     ficheros: { leidos: 0, validos: 0, rechazados: 0, porCarpeta: {} },
@@ -893,6 +929,7 @@ export function cargarHechos(db: DatabaseSync, entradas: readonly EntradaHechos[
     secciones: {},
     avisos: {},
     asaltosPdfDuplicados: { antes: contarAsaltosPdfDuplicados(db), despues: 0 },
+    generoClave: [],
     segundos: 0,
   };
   const grupos = new Map<string, Meta[]>();
@@ -926,7 +963,7 @@ export function cargarHechos(db: DatabaseSync, entradas: readonly EntradaHechos[
   }
   informe.pruebas = grupos.size;
 
-  const cargador = new Cargador(db, undefined, new Set(grupos.keys()));
+  const cargador = new Cargador(db, undefined, new Set(grupos.keys()), opciones.diccionarioGenero ?? null);
   cargador.empezar();
   try {
     for (const metas of grupos.values()) cargador.aplicarGrupo(metas);
@@ -939,6 +976,7 @@ export function cargarHechos(db: DatabaseSync, entradas: readonly EntradaHechos[
   informe.tablas = cargador.tablas;
   informe.secciones = cargador.secciones;
   informe.avisos = cargador.avisos;
+  informe.generoClave = cargador.generosClave;
   informe.asaltosPdfDuplicados.despues = contarAsaltosPdfDuplicados(db);
   informe.segundos = Math.round((Date.now() - inicio) / 100) / 10;
   return informe;
@@ -983,7 +1021,8 @@ function main(): void {
   quitarGuardia(db);
   let informe: InformeCarga;
   try {
-    informe = cargarHechos(db, entradas);
+    const diccionarioGenero = bandera('sin-genero-clave') ? null : diccionarioGeneroDeBase(db);
+    informe = cargarHechos(db, entradas, { diccionarioGenero });
   } finally {
     restaurarGuardia(db);
     db.close();

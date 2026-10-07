@@ -33,9 +33,10 @@ vi.mock('@/lib/sport/explorar/ediciones-pantalla', () => ({
   },
 }));
 vi.mock('@/lib/sport/explorar/catalogo', () => ({
-  cargarCatalogoEdiciones: async (ctx: ContextoExplorador, entrada: Record<string, string>) => {
+  cargarCatalogoEdiciones: async (ctx: ContextoExplorador, entrada: Record<string, string>, opciones?: { indice?: () => Promise<unknown> }) => {
     llamadas.catalogo++;
-    return { estado: 'ok', ediciones: [], total: 0, pruebas: 0, siguiente: null, entrada, quien: (await ctx.perfil())?.profileId };
+    const indice = opciones?.indice ? Boolean(await opciones.indice()) : false;
+    return { estado: 'ok', ediciones: [], total: 0, pruebas: 0, siguiente: null, entrada, indice, quien: (await ctx.perfil())?.profileId };
   },
 }));
 vi.mock('@/lib/sport/explorar/cara-a-cara-pantalla', () => ({
@@ -83,14 +84,15 @@ vi.mock('@/lib/sport/explorar/siguiendo-pantalla', async (original) => {
 const { crearCachesExplorar } = await import('@/lib/sport/explorar/cache-pantallas');
 const { contextoPublico, LECTOR_PUBLICO } = await import('@/lib/sport/explorar/contexto-publico');
 
-function entorno() {
+function entorno({ sinIndice = false }: { sinIndice?: boolean } = {}) {
   const memoria = almacenMemoria();
   const cache = crearCache({
     almacen: () => memoria,
     versiones: { de: async (deps: readonly Dependencia[]) => versionDe({ ledger: 7 }, deps), olvidar() {} },
     esperar: () => {},
   });
-  const base = crearContexto();
+  // Sin la identidad deportiva no hay índice de ediciones y el catálogo vuelve a la caché por búsqueda.
+  const base = crearContexto(sinIndice ? { esquema: { identidad: false, referencias: false } } : {});
   const publicos: ContextoExplorador[] = [];
   const caches = crearCachesExplorar({
     cache,
@@ -100,7 +102,7 @@ function entorno() {
       return c;
     },
   });
-  return { caches, publicos, memoria };
+  return { caches, publicos, memoria, sentencias: base.sentencias };
 }
 
 const cuentaA = () => crearContexto({ perfil: perfil({ profileId: 'cuenta-a', email: 'a@example.test' }) }).ctx;
@@ -167,8 +169,23 @@ describe('edición compartida', () => {
     expect(llamadas.edicion).toBe(2);
   });
 
-  it('catálogo y series: primera página compartida; con cursor, directo', async () => {
-    const { caches } = entorno();
+  it('catálogo con índice: el índice se lee una vez, sin cuenta, y cada búsqueda se resuelve en la petición', async () => {
+    const { caches, sentencias } = entorno();
+    const vacio = { q: '', fuente: '', temporada: '' };
+    const a = await caches.cargarCatalogoCompartido(cuentaA(), vacio, undefined);
+    const b = await caches.cargarCatalogoCompartido(cuentaB(), { ...vacio, q: 'mndial' }, undefined);
+    const pagina = await caches.cargarCatalogoCompartido(cuentaA(), vacio, 'cursor-x');
+    expect(llamadas.series).toBe(1);
+    expect(llamadas.catalogo).toBe(3);
+    expect(sentencias.filter((s) => /LEFT JOIN sport_competition c ON c.edition_id = e.id/.test(s.text))).toHaveLength(1);
+    expect(a.catalogo).toMatchObject({ indice: true, quien: 'cuenta-a' });
+    expect(b.catalogo).toMatchObject({ indice: true, quien: 'cuenta-b', entrada: { q: 'mndial' } });
+    expect(pagina.catalogo).toMatchObject({ indice: true, entrada: { cursor: 'cursor-x' } });
+    expect(JSON.stringify(a.series)).not.toContain('cuenta-a');
+  });
+
+  it('catálogo sin índice: primera página compartida; con cursor, directo', async () => {
+    const { caches } = entorno({ sinIndice: true });
     const vacio = { q: '', fuente: '', temporada: '' };
     const a = await caches.cargarCatalogoCompartido(cuentaA(), vacio, undefined);
     const b = await caches.cargarCatalogoCompartido(cuentaB(), vacio, undefined);
@@ -178,6 +195,31 @@ describe('edición compartida', () => {
     const pagina = await caches.cargarCatalogoCompartido(cuentaA(), vacio, 'cursor-x');
     expect(llamadas.catalogo).toBe(2);
     expect(pagina.catalogo).toMatchObject({ quien: 'cuenta-a', entrada: { cursor: 'cursor-x' } });
+  });
+
+  it('catálogo sin índice: el texto se normaliza para la clave; uno largo o un filtro desconocido van directos', async () => {
+    const { caches } = entorno({ sinIndice: true });
+    await caches.cargarCatalogoCompartido(cuentaA(), { q: 'Copa  ESPAÑA', fuente: 'fie', temporada: '2025-2026' }, undefined);
+    const igual = await caches.cargarCatalogoCompartido(cuentaB(), { q: 'copa espana', fuente: 'fie', temporada: '2025-2026' }, undefined);
+    expect(llamadas.catalogo).toBe(1);
+    expect(igual.catalogo).toMatchObject({ quien: '', entrada: { q: 'copa espana' } });
+    for (const malo of [
+      { q: 'x'.repeat(41), fuente: '', temporada: '' },
+      { q: '', fuente: 'otra', temporada: '' },
+      { q: '', fuente: '', temporada: 'ayer' },
+    ]) {
+      const r = await caches.cargarCatalogoCompartido(cuentaA(), malo, undefined);
+      expect(r.catalogo).toMatchObject({ quien: 'cuenta-a' });
+    }
+    expect(llamadas.catalogo).toBe(4);
+  });
+
+  it('una edición o una prueba que no son UUID van directas, sin clave en la caché', async () => {
+    const { caches, publicos } = entorno();
+    const r = await caches.cargarEdicionCompartida(cuentaA(), 'no-es-uuid', { prueba: '', cursor: '' });
+    await caches.cargarEdicionCompartida(cuentaA(), UUID_A, { prueba: 'x'.repeat(30), cursor: '' });
+    expect(r).toMatchObject({ edicion: { quien: 'cuenta-a' } });
+    expect(publicos).toHaveLength(0);
   });
 });
 
@@ -196,12 +238,25 @@ describe('cara a cara compartido', () => {
     expect(llamadas.pantalla).toBe(2);
   });
 
-  it('la búsqueda por nombre es parte de la clave y lleva el día', async () => {
-    const { caches } = entorno();
+  it('la búsqueda de rival por nombre (texto libre) va directa y no entra en la caché', async () => {
+    const { caches, publicos, memoria } = entorno();
     const r = await caches.cargarCaraACaraCompartida(cuentaA(), UUID_A, { ...elegir, q: 'zabala' });
-    expect(r.vista).toMatchObject({ q: 'zabala', hoy: '2026-10-02' });
-    await caches.cargarCaraACaraCompartida(cuentaA(), UUID_A, elegir);
+    expect(r.vista).toMatchObject({ q: 'zabala', hoy: '2026-10-02', quien: 'cuenta-a' });
+    await caches.cargarCaraACaraCompartida(cuentaA(), UUID_A, { ...elegir, q: 'zabala' });
     expect(llamadas.pantalla).toBe(2);
+    expect(publicos).toHaveLength(0);
+    expect(memoria.bytes).toBe(0);
+  });
+
+  it('un duelo con filtros fuera de los valores admitidos va directo', async () => {
+    const { caches, publicos } = entorno();
+    for (const malo of [{ temporada: 'x'.repeat(12) }, { arma: 'LANZA' }, { fase: 'FINAL' }, { ambito: 'galactico' }]) {
+      await caches.cargarCaraACaraCompartida(cuentaA(), UUID_A, { ...duelo, ...malo });
+    }
+    expect(llamadas.pantalla).toBe(4);
+    expect(publicos).toHaveLength(0);
+    await caches.cargarCaraACaraCompartida(cuentaA(), UUID_A, { ...duelo, temporada: '2025-2026', arma: 'SABLE', fase: 'POULE', ambito: 'nacional' });
+    expect(publicos).toHaveLength(1);
   });
 
   it('el duelo guarda los relevos en la misma entrada', async () => {

@@ -70,7 +70,7 @@ export function TarjetaGiratoria({
               className={cn(
                 TACTIL,
                 'inline-flex h-[32px] min-w-0 items-center justify-center rounded-full px-1.5 text-xs whitespace-nowrap text-muted-foreground max-[359px]:px-1 sm:px-3 sm:text-[0.8125rem]',
-                'hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+                'hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
                 'aria-pressed:bg-marcado aria-pressed:font-semibold aria-pressed:text-primary-text',
               )}
             >
@@ -82,7 +82,7 @@ export function TarjetaGiratoria({
         <button
           type="button"
           onClick={() => ir((visible + 1) % caras.length)}
-          className={cn(TACTIL, 'hidden size-[32px] shrink-0 items-center sm:ml-auto sm:inline-flex justify-center rounded-full border border-filete-alto text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none')}
+          className={cn(TACTIL, 'hidden size-[32px] shrink-0 items-center sm:ml-auto sm:inline-flex justify-center rounded-full border border-filete-alto text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none')}
           aria-label={`Girar: ver ${caras[(visible + 1) % caras.length].rotulo.toLowerCase()}`}
         >
           <RotateCw className="size-4" aria-hidden />

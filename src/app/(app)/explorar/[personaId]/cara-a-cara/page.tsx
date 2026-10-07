@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { cache } from 'react';
 import { RelevosCaraACaraVista } from '@/components/explorar/relevos';
 import {
   CabeceraCaraACara,
@@ -18,7 +19,41 @@ import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { titular } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
-export const metadata = { title: 'Cara a cara' };
+
+type Consulta = Record<string, string | string[] | undefined>;
+
+export async function generateMetadata({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ personaId: string }>;
+  searchParams: Promise<Consulta>;
+}): Promise<{ title: string }> {
+  if (!(await getSessionProfile())) return { title: 'Cara a cara' };
+  const [{ personaId: segmento }, consulta] = await Promise.all([params, searchParams]);
+  const { vista } = await leerPantalla(segmento, JSON.stringify(consulta));
+  const nombre = (p: { nombre: string }) => nombreVisible(p.nombre) || titular(p.nombre);
+  if (vista.tipo === 'ok') {
+    const { yo, rival } = vista.datos.personas;
+    return { title: `${nombre(yo)} y ${nombre(rival)} · Cara a cara` };
+  }
+  if (vista.tipo === 'elegir') return { title: `${nombre(vista.persona)} · Cara a cara` };
+  return { title: 'Cara a cara' };
+}
+
+/**
+ * Sólo se llama tras la guarda de sesión. Una lectura por petición para la
+ * página y su título: `cache` necesita argumentos primitivos, así que la
+ * consulta va serializada.
+ */
+const leerPantalla = cache(async (segmento: string, consultaJson: string) => {
+  const personaId = personaDeRuta(segmento);
+  const criterios = leerCriteriosCaraACara(JSON.parse(consultaJson) as Consulta);
+  const { vista, relevos } = personaId
+    ? await cargarCaraACaraCompartida(contextoReal(), personaId, criterios)
+    : ({ vista: { tipo: 'entrada_invalida' }, relevos: null } as const);
+  return { personaId, criterios, vista, relevos };
+});
 
 /**
  * Cara a cara individual de una persona con un rival, abierto siempre por
@@ -42,13 +77,8 @@ export default async function Pagina({
   if (!perfil) redirect('/entrar');
 
   const [{ personaId: segmento }, consulta] = await Promise.all([params, searchParams]);
-  const personaId = personaDeRuta(segmento);
-  const criterios = leerCriteriosCaraACara(consulta);
-
   // Duelo y relevos llegan juntos de la caché compartida: la página se pinta entera de una vez.
-  const { vista, relevos } = personaId
-    ? await cargarCaraACaraCompartida(contextoReal(), personaId, criterios)
-    : ({ vista: { tipo: 'entrada_invalida' }, relevos: null } as const);
+  const { personaId, criterios, vista, relevos } = await leerPantalla(segmento, JSON.stringify(consulta));
   if (vista.tipo === 'sin_sesion') redirect('/entrar');
 
   const hoy = new Date().toISOString().slice(0, 10);
@@ -97,11 +127,11 @@ export default async function Pagina({
     );
   }
 
-  // El título («Cara a cara») lo pone la cabecera compacta de la aplicación (`cabeceraDeRuta`).
+  // «Cara a cara», en la cabecera compacta, es un rótulo: el `<h1>` es el nombre, con el aspecto de antes.
   return (
     <div className="flex flex-col gap-6">
       {vista.tipo === 'elegir' ? (
-        <p className="text-[16px] leading-[20px] font-semibold break-words">{nombre}</p>
+        <h1 className="font-sans text-[16px] leading-[20px] font-semibold tracking-normal break-words [text-wrap:wrap]">{nombre}</h1>
       ) : null}
 
       {vista.tipo === 'elegir' ? filtros : null}

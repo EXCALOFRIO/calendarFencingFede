@@ -1,7 +1,8 @@
 import type { Cacheado, DefinicionCache } from '@/lib/cache/cache';
 import type { ParteClave } from '@/lib/cache/claves';
-import type { FilaUnida } from '@/lib/entries/union';
+import { claveExtra, personaDeFila, type ExtraInscrito, type FilaUnida } from '@/lib/entries/union';
 import type { EstadoLista } from '@/lib/entries/lectura';
+import type { ExtrasInscritos, ParInscrito } from './inscritos-extras';
 import type { EventView } from './calendar';
 import type { TramoPasado } from './calendario-pasado-modelo';
 import type { VistaPodiosEvento } from './evento-resultados';
@@ -27,9 +28,39 @@ type Definidor = {
 
 /** Lo público de la lista unida: sin evidencias ni procedencia, que la ficha no necesita. */
 export type ListaPublica = {
-  filas: Pick<FilaUnida, 'competitionId' | 'nombre' | 'equipo' | 'club' | 'athleteIds' | 'retiradoEn'>[];
+  filas: (Pick<FilaUnida, 'competitionId' | 'nombre' | 'equipo' | 'club' | 'athleteIds' | 'retiradoEn'> & {
+    /** Persona deportiva demostrada por las evidencias (`personaDeFila`), para el enlace y el retrato. */
+    personaId: string | null;
+    /** Nacionalidad y puestos; llega de otra entrada de la caché y puede faltar. */
+    extra?: ExtraInscrito | null;
+  })[];
   estados: Record<string, EstadoLista>;
 };
+
+/** Pares (prueba, persona) de la lista que pueden llevar nacionalidad y puestos. */
+export function paresDeLista(lista: Pick<ListaPublica, 'filas'>): ParInscrito[] {
+  const vistos = new Set<string>();
+  const pares: ParInscrito[] = [];
+  for (const f of lista.filas) {
+    if (!f.personaId || f.retiradoEn) continue;
+    const clave = claveExtra(f.competitionId, f.personaId);
+    if (vistos.has(clave)) continue;
+    vistos.add(clave);
+    pares.push({ competitionId: f.competitionId, personaId: f.personaId });
+  }
+  return pares;
+}
+
+/** Cuelga de cada fila enlazada lo suyo; lo que falte (extras de antes de un alta) sale sin extra. */
+export function conExtras(lista: ListaPublica, extras: ExtrasInscritos | null): ListaPublica {
+  if (!extras) return lista;
+  return {
+    ...lista,
+    filas: lista.filas.map((f) =>
+      f.personaId ? { ...f, extra: extras[claveExtra(f.competitionId, f.personaId)] ?? null } : f,
+    ),
+  };
+}
 
 export type LectoresCalendario = {
   /** La temporada de hoy en adelante (`listEvents` de la pantalla principal). */
@@ -40,6 +71,8 @@ export type LectoresCalendario = {
   /** Lista oficial unida, ya con la sesión comprobada por quien llama. */
   inscritos: (eventId: string) => Promise<{ filas: FilaUnida[]; estados: Record<string, EstadoLista> }>;
   podios: (eventId: string) => Promise<VistaPodiosEvento>;
+  /** Nacionalidad y puestos de los inscritos enlazados (`inscritos-extras.ts`). Sin él, la lista va sin extras. */
+  extrasInscritos?: (pares: ParInscrito[]) => Promise<ExtrasInscritos>;
   /** Día en Madrid (`hoyMadrid`). */
   hoy: () => string;
 };
@@ -90,6 +123,7 @@ export function aListaPublica(lista: { filas: FilaUnida[]; estados: Record<strin
       club: f.club,
       athleteIds: f.athleteIds,
       retiradoEn: f.retiradoEn,
+      personaId: personaDeFila(f),
     })),
     estados: lista.estados,
   };
@@ -133,7 +167,8 @@ export function crearCachesCalendario({ cache, leer }: { cache: Definidor; leer:
   });
 
   const lista = cache.definir({
-    espacio: 'calendario-inscritos',
+    // `-2`: desde que lleva `personaId`; las entradas de antes no enlazarían a nadie.
+    espacio: 'calendario-inscritos-2',
     depende: ['calendario'],
     frescoMs: 2 * MINUTO,
     caducaMs: DIA,
@@ -141,6 +176,31 @@ export function crearCachesCalendario({ cache, leer }: { cache: Definidor; leer:
     // Un id que no es de ningún torneo no tiene pruebas: no se guarda.
     guardarSi: (v: ListaPublica) => v.filas.length > 0 || Object.keys(v.estados).length > 0,
   });
+
+  /*
+    Aparte de la lista y con otra frescura: los rankings cambian cada semana y
+    la lista cada pocos minutos. Se pide en paralelo con la lista (la lee de la
+    caché por dentro), y se cruza por prueba y persona, así que unos extras de
+    antes de un alta sólo dejan sin chips al recién llegado hasta que se
+    recalculan, nunca le ponen los de otro.
+  */
+  const leerExtras = leer.extrasInscritos;
+  // La lectura de la lista que ya está en marcha en `listaPublica`: con la caché
+  // fría, pedirla otra vez desde los extras la calcularía dos veces en D1.
+  const listasEnCurso = new Map<string, Promise<ListaPublica>>();
+  const extras = leerExtras
+    ? cache.definir({
+        espacio: 'calendario-inscritos-extras',
+        depende: ['calendario', 'deporte'],
+        frescoMs: 30 * MINUTO,
+        caducaMs: 7 * DIA,
+        cargar: async (eventId: string) => {
+          const pares = paresDeLista(await (listasEnCurso.get(eventId) ?? lista(eventId)));
+          return pares.length > 0 ? leerExtras(pares) : {};
+        },
+        guardarSi: (v: ExtrasInscritos) => Object.keys(v).length > 0,
+      })
+    : null;
 
   const podios = cache.definir({
     espacio: 'calendario-podios',
@@ -168,8 +228,17 @@ export function crearCachesCalendario({ cache, leer }: { cache: Definidor; leer:
     detalle(eventId: string): Promise<EventView | null> {
       return detalle(eventId, diaUtc());
     },
-    listaPublica(eventId: string): Promise<ListaPublica> {
-      return lista(eventId);
+    async listaPublica(eventId: string): Promise<ListaPublica> {
+      if (!extras) return lista(eventId);
+      const enCurso = lista(eventId);
+      listasEnCurso.set(eventId, enCurso);
+      try {
+        // Sin extras (fallo de D1 o de la caché) la lista sale igual, con sus enlaces.
+        const [l, e] = await Promise.all([enCurso, extras(eventId).catch(() => null)]);
+        return conExtras(l, e);
+      } finally {
+        if (listasEnCurso.get(eventId) === enCurso) listasEnCurso.delete(eventId);
+      }
     },
     podios(eventId: string): Promise<VistaPodiosEvento> {
       return podios(eventId);

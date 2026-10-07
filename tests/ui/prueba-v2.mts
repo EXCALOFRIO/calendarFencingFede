@@ -32,6 +32,7 @@ import { cargarCatalogoEdiciones } from '@/lib/sport/explorar/catalogo';
 import { leerCriteriosCatalogo } from '@/lib/sport/explorar/catalogo-url';
 import { leerCriteriosEdicion } from '@/lib/sport/explorar/edicion-url';
 import { cargarEdicion, cargarSeries } from '@/lib/sport/explorar/ediciones-pantalla';
+import { leerEventoDeEdicion, urlEventoCalendario } from '@/lib/sport/explorar/enlaces-calendario';
 import { crearContexto } from '../helpers/explorar';
 
 const RAIZ = process.cwd();
@@ -105,7 +106,10 @@ async function pagina(nombre: string, edicionId: string, consulta: Record<string
   const vista = await cargarEdicion(ctx, edicionId, criterios);
   tiempos.push({ pantalla: nombre, ms: Math.round(performance.now() - t), consultas: consultas - antes });
   if (vista.tipo !== 'ok') throw new Error(`${nombre}: ${vista.tipo}`);
-  return { vista, html: (css: string) => documento(css, React.createElement(EdicionCompleta, { edicion: vista.edicion, criterios })) };
+  // El enlace al torneo del calendario, como en la página (`enlaces-calendario.ts`).
+  const evento = await leerEventoDeEdicion(ctx.db, edicionId);
+  const calendario = evento ? urlEventoCalendario(evento, criterios.origen) : null;
+  return { vista, html: (css: string) => documento(css, React.createElement(EdicionCompleta, { edicion: vista.edicion, criterios, calendario })) };
 }
 
 const css = await compilarCss();
@@ -178,8 +182,9 @@ console.log(
   partes.vista.edicion.pruebasDetalle.map((p) => `${p.arma}/${p.genero}/${p.fecha} miembros=${p.miembros?.length} puestos=${p.resultados.importados} asaltos=${p.asaltos}`),
 );
 
-// Índice de ediciones: catálogo y series, sin filtros y filtrado por fuente.
-for (const [nombre, consulta] of [['ediciones', {}], ['ediciones-fie', { fuente: 'fie' }]] as const) {
+// Índice de ediciones: catálogo y series, sin filtros y filtrado por fuente. `SIN_CATALOGO=1` lo salta
+// (la matriz sólo mide las páginas de la prueba).
+for (const [nombre, consulta] of process.env.SIN_CATALOGO === '1' ? [] : ([['ediciones', {}], ['ediciones-fie', { fuente: 'fie' }]] as const)) {
   const { criterios, cursor } = leerCriteriosCatalogo(consulta);
   const entrada = Object.fromEntries(Object.entries(criterios).filter(([, v]) => v));
   const antes = consultas;

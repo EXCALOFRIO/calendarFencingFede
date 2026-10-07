@@ -2,8 +2,11 @@ import type * as React from 'react';
 import type { VistaExplorar } from '@/lib/sport/explorar/pantalla';
 import { construirUrl, hayCriterios, type CriteriosExplorar, type OpcionTemporada } from '@/lib/sport/explorar/url';
 import { CabeceraExplorar } from './cabecera-explorar';
+import { CLAVES_FILTRO_TIRADOR } from '@/lib/sport/explorar/filtros-buscar';
 import { FormularioFiltros } from './formulario-filtros';
 import { ChipsActivos, EstadoSinCoincidencias, EstadoSinLista, ListaDeportistas } from './resultados';
+
+const OMITIR = ['q', ...CLAVES_FILTRO_TIRADOR] as const;
 
 /**
  * Pestaña Buscar: la barra de perfiles en vivo, los filtros y, debajo, la
@@ -57,7 +60,8 @@ export function VistaBuscar({
         profileId={profileId}
       >
         <div className="flex min-w-0 flex-col gap-3">
-          {inicio ? null : <ChipsActivos criterios={criterios} />}
+          {/* Lo que tiene chip arriba no se repite; aquí quedan los filtros de enlaces antiguos (temporada, torneo…). */}
+          {inicio ? null : <ChipsActivos criterios={criterios} omitir={OMITIR} />}
           {contenido}
         </div>
       </FormularioFiltros>

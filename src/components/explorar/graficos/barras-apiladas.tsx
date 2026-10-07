@@ -44,7 +44,7 @@ export function BarrasApiladas({
   const rotulos = indicesRotulo(n);
   const conTotales = totales && n <= 24;
   return (
-    <Lectura inicial={inicial} className={className}>
+    <Lectura inicial={inicial} datos={columnas.map((c) => c.lectura)} className={className}>
       <div role="img" aria-label={titulo} className="flex min-w-0 flex-col gap-1">
         <div className={cn('relative flex items-stretch gap-px border-b border-filete-alto pt-4', ALTO[alto])}>
           {columnas.map((c, i) => {
@@ -56,7 +56,7 @@ export function BarrasApiladas({
                 className="group/col flex min-w-0 flex-1 flex-col items-center justify-end"
               >
                 {conTotales && total > 0 ? (
-                  <span className="cifra mb-0.5 text-[0.6875rem] leading-none text-muted-foreground group-hover/col:text-foreground">
+                  <span className="cifra mb-0.5 text-[12px] leading-none text-muted-foreground group-hover/col:text-foreground">
                     {total}
                   </span>
                 ) : null}

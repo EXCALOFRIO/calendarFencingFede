@@ -138,7 +138,7 @@ export function TablaRankingEuropeo({
             marcado={soloEspana}
             onClick={() => cambiarEspana(!soloEspana)}
             contador={tabla ? tabla.espanoles : undefined}
-            aria-label={`Solo España${tabla ? `: ${tabla.espanoles} de ${tabla.filas.length}` : ''}`}
+            detalle={tabla ? `de ${tabla.filas.length}` : undefined}
           >
             Solo España
           </ChipFiltro>
@@ -154,6 +154,12 @@ export function TablaRankingEuropeo({
           leida={tabla.publicadaEl ? formatDateEs(tabla.publicadaEl) : null}
           url={tabla.sourceUrl}
         />
+      ) : null}
+
+      {tabla ? (
+        <p role="status" className="sr-only">
+          {filtradas.length} {filtradas.length === 1 ? 'tirador' : 'tiradores'}
+        </p>
       ) : null}
 
       {visibles.length > 0 ? (

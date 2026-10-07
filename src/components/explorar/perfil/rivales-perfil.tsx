@@ -17,7 +17,7 @@ function FilaRival({ personaId, r }: { personaId: string; r: RivalFrecuente }) {
       <Link
         href={construirUrlCaraACara(personaId, { rival: r.id })}
         prefetch={false}
-        className="grid min-h-14 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-2.5 hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:px-5"
+        className="grid min-h-14 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-2.5 hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:px-5"
       >
         <span className="flex min-w-0 items-center gap-3">
           <FotoDeportista personaId={r.id} nombre={nombreVisible(r.nombre)} tamano="lista" apagado />

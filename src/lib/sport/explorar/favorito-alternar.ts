@@ -9,7 +9,9 @@ import type { ResultadoFavorito } from './favoritos';
  * cuando la sesión ha caducado) devuelve el estado previo: nunca se deja
  * «Favorito» en pantalla si no se guardó.
  *
- * Los textos no prometen avisos: un favorito es sólo un acceso rápido privado.
+ * Los textos no prometen avisos ni dicen que no los haya: quien sigue a un
+ * adulto puede recibirlos (notificaciones «Siguiendo»), a un posible menor no,
+ * y aquí no se sabe cuál es.
  */
 
 export type AccionFavorito = (entrada: unknown) => Promise<ResultadoFavorito>;
@@ -20,7 +22,7 @@ export type CambioFavorito = {
   mensaje: string;
 };
 
-export const MENSAJE_GUARDADO = 'Guardado en tus favoritos. Es un acceso rápido privado, sin avisos.';
+export const MENSAJE_GUARDADO = 'Guardado en tus favoritos.';
 export const MENSAJE_QUITADO = 'Quitado de tus favoritos.';
 const MENSAJE_ERROR =
   'No se ha podido guardar el cambio y todo sigue como estaba. Comprueba la conexión, o vuelve a entrar si tu sesión ha caducado, e inténtalo de nuevo.';

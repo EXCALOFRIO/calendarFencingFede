@@ -114,6 +114,28 @@ export function leerContextoCalendario(params: Parametros): ContextoCalendarioLe
   return salida;
 }
 
+/**
+ * Torneo cuya ficha se abre al llegar (`evento=<id>`, desde una edición o un
+ * aviso). No es contexto: no se recuerda ni se escribe en un retorno, y la
+ * vista lo quita de la dirección al abrir la ficha (`quitarEventoDeUrl`).
+ */
+export function leerEventoCalendario(params: Parametros): string | null {
+  const evento = primero(params.evento)?.trim();
+  return evento && UUID_RE.test(evento) ? evento.toLowerCase() : null;
+}
+
+/** La dirección (ruta + consulta + fragmento) sin `evento=`, para no reabrir la ficha al volver. */
+export function quitarEventoDeUrl(direccion: string): string {
+  const corte = direccion.search(/[?#]/);
+  if (corte === -1 || direccion[corte] === '#') return direccion;
+  const fin = direccion.indexOf('#', corte);
+  const consulta = new URLSearchParams(direccion.slice(corte + 1, fin === -1 ? undefined : fin));
+  if (!consulta.has('evento')) return direccion;
+  consulta.delete('evento');
+  const texto = consulta.toString();
+  return `${direccion.slice(0, corte)}${texto ? `?${texto}` : ''}${fin === -1 ? '' : direccion.slice(fin)}`;
+}
+
 function componer(c: ContextoCalendarioLeido, busqueda: string): string {
   const params = new URLSearchParams();
   if (c.vista && VISTAS.includes(c.vista)) params.set('vista', c.vista);

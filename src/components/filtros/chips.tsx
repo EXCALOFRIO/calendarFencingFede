@@ -27,7 +27,8 @@ export function BotonFiltros({
       icono={SlidersHorizontal}
       marcado={activos > 0}
       contador={activos}
-      aria-label={activos > 0 ? `Filtros, ${activos} ${activos === 1 ? 'activo' : 'activos'}` : 'Filtros'}
+      // Sin aria-label: el nombre sale de lo visible, «Filtros 1», y el lector oye además «activo» (WCAG 2.5.3).
+      detalle={activos > 0 ? (activos === 1 ? 'activo' : 'activos') : undefined}
       {...resto}
     >
       Filtros

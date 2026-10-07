@@ -1,9 +1,10 @@
 'use client';
 
-import { ChevronDown, Search, X } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { BanderaPais } from '@/components/bandera';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { categoriaVisible, ordenCategoriaVisible } from '@/lib/sport/explorar/presentacion';
 import type { AmbitoResultados, FilaListaPerfil, ListaPerfil } from '@/lib/sport/explorar/resultados-perfil';
 import type { Arma } from '@/lib/sport/explorar/tipos';
@@ -65,29 +66,33 @@ function Selector({
   onChange: (v: string) => void;
 }) {
   const activo = valor !== '';
+  // Radix no admite un elemento con valor vacío: «todas» va con un valor propio.
   return (
-    <label className="relative min-w-0">
-      <span className="sr-only">{etiqueta}</span>
-      <select
-        value={valor}
-        onChange={(e) => onChange(e.target.value)}
+    <Select value={activo ? valor : TODAS} onValueChange={(v) => onChange(v === TODAS ? '' : v)}>
+      <SelectTrigger
+        aria-label={etiqueta}
         className={cn(
-          'h-[40px] w-full min-w-0 cursor-pointer appearance-none truncate rounded-full border bg-card pr-5.5 pl-2.5 text-[0.8125rem] outline-none max-[359px]:pr-5 max-[359px]:pl-2 max-[359px]:text-xs sm:pr-8 sm:pl-3.5 sm:text-sm',
-          'focus-visible:ring-[3px] focus-visible:ring-ring/50',
+          // En px: `h-11` es rem y con el texto al 130 % la pastilla pasaba de 44 px.
+          'data-[size=default]:h-[44px] w-full min-w-0 gap-1 rounded-full border bg-card py-0 pr-2.5 pl-2.5 text-[0.8125rem] max-[359px]:pr-1.5 max-[359px]:pl-2 max-[359px]:text-xs sm:pr-3 sm:pl-3.5 sm:text-sm',
+          '*:data-[slot=select-value]:block *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:truncate',
           activo ? 'border-primary-text bg-marcado font-semibold text-primary-text' : 'text-foreground',
         )}
       >
-        <option value="">{todas}</option>
+        <SelectValue placeholder={todas} />
+      </SelectTrigger>
+      <SelectContent position="popper" align="start">
+        <SelectItem value={TODAS}>{todas}</SelectItem>
         {lista.map((o) => (
-          <option key={o.valor} value={o.valor}>
+          <SelectItem key={o.valor} value={o.valor}>
             {o.etiqueta} ({o.n})
-          </option>
+          </SelectItem>
         ))}
-      </select>
-      <ChevronDown className="pointer-events-none absolute top-1/2 right-1.5 size-3.5 max-[359px]:right-1 -translate-y-1/2 text-muted-foreground sm:right-3 sm:size-4" aria-hidden />
-    </label>
+      </SelectContent>
+    </Select>
   );
 }
+
+const TODAS = '__todas__';
 
 function TarjetaMejor({ r, className }: { r: FilaListaPerfil; className?: string }) {
   return (
@@ -95,7 +100,7 @@ function TarjetaMejor({ r, className }: { r: FilaListaPerfil; className?: string
       <Link
         href={r.href}
         prefetch={false}
-        className="flex h-full min-w-0 flex-col gap-2.5 rounded-xl border bg-card p-3 hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:p-4"
+        className="flex h-full min-w-0 flex-col gap-2.5 rounded-xl border bg-card p-3 hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:p-4"
       >
         <span className="flex min-w-0 items-center justify-between gap-2">
           <DiscoPuesto puesto={r.puesto} puestoPublicado={r.puestoPublicado} tamano="lg" />
@@ -248,7 +253,7 @@ export function HistorialPerfil({
                     className={cn(
                       TACTIL,
                       'flex min-h-[32px] min-w-0 items-center justify-center gap-1 rounded-full px-2 text-[0.8125rem] font-medium whitespace-nowrap max-[359px]:px-1 max-[359px]:text-xs sm:px-4 sm:text-sm',
-                      'focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+                      'focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
                       activo ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
                     )}
                   >
@@ -294,7 +299,7 @@ export function HistorialPerfil({
               value={texto}
               onChange={(e) => cambiar(setTexto)(e.target.value)}
               placeholder="Competición o ciudad"
-              className="h-[40px] w-full min-w-0 rounded-full border bg-card pr-4 pl-10 text-[16px] outline-none placeholder:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-sm"
+              className="h-[40px] w-full min-w-0 rounded-full border bg-card pr-4 pl-10 text-[16px] outline-none placeholder:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring sm:text-sm"
             />
           </label>
           <div className={cn('grid min-w-0 gap-2 max-[359px]:gap-1.5', conArma ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-[5fr_3fr_5fr] sm:grid-cols-3')}>
@@ -307,7 +312,7 @@ export function HistorialPerfil({
             <button
               type="button"
               onClick={limpiar}
-              className={cn(TACTIL, 'inline-flex min-h-[32px] w-fit items-center gap-1 rounded-full px-3 text-sm text-primary-text hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none')}
+              className={cn(TACTIL, 'inline-flex min-h-[32px] w-fit items-center gap-1 rounded-full px-3 text-sm text-primary-text hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none')}
             >
               <X className="size-4" aria-hidden />
               Quitar filtros
@@ -339,7 +344,7 @@ export function HistorialPerfil({
               <button
                 type="button"
                 onClick={() => setVisibles((v) => v + PASO)}
-                className="inline-flex min-h-[40px] w-full items-center justify-center rounded-full border bg-card text-sm font-medium hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto sm:self-center sm:px-6"
+                className="inline-flex min-h-[40px] w-full items-center justify-center rounded-full border bg-card text-sm font-medium hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:w-auto sm:self-center sm:px-6"
               >
                 Ver más · quedan {filtradas.length - mostradas.length}
               </button>

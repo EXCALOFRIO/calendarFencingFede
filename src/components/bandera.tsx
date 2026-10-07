@@ -279,23 +279,29 @@ export function BanderaPais({
         'font-semibold uppercase tracking-wide text-foreground no-underline',
         'tabular-nums',
         tamaño === 'fila'
-          ? 'min-w-[2.6em] px-1 py-px text-[0.625rem] leading-[1.4]'
+          ? 'min-w-[2.4em] px-1 py-px text-[12px] leading-[14px] tracking-normal'
           : 'min-w-[2.7em] px-1.5 py-0.5 text-xs leading-tight',
         conNombre ? null : className,
       )}
     >
-      {codigo}
+      {/* El lector dice el país y no «E, S, P»; el código es para la vista. */}
+      <span aria-hidden>{codigo}</span>
+      <span className="sr-only" suppressHydrationWarning>
+        {nombre ?? codigo}
+      </span>
     </abbr>
   );
 
   if (!conNombre) {
     if (!bandera) return pastilla;
     if (soloBandera) {
-      // El código se queda para lectores de pantalla y en el rótulo emergente.
+      // El nombre del país se queda para lectores de pantalla y en el rótulo emergente.
       return (
         <span title={nombre ?? codigo} suppressHydrationWarning className={cn('inline-flex shrink-0', className)}>
           {bandera}
-          <span className="sr-only">{codigo}</span>
+          <span className="sr-only" suppressHydrationWarning>
+            {nombre ?? codigo}
+          </span>
         </span>
       );
     }

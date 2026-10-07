@@ -707,3 +707,34 @@ export function resumirVigencia(filas: VigenciaCalculada[]): {
     familiasConVarias: conVarias.size,
   };
 }
+
+/** Lo que hay en `documento_vigencia`, sin las columnas de contabilidad. */
+export type VigenciaGuardada = Omit<VigenciaCalculada, 'estado'> & { estado: string };
+
+const CAMPOS_VIGENCIA = [
+  'familia',
+  'asunto',
+  'temporada',
+  'temporadaInferida',
+  'numeroCircular',
+  'etiquetaVersion',
+  'ordenVersion',
+  'versionesEnFamilia',
+  'estado',
+  'sustituidaPorId',
+  'duplicadoDeId',
+  'motivo',
+] as const satisfies readonly (keyof VigenciaCalculada)[];
+
+/** Las vigencias calculadas que no están guardadas o difieren en algún campo. */
+export function vigenciasQueCambian(
+  calculadas: readonly VigenciaCalculada[],
+  guardadas: readonly VigenciaGuardada[],
+): VigenciaCalculada[] {
+  const porId = new Map(guardadas.map((g) => [g.documentoId, g]));
+  return calculadas.filter((v) => {
+    const previa = porId.get(v.documentoId);
+    if (!previa) return true;
+    return CAMPOS_VIGENCIA.some((campo) => (v[campo] ?? null) !== (previa[campo] ?? null));
+  });
+}

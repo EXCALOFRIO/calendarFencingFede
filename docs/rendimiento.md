@@ -24,9 +24,10 @@ el apartado 8 para aplicarlos después.
 
 ```powershell
 $W = "$env:USERPROFILE\calendario-datos\calendario-trabajo"
-# Una sola copia (≈2 GB; hace falta ≥6 GB libres), preparada y movida al estado local:
-Copy-Item "$W\nuevo9.sqlite" "$W\perf\rutas\base.sqlite"
-npx tsx tests/perf/preparar-copia.mts "$W\perf\rutas\base.sqlite" "$W\relevos-sql-lote8" "$W\rankings-internacionales-sql-lote8"
+# Una sola copia (≈2 GB; hace falta ≥6 GB libres), preparada y movida al estado local.
+# La copia de producción es nuevo11 (nuevo9 y nuevo10 ya no existen); trae relevos y rankings:
+Copy-Item "$W\nuevo11.sqlite" "$W\perf\rutas\base.sqlite"
+npx tsx tests/perf/preparar-copia.mts "$W\perf\rutas\base.sqlite"
 $env:PERF_ESTADO = "$W\perf\rutas\estado"; $env:PERF_COPIA = "$W\perf\rutas\base.sqlite"
 npx tsx tests/perf/rutas.mts "$W\perf\rutas\antes.json"            # instala la copia y mide
 Remove-Item Env:PERF_COPIA
@@ -526,3 +527,62 @@ comprobar aquí:
     (prohibidos `next dev` y `next build`). Hay que revisar en `cf:preview` el
     paso de trimestre (sigue el anterior hasta que llega el nuevo), la ficha
     abierta tras pasar el puntero y el cara a cara con relevos.
+
+## 11. Olas y pasada final
+
+### Estado de lo pendiente de la fase 2
+
+| # | Pendiente | Estado |
+|---|---|---|
+| 1 | `explorar/loading.tsx` y el resto de `loading.tsx` | Hecho. En la pasada final cayó el último (`estado/loading.tsx`), junto con `ui/skeleton.tsx` y los esqueletos de `/perfil`. No queda ningún `loading.tsx` en `src/app`. |
+| 2 | Invalidar tras la ingesta | Hecho: `trasIngesta` (`src/lib/ingest/tras-ingesta.ts`) en `api/cron/ingest/[source]` y `api/admin/ingest`; `invalidarCacheSinFallar(['calendario'])` en la extracción de PDFs y la normativa. |
+| 3 | Layout: frescura y temporada a la caché | Hecho: espacios `temporada-actual` y `calendario-frescura` (`calendar.ts`). |
+| 4 | KV `CACHE_DATOS` | Declarado en `wrangler.jsonc`. |
+| 5-9 | Ficha fría, cara a cara frío, catálogo, podios, recorte de la temporada | Sin cambios: cacheados, el coste está en la primera carga por isolate y versión. |
+| 10 | `contextoReal()` por petición | Hecho (`real.ts`, React `cache`). |
+| 11 | Comprobación visual | La matriz de dispositivos completa, sin servidor (`capturas/matriz/`). |
+
+En las olas, además, el perfil pasó a secciones con caché compartida
+(`perfil-cache.ts`: cabecera + Resultados, rendimiento, rivales, curiosidades
+y europeo) y /ranking a tablas compartidas por grupo (`ranking/compartido.ts`:
+temporadas, grupos y tablas nacionales, FIE y europeas, la FIE sin `esMio`).
+
+### Pasada final (copia `nuevo11`, `PERF_HOY=2026-10-08`)
+
+Consultas / filas leídas, caliente salvo donde se dice. «Directo» es el camino
+de antes (D1 en cada visita); «caché», el de ahora:
+
+| Ruta | Antes | Después |
+|---|---:|---:|
+| /ranking, tirador, internacional | 7 / 2.720 | **7 / 22** |
+| /ranking, tirador, nacional | 7 / 2.720 | **6 / 20** |
+| /ranking, seleccionador, nacional | 5 / 509 | 5 / 509 |
+| Feed vacío (cuenta que no sigue a nadie) | 6 / 11.519 | **5 / 29** |
+| Siguiendo vacío | igual que el feed vacío | igual que el feed vacío |
+| Sugeridos de una persona (Llavador), por lectura | 3 / 16.539 | **0 / 0** (16.539 la primera vez por isolate y versión) |
+| Buscar vacío con propuestas (ya iba por la caché; referencia) | 11 / 128 | 11 / 128 |
+
+- **`getPuestosOficiales`** (`src/lib/queries/ranking.ts`): el tamaño de cada
+  clasificación oficial («3.º de 88») salía de un `GROUP BY` sobre toda
+  `official_ranking_entry` (≈1.350 filas, 2.700 leídas) en cada petición. Es
+  igual para todas las cuentas: ahora va a la caché compartida
+  (`ranking-nac-tamanos`, dependencia `ranking`, 10 min / 7 d) como un
+  diccionario `temporada|arma|género|categoría → clasificados`. La cuenta sólo
+  lee sus propias filas por `official_ranking_entry_athlete_idx`. Sirve a
+  /ranking, Mi estado y el alta.
+- **Sugeridos** (`sqlTiradoresSugeridos`, ≈16.500 filas en una ficha grande):
+  ya estaban cacheados en la sección Rivales del perfil (`perfil-rivales`) y en
+  Buscar vacío (`buscar-sugeridos`), pero el feed vacío y Siguiendo vacío
+  llamaban a `leerPropuestasParaSeguir` sin las fuentes de la caché, y leían
+  en cada visita los sugeridos de la ficha propia (16.500) o los destacados
+  (11.500). Es justo la pantalla de toda cuenta nueva. Ahora
+  `fuentesPropuestasCompartidas(ctx)` (`cache-real.ts`) se pasa a
+  `cargarInicio` y `cargarListaSiguiendo`. La consulta en sí no se ha
+  reescrito: el coste está en las coincidencias de las 20 pruebas recientes
+  (≈11.000 filas en `por_pid`), que son el criterio de la sugerencia; bajar la
+  ventana cambiaría a quién se sugiere.
+- Lo que queda en el seleccionador (505 filas) es `getRankingStatus`
+  (`count(*)` sobre `result`), sólo para quien ve el cálculo interno.
+- Las cifras «fría» de este arnés comparten proceso entre rutas: la caché de
+  tamaños que llena una ruta la aprovecha la siguiente. Para una fría limpia,
+  un proceso por ruta (apartado 10).

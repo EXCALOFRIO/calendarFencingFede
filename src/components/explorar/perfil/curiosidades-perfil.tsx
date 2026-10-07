@@ -124,7 +124,7 @@ function TarjetaCuriosidad({ personaId, c, nivel }: { personaId: string; c: Curi
         <div className="flex min-w-0 items-center gap-2">
           <EnlacePrecarga
             href={rutaFicha(c.rival.id)}
-            className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2.5 rounded-sm underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+            className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2.5 rounded-sm underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
           >
             {/* La misma persona sale en varias tarjetas: `FotoDeportista` la pide una sola vez. */}
             <FotoDeportista personaId={c.rival.id} nombre={nombre} tamano="lista" apagado />
@@ -138,7 +138,7 @@ function TarjetaCuriosidad({ personaId, c, nivel }: { personaId: string; c: Curi
             href={construirUrlCaraACara(personaId, { rival: c.rival.id })}
             aria-label={`Cara a cara con ${nombre}`}
             title="Cara a cara"
-            className={cn(TACTIL, 'inline-flex size-[32px] shrink-0 items-center justify-center gap-1.5 rounded-full border text-xs font-medium hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto sm:px-3')}
+            className={cn(TACTIL, 'inline-flex size-[32px] shrink-0 items-center justify-center gap-1.5 rounded-full border text-xs font-medium hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:w-auto sm:px-3')}
           >
             <Swords className="size-4" aria-hidden />
             <span className="hidden sm:inline">Cara a cara</span>

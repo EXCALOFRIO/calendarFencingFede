@@ -4,6 +4,7 @@ import { ChevronRight, ExternalLink, FileText, Flag, Trophy } from 'lucide-react
 import { EnlaceIntencion } from '@/components/enlace-intencion';
 import * as React from 'react';
 import { BanderaPais } from '@/components/bandera';
+import { EnlacePais } from '@/components/explorar/piezas';
 import { AREA_TACTIL } from '@/components/sistema/tactil';
 import type { EventView } from '@/lib/queries/calendar';
 import type { PruebaPasada } from '@/lib/queries/calendario-pasado-modelo';
@@ -123,9 +124,12 @@ const ICONO_EXTERNO = cn(
 function Ganador({
   ganador,
   recortar = false,
+  sinBandera = false,
 }: {
   ganador: NonNullable<PruebaPasada['ganador']>;
   recortar?: boolean;
+  /** La bandera va fuera, como enlace al país (en la hoja). */
+  sinBandera?: boolean;
 }) {
   return (
     <span className={cn('flex min-w-0 items-center gap-1.5', recortar && 'flex-1')}>
@@ -144,7 +148,7 @@ function Ganador({
       >
         {ganador.nombre}
       </span>
-      {ganador.pais ? (
+      {ganador.pais && !sinBandera ? (
         <BanderaPais pais={ganador.pais} soloBandera={recortar} className="shrink-0 text-[12px] normal-case tracking-tight" />
       ) : null}
     </span>
@@ -329,7 +333,7 @@ export function ResultadosPasados({
                   </span>
                   {p.ganador ? (
                     <span className="flex min-w-0 text-xs text-muted-foreground">
-                      <Ganador ganador={p.ganador} recortar />
+                      <Ganador ganador={p.ganador} recortar sinBandera />
                     </span>
                   ) : null}
                 </span>
@@ -353,6 +357,8 @@ export function ResultadosPasados({
                 ) : (
                   <div className="flex min-h-12 min-w-0 flex-1 items-center gap-2 py-2 pl-3 pr-1">{cuerpo}</div>
                 )}
+                {/* La bandera del ganador, hermana del enlace de la prueba: lleva a su país. */}
+                {p.ganador?.pais ? <EnlacePais pais={p.ganador.pais} /> : null}
                 {p.urlOficial ? (
                   <a
                     href={p.urlOficial}

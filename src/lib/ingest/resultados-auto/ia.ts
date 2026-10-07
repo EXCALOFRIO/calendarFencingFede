@@ -132,6 +132,11 @@ export async function extraerPdfConIa(cliente: ClienteIa, ctx: {
   url: string; sha256: string; docId: string; season: string; textos: string[]; editionName: string | null;
   editionStart?: string | null; editionEnd?: string | null; fechaCatalogo?: (p: PruebaFecha) => string | null;
   maxCaracteres: number; neuronasDisponibles: number;
+  /**
+   * Apunta en firme el peor caso (y la llamada) ANTES de llamar; `false` = no se pudo apuntar y
+   * no se llama. Así un corte del Worker a mitad de la llamada no deja el gasto sin contar.
+   */
+  reservar?: (peorCaso: number) => Promise<boolean>;
 }): Promise<ResultadoIa> {
   const usuario = promptUsuario(ctx.textos, ctx.maxCaracteres);
   if (!usuario) return { ok: false, motivo: 'ia_texto_demasiado_largo', fallos: [], neuronas: 0, llamada: false };
@@ -139,6 +144,9 @@ export async function extraerPdfConIa(cliente: ClienteIa, ctx: {
     MAX_TOKENS_SALIDA * 3);
   if (peorCaso > ctx.neuronasDisponibles) {
     return { ok: false, motivo: 'ia_sin_neuronas_hoy', fallos: [], neuronas: 0, llamada: false };
+  }
+  if (ctx.reservar && !(await ctx.reservar(peorCaso))) {
+    return { ok: false, motivo: 'ia_reserva_no_guardada', fallos: [], neuronas: 0, llamada: false };
   }
   let respuesta: string;
   try {

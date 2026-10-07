@@ -6,7 +6,7 @@ import { Suspense } from 'react';
 import { Seccion } from '@/components/estado/piezas';
 import { EnlaceFavoritos } from '@/components/explorar/favoritos';
 import { Calendarios, type FeedVista } from '@/components/perfil/calendarios';
-import { HistorialPropio, HistorialPropioCargando } from '@/components/perfil/historial-propio';
+import { HistorialPropio } from '@/components/perfil/historial-propio';
 import { Dato, FichaTirador } from '@/components/perfil/tirador';
 import { Button } from '@/components/ui/button';
 import { getManagedAthletes, requireProfile } from '@/lib/auth/session';
@@ -150,9 +150,7 @@ export default async function Pagina({
               dirección técnica, y punto.
             */}
             <p className="medida text-sm text-muted-foreground">
-              Tu cuenta no tiene ninguna ficha de tirador vinculada. Aquí
-              aparecerían sus armas, sus categorías y sus licencias. La vincula
-              la dirección técnica desde Gestión › Usuarios.
+              Sin ficha de tirador. La vincula la dirección técnica.
             </p>
             <Button variant="outline" asChild>
               <Link href="/">Ver el calendario</Link>
@@ -164,9 +162,11 @@ export default async function Pagina({
       {/*
         Historial por defecto, no un enlace. Va en su propio límite de carga
         para que la cuenta y la ficha se vean sin esperar a las consultas
-        deportivas; si fallan, el error se queda dentro de esta sección.
+        deportivas; si fallan, el error se queda dentro de esta sección. Sin
+        esqueleto (`docs/diseno-sistema.md` § 5) y sin `key`: al cambiar de
+        página del historial se queda el anterior hasta que llega el nuevo.
       */}
-      <Suspense key={JSON.stringify(criteriosFicha)} fallback={<HistorialPropioCargando />}>
+      <Suspense fallback={null}>
         <HistorialPropio criterios={criteriosFicha} />
       </Suspense>
 
@@ -174,8 +174,7 @@ export default async function Pagina({
         <div className="pt-3">
           {perfil.preview ? (
             <p className="text-sm text-muted-foreground">
-              Las direcciones privadas del calendario y su renovación no están
-              disponibles en la vista previa. Sal de ella para usar tu calendario.
+              No disponible en la vista previa.
             </p>
           ) : <Calendarios feeds={feeds} revocar={revocarCalendario} />}
         </div>
@@ -184,8 +183,7 @@ export default async function Pagina({
       <Seccion titulo="Sesión">
         <div className="flex flex-col items-start gap-3 pt-3">
           <p className="medida text-sm text-muted-foreground">
-            Se cierra la sesión en este dispositivo. Los calendarios que tengas
-            suscritos siguen actualizándose: no dependen de estar dentro.
+            Tus calendarios suscritos siguen al día.
           </p>
           <form action={salir}>
             <Button variant="outline" type="submit">

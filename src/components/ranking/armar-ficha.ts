@@ -246,7 +246,7 @@ export function ladoMundial(ficha: FichaFie | null): LadoRanking {
        */
       const pares: DatoFicha[] = [
         {
-          etiqueta: 'Puntos FIE',
+          etiqueta: 'Puntos',
           valor: vigente.points === null ? null : puntos(vigente.points),
           pie:
             vigente.eventCount === null

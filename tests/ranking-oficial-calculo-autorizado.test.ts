@@ -190,6 +190,6 @@ describe('panel de la fila oficial', () => {
   it('con permiso y sin resultados emparejados lo dice, distinto de no tener permiso', () => {
     const html = detalle(true, false);
     expect(html).toContain('Cálculo de esta aplicación');
-    expect(html).toContain('no hay cálculo propio');
+    expect(html).toContain('Sin resultados de esta temporada con su licencia');
   });
 });

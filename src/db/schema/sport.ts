@@ -169,7 +169,6 @@ export const sportExternalId = pgTable(
       t.validFrom,
     ),
     index('sport_external_id_lookup_idx').on(t.scheme, t.value, t.scopeSource),
-    index('sport_external_id_person_idx').on(t.personId),
     check(
       'sport_external_id_confirmed_has_person',
       sql`${t.linkStatus} <> 'CONFIRMADO' OR ${t.personId} IS NOT NULL`,
@@ -429,7 +428,6 @@ export const sportBout = pgTable(
     ),
     index('sport_bout_a_idx').on(t.fencerAPersonId, t.fencerBPersonId, t.occurredOn),
     index('sport_bout_b_idx').on(t.fencerBPersonId, t.fencerAPersonId, t.occurredOn),
-    index('sport_bout_competition_idx').on(t.competitionId, t.phase, t.roundKey),
     check('sport_bout_canonical_order', sql`${t.fencerARef} < ${t.fencerBRef}`),
     check('sport_bout_phase', sql`${t.phase} IN ('POULE','TABLEAU')`),
     check('sport_bout_scores', sql`${t.scoreA} >= 0 AND ${t.scoreB} >= 0`),

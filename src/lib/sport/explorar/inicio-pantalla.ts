@@ -33,8 +33,9 @@ export type VistaInicio = {
 export async function cargarInicio(
   ctx: ContextoExplorador,
   criterios: { cursor?: string; soloMedallas?: boolean },
+  fuentes?: FuentesPropuestas,
 ): Promise<VistaInicio> {
-  const vista = await cargarSiguiendo(ctx, criterios);
+  const vista = await cargarSiguiendo(ctx, criterios, fuentes);
   const vacia = vista.tipo === 'ok' && vista.sinResultados && !criterios.cursor;
   return { vista, siguiendo: vacia ? await cargarConteoSiguiendo(ctx) : null };
 }
@@ -58,7 +59,11 @@ export type VistaListaSiguiendo =
  * Lista de seguidas. Con una sola página el total es su longitud y no hace
  * falta otra consulta; sólo una cuenta con más de una página pide el conteo.
  */
-export async function cargarListaSiguiendo(ctx: ContextoExplorador, cursor: string | undefined): Promise<VistaListaSiguiendo> {
+export async function cargarListaSiguiendo(
+  ctx: ContextoExplorador,
+  cursor: string | undefined,
+  fuentes?: FuentesPropuestas,
+): Promise<VistaListaSiguiendo> {
   try {
     const r = await leerListaSiguiendo(ctx, cursor ? { cursor } : {});
     if (r.estado === 'entrada_invalida') return { tipo: 'error' };
@@ -67,7 +72,7 @@ export async function cargarListaSiguiendo(ctx: ContextoExplorador, cursor: stri
     if (!r.sinResultados || cursor) return { tipo: 'ok', items: r.items, siguiente: r.siguiente, total };
     let sugeridos: PersonaParaSeguir[] | null;
     try {
-      sugeridos = await leerPropuestasParaSeguir(ctx);
+      sugeridos = await leerPropuestasParaSeguir(ctx, fuentes);
     } catch (error) {
       if (esNoAutenticado(error)) throw error;
       aviso('las propuestas para seguir', error);

@@ -18,7 +18,7 @@ const { BarraVictorias } = await import('@/components/explorar/barra-victorias')
 const { PuestosComparados, escalaPuesto, marcasPuesto, mediaMovil, resumenDelante } = await import(
   '@/components/explorar/graficos/puestos-comparados'
 );
-const { DispersionPuestos, resumenTendencia } = await import('@/components/explorar/graficos/dispersion-puestos');
+const { resumenTendencia } = await import('@/components/explorar/graficos/dispersion-puestos');
 
 const html = (nodo: React.ReactElement) => renderToStaticMarkup(nodo);
 
@@ -37,7 +37,7 @@ const poule: PouleDePrueba = {
   ],
 };
 
-describe('poule en móvil: matriz a pantalla completa', () => {
+describe('poule en móvil: hoja de poule a pantalla completa', () => {
   it('el puesto sigue cociente de victorias, índice y tocados dados, y comparte los empates', () => {
     expect(puestosPoule(poule.filas)).toEqual([2, 1, 3]);
     const empate = { victorias: 2, asaltos: 3, tocados: 10, recibidos: 8 };
@@ -61,12 +61,15 @@ describe('poule en móvil: matriz a pantalla completa', () => {
     expect(marcado).toContain('sticky left-0');
     expect(marcado).toMatch(/class="[^"]*overflow-auto[^"]*" data-matriz-poule=""/);
     expect(marcado).toContain(`href="/explorar/${UUID_A}"`);
-    expect(marcado).toContain('>Ruiz<');
+    expect(marcado).toContain('>Ruiz B.<');
   });
 
-  it('cerrada, cada poule conserva la lista y ofrece un botón para abrir la matriz', () => {
+  it('cerrada, cada poule conserva la lista y ofrece un botón para abrir la hoja', () => {
     const marcado = html(React.createElement(PoulesDePrueba, { poules: [poule], filtro: { consulta: '' } }));
-    expect(marcado).toContain('aria-label="Abrir la matriz de Poule 1"');
+    // La etiqueta empieza por lo que se ve, «Hoja» (WCAG 2.5.3), y no queda rastro de «matriz».
+    expect(marcado).toContain('aria-label="Hoja de Poule 1"');
+    expect(marcado).toMatch(/<\/svg>Hoja<\/button>/);
+    expect(marcado).not.toMatch(/>[^<]*[Mm]atriz/);
     expect(marcado).toContain('aria-haspopup="dialog"');
     expect(marcado).toContain('aria-expanded="false"');
     expect(marcado).not.toContain('data-matriz-poule');
@@ -147,7 +150,7 @@ describe('cara a cara: asaltos directos antes que los cruces', () => {
     expect(marcado).toMatch(/<h2 id="h2h-asaltos"[^>]*>Asaltos<span[^>]*>3<\/span><\/h2>/);
     expect(marcado).toContain(`href="/explorar/ediciones/ed2?prueba=c2&amp;persona=${UUID_A}"`);
     expect(marcado).toContain(`href="/explorar/ediciones/ed1?prueba=c1&amp;persona=${UUID_A}"`);
-    expect(marcado).toContain('>Tabla de 32<');
+    expect(marcado).toContain('>Tablón de 32<');
     expect(marcado).toContain('>Final<');
     expect(marcado).toContain('>Poule<');
     expect(marcado).not.toMatch(/>A32<|>P2<|>A2</);
@@ -217,12 +220,13 @@ describe('nombres cortos de competición en filas estrechas', () => {
     expect(corto('Trofeo del Campeonato del Mundo')).toBe('Trofeo del Campeonato del Mundo');
   });
 
-  it('las filas de asaltos y cruces enseñan la forma corta y guardan la entera en title y aria-label', () => {
+  it('las filas de asaltos y cruces enseñan la forma corta y guardan la entera en title y para el lector', () => {
     const espana = [encuentro({ torneo: 'CAMPEONATO DE ESPAÑA ABSOLUTO' })];
     const marcado = html(React.createElement(CaraACaraCompleto, { datos: datos({ encuentros: espana }), criterios }));
     expect(marcado).toContain('title="Campeonato de España Absoluto">Cto. España Absoluto<');
     expect(marcado.match(/>Cto\. España Absoluto</g)).toHaveLength(3);
-    expect(marcado).toMatch(/aria-label="[^"]*Campeonato de España Absoluto/);
+    // La frase entera va en sr-only, no en un aria-label que tape lo visible.
+    expect(marcado).toMatch(/<span class="sr-only">[^<]*Campeonato de España Absoluto/);
   });
 });
 
@@ -277,13 +281,5 @@ describe('puestos comparados: 1º arriba, media móvil, podios y resumen', () =>
     expect(resumenTendencia([0.2, 0.21], [0, 400])).toEqual({ valor: 0.21, sentido: 'estable' });
     expect(resumenTendencia([0.2, 0.4], [0, 400])).toEqual({ valor: 0.4, sentido: 'baja' });
     expect(resumenTendencia([0.3], [10])).toEqual({ valor: 0.3, sentido: null });
-    const puntos = Array.from({ length: 8 }, (_, i) => ({
-      pruebaId: `p${i}`, edicionId: null, fecha: `20${15 + i}-05-01`, fechaOrden: `20${15 + i}-05-01`,
-      temporada: `20${15 + i}`, torneo: `TNR ${i}`, tipo: 'TNR' as never, tono: 'org-rfee' as const,
-      ambito: 'nacional' as const, categoria: 'ABS', puesto: 38 - i * 5, participantes: 40, percentil: (38 - i * 5) / 40,
-    }));
-    const marcado = html(React.createElement(DispersionPuestos, { puntos, titulo: 'Evolución' }));
-    expect(marcado).toMatch(/Tendencia Top \d+%/);
-    expect(marcado).toContain('mejor que hace un año');
   });
 });

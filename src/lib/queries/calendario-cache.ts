@@ -1,3 +1,4 @@
+import { db } from '@/db';
 import { cacheCompartida } from '@/lib/cache';
 import { hoyMadrid } from '@/lib/callups/fechas';
 import { contextoPublico } from '@/lib/sport/explorar/contexto-publico';
@@ -5,6 +6,7 @@ import { getEvent, listEvents } from './calendar';
 import { crearCachesCalendario } from './calendario-cache-modelo';
 import { cargarTramoPasado, edicionesExplorarDeEvento } from './calendario-pasado';
 import { cargarPodiosEvento } from './evento-resultados';
+import { leerExtrasInscritos } from './inscritos-extras';
 import { leerListaUnidaTrasGuarda } from './inscritos-union';
 
 /**
@@ -25,6 +27,7 @@ export const calendarioCompartido = crearCachesCalendario({
       cargarPodiosEvento(contextoPublico(hoyMadrid()), eventId, async (id) =>
         (await edicionesExplorarDeEvento(id)).map((e) => e.edicionId),
       ),
+    extrasInscritos: (pares) => leerExtrasInscritos(db, pares),
     hoy: hoyMadrid,
   },
 });

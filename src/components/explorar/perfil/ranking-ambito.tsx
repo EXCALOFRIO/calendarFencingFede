@@ -61,7 +61,7 @@ function TarjetaPuesto({ p, conArma }: { p: PuestoInternacional; conArma: boolea
         {medalla ? <PuntoMedalla medalla={medalla} className="size-2.5" /> : null}
         <span className="cifra text-3xl leading-none">{p.puesto}º</span>
       </span>
-      <span className="flex min-w-0 flex-wrap gap-x-2 text-[0.6875rem] leading-tight text-muted-foreground">
+      <span className="flex min-w-0 flex-wrap gap-x-2 text-[12px] leading-tight text-muted-foreground">
         {p.de ? <span>de {p.de}</span> : null}
         {p.puntos !== null ? <span className="truncate">{formatoPuntos(p.puntos)} pts</span> : null}
       </span>
@@ -86,7 +86,7 @@ function FilaSerie({ s, conArma }: { s: SerieInternacional; conArma: boolean }) 
             <li
               key={`${p.fuente}-${p.anioFin}`}
               className={cn(
-                'inline-flex h-6 items-center gap-1 rounded-full border border-filete-alto px-2 text-[0.6875rem]',
+                'inline-flex h-6 items-center gap-1 rounded-full border border-filete-alto px-2 text-[12px]',
                 medalla && CLASES_MEDALLA[medalla],
               )}
             >
@@ -96,7 +96,7 @@ function FilaSerie({ s, conArma }: { s: SerieInternacional; conArma: boolean }) 
           );
         })}
         {puestos.length > visibles.length ? (
-          <li className="inline-flex h-6 items-center px-1 text-[0.6875rem] text-muted-foreground">+{puestos.length - visibles.length}</li>
+          <li className="inline-flex h-6 items-center px-1 text-[12px] text-muted-foreground">+{puestos.length - visibles.length}</li>
         ) : null}
       </ul>
     </li>

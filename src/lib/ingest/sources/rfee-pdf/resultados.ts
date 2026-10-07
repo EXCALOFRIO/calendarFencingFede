@@ -1,14 +1,16 @@
 import type { EstadoCobertura } from '../fie-resultados';
 import { exclusionesVacias } from './asaltos';
 import { dividirPaginaPorPruebas } from './bloques';
-import { metadatosDeCabecera } from './cabecera';
+import { metadatosDeCabecera, type MetadatosCabecera } from './cabecera';
 import { leerClasificacion } from './clasificacion';
 import { leerCuadro } from './cuadro';
 import { leerClasificacionIntermedia, nombreEnIntermedia } from './intermedia';
 import { analizarPagina, type PaginaAnalizada } from './paginas';
 import { leerPoules } from './poules';
 import type {
+  Arma,
   AsaltoPdf,
+  Genero,
   CoberturaPdf,
   ExclusionesPdf,
   Formato,
@@ -63,13 +65,35 @@ function coberturaAsaltos(
   return { estado: 'completo', publicado, importado, motivo: null };
 }
 
+/**
+ * Arma y género que el llamante ya conoce de la prueba (la auditoría, por la competición guardada).
+ * Sólo cubren lo que la cabecera no determina, y nunca contra lo que nombra: con «masculino y
+ * femenino» la pista tiene que ser uno de los dos.
+ */
+export type PistasPrueba = { arma?: Arma | null; genero?: Genero | null };
+
+function aplicarPistas(meta: MetadatosCabecera, pistas: PistasPrueba | undefined): MetadatosCabecera {
+  if (!pistas) return meta;
+  let { arma, genero, errores } = meta;
+  if (arma === null && pistas.arma && (meta.armasDeclaradas.length === 0 || meta.armasDeclaradas.includes(pistas.arma))) {
+    arma = pistas.arma;
+    errores = errores.filter((e) => !/ arma$/.test(e));
+  }
+  if (genero === null && pistas.genero && (meta.generosDeclarados.length === 0 || meta.generosDeclarados.includes(pistas.genero))) {
+    genero = pistas.genero;
+    errores = errores.filter((e) => !/ género$/.test(e));
+  }
+  return { ...meta, arma, genero, errores };
+}
+
 function construirPrueba(
   docId: string,
   grupo: PaginaAnalizada[],
   existentes: Set<string>,
+  pistas?: PistasPrueba,
 ): PruebaPdf {
   const cabecera = grupo[0].cabecera;
-  const meta = metadatosDeCabecera(cabecera);
+  const meta = aplicarPistas(metadatosDeCabecera(cabecera), pistas);
   const rechazos: Rechazo[] = [];
   const porTipo = (t: PaginaAnalizada['tipo']) => grupo.filter((p) => p.tipo === t);
 
@@ -189,7 +213,7 @@ const SIN_PRUEBA: PaginaAnalizada['tipo'][] = ['sin_texto', 'ilegible', 'descono
 
 export function leerResultadosPdf(
   paginas: readonly PaginaTexto[],
-  contexto: { url: string; docId: string },
+  contexto: { url: string; docId: string; pistas?: PistasPrueba },
 ): LecturaPdf {
   const analizadas = paginas.flatMap(dividirPaginaPorPruebas).map(analizarPagina);
   const grupos = new Map<string, PaginaAnalizada[]>();
@@ -213,7 +237,7 @@ export function leerResultadosPdf(
   const claves = new Set<string>();
   const pruebas: PruebaPdf[] = [];
   for (const g of grupos.values()) {
-    const prueba = construirPrueba(contexto.docId, g, claves);
+    const prueba = construirPrueba(contexto.docId, g, claves, contexto.pistas);
     pruebas.push(prueba);
     for (const p of g) clasificadas.push({ pagina: p.numero, tipo: p.tipo, prueba: prueba.clave, motivo: null });
   }

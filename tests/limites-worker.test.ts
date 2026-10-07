@@ -130,12 +130,42 @@ describe('límites de peticiones del Worker', () => {
     expect(await comprobarLimites(peticion('/api/auth/get-session'), { LIMITE_ACCESO: roto })).toBeNull();
   });
 
-  it('el resto de rutas no consulta ningún limitador', async () => {
+  it('el resto de rutas cuenta sólo en el límite general por IP', async () => {
     const env = entorno();
-    for (const ruta of ['/', '/explorar', '/calendario', '/api/calendario/abc.ics']) {
+    const rutas = ['/', '/explorar', '/calendario', '/api/calendario/abc.ics', '/api/notificaciones', '/explorar?_rsc=1'];
+    for (const ruta of rutas) {
       expect(await comprobarLimites(peticion(ruta, { cookie: SESION }), env)).toBeNull();
     }
-    for (const nombre of LIMITADORES) expect(env[nombre].limit).not.toHaveBeenCalled();
+    for (const nombre of LIMITADORES) {
+      if (nombre !== 'LIMITE_PAGINAS') expect(env[nombre].limit, nombre).not.toHaveBeenCalled();
+    }
+    expect(env.LIMITE_PAGINAS.limit.mock.calls.map((c) => c[0].key)).toEqual(rutas.map(() => 'paginas:ip:192.0.2.10'));
+  });
+
+  it('el límite general es por IP: otra cookie no estrena contador, otra IP sí', async () => {
+    const env = entorno({ LIMITE_PAGINAS: 2 });
+    let i = 0;
+    const crear = () => peticion('/explorar', { cookie: `__Secure-neon-auth.session_token=inv-${i++}` });
+    expect(await repetir(3, crear, env)).toEqual([200, 200, 429]);
+    expect(await repetir(1, () => peticion('/explorar', { ip: '192.0.2.99' }), env)).toEqual([200]);
+  });
+
+  it.each([
+    ['multipart/form-data; boundary=x', '--x--'],
+    ['application/x-www-form-urlencoded', 'a=1'],
+    ['text/plain', 'x'],
+  ])('un POST %s a una página cuenta como acción aunque no lleve Next-Action', async (tipo, cuerpo) => {
+    const env = entorno({ LIMITE_ACCIONES: 1 });
+    const crear = () => peticion('/ajustes', { method: 'POST', headers: { 'content-type': tipo }, body: cuerpo, cookie: SESION });
+    expect(await repetir(2, crear, env)).toEqual([200, 429]);
+    expect(env.LIMITE_PAGINAS.limit).not.toHaveBeenCalled();
+  });
+
+  it('un POST a /api/ que no tiene regla propia va al límite general, no al de acciones', async () => {
+    const env = entorno();
+    await comprobarLimites(peticion('/api/notificaciones', { method: 'POST', cookie: SESION }), env);
+    expect(env.LIMITE_ACCIONES.limit).not.toHaveBeenCalled();
+    expect(env.LIMITE_PAGINAS.limit).toHaveBeenCalledTimes(1);
   });
 
   it('conLimites corta antes de servir', async () => {
@@ -154,6 +184,12 @@ describe('límites de peticiones del Worker', () => {
       expect(texto).toMatch(new RegExp(`"name": "${nombre}", "namespace_id": "\\d+", "simple": \\{ "limit": \\d+, "period": 60 \\}`));
     }
     expect(texto).toMatch(/"limits": \{\s*"cpu_ms": \d+\s*\}/);
+    expect(texto).toContain('{ "name": "LIMITE_PAGINAS", "namespace_id": "84109", "simple": { "limit": 1200, "period": 60 } }');
+    expect(texto).toContain('{ "name": "LIMITE_IP_SESION", "namespace_id": "84108", "simple": { "limit": 3000, "period": 60 } }');
+    const ids = [...texto.matchAll(/"namespace_id": "(\d+)"/g)].map((m) => m[1]);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(texto).toMatch(/^\s*"preview_urls": false,/m);
+    expect(texto).not.toMatch(/^\s*"workers_dev":/m);
     const worker = readFileSync(new URL('../worker/index.ts', import.meta.url), 'utf8');
     expect(worker).toContain('conLimites(servir)');
     // El scheduled sigue llamando a la aplicación sin pasar por los límites.

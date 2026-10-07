@@ -252,7 +252,8 @@ export function rankingCombos(categorias: SkermoCategoryOption[]): RankingCombo[
  * fuera a propósito: si no, la segunda pasada "actualizaría" las 4.000 filas.
  */
 export async function rankingContentHash(row: {
-  position: number | null;
+  /** El puesto, o la marca de empate de `puestosParaHuella`. */
+  position: number | string | null;
   sourceAthleteName: string;
   sourceClub: string | null;
   totalPoints: string | null;
@@ -268,6 +269,39 @@ export async function rankingContentHash(row: {
       row.skermoAthleteId,
     ]),
   );
+}
+
+/**
+ * El puesto que entra en el hash de cada fila de un grupo leído.
+ *
+ * Skermo numera seguidos a los empatados a puntos (100, 101…) pero los ordena
+ * distinto en cada petición: comprobado en vivo, dos tiradores con 149,08 se
+ * intercambian el 100 y el 101 de una lectura a otra. Con el puesto tal cual
+ * en el hash, cada empate contaba como «actualizado» todas las noches.
+ *
+ * A los empatados se les da la marca `«primer puesto»=«tamaño»` del empate:
+ * un intercambio dentro del empate no cambia nada, y cualquier cambio de
+ * composición o de altura del empate cambia la marca de TODOS sus miembros,
+ * que se reescriben juntos con los puestos de una misma lectura (sin huecos ni
+ * puestos repetidos). Quien no empata conserva su puesto, así que su hash es
+ * el mismo de siempre.
+ */
+export function puestosParaHuella(
+  filas: readonly { position: number | null; totalPoints: string | null }[],
+): (number | string | null)[] {
+  const grupos = new Map<string, number[]>();
+  for (const f of filas) {
+    if (f.position === null) continue;
+    const clave = JSON.stringify(f.totalPoints);
+    const grupo = grupos.get(clave) ?? [];
+    grupo.push(f.position);
+    grupos.set(clave, grupo);
+  }
+  return filas.map((f) => {
+    if (f.position === null) return null;
+    const grupo = grupos.get(JSON.stringify(f.totalPoints))!;
+    return grupo.length < 2 ? f.position : `${Math.min(...grupo)}=${grupo.length}`;
+  });
 }
 
 // ------------------------------------------------- Ausentes de la lista ---
@@ -293,6 +327,34 @@ export function claveFilaRanking(
   skermoAthleteId: string,
 ): string {
   return `${weapon}|${gender}|${categoryRaw}|${skermoAthleteId}`;
+}
+
+export type FilaRankingGuardada = {
+  contentHash: string;
+  sourceLicense: string | null;
+  athleteId: string | null;
+};
+
+/**
+ * Qué hacer con una fila leída frente a la guardada:
+ * - `creada` / `actualizada`: fila nueva o con puesto, puntos, nombre o club distintos;
+ * - `emparejada`: mismo contenido, pero hoy se sabe una licencia o un tirador
+ *   nuestro que no estaba guardado (o el tirador emparejado ha cambiado);
+ * - `igual`: nada que escribir.
+ *
+ * Sin licencia no se toca una fila igual: el upsert pondría `athlete_id` a
+ * null y borraría un emparejado hecho a mano o en otra pasada.
+ */
+export function decidirEscrituraRanking(
+  guardada: FilaRankingGuardada | undefined,
+  leida: { contentHash: string; licencia: string | null; athleteId: string | null },
+): 'creada' | 'actualizada' | 'emparejada' | 'igual' {
+  if (!guardada) return 'creada';
+  if (guardada.contentHash !== leida.contentHash) return 'actualizada';
+  if (!leida.licencia) return 'igual';
+  return leida.licencia !== guardada.sourceLicense || leida.athleteId !== guardada.athleteId
+    ? 'emparejada'
+    : 'igual';
 }
 
 /**
@@ -615,7 +677,7 @@ export async function ingestRankingRfee(
   }
 
   // --- 5. Lo que ya está guardado, para no reescribir lo que no cambió ---
-  const hashesGuardados = new Map<string, string>();
+  const hashesGuardados = new Map<string, FilaRankingGuardada>();
   const existentes = await db
     .select({
       weapon: officialRankingEntry.weapon,
@@ -623,13 +685,15 @@ export async function ingestRankingRfee(
       categoryRaw: officialRankingEntry.categoryRaw,
       skermoAthleteId: officialRankingEntry.skermoAthleteId,
       contentHash: officialRankingEntry.contentHash,
+      sourceLicense: officialRankingEntry.sourceLicense,
+      athleteId: officialRankingEntry.athleteId,
     })
     .from(officialRankingEntry)
     .where(eq(officialRankingEntry.skermoSeasonId, temporada.value));
   for (const e of existentes) {
     hashesGuardados.set(
       claveFilaRanking(e.weapon, e.gender, e.categoryRaw, e.skermoAthleteId ?? ''),
-      e.contentHash,
+      { contentHash: e.contentHash, sourceLicense: e.sourceLicense, athleteId: e.athleteId },
     );
   }
 
@@ -661,7 +725,8 @@ export async function ingestRankingRfee(
       continue;
     }
 
-    for (const fila of filas) {
+    const puestosHuella = puestosParaHuella(filas);
+    for (const [i, fila] of filas.entries()) {
       const licencia = licenciaPorSkermoId.get(fila.skermoAthleteId) ?? null;
       const athleteId = licencia
         ? (athleteIdPorLicencia.get(normalizeLicense(licencia)) ?? null)
@@ -669,20 +734,23 @@ export async function ingestRankingRfee(
       if (athleteId) stats.emparejadas += 1;
       else stats.sinEmparejar += 1;
 
-      const contentHash = await rankingContentHash(fila);
+      const contentHash = await rankingContentHash({ ...fila, position: puestosHuella[i] });
       const clave = `${combo.weapon}|${combo.gender}|${combo.categoryRaw}|${fila.skermoAthleteId}`;
-      const anterior = hashesGuardados.get(clave);
-
-      if (anterior === contentHash) {
+      /*
+        Antes una fila igual con licencia se reescribía siempre: ~1.300 filas
+        por lectura sin que cambiara nada. Ahora solo si el emparejado es nuevo.
+      */
+      const decision = decidirEscrituraRanking(hashesGuardados.get(clave), {
+        contentHash,
+        licencia,
+        athleteId,
+      });
+      if (decision === 'igual') {
         stats.itemsUnchanged += 1;
-        // Aun así puede haber aparecido la licencia hoy: si es así, se
-        // escribe igual para que el emparejado quede guardado.
-        if (!licencia) continue;
-      } else if (anterior === undefined) {
-        stats.itemsCreated += 1;
-      } else {
-        stats.itemsUpdated += 1;
+        continue;
       }
+      if (decision === 'creada') stats.itemsCreated += 1;
+      else stats.itemsUpdated += 1;
 
       aEscribir.push({
         seasonLabel: temporada.label,

@@ -51,7 +51,7 @@ export const CLASE_LISTA_PERFILES = 'flex min-w-0 flex-col';
 
 /** «Ver más» como texto de acento: 44 px de toque, sin pastilla que ocupe más que las filas. */
 export const CLASE_VER_MAS =
-  'inline-flex h-[44px] items-center gap-1.5 px-4 text-[13px] font-semibold text-primary-text outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
+  'inline-flex h-[44px] items-center gap-1.5 px-4 text-[13px] font-semibold text-primary-text outline-none focus-visible:ring-[3px] focus-visible:ring-ring';
 
 export function PastillaMotivo({ children }: { children: React.ReactNode }) {
   return (
@@ -98,14 +98,14 @@ export function FilaPerfil({
         data-persona={p.id}
         data-nombre={p.nombre}
         data-pais={p.pais ?? ''}
-        className="flex min-h-[56px] min-w-0 flex-1 items-center gap-3 rounded-lg py-[4px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="flex min-h-[56px] min-w-0 flex-1 items-center gap-3 rounded-lg py-[4px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring"
       >
         <FotoDeportista personaId={p.id} nombre={nombre} tamano="lista" apagado={p.resultados === 0} />
         <span className="flex min-w-0 flex-1 flex-col gap-[5px]">
           <span className="truncate text-[14px] leading-[18px] font-semibold">{nombre}</span>
           {hayLinea ? (
-            // Sin el recorte, las medallas de quien tiene muchas montan sobre el botón de Seguir.
-            <span className="flex min-w-0 items-center gap-1.5 overflow-hidden py-px text-[12px] leading-none whitespace-nowrap text-muted-foreground">
+            // Envuelve en vez de recortar: con el texto al 200 % las medallas no caben en una línea y no deben montar sobre Seguir.
+            <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 py-px text-[12px] leading-none text-muted-foreground">
               {p.pais ? <BanderaPais pais={p.pais} soloBandera className="shrink-0" /> : null}
               {detalle}
               {p.motivo ? <PastillaMotivo>{p.motivo}</PastillaMotivo> : null}

@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { firmaAviso, lineasDe, type AvisoNuevo, type DatosAviso } from './agrupar';
 import { filasDe, jsonLista, type DbAvisos } from './db';
+import { destinoDeAviso } from './destinos';
 import {
   CLAVES_PREFERENCIA, PREFERENCIAS_POR_DEFECTO, esClavePreferencia, esRutaInterna,
   type ClavePreferencia, type Preferencias, type TipoNotificacion,
@@ -101,7 +102,9 @@ export async function guardarAvisos(
       continue;
     }
     const anteriorDatos = previa.datos ? (JSON.parse(previa.datos) as DatosAviso) : null;
-    if (firmaAviso({ titulo: previa.titulo, cuerpo: previa.cuerpo, url: previa.url, datos: anteriorDatos }) === firmaAviso(a)) continue;
+    // Con la dirección ya puesta al día: un aviso guardado antes de `evento=` no vuelve a contar como no leído sólo por eso.
+    const urlPrevia = destinoDeAviso({ url: previa.url, grupo: a.grupo });
+    if (firmaAviso({ titulo: previa.titulo, cuerpo: previa.cuerpo, url: urlPrevia, datos: anteriorDatos }) === firmaAviso(a)) continue;
     await db.execute(sql`
       UPDATE notificacion SET tipo = ${a.tipo}, titulo = ${a.titulo}, cuerpo = ${a.cuerpo}, url = ${a.url}, datos = ${datos},
         en_bandeja = ${enBandeja}, leida_en = NULL, actualizada_en = ${t}
@@ -141,7 +144,7 @@ export async function leerBandeja(db: DbAvisos, profileId: string, limite = MAX_
     ORDER BY actualizada_en DESC, id LIMIT ${Math.max(1, Math.min(limite, 500))}`);
   return filas.map((f) => ({
     id: f.id, tipo: f.tipo, grupo: f.grupo, titulo: f.titulo, cuerpo: f.cuerpo,
-    url: esRutaInterna(f.url) ? f.url : '/notificaciones',
+    url: destinoDeAviso(f),
     datos: leerDatos(f.datos),
     leida: f.leida_en !== null, creadaEn: Number(f.creada_en), actualizadaEn: Number(f.actualizada_en),
   }));
@@ -172,7 +175,7 @@ export async function abrirAviso(db: DbAvisos, profileId: string, id: string, ah
   await db.execute(sql`
     UPDATE notificacion SET leida_en = ${ahora.getTime()}
     WHERE profile_id = ${profileId} AND grupo = ${fila.grupo} AND leida_en IS NULL`);
-  return esRutaInterna(fila.url) ? fila.url : '/notificaciones';
+  return destinoDeAviso(fila);
 }
 
 export async function marcarTodasLeidas(db: DbAvisos, profileId: string, ahora = new Date()): Promise<void> {
@@ -186,6 +189,22 @@ export async function marcarPushEnviada(db: DbAvisos, ids: readonly string[], ah
   await db.execute(sql`
     UPDATE notificacion SET push_enviada_en = ${ahora.getTime()}
     WHERE id IN (SELECT value FROM json_each(${jsonLista(ids)}))`);
+}
+
+/** Notificaciones de prueba por cuenta y hora: cada una manda un push a todos sus dispositivos. */
+export const MAX_PRUEBAS_POR_HORA = 3;
+
+/**
+ * Cuántas pruebas ha pedido la cuenta en la última hora. Cuenta las filas
+ * `tipo = 'prueba'` que guarda la propia acción (una por prueba, clave con la
+ * marca de tiempo), así que no necesita tabla propia; la poda solo borra filas
+ * de más de 90 días.
+ */
+export async function contarPruebasRecientes(db: DbAvisos, profileId: string, ahora = new Date()): Promise<number> {
+  const [fila] = await filasDe<{ n: number }>(db, sql`
+    SELECT count(*) AS n FROM notificacion
+    WHERE profile_id = ${profileId} AND tipo = 'prueba' AND creada_en > ${ahora.getTime() - 3_600_000}`);
+  return Number(fila?.n ?? 0);
 }
 
 /** Lo leído de hace más de 90 días y lo no leído de hace más de 180 sobra. */

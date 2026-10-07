@@ -30,6 +30,18 @@ describe('trasIngesta', () => {
     expect(r).toEqual({ cache: 'ok', avisos: { estado: 'ok', eventos: 3, avisos: 2, push: 1 } });
   });
 
+  it('una pasada sin cambios no sube la época de la caché, pero sí genera los avisos', async () => {
+    const invalidar = vi.fn(async () => {});
+    const notificar = vi.fn(async () => resumenNotificar);
+    const r = await trasIngesta('rfee_wp', { db, invalidar, notificar, registro: silencio, resultado: { sinCambios: true } });
+    expect(invalidar).not.toHaveBeenCalled();
+    expect(notificar).toHaveBeenCalledOnce();
+    expect(r.cache).toBe('sin_cambios');
+
+    await trasIngesta('rfee_wp', { db, invalidar, notificar, registro: silencio, resultado: { sinCambios: false } });
+    expect(invalidar).toHaveBeenCalledWith('rfee_wp');
+  });
+
   it('un fallo de la caché no impide los avisos ni lanza', async () => {
     const notificar = vi.fn(async () => resumenNotificar);
     const r = await trasIngesta('fie', {
@@ -100,9 +112,13 @@ describe('cableado', () => {
   it('las dos rutas de runIngest llaman a trasIngesta después de runIngest', () => {
     for (const ruta of ['src/app/api/cron/ingest/[source]/route.ts', 'src/app/api/admin/ingest/route.ts']) {
       const texto = leer(ruta);
-      expect(texto, ruta).toContain('await trasIngesta(source)');
-      expect(texto.indexOf('await runIngest('), ruta).toBeLessThan(texto.indexOf('await trasIngesta(source)'));
+      expect(texto, ruta).toContain('await trasIngesta(source');
+      expect(texto.indexOf('await runIngest('), ruta).toBeLessThan(texto.indexOf('await trasIngesta(source'));
     }
+  });
+
+  it('el cron pasa el resultado para no invalidar lo que no cambió', () => {
+    expect(leer('src/app/api/cron/ingest/[source]/route.ts')).toContain('await trasIngesta(source, { resultado })');
   });
 
   it('la pasada automática pasa por despuesDePasada', () => {

@@ -57,7 +57,7 @@ export default async function AppLayout({
   ) : null;
 
   return (
-    <div className="hueco-barra flex min-h-dvh flex-col">
+    <div className="hueco-barra flex min-h-svh flex-col">
       {/* Primer elemento enfocable: salta la cabecera y la navegación. */}
       <a
         href="#contenido"
@@ -107,7 +107,7 @@ export default async function AppLayout({
         {children}
       </main>
 
-      <NavMovil />
+      <NavMovil cuenta={perfil.profileId} />
     </div>
   );
 }

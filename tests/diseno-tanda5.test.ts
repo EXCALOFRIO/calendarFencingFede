@@ -66,13 +66,16 @@ describe('pantalla de prueba', () => {
       edicionId: 'e', base: { prueba: 'p', cursor: '' }, clasificacion: [fila],
       asaltos: { poules: [], cuadro: [{ ronda: 'T8', etiqueta: 'Cuartos', asaltos: [asalto(1)] }] } as never,
     }));
-    expect(marcado.match(/role="tab"/g)).toHaveLength(2);
+    // Botones con aria-current, no pestañas ARIA a medias.
+    expect(marcado.match(/aria-controls=/g)).toHaveLength(2);
+    expect(marcado).not.toContain('role="tab"');
     expect(marcado).not.toContain('>Poules<');
     expect(marcado).not.toContain('disabled=""');
     expect(marcado).toContain('grid-cols-2');
-    expect(marcado).toContain('aria-label="Clasificación"');
-    expect(marcado).toContain('>Clasif.<');
-    expect(marcado).toMatch(/role="tab"[^>]*class="inline-flex h-\[32px\][^"]*after:h-\[max\(100%,44px\)\]/);
+    // «Clasif.» se ve; «Clasificación» es lo que oye el lector (sin aria-label que tape lo visible).
+    expect(marcado).toContain('<span class="truncate max-sm:sr-only">Clasificación</span>');
+    expect(marcado).toContain('<span aria-hidden="true" class="sm:hidden">Clasif.</span>');
+    expect(marcado).toMatch(/aria-controls="[^"]*"[^>]*class="inline-flex h-\[32px\][^"]*after:h-\[max\(100%,44px\)\]/);
     expect(marcado).not.toMatch(/\bh-10\b|\bsize-10\b/);
   });
 
@@ -89,10 +92,11 @@ describe('pantalla de prueba', () => {
     expect(marcado).not.toMatch(/\bh-8\b|\bh-9\b/);
   });
 
-  it('Buscar tiene dos pestañas de 44 px de toque, sin pastillas de colecciones', () => {
+  it('Buscar tiene tres pestañas de 44 px de toque, sin pastillas de colecciones', () => {
     const marcado = html(React.createElement(CabeceraExplorar, { activa: 'competiciones' }));
-    expect(marcado.match(/class="flex h-\[36px\] [^"]*after:h-\[max\(100%,44px\)\]/g)).toHaveLength(2);
+    expect(marcado.match(/class="flex h-\[36px\] [^"]*after:h-\[max\(100%,44px\)\]/g)).toHaveLength(3);
     expect(marcado).toContain('href="/explorar/buscar"');
+    expect(marcado).toContain('href="/explorar/buscar?ver=paises"');
     expect(marcado).toMatch(/<a[^>]*aria-current="page"[^>]*>Competiciones</);
     expect(marcado).not.toContain('/explorar/favoritos');
   });

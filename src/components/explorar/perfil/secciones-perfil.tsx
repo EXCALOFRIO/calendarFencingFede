@@ -155,11 +155,15 @@ export function SeccionCuriosidades({ personaId, stats }: { personaId: string; s
 
 export function SeccionRanking({ extras, europeo }: { extras: ExtrasPerfil; europeo: BloqueRankingInternacional | null }) {
   return (
-    <PestanaRanking
-      bloques={bloquesRankingPerfil(extras)}
-      nivel={NIVEL}
-      europeo={europeo ? <RankingAmbitoPerfil titulo="Europeo" bloque={europeo} nivel={NIVEL} /> : null}
-    />
+    <>
+      {/* Entre el h1 (el nombre) y los h3 de cada ámbito: la pestaña ya lo dice a la vista. */}
+      <h2 className="sr-only">Ranking</h2>
+      <PestanaRanking
+        bloques={bloquesRankingPerfil(extras)}
+        nivel={NIVEL}
+        europeo={europeo ? <RankingAmbitoPerfil titulo="Europeo" bloque={europeo} nivel={NIVEL} /> : null}
+      />
+    </>
   );
 }
 

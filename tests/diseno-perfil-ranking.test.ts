@@ -89,7 +89,9 @@ describe('/ranking: la tarjeta del tirador', () => {
 
   it('los puntos van sin decimales por debajo de 360 px y con ellos por encima', () => {
     const fila = html(React.createElement('ol', null, React.createElement(FilaLinea, { puesto: 3, nombre: 'Carlos Llavador', puntos: 1387.77 })));
-    expect(fila).toContain('max-[359px]:hidden">1387,77</span>');
+    // La cifra exacta sale de la vista por debajo de 360 px, pero no del lector.
+    expect(fila).toContain('max-[359px]:sr-only">1387,77<span class="sr-only"> puntos</span></span>');
     expect(fila).toContain('min-[360px]:hidden" title="1387,77">1388</span>');
+    expect(fila).toMatch(/<span aria-hidden="true" class="[^"]*min-\[360px\]:hidden"/);
   });
 });

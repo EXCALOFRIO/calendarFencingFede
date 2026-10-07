@@ -257,7 +257,7 @@ export function TablaRankingFie({
         marcado={soloEspana}
         onClick={() => cambiarEspana(!soloEspana)}
         contador={tabla ? tabla.espanoles : undefined}
-        aria-label={`Solo España${tabla ? `: ${tabla.espanoles} de ${tabla.rows.length}` : ''}`}
+        detalle={tabla ? `de ${tabla.rows.length}` : undefined}
       >
         Solo España
       </ChipFiltro>
@@ -266,7 +266,7 @@ export function TablaRankingFie({
           activo={soloJjoo}
           onCambio={cambiarJjoo}
           cuantos={conJjoo.length}
-          className={cn(clasesChip(soloJjoo), 'border-0 shadow-none', soloJjoo && '[&_span.text-xs]:text-background')}
+          className={cn(clasesChip(soloJjoo), 'border-0 shadow-none')}
         />
       ) : null}
     </>
@@ -317,6 +317,15 @@ export function TablaRankingFie({
         />
       ) : null}
 
+      {tabla ? (
+        <p role="status" className="sr-only">
+          {filtradas.length}{' '}
+          {porEquipos
+            ? filtradas.length === 1 ? 'selección' : 'selecciones'
+            : filtradas.length === 1 ? 'tirador' : 'tiradores'}
+        </p>
+      ) : null}
+
       {visibles.length > 0 ? (
         <ol
           aria-label={porEquipos ? 'Ranking internacional de selecciones' : 'Ranking internacional individual'}
@@ -337,6 +346,7 @@ export function TablaRankingFie({
                 mio={mio}
                 resaltada={fila.pais === 'ESP'}
                 sinRetrato={porEquipos}
+                enlacePais={porEquipos}
                 tras={anotacionDe(fila)?.estado ? (
                   <BurbujaOlimpica anotacion={anotacionDe(fila)} fechaRanking={olimpica?.fechaRanking ?? null} compacta className="shrink-0" />
                 ) : undefined}

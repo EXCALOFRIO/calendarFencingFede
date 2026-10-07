@@ -81,7 +81,7 @@ export function ElegirConvocados({
    * El guardia va en una `ref` y no en el estado a propósito: con
    * `cargando` en las dependencias, el propio `setCargando(true)` volvía a
    * lanzar el efecto, la limpieza del anterior cancelaba la respuesta y la
-   * hoja se quedaba en "Cargando la clasificación…" para siempre.
+   * hoja se quedaba esperando la clasificación para siempre.
    */
   const pedido = React.useRef(false);
 
@@ -241,9 +241,8 @@ export function ElegirConvocados({
 
           <Separator />
 
-          {cargando ? (
-            <p className="text-sm text-muted-foreground">Cargando la clasificación…</p>
-          ) : null}
+          {/* Sin texto de espera a la vista: sólo se anuncia a los lectores de pantalla. */}
+          <p role="status" className="sr-only">{cargando ? 'Leyendo la clasificación' : ''}</p>
 
           {error ? (
             <p className="text-sm text-danger" role="alert">

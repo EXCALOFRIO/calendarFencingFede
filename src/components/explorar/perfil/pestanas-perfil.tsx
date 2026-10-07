@@ -63,7 +63,7 @@ export function PestanasPerfil({
                 className={cn(
                   // 44 px de alto táctil con el icono de 20 px, en px para que la raíz de 18 px no los agrande; el subrayado de la activa va pegado al filete.
                   'relative -mb-px flex h-[44px] min-w-0 flex-1 items-center justify-center gap-[6px] border-b-2 px-[8px] text-[13px] font-medium sm:px-[16px]',
-                  'focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+                  'focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
                   activo ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
                 )}
               >

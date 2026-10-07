@@ -3,7 +3,7 @@ import { buscarDatoDeCuenta } from '@/lib/cache';
 import { grupoMasParecido } from '@/components/ranking/formato';
 
 const { conMios } = await import('@/app/(app)/ranking/compartido');
-const { armarDatosNacional, grupoNacionalAEnviar } = await import('@/app/(app)/ranking/consultas');
+const { armarDatosNacional, grupoFieValido, grupoNacionalAEnviar } = await import('@/app/(app)/ranking/consultas');
 
 const fila = (fieId: number, athleteId: string | null) => ({
   fieId, position: fieId, nombre: `T${fieId}`, pais: 'ESP', paisNombre: 'España', points: 10,
@@ -53,6 +53,19 @@ describe('caché compartida de /ranking: lo de la cuenta va aparte', () => {
     expect(Object.keys(datos.internos)).toEqual(['ESPADA|F|M17|a1']);
     expect(Object.keys(datos.desgloses)).toEqual(['ESPADA|F|M17|a1']);
     expect(datos.personas).toEqual({ f1: 'p1' });
+  });
+
+  it('el grupo FIE pedido por el navegador sólo entra en la clave de la caché si es de los admitidos', () => {
+    expect(grupoFieValido({ format: 'INDIVIDUAL', weapon: 'SABLE', gender: 'F', category: 'M20' })).toBe(true);
+    expect(grupoFieValido({ format: 'EQUIPOS', weapon: 'ESPADA', gender: 'M', category: 'VET' })).toBe(true);
+    for (const malo of [
+      null, 'x', {},
+      { format: 'INDIVIDUAL', weapon: 'SABLE', gender: 'F', category: 'M20'.repeat(50) },
+      { format: 'RELEVOS', weapon: 'SABLE', gender: 'F', category: 'M20' },
+      { format: 'INDIVIDUAL', weapon: 'sable', gender: 'F', category: 'M20' },
+      { format: 'INDIVIDUAL', weapon: 'SABLE', gender: 'X', category: 'M20' },
+      { format: 'INDIVIDUAL', weapon: 'SABLE', gender: 'F', category: { toString: () => 'M20' } },
+    ]) expect(grupoFieValido(malo), JSON.stringify(malo)).toBe(false);
   });
 
   it('servidor y tabla eligen el mismo grupo parecido', () => {

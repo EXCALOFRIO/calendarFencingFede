@@ -792,7 +792,7 @@ describe('cara a cara: cifras y cruces', () => {
     const rotulo = (fase: 'POULE' | 'TABLEAU', ronda: string) => rotuloMarcador({ fase, ronda });
     expect(rotulo('POULE', 'P3')).toBe('Poule');
     expect(rotulo('POULE', 'V2P1')).toBe('Poule');
-    expect(rotulo('TABLEAU', 'A32')).toBe('Tabla de 32');
+    expect(rotulo('TABLEAU', 'A32')).toBe('Tablón de 32');
     expect(rotulo('TABLEAU', 'A8')).toBe('Cuartos');
     expect(rotulo('TABLEAU', 'A4')).toBe('Semifinal');
     expect(rotulo('TABLEAU', 'A2')).toBe('Final');
@@ -812,12 +812,17 @@ describe('cara a cara: cifras y cruces', () => {
     expect(marcado).toContain('aria-label="Últimos asaltos, del más reciente: victoria, derrota"');
     expect(marcado).not.toContain('Volver');
     // El título va en la cabecera compacta de la aplicación (`cabeceraDeRuta`), no aquí.
-    expect(marcado).not.toContain('<h1');
+    // El único h1 es el de los nombres, sólo para el lector.
+    expect(marcado).not.toMatch(/<h1(?! class="sr-only")/);
     expect(marcado).toContain('<span class="shrink-0 text-xs text-muted-foreground">Últimos</span>');
     expect(marcado).not.toMatch(/tracking-\[/);
     expect(marcado).toContain('>Lucia Garcia<');
     expect(marcado).toContain('>Marta Ruiz<');
-    expect(marcado).not.toContain('sr-only');
+    // Fuera del h1 de los nombres y del nombre del país de las banderas, nada de texto oculto.
+    const sinPermitidos = marcado
+      .replace(/<h1 class="sr-only">.*?<\/h1>/, '')
+      .replace(/<span class="sr-only">(España|Francia)<\/span>/g, '');
+    expect(sinPermitidos).not.toContain('sr-only');
     // Países distintos: se pinta la bandera de cada una.
     expect(marcado).toContain('ESP');
     expect(marcado).toContain('FRA');
@@ -886,7 +891,8 @@ describe('cabecera y entradas al cara a cara', () => {
     const marcado = html(
       React.createElement(CabeceraCaraACara, { datos, criterios: criterios({ temporada: '2027', fase: 'POULE' }) }),
     );
-    expect(marcado).not.toContain('<h1');
+    // El único h1 es el de los nombres, sólo para el lector.
+    expect(marcado).not.toMatch(/<h1(?! class="sr-only")/);
     expect(marcado).toContain(`href="/explorar/${UUID_A}"`);
     expect(marcado).toContain(`href="/explorar/${UUID_B}"`);
     expect(marcado).toContain(`href="/explorar/${UUID_B}/cara-a-cara?rival=${UUID_A}&amp;temporada=2027&amp;fase=POULE"`);

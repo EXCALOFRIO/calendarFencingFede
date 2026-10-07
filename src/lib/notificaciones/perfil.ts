@@ -1,8 +1,8 @@
 import { sql } from 'drizzle-orm';
-import { rutaFicha } from '@/lib/sport/explorar/url';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import type { AvisoNuevo } from './agrupar';
 import { guardarAvisos, leerPreferencias, type AvisoGuardado } from './bandeja';
+import { destinoPerfil } from './destinos';
 import { filasDe, jsonLista, type DbAvisos } from './db';
 import { puestoTexto, recortar } from './textos';
 import type { Preferencias } from './tipos';
@@ -99,7 +99,7 @@ export function construirAvisosPerfil(
       grupo: `persona:${personaId}`,
       titulo: recortar(titulo, 200),
       cuerpo: recortar(cambios.map((c) => c.texto).join('; '), 1000),
-      url: rutaFicha(personaId),
+      url: destinoPerfil(personaId),
       datos: { contexto: nombre, detalles: cambios.map((c) => recortar(c.texto, 200)) },
     }));
 }

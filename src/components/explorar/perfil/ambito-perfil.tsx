@@ -31,11 +31,11 @@ function TarjetaAmbito({ clave, rotulo, r }: { clave: 'internacional' | 'naciona
         <>
           <dl className="grid grid-cols-2 gap-2">
             <div className="flex min-w-0 flex-col gap-0.5">
-              <dt className="text-[0.6875rem] leading-none text-muted-foreground">Mejor</dt>
+              <dt className="text-[12px] leading-none text-muted-foreground">Mejor</dt>
               <dd className="cifra text-3xl leading-none">{r.mejorPuesto !== null ? `${r.mejorPuesto}º` : '—'}</dd>
             </div>
             <div className="flex min-w-0 flex-col gap-0.5">
-              <dt className="text-[0.6875rem] leading-none text-muted-foreground">Ganados</dt>
+              <dt className="text-[12px] leading-none text-muted-foreground">Ganados</dt>
               <dd className="cifra text-3xl leading-none">{p !== null ? `${p}%` : '—'}</dd>
             </div>
           </dl>
@@ -60,7 +60,7 @@ function FilaTipo({ t }: { t: ResumenCompeticiones & { tono: TonoTipo } }) {
       </span>
       <span className="flex flex-col items-end leading-none">
         <span className="cifra text-xl">{t.competiciones}</span>
-        <span className="text-[0.625rem] text-muted-foreground">{t.mejorPuesto !== null ? `mejor ${t.mejorPuesto}º` : 'pruebas'}</span>
+        <span className="text-[12px] text-muted-foreground">{t.mejorPuesto !== null ? `mejor ${t.mejorPuesto}º` : 'pruebas'}</span>
       </span>
     </li>
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inicialesVisibles, nombreVisible, partesNombre } from '@/lib/sport/nombre-visible';
+import { inicialesVisibles, nombreCompacto, nombreVisible, partesNombre } from '@/lib/sport/nombre-visible';
 
 describe('nombreVisible', () => {
   it('FIE: apellidos en mayúsculas y nombre después', () => {
@@ -20,5 +20,18 @@ describe('nombreVisible', () => {
     expect(partesNombre('CASAL CAMPELO Pedro')).toEqual({ nombre: 'Pedro', apellidos: 'CASAL CAMPELO' });
     expect(inicialesVisibles('PEREZ GARCIA Juan')).toBe('JP');
     expect(nombreVisible(null)).toBe('');
+  });
+});
+
+describe('nombreCompacto', () => {
+  it('primer apellido (con partículas) e inicial del nombre', () => {
+    expect(nombreCompacto('ZABALA GUTIERREZ Juan')).toBe('Zabala J.');
+    expect(nombreCompacto('GARCIA DE LAS CUEVAS Lucas')).toBe('Garcia L.');
+    expect(nombreCompacto('MARTIN-PORTUGUES Lucia')).toBe('Martin-Portugues L.');
+    expect(nombreCompacto('LETOU Koffi Frederic')).toBe('Letou K.');
+  });
+  it('sin apellidos marcados no adivina: nombre visible entero', () => {
+    expect(nombreCompacto('LUCIA RIVERO REDONDO')).toBe('Lucia Rivero Redondo');
+    expect(nombreCompacto(null)).toBe('');
   });
 });

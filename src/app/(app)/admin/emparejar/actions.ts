@@ -5,6 +5,14 @@ import { revalidatePath } from 'next/cache';
 import { db } from '@/db';
 import { athlete, result } from '@/db/schema';
 import { requireWritableRole } from '@/lib/auth/session';
+import { invalidarCacheSinFallar, type Dependencia } from '@/lib/cache';
+
+/**
+ * `result` alimenta el ranking nacional y `athlete` (con su licencia) el
+ * enlace de las fichas deportivas y del ranking FIE: ninguna es `sport_*`, así
+ * que el ledger no sube la versión de `deporte` por sí solo.
+ */
+const DEPENDENCIAS_EMPAREJADO: readonly Dependencia[] = ['deporte', 'ranking', 'ranking-fie'];
 
 export type ResultadoAccion =
   | { ok: true; message: string }
@@ -67,6 +75,7 @@ export async function asignarResultado(
         .where(eq(athlete.id, athleteId));
       licenciaGuardada = true;
     } catch {
+      await invalidarCacheSinFallar(DEPENDENCIAS_EMPAREJADO, 'emparejar');
       // La licencia es única: si ya la tiene otro, se avisa en vez de romper.
       return {
         ok: true,
@@ -78,6 +87,7 @@ export async function asignarResultado(
     }
   }
 
+  await invalidarCacheSinFallar(DEPENDENCIAS_EMPAREJADO, 'emparejar');
   revalidatePath('/admin/emparejar');
   revalidatePath('/admin');
 
@@ -114,6 +124,7 @@ export async function asignarTodosConEseNombre(
     )
     .returning({ id: result.id });
 
+  if (filas.length > 0) await invalidarCacheSinFallar(DEPENDENCIAS_EMPAREJADO, 'emparejar');
   revalidatePath('/admin/emparejar');
   revalidatePath('/admin');
 
@@ -127,6 +138,7 @@ export async function asignarTodosConEseNombre(
 export async function desasignarResultado(resultId: string): Promise<ResultadoAccion> {
   await requireWritableRole('admin');
   await db.update(result).set({ athleteId: null }).where(eq(result.id, resultId));
+  await invalidarCacheSinFallar(DEPENDENCIAS_EMPAREJADO, 'emparejar');
   revalidatePath('/admin/emparejar');
   return { ok: true, message: 'Resultado devuelto a la cola de sin emparejar.' };
 }

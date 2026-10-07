@@ -5,7 +5,7 @@
  * (`PERF_DB`, sólo lectura) y lo sirve con `node:http`; el cliente es un
  * paquete de esbuild con las acciones de servidor sustituidas.
  *
- *   PERF_DB=…\nuevo10.sqlite npx tsx tests/ui/ola2b-calendario.mts
+ *   PERF_DB=…\nuevo11.sqlite npx tsx tests/ui/ola2b-calendario.mts
  *
  * Mide, a 320, 393 y 1440 px:
  * - que los controles de la cabecera y los chips se ven de ≤ 36 px y se

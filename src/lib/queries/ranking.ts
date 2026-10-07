@@ -30,6 +30,7 @@ import { fieFichaPublicaUrl, fotoFieAncho } from '../ingest/sources/fie-tiradore
 import { titular, yearFromIsoDate } from '../utils';
 import { hoyMadrid } from '../callups/fechas';
 import { posibleMenor } from '../sport/explorar/anio-publico';
+import { DIA, MINUTO, cacheCompartida } from '../cache';
 
 const CATEGORIAS_MENORES: ReadonlySet<string> = new Set([
   'M7', 'M9', 'M10', 'M11', 'M12', 'M13', 'M14', 'M15', 'M17', 'M20',
@@ -666,8 +667,10 @@ export async function getRankingScreenData(
   // cálculos ya es metadato del ranking interno.
   if (armas.length === 0) return empty;
 
-  const status = await getRankingStatus();
-  if (!status.season || status.snapshotCount === 0) return empty;
+  // No `getRankingStatus`: su `count(*)` sobre `result` recorre la tabla
+  // entera en cada visita. Sin cálculo guardado, `listRankingGroups` ya sale vacío.
+  const season = await getRankingSeason();
+  if (!season) return empty;
 
   const groups = await listRankingGroups(armas);
   if (groups.length === 0) return empty;
@@ -727,7 +730,7 @@ export async function getRankingScreenData(
     .innerJoin(eventTable, eq(eventTable.id, eventCompetitionTable.eventId))
     .where(
       and(
-        eq(rankingPointTable.seasonId, status.season.id),
+        eq(rankingPointTable.seasonId, season.id),
         inArray(eventCompetitionTable.weapon, [...armas]),
       ),
     )
@@ -1039,6 +1042,42 @@ export type PuestoOficial = {
   sourceUrl: string | null;
 };
 
+const claveTamano = (r: { seasonLabel: string; weapon: string; gender: string; categoryRaw: string }) =>
+  `${r.seasonLabel}|${r.weapon}|${r.gender}|${r.categoryRaw}`;
+
+/**
+ * Cuánta gente hay en cada clasificación oficial. Sin esto, «3.º» no dice
+ * nada: la pantalla tiene que poder escribir «3.º de 88». Recorre la tabla
+ * entera (unas 2.700 filas leídas en D1) y es igual para todas las cuentas, así
+ * que va a la caché compartida: el que mira sólo lee sus propias filas.
+ */
+async function leerTamanosOficiales(): Promise<Record<string, number>> {
+  const tamanos = await db
+    .select({
+      seasonLabel: officialRankingEntryTable.seasonLabel,
+      weapon: officialRankingEntryTable.weapon,
+      gender: officialRankingEntryTable.gender,
+      categoryRaw: officialRankingEntryTable.categoryRaw,
+      cuantos: sql<number>`count(*) filter (where ${officialRankingEntryTable.position} is not null)`,
+    })
+    .from(officialRankingEntryTable)
+    .groupBy(
+      officialRankingEntryTable.seasonLabel,
+      officialRankingEntryTable.weapon,
+      officialRankingEntryTable.gender,
+      officialRankingEntryTable.categoryRaw,
+    );
+  return Object.fromEntries(tamanos.map((t) => [claveTamano(t), Number(t.cuantos)]));
+}
+
+const tamanosOficiales = cacheCompartida.definir({
+  espacio: 'ranking-nac-tamanos',
+  depende: ['ranking'],
+  frescoMs: 10 * MINUTO,
+  caducaMs: 7 * DIA,
+  cargar: leerTamanosOficiales,
+});
+
 /**
  * Las clasificaciones oficiales de unos tiradores.
  *
@@ -1073,34 +1112,7 @@ export async function getPuestosOficiales(
 
   if (suyas.length === 0) return [];
 
-  /**
-   * Cuánta gente hay en cada clasificación suya. Sin esto, «3.º» no dice nada:
-   * la pantalla tiene que poder escribir «3.º de 88».
-   */
-  const tamanos = await db
-    .select({
-      seasonLabel: officialRankingEntryTable.seasonLabel,
-      weapon: officialRankingEntryTable.weapon,
-      gender: officialRankingEntryTable.gender,
-      categoryRaw: officialRankingEntryTable.categoryRaw,
-      cuantos: sql<number>`count(*) filter (where ${officialRankingEntryTable.position} is not null)`,
-    })
-    .from(officialRankingEntryTable)
-    .groupBy(
-      officialRankingEntryTable.seasonLabel,
-      officialRankingEntryTable.weapon,
-      officialRankingEntryTable.gender,
-      officialRankingEntryTable.categoryRaw,
-    );
-
-  const clave = (r: {
-    seasonLabel: string;
-    weapon: string;
-    gender: string;
-    categoryRaw: string;
-  }) => `${r.seasonLabel}|${r.weapon}|${r.gender}|${r.categoryRaw}`;
-
-  const cuantos = new Map(tamanos.map((t) => [clave(t), t.cuantos]));
+  const cuantos = await tamanosOficiales();
 
   return suyas
     .filter((r): r is typeof r & { athleteId: string } => r.athleteId !== null)
@@ -1114,7 +1126,7 @@ export async function getPuestosOficiales(
       position: r.position,
       totalPoints: r.totalPoints === null ? null : Number.parseFloat(r.totalPoints),
       club: r.club,
-      deCuantos: cuantos.get(clave(r)) ?? 0,
+      deCuantos: cuantos[claveTamano(r)] ?? 0,
       actualizadoEl: r.updatedAt,
       sourceUrl: r.sourceUrl,
     }))

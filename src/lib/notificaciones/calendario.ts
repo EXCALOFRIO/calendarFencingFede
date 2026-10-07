@@ -1,6 +1,6 @@
-import { construirUrlCalendario } from '@/lib/calendario/contexto-url';
 import { formatDateRangeEs, formatDateTimeEs } from '@/lib/utils';
 import type { AvisoNuevo } from './agrupar';
+import { destinoEvento } from './destinos';
 import { nombrePrueba, recortar } from './textos';
 import { PREFERENCIAS_POR_DEFECTO, type Preferencias } from './tipos';
 
@@ -47,10 +47,6 @@ function pruebasTexto(pruebas: readonly EventoCalendario['competitions'][number]
   return nombres.length > vistas.length ? `${vistas.join(', ')} y ${nombres.length - vistas.length} más` : vistas.join(', ');
 }
 
-function urlEvento(e: EventoCalendario): string {
-  return construirUrlCalendario({ mes: e.startDate.slice(0, 7), busqueda: e.name });
-}
-
 export function construirAvisosCalendario(
   perfiles: readonly CriteriosCalendario[],
   eventos: readonly EventoCalendario[],
@@ -79,7 +75,7 @@ export function construirAvisosCalendario(
           grupo: `evento:${e.id}`,
           titulo: recortar(`Nueva competición: ${e.name}`, 200),
           cuerpo: recortar(`${fechas}${lugar}. ${pruebasTexto(suyas)}`, 1000),
-          url: urlEvento(e),
+          url: destinoEvento(e),
           datos: { contexto: recortar(e.name, 200), detalles: [recortar(pruebasTexto(suyas), 200)] },
         });
       }
@@ -99,7 +95,7 @@ export function construirAvisosCalendario(
         grupo: `evento:${e.id}`,
         titulo: recortar(`Cierra la inscripción en ${dias} ${dias === 1 ? 'día' : 'días'}: ${e.name}`, 200),
         cuerpo: recortar(`${proximo.d.label}: ${formatDateTimeEs(proximo.d.deadlineAt)}. ${pruebasTexto(delMismoCierre)}`, 1000),
-        url: urlEvento(e),
+        url: destinoEvento(e),
         datos: { contexto: recortar(e.name, 200), detalles: [recortar(pruebasTexto(delMismoCierre), 200)] },
       });
     }

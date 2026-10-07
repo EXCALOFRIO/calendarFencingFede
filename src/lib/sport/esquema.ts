@@ -28,15 +28,22 @@ export function crearDetectorEsquema(
   let completo: EstadoEsquema | null = null;
   let ausenteHasta = 0;
   let ultimo: EstadoEsquema | null = null;
+  // Las lecturas que llegan a la vez (un perfil en frío pide el esquema desde
+  // cuatro sitios) comparten una sola consulta al catálogo.
+  let enCurso: Promise<EstadoEsquema> | null = null;
 
   return async () => {
     if (completo) return completo;
     if (ultimo && ahora() < ausenteHasta) return ultimo;
-    const estado = await consultar();
-    if (estado.identidad && estado.referencias) completo = estado;
-    ultimo = estado;
-    ausenteHasta = ahora() + AUSENTE_MS;
-    return estado;
+    enCurso ??= consultar().then((estado) => {
+      if (estado.identidad && estado.referencias) completo = estado;
+      ultimo = estado;
+      ausenteHasta = ahora() + AUSENTE_MS;
+      return estado;
+    }).finally(() => {
+      enCurso = null;
+    });
+    return enCurso;
   };
 }
 

@@ -56,7 +56,7 @@ describe('navegación', () => {
     const ranking = DESTINOS[3];
     expect(nav.toquePestana('/', ranking, 'calendario')).toEqual({ accion: 'navegar', tipos: ['nav-pestana'] });
     expect(nav.toquePestana('/ranking', ranking, 'ranking')).toEqual({ accion: 'subir' });
-    expect(nav.toquePestana('/ranking/historico', ranking, 'ranking')).toEqual({ accion: 'navegar', tipos: ['nav-volver'] });
+    expect(nav.toquePestana('/ranking/historico', ranking, 'ranking')).toEqual({ accion: 'raiz', tipos: ['nav-volver'] });
   });
 
   it('cada pestaña vuelve a donde se dejó, salvo la activa, que va a su raíz', () => {

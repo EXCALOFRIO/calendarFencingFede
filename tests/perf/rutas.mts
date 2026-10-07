@@ -136,9 +136,11 @@ const { getCurrentSeason, getDataFreshness } = await import('@/lib/queries/calen
 const { calendarioCompartido } = await import('@/lib/queries/calendario-cache');
 const { cargarPantallaCalendario } = await import('@/lib/queries/calendario-pantalla');
 const { quienVaDelEvento } = await import('@/lib/queries/quien-va');
-const { cargarCaraACaraCompartida, cargarCatalogoCompartido, cargarEdicionCompartida } = await import('@/lib/sport/explorar/cache-real');
+const { cargarBuscarVacioCompartido, cargarCaraACaraCompartida, cargarCatalogoCompartido, cargarEdicionCompartida, fuentesPropuestasCompartidas } = await import('@/lib/sport/explorar/cache-real');
+const { leerSugeridosDePersona } = await import('@/lib/sport/explorar/siguiendo-pantalla');
 const { cargarSeries } = await import('@/lib/sport/explorar/ediciones-pantalla');
 const { cargarCatalogoEdiciones } = await import('@/lib/sport/explorar/catalogo');
+const { leerDatosIndiceEdiciones } = await import('@/lib/sport/explorar/indice-ediciones');
 const { cargarExplorar } = await import('@/lib/sport/explorar/pantalla');
 const { CRITERIOS_VACIOS } = await import('@/lib/sport/explorar/url');
 const { cargarConteoSiguiendo, leerPropuestasParaSeguir } = await import('@/lib/sport/explorar/siguiendo-pantalla');
@@ -151,6 +153,9 @@ const { cargarExtrasPerfil } = await import('@/lib/sport/explorar/perfil-extra')
 const { cargarDiferidosPerfil } = await import('@/lib/sport/explorar/perfil-diferido');
 const pd = await import('@/lib/sport/explorar/perfil-diferido');
 const pc = await import('@/lib/sport/explorar/perfil-cache-real');
+const pais = await import('@/lib/sport/explorar/pais-cache-real');
+const paisUrl = await import('@/lib/sport/explorar/pais-url');
+const { leerDueloPaises } = await import('@/lib/sport/explorar/pais');
 const { leerCriteriosEdicion } = await import('@/lib/sport/explorar/edicion-url');
 const { leerCriteriosCaraACara } = await import('@/lib/sport/explorar/cara-a-cara-url');
 const rk = await import('@/lib/queries/ranking');
@@ -162,6 +167,11 @@ const { armasInternas } = await import('@/lib/ranking/acceso-interno');
 const { completarTablaFie } = await import('@/app/(app)/ranking/consultas');
 const { cargarPantallaRanking, leerVistaRanking } = await import('@/app/(app)/ranking/datos');
 const { leerFiltroRankingNacional } = await import('@/lib/ranking/url-nacional');
+const { cargarListaSiguiendo } = await import('@/lib/sport/explorar/inicio-pantalla');
+const { resolverPersonaPropia } = await import('@/lib/sport/explorar/propietario');
+const { listCallUpsForAthletes } = await import('@/lib/queries/callups');
+const { contarNoLeidas, leerBandeja } = await import('@/lib/notificaciones/bandeja');
+const { tablaFieCompartida, conMios } = await import('@/app/(app)/ranking/compartido');
 const { athlete, entry, userProfile, club, sportPerson } = await import('@/db/schema');
 const { and, eq, inArray, or } = await import('drizzle-orm');
 type SessionProfile = import('@/lib/auth/session').SessionProfile;
@@ -321,12 +331,15 @@ async function esperarTodo(o: object): Promise<Record<string, unknown>> {
   return salida;
 }
 
-/** Un torneo nacional próximo de la copia, para medir la ficha del calendario. */
-const FICHA = (await BASE.prepare(`SELECT id FROM event WHERE disappeared_at IS NULL AND canonical_event_id IS NULL
+/** Un torneo nacional próximo de la copia, para medir la ficha del calendario (o `PERF_FICHA`). */
+const FICHA = process.env.PERF_FICHA ?? (await BASE.prepare(`SELECT id FROM event WHERE disappeared_at IS NULL AND canonical_event_id IS NULL
   AND scope = 'NACIONAL' AND start_date >= ? ORDER BY start_date, name LIMIT 1`).bind(HOY).first<{ id: string }>())?.id ?? '';
 /** Otra prueba del Mundial 2026 que no es la que se abre por defecto. */
 const OTRA_PRUEBA = (await BASE.prepare(`SELECT id FROM sport_competition WHERE edition_id = ?
   ORDER BY competition_date DESC, id DESC LIMIT 1`).bind(MUNDIAL_2026).first<{ id: string }>())?.id ?? '';
+/** Cursor de la segunda página del cara a cara España-Italia (sin la 0018, vacío). */
+const CURSOR_ESP_ITA = await leerDueloPaises(createD1Database(BASE), 'ESP', 'ITA', paisUrl.leerFiltrosDuelo({ arma: 'ESPADA', genero: 'M', categoria: 'M20' }))
+  .then((d) => d.siguiente ?? '', () => '');
 
 /**
  * Lo que hace `fichaDelEvento` (`(app)/detalle-evento.ts`) tras la sesión:
@@ -364,7 +377,24 @@ const RUTAS: { ruta: string; cargar: () => Promise<unknown> }[] = [
     ruta: 'catálogo de ediciones sin filtros',
     cargar: () => cargarCatalogoCompartido(contexto(TIRADOR), { q: '', fuente: '', temporada: '' }, undefined),
   },
+  // Buscador de competiciones: la fría lee el índice de ediciones (una vez por versión); la caliente es lo que cuesta cada tecla.
+  { ruta: 'competiciones: datos del índice (una vez por versión)', cargar: () => leerDatosIndiceEdiciones(contexto(TIRADOR)) },
+  ...(['mndial', 'copa del mun', 'turin', 'gp turin 2024'] as const).map((q) => ({
+    ruta: `competiciones «${q}» (por tecla)`,
+    cargar: () => cargarCatalogoCompartido(contexto(TIRADOR), { q, fuente: '', temporada: '' }, undefined),
+  })),
+  {
+    ruta: 'competiciones arma + categoría + años (por toque)',
+    cargar: () => cargarCatalogoCompartido(contexto(TIRADOR), { q: 'copa del mundo', fuente: 'fie', temporada: '', arma: 'ESPADA', categoria: 'M20', desde: '2018', hasta: '2024' }, undefined),
+  },
+  { ruta: 'competiciones «turin» sin índice (antes)', cargar: () => cargarCatalogoEdiciones(contexto(TIRADOR), { q: 'turin' }) },
   { ruta: 'buscar vacío (propuestas)', cargar: () => { const c = contexto(TIRADOR); return Promise.all([cargarExplorar(c, CRITERIOS_VACIOS, undefined), cargarConteoSiguiendo(c), leerPropuestasParaSeguir(c)]); } },
+  { ruta: 'buscar vacío (propuestas, caché)', cargar: () => { const c = contexto(TIRADOR); return Promise.all([cargarConteoSiguiendo(c), cargarBuscarVacioCompartido(c)]); } },
+  // Feed y Siguiendo vacíos (cuenta que no sigue a nadie): antes, las propuestas iban directas a D1.
+  { ruta: 'feed vacío, seleccionador (directo)', cargar: () => cargarInicio(contexto(SELECCIONADOR), {}) },
+  { ruta: 'feed vacío, seleccionador (caché)', cargar: () => { const c = contexto(SELECCIONADOR); return cargarInicio(c, {}, fuentesPropuestasCompartidas(c)); } },
+  { ruta: 'sugeridos de Llavador (directo)', cargar: () => leerSugeridosDePersona(contexto(TIRADOR), LLAVADOR) },
+  { ruta: 'sugeridos de Llavador (caché)', cargar: () => fuentesPropuestasCompartidas(contexto(TIRADOR)).sugeridosDe!(LLAVADOR) },
   { ruta: 'buscar «zabala»', cargar: () => { const c = contexto(TIRADOR); return Promise.all([cargarExplorar(c, { ...CRITERIOS_VACIOS, q: 'zabala' }, undefined), cargarConteoSiguiendo(c)]); } },
   { ruta: 'sugerencias en vivo «zabal» (por tecla)', cargar: () => sugerirPersonas(contexto(TIRADOR), { q: 'zabal' }) },
   { ruta: 'feed (sigue a 20)', cargar: () => cargarInicio(contexto(TIRADOR), {}) },
@@ -385,6 +415,31 @@ const RUTAS: { ruta: string; cargar: () => Promise<unknown> }[] = [
     ruta: 'cara a cara Llavador vs rival',
     cargar: () => cargarCaraACaraCompartida(contexto(TIRADOR), LLAVADOR, leerCriteriosCaraACara({ rival: RIVAL })),
   },
+  // Fichas de país (0018): lo mismo que `explorar/pais/[codigo]` y `.../contra/[otro]`.
+  ...([
+    ['país ESP, sin filtros', 'ESP', {}],
+    ['país ESP, espada M20', 'ESP', { arma: 'ESPADA', categoria: 'M20' }],
+    ['país FRA, sin filtros', 'FRA', {}],
+  ] as const).map(([nombre, codigo, q]) => ({
+    ruta: nombre,
+    cargar: () => pais.cargarFichaPaisCompartida(contexto(TIRADOR), codigo, paisUrl.leerFiltrosPais(q)),
+  })),
+  ...([
+    ['selecciones ESP-ITA, M20 espada masculina', 'ESP', 'ITA', { arma: 'ESPADA', genero: 'M', categoria: 'M20' }],
+    ['selecciones ESP-ITA, sin filtros', 'ESP', 'ITA', {}],
+    ['selecciones ESP-FRA, equipos', 'ESP', 'FRA', { modalidad: 'equipos' }],
+  ] as const).map(([nombre, codigo, rival, q]) => ({
+    ruta: nombre,
+    cargar: () => pais.cargarDueloPaisesCompartido(contexto(TIRADOR), codigo, rival, paisUrl.leerFiltrosDuelo(q), ''),
+  })),
+  {
+    // La página siguiente de la lista va directa a D1 (con cursor no se cachea).
+    ruta: 'selecciones ESP-ITA, M20 espada masculina, página 2',
+    cargar: async () => {
+      const f = paisUrl.leerFiltrosDuelo({ arma: 'ESPADA', genero: 'M', categoria: 'M20' });
+      return pais.cargarDueloPaisesCompartido(contexto(TIRADOR), 'ESP', 'ITA', f, CURSOR_ESP_ITA);
+    },
+  },
   { ruta: 'ranking vigente, tirador (nacional + mundial)', cargar: () => rankingVigente(TIRADOR) },
   { ruta: 'ranking vigente, seleccionador', cargar: () => rankingVigente(SELECCIONADOR) },
   { ruta: 'ranking nacional 2019-2020', cargar: () => rankingPasado(TIRADOR, '2019-2020') },
@@ -393,6 +448,9 @@ const RUTAS: { ruta: string; cargar: () => Promise<unknown> }[] = [
     ['tirador, internacional', TIRADOR, ''],
     ['tirador, nacional', TIRADOR, 'ambito=nacional'],
     ['seleccionador, nacional', SELECCIONADOR, 'ambito=nacional'],
+    ['seleccionador, internacional', SELECCIONADOR, ''],
+    ['tirador, europeo', TIRADOR, 'ambito=europeo'],
+    ['tirador, nacional 2019-2020', TIRADOR, 'ambito=nacional&temporada=2019-2020'],
   ] as const).map(([nombre, perfil, consulta]) => ({
     ruta: `ranking /ranking página, ${nombre}`,
     cargar: () => {
@@ -405,6 +463,37 @@ const RUTAS: { ruta: string; cargar: () => Promise<unknown> }[] = [
     ruta: 'ranking nacional: otro grupo (acción)',
     cargar: async () => (await import('@/app/(app)/ranking/consultas')).leerNacionalDeGrupo({ weapon: 'ESPADA', gender: 'M', category: 'ABS' }),
   },
+  {
+    // Lo que lee `cargarClasificacionFie` (la acción de verdad), sin la sesión.
+    ruta: 'ranking mundial: cambiar de tabla (acción, caché)', cargar: async () => {
+      const [mios, tabla] = await Promise.all([
+        getManagedAthletes(TIRADOR.profileId),
+        tablaFieCompartida('INDIVIDUAL', 'ESPADA', 'F', 'ABS', HOY),
+      ]);
+      return conMios(tabla, mios.map((a) => a.id));
+    },
+  },
+  { ruta: 'siguiendo (sigue a 20)', cargar: () => { const c = contexto(TIRADOR); return cargarListaSiguiendo(c, undefined, fuentesPropuestasCompartidas(c)); } },
+  {
+    // `notificaciones/page.tsx` y la campana del armazón (bandeja vacía en la copia: sólo cuesta el índice).
+    ruta: 'notificaciones (bandeja + campana)',
+    cargar: () => Promise.all([leerBandeja(db, TIRADOR.profileId), contarNoLeidas(db, TIRADOR.profileId)]),
+  },
+  ...([['tirador', TIRADOR], ['seleccionador', SELECCIONADOR]] as const).map(([nombre, perfil]) => ({
+    // Lo mismo que `explorar/yo/page.tsx` («Tú»).
+    ruta: `Tú, ${nombre}`,
+    cargar: async () => {
+      const [propia, atletas, temporada] = await Promise.all([
+        resolverPersonaPropia(contexto(perfil), perfil.profileId).catch(() => null),
+        getManagedAthletes(perfil.profileId),
+        getCurrentSeason(),
+      ]);
+      const convocatorias = perfil.role === 'athlete'
+        ? await listCallUpsForAthletes(atletas.map((a) => a.id)).then((l) => l.length, () => 0)
+        : 0;
+      return { propia, atletas, temporada, convocatorias };
+    },
+  })),
   {
     ruta: 'ranking mundial: cambiar de tabla (acción)', cargar: async () => {
       const mios = (await getManagedAthletes(TIRADOR.profileId)).map((a) => a.id);
@@ -499,7 +588,8 @@ for (const r of RUTAS) for (const pasada of PASADAS) {
     // Todas las sentencias de la ruta, con el SQL entero, para estudiarlas una a una.
     const nombre = m.ruta.normalize('NFD').replace(/[^\w]+/g, '-').toLowerCase();
     writeFileSync(`${process.env.PERF_VOLCAR}/${nombre}.json`, JSON.stringify(propio.map((x) => ({
-      leidas: x.leidas, devueltas: x.devueltas, motorMs: x.motorMs, via: x.via, sql: x.sql,
+      leidas: x.leidas, devueltas: x.devueltas, motorMs: x.motorMs, via: x.via,
+      inicio: Math.round(x.inicio - t0), fin: Math.round(x.fin - t0), sql: x.sql,
       params: x.params.map((p) => (typeof p === 'string' && p.length > 200 ? `${p.slice(0, 200)}…` : p)),
     })).sort((a, b) => (b.leidas ?? 0) - (a.leidas ?? 0)), null, 2));
   }

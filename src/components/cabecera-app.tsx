@@ -54,7 +54,15 @@ function Cabecera({ campana, aviso, conBusqueda }: Props & { conBusqueda: boolea
       <CabeceraCompacta variante="raiz" titulo={c.titulo} acciones={acciones} className="lg:static" />
     );
   } else if (c) {
-    cabecera = <CabeceraCompacta variante="subpantalla" titulo={c.titulo} volverA={c.volverA} className="lg:static" />;
+    cabecera = (
+      <CabeceraCompacta
+        variante="subpantalla"
+        titulo={c.titulo}
+        volverA={c.volverA}
+        encabezado={c.encabezado ?? true}
+        className="lg:static"
+      />
+    );
   } else {
     // Sin cabecera (la pantalla pinta su título), el contenido no puede quedar bajo la barra de estado del iPhone.
     cabecera = <div aria-hidden className="h-[env(safe-area-inset-top)] lg:hidden" />;

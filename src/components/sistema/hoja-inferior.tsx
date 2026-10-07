@@ -122,7 +122,7 @@ export function HojaInferior({
             <div aria-hidden className="mx-auto mt-[8px] h-[4px] w-[36px] rounded-full bg-[color-mix(in_oklab,var(--muted-foreground)_45%,var(--popover))] sm:hidden" />
             <div className="grid h-[44px] grid-cols-[36px_minmax(0,1fr)_36px] items-center gap-[8px] px-[8px] sm:h-[52px]">
               <span aria-hidden />
-              <Dialog.Title className="truncate text-center font-sans text-[16px] leading-[20px] font-semibold tracking-normal">
+              <Dialog.Title className="line-clamp-2 break-words text-center font-sans text-[16px] leading-[20px] font-semibold tracking-normal">
                 {titulo}
               </Dialog.Title>
               <Dialog.Close asChild>

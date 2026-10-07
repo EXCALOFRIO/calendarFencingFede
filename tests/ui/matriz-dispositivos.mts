@@ -14,7 +14,7 @@
  * · --sin-texto · --paralelo=N (arneses a la vez, 2 por defecto) · --listar
  * (sólo muestra las rutas que abre cada arnés) · --informe (no ejecuta nada,
  * sólo rehace el informe con las medidas que hay). PERF_DB es la copia SQLite
- * (por defecto %USERPROFILE%\calendario-datos\calendario-trabajo\nuevo9.sqlite,
+ * (por defecto %USERPROFILE%\calendario-datos\calendario-trabajo\nuevo11.sqlite,
  * que se abre en sólo lectura). MATRIZ_FORZAR_CLARO=1 quita además la clase
  * `dark` en el tema claro. Sale con código 1 si alguna página tiene desborde
  * horizontal o no cargó en un móvil.
@@ -37,7 +37,7 @@ const CARPETA = path.join(RAIZ, 'capturas', args.rapido ? 'matriz-rapido' : 'mat
 const MEDIDAS = path.join(CARPETA, args.listar ? 'listar' : 'medidas');
 const REGISTROS = path.join(CARPETA, 'registros');
 const TIEMPO_MAX = Number(process.env.MATRIZ_TIEMPO ?? 40 * 60) * 1000;
-const PERF_DB = process.env.PERF_DB ?? path.join(homedir(), 'calendario-datos', 'calendario-trabajo', 'nuevo9.sqlite');
+const PERF_DB = process.env.PERF_DB ?? path.join(homedir(), 'calendario-datos', 'calendario-trabajo', 'nuevo11.sqlite');
 const TSX = path.join(RAIZ, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 
 const todos = arneses();

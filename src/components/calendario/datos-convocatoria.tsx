@@ -85,7 +85,6 @@ export function CitaConvocatoria({
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={`${dato.etiqueta}: ver la frase de la convocatoria de la que sale`}
           className={cn(
             'group/cita -mx-2 block min-w-0 rounded-md px-2 text-left transition-colors',
             'hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -93,6 +92,8 @@ export function CitaConvocatoria({
           )}
         >
           {children}
+          {/* Detrás del valor: el nombre accesible empieza por lo que se ve (WCAG 2.5.3). */}
+          <span className="sr-only">. {dato.etiqueta}: ver la frase de la convocatoria</span>
         </button>
       </PopoverTrigger>
 

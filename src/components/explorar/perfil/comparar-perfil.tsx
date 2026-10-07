@@ -119,7 +119,7 @@ export function CompararPerfil({
               setAbierta(false);
             }
           }}
-          className="h-[40px] w-full min-w-0 rounded-md border bg-background pr-3 pl-9 text-[16px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="h-[40px] w-full min-w-0 rounded-md border bg-background pr-3 pl-9 text-[16px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring"
         />
         {mostrar ? (
           <div className="absolute inset-x-0 top-full z-20 mt-1 overflow-hidden rounded-md border bg-popover shadow-lg">
@@ -177,7 +177,7 @@ export function CompararPerfil({
                 <Link
                   href={construirUrlCaraACara(personaId, { rival: r.id })}
                   prefetch={false}
-                  className="inline-flex min-h-[40px] max-w-full items-center gap-2 rounded-full border bg-background py-1 pr-3.5 pl-1 text-sm hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                  className="inline-flex min-h-[40px] max-w-full items-center gap-2 rounded-full border bg-background py-1 pr-3.5 pl-1 text-sm hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
                 >
                   <AvatarAnillo nombre={nombreVisible(r.nombre)} tamano="sm" apagado />
                   <span className="min-w-0 max-w-40 truncate font-medium">{nombreVisible(r.nombre)}</span>

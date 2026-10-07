@@ -15,7 +15,7 @@ function Barra({ valor, rotulo, color }: { valor: number | null; rotulo: string;
   const p = pct(valor);
   return (
     <span className="flex min-w-0 flex-1 items-center gap-1.5">
-      <span className="w-[3.25rem] shrink-0 text-[0.625rem] leading-none text-muted-foreground">{rotulo}</span>
+      <span className="w-[3.25rem] shrink-0 text-[12px] leading-none text-muted-foreground">{rotulo}</span>
       <span aria-hidden className="relative h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
         {p !== null ? <span className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${p}%`, background: color }} /> : null}
       </span>
@@ -60,7 +60,7 @@ export function BarrasTipo({
                 >
                   <span className="truncate">{f.etiqueta}</span>
                 </span>
-                <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.6875rem] leading-none text-muted-foreground">
+                <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] leading-none text-muted-foreground">
                   {medallas.map((m) => (
                     <span key={m.clave} className="inline-flex items-center gap-1" title={m.nombre}>
                       <span aria-hidden className="size-2 rounded-full" style={{ background: COLOR[m.clave] }} />
@@ -78,7 +78,7 @@ export function BarrasTipo({
               <div className="flex shrink-0 items-start gap-4 text-right">
                 <span className="flex flex-col items-end gap-0.5">
                   <span className="cifra text-2xl leading-none">{f.competiciones}</span>
-                  <span className="text-[0.625rem] leading-none text-muted-foreground">comp.</span>
+                  <span className="text-[12px] leading-none text-muted-foreground">comp.</span>
                 </span>
                 {p !== null ? (
                   <span className="flex w-12 flex-col items-end gap-0.5">
@@ -86,7 +86,7 @@ export function BarrasTipo({
                       {p}
                       <span className="text-sm">%</span>
                     </span>
-                    <span className="text-[0.625rem] leading-none text-muted-foreground">ganados</span>
+                    <span className="text-[12px] leading-none text-muted-foreground">ganados</span>
                   </span>
                 ) : null}
               </div>

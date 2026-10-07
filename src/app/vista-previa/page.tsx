@@ -4,6 +4,7 @@ import { asc, inArray, ne } from 'drizzle-orm';
 import { and } from 'drizzle-orm';
 import { db } from '@/db';
 import { userProfile } from '@/db/schema';
+import { SelectorPerfilVistaPrevia } from '@/components/admin/selector-perfil-vista-previa';
 import { Button } from '@/components/ui/button';
 import { getAuthenticatedProfile } from '@/lib/auth/session';
 import { iniciarVistaPrevia, terminarAccesoQa, terminarVistaPrevia } from './actions';
@@ -62,11 +63,11 @@ export default async function VistaPrevia({
                 <form action={iniciarVistaPrevia} className="flex flex-1 flex-col gap-3">
                   <input type="hidden" name="role" value={role} />
                   <label htmlFor={`perfil-${role}`} className="text-sm">Perfil que quieres ver</label>
-                  <select id={`perfil-${role}`} name="profileId"
-                    className="h-11 min-w-0 w-full rounded-md border bg-background px-2 text-base"
-                    autoFocus={consulta.rol === role}>
-                    {disponibles.map((p) => <option key={p.id} value={p.id}>{p.fullName}</option>)}
-                  </select>
+                  <SelectorPerfilVistaPrevia
+                    id={`perfil-${role}`}
+                    perfiles={disponibles.map((p) => ({ id: p.id, fullName: p.fullName }))}
+                    autoFocus={consulta.rol === role}
+                  />
                   <Button type="submit" className="mt-auto min-h-11 whitespace-normal">
                     Ver como {label.toLowerCase()}
                   </Button>

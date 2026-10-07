@@ -43,6 +43,26 @@ export function nombreVisible(publicado: string | null | undefined): string {
   return palabras.map((p, i) => capitalizar(p, i === 0)).join(' ');
 }
 
+/** Partículas que van delante del primer apellido y forman parte de él («De la Fuente», «San Martin»). */
+const PREFIJOS_APELLIDO = new Set([...PARTICULAS, 'san', 'santa']);
+
+/**
+ * Formato compacto común para donde no cabe el nombre entero (poules, cuadro):
+ * primer apellido con sus partículas y la inicial del nombre, «Zabala J.» de
+ * «ZABALA GUTIERREZ Juan». Si la fuente no separa apellidos y nombre
+ * («JUAN PEREZ GARCIA») no se sabe cuál es el apellido y va el nombre visible
+ * entero: mejor largo que equivocado.
+ */
+export function nombreCompacto(publicado: string | null | undefined): string {
+  if (!publicado) return '';
+  const { nombre, apellidos } = partesNombre(publicado);
+  if (!nombre || !apellidos) return nombreVisible(publicado);
+  const palabras = nombreVisible(apellidos).split(' ');
+  const fin = palabras.findIndex((p) => !PREFIJOS_APELLIDO.has(p.toLocaleLowerCase('es')));
+  const apellido = palabras.slice(0, fin < 0 ? palabras.length : fin + 1).join(' ');
+  return `${apellido} ${nombre.charAt(0).toLocaleUpperCase('es')}.`;
+}
+
 /** Iniciales para el avatar: primera letra del nombre y del primer apellido. */
 export function inicialesVisibles(publicado: string | null | undefined): string {
   const palabras = nombreVisible(publicado).split(' ').filter((p) => !PARTICULAS.has(p.toLocaleLowerCase('es')));

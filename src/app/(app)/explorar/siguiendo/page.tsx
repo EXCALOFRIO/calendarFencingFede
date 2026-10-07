@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { PantallaListaSiguiendo } from '@/components/explorar/pantalla-siguiendo';
 import { getSessionProfile } from '@/lib/auth/session';
+import { fuentesPropuestasCompartidas } from '@/lib/sport/explorar/cache-real';
 import { cargarListaSiguiendo } from '@/lib/sport/explorar/inicio-pantalla';
 import { contextoReal } from '@/lib/sport/explorar/real';
 import { leerCriteriosSiguiendo } from '@/lib/sport/explorar/siguiendo-url';
@@ -26,7 +27,8 @@ export default async function Pagina({
   if (!perfil) redirect('/entrar');
 
   const { cursor } = leerCriteriosSiguiendo(await searchParams);
-  const vista = await cargarListaSiguiendo(contextoReal(), cursor || undefined);
+  const ctx = contextoReal();
+  const vista = await cargarListaSiguiendo(ctx, cursor || undefined, fuentesPropuestasCompartidas(ctx));
   if (vista.tipo === 'sin_sesion') redirect('/entrar');
 
   return <PantallaListaSiguiendo vista={vista} />;

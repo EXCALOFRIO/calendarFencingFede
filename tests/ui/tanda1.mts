@@ -30,6 +30,8 @@ import { EdicionCompleta } from '@/components/explorar/ediciones';
 import { FiltrosCaraACara } from '@/components/explorar/filtros-cara-a-cara';
 import { SeccionRendimientoCaraACara } from '@/components/explorar/graficos/seccion-rendimiento-cara-a-cara';
 import { MatrizPoule } from '@/components/explorar/prueba/hoja-poule';
+import { BotonIcono } from '@/components/sistema/boton';
+import { X } from 'lucide-react';
 import { enlaceFichaDePrueba } from '@/components/explorar/prueba/enlaces';
 import { cargarCaraACaraPantalla } from '@/lib/sport/explorar/cara-a-cara-pantalla';
 import { leerCriteriosCaraACara } from '@/lib/sport/explorar/cara-a-cara-url';
@@ -117,18 +119,15 @@ const hoja = React.createElement(
   React.createElement(
     'div',
     { role: 'dialog', className: 'fixed inset-0 z-50 flex h-dvh max-h-dvh flex-col gap-0 overscroll-contain bg-popover' },
+    // La cabecera de `HojaPoule`: título, número de tiradores y el aspa en la misma fila.
     React.createElement(
       'div',
-      { className: 'flex flex-row items-center gap-2 border-b py-3 pr-16 pl-3' },
-      React.createElement('h2', { className: 'min-w-0 truncate text-lg leading-tight font-semibold text-foreground' }, poulePropia.etiqueta),
+      { className: 'flex h-[52px] shrink-0 flex-row items-center gap-2 border-b pr-[8px] pl-3' },
+      React.createElement('h2', { className: 'min-w-0 truncate text-[16px] leading-[20px] font-semibold text-foreground' }, poulePropia.etiqueta),
       React.createElement('span', { className: 'text-xs text-muted-foreground' }, poulePropia.filas.length),
+      React.createElement(BotonIcono, { etiqueta: 'Cerrar', tamano: 'md', className: 'ml-auto' }, React.createElement(X, { 'aria-hidden': true })),
     ),
     React.createElement(MatrizPoule, { poule: poulePropia, enlace, filtro: { consulta: '', persona: ZABALA } }),
-    React.createElement(
-      'span',
-      { className: 'cerrar-hoja absolute top-3.5 right-3.5 grid size-10 place-items-center rounded-full border border-filete-alto bg-accent text-foreground' },
-      '✕',
-    ),
   ),
 );
 

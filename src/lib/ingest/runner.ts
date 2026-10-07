@@ -42,7 +42,7 @@ import {
 } from './sources/fie';
 import { ingestFieTiradores } from './sources/fie-tiradores';
 import { ingestRankingRfee } from './sources/ranking-rfee';
-import { fetchOfficialDocuments } from './sources/rfee-wp';
+import { documentosQueCambian, fetchOfficialDocuments } from './sources/rfee-wp';
 import { parseSkermoCalendar, skermoCalendarUrl } from './sources/skermo';
 import { ingestSkermoResults } from './sources/skermo-results';
 import { markMissingEvents, upsertEvents, upsertListasDeInscritos } from './upsert';
@@ -113,6 +113,13 @@ export type IngestResult = {
   durationMs: number;
   error: string | null;
   note: string | null;
+  /**
+   * `true` solo cuando la fuente sabe que no escribió nada que se vea (ni
+   * filas contadas ni efectos secundarios): entonces `trasIngesta` no sube la
+   * época de la caché. Las fuentes que no lo llevan contado lo dejan en
+   * `false`, que es lo seguro.
+   */
+  sinCambios: boolean;
 };
 
 /**
@@ -155,6 +162,7 @@ export async function runIngest(
     durationMs: 0,
     error: null,
     note: null,
+    sinCambios: false,
   };
 
   try {
@@ -204,6 +212,7 @@ export async function runIngest(
   } catch (error) {
     base.status = 'error';
     base.error = error instanceof Error ? error.message : String(error);
+    base.sinCambios = false;
   }
 
   base.durationMs = Date.now() - startedAt.getTime();
@@ -297,6 +306,7 @@ async function dispatch(source: IngestSource, runId: string, forzar: boolean): P
           itemsUpdated: 0,
           itemsUnchanged: 0,
           itemsQuarantined: 0,
+          sinCambios: true,
           note: `No toca leer el ranking. ${decision.explicacion}`,
         };
       }
@@ -1002,6 +1012,7 @@ async function ingestRanking(runId: string): Promise<Dispatched> {
     itemsUpdated: stats.itemsUpdated,
     itemsUnchanged: stats.itemsUnchanged,
     itemsQuarantined: stats.itemsQuarantined,
+    sinCambios: stats.itemsCreated === 0 && stats.itemsUpdated === 0 && stats.itemsDeleted === 0,
     note: stats.note,
   };
 }
@@ -1080,7 +1091,7 @@ async function ingestOfficialDocuments(): Promise<Dispatched> {
    * dos escrituras en lote.
    */
   if (candidates.length === 0) {
-    return { status: 'ok', itemsSeen: rowsSeen, note: '0 documentos únicos' };
+    return { status: 'ok', itemsSeen: rowsSeen, sinCambios: true, note: '0 documentos únicos' };
   }
 
   const existentes = new Map(
@@ -1102,21 +1113,8 @@ async function ingestOfficialDocuments(): Promise<Dispatched> {
     ).map((r) => [r.wpMediaId, r] as const),
   );
 
-  const nuevos = candidates.filter((d) => !existentes.has(d.wpMediaId));
-  /*
-    Antes se reescribían las ~280 circulares cada noche aunque no cambiara
-    nada. Solo van al INSERT las nuevas y las que cambian de título, URL o
-    fecha.
-  */
-  const aEscribir = candidates.filter((d) => {
-    const previo = existentes.get(d.wpMediaId);
-    return (
-      !previo ||
-      previo.title !== d.title ||
-      previo.pdfUrl !== d.pdfUrl ||
-      new Date(previo.publishedAt).getTime() !== d.publishedAt.getTime()
-    );
-  });
+  // Antes se reescribían las ~280 circulares cada noche aunque no cambiara nada.
+  const { nuevos, aEscribir } = documentosQueCambian(candidates, existentes);
 
   for (const lote of lotesDeInsercion(aEscribir, officialDocument)) {
     /**
@@ -1197,11 +1195,14 @@ async function ingestOfficialDocuments(): Promise<Dispatched> {
    * cálculo no esté. Mismo criterio que `recalcularEnlaces()`.
    */
   let notaVigencia = '';
+  let vigenciaQuieta = false;
   try {
     const v = await recalcularVigencia();
+    vigenciaQuieta = v.escritas === 0;
     notaVigencia =
       `, vigencia: ${v.vigentes} en vigor, ${v.superadas} superadas, ` +
-      `${v.canceladas} canceladas, ${v.duplicadas} duplicadas en ${v.familias} familias`;
+      `${v.canceladas} canceladas, ${v.duplicadas} duplicadas en ${v.familias} familias` +
+      `, ${v.escritas} vigencias reescritas`;
   } catch (error) {
     notaVigencia = `, vigencia sin recalcular (${
       error instanceof Error ? error.message : 'error'
@@ -1215,6 +1216,7 @@ async function ingestOfficialDocuments(): Promise<Dispatched> {
     itemsUpdated: updated,
     itemsUnchanged: candidates.length - aEscribir.length,
     notificationsQueued: feeAlerts,
+    sinCambios: aEscribir.length === 0 && vigenciaQuieta,
     note: `${candidates.length} documentos únicos${notaVigencia}`,
   };
 }

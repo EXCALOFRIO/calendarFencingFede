@@ -3,7 +3,7 @@
 import { ChevronRight, ExternalLink, Trophy } from 'lucide-react';
 import { EnlaceIntencion } from '@/components/enlace-intencion';
 import * as React from 'react';
-import { BanderaPais } from '@/components/bandera';
+import { EnlacePais } from '@/components/explorar/piezas';
 import { Button } from '@/components/ui/button';
 import type { PuestoPodio, VistaPodiosEvento } from '@/lib/queries/evento-resultados';
 import {
@@ -12,6 +12,7 @@ import {
   type PruebaDeEdicion,
 } from '@/lib/sport/explorar/edicion-modelo';
 import { construirUrlEdicion } from '@/lib/sport/explorar/edicion-url';
+import type { CompeticionCalendario } from '@/lib/sport/explorar/enlaces-calendario';
 import { CLASES_MEDALLA, categoriaVisible, medallaDe } from '@/lib/sport/explorar/presentacion';
 import { rutaFicha } from '@/lib/sport/explorar/url';
 import { GENDER_LABEL, WEAPON_LABEL, cn, titular } from '@/lib/utils';
@@ -42,17 +43,20 @@ import { podiosDelEvento } from './resultados-accion';
 type Lectura = { evento: string; vista: VistaPodiosEvento | 'fallo' };
 
 const ENLACE =
-  'inline-flex min-h-[44px] items-center gap-1 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none md:min-h-0';
+  'inline-flex min-h-[44px] items-center gap-1 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none';
 
 export function ResultadosTorneo({
   eventoId,
   retorno,
   pruebaElegida,
+  competicion = null,
 }: {
   eventoId: string;
   retorno?: string;
   /** Prueba del calendario seleccionada arriba: su podio va marcado. */
   pruebaElegida?: string | null;
+  /** La misma prueba con arma, género, categoría y formato: «Ver resultados» lleva a la suya exacta. */
+  competicion?: CompeticionCalendario | null;
 }) {
   // Lo precargado con la intención de abrir la ficha, si ya llegó.
   const [lectura, setLectura] = React.useState<Lectura | null>(() => {
@@ -76,7 +80,34 @@ export function ResultadosTorneo({
   }, [eventoId]);
 
   const vista = lectura && lectura.evento === eventoId ? lectura.vista : null;
-  return <CuerpoPodios vista={vista} retorno={retorno} pruebaElegida={pruebaElegida ?? null} />;
+  return <CuerpoPodios vista={vista} retorno={retorno} pruebaElegida={pruebaElegida ?? null} competicion={competicion} />;
+}
+
+/**
+ * La prueba de Explorar que ES la prueba del calendario elegida: por el
+ * vínculo guardado si lo hay y, si no, por arma, género, categoría y formato
+ * (como `destinoEnPruebas`). Sólo entre las que tienen algo que enseñar.
+ */
+export function pruebaExacta(
+  ediciones: readonly { id: string; pruebasDetalle: PruebaDeEdicion[] }[],
+  pruebaElegida: string | null,
+  competicion: CompeticionCalendario | null,
+): { edicionId: string; prueba: PruebaDeEdicion } | null {
+  const todas = ediciones.flatMap((e) => e.pruebasDetalle.map((prueba) => ({ edicionId: e.id, prueba })));
+  if (pruebaElegida) {
+    const guardada = todas.find((x) => x.prueba.pruebaCalendarioId === pruebaElegida);
+    if (guardada) return guardada;
+  }
+  if (!competicion) return null;
+  return (
+    todas.find(
+      (x) =>
+        x.prueba.arma === competicion.weapon &&
+        x.prueba.genero === competicion.gender &&
+        x.prueba.categoria.codigo === competicion.category &&
+        x.prueba.formato === competicion.format,
+    ) ?? null
+  );
 }
 
 /** Enlaces oficiales que se pueden abrir: los demás no se nombran. */
@@ -94,26 +125,43 @@ export function CuerpoPodios({
   vista,
   retorno,
   pruebaElegida = null,
+  competicion = null,
 }: {
   /** `null` mientras se lee. */
   vista: VistaPodiosEvento | 'fallo' | null;
   retorno?: string;
   pruebaElegida?: string | null;
+  competicion?: CompeticionCalendario | null;
 }) {
   if (vista === null || vista === 'fallo' || vista.tipo !== 'ok') return null;
   const ediciones = vista.ediciones
     .map((e) => ({ ...e, pruebasDetalle: e.pruebasDetalle.filter((p) => conAlgo(p, vista.podios)) }))
     .filter((e) => e.pruebasDetalle.length > 0);
   if (ediciones.length === 0) return null;
+  const exacta = pruebaExacta(ediciones, pruebaElegida, competicion);
 
   return (
     <section
       aria-labelledby="resultados-torneo"
       className="flex flex-col gap-3 border-t border-t-filete pt-4 pb-1 first:border-t-0 first:pt-0"
     >
-      <h3 id="resultados-torneo" className="text-[20px] leading-[24px]">
-        Resultados
-      </h3>
+      <div className="flex items-center justify-between gap-3">
+        <h3 id="resultados-torneo" className="text-[20px] leading-[24px]">
+          Resultados
+        </h3>
+        {/* La prueba elegida arriba, con su clasificación, poules y directas. */}
+        {exacta ? (
+          <Button asChild size="sm" className="rounded-full">
+            <EnlaceIntencion
+              href={construirUrlEdicion(exacta.edicionId, { prueba: exacta.prueba.id, origen: retorno })}
+              data-resultados-prueba={exacta.prueba.id}
+            >
+              Ver resultados
+              <ChevronRight />
+            </EnlaceIntencion>
+          </Button>
+        ) : null}
+      </div>
       <div className="flex flex-col gap-5">
         {ediciones.map((edicion) => {
           const variasCategorias =
@@ -135,9 +183,7 @@ export function CuerpoPodios({
                     podio={vista.podios[prueba.id] ?? []}
                     conCategoria={variasCategorias}
                     retorno={retorno}
-                    elegida={
-                      pruebaElegida !== null && prueba.pruebaCalendarioId === pruebaElegida
-                    }
+                    elegida={exacta?.prueba.id === prueba.id}
                   />
                 ))}
               </ul>
@@ -225,15 +271,15 @@ function FilaPodio({ puesto }: { puesto: PuestoPodio }) {
           'cifra inline-flex size-7 shrink-0 items-center justify-center rounded-full border text-sm',
           medalla ? CLASES_MEDALLA[medalla] : 'border-filete',
         )}
-        aria-label={`Puesto ${puesto.puesto}`}
       >
+        <span className="sr-only">Puesto </span>
         {puesto.puesto}
       </span>
       {puesto.personaId ? (
         // La fila entera es el enlace: el nombre solo medía 23 px de alto.
         <EnlaceIntencion
           href={rutaFicha(puesto.personaId)}
-          className="group flex min-h-[44px] min-w-0 flex-1 flex-col justify-center rounded-md leading-tight focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+          className="group flex min-h-[44px] min-w-0 flex-1 flex-col justify-center rounded-md leading-tight focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
         >
           <DatosPodio puesto={puesto} nombre={nombre} />
         </EnlaceIntencion>
@@ -242,6 +288,8 @@ function FilaPodio({ puesto }: { puesto: PuestoPodio }) {
           <DatosPodio puesto={puesto} nombre={nombre} />
         </span>
       )}
+      {/* Hermana del enlace a la persona, no dentro: la bandera lleva a su país. */}
+      {puesto.pais ? <EnlacePais pais={puesto.pais} soloBandera={false} className="justify-end" /> : null}
     </li>
   );
 }
@@ -251,7 +299,6 @@ function DatosPodio({ puesto, nombre }: { puesto: PuestoPodio; nombre: string })
     <>
       <span className="flex min-w-0 items-center gap-1.5">
         <span className="min-w-0 truncate text-sm font-medium underline-offset-4 group-hover:underline">{nombre}</span>
-        <BanderaPais pais={puesto.pais} className="text-[12px]" />
       </span>
       {puesto.club ? (
         <span className="truncate text-xs text-muted-foreground">{titular(puesto.club)}</span>

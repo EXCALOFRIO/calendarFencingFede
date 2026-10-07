@@ -100,7 +100,7 @@ export function PuestosComparados({
   const resumen = resumenDelante(pruebas, yo, rival);
 
   return (
-    <Lectura inicial={inicial} className={className}>
+    <Lectura inicial={inicial} datos={pruebas.map((p) => lecturaPrueba(p, yo, rival))} className={className}>
       {resumen ? (
         <Badge variant="secondary" className="min-h-6 max-w-full gap-1.5 px-2.5 text-left text-xs whitespace-normal">
           <span

@@ -60,7 +60,7 @@ export function ListaTu({ secciones }: { secciones: SeccionTu[] }) {
               {s.titulo}
             </h2>
           ) : null}
-          <ul className="flex flex-col divide-y divide-filete overflow-hidden rounded-[12px] bg-card">
+          <ul className="sis-aparecer-lista flex flex-col divide-y divide-filete overflow-hidden rounded-[12px] bg-card">
             {s.filas.map((f) => {
               const Icono = ICONO[f.clave];
               return (

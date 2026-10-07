@@ -29,9 +29,11 @@ describe('filtros compactos: las piezas del sistema', () => {
     const boton = html(React.createElement(BotonFiltros, { activos: 2 }));
     expect(boton).toContain('data-slot="sistema-chip"');
     expect(boton).toContain('aria-haspopup="dialog"');
-    expect(boton).toContain('aria-label="Filtros, 2 activos"');
+    // El nombre sale de lo visible («Filtros 2») y el lector oye además «activos».
+    expect(boton).not.toContain('aria-label=');
+    expect(boton).toContain('<span class="sr-only"> activos</span>');
     expect(boton).toContain('h-[32px]');
-    expect(html(React.createElement(BotonFiltros, { activos: 0 }))).toContain('aria-label="Filtros"');
+    expect(html(React.createElement(BotonFiltros, { activos: 0 }))).not.toContain('sr-only');
   });
 
   it('las opciones de la hoja son grupos de radio con el aspecto del chip del sistema', () => {
@@ -81,7 +83,7 @@ describe('barra de filtros de /ranking', () => {
     expect(dentro).toMatch(/aria-pressed="true"[^>]*><span>Internacional/);
     expect(dentro).toMatch(/aria-pressed="false"[^>]*><span>Nacional/);
     expect(dentro).toContain('>Europeo<');
-    expect(dentro).toContain('Filtros, 1 activo');
+    expect(dentro).toContain('<span class="sr-only"> activo</span>');
   });
 
   it('sin internacional, el proveedor se queda en Nacional y no pinta el conmutador', () => {

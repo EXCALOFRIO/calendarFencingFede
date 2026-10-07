@@ -96,6 +96,65 @@
   animation: 160ms var(--sis-curva) both sis-aparecer;
 }
 
+/*
+ * Pestaña que pasa a marcada (`BarraInferior`): el icono crece de 0,9 a 1
+ * sin pasarse. Sólo `scale`, que no mueve nada alrededor.
+ */
+.sis-marcar {
+  animation: 180ms var(--sis-curva) backwards sis-marcar;
+}
+@keyframes sis-marcar {
+  from {
+    scale: 0.9;
+  }
+}
+
+/*
+ * Aparición de listas y tarjetas: sólo opacidad, así que no desplaza nada
+ * (CLS 0). `.sis-aparecer` para un bloque suelto; `.sis-aparecer-lista` en
+ * el contenedor escalona las ocho primeras filas 20 ms cada una (como mucho
+ * 140 ms de retardo). Lo que llega después (una página más del feed)
+ * aparece sin retardo. `backwards` y no `both`: acabada la animación no
+ * queda ninguna opacidad fijada.
+ */
+.sis-aparecer,
+.sis-aparecer-lista > *,
+[data-slot='card'] {
+  animation: 180ms var(--sis-curva) backwards sis-aparecer;
+}
+.sis-aparecer-lista > :nth-child(2) { animation-delay: 20ms; }
+.sis-aparecer-lista > :nth-child(3) { animation-delay: 40ms; }
+.sis-aparecer-lista > :nth-child(4) { animation-delay: 60ms; }
+.sis-aparecer-lista > :nth-child(5) { animation-delay: 80ms; }
+.sis-aparecer-lista > :nth-child(6) { animation-delay: 100ms; }
+.sis-aparecer-lista > :nth-child(7) { animation-delay: 120ms; }
+.sis-aparecer-lista > :nth-child(8) { animation-delay: 140ms; }
+
+/*
+ * Hojas y diálogos de `ui/` (Radix + tw-animate): la hoja lateral traía
+ * 500 ms al abrir y 300 al cerrar. Se igualan a `HojaInferior`: 240 / 180 ms
+ * con la curva de iOS. `--tw-animation-duration` manda sobre `duration-*`
+ * en `animate-in`/`animate-out`, y esto va fuera de capa, así que gana a
+ * las utilidades sin tocar los componentes.
+ */
+[data-slot='sheet-content'][data-state='open'] {
+  --tw-animation-duration: 240ms;
+  --tw-ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+[data-slot='sheet-content'][data-state='closed'] {
+  --tw-animation-duration: 180ms;
+  --tw-ease: var(--sis-curva-salida);
+}
+[data-slot='dialog-content'][data-state='open'] {
+  --tw-animation-duration: 200ms;
+  --tw-ease: var(--sis-curva);
+}
+[data-slot='dialog-content'][data-state='closed'],
+[data-slot='sheet-overlay'][data-state='closed'],
+[data-slot='dialog-overlay'][data-state='closed'] {
+  --tw-animation-duration: 150ms;
+}
+
 @keyframes sis-desvanecer {
   to {
     opacity: 0;
@@ -143,5 +202,12 @@
   ::view-transition-old(*),
   ::view-transition-new(*) {
     animation-delay: 0s !important;
+  }
+  /* La regla global acorta la duración pero no el retardo del escalonado. */
+  .sis-marcar,
+  .sis-aparecer,
+  .sis-aparecer-lista > *,
+  [data-slot='card'] {
+    animation: none !important;
   }
 }

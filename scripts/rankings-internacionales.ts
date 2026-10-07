@@ -19,22 +19,39 @@ import {
 import { archivoBf, elegirListasBf, entradasSitemapBf, listaBf, urlsSitemapBf, type EntradaBf } from '../src/lib/ingest/rankings-internacionales/bf';
 import { CFF_PAGINA, CFF_PAUSA_MS, documentosCff, leerCsv, listasCff } from '../src/lib/ingest/rankings-internacionales/cff';
 import { COMBOS_HKFA, archivoHkfa, listaHkfa, urlHkfa } from '../src/lib/ingest/rankings-internacionales/hkfa';
+import { PAGINAS_AFF, listasAff, urlAff } from '../src/lib/ingest/rankings-internacionales/aff';
+import { OEFV_ARCHIVO, archivoOefv, documentosOefv, listaOefv } from '../src/lib/ingest/rankings-internacionales/oefv';
+import { FRS_PAGINA, archivoFrs, documentosFrs, listaFrs } from '../src/lib/ingest/rankings-internacionales/frs';
+import { TEF_PAGINA, archivoTef, documentosTef, listaTef } from '../src/lib/ingest/rankings-internacionales/tef';
+import { CSS_TEMPORADAS, archivoCss, combosCss, listaCss, temporadasCss, urlCss } from '../src/lib/ingest/rankings-internacionales/css';
+import { KNAS_BASE, documentosKnas, listaKnas, urlKnas } from '../src/lib/ingest/rankings-internacionales/knas';
+import { PAGINAS_FVE, listasFve, urlFve } from '../src/lib/ingest/rankings-internacionales/fve';
+import { BFF_PAGINA, hojasBff, listaBff, pestanasBff, tituloBff } from '../src/lib/ingest/rankings-internacionales/bff';
+import {
+  USA_ACTUAL, USA_ARCHIVO, USA_PAUSA_MS, archivosUsa, carpetasUsa, claveCombosUsa, elegirPdfsUsa, ficherosCarpetaUsa, finalTemporadaUsa, listaUsa, pdfUsa,
+} from '../src/lib/ingest/rankings-internacionales/usa';
+import { SGP_BASE, aniosSgp, archivoSgp, combosSgp, listaSgp, urlSgp, type ComboSgp } from '../src/lib/ingest/rankings-internacionales/sgp';
+import { COMBOS_FPE, FPE_PAGINA, claveFpe, entradaFpe, listaFpe, nonceFpe, pdfFpe, urlBusquedaFpe } from '../src/lib/ingest/rankings-internacionales/fpe';
+import { filasCeldas, trozosPagina, type Celda } from '../src/lib/ingest/rankings-internacionales/pdf-celdas';
 import { archivoMvsz, combosMvsz, listaMvsz, temporadasMvsz, urlFormularioMvsz, urlMvsz } from '../src/lib/ingest/rankings-internacionales/mvsz';
 import { sentenciasLista, type FilaSql } from '../src/lib/ingest/rankings-internacionales/sql';
 import type { ListaInternacional } from '../src/lib/ingest/rankings-internacionales/tipos';
 import { indicePersonas, vincularLista, type MotivoSinVinculo, type PersonaFie } from '../src/lib/ingest/rankings-internacionales/vincular';
-import { leerXlsx } from '../src/lib/ingest/rankings-internacionales/xlsx';
+import { entradasZip, leerXlsx } from '../src/lib/ingest/rankings-internacionales/xlsx';
 import { currentFieSeason } from '../src/lib/ingest/sources/fie';
 import { FUENTES_RANKING } from '../src/lib/sport/rankings-internacionales-fuentes';
 import { componerChunk, proyeccion } from './indexado/sincronizar-d1';
 
 /**
  * Rankings internacionales: histórico FIE, EFC (europeo), FFE (Francia), FIS
- * (Italia), FAHK (Hong Kong), MVSZ (Hungría), BF (Gran Bretaña) y CFF
- * (Canadá), a `sport_ranking_publication`/`sport_ranking_entry`.
+ * (Italia), FAHK (Hong Kong), MVSZ (Hungría), BF (Gran Bretaña), CFF
+ * (Canadá), AFF (Australia), ÖFV (Austria), FRS (Rumanía), TEF (Turquía), ČSŠ
+ * (República Checa), KNAS (Países Bajos), FVE (Venezuela), БФФ (Bulgaria),
+ * USA Fencing (Estados Unidos), FS (Singapur) y FPE (Portugal), a
+ * `sport_ranking_publication`/`sport_ranking_entry`.
  *
- *   node node_modules/tsx/dist/cli.mjs scripts/rankings-internacionales.ts --descargar [--fuentes fie,efc,ffe,fis,hkfa,mvsz,bf,cff]
- *   ... --generar --base <copia .sqlite> --salida <dir> [--fuentes ...] [--todas-las-filas] [--dia YYYY-MM-DD]
+ *   node node_modules/tsx/dist/cli.mjs scripts/rankings-internacionales.ts --descargar [--fuentes fie,efc,ffe,fis,hkfa,mvsz,bf,cff,aff,oefv,frs,tef,css,knas,fve,bff,usa,sgp,fpe] [--usa-desde 2013]
+ *   ... --generar --base <copia .sqlite> --salida <dir> [--fuentes ...] [--todas-las-filas] [--dia YYYY-MM-DD] [--omitir <informe.json>,...]
  *   ... --comprobar --base <copia .sqlite> --salida <dir>
  *
  * --descargar: sólo GET públicos, como mucho 2 a la vez por fuente (cada fuente
@@ -70,13 +87,13 @@ const TEMPORADA_FIE = currentFieSeason(new Date(`${HOY}T12:00:00Z`));
 
 let peticiones = 0;
 
-async function pedir(url: string): Promise<Buffer> {
+async function pedir(url: string, msMax = 90_000): Promise<Buffer> {
   let ultimo: unknown = null;
   for (let intento = 0; intento < 2; intento += 1) {
     try {
       const r = await fetch(url, {
         headers: { 'User-Agent': process.env.INGEST_USER_AGENT || 'CalendarioEsgrima/1.0 (+contacto)', 'Accept-Language': 'en,es;q=0.8' },
-        signal: AbortSignal.timeout(90_000),
+        signal: AbortSignal.timeout(msMax),
       });
       peticiones += 1;
       if (r.status === 404) return Buffer.alloc(0);
@@ -135,6 +152,25 @@ async function textoPdf(bytes: Buffer): Promise<string> {
   const { text } = await extractText(pdf, { mergePages: false });
   return (Array.isArray(text) ? text : [text]).join('\n');
 }
+
+/** Celdas por línea de cada página (para listas cuyas columnas sólo se separan por posición). */
+async function celdasPdf(bytes: Buffer): Promise<Celda[][][]> {
+  const pdf = await getDocumentProxy(new Uint8Array(bytes));
+  const paginas: Celda[][][] = [];
+  for (let n = 1; n <= pdf.numPages; n += 1) {
+    const contenido = await (await pdf.getPage(n)).getTextContent();
+    paginas.push(filasCeldas(trozosPagina(contenido.items.flatMap((it) => ('str' in it ? [it] : [])))));
+  }
+  return paginas;
+}
+
+async function paginasPdf(bytes: Buffer): Promise<string[]> {
+  const pdf = await getDocumentProxy(new Uint8Array(bytes));
+  const { text } = await extractText(pdf, { mergePages: false });
+  return Array.isArray(text) ? text : [text];
+}
+
+const esPdf = (b: Buffer | null): b is Buffer => !!b && b.length > 4 && b.subarray(0, 4).toString('latin1') === '%PDF';
 
 // ------------------------------------------------------------------ FIE ---
 
@@ -354,6 +390,369 @@ function listasCffCache(): ListaInternacional[] {
   return salida;
 }
 
+// ------------------------------------------------------------------ AFF ---
+
+/** Páginas guardadas con su día de lectura: cada una es la lista vigente ese día. */
+function diasEnCache(dir: string, sufijo: string): string[] {
+  const completa = join(CACHE, dir);
+  if (!existsSync(completa)) return [];
+  return readdirSync(completa)
+    .map((n) => new RegExp(`^(\\d{4}-\\d{2}-\\d{2})-${sufijo.replace(/[.]/g, '\\.')}$`).exec(n)?.[1])
+    .filter((d): d is string => !!d)
+    .filter((d, i, a) => a.indexOf(d) === i)
+    .sort();
+}
+
+async function descargarAff() {
+  await enParalelo(PAGINAS_AFF, async (p) => {
+    await enCache(join('aff', `${HOY}-${p.ruta}.html`), urlAff(p));
+  }, 'aff');
+}
+
+function listasAffCache(): ListaInternacional[] {
+  const salida: ListaInternacional[] = [];
+  for (const p of PAGINAS_AFF) {
+    for (const dia of diasEnCache('aff', `${p.ruta}.html`)) {
+      const b = leerCache(join('aff', `${dia}-${p.ruta}.html`));
+      if (b) salida.push(...listasAff(p, b.toString('utf8'), dia));
+    }
+  }
+  return salida;
+}
+
+// ----------------------------------------------------------------- ÖFV ---
+
+async function descargarOefv() {
+  const html = (await enCache(join('oefv', 'archivo.html'), OEFV_ARCHIVO)).toString('utf8');
+  const docs = documentosOefv(html);
+  console.log(`oefv: ${docs.length} listas en el archivo`);
+  await enParalelo(docs, async (d) => {
+    await enCache(join('oefv', archivoOefv(d)), d.url);
+  }, 'oefv');
+}
+
+async function listasOefvCache(): Promise<ListaInternacional[]> {
+  const html = leerCache(join('oefv', 'archivo.html'));
+  if (!html) return [];
+  const salida: ListaInternacional[] = [];
+  let ilegibles = 0;
+  for (const d of documentosOefv(html.toString('utf8'))) {
+    const b = leerCache(join('oefv', archivoOefv(d)));
+    if (!esPdf(b)) continue;
+    const l = listaOefv(d, await celdasPdf(b), HOY);
+    if (l) salida.push(l);
+    else ilegibles += 1;
+  }
+  if (ilegibles) console.log(`oefv: ${ilegibles} PDF sin las columnas esperadas (formato antiguo), no se leen`);
+  return salida;
+}
+
+// ----------------------------------------------------------------- FRS ---
+
+async function descargarFrs() {
+  const html = (await enCache(join('frs', `${HOY}-pagina.html`), FRS_PAGINA)).toString('utf8');
+  await enParalelo(documentosFrs(html), async (d) => {
+    await enCache(join('frs', archivoFrs(d)), d.url);
+  }, 'frs');
+}
+
+async function listasFrsCache(): Promise<ListaInternacional[]> {
+  const salida: ListaInternacional[] = [];
+  const vistos = new Set<string>();
+  for (const dia of diasEnCache('frs', 'pagina.html')) {
+    for (const d of documentosFrs(leerCache(join('frs', `${dia}-pagina.html`))!.toString('utf8'))) {
+      if (vistos.has(archivoFrs(d))) continue;
+      vistos.add(archivoFrs(d));
+      const b = leerCache(join('frs', archivoFrs(d)));
+      const l = esPdf(b) ? listaFrs(d, await celdasPdf(b)) : null;
+      if (l) salida.push(l);
+    }
+  }
+  return salida;
+}
+
+// ----------------------------------------------------------------- TEF ---
+
+const archivoTefDia = (d: Parameters<typeof archivoTef>[0], dia: string) => (d.dia ? archivoTef(d) : archivoTef({ ...d, dia }));
+
+async function descargarTef() {
+  const html = (await enCache(join('tef', `${HOY}-pagina.html`), TEF_PAGINA)).toString('utf8');
+  await enParalelo(documentosTef(html), async (d) => {
+    await enCache(join('tef', archivoTefDia(d, HOY)), d.url);
+  }, 'tef');
+}
+
+async function listasTefCache(): Promise<ListaInternacional[]> {
+  const salida: ListaInternacional[] = [];
+  const vistos = new Set<string>();
+  for (const dia of diasEnCache('tef', 'pagina.html')) {
+    for (const d of documentosTef(leerCache(join('tef', `${dia}-pagina.html`))!.toString('utf8'))) {
+      const archivo = archivoTefDia(d, dia);
+      if (vistos.has(archivo)) continue;
+      vistos.add(archivo);
+      const b = leerCache(join('tef', archivo));
+      const l = esPdf(b) ? listaTef(d, await celdasPdf(b), dia) : null;
+      if (l) salida.push(l);
+    }
+  }
+  return salida;
+}
+
+// ----------------------------------------------------------------- ČSŠ ---
+
+/** Últimas cinco temporadas terminadas y la abierta. */
+const CSS_DESDE = TEMPORADA_FIE - 6;
+
+async function descargarCss() {
+  // Las temporadas se vuelven a pedir cada día: dicen cuál está abierta.
+  const json = JSON.parse((await enCache(join('css', `${HOY}-temporadas.json`), CSS_TEMPORADAS)).toString('utf8'));
+  await enParalelo(combosCss(temporadasCss(json, CSS_DESDE)), async (c) => {
+    await enCache(join('css', archivoCss(c, HOY)), urlCss(c));
+  }, 'css');
+}
+
+function listasCssCache(): Candidata[] {
+  const salida: Candidata[] = [];
+  const vistos = new Set<string>();
+  for (const dia of diasEnCache('css', 'temporadas.json')) {
+    const json = JSON.parse(leerCache(join('css', `${dia}-temporadas.json`))!.toString('utf8'));
+    for (const c of combosCss(temporadasCss(json, CSS_DESDE))) {
+      const archivo = archivoCss(c, dia);
+      if (vistos.has(archivo)) continue;
+      vistos.add(archivo);
+      const b = leerCache(join('css', archivo));
+      const l = b && b.length ? listaCss(c, JSON.parse(b.toString('utf8')), dia) : null;
+      if (l) salida.push({ lista: l, cerrada: !c.temporada.activa });
+    }
+  }
+  return salida;
+}
+
+// ---------------------------------------------------------------- KNAS ---
+
+async function descargarKnas() {
+  const html = (await enCache(join('knas', `${HOY}-portada.html`), `${KNAS_BASE}/`)).toString('utf8');
+  const ids = documentosKnas(html);
+  console.log(`knas: ${ids.length} listas individuales`);
+  await enParalelo(ids, async (id) => {
+    await enCache(join('knas', `${HOY}-${id}.html`), urlKnas(id));
+  }, 'knas');
+}
+
+function listasKnasCache(): ListaInternacional[] {
+  const salida: ListaInternacional[] = [];
+  for (const dia of diasEnCache('knas', 'portada.html')) {
+    for (const id of documentosKnas(leerCache(join('knas', `${dia}-portada.html`))!.toString('utf8'))) {
+      const b = leerCache(join('knas', `${dia}-${id}.html`));
+      const l = b && listaKnas(id, b.toString('utf8'));
+      if (l) salida.push(l);
+    }
+  }
+  return salida;
+}
+
+// ----------------------------------------------------------------- FVE ---
+
+async function descargarFve() {
+  await enParalelo(PAGINAS_FVE, async (p) => {
+    await enCache(join('fve', `${HOY}-${p.ruta}.html`), urlFve(p));
+  }, 'fve');
+}
+
+function listasFveCache(): ListaInternacional[] {
+  const salida: ListaInternacional[] = [];
+  for (const p of PAGINAS_FVE) {
+    for (const dia of diasEnCache('fve', `${p.ruta}.html`)) {
+      const b = leerCache(join('fve', `${dia}-${p.ruta}.html`));
+      if (b) salida.push(...listasFve(p, b.toString('utf8'), dia));
+    }
+  }
+  return salida;
+}
+
+// ----------------------------------------------------------------- БФФ ---
+
+/** docs.google.com pide `Crawl-delay: 1`: una petición cada vez y un segundo entre dos. */
+const BFF_PAUSA_MS = 1_000;
+
+async function descargarBff() {
+  const pagina = (await enCache(join('bff', `${HOY}-pagina.html`), BFF_PAGINA)).toString('utf8');
+  for (const [i, hoja] of hojasBff(pagina).entries()) {
+    const ruta = join('bff', `${HOY}-hoja-${i + 1}.html`);
+    if (!leerCache(ruta)) await espera(BFF_PAUSA_MS);
+    const html = (await enCache(ruta, hoja.url)).toString('utf8');
+    for (const p of pestanasBff(hoja, html)) {
+      const archivo = join('bff', `${HOY}-hoja-${i + 1}-${p.gid}.html`);
+      if (leerCache(archivo)) continue;
+      await espera(BFF_PAUSA_MS);
+      await enCache(archivo, p.url);
+    }
+  }
+}
+
+function listasBffCache(): ListaInternacional[] {
+  const salida: ListaInternacional[] = [];
+  for (const dia of diasEnCache('bff', 'pagina.html')) {
+    for (const [i, hoja] of hojasBff(leerCache(join('bff', `${dia}-pagina.html`))!.toString('utf8')).entries()) {
+      const html = leerCache(join('bff', `${dia}-hoja-${i + 1}.html`))?.toString('utf8');
+      const titulo = html && tituloBff(html);
+      if (!html || !titulo) continue;
+      for (const p of pestanasBff(hoja, html)) {
+        const b = leerCache(join('bff', `${dia}-hoja-${i + 1}-${p.gid}.html`));
+        const l = b && listaBff(p, titulo, b.toString('utf8'), dia);
+        if (l) salida.push(l);
+      }
+    }
+  }
+  return salida;
+}
+
+// ----------------------------------------------------------------- USA ---
+
+const nombreArchivo = (ruta: string) => decodeURIComponent(ruta.split('/').pop() ?? '');
+/** El final de temporada no siempre es el último PDF del zip (ver `finalTemporadaUsa`). */
+const USA_POR_COMBO = 4;
+
+async function descargarUsa() {
+  // Temporadas anteriores: un zip por temporada (cdn de usafencing.org). De
+  // cada zip sólo se guardan los últimos PDF de cada combo; el zip no se conserva.
+  const html = (await enCache(join('usa', 'archivo.html'), USA_ARCHIVO)).toString('utf8');
+  const desde = Number(arg('usa-desde', '2013'));
+  for (const a of archivosUsa(html).filter((x) => Number(x.temporada.slice(0, 4)) >= desde)) {
+    const indice = join('usa', a.temporada, 'indice.json');
+    if (leerCache(indice)) continue;
+    console.log(`usa: zip ${a.temporada}`);
+    const zip = await pedir(a.url, 900_000);
+    await espera(PAUSA_MS);
+    if (!zip.length) continue;
+    const nombres: string[] = [];
+    entradasZip(zip, (n) => (nombres.push(n), false));
+    const elegidos = new Set(elegirPdfsUsa(nombres, USA_POR_COMBO));
+    const pdfs = entradasZip(zip, (n) => elegidos.has(n));
+    mkdirSync(join(CACHE, 'usa', a.temporada), { recursive: true });
+    for (const [n, b] of pdfs) writeFileSync(join(CACHE, 'usa', a.temporada, nombreArchivo(n)), b);
+    writeFileSync(join(CACHE, indice), JSON.stringify({ url: a.url, pdfs: [...pdfs.keys()].map(nombreArchivo).sort() }, null, 2));
+  }
+  // Directorio actual (`Crawl-delay: 10`): una petición cada vez y diez segundos entre dos.
+  const ruta = join('usa', `${HOY}-actual.html`);
+  if (!leerCache(ruta)) await espera(USA_PAUSA_MS);
+  const raiz = (await enCache(ruta, USA_ACTUAL)).toString('utf8');
+  const indiceActual = join(CACHE, 'usa', 'actual', 'indice.json');
+  const rutas: Record<string, string> = existsSync(indiceActual) ? JSON.parse(readFileSync(indiceActual, 'utf8')) : {};
+  for (const carpeta of carpetasUsa(raiz)) {
+    const rutaCarpeta = join('usa', `${HOY}-carpeta-${decodeURIComponent(carpeta).trim().replace(/\W+/g, '_')}.html`);
+    if (!leerCache(rutaCarpeta)) await espera(USA_PAUSA_MS);
+    const html = (await enCache(rutaCarpeta, `${USA_ACTUAL}?dir=${carpeta}`)).toString('utf8');
+    for (const f of elegirPdfsUsa(ficherosCarpetaUsa(html))) {
+      const destino = join('usa', 'actual', nombreArchivo(f));
+      rutas[nombreArchivo(f)] = f;
+      if (leerCache(destino)) continue;
+      await espera(USA_PAUSA_MS);
+      await enCache(destino, `${USA_ACTUAL}${f}`);
+    }
+  }
+  mkdirSync(dirname(indiceActual), { recursive: true });
+  writeFileSync(indiceActual, JSON.stringify(rutas, null, 2));
+}
+
+async function listasUsaCache(): Promise<ListaInternacional[]> {
+  const dir = join(CACHE, 'usa');
+  if (!existsSync(dir)) return [];
+  const salida: ListaInternacional[] = [];
+  let ilegibles = 0;
+  for (const temporada of readdirSync(dir).filter((n) => /^\d{4}-\d{4}$/.test(n)).sort()) {
+    const indice = leerCache(join('usa', temporada, 'indice.json'));
+    if (!indice) continue;
+    const { url, pdfs } = JSON.parse(indice.toString('utf8')) as { url: string; pdfs: string[] };
+    const porCombo = new Map<string, string[]>();
+    for (const n of elegirPdfsUsa(pdfs, USA_POR_COMBO)) {
+      const clave = claveCombosUsa(pdfUsa(n)!);
+      porCombo.set(clave, [...(porCombo.get(clave) ?? []), n]);
+    }
+    for (const nombres of porCombo.values()) {
+      const candidatas: (ListaInternacional | null)[] = [];
+      for (const n of nombres) {
+        const b = leerCache(join('usa', temporada, n));
+        const l = esPdf(b) ? listaUsa(await paginasPdf(b), n, url) : null;
+        candidatas.push(l);
+        if (l?.temporada === temporada) break;
+      }
+      const l = finalTemporadaUsa(candidatas, temporada);
+      if (l) salida.push(l);
+      else ilegibles += 1;
+    }
+  }
+  const indiceActual = leerCache(join('usa', 'actual', 'indice.json'));
+  const rutas: Record<string, string> = indiceActual ? JSON.parse(indiceActual.toString('utf8')) : {};
+  for (const n of elegirPdfsUsa(Object.keys(rutas))) {
+    const b = leerCache(join('usa', 'actual', n));
+    const l = esPdf(b) ? listaUsa(await paginasPdf(b), n, `${USA_ACTUAL}${rutas[n]}`) : null;
+    if (l) salida.push(l);
+    else ilegibles += 1;
+  }
+  if (ilegibles) console.log(`usa: ${ilegibles} combos sin una tabla «rolling» legible de su temporada, no se leen`);
+  return salida;
+}
+
+// ----------------------------------------------------------------- SGP ---
+
+/** El año de inicio cuya temporada sigue abierta se vuelve a leer cada día. */
+const sgpAbierta = (c: ComboSgp) => c.anio + 1 >= TEMPORADA_FIE;
+
+async function descargarSgp() {
+  const form = (await enCache(join('sgp', `${HOY}-formulario.html`), `${SGP_BASE}/showranks`)).toString('utf8');
+  await enParalelo(combosSgp(aniosSgp(form)), async (c) => {
+    await enCache(join('sgp', archivoSgp(c, sgpAbierta(c) ? HOY : null)), urlSgp(c));
+  }, 'sgp');
+}
+
+function listasSgpCache(): Candidata[] {
+  const salida: Candidata[] = [];
+  const vistos = new Set<string>();
+  for (const dia of diasEnCache('sgp', 'formulario.html')) {
+    for (const c of combosSgp(aniosSgp(leerCache(join('sgp', `${dia}-formulario.html`))!.toString('utf8')))) {
+      const archivo = archivoSgp(c, sgpAbierta(c) ? dia : null);
+      if (vistos.has(archivo)) continue;
+      vistos.add(archivo);
+      const b = leerCache(join('sgp', archivo));
+      const l = b && listaSgp(c, b.toString('utf8'), dia);
+      if (l) salida.push({ lista: l, cerrada: !sgpAbierta(c) });
+    }
+  }
+  return salida;
+}
+
+// ----------------------------------------------------------------- FPE ---
+
+async function descargarFpe() {
+  const pagina = (await enCache(join('fpe', `${HOY}-pagina.html`), FPE_PAGINA)).toString('utf8');
+  const nonce = nonceFpe(pagina);
+  if (!nonce) throw new Error('fpe: el formulario de búsqueda no trae `unonce`');
+  await enParalelo(COMBOS_FPE, async (c) => {
+    const busqueda = (await enCache(join('fpe', `${HOY}-busqueda-${claveFpe(c)}.html`), urlBusquedaFpe(c, nonce))).toString('utf8');
+    const e = entradaFpe(c, busqueda);
+    if (!e) return;
+    const pdf = pdfFpe((await enCache(join('fpe', `${HOY}-entrada-${claveFpe(c)}.html`), e.url)).toString('utf8'));
+    if (pdf) await enCache(join('fpe', `${HOY}-${claveFpe(c)}.pdf`), pdf);
+  }, 'fpe');
+}
+
+async function listasFpeCache(): Promise<ListaInternacional[]> {
+  const salida: ListaInternacional[] = [];
+  for (const dia of diasEnCache('fpe', 'pagina.html')) {
+    for (const c of COMBOS_FPE) {
+      const busqueda = leerCache(join('fpe', `${dia}-busqueda-${claveFpe(c)}.html`));
+      const e = busqueda && entradaFpe(c, busqueda.toString('utf8'));
+      const entrada = e && leerCache(join('fpe', `${dia}-entrada-${claveFpe(c)}.html`));
+      const pdf = entrada && pdfFpe(entrada.toString('utf8'));
+      const b = leerCache(join('fpe', `${dia}-${claveFpe(c)}.pdf`));
+      const l = e && pdf && esPdf(b) ? listaFpe(c, e.temporada, await textoPdf(b), pdf, dia) : null;
+      if (l) salida.push(l);
+    }
+  }
+  return salida;
+}
+
 // -------------------------------------------------------------- Generar ---
 
 type Candidata = { lista: ListaInternacional; cerrada: boolean };
@@ -372,6 +771,20 @@ async function candidatas(fuentes: Set<string>): Promise<Candidata[]> {
   if (fuentes.has('mvsz')) for (const lista of listasMvszCache()) salida.push({ lista, cerrada: Number(lista.temporada.slice(5)) < TEMPORADA_FIE });
   if (fuentes.has('bf')) salida.push(...(await listasBfCache()));
   if (fuentes.has('cff')) for (const lista of listasCffCache()) salida.push({ lista, cerrada: Number(lista.temporada.slice(5)) < TEMPORADA_FIE });
+  if (fuentes.has('aff')) for (const lista of listasAffCache()) salida.push({ lista, cerrada: false });
+  // El archivo del ÖFV sólo tiene temporadas terminadas: la lista final de cada una.
+  if (fuentes.has('oefv')) for (const lista of await listasOefvCache()) salida.push({ lista, cerrada: Number(lista.temporada.slice(5)) < TEMPORADA_FIE });
+  if (fuentes.has('frs')) for (const lista of await listasFrsCache()) salida.push({ lista, cerrada: false });
+  if (fuentes.has('tef')) for (const lista of await listasTefCache()) salida.push({ lista, cerrada: false });
+  if (fuentes.has('css')) salida.push(...listasCssCache());
+  if (fuentes.has('knas')) for (const lista of listasKnasCache()) salida.push({ lista, cerrada: false });
+  // Sin día publicado: una temporada terminada se carga una vez, con el día de la primera lectura.
+  if (fuentes.has('fve')) for (const lista of listasFveCache()) salida.push({ lista, cerrada: Number(lista.temporada.slice(5)) < TEMPORADA_FIE });
+  if (fuentes.has('bff')) for (const lista of listasBffCache()) salida.push({ lista, cerrada: Number(lista.temporada.slice(5)) < TEMPORADA_FIE });
+  // Los PDF de USA Fencing son las listas finales de temporadas terminadas.
+  if (fuentes.has('usa')) for (const lista of await listasUsaCache()) salida.push({ lista, cerrada: Number(lista.temporada.slice(5)) < TEMPORADA_FIE });
+  if (fuentes.has('sgp')) salida.push(...listasSgpCache());
+  if (fuentes.has('fpe')) for (const lista of await listasFpeCache()) salida.push({ lista, cerrada: false });
   return salida;
 }
 
@@ -424,7 +837,7 @@ async function generar() {
   if (!arg('salida')) throw new Error('falta --salida <dir>');
   const salida = resolve(arg('salida'));
   const base = abrirBase(arg('base'));
-  const fuentes = new Set((arg('fuentes') || 'fie,efc,ffe,fis,hkfa,mvsz,bf,cff').split(','));
+  const fuentes = new Set((arg('fuentes') || 'fie,efc,ffe,fis,hkfa,mvsz,bf,cff,aff,oefv,frs,tef,css,knas,fve,bff,usa,sgp,fpe').split(','));
   const todas = bandera('todas-las-filas');
   const indice = indicePersonas(personasFie(base));
   console.log(`Personas con id FIE: ${indice.porFieId.size}; claves de nombre: ${indice.porNombre.size}`);
@@ -435,6 +848,12 @@ async function generar() {
   const claveLista = (s: string, t: string, a: string, g: string, r: string) => `${s}|${t}|${a}|${g}|${r}`;
   const listasExistentes = new Set(existentes.map((e) => claveLista(e.source, e.season, e.weapon, e.gender, e.raw)));
   const diasExistentes = new Set(existentes.map((e) => `${claveLista(e.source, e.season, e.weapon, e.gender, e.raw)}|${e.dia}`));
+  // `--omitir a/informe.json,b/informe.json`: fuentes y temporadas que ya
+  // generó otra tanda (pendiente de aplicar, así que la copia no las tiene).
+  const omitidas = new Set(arg('omitir').split(',').filter(Boolean).flatMap((ruta) => {
+    const inf = JSON.parse(readFileSync(resolve(ruta), 'utf8')) as { fuentes: Record<string, { temporadas: string[] }> };
+    return Object.entries(inf.fuentes).flatMap(([f, d]) => d.temporadas.map((t) => `${f}|${t}`));
+  }));
 
   if (existsSync(salida)) for (const f of readdirSync(salida)) if (/^\d{2}-.*\.sql$/.test(f)) rmSync(join(salida, f));
   mkdirSync(salida, { recursive: true });
@@ -449,6 +868,10 @@ async function generar() {
       porFieId: 0, porNombre: 0, personas: new Set<string>(), motivos: {}, filasCargadas: 0,
     };
     resumen.set(l.fuente, r);
+    if (omitidas.has(`${l.fuente}|${l.temporada}`)) {
+      r.listasYaCargadas += 1;
+      continue;
+    }
     const clave = claveLista(l.fuente, l.temporada, l.arma, l.genero, l.categoriaRaw);
     // Las temporadas ya leídas por la ingesta diaria de la FIE no se duplican en el histórico.
     const yaFie = l.fuente === 'fie_historico' && listasExistentes.has(claveLista('fie_tiradores', l.temporada, l.arma, l.genero, l.categoriaRaw));
@@ -499,7 +922,7 @@ async function generar() {
     cuerpos.set(grupo, partes);
   }
 
-  const orden = ['fie_historico', 'efc_ranking', 'ffe_classement', 'fis_ranking', 'hkfa_ranking', 'mvsz_ranglista', 'bf_ranking', 'cff_ranking'];
+  const orden = ['fie_historico', 'efc_ranking', 'ffe_classement', 'fis_ranking', 'hkfa_ranking', 'mvsz_ranglista', 'bf_ranking', 'cff_ranking', 'aff_ranking', 'oefv_rangliste', 'frs_ranking', 'tef_klasman', 'css_zebricek', 'knas_ranglijst', 'fve_clasificacion', 'bff_ranglista', 'usa_points', 'sgp_ranking', 'fpe_ranking'];
   const medido = statSync(resolve(arg('base'))).size;
   const ficheros: { archivo: string; fuente: string; temporada: string; listas: number; entradas: number; cargoBytes: number; bytes: number; sha256: string }[] = [];
   let n = 0;
@@ -628,6 +1051,17 @@ const DESCARGAS: Record<string, () => Promise<void>> = {
   mvsz: descargarMvsz,
   bf: descargarBf,
   cff: descargarCff,
+  aff: descargarAff,
+  oefv: descargarOefv,
+  frs: descargarFrs,
+  tef: descargarTef,
+  css: descargarCss,
+  knas: descargarKnas,
+  fve: descargarFve,
+  bff: descargarBff,
+  usa: descargarUsa,
+  sgp: descargarSgp,
+  fpe: descargarFpe,
 };
 
 async function descargar() {

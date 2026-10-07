@@ -119,6 +119,17 @@ export function sentenciasConsumo(ahora: number, sumas: Partial<Record<ClaveCons
   }));
 }
 
+/**
+ * Corrige un contador ya apuntado (la reserva de neuronas, por lo real). Un UPDATE y no un
+ * upsert: un delta negativo no pasaría el CHECK `valor >= 0` como fila nueva. Nunca baja de 0.
+ */
+export function sentenciaAjusteConsumo(ahora: number, clave: ClaveConsumo, delta: number) {
+  return {
+    sql: `update resultado_auto_consumo set valor = max(0, valor + ?) where dia = ? and clave = ?`,
+    params: [Math.trunc(delta), diaUtc(ahora), clave],
+  };
+}
+
 /** Margen del libro de capacidad: lo que queda hasta el presupuesto de 8 GiB. */
 export async function margenLedger(base: BaseResultados, presupuesto: number): Promise<{ contabilizado: number; margen: number; bloqueado: boolean }> {
   const [f] = await base.leer<{ a: number; b: number }>(

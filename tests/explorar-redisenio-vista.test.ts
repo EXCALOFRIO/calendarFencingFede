@@ -1,7 +1,14 @@
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CRITERIOS_CARA_A_CARA_VACIOS } from '@/lib/sport/explorar/cara-a-cara-url';
+import { CRITERIOS_CATALOGO_VACIOS } from '@/lib/sport/explorar/catalogo-url';
+
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/explorar/ediciones',
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 import type { DatosCaraACara } from '@/lib/sport/explorar/cara-a-cara-pantalla';
 import type { AsaltosDePrueba } from '@/lib/sport/explorar/tipos-busqueda';
 import { CRITERIOS_VACIOS } from '@/lib/sport/explorar/url';
@@ -114,7 +121,8 @@ describe('clasificación, poules y cuadro de una edición', () => {
     expect(marcado).toContain('Lucia Garcia Perez');
     // En Explorar no se enseñan clubes.
     expect(marcado).not.toContain('Club Sintético');
-    expect(marcado).toContain('aria-label="Abrir la ficha deportiva de Lucia Garcia Perez"');
+    // El enlace se nombra por lo que enseña (WCAG 2.5.3).
+    expect(marcado).not.toContain('aria-label="Abrir la ficha deportiva de');
   });
 
   const asaltos: AsaltosDePrueba = {
@@ -151,13 +159,15 @@ describe('clasificación, poules y cuadro de una edición', () => {
   }));
 
   const pestanaActiva = (marcado: string, etiqueta: string) =>
-    new RegExp(`role="tab"[^>]*aria-selected="true"[^>]*>(?:(?!</button>).)*${etiqueta}`).test(marcado);
+    new RegExp(`<button[^>]*aria-current="true"[^>]*>(?:(?!</button>).)*${etiqueta}`).test(marcado);
   const pestanaApagada = (marcado: string, etiqueta: string) =>
-    new RegExp(`role="tab"[^>]*disabled=""[^>]*>(?:(?!</button>).)*${etiqueta}`).test(marcado);
+    new RegExp(`<button[^>]*disabled=""[^>]*>(?:(?!</button>).)*${etiqueta}`).test(marcado);
 
   it('con asaltos importados ofrece clasificación, poules y directas, y abre en la clasificación', () => {
     const marcado = completa({ asaltos });
-    expect(marcado).toContain('role="tablist"');
+    // Botones con aria-current, no pestañas ARIA a medias.
+    expect(marcado).toContain('role="group" aria-label="Vista"');
+    expect(marcado).not.toContain('role="tab"');
     expect(pestanaActiva(marcado, 'Clasificación')).toBe(true);
     expect(pestanaApagada(marcado, 'Poules')).toBe(false);
     expect(pestanaApagada(marcado, 'Directas')).toBe(false);
@@ -187,7 +197,10 @@ describe('clasificación, poules y cuadro de una edición', () => {
     const cuadro = html(React.createElement(CuadroDePrueba, { cuadro: asaltos.cuadro, enlace }));
     expect(cuadro).toContain('Final');
     expect(cuadro).toContain('ganó con');
-    expect(cuadro.match(/<a /g)).toHaveLength(2);
+    // Las dos fichas y, con las dos vinculadas, los tantos abren su cara a cara.
+    expect(cuadro.match(/<a (?![^>]*data-enlace)/g)).toHaveLength(2);
+    expect(cuadro).toContain(`href="/explorar/${UUID_A}/cara-a-cara?rival=${UUID_B}"`);
+    expect(cuadro.match(/data-enlace="cara-a-cara"/g)).toHaveLength(1);
     expect(html(React.createElement(PoulesDePrueba, { poules: [] }))).toContain('Sin poules.');
   });
 });
@@ -203,20 +216,22 @@ describe('catálogo de ediciones', () => {
     expect(fie).not.toMatch(/312|clasificados|>FIE</);
   });
 
-  it('el selector de fuente es el de la interfaz y sigue enviando «fuente» por GET', () => {
+  it('los filtros son chips del sistema (sin <select>) y siguen viajando por GET', () => {
     const marcado = html(React.createElement(CatalogoEdiciones, {
-      criterios: { q: '', fuente: 'rfee_pdf', temporada: '' },
+      criterios: { ...CRITERIOS_CATALOGO_VACIOS, fuente: 'rfee_pdf' },
       vista: { estado: 'ok', total: 0, pruebas: 0, siguiente: null, ediciones: [] },
     }));
-    expect(marcado).toContain('id="catalogo-fuente"');
     expect(marcado).toContain('type="hidden" name="fuente" value="rfee_pdf"');
+    expect(marcado).toMatch(/data-slot="sistema-chip"[^>]*data-tipo="menu"[^>]*data-marcado="true"[^>]*>(?:<[^>]+>)*Nacional \(PDF\)/);
+    expect(marcado).not.toContain('<select');
     expect(marcado).not.toContain('<option');
     expect(marcado).not.toContain('uppercase');
     const todas = html(React.createElement(CatalogoEdiciones, {
-      criterios: { q: '', fuente: '', temporada: '' },
+      criterios: CRITERIOS_CATALOGO_VACIOS,
       vista: { estado: 'ok', total: 0, pruebas: 0, siguiente: null, ediciones: [] },
     }));
-    expect(todas).toContain('type="hidden" name="fuente" value=""');
+    expect(todas).not.toContain('name="fuente"');
+    for (const chip of ['Organizador', 'Arma', 'Categoría', 'Fechas']) expect(todas).toContain(`>${chip}</span>`);
   });
 });
 

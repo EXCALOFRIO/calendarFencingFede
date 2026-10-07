@@ -21,7 +21,6 @@ vi.mock('@/app/(app)/explorar/resultados-evento', () => ({ resultadosDelEvento: 
 
 const { ClasificacionDePrueba, EdicionCompleta, PruebasDeEdicion } = await import('@/components/explorar/ediciones');
 const { VolverAExplorar } = await import('@/components/explorar/ficha-deportiva');
-const { CuerpoResultados } = await import('@/components/calendario/banda-resultados');
 
 /**
  * El calendario guarda su estado en el cliente: sin una referencia en la URL,
@@ -257,30 +256,5 @@ describe('el calendario recuerda y recupera su contexto', () => {
     const url = construirUrlCalendario(CONTEXTO);
     expect(new URL(url, 'http://x').searchParams.has('evento')).toBe(false);
     expect(Object.keys(leerContextoCalendario({ evento: UUID_A, mes: '2026-11' }))).toEqual(['mes']);
-  });
-});
-
-describe('banda de resultados del calendario', () => {
-  const origen = construirUrlCalendario(CONTEXTO);
-  const vista = { tipo: 'ok' as const, ediciones: [{ ...resumen, pruebasDetalle: [prueba] }] };
-
-  it('los enlaces a la edición y a su clasificación llevan el origen del calendario', () => {
-    const marcado = html(React.createElement(CuerpoResultados, { vista, retorno: origen }));
-    expect(marcado).toContain(`href="${escapado(construirUrlEdicion(UUID_A, { origen }))}"`);
-    expect(marcado).toContain(`href="${escapado(construirUrlEdicion(UUID_A, { prueba: UUID_B, origen }))}"`);
-  });
-
-  it('sin referencia los enlaces son los de siempre', () => {
-    const marcado = html(React.createElement(CuerpoResultados, { vista }));
-    expect(marcado).toContain(`href="/explorar/ediciones/${UUID_A}"`);
-    expect(marcado).toContain(`href="/explorar/ediciones/${UUID_A}?prueba=${UUID_B}"`);
-  });
-
-  it('un origen que no es del calendario no viaja en los enlaces', () => {
-    const marcado = html(
-      React.createElement(CuerpoResultados, { vista, retorno: 'https://evil.example/?mes=2026-11' }),
-    );
-    expect(marcado).not.toContain('evil.example');
-    expect(marcado).not.toContain('origen=');
   });
 });

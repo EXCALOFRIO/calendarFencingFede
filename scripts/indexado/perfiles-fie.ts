@@ -49,6 +49,14 @@ export type AtletaFie = {
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
+/** The FIE publishes 1920-01-01 when it does not know the birth date (147 athletes on 7/10/2026). */
+export const FECHA_COMODIN_FIE = '1920-01-01';
+
+/** A FIE birth date, or null when it is missing, malformed or the placeholder. */
+export function fechaFieReal(fecha: unknown): string | null {
+  return typeof fecha === 'string' && ISO.test(fecha) && fecha !== FECHA_COMODIN_FIE ? fecha : null;
+}
+
 function texto(v: unknown): string | null {
   if (typeof v !== 'string') return null;
   const limpio = v.replace(/<br\s*\/?>/gi, ' ').replace(/\s+/g, ' ').trim();
@@ -172,7 +180,7 @@ export function leerAtletaFie(raw: unknown, fieId: number): AtletaFie | null {
   if (clubDirecto) for (const c of clubesDeGraceNote(clubDirecto)) anadir(c);
   for (const c of clubesDeGraceNote(graceNote(o, /^club\s*\/\s*team$/i))) anadir(c);
 
-  const fecha = typeof o.date === 'string' && ISO.test(o.date) ? o.date : null;
+  const fecha = fechaFieReal(o.date);
   const foto = texto(o.image);
   return {
     fieId,

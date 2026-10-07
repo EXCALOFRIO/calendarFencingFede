@@ -62,7 +62,7 @@ export function BalanceAcumulado({
     previo = anio || previo;
   });
   return (
-    <Lectura inicial={inicial} className={className}>
+    <Lectura inicial={inicial} datos={asaltos.map(lecturaAsalto)} className={className}>
       <div role="img" aria-label={titulo} className="flex min-w-0 flex-col gap-1">
         <div className={cn('relative', ALTO[alto])}>
           <Guias marcas={[{ y: cero, fuerte: true }]} />

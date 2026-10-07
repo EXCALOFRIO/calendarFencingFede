@@ -14,7 +14,7 @@ export type GrupoDePruebas = { clave: string; titulo: string; opciones: OpcionDe
 export type PruebaActual = { titulo: string; categoria: string; variante?: string };
 
 const PASTILLA =
-  'inline-flex h-[32px] min-w-0 items-center gap-1.5 rounded-full px-2.5 text-[13px] transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none';
+  'inline-flex h-[32px] min-w-0 items-center gap-1.5 rounded-full px-2.5 text-[13px] transition-colors focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none';
 const MARCADA = 'border-transparent bg-foreground font-semibold text-background';
 const LIBRE = 'text-muted-foreground hover:bg-accent hover:text-foreground';
 

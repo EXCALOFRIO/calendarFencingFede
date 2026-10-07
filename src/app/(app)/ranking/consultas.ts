@@ -16,7 +16,7 @@ import {
 } from '@/lib/queries/ranking';
 import { personasDeAtletas, type GruposOficialesVigentes, type TablaOficialVigente } from '@/lib/queries/ranking-temporadas';
 import { armasInternas } from '@/lib/ranking/acceso-interno';
-import type { Gender, RankingCategory, Weapon } from '@/lib/ranking/compute';
+import { RANKING_CATEGORIES, type Gender, type RankingCategory, type Weapon } from '@/lib/ranking/compute';
 import { getAnotacionesOlimpicas } from '@/lib/queries/olimpica';
 import { personasPorFieId } from '@/lib/queries/personas-ranking';
 import type { TablaFieCompleta } from '@/lib/ranking/tabla-fie-completa';
@@ -81,6 +81,21 @@ export async function tablaFieParaCuenta(
   return conMios(await tablaFieCompartida(g.format, g.weapon, g.gender, g.category, hoyRanking()), mios);
 }
 
+const FORMATOS_FIE: readonly string[] = ['INDIVIDUAL', 'EQUIPOS'];
+const ARMAS_FIE: readonly string[] = ['FLORETE', 'ESPADA', 'SABLE'];
+const GENEROS_FIE: readonly string[] = ['M', 'F', 'MIXTO'];
+
+export function grupoFieValido(params: unknown): params is {
+  format: FormatoClasificacion; weapon: Weapon; gender: Gender; category: RankingCategory;
+} {
+  if (!params || typeof params !== 'object') return false;
+  const p = params as Record<string, unknown>;
+  return typeof p.format === 'string' && FORMATOS_FIE.includes(p.format)
+    && typeof p.weapon === 'string' && ARMAS_FIE.includes(p.weapon)
+    && typeof p.gender === 'string' && GENEROS_FIE.includes(p.gender)
+    && typeof p.category === 'string' && (RANKING_CATEGORIES as readonly string[]).includes(p.category);
+}
+
 /**
  * La clasificación internacional de UN grupo, pedida desde el navegador al
  * tocar el selector: así no se trae las 11.561 filas de la clasificación
@@ -95,6 +110,8 @@ export async function cargarClasificacionFie(params: {
   'use server';
 
   const perfil = await requireProfile();
+  // Los parámetros llegan del navegador y son la clave de la caché compartida: fuera de la lista, ni se busca.
+  if (!grupoFieValido(params)) return null;
   const [mios, tabla] = await Promise.all([
     getManagedAthletes(perfil.profileId),
     tablaFieCompartida(params.format, params.weapon, params.gender, params.category, hoyRanking()),

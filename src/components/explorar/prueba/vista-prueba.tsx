@@ -134,7 +134,8 @@ export function VistaPrueba({
       <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
         {conPestanas ? (
           <div
-            role="tablist"
+            // Botones con `aria-current` y no pestañas ARIA: sin flechas ni `tabpanel`, `role="tab"` prometía un teclado que no hay.
+            role="group"
             aria-label="Vista"
             className={cn('grid shrink-0 gap-0.5 rounded-full border bg-card p-0.5 sm:w-auto', COLUMNAS[ofrecidas.length])}
           >
@@ -144,14 +145,11 @@ export function VistaPrueba({
                 <button
                   key={valor}
                   type="button"
-                  role="tab"
-                  id={`${id}-${valor}`}
-                  aria-selected={activa}
+                  aria-current={activa ? 'true' : undefined}
                   aria-controls={panelId}
-                  aria-label={corta ? etiqueta : undefined}
                   onClick={() => cambiarVista(valor)}
                   className={cn(
-                    'inline-flex h-[32px] min-w-0 items-center justify-center gap-1.5 rounded-full px-3 text-[13px] transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none',
+                    'inline-flex h-[32px] min-w-0 items-center justify-center gap-1.5 rounded-full px-3 text-[13px] transition-colors focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none',
                     AREA_TACTIL,
                     activa
                       ? 'bg-foreground font-semibold text-background'
@@ -161,8 +159,8 @@ export function VistaPrueba({
                   <Icono aria-hidden className={cn('hidden size-4 shrink-0 sm:block', valor === 'directas' && 'rotate-90')} />
                   {corta ? (
                     <>
-                      <span className="sm:hidden">{corta}</span>
-                      <span className="hidden truncate sm:inline">{etiqueta}</span>
+                      <span aria-hidden className="sm:hidden">{corta}</span>
+                      <span className="truncate max-sm:sr-only">{etiqueta}</span>
                     </>
                   ) : (
                     <span className="truncate">{etiqueta}</span>
@@ -190,7 +188,7 @@ export function VistaPrueba({
             aria-label="Buscar un tirador en esta vista"
             enterKeyHint="search"
             autoComplete="off"
-            className="h-[40px] w-full min-w-0 rounded-full border border-input bg-card pr-24 pl-9 text-[16px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [&::-webkit-search-cancel-button]:hidden"
+            className="h-[40px] w-full min-w-0 rounded-full border border-borde-campo bg-card pr-24 pl-9 text-[16px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring [&::-webkit-search-cancel-button]:hidden"
           />
           {consulta ? (
             <div className="absolute inset-y-0 right-0 flex items-center">
@@ -201,7 +199,7 @@ export function VistaPrueba({
                 <button
                   type="submit"
                   aria-label="Siguiente coincidencia"
-                  className="inline-flex size-[40px] items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                  className="inline-flex size-[40px] items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
                 >
                   <ChevronDown className="size-4" aria-hidden />
                 </button>
@@ -210,7 +208,7 @@ export function VistaPrueba({
                 type="button"
                 onClick={() => buscar('')}
                 aria-label="Borrar la búsqueda"
-                className="inline-flex size-[40px] items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                className="inline-flex size-[40px] items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
               >
                 <X className="size-4" aria-hidden />
               </button>
@@ -222,7 +220,9 @@ export function VistaPrueba({
         </form>
       </div>
 
-      <div ref={panel} id={panelId} role={conPestanas ? 'tabpanel' : undefined} aria-labelledby={conPestanas ? `${id}-${vista}` : undefined} className="flex min-w-0 flex-col gap-3">
+      <div ref={panel} id={panelId} className="flex min-w-0 flex-col gap-3">
+        {/* Entre el h1 de la edición y los h3 de cada poule; a la vista lo dicen los botones de arriba. */}
+        <h2 className="sr-only">{VISTAS.find((v) => v.valor === vista)?.etiqueta}</h2>
         {vista === 'clasificacion' ? (
           <>
             <ListaClasificacion filas={clasificacion} enlace={enlace} filtro={filtro} />

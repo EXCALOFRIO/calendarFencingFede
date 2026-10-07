@@ -161,8 +161,9 @@ describe('Explorar: jerarquía y explicación progresiva', () => {
       },
     } as DatosCaraACara;
     const salida = html(React.createElement(CabeceraCaraACara, { datos, criterios: CRITERIOS_CARA_A_CARA_VACIOS }));
-    // «Cara a cara» es el título de la cabecera compacta; aquí sólo van los nombres.
-    expect(salida).not.toContain('<h1');
+    // «Cara a cara» es el rótulo de la cabecera compacta; el h1 (sólo para el lector) son los nombres.
+    expect(salida).not.toMatch(/<h1(?! class="sr-only")/);
+    expect(salida).toContain('<h1 class="sr-only"');
     expect(salida).toContain(ficha.nombre);
     expect(salida).toContain('Invertir perspectiva');
     expect(salida).toContain('aria-label="Verlo desde Marta Ruiz"');
@@ -214,7 +215,8 @@ describe('Explorar: jerarquía y explicación progresiva', () => {
     expect(salida).toContain('>Abandono<');
     expect(salida).not.toContain('Sala de Armas');
     expect(salida).toContain('Sin puesto numérico');
-    expect(salida).not.toContain('<a ');
+    // Sin ficha no hay enlace a la persona; la bandera sí lleva a su país.
+    expect(salida).not.toMatch(/<a (?![^>]*data-enlace="pais")/);
     expect(salida).not.toContain('>0<');
   });
 });

@@ -23,15 +23,17 @@ export function FiltroOlimpico({
       size="sm"
       pressed={activo}
       onPressedChange={onCambio}
-      aria-label="Solo JJOO LA 2028"
       data-filtro-olimpico=""
       className={cn('rounded-full px-3', className)}
     >
       <IconoAros className="w-[1.375rem]" />
       <span>Solo JJOO</span>
       {cuantos !== undefined ? (
-        <span className="text-xs text-muted-foreground tabular-nums">{cuantos}</span>
+        // Hereda el color del rótulo: un gris propio no llega a 4,5:1 sobre el chip marcado.
+        <span className="cifra -my-px text-[14px] tabular-nums">{cuantos}</span>
       ) : null}
+      {/* Detrás de lo visible: el nombre accesible empieza por «Solo JJOO» (WCAG 2.5.3). */}
+      <span className="sr-only"> (LA 2028)</span>
     </Toggle>
   );
 }

@@ -90,7 +90,7 @@ function Fila({
 
       <code
         id={`url-${feed.tipo}`}
-        className="min-w-0 break-all rounded-md border bg-muted/40 px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-muted-foreground"
+        className="min-w-0 break-all rounded-md border bg-muted/40 px-2.5 py-1.5 font-mono text-[12px] leading-relaxed text-muted-foreground"
       >
         {feed.url}
       </code>
@@ -136,9 +136,7 @@ export function Calendarios({
   return (
     <div className="flex flex-col gap-4">
       <p className="medida text-sm text-muted-foreground">
-        En el iPhone, toca «Suscribir»: se abre el diálogo del calendario y solo
-        tienes que aceptar. En Google Calendar, desde el ordenador, copia la
-        dirección y pégala en «Otros calendarios», el «+», «Desde URL».
+        iPhone: «Suscribir». Google Calendar: copia la dirección en «Desde URL».
       </p>
 
       {principal ? (

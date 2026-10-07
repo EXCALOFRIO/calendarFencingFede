@@ -15,7 +15,7 @@ import type { Nivel } from './piezas';
  * prueba). Sólo se pintan si hay alguno.
  */
 
-const ENLACE = 'focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset';
+const ENLACE = 'focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset';
 const DIA = new Intl.DateTimeFormat('es-ES', { day: '2-digit', timeZone: 'UTC' });
 const MES = new Intl.DateTimeFormat('es-ES', { month: 'short', timeZone: 'UTC' });
 const ANIO = new Intl.DateTimeFormat('es-ES', { year: '2-digit', timeZone: 'UTC' });
@@ -33,12 +33,12 @@ const conSigno = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
 
 const RONDAS: Record<string, string> = { T2: 'Final', 'T2-3': '3.er puesto', T4: 'Semifinal', T8: 'Cuartos' };
 
-/** «Final», «Semifinal», «Cuartos», «Tabla de 16»; sin clave (cuadro de puestos), «Puestos». */
+/** «Final», «Semifinal», «Cuartos», «Tablón de 16»; sin clave (cuadro de puestos), «Puestos». */
 export function rotuloRondaRelevo(r: Pick<RelevoCaraACara, 'fase' | 'ronda'>): string {
   if (r.fase === 'POULE') return 'Poule';
   if (!r.ronda) return 'Puestos';
   const tabla = /^T(\d+)$/.exec(r.ronda);
-  return RONDAS[r.ronda] ?? (tabla ? `Tabla de ${tabla[1]}` : 'Directa');
+  return RONDAS[r.ronda] ?? (tabla ? `Tablón de ${tabla[1]}` : 'Directa');
 }
 
 function urlPrueba(p: { edicionId: string; pruebaId: string }, personaId: string): string {

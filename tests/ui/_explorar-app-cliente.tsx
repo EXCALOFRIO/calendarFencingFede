@@ -18,6 +18,6 @@ for (const [id, Nav] of [['nav-escritorio', NavEscritorio], ['nav-movil', NavMov
 
 // El formulario de Buscar usa el router de Next, que fuera de Next no se puede pintar en el servidor.
 const raiz = document.getElementById('isla');
-// Competiciones se pinta estática: no hay nada que hidratar.
-if (raiz && datos.vista === 'buscar') createRoot(raiz).render(contenidoExplorar(datos));
+// Competiciones y Países también llevan buscadores con el router: se montan en el navegador.
+if (raiz && (datos.vista === 'buscar' || datos.vista === 'ediciones' || datos.vista === 'paises')) createRoot(raiz).render(contenidoExplorar(datos));
 else if (raiz && (datos.vista === 'inicio' || datos.vista === 'siguiendo')) hydrateRoot(raiz, contenidoExplorar(datos));

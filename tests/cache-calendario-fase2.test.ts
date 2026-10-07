@@ -194,6 +194,6 @@ describe('quién va: la lista es común, «es mío» es de cada cuenta', () => {
 
   it('aListaPublica proyecta sólo lo que necesita la ficha', () => {
     const l = aListaPublica({ filas: [fila({ nombre: 'X', athleteIds: ['a'] })], estados: { p1: 'con_datos' } });
-    expect(Object.keys(l.filas[0]).sort()).toEqual(['athleteIds', 'club', 'competitionId', 'equipo', 'nombre', 'retiradoEn']);
+    expect(Object.keys(l.filas[0]).sort()).toEqual(['athleteIds', 'club', 'competitionId', 'equipo', 'nombre', 'personaId', 'retiradoEn']);
   });
 });

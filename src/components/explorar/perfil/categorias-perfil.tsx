@@ -31,25 +31,25 @@ export function CategoriasPerfil({ categorias, nivel }: { categorias: readonly R
       <ul className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4" aria-label="Resultados por categoría">
         {lista.map((c) => (
           <li key={c.clave} data-categoria={c.clave} className="flex min-w-0 flex-col gap-3 rounded-xl border bg-card p-3 sm:p-4">
-            <div className="flex min-w-0 items-baseline justify-between gap-2">
-              <span className="truncate text-sm font-semibold">{categoriaVisible(c.clave)}</span>
+            <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+              <span className="min-w-0 break-words text-sm font-semibold">{categoriaVisible(c.clave)}</span>
               <span className="shrink-0 text-xs text-muted-foreground">
                 <span className="cifra text-lg text-foreground">{c.competiciones}</span> {c.competiciones === 1 ? 'prueba' : 'pruebas'}
               </span>
             </div>
             <dl className="grid grid-cols-2 gap-2">
               <div className="flex min-w-0 flex-col gap-0.5">
-                <dt className="text-[0.6875rem] leading-none text-muted-foreground">Mejor</dt>
+                <dt className="text-[12px] leading-none text-muted-foreground">Mejor</dt>
                 <dd className="cifra text-3xl leading-none">{c.mejorPuesto !== null ? `${c.mejorPuesto}º` : '—'}</dd>
               </div>
               {c.finales != null ? (
                 <div className="flex min-w-0 flex-col gap-0.5">
-                  <dt className="text-[0.6875rem] leading-none text-muted-foreground">Top 8</dt>
+                  <dt className="text-[12px] leading-none text-muted-foreground">Top 8</dt>
                   <dd className="cifra text-3xl leading-none">{c.finales}</dd>
                 </div>
               ) : c.podios != null ? (
                 <div className="flex min-w-0 flex-col gap-0.5">
-                  <dt className="text-[0.6875rem] leading-none text-muted-foreground">Podios</dt>
+                  <dt className="text-[12px] leading-none text-muted-foreground">Podios</dt>
                   <dd className="cifra text-3xl leading-none">{c.podios}</dd>
                 </div>
               ) : null}

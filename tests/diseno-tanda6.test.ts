@@ -55,7 +55,7 @@ describe('objetivos de 44 px', () => {
     const vista = readFileSync(new URL('../src/components/calendario/vista.tsx', import.meta.url), 'utf8');
     // Flechas y lupa como `BotonIcono` md (32 px); «Hoy» como `Boton` sm; los filtros, una fila de chips.
     expect(vista).toMatch(/<BotonIcono\s+etiqueta=\{vista === 'mes' \? 'Mes anterior' : 'Trimestre anterior'\}\s+tamano="md"/);
-    expect(vista).toMatch(/<Boton\s+tamano="sm"\s+aria-label="Ir al mes actual"/);
+    expect(vista).toMatch(/<Boton\s+tamano="sm"\s+aria-label="Hoy: ir al mes actual"/);
     expect(vista).toContain('<FilaChips etiqueta="Filtros del calendario">');
     expect(vista).toContain('tipo="menu"');
     // Nada de alturas en rem en la cabecera: con la raíz de 18 px crecían en el móvil.

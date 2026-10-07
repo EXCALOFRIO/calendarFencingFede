@@ -17,7 +17,18 @@ export type FuenteRankingInternacional =
   | 'hkfa_ranking'
   | 'mvsz_ranglista'
   | 'bf_ranking'
-  | 'cff_ranking';
+  | 'cff_ranking'
+  | 'aff_ranking'
+  | 'oefv_rangliste'
+  | 'frs_ranking'
+  | 'tef_klasman'
+  | 'css_zebricek'
+  | 'knas_ranglijst'
+  | 'fve_clasificacion'
+  | 'bff_ranglista'
+  | 'usa_points'
+  | 'sgp_ranking'
+  | 'fpe_ranking';
 
 export type DescripcionFuente = {
   ambito: AmbitoRanking;
@@ -43,6 +54,17 @@ export const FUENTES_RANKING: Record<FuenteRankingInternacional | 'fie_tiradores
   mvsz_ranglista: { ambito: 'nacional', organismo: 'MVSZ', nombre: 'Ranglista MVSZ (Hungría)', pais: 'HUN', continente: null, web: 'https://versenyinfo.hunfencing.hu/index.php?p=pRanglista' },
   bf_ranking: { ambito: 'nacional', organismo: 'BF', nombre: 'British Fencing rankings (Gran Bretaña)', pais: 'GBR', continente: null, web: 'https://www.britishfencing.com/rankings/' },
   cff_ranking: { ambito: 'nacional', organismo: 'CFF', nombre: 'Canadian Fencing Federation rankings (Canadá)', pais: 'CAN', continente: null, web: 'https://fencing.ca/rankings-and-classifications/' },
+  aff_ranking: { ambito: 'nacional', organismo: 'AFF', nombre: 'Australian Fencing Federation rankings (Australia)', pais: 'AUS', continente: null, web: 'https://www.ausfencing.org/open-rankings/' },
+  oefv_rangliste: { ambito: 'nacional', organismo: 'ÖFV', nombre: 'Rangliste ÖFV (Austria)', pais: 'AUT', continente: null, web: 'https://www.oefv.com/de/intern:13/ranglisten-archiv' },
+  frs_ranking: { ambito: 'nacional', organismo: 'FRS', nombre: 'Ranking național FRS (Rumanía)', pais: 'ROU', continente: null, web: 'https://frscrima.ro/ranking-national/' },
+  tef_klasman: { ambito: 'nacional', organismo: 'TEF', nombre: 'Klasman TEF (Turquía)', pais: 'TUR', continente: null, web: 'https://www.eskrim.org.tr/klasmanlar-20.html' },
+  css_zebricek: { ambito: 'nacional', organismo: 'ČSŠ', nombre: 'Žebříček ČSŠ (República Checa)', pais: 'CZE', continente: null, web: 'https://www.czechfencing.cz/zebricky' },
+  knas_ranglijst: { ambito: 'nacional', organismo: 'KNAS', nombre: 'Ranglijst KNAS (Países Bajos)', pais: 'NED', continente: null, web: 'https://knas.onzeranglijsten.net/' },
+  fve_clasificacion: { ambito: 'nacional', organismo: 'FVE', nombre: 'Clasificación nacional FVE (Venezuela)', pais: 'VEN', continente: null, web: 'https://fencingven.com/clasificaciones/' },
+  bff_ranglista: { ambito: 'nacional', organismo: 'БФФ', nombre: 'Ранглиста БФФ (Bulgaria)', pais: 'BUL', continente: null, web: 'https://bulfencing.com/sastezania/ranglista.html' },
+  usa_points: { ambito: 'nacional', organismo: 'USA Fencing', nombre: 'National Rolling Point Standings (Estados Unidos)', pais: 'USA', continente: null, web: 'https://www.usafencing.org/point-standings' },
+  sgp_ranking: { ambito: 'nacional', organismo: 'FS', nombre: 'Fencing Singapore rankings (Singapur)', pais: 'SGP', continente: null, web: 'https://my.fencingsingapore.org.sg/showranks' },
+  fpe_ranking: { ambito: 'nacional', organismo: 'FPE', nombre: 'Ranking nacional FPE (Portugal)', pais: 'POR', continente: null, web: 'https://www.fpe.pt/competicao/ranking/' },
 };
 
 export const FUENTES_MUNDIALES = ['fie_tiradores', 'fie_historico'] as const;

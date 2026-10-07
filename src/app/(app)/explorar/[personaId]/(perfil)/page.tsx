@@ -3,10 +3,12 @@ import { cargarFichaPantalla } from '@/lib/sport/explorar/ficha-pantalla';
 import { leerCriteriosFicha } from '@/lib/sport/explorar/ficha-url';
 import { contextoReal } from '@/lib/sport/explorar/real';
 import { RUTA_EXPLORAR } from '@/lib/sport/explorar/url';
-import { exigirSesion, fichaPerfil, personaDeSegmento } from './datos';
+import { exigirSesion, fichaPerfil, personaDeSegmento, tituloPerfil } from './datos';
 
 export const dynamic = 'force-dynamic';
-export const metadata = { title: 'Ficha deportiva' };
+export function generateMetadata({ params }: { params: Promise<{ personaId: string }> }) {
+  return tituloPerfil(params, null);
+}
 
 /**
  * Sección Resultados del perfil (la raíz de la ficha). La ficha la comparte

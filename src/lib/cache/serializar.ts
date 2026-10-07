@@ -21,7 +21,8 @@ export function deserializar<T>(texto: string): T {
   return JSON.parse(texto, (_clave, v) => {
     if (v && typeof v === 'object' && !Array.isArray(v) && typeof v[TIPO] === 'string') {
       switch (v[TIPO]) {
-        case 'Date': return new Date(v.v);
+        // An invalid Date is stored as NaN, which JSON writes as null; new Date(null) would be 1970.
+        case 'Date': return new Date(v.v === null ? Number.NaN : v.v);
         case 'Map': return new Map(v.v);
         case 'Set': return new Set(v.v);
         case 'BigInt': return BigInt(v.v);

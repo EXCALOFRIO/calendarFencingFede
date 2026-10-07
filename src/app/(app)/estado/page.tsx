@@ -114,20 +114,14 @@ async function SinTiradores({ rol }: { rol: string }) {
       <h1 className="text-2xl sm:text-3xl">Mi estado</h1>
       <p className="medida text-sm text-muted-foreground">
         {esPersonal
-          ? 'Tu cuenta todavía no está unida a ninguna ficha de tirador, así ' +
-            'que no hay competiciones ni plazos que seguir y el calendario no ' +
-            'sabe cuál es tu arma.'
-          : 'Esta pantalla sigue las competiciones de los tiradores de tu ' +
-            'cuenta, y la tuya no gestiona ninguno. Lo de la federación ' +
-            'entera está en el calendario, en tiradores y en el ranking.'}
+          ? 'Tu cuenta no tiene ficha de tirador.'
+          : 'Tu cuenta no gestiona tiradores.'}
       </p>
       {esPersonal ? (
         <p className="medida text-sm text-muted-foreground">
-          Puedes unirla tú mismo:{' '}
           {oficial && oficial.tiradores > 0
-            ? `búscate entre los ${oficial.tiradores} tiradores de la clasificación oficial de la RFEE`
-            : 'búscate en la clasificación oficial de la RFEE'}{' '}
-          y confírmalo. Tarda menos que escribir a nadie.
+            ? `Búscate entre los ${oficial.tiradores.toLocaleString('es-ES')} tiradores del ranking nacional.`
+            : 'Búscate en el ranking nacional.'}
         </p>
       ) : null}
       <div className="flex flex-wrap gap-2 pt-1">

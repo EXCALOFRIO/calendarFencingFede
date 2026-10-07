@@ -14,6 +14,7 @@ import {
 import { requireProfile } from '@/lib/auth/session';
 import { depsEvidenciaDb } from '@/lib/entries/evidencia-db';
 import { normalizarLicencia, type RefPublicada } from '@/lib/entries/identidad';
+import { sinDuplicadosEnPantalla } from '@/lib/entries/duplicados-pantalla';
 import { aListaVisible, contarPorPrueba, type InscritoPublicado } from '@/lib/entries/union';
 import { esquemaDeportivo } from '@/lib/sport/esquema-db';
 import {
@@ -267,9 +268,12 @@ export async function inscritosPublicados(
   return aListaVisible(filas, new Set(opciones.athleteIdsPropios ?? []));
 }
 
-/** Filas visibles por prueba; es exactamente lo que enseña `inscritosPublicados`. */
+/**
+ * Filas visibles por prueba: lo que enseña la ficha, sin la copia de Skermo
+ * de quien ya está enlazado por la FIE (`sinDuplicadosEnPantalla`).
+ */
 export async function contarInscritosPublicados(
   eventId: string,
 ): Promise<Record<string, number>> {
-  return contarPorPrueba(await inscritosPublicados(eventId));
+  return contarPorPrueba(sinDuplicadosEnPantalla(await inscritosPublicados(eventId)));
 }

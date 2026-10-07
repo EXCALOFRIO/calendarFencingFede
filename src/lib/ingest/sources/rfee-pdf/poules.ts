@@ -32,6 +32,11 @@ import type { AsaltoPdf, ExclusionesPdf, OrigenMarcador, Rechazo, Region } from 
  * incógnitas × tope obliga a que todas lo valgan. Esas celdas salen como
  * `derivado_de_limite`; si el tope contradice algún total de la poule, no se
  * usa en ella. Lo que sigue sin determinar no recibe tanteo y queda parcial.
+ *
+ * Un tirador retirado (no presentado, abandono, exclusión) no tiene fila en la
+ * matriz: sus cruces están anulados y los totales de los demás no los cuentan.
+ * Una victoria por prioridad con los tocados iguales («V3» frente a «3») cuadra
+ * con los totales, pero no se emite: el asalto se guarda sólo con su marcador.
  */
 
 export type LecturaPoules = {
@@ -51,16 +56,38 @@ export type FilaMatriz = {
   club: string | null;
   celdas: string[];
   vm: number;
+  /** Cifras decimales con que se publica `vm`: con dos, Engarde a veces trunca («0,83», «0,16»). */
+  vmDecimales?: number;
   ind: number;
   td: number;
 };
 
-// «Vuelta No 1», «Volta núm. 1», «Round No 1».
-const RE_VUELTA = /(?:VUELTA|VOLTA|ROUND)\s*(?:N\.?[^\d\s]{0,2}\.?)?\s*(\d+)/;
-const RE_CELDAS = /^(V\d*|\d+|X)(\s+(V\d*|\d+|X))*$/;
+/**
+ * Tirador que no tira la poule: Engarde llena su fila con `C` o `F` (no se presentó,
+ * «DNS», «forfait», «cesión»), `A` (abandono, «DNF») o `E` (exclusión, «EXC», «exclus»)
+ * y la deja sin totales. Sus cruces quedan anulados: los rivales llevan `X` en su
+ * columna y cuentan V/M, TD e índice sin él.
+ */
+export type FilaRetirada = {
+  y: number;
+  nombre: string;
+  club: string | null;
+  marca: string;
+  estado: string;
+  rivales: number;
+};
+
+// «Vuelta No 1», «Volta núm. 1», «Round No 1», «Tour No 1».
+const RE_VUELTA = /(?:VUELTA|VOLTA|ROUND|TOUR)\s*(?:N\.?[^\d\s]{0,2}\.?)?\s*(\d+)/;
+const RE_TOKEN = /^(V\d*|\d+|X)$/;
+// PDF.js pega a veces celdas contiguas sin espacio («V4V», «3V»): sólo se separan por la `V`, que siempre abre celda.
+const RE_PEGADAS = /^(?:V\d*|\d+)(?:V\d*)+$/;
 // Engarde publica V/M con punto o con coma decimal según el idioma del equipo («0.667», «0,667»).
 const RE_DECIMAL = /^\d[.,]\d{2,3}$/;
 const RE_ENTERO = /^[+-]?\d+$/;
+// El estado sale en el idioma del equipo y a veces truncado por la columna («forfai», «aband»).
+const RE_ESTADO_RETIRADO = /^(DNS|DNF|EXC(L|LUS|LOS|LÒS)?|ABAND(O|ON|ONO)?|FORFAIT?|CESI[OÓ]N)$/i;
+const RE_MARCAS_RETIRADO = /^[ACEF](\s+[ACEF])*$/;
 
 const regionBloque = (pagina: number, desde: number, hasta: number): Region => ({
   pagina,
@@ -68,34 +95,119 @@ const regionBloque = (pagina: number, desde: number, hasta: number): Region => (
   yMin: redondear(hasta - 4),
 });
 
-function leerFila(f: Fila): FilaMatriz | string {
+/** Celdas de un texto de la matriz, o `null` si no lo es. */
+function celdasDe(s: string): string[] | null {
+  const out: string[] = [];
+  for (const t of s.split(' ')) {
+    if (RE_TOKEN.test(t)) out.push(t);
+    else if (RE_PEGADAS.test(t)) out.push(...t.match(/^\d+|V\d*/g)!);
+    else return null;
+  }
+  return out;
+}
+
+/**
+ * `x` de la columna de club, si al menos dos filas la ocupan con un texto que no es celda.
+ * Sirve para no leer como celda un club numérico truncado («100» de «100TO-C»).
+ */
+function columnaClub(filas: readonly Fila[]): number | null {
+  const cuenta = new Map<number, number>();
+  for (const f of filas) {
+    if (f.items.length < 3 || celdasDe(f.items[0].s) !== null || celdasDe(f.items[1].s) !== null) continue;
+    const x = Math.round(f.items[1].x);
+    cuenta.set(x, (cuenta.get(x) ?? 0) + 1);
+  }
+  let mejor: number | null = null;
+  let n = 1;
+  for (const [x, c] of cuenta) if (c > n) [mejor, n] = [x, c];
+  return mejor;
+}
+
+function leerRetirado(f: Fila): FilaRetirada | null {
+  const s = f.items.map((i) => i.s);
+  let fin = s.length;
+  if (fin > 0 && RE_ENTERO.test(s[fin - 1])) fin -= 1;
+  if (fin < 3 || !RE_ESTADO_RETIRADO.test(s[fin - 1])) return null;
+  let k = fin - 1;
+  const marcas: string[] = [];
+  while (k > 1 && RE_MARCAS_RETIRADO.test(s[k - 1])) {
+    marcas.unshift(...s[k - 1].split(' '));
+    k -= 1;
+  }
+  const texto = s.slice(0, k);
+  if (marcas.length === 0 || new Set(marcas).size !== 1 || texto.length === 0 || texto.length > 2) return null;
+  return { y: f.y, nombre: texto[0], club: texto[1] ?? null, marca: marcas[0], estado: s[fin - 1].toUpperCase(), rivales: marcas.length };
+}
+
+function leerFila(f: Fila, xClub: number | null = null): FilaMatriz | FilaRetirada | string {
   const iDec = f.items.findIndex((i) => RE_DECIMAL.test(i.s));
-  if (iDec < 1) return 'Fila de poule sin el total V/M';
+  if (iDec < 1) return leerRetirado(f) ?? 'Fila de poule sin el total V/M';
   const despues = f.items.slice(iDec + 1).map((i) => i.s);
   if (despues.length !== 3 || !despues.every((s) => RE_ENTERO.test(s))) return 'Totales ind./TD/cl. ilegibles';
 
   const antes = f.items.slice(0, iDec);
   let k = 0;
   const texto: string[] = [];
-  while (k < antes.length && !RE_CELDAS.test(antes[k].s)) {
+  while (k < antes.length && celdasDe(antes[k].s) === null) {
+    texto.push(antes[k].s);
+    k += 1;
+  }
+  if (texto.length === 1 && k < antes.length && xClub !== null && /^\d+$/.test(antes[k].s) && Math.abs(antes[k].x - xClub) < 3) {
     texto.push(antes[k].s);
     k += 1;
   }
   if (texto.length === 0 || texto.length > 2) return 'Nombre y club de la fila no reconocibles';
   const celdas: string[] = [];
   for (const it of antes.slice(k)) {
-    if (!RE_CELDAS.test(it.s)) return 'Celda de matriz ilegible';
-    celdas.push(...it.s.split(' '));
+    const c = celdasDe(it.s);
+    if (c === null) return 'Celda de matriz ilegible';
+    celdas.push(...c);
   }
+  const vm = f.items[iDec].s;
   return {
     y: f.y,
     nombre: texto[0],
     club: texto[1] ?? null,
     celdas,
-    vm: Number(f.items[iDec].s.replace(',', '.')),
+    vm: Number(vm.replace(',', '.')),
+    vmDecimales: vm.length - 2,
     ind: Number(despues[0]),
     td: Number(despues[1]),
   };
+}
+
+/**
+ * Las filas que tiran la poule, sin los retirados ni sus columnas. Cada retirado debe
+ * ocupar todos los cruces y cada rival marcar `X` en su columna: así no hay duda de qué
+ * celda sale de la fila.
+ */
+function quitarRetirados(todas: readonly (FilaMatriz | FilaRetirada)[]): { filas: FilaMatriz[]; retirados: FilaRetirada[] } | string {
+  const n = todas.length;
+  const ret = todas.flatMap((f, i) => ('estado' in f ? [i] : []));
+  const retirados = ret.map((i) => todas[i] as FilaRetirada);
+  if (ret.length === 0) return { filas: todas as FilaMatriz[], retirados };
+  if (retirados.some((r) => r.rivales !== n - 1)) return 'Matriz incompleta o dividida entre páginas';
+  const filas: FilaMatriz[] = [];
+  for (const [i, f] of todas.entries()) {
+    if ('estado' in f) continue;
+    let t = f.celdas;
+    if (t.length === n && t[i] === 'X') t = t.filter((_, j) => j !== i);
+    if (t.length !== n - 1) return 'Matriz incompleta o dividida entre páginas';
+    const quitar = new Set(ret.map((j) => (j < i ? j : j - 1)));
+    if ([...quitar].some((p) => t[p] !== 'X')) return 'Un cruce con un tirador retirado publica tanteo';
+    filas.push({ ...f, celdas: t.filter((_, p) => !quitar.has(p)) });
+  }
+  return { filas, retirados };
+}
+
+/** V/M redondeado como Engarde o, con dos cifras, también truncado. */
+function vmCuadra(victorias: number, asaltos: number, f: FilaMatriz): boolean {
+  const v = victorias / asaltos;
+  if (Math.abs(v - f.vm) <= 0.0015) return true;
+  const d = f.vmDecimales ?? 3;
+  if (d !== 2) return false;
+  const publicado = Math.round(f.vm * 100);
+  return Math.floor((victorias * 100) / asaltos + 1e-9) === publicado || Math.round(v * 100) === publicado;
 }
 
 function aCelda(t: string): Celda {
@@ -103,7 +215,12 @@ function aCelda(t: string): Celda {
   return { gana: false, puntos: Number(t), origen: 'explicito' };
 }
 
-export type Matriz = { celdas: Celda[][]; sinResolver: number };
+export type Matriz = {
+  celdas: Celda[][];
+  sinResolver: number;
+  /** Cruces ganados por prioridad con los tocados iguales: el marcador solo no dice quién ganó. */
+  prioridad: number;
+};
 
 /**
  * Valida la matriz y fija cada `V` sin número que los totales publicados
@@ -130,7 +247,7 @@ function validarMatriz(filas: FilaMatriz[], limite: number | null = null): Matri
 
   for (let i = 0; i < n; i += 1) {
     const victorias = celdas[i].filter((c, j) => j !== i && c.gana).length;
-    if (Math.abs(victorias / (n - 1) - filas[i].vm) > 0.0015) return 'El total V/M no coincide con las victorias de la fila';
+    if (!vmCuadra(victorias, n - 1, filas[i])) return 'El total V/M no coincide con las victorias de la fila';
     for (let j = i + 1; j < n; j += 1) {
       if (celdas[i][j].gana && celdas[j][i].gana) return 'Dos ganadores en el mismo cruce';
     }
@@ -220,6 +337,7 @@ function validarMatriz(filas: FilaMatriz[], limite: number | null = null): Matri
       return 'El índice no coincide con los tocados dados y recibidos';
     }
   }
+  let prioridad = 0;
   for (let i = 0; i < n; i += 1) {
     for (let j = i + 1; j < n; j += 1) {
       const a = celdas[i][j];
@@ -227,10 +345,13 @@ function validarMatriz(filas: FilaMatriz[], limite: number | null = null): Matri
       if (a.gana === b.gana) continue;
       const ganadora = a.gana ? a : b;
       const perdedora = a.gana ? b : a;
-      if (ganadora.puntos !== null && ganadora.puntos <= (perdedora.puntos ?? 0)) return 'El ganador no tiene más tocados que el perdedor';
+      if (ganadora.puntos === null) continue;
+      // Empate al acabar el tiempo y el minuto de prioridad: Engarde escribe «V3» frente a «3».
+      if (ganadora.puntos === perdedora.puntos && ganadora.origen === 'explicito') prioridad += 1;
+      else if (ganadora.puntos <= (perdedora.puntos ?? 0)) return 'El ganador no tiene más tocados que el perdedor';
     }
   }
-  return { celdas, sinResolver };
+  return { celdas, sinResolver, prioridad };
 }
 
 type Evidencia = { obligados: Set<number>; maximoPublicado: number };
@@ -247,7 +368,9 @@ export type PouleLeida = {
   vuelta: number;
   ronda: string;
   rondaOriginal: string;
+  /** Los que tiran la poule; los retirados no tienen fila en la matriz. */
   filas: FilaMatriz[];
+  retirados: FilaRetirada[];
   matriz: Matriz;
 };
 
@@ -316,13 +439,20 @@ export function leerMatricesPoules(paginas: readonly PaginaAnalizada[]): Matrice
         rechazar('Poule sin fila de cabecera V/M');
         continue;
       }
-      const leidas = cuerpo.slice(iCab + 1).map(leerFila);
+      const filasCuerpo = cuerpo.slice(iCab + 1);
+      const xClub = columnaClub(filasCuerpo);
+      const leidas = filasCuerpo.map((f) => leerFila(f, xClub));
       const mala = leidas.find((r): r is string => typeof r === 'string');
-      if (mala !== undefined || leidas.length < 2) {
-        rechazar(mala ?? 'Poule con menos de dos tiradores');
+      if (mala !== undefined) {
+        rechazar(mala);
         continue;
       }
-      const filas = leidas as FilaMatriz[];
+      const sinRetirados = quitarRetirados(leidas as (FilaMatriz | FilaRetirada)[]);
+      if (typeof sinRetirados === 'string' || sinRetirados.filas.length < 2) {
+        rechazar(typeof sinRetirados === 'string' ? sinRetirados : 'Poule con menos de dos tiradores');
+        continue;
+      }
+      const { filas, retirados } = sinRetirados;
       publicado += (filas.length * (filas.length - 1)) / 2;
 
       const matriz = validarMatriz(filas);
@@ -344,6 +474,7 @@ export function leerMatricesPoules(paginas: readonly PaginaAnalizada[]): Matrice
         ronda: vuelta === 1 ? `P${numero}` : `V${vuelta}P${numero}`,
         rondaOriginal: `${tituloVuelta} / ${textoFila(cabeza)}`,
         filas,
+        retirados,
         matriz,
       });
     }
@@ -454,6 +585,11 @@ export function leerPoules(
           excluidos.sinMarcador += 1;
           continue;
         }
+        // Un asalto se guarda sólo con su marcador: con tocados iguales se perdería quién ganó.
+        if (ganadora.puntos === perdedora.puntos) {
+          excluidos.sinGanador += 1;
+          continue;
+        }
         const vi = validas[i];
         const vj = validas[j];
         if (!vi || !vj) {
@@ -476,6 +612,9 @@ export function leerPoules(
       rechazar(`${matriz.sinResolver} victorias sin tanteo que los totales publicados no determinan: no se les atribuye ninguno`);
     }
     if (sinGanador > 0) rechazar(`${sinGanador} cruces sin ningún ganador marcado: no son un duelo con resultado`);
+    if (matriz.prioridad > 0) {
+      rechazar(`${matriz.prioridad} victorias por prioridad con los tocados iguales: el marcador no dice quién ganó y no se guardan`);
+    }
   }
 
   return { asaltos: acumulador.asaltos, excluidos, rechazos, grupos, publicado };

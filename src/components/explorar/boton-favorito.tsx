@@ -111,7 +111,7 @@ export function BotonFavorito({
           data-estado={optimista ? 'favorito' : 'sin-guardar'}
           className={cn(
             'group relative w-full cursor-pointer rounded-lg outline-none aria-disabled:cursor-wait',
-            'focus-visible:ring-[3px] focus-visible:ring-ring/50',
+            'focus-visible:ring-[3px] focus-visible:ring-ring',
           )}
         >
           <span className={cn(clasesSeguir(optimista), 'h-11 w-full px-4 text-sm', pendiente && 'opacity-70')}>
@@ -136,7 +136,7 @@ export function BotonFavorito({
         data-estado={optimista ? 'favorito' : 'sin-guardar'}
         className={cn(
           'min-h-11 min-w-11 shrink-0 cursor-pointer bg-transparent hover:bg-transparent',
-          'transition-colors hover:text-primary-text focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+          'transition-colors hover:text-primary-text focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring',
           'aria-disabled:cursor-wait motion-reduce:transition-none',
           optimista ? 'text-primary-text' : 'text-muted-foreground',
           pendiente && 'opacity-70',

@@ -47,7 +47,7 @@ export function rangoTemporadas(temporadas: readonly string[]): string[] {
 export function Cambio({ lista }: { lista: Pick<ListaRankingNacional, 'cambio' | 'nueva'> }) {
   if (lista.cambio === null) {
     return lista.nueva ? (
-      <span className="rounded-full border border-filete-alto px-1.5 text-[0.625rem] leading-4 text-muted-foreground">Nuevo</span>
+      <span className="rounded-full border border-filete-alto px-1.5 text-[12px] leading-4 text-muted-foreground">Nuevo</span>
     ) : null;
   }
   if (lista.cambio === 0) {
@@ -76,8 +76,8 @@ function Cifra({ valor, rotulo, detalle }: { valor: string; rotulo: string; deta
   return (
     <div className="flex min-w-0 flex-col items-center gap-1 bg-card px-2 py-3 text-center">
       <span className="cifra text-3xl leading-none sm:text-4xl">{valor}</span>
-      <span className="max-w-full truncate text-[0.6875rem] leading-none text-muted-foreground">{rotulo}</span>
-      {detalle ? <span className="line-clamp-2 max-w-full text-[0.625rem] leading-tight text-muted-foreground">{detalle}</span> : null}
+      <span className="max-w-full truncate text-[12px] leading-none text-muted-foreground">{rotulo}</span>
+      {detalle ? <span className="line-clamp-2 max-w-full text-[12px] leading-tight text-muted-foreground">{detalle}</span> : null}
     </div>
   );
 }
@@ -92,7 +92,7 @@ function TarjetaActual({ lista, conArma }: { lista: ListaRankingNacional; conArm
         prefetch={false}
         data-lista={lista.clave}
         className={cn(
-          'flex h-full min-w-0 flex-col gap-1.5 rounded-xl border bg-card px-3 py-2.5 transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+          'flex h-full min-w-0 flex-col gap-1.5 rounded-xl border bg-card px-3 py-2.5 transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
           medalla && CONTORNO_MEDALLA[medalla],
         )}
       >
@@ -101,7 +101,7 @@ function TarjetaActual({ lista, conArma }: { lista: ListaRankingNacional; conArm
           <span className="cifra text-4xl leading-none">{p.puesto}º</span>
           <Cambio lista={lista} />
         </span>
-        <span className="flex min-w-0 flex-wrap gap-x-2 text-[0.6875rem] leading-tight text-muted-foreground">
+        <span className="flex min-w-0 flex-wrap gap-x-2 text-[12px] leading-tight text-muted-foreground">
           {p.de > 0 ? <span>de {p.de}</span> : null}
           {p.puntos !== null ? <span className="truncate">{formatoPuntos(p.puntos)} pts</span> : null}
         </span>
@@ -168,7 +168,7 @@ function Historial({ ranking, nivel }: { ranking: RankingNacional; nivel: Nivel 
                   href={enlace(l, t)}
                   prefetch={false}
                   className={cn(
-                    'inline-flex h-[40px] max-w-full min-w-0 items-center gap-1.5 rounded-full border border-filete-alto px-3 text-xs hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+                    'inline-flex h-[40px] max-w-full min-w-0 items-center gap-1.5 rounded-full border border-filete-alto px-3 text-xs hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
                     medalla && CLASES_MEDALLA[medalla],
                   )}
                 >
@@ -258,7 +258,7 @@ export function RankingMundialPerfil({ entradas, nivel }: { entradas: readonly E
                 <span className="cifra text-4xl leading-none">{e.puesto}º</span>
               </span>
               {e.puntos !== null && Number.isFinite(Number(e.puntos)) ? (
-                <span className="text-[0.6875rem] leading-tight text-muted-foreground">{formatoPuntos(Number(e.puntos))} pts</span>
+                <span className="text-[12px] leading-tight text-muted-foreground">{formatoPuntos(Number(e.puntos))} pts</span>
               ) : null}
             </li>
           );

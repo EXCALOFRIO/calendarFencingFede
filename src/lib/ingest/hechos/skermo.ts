@@ -27,7 +27,9 @@ export function hechosSkermo(id: string, html: string, huella: string): HechosPr
     };
   });
   const ultimo = Math.max(0, ...results.map((r) => r.position ?? 0));
-  const completo = ultimo <= results.length;
+  // A response cut mid-table still parses (cheerio closes the open tags) and its positions look gapless.
+  const tablaCerrada = /<table\b[\s\S]*<\/table>/i.test(html);
+  const completo = tablaCerrada && ultimo <= results.length;
   return hechosPrueba.parse({
     version: 1,
     source: 'skermo_rfee',
@@ -47,7 +49,9 @@ export function hechosSkermo(id: string, html: string, huella: string): HechosPr
       publishedParticipants: results.length,
       notes: [
         'Clasificación publicada en Skermo (ranking público RFEE); Skermo no publica poules ni cuadro',
-        ...(completo ? [] : [`Clasificación incompleta: último puesto ${ultimo} con ${results.length} filas`]),
+        ...(completo ? [] : [tablaCerrada
+          ? `Clasificación incompleta: último puesto ${ultimo} con ${results.length} filas`
+          : `Página cortada antes del final de la tabla: ${results.length} filas leídas`]),
       ],
     },
     results,

@@ -6,7 +6,8 @@ import { inflateRawSync } from 'node:zlib';
  * texto en línea y números) de cada hoja; ni estilos ni fórmulas.
  */
 
-function entradasZip(buf: Buffer): Map<string, Buffer> {
+/** Entradas de un zip; con `filtro`, sólo se descomprimen las que lo cumplen. */
+export function entradasZip(buf: Buffer, filtro?: (nombre: string) => boolean): Map<string, Buffer> {
   let fin = -1;
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65_557); i -= 1) {
     if (buf.readUInt32LE(i) === 0x06054b50) {
@@ -29,8 +30,9 @@ function entradasZip(buf: Buffer): Map<string, Buffer> {
     const nombre = buf.toString('utf8', p + 46, p + 46 + largoNombre);
     const inicio = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
     const datos = buf.subarray(inicio, inicio + comprimido);
-    if (metodo === 0) salida.set(nombre, Buffer.from(datos));
-    else if (metodo === 8) salida.set(nombre, inflateRawSync(datos));
+    const quiere = !filtro || filtro(nombre);
+    if (quiere && metodo === 0) salida.set(nombre, Buffer.from(datos));
+    else if (quiere && metodo === 8) salida.set(nombre, inflateRawSync(datos));
     p += 46 + largoNombre + largoExtra + largoComentario;
   }
   return salida;

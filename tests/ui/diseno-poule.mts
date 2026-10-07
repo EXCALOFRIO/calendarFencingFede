@@ -26,6 +26,8 @@ import { createD1Database } from '@/db/d1/runtime';
 import type { D1Binding, D1QueryResult, D1Statement } from '@/db/d1/binding';
 import { EdicionCompleta } from '@/components/explorar/ediciones';
 import { MatrizPoule } from '@/components/explorar/prueba/hoja-poule';
+import { BotonIcono } from '@/components/sistema/boton';
+import { X } from 'lucide-react';
 import { enlaceFichaDePrueba } from '@/components/explorar/prueba/enlaces';
 import { ListaDeportistas } from '@/components/explorar/resultados';
 import { leerCriteriosEdicion } from '@/lib/sport/explorar/edicion-url';
@@ -141,16 +143,12 @@ function hoja(poule: PouleDePrueba) {
       { role: 'dialog', className: 'fixed inset-0 z-50 flex h-dvh max-h-dvh flex-col gap-0 overscroll-contain bg-popover' },
       React.createElement(
         'div',
-        { className: 'flex flex-row items-center gap-2 border-b py-3 pr-16 pl-3' },
-        React.createElement('h2', { className: 'min-w-0 truncate text-lg leading-tight font-semibold text-foreground' }, poule.etiqueta),
+        { className: 'flex h-[52px] shrink-0 flex-row items-center gap-2 border-b pr-[8px] pl-3' },
+        React.createElement('h2', { className: 'min-w-0 truncate text-[16px] leading-[20px] font-semibold text-foreground' }, poule.etiqueta),
         React.createElement('span', { className: 'text-xs text-muted-foreground' }, poule.filas.length),
+        React.createElement(BotonIcono, { etiqueta: 'Cerrar', tamano: 'md', className: 'ml-auto' }, React.createElement(X, { 'aria-hidden': true })),
       ),
       React.createElement(MatrizPoule, { poule, enlace, filtro: { consulta: '', persona: ZABALA } }),
-      React.createElement(
-        'span',
-        { className: 'absolute top-3.5 right-3.5 grid size-10 place-items-center rounded-full border border-filete-alto bg-accent text-foreground' },
-        '✕',
-      ),
     ),
   );
 }

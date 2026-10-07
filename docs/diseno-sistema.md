@@ -26,12 +26,14 @@ Cinco reglas:
 | Explorar | `Compass` | `/explorar` (lo que hoy es Inicio: el feed de a quién sigues) | `/explorar/[personaId]`, `/explorar/favoritos` |
 | Buscar | `Search` | `/explorar/buscar` | `/explorar/ediciones` |
 | Ranking | `Trophy` | `/ranking` | — |
-| Tú | `CircleUserRound` (o la foto propia de 24 px) | `/explorar/yo` | `/perfil`, `/estado`, `/ajustes` |
+| Tú | la foto propia de 24 px (`CircleUserRound` si no hay) | `/explorar/yo` | `/perfil`, `/estado`, `/ajustes` |
 
 - **Medidas:** 50 px de alto más `env(safe-area-inset-bottom)`. Iconos de 22 px; trazo de 1,7, y de 2,4 en la pestaña activa. Sin rótulos: el nombre va en `aria-label`. Con `rotulos="visibles"` se añade un rótulo de 10 px, solo si las pruebas con usuarios muestran que hace falta.
 - **Pestaña activa:** el icono en `--foreground` con trazo grueso; las demás en `--muted-foreground`. No lleva pastilla, punto ni contorno rojo.
 - **Fondo:** sólido (`bg-background`) con un filete de 1 px (`--filete-alto`) arriba. Existe la variante `fondo="material"`, que pone el fondo al 82 %, `backdrop-filter: blur(20px) saturate(1.6)` y vuelve a sólido si el navegador no soporta `backdrop-filter`. Solo se usa en pantallas con fotos a sangre detrás. Nunca se usa un alfa sin desenfoque.
 - **Insignia:** un punto rojo de 7 px con anillo del color del fondo. Indica novedades y nada más; nunca lleva un número.
+- **Foto en «Tú»:** como en Instagram, la pestaña lleva la foto de la ficha deportiva vinculada (24 px, redonda) y, marcada, un aro fino de 1,5 px en `--foreground` con 1,5 px de aire. Sin ficha vinculada, sin foto publicada o si la foto falla, el icono. La foto no va en el HTML ni en el layout: `useRetratoPropio` (`retrato-propio.ts`) pide después de pintar `/api/explorar/yo/retrato?cuenta=<profileId>` (respuesta `private`, una hora, `Vary: Cookie`) y luego la foto por la ruta de siempre. Ninguna pantalla hace una consulta más a D1 y la caché compartida no ve datos de la cuenta.
+- **Quieta al desplazar:** `position: fixed` en su propia capa (`translateZ(0)`), sin transiciones de `transform`, y el documento sin rebote elástico (`overscroll-behavior-y: none` en `html` y `body`, ver § 4). El armazón usa `min-h-svh` y no `min-h-dvh`, que en Safari cambia de alto mientras se esconde su barra y recoloca la página.
 - **Toques:**
   - en otra pestaña, cambia de pestaña con un fundido de 150 ms;
   - en la pestaña activa desde una subpantalla, vuelve a su raíz;
@@ -106,7 +108,7 @@ El estado activo es el mismo que en el móvil: el texto en `--foreground` semibo
 
 ## 2. Escala de tamaños
 
-Todo en **px**, no en rem. Hoy la raíz sube a 18 px por debajo de 640 px, así que cualquier `h-11`, `text-sm` o `size-5` crece un 12,5 % en el móvil. Esa es la otra mitad de los «botones enormes», además de la regla global de 44 px (§ 8.2).
+Todo en **px**, no en rem. La raíz es de 16 px en todos los tamaños: la de 18 px por debajo de 640 px, que hacía crecer un 12,5 % cualquier `h-11`, `text-sm` o `size-5` en el móvil, se quitó en la pasada final (§ 8.3). Era la otra mitad de los «botones enormes», además de la regla global de 44 px (§ 8.2).
 
 | Elemento | Visible | Área táctil |
 |---|---|---|
@@ -192,6 +194,10 @@ Todo en **px**, no en rem. Hoy la raíz sube a 18 px por debajo de 640 px, así 
 | Avanzar o volver (28 px + fundido) | 120 salida, 200 entrada (60 ms de retardo), 260 desplazamiento | `cubic-bezier(.2,0,0,1)` |
 | Mismo sitio, otro contenido (`TransicionContenido`) | 100 + 160 ms | ídem |
 | Hoja inferior | 240 ms al abrir, 180 al cerrar | `cubic-bezier(.32,.72,0,1)` (la de iOS) |
+| Hoja lateral y diálogo de `ui/` | 240 / 180 ms (hoja), 200 / 150 ms (diálogo) | la de iOS / `--sis-curva` |
+| Pulsar una pestaña de la barra | icono a 0,86 mientras se pulsa, 150 ms | ease-out |
+| Pestaña que pasa a marcada (`.sis-marcar`) | de 0,9 a 1 en 180 ms, sin pasarse | `--sis-curva` |
+| Aparición de lista o tarjeta (`.sis-aparecer`, `.sis-aparecer-lista`) | 180 ms de opacidad; 20 ms de escalonado en las 8 primeras filas | `--sis-curva` |
 
 - **View Transitions de React.** Next 16.3 ya trae `<ViewTransition>` sin configurar nada (`node_modules/next/dist/docs/01-app/02-guides/view-transitions.md`). Las navegaciones son Transitions, así que se activan solas.
   - **Tipos:** se pasan con `<Link transitionTypes={['nav-avanzar']}>` o con `router.push(href, { transitionTypes })`. Las constantes están en `TIPO_TRANSICION` (`navegacion.ts`), y `tiposEntre(desde, hasta)` deduce la dirección por la profundidad de la ruta.
@@ -208,6 +214,15 @@ Todo en **px**, no en rem. Hoy la raíz sube a 18 px por debajo de 640 px, así 
   - se queda el fundido y se quita el desplazamiento (`--sis-recorrido: 0px`), con duraciones de grupo a 0;
   - la regla global de `globals.css` no alcanza a los pseudoelementos de view transition, por eso va en `sistema.css`;
   - la subida al principio con la pestaña activa pasa a ser instantánea.
+
+### 4.1 Pautas de movimiento
+
+- **Corto y sin rebote.** Entre 150 y 250 ms; nada de muelles, curvas que se pasan ni animaciones en bucle. El retardo acumulado de un escalonado no pasa de 140 ms.
+- **Sólo `opacity` y `scale`/`translate`.** Nunca alto, ancho, márgenes ni `top`: lo que aparece no empuja a nada (CLS 0). Las listas aparecen con un fundido, no deslizándose.
+- **Las listas se animan al entrar en el DOM**, no al hacer scroll: la primera pantalla y cada página nueva del feed. Una fila que ya estaba no vuelve a animar.
+- **Lo fijo no se mueve.** La cabecera y la barra no tienen transiciones de `transform` y el documento no rebota (`overscroll-behavior-y: none`). Lo que hace scroll por dentro (hojas, matrices, carriles de chips) lleva `overscroll-contain`.
+- **Hojas y diálogos de `ui/`** se ajustan desde `sistema.css` con `--tw-animation-duration` y `--tw-ease`, sin tocar los componentes.
+- **`prefers-reduced-motion`** quita además `.sis-marcar` y las apariciones (`animation: none`), porque la regla global acorta la duración pero no el retardo del escalonado.
 
 ## 5. Carga sin esqueletos
 
@@ -304,11 +319,11 @@ Objetivo: tocar algo produce respuesta en menos de 100 ms y la pantalla nueva ap
 
 Pruebas: `tests/sistema-piezas.test.ts`. Muestra: `tests/ui/sistema-muestra.mts` (servidor `node:http` e hidratación con esbuild, sin `next dev`). Mide que cada control se ve de ≤ 36 px y se toca en ≥ 44, que no hay desplazamiento horizontal y que no hay errores de consola. Hace capturas a 320, 393 y 1440 en `capturas/sistema/`.
 
-La sonda de auditoría (`tests/ui/auditoria-sonda.mts`) mide el objetivo táctil con `getBoundingClientRect` y contará como «pequeños» los controles de 32 px con área por `::after`. En la pasada final hay que enseñarle a leer `getComputedStyle(el, '::after')`, como hace `sistema-muestra.mts`.
+La sonda de auditoría (`tests/ui/auditoria-sonda.mts`) y la matriz de dispositivos (`tests/ui/matriz-medir.mts`) miden el área táctil real: la caja del control o su `::after` (`getComputedStyle(el, '::after')`), la mayor, recortada por los antepasados con `overflow` distinto de `visible`. La matriz afina dos casos: en una zona desplazable recorta como si se hubiera desplazado lo justo para ver el control (una fila más abajo de una lista con scroll no cuenta como pequeña), y lo que un antepasado oculta del todo (lo plegado bajo «Ver todo») no se cuenta. El informe escribe «44x44 (se ve 32x32)» cuando el área sale del `::after`.
 
-## 8. Parches de `globals.css` (NO aplicados)
+## 8. Parches de `globals.css` (aplicados)
 
-Otras sesiones dependen de la regla actual. Se aplican al empezar la pasada final, en este orden, y después se pasa la sonda y el barrido.
+Estado: 8.1, 8.2, 8.4 y 8.5 se aplicaron en las olas; 8.3 (fuera la raíz de 18 px) en la pasada final. Se dejan escritos como referencia de qué cambió y qué hay que revisar si se toca.
 
 ### 8.1 Importar el movimiento
 
@@ -419,7 +434,7 @@ Y dentro del `@layer base` que ya hay:
 -  }
 ```
 
-La raíz de 18 px agranda un 12,5 % todo lo que va en rem en el móvil. Las piezas del sistema van en px y no les afecta. Se quita cuando las pantallas ya usen la escala de § 2. Si se quitara antes, el texto en rem de las pantallas sin migrar bajaría de 15,75 a 14 px de golpe.
+La raíz de 18 px agrandaba un 12,5 % todo lo que va en rem en el móvil. Las piezas del sistema van en px y no les afecta. Al quitarla, el texto en rem bajó de 15,75 a 14 px y los rótulos de 11 px (`text-[0.6875rem]`) y 10 px (`text-[0.625rem]`), que en el móvil se veían a 12,4 y 11,25, se quedaban en 11 y 10. Por eso, en la misma entrega, todo rótulo por debajo de 12 px pasó a `text-[12px]` (pastilla de país, insignia de organismo, ejes y leyendas de los gráficos, cifras del perfil, «Dirección técnica» de la cabecera de escritorio…). Sólo quedan por debajo los rótulos opcionales de 10 px de la barra.
 
 ### 8.4 El hueco de la barra, una sola regla
 
@@ -468,7 +483,7 @@ Las líneas son las de este momento: varias de estas pantallas las están cambia
 | `src/components/convocatorias/elegir-convocados.tsx:356` | `hover:bg-muted/40` | `hover:bg-secondary` |
 | `src/app/(app)/documentos/page.tsx:302, 461` | `hover:bg-accent/40`; `border-border/50 bg-muted/30` | `hover:bg-secondary`; `border-filete bg-card` |
 | `src/components/escudo.tsx:229` | plato `bg-white/90` detrás del escudo | `bg-white` (el 10 % deja ver la retícula detrás del escudo) |
-| `src/components/ui/button.tsx:11, 13` · `ui/badge.tsx:11, 15` · `filtros/chips.tsx:357` · `app/global-error.tsx:47` | `hover:bg-primary/90`, `dark:bg-destructive/60` | `hover:brightness-110`; `bg-destructive` opaco |
+| `src/components/ui/button.tsx:11, 13` · `ui/badge.tsx:11, 15` · `app/global-error.tsx:47` | `hover:bg-primary/90`, `dark:bg-destructive/60` | Hecho en la pasada final en `badge.tsx` y `global-error.tsx` (`hover:brightness-110`, `bg-destructive` opaco). La cita a `filtros/chips.tsx:357` se retiró: esa línea ya no existe. |
 | `src/components/admin/*` (`alta-tirador.tsx:209`, `ajustes-panel.tsx:236, 451`, `usuarios-panel.tsx:484, 516, 792, 840`) · `app/entrar/page.tsx:119` · `app/(app)/ajustes/notificaciones/page.tsx:41` | avisos `bg-warn/5`, `bg-destructive/5`, `bg-primary/5`, `bg-destructive/10` | tokens `--warn-tinte`, `--danger-tinte`, `bg-marcado` (prioridad baja) |
 | `src/components/ui/kbd.tsx:10` · `ui/dropdown-menu.tsx:76` | alfa dentro de un tooltip o de un menú (sobre superficie opaca) | se pueden quedar: van sobre un panel opaco |
 
@@ -523,7 +538,17 @@ En este orden. Cada paso es una entrega con sus capturas a 320, 393 y 1440, la s
    - una lista de filas de 48 px: Mi estado (tiradores), Siguiendo, Convocatorias, Mis tiradores (club o seleccionador), Notificaciones, Calendarios, Gestión (administración) y Salir;
    - cada fila es una subpantalla con `CabeceraCompacta`.
 9. **Notificaciones:** la campana de la cabecera abre `/notificaciones` como subpantalla, y la insignia es el punto rojo de la barra o de la campana.
-10. **Cierre:**
+10. **Cierre** (hecho, ver § 11):
     - § 8.3 (fuera la raíz de 18 px);
     - repaso del texto con el diccionario de § 6;
-    - capturas finales en `capturas/pasada-final/`.
+    - capturas finales: la matriz completa en `capturas/matriz/`, con la línea base medida antes de la pasada (`linea-base.*`) y la comparación (`comparacion-linea-base.md`).
+
+## 11. Pasada final: lo que se hizo
+
+- **Matriz** (`tests/ui/matriz-medir.mts`): mide el área táctil real con el criterio de la sonda (§ 7). Base por defecto: `nuevo11.sqlite`.
+- **Raíz de 16 px** en todos los tamaños (§ 8.3) y ningún rótulo por debajo de 12 px: `BanderaPais` (pastilla de 12 px, 18 px de alto como antes), `InsigniaOrganismo` (12 px), `EjeX`, `Guias` y `Leyenda` (12 px; el hueco mínimo entre rótulos del eje sube de 13 a 15 % y de 20 a 24 % en estrecho), la segunda línea de la cuenta en `cabecera-escritorio.tsx` y los rótulos del perfil y de los gráficos.
+- **Toque:** `BotonVolver` ya se tocaba en 44 px con el `::after` de `BotonIcono`; la matriz lo confirma. Los enlaces a las pruebas de una ficha de torneo (`prueba-resultados.tsx`, `resultados-torneo.tsx`) dejan de bajar a 21 px desde 768 px (iPad): se quedan en 44. Las filas `Item` pequeñas miden 44 px y no 46. En la página de una prueba, las poules van en dos columnas sólo desde 1280 px: a 1024 el nombre se quedaba en 19 px.
+- **El nombre enlazado del feed** (`tarjeta-feed.tsx`) se toca en la tarjeta entera por su `after:inset-0`; la matriz, que antes medía los 18 px de la línea, ya no lo cuenta.
+- **Sin esqueletos:** fuera `estado/loading.tsx`, `ui/skeleton.tsx`, el esqueleto de `HistorialPropio` en `/perfil` y los `CargandoPestana` de `FichaCompleta` (las pestañas diferidas esperan con `fallback={null}`). Los avisos de espera para lectores de pantalla siguen, sin «Cargando…».
+- **Textos:** diccionario de § 6 en circuitos (`CIRCUIT_LABEL`, `CIRCUIT_SHORT`: «Copa del Mundo M17», «Gran Premio», «Satélite», «Circuito Europeo M17», «Mundial» para el Campeonato del Mundo), categorías (`CATEGORIAS_DEPORTIVAS`: M20, M17… en vez de «Júnior (M20)»), filtros de organismo y de fuente (Internacional, Europeo, Nacional), leyenda de la dispersión de puestos, «Puntos» en la ficha FIE, «Perfil deportivo» en Tú, y párrafos de `/perfil`, `/estado` y la tabla oficial reducidos a una línea.
+- **Limpieza:** fuera `calendario/banda-resultados.tsx` y su prueba (nadie lo importaba). La acción `explorar/resultados-evento.ts` se queda: la usa la matriz de acceso anónimo.

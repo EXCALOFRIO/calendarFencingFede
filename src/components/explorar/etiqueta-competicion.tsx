@@ -26,7 +26,7 @@ export const CLASES_TONO: Record<TonoTipo, string> = {
 };
 
 const PASTILLA =
-  'inline-flex h-6 max-w-full shrink-0 items-center rounded-full border px-2.5 text-xs leading-none font-semibold whitespace-nowrap';
+  'inline-flex h-6 max-w-full min-w-0 shrink-0 items-center rounded-full border px-2.5 text-xs leading-none font-semibold whitespace-nowrap';
 
 /** Tipo de competición coloreado por organismo; el nombre largo queda en el `title`. */
 export function EtiquetaTipoCompeticion({

@@ -103,6 +103,9 @@ describe('alternarFavorito', () => {
     ];
     for (const m of mensajes) {
       expect(m).not.toMatch(/te avis|recibir|notificar|notificaci(o|ó)n(es)? (de|cuando)|siguiendo|seguir a|suscri/i);
+      // Tampoco lo contrario: a quien sigue a un adulto sí le pueden llegar avisos.
+      expect(m).not.toMatch(/sin avisos/i);
     }
+    expect(mensajes[0]).toBe('Guardado en tus favoritos.');
   });
 });

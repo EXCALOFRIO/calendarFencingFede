@@ -1,7 +1,7 @@
 'use client';
 
 import { Check, RotateCw, UserPlus } from 'lucide-react';
-import { useOptimistic, useState, useTransition } from 'react';
+import { useEffect, useOptimistic, useState, useTransition } from 'react';
 import {
   guardarFavoritoAccion,
   quitarFavoritoAccion,
@@ -58,6 +58,14 @@ export function BotonSeguirCompacto({
   }
 
   const error = cambio?.resultado === 'error';
+  const aviso = pendiente ? 'Guardando el cambio…' : cambio && !error ? mensajeSeguir(cambio, nombre) : '';
+  // La región ya existe antes del primer aviso: una región que nace con el texto no siempre se anuncia.
+  useEffect(() => {
+    regionAviso();
+  }, []);
+  useEffect(() => {
+    if (aviso) regionAviso().textContent = aviso;
+  }, [aviso]);
   const Icono = error ? RotateCw : optimista ? Check : UserPlus;
   const etiqueta = error
     ? `Reintentar: seguir a ${nombre}`
@@ -84,7 +92,7 @@ export function BotonSeguirCompacto({
         <span
           className={cn(
             clasesSeguir(optimista, error),
-            'h-[30px] gap-1 rounded-full px-3 text-[13px] group-focus-visible:ring-[3px] group-focus-visible:ring-ring/50',
+            'h-[30px] gap-1 rounded-full px-3 text-[13px] group-focus-visible:ring-[3px] group-focus-visible:ring-ring',
             'max-[359px]:size-[32px] max-[359px]:px-0',
             pendiente && 'opacity-70',
           )}
@@ -97,10 +105,25 @@ export function BotonSeguirCompacto({
           />
         </span>
       </button>
-      <span role="status" className="sr-only">
-        {pendiente ? 'Guardando el cambio…' : cambio && !error ? mensajeSeguir(cambio, nombre) : ''}
-      </span>
       {error ? <span role="alert" className="sr-only">{mensajeSeguir(cambio, nombre)}</span> : null}
     </span>
   );
 }
+
+/**
+ * Una sola región viva para todos los «Seguir» de la pantalla: con una por
+ * fila, una lista de 25 resultados eran 25 regiones `status` vacías.
+ */
+function regionAviso(): HTMLElement {
+  let region = document.getElementById(ID_AVISO);
+  if (!region) {
+    region = document.createElement('div');
+    region.id = ID_AVISO;
+    region.setAttribute('role', 'status');
+    region.className = 'sr-only';
+    document.body.appendChild(region);
+  }
+  return region;
+}
+
+const ID_AVISO = 'aviso-seguir';

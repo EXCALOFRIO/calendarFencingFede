@@ -26,6 +26,8 @@ vi.mock('@/db', () => ({
   }),
 }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
+const cache = vi.hoisted(() => ({ invalidarCacheSinFallar: vi.fn(async () => {}) }));
+vi.mock('@/lib/cache', () => cache);
 vi.mock('next/navigation', () => ({
   redirect: (url: string) => { throw Object.assign(new Error('TEST_REDIRECT'), { url }); },
 }));
@@ -126,7 +128,10 @@ describe('frontera de acciones para revisión de identidad', () => {
     datos.set('profileId', 'b');
     datos.set('clave', 'rfee:otro');
     datos.set('adminProfileId', 'b');
+    cache.invalidarCacheSinFallar.mockClear();
     expect(await resolverSolicitudVinculo(datos)).toMatchObject({ ok: true });
+    // Ha escrito athlete y fie_fencer: las fichas y el ranking FIE cacheados dejan de servirse.
+    expect(cache.invalidarCacheSinFallar).toHaveBeenCalledWith(['deporte', 'ranking-fie'], 'vinculo');
     expect(await database.select().from(athlete)).toMatchObject([{ userProfileId: 'a', linkedByProfileId: 'admin' }]);
     expect(await database.select().from(athleteLinkRequest)).toMatchObject([{
       state: 'APROBADA', reviewedByProfileId: 'admin', sourceKey: 'fie:101',
@@ -148,7 +153,9 @@ describe('frontera de acciones para revisión de identidad', () => {
   it('rechazar deja un rastro sin modificar ficha, armas o enlaces', async () => {
     const id = await solicitud();
     contexto.perfil = sesion('admin', 'admin');
+    cache.invalidarCacheSinFallar.mockClear();
     expect(await resolverSolicitudVinculo(formulario(id, 'rechazar'))).toMatchObject({ ok: true });
+    expect(cache.invalidarCacheSinFallar).not.toHaveBeenCalled();
     expect(await database.select().from(athlete)).toMatchObject([{ userProfileId: null }]);
     expect(await database.select().from(athleteLinkRequest)).toMatchObject([{
       state: 'RECHAZADA', reviewedByProfileId: 'admin', athleteId: null,

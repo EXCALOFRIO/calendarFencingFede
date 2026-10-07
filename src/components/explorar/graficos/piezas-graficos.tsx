@@ -8,6 +8,17 @@ export function Subtitulo({ nivel, children, className }: { nivel: Nivel; childr
   return <Etiqueta className={cn('font-display text-lg leading-none font-semibold tracking-tight', className)}>{children}</Etiqueta>;
 }
 
+/** Lectura de una gráfica en lenguaje sencillo, encima de ella (ver `frases.ts`). Sin frases no pinta nada. */
+export function Frases({ frases, className }: { frases: readonly (string | null | undefined)[]; className?: string }) {
+  const visibles = frases.filter((f): f is string => Boolean(f));
+  if (visibles.length === 0) return null;
+  return (
+    <p className={cn('text-[13px] leading-snug text-pretty text-muted-foreground', className)}>
+      {visibles.join(' ')}
+    </p>
+  );
+}
+
 /** Celdas separadas por filetes de un píxel (la rejilla pinta el fondo y cada celda tapa el suyo). */
 export function Rejilla({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={cn('grid min-w-0 gap-px overflow-hidden border-y bg-border', className)}>{children}</div>;
@@ -36,7 +47,7 @@ export function Celda({
         <span className="min-w-fit grow basis-0 text-xs leading-tight text-muted-foreground">{rotulo}</span>
         {cifra !== undefined && cifra !== null ? (
           <span className="ml-auto flex shrink-0 items-baseline gap-1">
-            {contexto ? <span className="text-[0.625rem] leading-none text-muted-foreground">{contexto}</span> : null}
+            {contexto ? <span className="text-[12px] leading-none text-muted-foreground">{contexto}</span> : null}
             <span className="cifra text-3xl leading-none">
               {cifra}
               {unidad ? <span className="text-base">{unidad}</span> : null}
@@ -76,10 +87,10 @@ export function BarraDuelo({
       <div className="flex min-w-0 items-end justify-between gap-2">
         <span className="flex min-w-0 items-baseline gap-1.5">
           <span className={cn('cifra leading-none', tamano)}>{formato(izquierda)}</span>
-          {rotuloIzquierda ? <span className="truncate text-[0.625rem] text-muted-foreground">{rotuloIzquierda}</span> : null}
+          {rotuloIzquierda ? <span className="truncate text-[12px] text-muted-foreground">{rotuloIzquierda}</span> : null}
         </span>
         <span className="flex min-w-0 items-baseline gap-1.5">
-          {rotuloDerecha ? <span className="truncate text-[0.625rem] text-muted-foreground">{rotuloDerecha}</span> : null}
+          {rotuloDerecha ? <span className="truncate text-[12px] text-muted-foreground">{rotuloDerecha}</span> : null}
           <span className={cn('cifra leading-none text-muted-foreground', tamano)}>{formato(derecha)}</span>
         </span>
       </div>

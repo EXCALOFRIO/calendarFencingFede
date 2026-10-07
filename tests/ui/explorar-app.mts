@@ -27,9 +27,9 @@ import { chromium, type Page } from 'playwright';
 import React from 'react';
 import { renderToStaticMarkup, renderToString } from 'react-dom/server';
 import { Marca } from '@/components/marca';
-import { PantallaEdiciones } from '@/components/explorar/catalogo-ediciones';
 import { cargarCatalogoEdiciones } from '@/lib/sport/explorar/catalogo';
-import { leerCriteriosCatalogo } from '@/lib/sport/explorar/catalogo-url';
+import { entradaCatalogo, leerCriteriosCatalogo } from '@/lib/sport/explorar/catalogo-url';
+import { construirIndiceEdiciones, leerDatosIndiceEdiciones, type IndiceEdiciones } from '@/lib/sport/explorar/indice-ediciones';
 import { cargarSeries } from '@/lib/sport/explorar/ediciones-pantalla';
 import { leerFotoDeportista } from '@/lib/sport/explorar/foto';
 import { leerFotosDeportistas } from '@/lib/sport/explorar/foto-lote';
@@ -113,7 +113,7 @@ function documento(css: string, cuerpo: string, datos: object | null): string {
 <header class="sticky top-0 z-30 border-b bg-card"><div class="ancho-app flex h-14 items-center gap-4 px-4">
 <a href="/" class="-mx-2 flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-2.5 px-2">${marca}<span class="hidden font-semibold tracking-tight sm:inline">Calendar<span class="text-primary-text">Fencing</span></span></a>
 <div class="mx-auto" id="nav-escritorio"></div>
-<div class="flex shrink-0 items-center gap-1"><a href="/perfil" class="flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-md p-1 pr-2"><span class="flex size-8 items-center justify-center rounded-full bg-muted text-xs">AR</span><span class="hidden min-w-0 flex-col leading-tight md:flex"><span class="max-w-36 truncate text-xs font-medium">Alejandro Ramírez</span><span class="max-w-36 truncate text-[11px] text-muted-foreground">Dirección técnica</span></span></a><button class="inline-flex size-11 items-center justify-center" aria-label="Salir">⎋</button></div>
+<div class="flex shrink-0 items-center gap-1"><a href="/perfil" class="flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-md p-1 pr-2"><span class="flex size-8 items-center justify-center rounded-full bg-muted text-xs">AR</span><span class="hidden min-w-0 flex-col leading-tight md:flex"><span class="max-w-36 truncate text-xs font-medium">Alejandro Ramírez</span><span class="max-w-36 truncate text-[12px] text-muted-foreground">Dirección técnica</span></span></a><button class="inline-flex size-11 items-center justify-center" aria-label="Salir">⎋</button></div>
 </div></header>
 <main id="contenido" class="ancho-app flex flex-1 flex-col px-4 py-4"><div id="isla" class="flex min-w-0 flex-col">${cuerpo}</div></main>
 <div id="nav-movil"></div></div>
@@ -163,14 +163,24 @@ async function paginaSiguiendo(css: string, b: URLSearchParams): Promise<Pintada
   return { html: documento(css, renderToString(contenidoExplorar(datos)), datos), ms };
 }
 
+/** El índice de ediciones, como la caché compartida: se lee una vez y se reutiliza. */
+let indiceEdiciones: Promise<IndiceEdiciones | null> | null = null;
+const indice = () => (indiceEdiciones ??= leerDatosIndiceEdiciones(ctx).then((d) => (d ? construirIndiceEdiciones(d) : null)));
+
 async function paginaEdiciones(css: string, b: URLSearchParams): Promise<Pintada> {
   const { criterios, cursor } = leerCriteriosCatalogo(Object.fromEntries(b));
-  const entrada = Object.fromEntries(Object.entries(criterios).filter(([, v]) => v));
   const t = performance.now();
-  const [series, catalogo] = await Promise.all([cargarSeries(ctx), cargarCatalogoEdiciones(ctx, { ...entrada, ...(cursor ? { cursor } : {}) })]);
+  const [series, catalogo] = await Promise.all([cargarSeries(ctx), cargarCatalogoEdiciones(ctx, entradaCatalogo(criterios, cursor), { indice })]);
   if (series.tipo === 'sin_sesion' || catalogo.estado === 'sin_sesion') throw new Error('sin sesión');
   const ms = performance.now() - t;
-  return { html: documento(css, renderToStaticMarkup(h(PantallaEdiciones, { catalogo, criterios, cursor, series })), null), ms };
+  const datos: DatosExplorarApp = { vista: 'ediciones', cuenta: CUENTA, catalogo, criterios, cursor, series, anioActual: Number(hoy.slice(0, 4)) };
+  return { html: documento(css, '', datos), ms };
+}
+
+async function paginaBuscarOPaises(css: string, b: URLSearchParams): Promise<Pintada> {
+  if (b.get('ver') !== 'paises') return paginaBuscar(css, b);
+  const datos: DatosExplorarApp = { vista: 'paises', cuenta: CUENTA, q: b.get('q') ?? '' };
+  return { html: documento(css, '', datos), ms: 0 };
 }
 
 const [css, cliente] = await Promise.all([compilarCss(), empaquetar()]);
@@ -184,7 +194,7 @@ const leerCuerpo = (pet: IncomingMessage) => new Promise<string>((ok) => {
 });
 const paginas: Record<string, (b: URLSearchParams) => Promise<Pintada>> = {
   '/explorar': (b) => paginaExplorar(css, b),
-  '/explorar/buscar': (b) => paginaBuscar(css, b),
+  '/explorar/buscar': (b) => paginaBuscarOPaises(css, b),
   '/explorar/siguiendo': (b) => paginaSiguiendo(css, b),
   '/explorar/ediciones': (b) => paginaEdiciones(css, b),
 };
@@ -340,7 +350,10 @@ for (const a of anchos) {
     ['siguiendo', '/explorar/siguiendo', '[aria-label="Personas que sigues"]'],
     ['siguiendo-muchas', '/explorar/siguiendo?cuenta=muchas', '[aria-label="Personas que sigues"]'],
     ['siguiendo-vacio', '/explorar/siguiendo?cuenta=nueva', '#isla'],
-    ['competiciones', '/explorar/ediciones', '#isla'],
+    ['competiciones', '/explorar/ediciones', '#catalogo-q'],
+    ['competiciones-mndial', '/explorar/ediciones?q=mndial', '[aria-label="Competiciones"]'],
+    ['competiciones-filtros', '/explorar/ediciones?q=copa%20del%20mun&arma=ESPADA&categoria=M20&desde=2018&hasta=2024', '[aria-label="Competiciones"]'],
+    ['paises', '/explorar/buscar?ver=paises', '#paises-lista'],
   ] as const).filter(([nombre]) => !SOLO || SOLO.test(nombre))) {
     const p = await abrir(a, ruta, esperar);
     await calma(p);
@@ -362,11 +375,25 @@ for (const a of anchos) {
   await foto(p, 'vivo-zabal', a);
   await p.close();
 
+  p = await abrir(a, '/explorar/buscar', '#explorar-q');
+  await escribir(p, 'italia');
+  await calma(p);
+  await foto(p, 'vivo-italia', a);
+  await p.close();
+
+  // Los chips abren su hoja: la de un tirador (arma) y la de una competición (fechas).
   p = await abrir(a, '/explorar?q=zabala&arma=ESPADA&categoria=ABS', '#explorar-q');
-  await p.getByRole('button', { name: /^Filtros/ }).click();
-  await p.waitForSelector('#explorar-panel-filtros[data-state="open"]');
+  await p.locator('[data-slot="sistema-chip"][data-tipo="menu"]', { hasText: 'Espada' }).click();
+  await p.waitForSelector('[data-slot="sistema-hoja"]');
   await calma(p, 3000);
   await foto(p, 'filtros', a);
+  await p.close();
+
+  p = await abrir(a, '/explorar/ediciones?q=turin', '[aria-label="Competiciones"]');
+  await p.locator('[data-slot="sistema-chip"][data-tipo="menu"]', { hasText: 'Fechas' }).click();
+  await p.waitForSelector('[data-slot="sistema-hoja"]');
+  await calma(p, 1500);
+  await foto(p, 'competiciones-fechas', a);
   await p.close();
 }
 await navegador.close();

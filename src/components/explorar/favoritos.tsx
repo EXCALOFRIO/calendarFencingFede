@@ -21,7 +21,7 @@ import { CLASE_VER_MAS, datoCorto } from './buscador-social-fila';
  */
 
 const ENLACE =
-  'inline-flex min-h-[44px] items-center gap-1.5 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
+  'inline-flex min-h-[44px] items-center gap-1.5 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none';
 
 /** Entrada a la lista desde Explorar o el perfil, sin ocupar sitio en la barra. */
 export function EnlaceFavoritos({ className }: { className?: string }) {
@@ -42,7 +42,7 @@ function FilaFavorito({ d, volver }: { d: FavoritoResumen; volver: string }) {
       <Link
         href={rutaFichaConRetorno(d.id, volver)}
         prefetch={false}
-        className="flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-sm py-1 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+        className="flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-sm py-1 focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
       >
         <FotoDeportista personaId={d.id} nombre={visible} tamano="lista" apagado={d.resultadosImportados === 0} />
         <span className="flex min-w-0 flex-1 flex-col gap-1">

@@ -134,6 +134,34 @@ export function mapWpMedia(item: WpMedia): OfficialDocumentCandidate | null {
   };
 }
 
+export type OfficialDocumentGuardado = {
+  wpMediaId: number;
+  title: string;
+  pdfUrl: string;
+  publishedAt: Date | number | string;
+};
+
+/**
+ * Las circulares que hay que escribir: las nuevas y las que cambian de título,
+ * URL o fecha, que es justo lo que refresca el INSERT ... ON CONFLICT.
+ */
+export function documentosQueCambian(
+  candidatos: readonly OfficialDocumentCandidate[],
+  existentes: ReadonlyMap<number, OfficialDocumentGuardado>,
+): { nuevos: OfficialDocumentCandidate[]; aEscribir: OfficialDocumentCandidate[] } {
+  const nuevos = candidatos.filter((d) => !existentes.has(d.wpMediaId));
+  const aEscribir = candidatos.filter((d) => {
+    const previo = existentes.get(d.wpMediaId);
+    return (
+      !previo ||
+      previo.title !== d.title ||
+      previo.pdfUrl !== d.pdfUrl ||
+      new Date(previo.publishedAt).getTime() !== d.publishedAt.getTime()
+    );
+  });
+  return { nuevos, aEscribir };
+}
+
 /**
  * Descarga las circulares. Se paginan de 100 en 100, que es el tope de la API
  * de WordPress, y se recorren varias búsquedas porque no todos los documentos

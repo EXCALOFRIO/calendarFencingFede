@@ -342,14 +342,14 @@ export function TablaRankingOficial({
           key={fila.id}
           type="button"
           onClick={() => setAbierto(fila.athleteId)}
-          className="flex min-h-0! min-w-0 cursor-pointer items-start gap-3 rounded-xl border border-filete-alto bg-card px-3 py-2.5 text-left transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+          className="flex min-h-0! min-w-0 cursor-pointer items-start gap-3 rounded-xl border border-filete-alto bg-card px-3 py-2.5 text-left transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
         >
           {conMiFicha ? null : (
             <span className="flex w-12 shrink-0 flex-col">
               <span className="cifra text-4xl leading-none text-primary-text">
                 {fila.position ?? '—'}
               </span>
-              <span className="mt-1 text-[11px] leading-tight text-muted-foreground">
+              <span className="mt-1 text-[12px] leading-tight text-muted-foreground">
                 {fila.position ? 'tu puesto oficial' : 'sin clasificar todavía'}
               </span>
             </span>
@@ -402,6 +402,10 @@ export function TablaRankingOficial({
         url={tabla.sourceUrl}
       />
 
+      <p role="status" className="sr-only">
+        {filtradas.length} {filtradas.length === 1 ? 'tirador' : 'tiradores'}
+      </p>
+
       {filasVisibles.length === 0 ? (
         <p className="border-y border-filete-alto py-6 text-sm text-muted-foreground">
           {busqueda ? 'Ningún tirador coincide. Prueba otro nombre.' : 'Sin puestos publicados en este grupo.'}
@@ -436,7 +440,7 @@ export function TablaRankingOficial({
                         type="button"
                         onClick={() => setAbierto(fila.athleteId)}
                         aria-label={`Ver los datos de ${fila.nombre}`}
-                        className="relative -mr-1 inline-flex size-7 min-h-0! min-w-0! items-center justify-center rounded-full text-muted-foreground after:absolute after:-inset-2 after:content-[''] hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                        className="relative -mr-1 inline-flex size-7 min-h-0! min-w-0! items-center justify-center rounded-full text-muted-foreground after:absolute after:-inset-2 after:content-[''] hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
                       >
                         <ChevronRight className="size-4" aria-hidden />
                       </button>
@@ -566,9 +570,7 @@ export function DetalleFilaOficial({
             />
           ) : (
             <p className="medida text-sm text-muted-foreground">
-              Todavía no hay ningún resultado de esta temporada emparejado con
-              su licencia, así que no hay cálculo propio que abrir. El puesto
-              oficial de arriba no depende de esto: lo publica la federación.
+              Sin resultados de esta temporada con su licencia.
             </p>
           )}
         </div>

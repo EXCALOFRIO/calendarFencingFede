@@ -4,9 +4,12 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { db } from '@/db';
 import { requireProfile, requireWritableProfile } from '@/lib/auth/session';
-import { abrirAviso, guardarAvisos, guardarPreferencia, leerPreferenciasDe, marcarTodasLeidas } from '@/lib/notificaciones/bandeja';
+import {
+  abrirAviso, contarPruebasRecientes, guardarAvisos, guardarPreferencia, leerPreferenciasDe, marcarTodasLeidas, MAX_PRUEBAS_POR_HORA,
+} from '@/lib/notificaciones/bandeja';
 import { esFaltaDeTabla } from '@/lib/notificaciones/db';
 import { entregarPush } from '@/lib/notificaciones/entrega';
+import { endpointValido } from '@/lib/notificaciones/push/enviar';
 import { borrarSuscripcion, guardarSuscripcion, validarSuscripcion } from '@/lib/notificaciones/suscripciones';
 import { esClavePreferencia, esRutaInterna } from '@/lib/notificaciones/tipos';
 
@@ -70,6 +73,10 @@ export async function guardarPreferenciaAccion(clave: string, activa: boolean): 
 }
 
 export async function suscribirAccion(entrada: unknown): Promise<ResultadoAccion> {
+  const endpoint = entrada && typeof entrada === 'object' ? (entrada as { endpoint?: unknown }).endpoint : null;
+  if (typeof endpoint !== 'string' || !endpointValido(endpoint.trim())) {
+    return { ok: false, error: 'Este navegador usa un servicio de notificaciones que no admitimos.' };
+  }
   const datos = validarSuscripcion(entrada);
   if (!datos) return { ok: false, error: 'El navegador ha devuelto una suscripción que no se puede usar.' };
   try {
@@ -105,6 +112,9 @@ export async function notificacionPruebaAccion(): Promise<ResultadoAccion> {
       return { ok: false, error: 'Tienes los dos canales apagados: enciende la campana o el móvil para probar.' };
     }
     const ahora = new Date();
+    if ((await contarPruebasRecientes(db, perfil.profileId, ahora)) >= MAX_PRUEBAS_POR_HORA) {
+      return { ok: false, error: 'Ya has enviado varias pruebas. Espera un rato.' };
+    }
     const guardados = await guardarAvisos(db, [{
       profileId: perfil.profileId,
       tipo: 'prueba',

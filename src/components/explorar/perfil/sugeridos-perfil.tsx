@@ -47,7 +47,7 @@ function TarjetaSugerido({ personaId, s }: { personaId: string; s: TiradorSugeri
       <article className="flex h-full min-w-0 flex-col items-center gap-1.5 rounded-xl border bg-card px-2 pt-3 pb-2.5 text-center">
         <EnlacePrecarga
           href={rutaFicha(s.id)}
-          className="flex min-h-[44px] w-full min-w-0 flex-col items-center gap-1.5 rounded-md focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+          className="flex min-h-[44px] w-full min-w-0 flex-col items-center gap-1.5 rounded-md focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
         >
           <FotoDeportista personaId={s.id} nombre={nombre} tamano="lista" />
           <span className="flex w-full min-w-0 items-center justify-center gap-1.5">

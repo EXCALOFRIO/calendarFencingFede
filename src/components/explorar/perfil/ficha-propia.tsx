@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useSyncExternalStore } from 'react';
+import { sinFichaPropiaAjena } from '@/components/navegacion-app';
+import { transformarRecordadas } from '@/components/sistema/memoria-pestanas';
 import { RUTA_EXPLORAR } from '@/lib/sport/explorar/url';
 
 /**
@@ -36,6 +38,8 @@ function apuntar(ruta: string, propia: boolean) {
   const antes = leer();
   // Una ficha ajena sólo borra lo apuntado si era esa misma (otra cuenta en la misma pestaña).
   const nueva = propia ? ruta : antes === ruta ? null : antes;
+  // Si otra pestaña de la barra recordaba la ficha propia (el primer pintado marca Explorar), vuelve a su raíz.
+  if (nueva) transformarRecordadas((r) => sinFichaPropiaAjena(r, nueva));
   if (nueva === antes) return;
   actual = nueva;
   try {
@@ -45,6 +49,11 @@ function apuntar(ruta: string, propia: boolean) {
     /* sin almacenamiento: vale para esta visita */
   }
   for (const o of oyentes) o();
+}
+
+/** Lo apuntado ahora mismo, fuera del render (la barra lo comprueba al guardar). */
+export function leerFichaPropia(): string | null {
+  return typeof window === 'undefined' ? null : leer();
 }
 
 /** Ruta de la ficha propia (`/explorar/<id>`) o `null` si no se conoce. */

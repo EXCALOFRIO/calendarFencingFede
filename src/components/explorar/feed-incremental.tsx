@@ -66,7 +66,7 @@ export function FeedIncremental({
 
   return (
     <>
-      <ol className="flex min-w-0 flex-col divide-y divide-filete-alto" aria-label="Resultados, del más reciente al más antiguo">
+      <ol className="sis-aparecer-lista flex min-w-0 flex-col divide-y divide-filete-alto" aria-label="Resultados, del más reciente al más antiguo">
         {lista.map((e) => <TarjetaSiguiendo key={e.id} e={e} />)}
       </ol>
       <div ref={centinela} className="flex min-h-[44px] flex-col items-center justify-center gap-1 pt-1">
@@ -76,7 +76,7 @@ export function FeedIncremental({
             prefetch={false}
             rel="next"
             aria-disabled={estado === 'cargando'}
-            className="inline-flex h-[44px] items-center gap-1.5 px-4 text-[13px] font-semibold text-primary-text outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="inline-flex h-[44px] items-center gap-1.5 px-4 text-[13px] font-semibold text-primary-text outline-none focus-visible:ring-[3px] focus-visible:ring-ring"
             onClick={(ev) => {
               if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button !== 0) return;
               ev.preventDefault();
@@ -90,7 +90,7 @@ export function FeedIncremental({
           <p className="text-[12px] text-muted-foreground">No hay más resultados.</p>
         ) : null}
         <p role="status" className="sr-only">
-          {estado === 'cargando' ? 'Cargando más resultados…' : estado === 'error' ? 'No se han podido cargar más resultados.' : ''}
+          {estado === 'cargando' ? 'Leyendo más resultados' : estado === 'error' ? 'No se han podido cargar más resultados.' : ''}
         </p>
       </div>
     </>

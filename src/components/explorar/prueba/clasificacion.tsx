@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
 import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
 import type { FilaClasificacion } from '@/lib/sport/explorar/edicion-modelo';
+import { rutaPaisDe } from '@/lib/sport/explorar/enlace-pais';
 import { CLASES_MEDALLA, medallaDe, type Medalla } from '@/lib/sport/explorar/presentacion';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { cn } from '@/lib/utils';
@@ -65,31 +66,48 @@ function Fila({ fila, enlace, filtro }: { fila: FilaClasificacion; enlace?: Enla
           <span className="text-xs text-muted-foreground">{fila.puestoPublicado}</span>
         ) : null}
       </span>
-      {fila.pais ? <BanderaPais pais={fila.pais} /> : <span aria-hidden />}
     </>
   );
-  const rejilla = 'grid min-h-[44px] grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-1';
+  const rejilla = 'grid min-h-[44px] grid-cols-[36px_minmax(0,1fr)] items-center gap-x-3 py-1 pl-3';
+  const pais = rutaPaisDe(fila.pais);
   return (
     <li
       id={idFilaClasificacion(fila.id)}
       data-resaltado={marcada ? 'true' : undefined}
-      className={cn('scroll-mt-24', marcada && 'bg-marcado shadow-[inset_3px_0_0_var(--color-primary)]')}
+      className={cn(
+        'grid scroll-mt-24 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1 pr-3',
+        marcada && 'bg-marcado shadow-[inset_3px_0_0_var(--color-primary)]',
+      )}
     >
       {fila.personaId && enlace ? (
         <Link
           href={enlace(fila.personaId)}
           prefetch={false}
           transitionTypes={[TIPO_TRANSICION.avanzar]}
-          aria-label={`Abrir la ficha deportiva de ${nombre}`}
           className={cn(
             rejilla,
-            'transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset motion-reduce:transition-none',
+            'transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset motion-reduce:transition-none',
           )}
         >
           {contenido}
         </Link>
       ) : (
         <div className={rejilla}>{contenido}</div>
+      )}
+      {/* Hermano del enlace de la persona y no dentro: la bandera lleva a su país. */}
+      {fila.pais && pais ? (
+        <Link
+          href={pais}
+          prefetch={false}
+          data-enlace="pais"
+          className="inline-flex min-h-[44px] min-w-[44px] items-center justify-end rounded-sm focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
+        >
+          <BanderaPais pais={fila.pais} />
+        </Link>
+      ) : fila.pais ? (
+        <BanderaPais pais={fila.pais} />
+      ) : (
+        <span aria-hidden />
       )}
     </li>
   );

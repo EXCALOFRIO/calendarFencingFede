@@ -32,6 +32,8 @@ export type PropsCabeceraCompacta = {
   anclada?: boolean;
   /** `false` para pintarla en línea (muestra, arneses). */
   pegajosa?: boolean;
+  /** `false`: el título se pinta como rótulo (`<p>`) porque el `<h1>` es el nombre que pinta la pantalla. */
+  encabezado?: boolean;
   className?: string;
 };
 
@@ -43,11 +45,13 @@ export function CabeceraCompacta({
   inicio,
   anclada = true,
   pegajosa = true,
+  encabezado = true,
   className,
 }: PropsCabeceraCompacta) {
   const desplazada = useDesplazada(pegajosa);
   useRegistrarPantalla();
   const sub = variante === 'subpantalla';
+  const Titulo = encabezado ? 'h1' : 'p';
   const izquierda = inicio ?? (sub ? <BotonVolver volverA={volverA} /> : null);
 
   return (
@@ -74,16 +78,18 @@ export function CabeceraCompacta({
         {titulo == null ? (
           <span aria-hidden />
         ) : (
-          <h1
+          <Titulo
             className={cn(
-              'min-w-0 truncate',
+              // Dos renglones como mucho (WCAG 1.4.4/1.4.10): 2 × 20 px o 2 × 24 px caben en los 48 px de la fila.
+              'min-w-0 line-clamp-2 break-words',
               sub
-                ? 'max-w-[60vw] justify-self-center font-sans text-[16px] leading-[20px] font-semibold tracking-normal'
+                ? 'max-w-[60vw] justify-self-center text-center font-sans text-[16px] leading-[20px] font-semibold tracking-normal'
                 : 'pl-[8px] text-[20px] leading-[24px] font-semibold',
+              !encabezado && !sub && 'font-display',
             )}
           >
             {titulo}
-          </h1>
+          </Titulo>
         )}
         <div className="flex min-w-0 items-center justify-self-end gap-[4px]">{acciones}</div>
       </div>

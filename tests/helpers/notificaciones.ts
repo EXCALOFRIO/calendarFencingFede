@@ -26,10 +26,11 @@ export function baseNotificaciones() {
       VALUES (?, ?, ?, ?, ?, ?, ?, 1)`).run(id, opciones.propietario ?? null, opciones.tutor ?? null, nombre, apellido, opciones.nacimiento ?? '2010-05-04', opciones.genero ?? 'F');
     return id;
   };
-  const persona = (nombre: string, opciones: { atleta?: string; fundidaEn?: string; anio?: number } = {}) => {
+  // Adulta por defecto: a quien sigue a un posible menor (o sin año) no le llegan sus resultados.
+  const persona = (nombre: string, opciones: { atleta?: string; fundidaEn?: string; anio?: number | null } = {}) => {
     const id = uuid();
     s.prepare(`INSERT INTO sport_person (id, athlete_id, display_name, name_normalized, merged_into_person_id, birth_year)
-      VALUES (?, ?, ?, ?, ?, ?)`).run(id, opciones.atleta ?? null, nombre, nombre.toLowerCase(), opciones.fundidaEn ?? null, opciones.anio ?? 2010);
+      VALUES (?, ?, ?, ?, ?, ?)`).run(id, opciones.atleta ?? null, nombre, nombre.toLowerCase(), opciones.fundidaEn ?? null, opciones.anio === undefined ? 1990 : opciones.anio);
     return id;
   };
   const evento = (nombre: string) => {

@@ -10,11 +10,21 @@ import { TACTIL } from '../perfil/tactil';
 import { BarrasApiladas } from './barras-apiladas';
 import { BarrasTipo, type FilaDesglose } from './barras-tipo';
 import { COLOR, COLOR_AMBITO, conSigno, decimal, MEDALLAS, pct, top } from './comun';
-import { DispersionPuestos, lecturaPuesto } from './dispersion-puestos';
+import { lecturaPuesto } from './dispersion-puestos';
 import { Donut } from './donut';
+import {
+  fraseAsaltos,
+  fraseCompeticiones,
+  fraseMedallas,
+  fraseMejorGrupo,
+  frasePuestoRelativo,
+  fraseTocados,
+  temporadaDeReferencia,
+} from './frases';
 import { LineaTemporal } from './linea-temporal';
 import { MiniSparkline } from './mini-sparkline';
-import { BarraDuelo, Celda, Rejilla, Subtitulo } from './piezas-graficos';
+import { BarraDuelo, Celda, Frases, Rejilla, Subtitulo } from './piezas-graficos';
+import { contarTramos, frasesTramos, TramosPuestos } from './tramos-puestos';
 
 const OPCIONES: { clave: AmbitoRendimiento; rotulo: string }[] = [
   { clave: 'todo', rotulo: 'Todo' },
@@ -51,10 +61,7 @@ function lecturaTemporada(t: TemporadaRendimiento, texto: string) {
  * para que una temporada recién empezada (una prueba) no la decida; si no hay
  * ninguna así, la última con alguna.
  */
-function ultimaConDatos(ts: TemporadaRendimiento[]) {
-  const inversa = [...ts].reverse();
-  return inversa.find((t) => t.competiciones >= 3) ?? inversa.find((t) => t.competiciones > 0) ?? null;
-}
+const ultimaConDatos = temporadaDeReferencia;
 
 const nCompeticiones = (n: number) => `${n} ${n === 1 ? 'competición' : 'competiciones'}`;
 
@@ -81,7 +88,7 @@ function Cifras({ v }: { v: VistaRendimiento }) {
           max={1}
           color={COLOR.marca}
         />
-        <span className="flex items-baseline justify-between gap-2 text-[0.625rem] text-muted-foreground">
+        <span className="flex items-baseline justify-between gap-2 text-[12px] text-muted-foreground">
           Directa
           <strong className="cifra text-xl font-semibold text-foreground">
             {pct(directa.porcentaje) ?? '–'}
@@ -103,7 +110,7 @@ function Cifras({ v }: { v: VistaRendimiento }) {
             colorDerecha={COLOR.apagado}
           />
         ) : null}
-        <span className="flex justify-between gap-2 text-[0.625rem] leading-none text-muted-foreground">
+        <span className="flex justify-between gap-2 text-[12px] leading-none text-muted-foreground">
           <span>Dados</span>
           <span>Recibidos</span>
         </span>
@@ -113,7 +120,7 @@ function Cifras({ v }: { v: VistaRendimiento }) {
         cifra={v.total.mediana !== null ? `${Math.round(v.total.mediana)}º` : '–'}
         className="col-span-2 lg:col-span-1"
       >
-        <span className="flex items-baseline justify-between gap-2 text-[0.625rem] text-muted-foreground">
+        <span className="flex items-baseline justify-between gap-2 text-[12px] text-muted-foreground">
           {top(v.total.percentilMediano) ?? ''}
           <span>
             Mejor <strong className="cifra text-xl font-semibold text-foreground">{v.total.mejor !== null ? `${v.total.mejor}º` : '–'}</strong>
@@ -148,6 +155,7 @@ function PorTemporada({ v, ambito }: { v: VistaRendimiento; ambito: AmbitoRendim
   return (
     <Rejilla className="sm:grid-cols-2">
       <Celda rotulo="Competiciones" cifra={ultima?.competiciones ?? 0} contexto={ultima?.corta}>
+        <Frases frases={[fraseCompeticiones(ts)]} />
         <BarrasApiladas
           titulo={`Competiciones por temporada; ${v.total.competiciones} en total`}
           columnas={ts.map((t) => ({
@@ -160,6 +168,7 @@ function PorTemporada({ v, ambito }: { v: VistaRendimiento; ambito: AmbitoRendim
         />
       </Celda>
       <Celda rotulo="Medallas" cifra={v.total.medallas} contexto="total">
+        <Frases frases={[fraseMedallas(ts, v.total)]} />
         <BarrasApiladas
           titulo={`Medallas por temporada: ${v.total.oros} oros, ${v.total.platas} platas y ${v.total.bronces} bronces`}
           columnas={ts.map((t) => ({
@@ -171,6 +180,7 @@ function PorTemporada({ v, ambito }: { v: VistaRendimiento; ambito: AmbitoRendim
         />
       </Celda>
       <Celda rotulo="Asaltos ganados" cifra={pct(ultima?.asaltos.porcentaje) ?? '–'} unidad="%" contexto={ultima?.corta}>
+        <Frases frases={[fraseAsaltos(ts)]} />
         <LineaTemporal
           titulo="Porcentaje de asaltos ganados por temporada"
           etiquetas={etiquetas}
@@ -195,6 +205,7 @@ function PorTemporada({ v, ambito }: { v: VistaRendimiento; ambito: AmbitoRendim
         const r = ultima ? porAsalto(ultima.asaltos.recibidos, ultima.asaltos.asaltos) : null;
         return d !== null && r !== null ? conSigno(d - r, decimal(Math.abs(d - r))) : '–';
       })()} contexto={ultima?.corta}>
+        <Frases frases={[fraseTocados(ts)]} />
         <LineaTemporal
           titulo="Tocados dados y recibidos por asalto en cada temporada"
           etiquetas={etiquetas}
@@ -216,6 +227,7 @@ function PorTemporada({ v, ambito }: { v: VistaRendimiento; ambito: AmbitoRendim
         contexto={ultima?.corta}
         className="sm:col-span-2"
       >
+        <Frases frases={[frasePuestoRelativo(ts, v.evolucion)]} />
         <LineaTemporal
           titulo="Puesto mediano relativo al cuadro, por temporada"
           etiquetas={etiquetas}
@@ -250,12 +262,13 @@ function Panel({ v, ambito, nivel }: { v: VistaRendimiento; ambito: AmbitoRendim
   return (
     <>
       <Cifras v={v} />
-      {v.evolucion.some((p) => p.percentil !== null) ? (
+      {v.evolucion.length > 0 ? (
         <section className="flex min-w-0 flex-col gap-2">
           <Subtitulo nivel={nivel}>Evolución</Subtitulo>
-          <DispersionPuestos
+          <Frases frases={frasesTramos(contarTramos(v.evolucion, v.porTemporada), v.porTemporada)} />
+          <TramosPuestos
             puntos={v.evolucion}
-            titulo={`Puesto de cada competición respecto al cuadro; mediana ${top(v.total.percentilMediano) ?? 'sin dato'}`}
+            temporadas={v.porTemporada}
             inicial={ultimo ? `Última: ${lecturaPuesto(ultimo)}` : null}
           />
         </section>
@@ -266,18 +279,21 @@ function Panel({ v, ambito, nivel }: { v: VistaRendimiento; ambito: AmbitoRendim
       </section>
       <section className="flex min-w-0 flex-col gap-2">
         <Subtitulo nivel={nivel}>Por tipo</Subtitulo>
+        <Frases frases={[fraseMejorGrupo(tipos)]} />
         <BarrasTipo filas={tipos} titulo="Rendimiento por tipo de competición" />
       </section>
       {/* Con una sola categoría también sale: es la lectura que se busca (mejor puesto, poule y directa). */}
       {categorias.length > 0 ? (
         <section className="flex min-w-0 flex-col gap-2">
           <Subtitulo nivel={nivel}>Por categoría</Subtitulo>
+          <Frases frases={[fraseMejorGrupo(categorias)]} />
           <BarrasTipo filas={categorias} titulo="Rendimiento por categoría" />
         </section>
       ) : null}
       {armas.length > 1 ? (
         <section className="flex min-w-0 flex-col gap-2">
           <Subtitulo nivel={nivel}>Por arma</Subtitulo>
+          <Frases frases={[fraseMejorGrupo(armas)]} />
           <BarrasTipo filas={armas} titulo="Rendimiento por arma" />
         </section>
       ) : null}
@@ -323,7 +339,7 @@ export function SeccionRendimiento({
                     TACTIL,
                     'inline-flex min-h-[32px] min-w-0 cursor-pointer flex-row items-center justify-center gap-x-1 rounded-full px-1.5 py-0.5 text-center text-xs leading-tight text-muted-foreground max-[359px]:flex-col sm:gap-x-1.5 sm:px-3 sm:text-[0.8125rem]',
                     'hover:text-foreground has-[:checked]:bg-marcado has-[:checked]:font-semibold has-[:checked]:text-primary-text',
-                    'has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/50',
+                    'has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring',
                   )}
                 >
                   <input

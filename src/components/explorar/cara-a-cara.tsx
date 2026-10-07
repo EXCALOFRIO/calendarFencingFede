@@ -30,7 +30,7 @@ import { WEAPON_LABEL, cn, titular } from '@/lib/utils';
 import { BarraVictorias } from './barra-victorias';
 import { EtiquetaTipoCompeticion } from './etiqueta-competicion';
 import { FotoDeportista } from './foto-deportista';
-import { Bloque } from './piezas';
+import { Bloque, EnlacePais } from './piezas';
 
 /**
  * Cara a cara individual. Sólo lleva lo que traen los DTO de `cara-a-cara.ts`:
@@ -39,12 +39,14 @@ import { Bloque } from './piezas';
  * Ningún texto afirma que dos personas «nunca se enfrentaron»: un conjunto
  * vacío sólo describe lo importado.
  *
- * Las frases para lector de pantalla van en `aria-label` y no en `sr-only`:
- * así no aparecen al copiar el texto de la página.
+ * Las frases para lector de pantalla van en `aria-label` y no en `sr-only`
+ * (así no aparecen al copiar el texto) salvo en enlaces y botones con texto
+ * visible: ahí un `aria-label` taparía lo que se ve (WCAG 2.5.3), así que
+ * la frase va en `sr-only` y lo visible, oculto al lector.
  */
 
 const ENLACE_CLASES =
-  'focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset';
+  'focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset';
 
 /** Entrar en una ficha, en una prueba o en un duelo desliza hacia delante (`docs/diseno-sistema.md` § 4). */
 const AVANZAR = [TIPO_TRANSICION.avanzar];
@@ -113,7 +115,6 @@ function Contendiente({
       <EnlaceIntencion
         href={rutaFicha(persona.id)}
         transitionTypes={AVANZAR}
-        aria-label={`Ficha de ${nombre}`}
         title={nombre}
         className={cn(
           // 44 px de área táctil aunque el nombre ocupe una línea; un nombre largo, dos como mucho.
@@ -123,7 +124,7 @@ function Contendiente({
       >
         <span className="line-clamp-2 break-words">{nombre}</span>
       </EnlaceIntencion>
-      {bandera && persona.pais ? <BanderaPais pais={persona.pais} /> : null}
+      {bandera && persona.pais ? <EnlacePais pais={persona.pais} soloBandera={false} className="-my-[8px]" /> : null}
     </div>
   );
 }
@@ -168,7 +169,10 @@ export function CabeceraCaraACara({
 
   return (
     <header className="flex min-w-0 flex-col gap-5 overflow-hidden rounded-md border border-t-filete-alto bg-linear-to-b from-marcado via-card to-card px-3 pt-1 pb-5 sm:px-8 sm:pb-7">
-      {/* El título («Cara a cara») está en la cabecera compacta de la aplicación. */}
+      {/* «Cara a cara», en la cabecera compacta, es un rótulo; el `<h1>` dice quiénes. Los nombres ya se ven abajo. */}
+      <h1 className="sr-only">
+        {nYo} y {nRival}
+      </h1>
       <div className="-mx-2 flex items-center justify-end">
         <BotonIcono href={urlVistaDelRival(yo.id, rival.id, criterios)} etiqueta={`Verlo desde ${nRival}`} titulo="Invertir perspectiva">
           <ArrowLeftRight aria-hidden />
@@ -368,7 +372,7 @@ const CORTA: Record<string, string> = {
   Semifinales: 'Semifinal',
 };
 
-/** «Poule», «Tabla de 32», «Cuartos», «Semifinal», «Final»: nunca la clave publicada. */
+/** «Poule», «Tablón de 32», «Cuartos», «Semifinal», «Final»: nunca la clave publicada. */
 export function rotuloMarcador(m: Pick<MarcadorEncuentro, 'fase' | 'ronda'>): string {
   if (m.fase === 'POULE') return 'Poule';
   const etiqueta = m.ronda ? etiquetaRonda('TABLEAU', m.ronda) : '';
@@ -458,8 +462,10 @@ function FilaCruce({
   ]
     .filter(Boolean)
     .join('. ');
+  // Lo visible va oculto al lector y la frase entera en `sr-only`: sin `aria-label` que tape el contenido (WCAG 2.5.3).
   const contenido = (
     <>
+      <span className="sr-only">{etiqueta}</span>
       {fecha ? (
         <time dateTime={e.fecha!.slice(0, 10)} aria-hidden className="flex flex-col items-center pt-0.5 leading-none">
           <span className="cifra text-xl">{DIA.format(fecha)}</span>
@@ -495,13 +501,12 @@ function FilaCruce({
         <EnlaceIntencion
           href={urlCruce(e, yo)}
           transitionTypes={AVANZAR}
-          aria-label={etiqueta}
           className={cn(FILA, 'py-3 transition-colors hover:bg-secondary', ENLACE_CLASES)}
         >
           {contenido}
         </EnlaceIntencion>
       ) : (
-        <div aria-label={etiqueta} role="group" className={cn(FILA, 'py-3')}>
+        <div className={cn(FILA, 'py-3')}>
           {contenido}
         </div>
       )}
@@ -582,6 +587,7 @@ function FilaAsaltoDirecto({ a, yo, nYo, nRival }: { a: AsaltoDirecto; yo: strin
     .join('. ');
   const contenido = (
     <>
+      <span className="sr-only">{etiqueta}</span>
       {fecha ? (
         <time dateTime={e.fecha!.slice(0, 10)} aria-hidden className="flex flex-col items-center leading-none">
           <span className="cifra text-lg">{DIA.format(fecha)}</span>
@@ -626,13 +632,12 @@ function FilaAsaltoDirecto({ a, yo, nYo, nRival }: { a: AsaltoDirecto; yo: strin
         <EnlaceIntencion
           href={urlCruce(e, yo)}
           transitionTypes={AVANZAR}
-          aria-label={etiqueta}
           className={cn(FILA_ASALTO, 'transition-colors hover:bg-secondary', ENLACE_CLASES)}
         >
           {contenido}
         </EnlaceIntencion>
       ) : (
-        <div role="group" aria-label={etiqueta} className={FILA_ASALTO}>
+        <div className={FILA_ASALTO}>
           {contenido}
         </div>
       )}
@@ -907,7 +912,7 @@ export function ElegirRival({
                 {criterios.cursor ? (
                   <Boton asChild variante="contorno" tamano="lg">
                     <EnlaceIntencion href={construirUrlCaraACara(persona.id, base)}>
-                      Volver a la primera página
+                      Primera página
                     </EnlaceIntencion>
                   </Boton>
                 ) : null}
@@ -917,7 +922,7 @@ export function ElegirRival({
                       href={construirUrlCaraACara(persona.id, { ...base, cursor: rivales.siguiente })}
                       rel="next"
                     >
-                      Ver más rivales
+                      Ver más
                     </EnlaceIntencion>
                   </Boton>
                 ) : null}

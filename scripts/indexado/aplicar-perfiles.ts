@@ -26,6 +26,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { argumento, bandera, CARPETA_TRABAJO, prepararCopiaTrabajo, quitarGuardia, restaurarGuardia } from './comun';
 import { consensoFecha } from './perfiles-datos';
 import type { FilaFieAtleta } from './fie-atletas';
+import { FECHA_COMODIN_FIE, fechaFieReal } from './perfiles-fie';
 import { mapaCanonico, type FilaNacional } from './perfiles-nacional';
 import {
   clave,
@@ -103,7 +104,8 @@ export function construirFila(e: EntradaPerfil, hoy: string, conFecha: boolean, 
   const nombre = completarNombre(e.actual, variantes);
 
   const fechas = [...(e.nacional?.fechas ?? [])];
-  if (e.fie?.fechaNacimiento) fechas.push({ fecha: e.fie.fechaNacimiento, fuente: 'fie' });
+  const fechaFie = fechaFieReal(e.fie?.fechaNacimiento);
+  if (fechaFie) fechas.push({ fecha: fechaFie, fuente: 'fie' });
   const consenso = consensoFecha(fechas);
   let anio = consenso.anio;
   let fuenteAnio = consenso.fuente;
@@ -193,16 +195,17 @@ export function proponerVinculos(
   }
   const salida: PropuestaVinculo[] = [];
   for (const [id, f] of fie) {
-    if (f.pais !== 'ESP' || !f.fechaNacimiento) continue;
+    const fecha = fechaFieReal(f.fechaNacimiento);
+    if (f.pais !== 'ESP' || !fecha) continue;
     if ((nacional.get(id)?.fechas.length ?? 0) > 0) continue;
     const base = palabrasOriginales(f.nombrePublicado).map(clave);
-    const candidatos = (porFecha.get(f.fechaNacimiento) ?? [])
+    const candidatos = (porFecha.get(fecha) ?? [])
       .filter((c) => c.id !== id && c.palabras.some((p) => cubre(p, base)));
     if (candidatos.length !== 1) continue;
     salida.push({
       fieId: f.fieId, personaFie: id, nombreFie: f.nombrePublicado,
       personaRfee: candidatos[0].id, nombreRfee: nombres.get(candidatos[0].id) ?? '',
-      fechaNacimiento: f.fechaNacimiento,
+      fechaNacimiento: fecha,
     });
   }
   return salida;
@@ -319,7 +322,7 @@ async function main() {
     .map((r) => canon.get(r.p) ?? r.p));
 
   const filas: FilaPerfil[] = [];
-  const cambiosAnio: { id: string; anio: number }[] = [];
+  const cambiosAnio: { id: string; anio: number | null }[] = [];
   const motivos: Record<string, number> = {};
   const cobertura = { personas: 0, anio: 0, fecha: 0, club: 0, clubCodigo: 0, clubNombre: 0, mano: 0, altura: 0, nombreExtendido: 0, conAcentos: 0, fie: 0, menores: 0 };
   const ejemplos: Record<string, unknown> = {};
@@ -337,6 +340,10 @@ async function main() {
     filas.push(fila);
     if (fila.birth_year !== null && fila.birth_year !== (p.anio === null ? null : Number(p.anio))) {
       cambiosAnio.push({ id: p.id, anio: fila.birth_year });
+    } else if (fila.birth_year === null && p.anio !== null && Number(p.anio) === Number(FECHA_COMODIN_FIE.slice(0, 4))
+      && fie.get(p.id)?.fechaNacimiento === FECHA_COMODIN_FIE) {
+      // A year copied from the FIE placeholder date by earlier runs: unknown, not 1920.
+      cambiosAnio.push({ id: p.id, anio: null });
     }
     if (nombre) motivos[nombre.motivo] = (motivos[nombre.motivo] ?? 0) + 1;
     if (nombre?.extendido && muestra.length < 60 && (muestra.length < 30 || nombre.conAcentos)) {

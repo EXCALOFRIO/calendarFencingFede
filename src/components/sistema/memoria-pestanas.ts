@@ -46,6 +46,22 @@ export function recordarPestana(clave: string, url: string): void {
   for (const o of oyentes) o();
 }
 
+/** Rehace la memoria entera (p. ej. quitar la ficha propia de Explorar al reconocerla). */
+export function transformarRecordadas(f: (previas: Recordadas) => Record<string, string>): void {
+  const previas = leer();
+  const nuevas = f(previas);
+  const iguales = Object.keys(nuevas).length === Object.keys(previas).length
+    && Object.entries(nuevas).every(([k, v]) => previas[k] === v);
+  if (iguales) return;
+  actuales = nuevas;
+  try {
+    window.sessionStorage.setItem(CLAVE_RECORDADAS, JSON.stringify(actuales));
+  } catch {
+    // Se pierde el recuerdo entre recargas, no la navegación.
+  }
+  for (const o of oyentes) o();
+}
+
 export function useRecordadas(): [Recordadas, (clave: string, url: string) => void] {
   const recordadas = useSyncExternalStore(suscribir, leer, () => VACIAS);
   const guardar = useCallback((clave: string, url: string) => recordarPestana(clave, url), []);

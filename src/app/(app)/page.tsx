@@ -1,6 +1,6 @@
 import { VistaCalendario, type TiradorOpcion } from '@/components/calendario/vista';
 import { requireProfile } from '@/lib/auth/session';
-import { leerContextoCalendario } from '@/lib/calendario/contexto-url';
+import { leerContextoCalendario, leerEventoCalendario } from '@/lib/calendario/contexto-url';
 import { deriveCategoriesFromBirthDate } from '@/lib/categories';
 import { requestEntry } from '@/lib/entries/actions';
 import { cargarPantallaCalendario } from '@/lib/queries/calendario-pantalla';
@@ -34,7 +34,10 @@ export default async function CalendarioPage({
 } = {}) {
   const perfil = await requireProfile();
   // Periodo y filtros con los que se vuelve desde una edición o una persona.
-  const inicial = leerContextoCalendario((await searchParams) ?? {});
+  const consulta = (await searchParams) ?? {};
+  const inicial = leerContextoCalendario(consulta);
+  // La ficha que se abre al llegar desde una edición o un aviso (`evento=`).
+  const eventoInicial = leerEventoCalendario(consulta);
 
   /**
    * LO YA CELEBRADO DEL TRAMO CON EL QUE SE ABRE, Y SOLO ESO.
@@ -85,6 +88,7 @@ export default async function CalendarioPage({
   return (
     <VistaCalendario
       inicial={inicial}
+      eventoInicial={eventoInicial}
       eventos={eventos}
       /**
        * Papel y armas, que es lo que decide con qué filtros se abre la

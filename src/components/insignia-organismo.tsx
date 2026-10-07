@@ -31,7 +31,7 @@ export function InsigniaOrganismo({
       data-organismo={organismo}
       title={NOMBRE[organismo]}
       className={cn(
-        'inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md border-l-[3px] pr-2 pl-1.5 text-[0.6875rem] leading-none font-bold tracking-[0.08em]',
+        'inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md border-l-[3px] pr-2 pl-1.5 text-[12px] leading-none font-bold tracking-[0.08em]',
         color.borde,
         color.tintePastilla,
         color.texto,

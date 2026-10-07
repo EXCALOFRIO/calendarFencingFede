@@ -41,7 +41,7 @@ function FilaRival({ personaId, r }: { personaId: string; r: RivalAmbito }) {
       <EnlacePrecarga
         href={construirUrlCaraACara(personaId, { rival: r.id })}
         data-rival={r.id}
-        className="grid min-h-[44px] min-w-0 grid-cols-[minmax(0,1fr)_6.5rem] items-center gap-x-2.5 px-3 py-1.5 hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none max-[359px]:grid-cols-[minmax(0,1fr)_5.75rem] sm:grid-cols-[minmax(0,1fr)_12rem] sm:px-4"
+        className="grid min-h-[44px] min-w-0 grid-cols-[minmax(0,1fr)_6.5rem] items-center gap-x-2.5 px-3 py-1.5 hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none max-[359px]:grid-cols-[minmax(0,1fr)_5.75rem] sm:grid-cols-[minmax(0,1fr)_12rem] sm:px-4"
       >
         <span className="flex min-w-0 items-center gap-2.5">
           <FotoDeportista personaId={r.id} nombre={nombre} tamano="fila" apagado />
@@ -124,7 +124,7 @@ export function RivalesPorAmbitoVista({
                   className={cn(
                     'relative inline-flex min-h-[40px] min-w-0 cursor-pointer flex-col items-center justify-center rounded-full px-2 py-1 text-center text-[0.8125rem] leading-tight text-muted-foreground sm:flex-row sm:gap-x-1.5 sm:px-4 sm:text-sm',
                     'hover:text-foreground has-[:checked]:bg-marcado has-[:checked]:font-semibold has-[:checked]:text-primary-text',
-                    'has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/50',
+                    'has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring',
                   )}
                 >
                   <input

@@ -70,30 +70,43 @@ export async function resolverPersonaPropia(
   const candidatas = new Set<string>();
   let contradiccion = false;
 
+  // Los enlaces directos y la evidencia de las fichas no dependen entre sí:
+  // se leen a la vez (cada rama es una cadena de idas a D1 en el camino del perfil).
+  const directas = (async () => {
+    const enlaces = await deps.personasEnlazadas(athleteIds);
+    const personas = await Promise.all(enlaces.map((e) => resolverPersona(ctx.db, e.personId)));
+    return enlaces.map((e, i) => ({ athleteId: e.athleteId, persona: personas[i] }));
+  })();
+  const conEvidencia = (async () => {
+    const fichasPorAtleta = await Promise.all(atletas.map((a) => deps.fichasFiePorAtleta([a.id])));
+    const refsPorAtleta = new Map<string, RefPublicada[]>();
+    atletas.forEach((a, i) => {
+      const refs: RefPublicada[] = [
+        ...fichasPorAtleta[i].flatMap((f) =>
+          refsPublicadas({ fuente: 'fie', fieId: f.fieId, licencia: f.fieLicense, observadoEl: hoy }),
+        ),
+        ...refsPublicadas({ fuente: 'fie', licencia: a.fieLicense, observadoEl: hoy }),
+        ...refsPublicadas({ fuente: 'skermo_rfee', licencia: a.rfeeLicense, observadoEl: hoy }),
+      ];
+      refsPorAtleta.set(a.id, refs.map(conTemporadaDeSuFuente(hoy)));
+    });
+    const evidencia = await cargarEvidencia(deps.evidencia, [...refsPorAtleta.values()].flat());
+    return { refsPorAtleta, evidencia };
+  })();
+  // Si una rama falla primero, la otra no queda sin manejador.
+  directas.catch(() => undefined);
+  conEvidencia.catch(() => undefined);
+
   const directasPorAtleta = new Map<string, Set<string>>();
-  for (const enlace of await deps.personasEnlazadas(athleteIds)) {
-    const persona = await resolverPersona(ctx.db, enlace.personId);
+  for (const { athleteId, persona } of await directas) {
     if (!persona) continue;
     candidatas.add(persona.canonicaId);
-    const propias = directasPorAtleta.get(enlace.athleteId) ?? new Set<string>();
+    const propias = directasPorAtleta.get(athleteId) ?? new Set<string>();
     propias.add(persona.canonicaId);
-    directasPorAtleta.set(enlace.athleteId, propias);
+    directasPorAtleta.set(athleteId, propias);
   }
 
-  const refsPorAtleta = new Map<string, RefPublicada[]>();
-  for (const a of atletas) {
-    const fichas = await deps.fichasFiePorAtleta([a.id]);
-    const refs: RefPublicada[] = [
-      ...fichas.flatMap((f) =>
-        refsPublicadas({ fuente: 'fie', fieId: f.fieId, licencia: f.fieLicense, observadoEl: hoy }),
-      ),
-      ...refsPublicadas({ fuente: 'fie', licencia: a.fieLicense, observadoEl: hoy }),
-      ...refsPublicadas({ fuente: 'skermo_rfee', licencia: a.rfeeLicense, observadoEl: hoy }),
-    ];
-    refsPorAtleta.set(a.id, refs.map(conTemporadaDeSuFuente(hoy)));
-  }
-
-  const evidencia = await cargarEvidencia(deps.evidencia, [...refsPorAtleta.values()].flat());
+  const { refsPorAtleta, evidencia } = await conEvidencia;
   for (const a of atletas) {
     const refs = refsPorAtleta.get(a.id) ?? [];
     if (refs.length === 0) continue;

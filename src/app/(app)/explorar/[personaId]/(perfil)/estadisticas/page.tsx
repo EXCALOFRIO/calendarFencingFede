@@ -1,10 +1,12 @@
 import { CuerpoSeccion, rendimientoUtil, SeccionEstadisticas } from '@/components/explorar/perfil/secciones-perfil';
 import { cargarRendimientoCompartido } from '@/lib/sport/explorar/perfil-cache-real';
 import { contextoReal } from '@/lib/sport/explorar/real';
-import { exigirSesion, fichaPerfil, personaDeSegmento } from '../datos';
+import { exigirSesion, fichaPerfil, personaDeSegmento, tituloPerfil } from '../datos';
 
 export const dynamic = 'force-dynamic';
-export const metadata = { title: 'Estadísticas · Ficha deportiva' };
+export function generateMetadata({ params }: { params: Promise<{ personaId: string }> }) {
+  return tituloPerfil(params, 'Estadísticas');
+}
 
 /**
  * Sección Estadísticas: sólo lee el rendimiento. La tarjeta de cifras ya la

@@ -55,16 +55,17 @@ export function CabeceraEscritorio({
           <Link
             href="/explorar/yo"
             prefetch={false}
-            aria-label={`Tú: ${cuenta.nombre}`}
             className={cn('flex h-[40px] items-center gap-[8px] rounded-full py-[4px] pr-[10px] pl-[4px] outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring', AREA_TACTIL)}
           >
-            <Avatar className="size-[32px]">
+            {/* Sin aria-label que tape el nombre visible (WCAG 2.5.3); las iniciales sobran para el lector. */}
+            <span className="sr-only">Tú: </span>
+            <Avatar aria-hidden className="size-[32px]">
               <AvatarFallback className="text-[12px]">{cuenta.iniciales}</AvatarFallback>
             </Avatar>
             <span className="flex min-w-0 flex-col leading-tight">
               <span className="max-w-36 truncate text-[12px] font-medium">{cuenta.nombre}</span>
               {cuenta.segundaLinea ? (
-                <span className="max-w-36 truncate text-[11px] text-muted-foreground">{cuenta.segundaLinea}</span>
+                <span className="max-w-36 truncate text-[12px] text-muted-foreground">{cuenta.segundaLinea}</span>
               ) : null}
             </span>
           </Link>

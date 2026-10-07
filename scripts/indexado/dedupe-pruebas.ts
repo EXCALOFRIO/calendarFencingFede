@@ -12,7 +12,8 @@
  *  - Mismo evento: pruebas INDIVIDUAL de rfee_pdf, skermo_rfee o engarde con la misma
  *    arma, categoría y género, fecha a
  *    ±2 días y al menos la mitad de los nombres de la menor (mínimo 4) compatibles
- *    con la otra. Los nombres son los de puestos y asaltos; un nombre del PDF
+ *    con la otra. A 3 días sólo con el mismo género y categoría, 8 nombres o más y el 90 %
+ *    en común en los dos sentidos (`ESTRICTO`). Los nombres son los de puestos y asaltos; un nombre del PDF
  *    recortado por la columna («RAMIREZ LARENA Al») es compatible con el completo
  *    («ALEJANDRO RAMIREZ LARENA»), ver `nombresCompatiblesRecorte`.
  *  - Por grupo, la prueba que queda es la de mejores puestos: skermo_rfee, luego
@@ -111,21 +112,36 @@ const dia = (f: string) => Math.round(Date.parse(`${f.slice(0, 10)}T00:00:00Z`) 
  * categoría puede no coincidir: el TNR absoluto que se tira dentro del satélite U23 de Sabadell
  * enlaza el PDF de la prueba U23, que el lector clasifica como M23.
  */
+/** Hasta aquí (días) basta la regla normal; a `VENTANA_ESTRICTA` días, `ESTRICTO`. */
+export const VENTANA_NORMAL = 2;
+export const VENTANA_ESTRICTA = 3;
+/**
+ * A 3 días: el PDF de la RFEE fecha la prueba el sábado del primer día y Engarde el día en que se
+ * tiró (Campeonato de España junior 2020: PDF 5-12, Engarde 8-12), o al revés. Sólo con el mismo
+ * género y la misma categoría (sin catálogo que las enlace) y casi todos los tiradores en común
+ * en los dos sentidos.
+ */
+export const ESTRICTO = { minimo: 8, cuota: 0.9 } as const;
+
 export function mismoEvento(a: PruebaNacional, b: PruebaNacional, umbral = 0.5, enlazadas = false): number {
   if (a.weapon !== b.weapon || (a.category !== b.category && !enlazadas)) return 0;
   // Dentro de una edición (un documento, un torneo Engarde) dos pruebas son fases distintas
   // («1ª fase» y «fase final»): las une el cargador o se quedan como están.
   if (a.edition_id === b.edition_id || (a.source === 'engarde' && b.source === 'engarde')) return 0;
   if (a.gender !== b.gender && a.gender !== 'MIXTO' && b.gender !== 'MIXTO') return 0;
-  if (Math.abs(dia(a.fecha) - dia(b.fecha)) > 2) return 0;
+  const dias = Math.abs(dia(a.fecha) - dia(b.fecha));
+  if (dias > VENTANA_ESTRICTA) return 0;
+  const estricta = dias > VENTANA_NORMAL;
+  if (estricta && (a.gender !== b.gender || a.category !== b.category)) return 0;
   const [menor, mayor] = a.nombres.length <= b.nombres.length ? [a, b] : [b, a];
-  if (menor.nombres.length < 4) return 0;
+  if (menor.nombres.length < (estricta ? ESTRICTO.minimo : 4)) return 0;
   const comunes = nombresEnComun(menor.nombres, mayor.nombres);
   if (comunes < 4) return 0;
   const sobreMenor = comunes / menor.nombres.length;
   // En el sentido contrario: el PDF repite cada tirador con el nombre entero (puestos) y
   // recortado (asaltos), y esas variantes casan todas con el mismo nombre de la otra prueba.
   const sobreMayor = nombresEnComun(mayor.nombres, menor.nombres) / mayor.nombres.length;
+  if (estricta) return sobreMenor >= ESTRICTO.cuota && sobreMayor >= ESTRICTO.cuota ? comunes : 0;
   if (sobreMenor >= umbral && sobreMayor >= umbral) return comunes;
   // Una lectura sólo de cuadro (los 32 primeros de 90) cabe entera en la clasificación;
   // dos pruebas con puestos donde una contiene a la otra son dos fases o dos eventos.
@@ -239,7 +255,7 @@ export function emparejarDuplicados(
     lista.sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : a.id < b.id ? -1 : 1));
     for (let i = 0; i < lista.length; i += 1) {
       for (let j = i + 1; j < lista.length; j += 1) {
-        if (dia(lista[j].fecha) - dia(lista[i].fecha) > 2) break;
+        if (dia(lista[j].fecha) - dia(lista[i].fecha) > VENTANA_ESTRICTA) break;
         const comunes = mismoEvento(lista[i], lista[j], umbral);
         if (comunes > 0) unir(lista[i], lista[j], comunes);
       }
@@ -391,6 +407,8 @@ export type OpcionesDuplicados = {
   catalogo?: readonly FilaCatalogoNacional[];
   /** Pruebas que no se agrupan con ninguna otra (las conjuntas de `dedupe-conjuntas.ts`). */
   excluir?: ReadonlySet<string>;
+  /** Sólo los grupos con alguna de estas pruebas (un lote que funde sólo lo que ha preparado). */
+  soloCon?: ReadonlySet<string>;
 };
 
 export type FilaAsaltoLectura = {
@@ -413,9 +431,10 @@ export function fundirDuplicados(db: DatabaseSync, opciones: OpcionesDuplicados 
   const excluir = opciones.excluir ?? new Set<string>();
   const todasNacionales = cargarPruebasNacionales(db, opciones.desde);
   const pruebas = todasNacionales.filter((p) => !excluir.has(p.id));
-  const { grupos, gruposConVariasSkermo } = emparejarDuplicados(
-    pruebas, opciones.umbral, enlacesDelCatalogo(pruebas, opciones.catalogo ?? []),
-  );
+  const emparejado = emparejarDuplicados(pruebas, opciones.umbral, enlacesDelCatalogo(pruebas, opciones.catalogo ?? []));
+  const elegido = (g: GrupoDuplicado) => !opciones.soloCon || [g.destino, ...g.otras].some((p) => opciones.soloCon!.has(p.id));
+  const grupos = emparejado.grupos.filter(elegido);
+  const gruposConVariasSkermo = emparejado.gruposConVariasSkermo.filter(elegido);
   const inf: InformeDuplicados = {
     pruebasNacionales: pruebas.length, grupos: grupos.length, gruposConVariasSkermo: gruposConVariasSkermo.length,
     gruposOmitidosRondasDistintas: 0, porFuentes: {}, fasesTrasladadas: 0, asaltosTrasladados: 0, asaltosYaPresentes: 0, asaltosDescartados: 0, asaltosDescartadosSinPareja: 0,

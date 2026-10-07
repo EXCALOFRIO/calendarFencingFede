@@ -38,7 +38,7 @@ export function BarrasDivergentes({
   const rotulos = indicesRotulo(n);
   const cifras = n <= 24;
   return (
-    <Lectura inicial={inicial} className={className}>
+    <Lectura inicial={inicial} datos={columnas.map((c) => c.lectura)} className={className}>
       <div role="img" aria-label={titulo} className="flex min-w-0 flex-col gap-1">
         <div className={cn('relative flex gap-px py-3.5', ALTO[alto])}>
           <div aria-hidden className="absolute inset-x-0 top-1/2 border-t border-filete-alto" />

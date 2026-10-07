@@ -1,41 +1,28 @@
 'use client';
 
-import { Grid3x3 } from 'lucide-react';
+import { Grid3x3, X } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+import { BotonIcono } from '@/components/sistema/boton';
 import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import type { PouleDePrueba } from '@/lib/sport/explorar/tipos-busqueda';
-import { nombreVisible, partesNombre } from '@/lib/sport/nombre-visible';
+import { nombreCompacto, nombreVisible } from '@/lib/sport/nombre-visible';
 import { cn } from '@/lib/utils';
 import type { EnlaceFicha } from './enlaces';
 import { puestosPoule, resaltado, type Filtro } from './logica';
 
 const firma = (n: number) => (n > 0 ? `+${n}` : String(n));
 
-const PARTICULAS = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'y', 'i', 'da', 'do', 'dos', 'di', 'van', 'von', 'der', 'den', 'du', 'le', 'san', 'santa']);
-
-/**
- * Sólo el primer apellido («Zabala» de «ZABALA GUTIERREZ Juan»), con sus
- * partículas («De la Fuente», «San Martin»). Si la fuente no separa apellidos
- * y nombre no se sabe cuál es el apellido y va el nombre visible entero.
- */
-export function apellidoPoule(publicado: string): string {
-  const { nombre, apellidos } = partesNombre(publicado);
-  if (!nombre || !apellidos) return nombreVisible(publicado);
-  const palabras = nombreVisible(apellidos).split(' ');
-  const fin = palabras.findIndex((p) => !PARTICULAS.has(p.toLocaleLowerCase('es')));
-  return palabras.slice(0, fin < 0 ? palabras.length : fin + 1).join(' ');
-}
-
 /*
  * Anchos de columna en px y no en rem: en móvil la raíz sube a 18 px y en rem
- * no cabría. Así, con 7 tiradores la matriz entera cabe en 393 px. Los totales
- * van fijos a la derecha y su `right` es la suma de los que tienen a su derecha.
+ * no cabría. Así, con 7 tiradores la hoja entera cabe en 393 px con el nombre
+ * compacto («Salcedo M.») sin recortar. Los totales van fijos a la derecha y
+ * su `right` es la suma de los que tienen a su derecha.
  */
-const CASILLA = 28;
-const NOMBRE_MIN = 80;
+const CASILLA = 26;
+const NOMBRE_MIN = 96;
 const NOMBRE_MAX = 160;
 const TOTALES = [
   { clave: 'V', titulo: 'Victorias', ancho: 20 },
@@ -52,8 +39,8 @@ const FIJA_IZQUIERDA = 'sticky left-0 z-[1] bg-popover';
 const FIJA_DERECHA = 'sticky z-[1] bg-popover';
 
 /**
- * La matriz completa de una poule para la hoja de móvil: casillas V5 / D3,
- * apellidos fijos a la izquierda y totales (V, TD, TR, índice y puesto) fijos
+ * La hoja completa de una poule para el móvil: casillas V5 / D3, nombres
+ * compactos («Zabala J.») fijos a la izquierda y totales (V, TD, TR, índice y puesto) fijos
  * a la derecha. Si no cabe, sólo se desplazan las casillas de los asaltos; la
  * persona resaltada lo está en su fila y en su columna.
  */
@@ -102,7 +89,8 @@ export function MatrizPoule({ poule, enlace, filtro }: { poule: PouleDePrueba; e
               const fija = totalFijo(k);
               return (
                 <th key={t.clave} scope="col" className={cn(fija.className, 'z-[3] py-2 font-medium')} style={fija.style}>
-                  <abbr title={t.titulo} className="no-underline">{t.clave}</abbr>
+                  <abbr title={t.titulo} aria-hidden className="no-underline">{t.clave}</abbr>
+                  <span className="sr-only">{t.titulo}</span>
                 </th>
               );
             })}
@@ -112,7 +100,7 @@ export function MatrizPoule({ poule, enlace, filtro }: { poule: PouleDePrueba; e
           {poule.filas.map((f, i) => {
             const fila = marcadas[i];
             const completo = nombreVisible(f.nombre);
-            const apellido = apellidoPoule(f.nombre);
+            const compacto = nombreCompacto(f.nombre);
             const valores = [
               { texto: f.victorias, clase: 'font-semibold' },
               { texto: f.tocados },
@@ -130,16 +118,16 @@ export function MatrizPoule({ poule, enlace, filtro }: { poule: PouleDePrueba; e
                       prefetch={false}
                       transitionTypes={[TIPO_TRANSICION.avanzar]}
                       title={completo}
-                      aria-label={`Ficha de ${completo}`}
-                      className="flex min-h-[44px] min-w-0 items-center gap-1 rounded-sm pr-1 pl-1.5 text-[13px] font-medium underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset"
+                      className="flex min-h-[44px] min-w-0 items-center gap-1 rounded-sm pr-1 pl-1.5 text-[13px] font-medium underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
                     >
                       <span className="cifra w-3 shrink-0 text-right text-xs text-muted-foreground">{i + 1}</span>
-                      <span className="min-w-0 truncate">{apellido}</span>
+                      <span className="min-w-0 truncate">{compacto}</span>
+                      <span className="sr-only">: {completo}</span>
                     </Link>
                   ) : (
                     <span title={completo} className="flex min-h-[44px] min-w-0 items-center gap-1 pr-1 pl-1.5 text-[13px] font-medium">
                       <span className="cifra w-3 shrink-0 text-right text-xs text-muted-foreground">{i + 1}</span>
-                      <span className="min-w-0 truncate">{apellido}</span>
+                      <span className="min-w-0 truncate">{compacto}</span>
                       <span className="sr-only">: {completo}</span>
                     </span>
                   )}
@@ -227,24 +215,34 @@ export function HojaPoule({
           type="button"
           variant="outline"
           size="sm"
-          aria-label={`Abrir la matriz de ${poule.etiqueta}`}
+          aria-label={`Hoja de ${poule.etiqueta}`}
           className={cn(
             "h-[32px] min-h-0! gap-1.5 rounded-full px-3 text-[13px] after:absolute after:inset-0 after:content-['']",
             className,
           )}
         >
           <Grid3x3 aria-hidden />
-          Matriz
+          Hoja
         </Button>
       </SheetTrigger>
       <SheetContent
         side="bottom"
         aria-describedby={undefined}
-        className="inset-0 h-dvh max-h-dvh gap-0 border-t-0"
+        showCloseButton={false}
+        className="inset-0 h-dvh max-h-dvh gap-0 border-t-0 pt-[env(safe-area-inset-top)]"
       >
-        <SheetHeader className="flex-row items-center gap-2 border-b py-3 pr-16 pl-3">
-          <SheetTitle className="min-w-0 truncate text-lg leading-tight">{poule.etiqueta}</SheetTitle>
-          <span className="text-xs text-muted-foreground">{poule.filas.length}</span>
+        {/* Misma cabecera que `HojaInferior`: título y aspa en una fila de 52 px, el aspa de 32 px con 44 de toque. */}
+        <SheetHeader className="h-[52px] shrink-0 flex-row items-center gap-2 border-b py-0 pr-[8px] pl-3">
+          <SheetTitle className="min-w-0 truncate text-[16px] leading-[20px] font-semibold">{poule.etiqueta}</SheetTitle>
+          <span className="text-xs text-muted-foreground">
+            {poule.filas.length}
+            <span className="sr-only"> tiradores</span>
+          </span>
+          <SheetClose asChild>
+            <BotonIcono etiqueta="Cerrar" tamano="md" className="ml-auto">
+              <X aria-hidden />
+            </BotonIcono>
+          </SheetClose>
         </SheetHeader>
         <MatrizPoule poule={poule} enlace={enlace} filtro={filtro} />
       </SheetContent>

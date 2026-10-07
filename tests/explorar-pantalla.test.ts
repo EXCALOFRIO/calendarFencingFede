@@ -314,28 +314,30 @@ describe('formulario de filtros', () => {
     expect(formulario(false)).not.toContain('Solo España');
   });
 
-  it('el atajo refleja el estado activo y todos los controles tienen etiqueta visible', () => {
+  it('el atajo refleja el estado activo; el campo tiene etiqueta y los filtros son chips que abren una hoja', () => {
     const html = formulario(true, criterios({ nacionalidad: 'ESP' }));
     expect(html).toContain('aria-pressed="true"');
-    for (const id of ['explorar-q', 'explorar-arma', 'explorar-genero']) {
-      expect(html).toContain(`for="${id}"`);
+    expect(html).toContain('for="explorar-q"');
+    for (const chip of ['Arma', 'Género', 'Categoría']) {
+      expect(html).toMatch(new RegExp(`aria-haspopup="dialog"[^>]*>(?:<[^>]+>)*${chip}<`));
     }
+    // El país elegido se ve en su chip, marcado.
+    expect(html).toMatch(/data-tipo="menu" data-marcado="true"[^>]*>(?:<[^>]+>)*España</);
     expect(html).toContain('role="search"');
   });
 
-  it('los filtros quedan tras el botón «Filtros», que cuenta los activos', () => {
+  it('filtros de tirador: arma, género, categoría y país; sin año, temporada, fechas ni torneo', () => {
     const conFiltro = formulario(false, criterios({ temporada: '2025-2026', arma: 'ESPADA' }));
-    expect(conFiltro).toContain('<span class="sr-only">, 2 activos</span>');
-    expect(conFiltro).toMatch(/id="explorar-panel-filtros"[^>]*data-state="closed"|data-state="closed"[^>]*id="explorar-panel-filtros"/);
+    expect(conFiltro).toMatch(/data-marcado="true"[^>]*>(?:<[^>]+>)*Espada</);
+    expect(conFiltro).toContain('Quitar filtros');
     const vacio = formulario(false);
-    expect(vacio).toContain('Filtros');
-    expect(vacio).not.toMatch(/, \d+ activos?</);
     expect(vacio).toContain('Buscar tiradores');
-    expect(vacio).toContain('Aplicar filtros');
-  });
-
-  it('un filtro inválido en la URL abre el panel para que se vea el error', () => {
-    const html = formulario(false, criterios({ desde: '2026-99-99' }));
-    expect(html).toMatch(/id="explorar-panel-filtros"[^>]*data-state="open"|data-state="open"[^>]*id="explorar-panel-filtros"/);
+    expect(vacio).not.toContain('Aplicar filtros');
+    expect(vacio).not.toContain('Quitar filtros');
+    for (const id of ['explorar-temporada', 'explorar-desde', 'explorar-hasta', 'explorar-torneo', 'explorar-ambito', 'explorar-organizador']) {
+      expect(vacio).not.toContain(`id="${id}"`);
+    }
+    expect(vacio).not.toMatch(/>(Temporada|Fechas|Torneo|Ámbito|Organizador)</);
+    expect(vacio).not.toContain('<select');
   });
 });

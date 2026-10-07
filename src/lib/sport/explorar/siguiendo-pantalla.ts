@@ -179,6 +179,7 @@ export async function leerPropuestasParaSeguir(
 export async function cargarSiguiendo(
   ctx: ContextoExplorador,
   criterios: { cursor?: string; soloMedallas?: boolean },
+  fuentes?: FuentesPropuestas,
 ): Promise<VistaSiguiendo> {
   try {
     const r = await leerFeedSiguiendo(ctx, {
@@ -192,7 +193,7 @@ export async function cargarSiguiendo(
     }
     let sugeridos: PersonaParaSeguir[] | null;
     try {
-      sugeridos = await leerPropuestasParaSeguir(ctx);
+      sugeridos = await leerPropuestasParaSeguir(ctx, fuentes);
     } catch (error) {
       if (esNoAutenticado(error)) throw error;
       aviso('las propuestas para seguir', error);

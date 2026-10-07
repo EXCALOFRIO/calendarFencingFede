@@ -15,6 +15,11 @@ export type PropsChipFiltro = Omit<React.ComponentProps<'button'>, 'children'> &
   marcado?: boolean;
   /** Cifra al lado del rótulo, por ejemplo cuántos filtros hay puestos. */
   contador?: number;
+  /**
+   * Lo que el lector oye detrás de la cifra («de 907»). En vez de un
+   * `aria-label`, que tendría que repetir lo visible letra a letra (WCAG 2.5.3).
+   */
+  detalle?: string;
   icono?: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>;
 };
 
@@ -38,6 +43,7 @@ export function ChipFiltro({
   tipo = 'alternar',
   marcado = tipo === 'quitar',
   contador,
+  detalle,
   icono: Icono,
   className,
   type,
@@ -67,6 +73,7 @@ export function ChipFiltro({
       {contador !== undefined && contador > 0 ? (
         <span className="cifra -my-px text-[14px] tabular-nums">{contador}</span>
       ) : null}
+      {detalle ? <span className="sr-only"> {detalle}</span> : null}
       {tipo === 'menu' ? <ChevronDown aria-hidden /> : null}
       {tipo === 'quitar' ? <X aria-hidden /> : null}
     </button>

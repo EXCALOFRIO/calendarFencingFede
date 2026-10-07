@@ -8,7 +8,7 @@ function Celda({ etiqueta, children, detalle }: { etiqueta: string; children: Re
       <dt className="truncate text-xs leading-none text-muted-foreground">{etiqueta}</dt>
       <dd className="flex min-w-0 flex-col gap-1">
         {children}
-        {detalle ? <span className="truncate text-[0.6875rem] leading-none text-muted-foreground">{detalle}</span> : null}
+        {detalle ? <span className="truncate text-[12px] leading-none text-muted-foreground">{detalle}</span> : null}
       </dd>
     </div>
   );

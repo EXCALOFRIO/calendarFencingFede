@@ -200,6 +200,53 @@ export async function medirEnPagina(u: { tactil: number; grande: number; texto: 
     }
   }
 
+  /*
+   * Área táctil real, con el criterio de `auditoria-sonda.mts`: la caja del
+   * control o, si es mayor, su `::after` transparente (`AREA_TACTIL` y la regla
+   * base de `globals.css`), recortada por los antepasados con `overflow`
+   * distinto de `visible`. En una zona desplazable se recorta como si se
+   * hubiera desplazado lo justo para ver el control (`alVer`): una fila que
+   * queda más abajo de una lista con scroll se alcanza desplazando, pero el
+   * `::after` de un chip pegado al principio de su fila sí se pierde.
+   */
+  const alVer = (a: number, b: number, va: number, vb: number, desplazado: number, maximo: number) => {
+    let d = 0;
+    if (b > vb) d = b - vb;
+    if (a < va + d) d = a - va;
+    return Math.min(Math.max(d, -desplazado), Math.max(0, maximo - desplazado));
+  };
+  const areaTactil = (el: Element, r: DOMRect) => {
+    let caja = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    const tras = getComputedStyle(el, '::after');
+    if (tras.content !== 'none' && tras.content !== 'normal' && tras.position === 'absolute') {
+      const w = parseFloat(tras.width);
+      const h = parseFloat(tras.height);
+      if (Number.isFinite(w) && Number.isFinite(h)) {
+        const cx = (r.left + r.right) / 2;
+        const cy = (r.top + r.bottom) / 2;
+        const aw = Math.max(r.width, w);
+        const ah = Math.max(r.height, h);
+        caja = { left: cx - aw / 2, top: cy - ah / 2, right: cx + aw / 2, bottom: cy + ah / 2 };
+      }
+    }
+    for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+      const s = getComputedStyle(n);
+      const x = s.overflowX !== 'visible';
+      const y = s.overflowY !== 'visible';
+      if (!x && !y) continue;
+      const p = n.getBoundingClientRect();
+      if (x) {
+        const d = /(auto|scroll)/.test(s.overflowX) ? alVer(r.left, r.right, p.left, p.right, n.scrollLeft, n.scrollWidth - n.clientWidth) : 0;
+        caja = { ...caja, left: Math.max(caja.left, p.left + d), right: Math.min(caja.right, p.right + d) };
+      }
+      if (y) {
+        const d = /(auto|scroll)/.test(s.overflowY) ? alVer(r.top, r.bottom, p.top, p.bottom, n.scrollTop, n.scrollHeight - n.clientHeight) : 0;
+        caja = { ...caja, top: Math.max(caja.top, p.top + d), bottom: Math.min(caja.bottom, p.bottom + d) };
+      }
+    }
+    return { width: Math.max(0, caja.right - caja.left), height: Math.max(0, caja.bottom - caja.top) };
+  };
+
   // Objetivos táctiles y controles grandes.
   const selector = 'a[href], button, [role=button], [role=tab], [role=link], [role=switch], [role=checkbox], [role=radio], [role=menuitem], input:not([type=hidden]), select, textarea, summary';
   const tactiles: string[] = [];
@@ -210,14 +257,20 @@ export async function medirEnPagina(u: { tactil: number; grande: number; texto: 
     if (el.parentElement?.closest(selector)) continue;
     const s = getComputedStyle(el);
     let r = el.getBoundingClientRect();
+    let objetivo: Element = el;
     const etiqueta = el.closest('label');
     if (etiqueta && el.matches('input')) {
       const re = etiqueta.getBoundingClientRect();
-      if (re.width * re.height > r.width * r.height) r = re;
+      if (re.width * re.height > r.width * r.height) { r = re; objetivo = etiqueta; }
     }
     // Enlace dentro de un párrafo: WCAG 2.5.8 lo exime.
     const enLinea = s.display === 'inline' && el.parentElement && (el.parentElement.textContent ?? '').trim().length > (el.textContent ?? '').trim().length + 3;
-    if (!enLinea && (r.width < u.tactil - 0.5 || r.height < u.tactil - 0.5)) tactiles.push(`${Math.round(r.width)}x${Math.round(r.height)} ${quien(el)}`);
+    const area = areaTactil(objetivo, r);
+    // Recortado entero por un antepasado (lo plegado bajo «Ver todo», por ejemplo): no se ve ni se toca.
+    if (area.width < 1 || area.height < 1) continue;
+    if (!enLinea && (area.width < u.tactil - 0.5 || area.height < u.tactil - 0.5)) {
+      tactiles.push(`${Math.round(area.width)}x${Math.round(area.height)}${area.width !== r.width || area.height !== r.height ? ` (se ve ${Math.round(r.width)}x${Math.round(r.height)})` : ''} ${quien(el)}`);
+    }
 
     if (el.matches('textarea, input[type=checkbox], input[type=radio]')) continue;
     const textoControl = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
@@ -307,8 +360,8 @@ export async function medirEnPagina(u: { tactil: number; grande: number; texto: 
 /**
  * Guion que corre antes que el documento: el <html> aún no existe y se espera
  * a que el analizador lo cree. Va como texto para que tsx no le meta `__name`.
- * El texto grande multiplica el tamaño raíz que ya fija la hoja (18 px en
- * móvil), como haría el zoom de texto, antes de la primera pintura para no
+ * El texto grande multiplica el tamaño raíz que ya fija la hoja (16 px),
+ * como haría el zoom de texto, antes de la primera pintura para no
  * contar como CLS; lo fijado en px no crece.
  */
 export function guionPrevio(o: { texto: number; quitarOscuro: boolean }): string {

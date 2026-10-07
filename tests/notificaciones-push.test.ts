@@ -4,7 +4,7 @@ import { aBase64url, deBase64url, utf8 } from '@/lib/notificaciones/push/base64u
 import {
   cifrarMensajePush, derivarClaves, descifrarMensajePush, importarPrivadaEcdh, importarPublicaNavegador,
 } from '@/lib/notificaciones/push/cifrado';
-import { enviarPush, type MensajePush } from '@/lib/notificaciones/push/enviar';
+import { endpointValido, enviarPush, type MensajePush } from '@/lib/notificaciones/push/enviar';
 import { cabeceraVapid, firmarJwtVapid, generarClavesVapid, leerClavesVapid } from '@/lib/notificaciones/push/vapid';
 
 /*
@@ -169,7 +169,7 @@ describe('envío al servicio de push', () => {
     const par = (await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])) as CryptoKeyPair;
     const publica = new Uint8Array(await crypto.subtle.exportKey('raw', par.publicKey));
     const auth = crypto.getRandomValues(new Uint8Array(16));
-    return { par, publica, auth, sub: { endpoint: 'https://push.example.test/abc', p256dh: aBase64url(publica), auth: aBase64url(auth) } };
+    return { par, publica, auth, sub: { endpoint: 'https://fcm.googleapis.com/fcm/send/abc', p256dh: aBase64url(publica), auth: aBase64url(auth) } };
   }
 
   it('manda las cabeceras de RFC 8030/8291/8292 y un cuerpo que el navegador descifra', async () => {
@@ -202,7 +202,48 @@ describe('envío al servicio de push', () => {
     expect((await enviarPush(sub, mensaje, claves, con(429))).estado).toBe('error');
     expect((await enviarPush(sub, mensaje, claves, con(503))).estado).toBe('error');
     expect((await enviarPush(sub, mensaje, claves, { fetch: (async () => { throw new Error('red'); }) as unknown as typeof fetch })).estado).toBe('error');
-    expect((await enviarPush({ ...sub, endpoint: 'http://inseguro.test/x' }, mensaje, claves, con(201))).estado).toBe('rechazada');
+    expect((await enviarPush({ ...sub, endpoint: 'http://inseguro.test/x' }, mensaje, claves, con(201))).estado).toBe('caducada');
+  });
+
+  it('solo admite los servicios de push conocidos, por https y sin puerto ni credenciales', () => {
+    for (const bueno of [
+      'https://fcm.googleapis.com/fcm/send/abc',
+      'https://updates.push.services.mozilla.com/wpush/v2/abc',
+      'https://otro.push.services.mozilla.com/wpush/v2/abc',
+      'https://web.push.apple.com/QGx',
+      'https://api.push.apple.com/3/device/x',
+      'https://wns2-par02p.notify.windows.com/w/?token=x',
+      'https://fcm.googleapis.com:443/fcm/send/abc',
+    ]) expect(endpointValido(bueno), bueno).toBe(true);
+    for (const malo of [
+      'http://fcm.googleapis.com/fcm/send/abc',
+      'https://fcm.googleapis.com:8443/fcm/send/abc',
+      'https://user:pw@fcm.googleapis.com/fcm/send/abc',
+      'https://fcm.googleapis.com.evil.test/x',
+      'https://evilfcm.googleapis.com/x',
+      'https://push.apple.com/x',
+      'https://evilpush.apple.com/x',
+      'https://169.254.169.254/latest/meta-data',
+      'https://localhost/x',
+      'https://push.example.test/abc',
+      `https://fcm.googleapis.com/${'x'.repeat(1000)}`,
+      'no es una url',
+    ]) expect(endpointValido(malo), malo).toBe(false);
+  });
+
+  it('no sigue redirecciones (cuentan como rechazo) y pide un tiempo máximo', async () => {
+    const claves = { ...(await generarClavesVapid()), asunto: 'mailto:a@example.test' };
+    const { sub } = await suscripcionDePrueba();
+    let init: RequestInit | null = null;
+    const r = await enviarPush(sub, mensaje, claves, {
+      fetch: (async (_u: string, i: RequestInit) => {
+        init = i;
+        return new Response(null, { status: 307, headers: { location: 'http://169.254.169.254/' } });
+      }) as unknown as typeof fetch,
+    });
+    expect(r).toEqual({ estado: 'rechazada', status: 307 });
+    expect(init!.redirect).toBe('manual');
+    expect(init!.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('un cuerpo muy largo se recorta para caber en un registro en vez de fallar', async () => {

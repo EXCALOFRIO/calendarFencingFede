@@ -180,7 +180,7 @@ export function BurbujaOlimpica({
           anotacion={anotacion}
           compacta={compacta}
           decorativa
-          className="group-focus-visible:ring-[3px] group-focus-visible:ring-ring/50"
+          className="group-focus-visible:ring-[3px] group-focus-visible:ring-ring"
         />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[min(19rem,calc(100vw-2rem))] p-3">

@@ -32,22 +32,57 @@ type FilaPrueba = {
   genero: keyof typeof GENDER_LABEL;
   categoria: string;
   categoriaRaw: string | null;
+  /** Puestos publicados; distingue dos partes con el mismo rótulo. */
+  puestos?: number | null;
 };
 
-/** «Espada masculina V40»: arma y género sólo si las partes no los comparten. */
+/**
+ * El literal de la fuente si es corto («VET40», «+50»). Uno largo del
+ * Criterium («2013 21.06.2025 COLMENAR VIEJO») se queda en su año; otro largo,
+ * en la categoría de la aplicación.
+ */
+function rotuloDeFuente(p: Pick<FilaPrueba, 'categoria' | 'categoriaRaw'>): string {
+  const raw = p.categoriaRaw?.trim() ?? '';
+  if (raw && raw.length <= 12) return raw;
+  const anio = /^(\d{4})\b/.exec(raw)?.[1];
+  return anio ?? categoriaVisible(p.categoria);
+}
+
+/**
+ * «Espada masculina V40»: arma y género sólo si las partes no los comparten.
+ * Dos partes con el mismo rótulo (la RFEE publica a veces dos listas de la
+ * misma franja) se distinguen por sus puestos («VET40 · 7») o, si también
+ * coinciden, por su orden.
+ */
 export function etiquetasDePartes(pruebas: readonly FilaPrueba[]): Map<string, string> {
   const variasArmas = new Set(pruebas.map((p) => p.arma)).size > 1;
   const variosGeneros = new Set(pruebas.map((p) => p.genero)).size > 1;
-  const salida = new Map<string, string>();
+  const base = new Map<string, string>();
   for (const p of pruebas) {
     const partes = [
       variasArmas ? WEAPON_LABEL[p.arma] : null,
       variosGeneros ? GENDER_LABEL[p.genero] : null,
-      p.categoriaRaw?.trim() || categoriaVisible(p.categoria),
+      rotuloDeFuente(p),
     ].filter(Boolean);
-    salida.set(p.id, partes.join(' '));
+    base.set(p.id, partes.join(' '));
+  }
+  const salida = new Map<string, string>();
+  const porRotulo = new Map<string, FilaPrueba[]>();
+  for (const p of pruebas) porRotulo.set(base.get(p.id)!, [...(porRotulo.get(base.get(p.id)!) ?? []), p]);
+  for (const [rotulo, grupo] of porRotulo) {
+    if (grupo.length === 1) {
+      salida.set(grupo[0].id, rotulo);
+      continue;
+    }
+    const conPuestos = new Set(grupo.map((p) => p.puestos ?? null)).size === grupo.length && grupo.every((p) => p.puestos);
+    grupo.forEach((p, i) => salida.set(p.id, `${rotulo} · ${conPuestos ? p.puestos : i + 1}`));
   }
   return salida;
+}
+
+/** Las partes en orden de rótulo («VET30» antes que «VET40»), con los números en su orden natural. */
+export function ordenarPartes<T extends { etiqueta: string }>(partes: readonly T[]): T[] {
+  return [...partes].sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, 'es', { numeric: true }));
 }
 
 export async function leerConjuntaDePrueba(
@@ -61,7 +96,8 @@ export async function leerConjuntaDePrueba(
     const ids = [enlace.conjuntaId, ...enlace.partes];
     const pruebas = filas<FilaPrueba>(await db.execute(sql`
       SELECT c.id, c.edition_id AS edicion, c.weapon AS arma, c.gender AS genero,
-             c.category AS categoria, c.category_raw AS "categoriaRaw"
+             c.category AS categoria, c.category_raw AS "categoriaRaw",
+             (SELECT count(*) FROM sport_result r WHERE r.competition_id = c.id) AS puestos
       FROM sport_competition c WHERE c.id IN (${listaUuid(ids)})`));
     const porId = new Map(pruebas.map((p) => [p.id, p]));
     const conjunta = porId.get(enlace.conjuntaId);
@@ -73,7 +109,7 @@ export async function leerConjuntaDePrueba(
     return {
       esConjunta,
       conjunta: aEnlace(conjunta, categoriaVisible(conjunta.categoria)),
-      partes: partes.filter((p) => esConjunta || p.id !== pruebaId).map((p) => aEnlace(p, etiquetas.get(p.id) ?? '')),
+      partes: ordenarPartes(partes.filter((p) => esConjunta || p.id !== pruebaId).map((p) => aEnlace(p, etiquetas.get(p.id) ?? ''))),
     };
   } catch {
     return null;

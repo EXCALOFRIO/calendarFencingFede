@@ -169,6 +169,35 @@ export function reencajar(
   }));
 }
 
+/**
+ * Persona deportiva de una fila, sólo si las evidencias la demuestran: una
+ * única persona confirmada por ID o licencia publicados, ningún conflicto y
+ * no más de una ficha local. Nunca por nombre; en la duda, `null`.
+ */
+export function personaDeFila(f: Pick<FilaUnida, 'observaciones'>): string | null {
+  const personas = new Set<string>();
+  const fichas = new Set<string>();
+  for (const o of f.observaciones) {
+    if (o.resolucion?.kind === 'conflict') return null;
+    if (o.resolucion?.kind === 'confirmed') personas.add(o.resolucion.personId);
+    if (o.athleteId) fichas.add(o.athleteId);
+  }
+  return personas.size === 1 && fichas.size <= 1 ? [...personas][0] : null;
+}
+
+/** Puesto en un ranking vigente; `absoluto` si es el absoluto en vez del de la categoría de la prueba. */
+export type PuestoInscrito = { puesto: number; absoluto: boolean };
+
+/** Clave de los extras de un inscrito: el mismo tirador puede ir a dos pruebas del torneo. */
+export const claveExtra = (competitionId: string, personaId: string) => `${competitionId}|${personaId}`;
+
+/** Lo público que acompaña a un inscrito enlazado: nacionalidad y puestos FIE (mundial) y RFEE (nacional). */
+export type ExtraInscrito = {
+  pais: string | null;
+  mundial: PuestoInscrito | null;
+  nacional: PuestoInscrito | null;
+};
+
 /** Lo único que la lista visible dice de cada inscrito. */
 export type InscritoPublicado = {
   competitionId: string;
@@ -178,6 +207,9 @@ export type InscritoPublicado = {
   /** `true` si es uno de los tiradores que gestiona quien está mirando. */
   esMio: boolean;
   retiradoEn: Date | null;
+  /** Persona deportiva demostrada (`personaDeFila`); sin ella la fila no enlaza. */
+  personaId?: string | null;
+  extra?: ExtraInscrito | null;
 };
 
 /**
@@ -185,7 +217,10 @@ export type InscritoPublicado = {
  * ajena pasan a la respuesta aunque la fila interna las tenga.
  */
 export function aListaVisible(
-  filas: readonly Pick<FilaUnida, 'competitionId' | 'nombre' | 'equipo' | 'club' | 'athleteIds' | 'retiradoEn'>[],
+  filas: readonly (Pick<FilaUnida, 'competitionId' | 'nombre' | 'equipo' | 'club' | 'athleteIds' | 'retiradoEn'> & {
+    personaId?: string | null;
+    extra?: ExtraInscrito | null;
+  })[],
   athleteIdsPropios: ReadonlySet<string>,
 ): InscritoPublicado[] {
   return filas.map((f) => ({
@@ -195,6 +230,9 @@ export function aListaVisible(
     club: f.club,
     esMio: f.athleteIds.some((id) => athleteIdsPropios.has(id)),
     retiradoEn: f.retiradoEn,
+    // Sólo si los hay: en una lista de Skermo de 170 filas, dos nulos por fila son 5 KB.
+    ...(f.personaId ? { personaId: f.personaId } : {}),
+    ...(f.personaId && f.extra ? { extra: f.extra } : {}),
   }));
 }
 

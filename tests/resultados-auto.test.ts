@@ -8,6 +8,7 @@ import { abrirD1Local } from '../src/lib/ingest/sport-incremental/local';
 import { ejecutarResultadosAuto, huellaHechos, proximaEspera, proximaHecha } from '../src/lib/ingest/resultados-auto/ejecutar';
 import { leerConfigResultadosAuto, POR_DEFECTO, type ConfigResultadosAuto } from '../src/lib/ingest/resultados-auto/config';
 import { leerEventosResultados } from '../src/lib/ingest/resultados-auto/eventos';
+import { sentenciaAjusteConsumo, sentenciasConsumo } from '../src/lib/ingest/resultados-auto/estado';
 import { comprobarPoules, sanearAsaltos } from '../src/lib/ingest/resultados-auto/validacion-estricta';
 import { extraerPdfConIa, neuronasEstimadas } from '../src/lib/ingest/resultados-auto/ia';
 import { crearRed, RedDetenida, type Transporte } from '../src/lib/ingest/resultados-auto/red';
@@ -16,6 +17,8 @@ import { hechosSkermo } from '../src/lib/ingest/hechos/skermo';
 import { normalizarNombre } from '../src/lib/ingest/hechos/reglas-carga';
 import { dbConSportLease, reclamarSportLease } from '../src/lib/ingest/sport-incremental/lease';
 import { sql } from 'drizzle-orm';
+import { licenciasEnMayusculas } from '../src/lib/ingest/resultados-auto/fuentes';
+import { consumirEventosIngesta } from '../src/lib/notificaciones/resultados';
 
 const fixture = (f: string) => new URL(`./fixtures/resultados-auto/${f}`, import.meta.url);
 const INDICE = readFileSync(fixture('skermo-indice-rfee.html'), 'utf8');
@@ -108,6 +111,48 @@ describe('red acotada', () => {
     await expect(red.texto('https://app.skermo.org/b')).rejects.toBeInstanceOf(RedDetenida);
     expect(t).toHaveBeenCalledOnce();
   });
+  const redirige = (destino: string, status = 302) => new Response(null, { status, headers: { location: destino } });
+  it('no deja a fetch seguir redirecciones: las sigue a mano, sólo a https y a hosts permitidos', async () => {
+    const t = vi.fn<Transporte>()
+      .mockResolvedValueOnce(redirige('/api/y'))
+      .mockResolvedValueOnce(redirige('https://www.engarde-service.com/z', 301))
+      .mockResolvedValueOnce(new Response('{"ok":1}'));
+    const red = crearRed({ maxPeticiones: 10, restanteMs: () => 30_000, transporte: t, pausaMs: 0 });
+    expect(await red.json('https://fie.org/api/x')).toEqual({ ok: 1 });
+    expect(t.mock.calls.map((c) => [c[0], c[1].redirect])).toEqual([
+      ['https://fie.org/api/x', 'manual'], ['https://fie.org/api/y', 'manual'], ['https://www.engarde-service.com/z', 'manual'],
+    ]);
+    expect(red.peticiones).toBe(3);
+  });
+  it.each([
+    ['otro host', 'https://example.com/x'],
+    ['http', 'http://fie.org/x'],
+    ['con credenciales', 'https://u:p@fie.org/x'],
+    ['otro puerto', 'https://fie.org:8443/x'],
+    ['metadatos', 'http://169.254.169.254/latest'],
+    ['sin Location', ''],
+  ])('una redirección a %s falla sin pedir el destino y sin parar la pasada', async (_n, destino) => {
+    const t = vi.fn<Transporte>().mockResolvedValueOnce(destino ? redirige(destino) : new Response(null, { status: 302 }));
+    const red = crearRed({ maxPeticiones: 10, restanteMs: () => 30_000, transporte: t, pausaMs: 0 });
+    await expect(red.texto('https://fie.org/a')).rejects.toThrow('redireccion_no_permitida');
+    expect(t).toHaveBeenCalledOnce();
+    expect(red.detenida).toBeNull();
+  });
+  it('más de tres redirecciones seguidas es un fallo', async () => {
+    const t = vi.fn<Transporte>(async () => redirige('https://fie.org/otra'));
+    const red = crearRed({ maxPeticiones: 10, restanteMs: () => 30_000, transporte: t, pausaMs: 0 });
+    await expect(red.texto('https://fie.org/a')).rejects.toThrow('demasiadas_redirecciones');
+    expect(t).toHaveBeenCalledTimes(4);
+  });
+  it('un 303 tras un POST sigue con GET y sin cuerpo; un 307 repite el POST', async () => {
+    const t = vi.fn<Transporte>()
+      .mockResolvedValueOnce(redirige('https://app.skermo.org/b', 307))
+      .mockResolvedValueOnce(redirige('https://app.skermo.org/c', 303))
+      .mockResolvedValueOnce(new Response('hecho'));
+    const red = crearRed({ maxPeticiones: 10, restanteMs: () => 30_000, transporte: t, pausaMs: 0 });
+    expect(await red.texto('https://app.skermo.org/a', { method: 'POST', form: { x: '1' } })).toBe('hecho');
+    expect(t.mock.calls.map((c) => [c[1].method, c[1].body ?? null])).toEqual([['POST', 'x=1'], ['POST', 'x=1'], ['GET', null]]);
+  });
 });
 
 function prueba(bouts: AsaltoHecho[], source: HechosPrueba['source'] = 'rfee_pdf', pools: HechosPrueba['status']['pools'] = 'completo'): HechosPrueba {
@@ -184,6 +229,35 @@ describe('validación estricta de la IA', () => {
   });
   it('la estimación de neuronas del peor caso cabe varias veces en la capa gratuita', () => {
     expect(neuronasEstimadas(60_000, 8_192 * 3)).toBeLessThan(1_000);
+  });
+  it('reserva el peor caso antes de llamar; si no se puede apuntar, no llama', async () => {
+    const orden: string[] = [];
+    const generarJson = vi.fn(async () => { orden.push('llamada'); return 'lo siento'; });
+    const reservar = vi.fn(async (n: number) => { orden.push(`reserva:${n}`); return true; });
+    const r = await extraerPdfConIa({ modelo: 'm', generarJson }, { ...ctx, reservar });
+    expect(orden).toHaveLength(2);
+    expect(orden[0]).toMatch(/^reserva:\d+$/);
+    expect(orden[1]).toBe('llamada');
+    // Lo real nunca pasa del peor caso reservado.
+    expect(r.neuronas).toBeLessThanOrEqual(Number(orden[0].split(':')[1]));
+    const sinApuntar = vi.fn(async () => '{}');
+    expect(await extraerPdfConIa({ modelo: 'm', generarJson: sinApuntar }, { ...ctx, reservar: async () => false }))
+      .toMatchObject({ ok: false, llamada: false, motivo: 'ia_reserva_no_guardada' });
+    expect(sinApuntar).not.toHaveBeenCalled();
+  });
+  it('el ajuste tras la llamada corrige la reserva en D1 sin bajar de cero', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec(`CREATE TABLE resultado_auto_consumo (dia TEXT NOT NULL, clave TEXT NOT NULL,
+      valor INTEGER NOT NULL CHECK (typeof(valor) = 'integer' AND valor >= 0), PRIMARY KEY (dia, clave)) WITHOUT ROWID`);
+    const correr = (s: { sql: string; params: unknown[] }) => db.prepare(s.sql).run(...(s.params as (string | number)[]));
+    for (const s of sentenciasConsumo(AHORA, { ia_llamadas: 1, ia_neuronas: 900 })) correr(s);
+    correr(sentenciaAjusteConsumo(AHORA, 'ia_neuronas', -650));
+    const valores = () => Object.fromEntries((db.prepare('SELECT clave, valor FROM resultado_auto_consumo').all() as { clave: string; valor: number }[])
+      .map((f) => [f.clave, f.valor]));
+    expect(valores()).toEqual({ ia_llamadas: 1, ia_neuronas: 250 });
+    correr(sentenciaAjusteConsumo(AHORA, 'ia_neuronas', -10_000));
+    expect(valores().ia_neuronas).toBe(0);
+    db.close();
   });
 });
 
@@ -267,6 +341,42 @@ describe('pasada completa sobre una base local', () => {
     expect(espia.prepare(`select person_id p, status s from sport_link_candidate where source='resultados_auto'`).all())
       .toEqual([{ p: 'p-otro', s: 'PROPUESTO' }]);
     expect(n('sport_person')).toBe(49);
+  });
+
+  it('una licencia que Skermo reescribe con minúscula sigue siendo la misma fila y la misma persona', async () => {
+    const { db, espia, n } = base();
+    const { t } = transporte();
+    await ejecutarResultadosAuto(deps(db, t));
+    const h = hechosSkermo('10351', CLASIFICACION_10351, 'c'.repeat(64))!;
+    const lic = h.results.find((x) => x.license && /^[A-Z]/.test(x.license))!.license!;
+    const editada = CLASIFICACION_10351.split(lic).join(lic[0].toLowerCase() + lic.slice(1));
+    expect(editada).not.toBe(CLASIFICACION_10351);
+    expect(licenciasEnMayusculas(hechosSkermo('10351', editada, 'c'.repeat(64))!).results.map((r) => [r.factKey, r.license]))
+      .toEqual(h.results.map((r) => [r.factKey, r.license]));
+
+    espia.exec(`update resultado_auto_unidad set proxima=0, huella=null where clave='skermo|2026-2027|10351'`);
+    const antes = { r: n('sport_result'), p: n('sport_person'), c: n('sport_link_candidate') };
+    const t2: Transporte = async (url, init) => url.startsWith('https://app.skermo.org/ranking/public/RFEE/competition/10351')
+      ? new Response(editada) : t(url, init);
+    const r2 = await ejecutarResultadosAuto(deps(db, t2));
+    expect(r2.filas).toBe(0);
+    expect({ r: n('sport_result'), p: n('sport_person'), c: n('sport_link_candidate') }).toEqual(antes);
+  });
+
+  it('ancla el cursor de avisos antes de escribir: los eventos de la primera pasada se notifican', async () => {
+    const { db, espia } = base();
+    espia.exec(readFileSync(new URL('../drizzle-d1/0014_notificaciones.sql', import.meta.url), 'utf8'));
+    const { t } = transporte();
+    const r = await ejecutarResultadosAuto(deps(db, t));
+    expect(r.eventos).toBeGreaterThan(0);
+    expect(espia.prepare(`select ultimo_id u from notificacion_cursor where fuente='resultado_auto_evento'`).get()).toEqual({ u: 0 });
+    const c = await consumirEventosIngesta(db, new Date(AHORA));
+    expect(c.leidos).toBe(r.eventos);
+
+    // A second pass never moves a cursor that already exists.
+    espia.exec(`update notificacion_cursor set ultimo_id=1`);
+    await ejecutarResultadosAuto(deps(db, t));
+    expect(espia.prepare(`select ultimo_id u from notificacion_cursor`).get()).toEqual({ u: 1 });
   });
 
   it('respeta el tope diario de filas: no empieza una prueba que no cabe', async () => {

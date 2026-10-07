@@ -33,7 +33,7 @@ import { organizadorDe } from '@/lib/sport/explorar/organizador';
 import { InsigniaOrganismo } from '@/components/insignia-organismo';
 import { cn, titular } from '@/lib/utils';
 import { EtiquetaTipoCompeticion } from './etiqueta-competicion';
-import { Nota, fechaLegible } from './piezas';
+import { EnlacePais, Nota, fechaLegible } from './piezas';
 import { ListaClasificacion } from './prueba/clasificacion';
 import { enlaceFichaDePrueba } from './prueba/enlaces';
 import { SelectorPrueba, type GrupoDePruebas, type OpcionFormato } from './prueba/selector-prueba';
@@ -43,7 +43,7 @@ import { armaYGenero, nombreDePrueba } from './prueba-resultados';
 const AVANZAR = [TIPO_TRANSICION.avanzar];
 
 const ENLACE =
-  'inline-flex min-h-[44px] items-center gap-1.5 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
+  'inline-flex min-h-[44px] items-center gap-1.5 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none';
 
 /** Entrada a las ediciones desde Explorar, sin ocupar sitio en la barra. */
 export function EnlaceEdiciones({ className }: { className?: string }) {
@@ -118,7 +118,7 @@ export function FilaEdicion({ e, catalogo }: { e: EdicionResumen & { clasificado
         href={construirUrlEdicion(e.id, { catalogo })}
         transitionTypes={AVANZAR}
         title={generico && ciudad ? `${nombre} ${ciudad}` : undefined}
-        className="grid min-h-12 grid-cols-[3.75rem_minmax(0,1fr)_auto] items-center gap-x-3 px-1 py-2 transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset motion-reduce:transition-none"
+        className="grid min-h-12 grid-cols-[3.75rem_minmax(0,1fr)_minmax(0,max-content)] items-center gap-x-3 px-1 py-2 transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset motion-reduce:transition-none"
       >
         <span className="text-xs tabular-nums text-muted-foreground">{fechaCorta(e.inicio)}</span>
         <span className="flex min-w-0 items-center gap-2">
@@ -128,7 +128,8 @@ export function FilaEdicion({ e, catalogo }: { e: EdicionResumen & { clasificado
           </span>
           {e.pais ? <BanderaPais pais={e.pais} soloBandera /> : null}
         </span>
-        <EtiquetaTipoCompeticion clasificacion={tipo} />
+        {/* Con el texto al 200 % la pastilla se recorta (lleva `title`) en vez de sacar la fila de la pantalla. */}
+        <EtiquetaTipoCompeticion clasificacion={tipo} className="max-w-[30vw]" />
       </EnlaceIntencion>
     </li>
   );
@@ -398,11 +399,14 @@ export function EdicionCompleta({
   edicion,
   criterios,
   conjunta = null,
+  calendario = null,
 }: {
   edicion: EdicionConAsaltos;
   criterios: CriteriosEdicion;
   /** Prueba conjunta de la elegida (ver `conjunta-edicion.ts`). */
   conjunta?: VistaConjunta | null;
+  /** El torneo en el calendario (`urlEventoCalendario`), si la edición es uno de sus torneos. */
+  calendario?: string | null;
 }) {
   const idElegida = edicion.pruebaElegida ?? criterios.prueba;
   const elegida = idElegida ? (pruebaDeId(edicion.pruebasDetalle, idElegida) ?? null) : null;
@@ -415,17 +419,17 @@ export function EdicionCompleta({
     <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-4">
       <header className="flex min-w-0 flex-col gap-1">
         <div className="flex items-start justify-between gap-3">
-          <h2 className="min-w-0 text-[28px] leading-[32px] break-words sm:text-[36px] sm:leading-[40px]">{titulo}</h2>
+          <h1 className="min-w-0 text-[28px] leading-[32px] break-words sm:text-[36px] sm:leading-[40px]">{titulo}</h1>
           {oficial ? (
             <a
               href={oficial.url}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={`Resultados oficiales en ${oficial.proveedor}`}
+              aria-label={`Resultados oficiales en ${oficial.proveedor} (se abre en otra pestaña)`}
               title={`Resultados oficiales en ${oficial.proveedor}`}
               className="group -m-1 inline-flex size-[44px] shrink-0 items-center justify-center rounded-full focus-visible:outline-none"
             >
-              <span className="inline-flex size-[36px] items-center justify-center rounded-full border border-input bg-card text-muted-foreground transition-colors group-hover:bg-accent group-hover:text-foreground group-focus-visible:ring-[3px] group-focus-visible:ring-ring/50">
+              <span className="inline-flex size-[36px] items-center justify-center rounded-full border border-input bg-card text-muted-foreground transition-colors group-hover:bg-accent group-hover:text-foreground group-focus-visible:ring-[3px] group-focus-visible:ring-ring">
                 <ExternalLink className="size-4" aria-hidden />
               </span>
             </a>
@@ -438,7 +442,17 @@ export function EdicionCompleta({
               <EtiquetaTipoCompeticion clasificacion={tipo} />
             </span>
           ) : null}
-          {fechas ? (
+          {fechas && calendario ? (
+            <EnlaceIntencion
+              href={calendario}
+              data-enlace="calendario"
+              aria-label={`${fechas}. Ver el torneo en el calendario`}
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
+            >
+              <CalendarDays aria-hidden className="size-4" />
+              {fechas}
+            </EnlaceIntencion>
+          ) : fechas ? (
             <span className="inline-flex items-center gap-1.5">
               <CalendarDays aria-hidden className="size-4" />
               {fechas}
@@ -448,11 +462,17 @@ export function EdicionCompleta({
             <span className="inline-flex min-w-0 items-center gap-1.5">
               <MapPin aria-hidden className="size-4 shrink-0" />
               {edicion.ciudad ? <span className="break-words">{titular(edicion.ciudad)}</span> : null}
-              {edicion.pais ? <BanderaPais pais={edicion.pais} soloBandera /> : null}
+              {edicion.pais ? <EnlacePais pais={edicion.pais} /> : null}
             </span>
           ) : null}
           {edicion.serie ? <span>{ETIQUETA_SERIE[edicion.serie]}</span> : null}
           {fechas ? null : <span>{edicion.temporada}</span>}
+          {conjunta?.esConjunta && conjunta.partes.length > 0 ? (
+            <span data-conjunta="titulo" className="inline-flex items-center gap-1.5">
+              <Swords aria-hidden className="size-4" />
+              Prueba conjunta
+            </span>
+          ) : null}
         </p>
       </header>
 

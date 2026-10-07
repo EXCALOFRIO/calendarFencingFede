@@ -1,5 +1,7 @@
 import { Suspense } from 'react';
+import { BuscadorPaises } from '@/components/explorar/buscador-paises';
 import { PropuestasBuscador } from '@/components/explorar/buscador-social-fila';
+import { CabeceraExplorar } from '@/components/explorar/cabecera-explorar';
 import { VistaBuscar } from '@/components/explorar/vista-buscar';
 import type { SessionProfile } from '@/lib/auth/session';
 import type { ContextoExplorador } from '@/lib/sport/explorar/contexto';
@@ -12,6 +14,16 @@ async function Propuestas({ ctx }: { ctx: ContextoExplorador }) {
   const propuestas = await cargarBuscarVacioCompartido(ctx);
   if (propuestas?.length === 0) return null;
   return <PropuestasBuscador propuestas={propuestas} className="lg:max-w-2xl" />;
+}
+
+/** Pestaña Países de Buscar (`/explorar/buscar?ver=paises`): lista fija, sin lecturas de la base. */
+export function PantallaPaises({ q }: { q: string }) {
+  return (
+    <div className="flex w-full min-w-0 flex-col gap-3 lg:mx-auto lg:max-w-2xl">
+      <CabeceraExplorar activa="paises" />
+      <BuscadorPaises qInicial={q} />
+    </div>
+  );
 }
 
 /**

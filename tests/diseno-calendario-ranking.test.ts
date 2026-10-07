@@ -259,7 +259,9 @@ describe('calendario, navegación y ranking: contrato de presentación', () => {
       expect(marcado).toContain('torneos coinciden');
       expect(marcado).toContain('Sabadell');
       expect(marcado).toContain('Paris');
-      expect(marcado).toContain('Abrir la ficha');
+      // El botón se nombra por lo que enseña (WCAG 2.5.3), sin aria-label que lo tape.
+      expect(marcado).toContain('data-barra="torneo"');
+      expect(marcado).not.toContain('Abrir la ficha.');
       expect(marcado).toContain('cifra text-4xl');
       expect(marcado).not.toMatch(/uppercase|tracking-widest|truncate|objetivo-libre/);
     }

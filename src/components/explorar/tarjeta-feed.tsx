@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
 import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
 import { AREA_TACTIL } from '@/components/sistema/tactil';
-import { rutaEdicion } from '@/lib/sport/explorar/edicion-url';
+import { construirUrlEdicion } from '@/lib/sport/explorar/edicion-url';
 import { CLASES_MEDALLA, categoriaVisible, medallaDe, nombrePrueba } from '@/lib/sport/explorar/presentacion';
 import type { EntradaSiguiendo } from '@/lib/sport/explorar/tipos-social';
 import { rutaFicha } from '@/lib/sport/explorar/url';
@@ -66,7 +66,7 @@ function DiscoPuesto({ e }: { e: EntradaSiguiendo }) {
 
 const AVANZAR = [TIPO_TRANSICION.avanzar];
 
-const SUBRAYADO = 'rounded-sm underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
+const SUBRAYADO = 'rounded-sm underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none';
 
 /**
  * Toda la tarjeta lleva a la ficha: el enlace del nombre se estira sobre ella
@@ -102,7 +102,7 @@ export function TarjetaSiguiendo({ e }: { e: EntradaSiguiendo }) {
             </span>
           </p>
           <Link
-            href={rutaEdicion(e.prueba.edicionId)}
+            href={construirUrlEdicion(e.prueba.edicionId, { prueba: e.prueba.id, persona: e.persona.id })}
             prefetch={false}
             transitionTypes={AVANZAR}
             className={cn(SUBRAYADO, AREA_TACTIL, 'z-[1] -mt-[5px] -mb-[10px] block min-w-0 pt-[5px] pb-[10px] text-[13px] leading-[17px]')}

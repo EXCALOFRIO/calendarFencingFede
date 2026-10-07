@@ -1,6 +1,6 @@
 # Favoritos: guía de comprobación manual
 
-Los favoritos son un acceso rápido privado a fichas deportivas. No envían avisos, no generan notificaciones ni permisos del navegador, no siguen a nadie y no enseñan ranking interno.
+Los favoritos (en la app, «Siguiendo») son un acceso rápido privado a fichas deportivas. Sus resultados nuevos salen en el feed y, si el tipo «Siguiendo» está activado en Notificaciones, también como aviso; nunca los de un posible menor, salvo que sea la ficha propia o la de un tutelado. Guardar un favorito no pide permisos del navegador ni enseña ranking interno.
 
 Esta guía es para quien tenga una sesión real. Los tests automáticos cubren acciones, vistas renderizadas en servidor y estados, pero no un navegador con sesión. La migración 0017 ya está aplicada en la base real. No crees usuarios de prueba en producción: usa una cuenta tuya.
 
@@ -25,7 +25,7 @@ Esta guía es para quien tenga una sesión real. Los tests automáticos cubren a
 8. Corta la red (modo sin conexión) y pulsa Guardar: el estado vuelve al anterior y aparece un aviso en rojo que dice cómo reintentar. Al volver la red, repite y debe funcionar.
 9. Con una segunda cuenta tuya, comprueba que su lista está vacía y no contiene lo guardado con la primera. Cambiar a mano `?cursor=` por un valor de la otra cuenta muestra «Esta página ya no corresponde a tu lista».
 10. Sin sesión, `/explorar/favoritos` y cualquier ficha redirigen a `/entrar`.
-11. El navegador no debe pedir ningún permiso de notificaciones en todo el recorrido.
+11. El navegador no debe pedir ningún permiso de notificaciones en todo el recorrido: ese permiso solo se pide desde Notificaciones → Este dispositivo → Activar.
 
 ## Anchos y accesibilidad
 

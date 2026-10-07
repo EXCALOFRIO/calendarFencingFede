@@ -16,7 +16,7 @@ export type EstadoAvisos =
   | { estado: 'ok'; eventos: number; avisos: number; push: number }
   | { estado: 'sin_tablas' | 'error' };
 
-export type ResumenTrasIngesta = { avisos: EstadoAvisos; cache: 'ok' | 'error' };
+export type ResumenTrasIngesta = { avisos: EstadoAvisos; cache: 'ok' | 'error' | 'sin_cambios' };
 
 type ResumenNotificar = { eventos: number; avisos: number; push: { enviadas: number } };
 
@@ -25,6 +25,11 @@ export type DepsTrasIngesta = {
   notificar?: (db: DbAvisos) => Promise<ResumenNotificar>;
   invalidar?: (fuente: string) => Promise<void>;
   registro?: Pick<Console, 'warn'>;
+  /**
+   * El resultado de `runIngest`. Si dice `sinCambios`, la época de la caché no
+   * se sube: hacerlo vaciaría la caché compartida del calendario sin motivo.
+   */
+  resultado?: { sinCambios?: boolean };
 };
 
 async function obtenerDb(deps: DepsTrasIngesta): Promise<DbAvisos> {
@@ -37,8 +42,12 @@ export async function trasIngesta(fuente: string, deps: DepsTrasIngesta = {}): P
   const resumen: ResumenTrasIngesta = { avisos: { estado: 'error' }, cache: 'ok' };
 
   try {
-    const invalidar = deps.invalidar ?? (await import('@/lib/cache')).invalidarTrasIngesta;
-    await invalidar(fuente);
+    if (deps.resultado?.sinCambios === true) {
+      resumen.cache = 'sin_cambios';
+    } else {
+      const invalidar = deps.invalidar ?? (await import('@/lib/cache')).invalidarTrasIngesta;
+      await invalidar(fuente);
+    }
   } catch (error) {
     resumen.cache = 'error';
     registro.warn(`[tras-ingesta] ${fuente}: no se pudo invalidar la caché (${nombreDeError(error)})`);

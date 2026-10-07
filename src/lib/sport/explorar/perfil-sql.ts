@@ -26,30 +26,39 @@ const TEMPORADA_DEPORTIVA = `(CASE
  * cuentan los asaltos de una de ellas: nunca se suman dos copias del mismo
  * asalto ni se mezclan marcadores de fuentes distintas.
  */
-export function asaltosValidos(ids: readonly string[]): SQL {
+export function asaltosValidos(
+  ids: readonly string[],
+  /**
+   * `ligero`: sin torneo ni fechas, así que no se une la edición; y `validos`
+   * se materializa porque el balance la lee varias veces (sin ello cada lectura
+   * repite el cruce con `elegidas` y su índice automático).
+   */
+  { ligero = false }: { ligero?: boolean } = {},
+): SQL {
   const columnas = (rival: string, favor: string, contra: string) => sql.raw(`
       b.id AS id, b.competition_id AS prueba, b.phase AS fase, b.${rival} AS rival_id,
       b.${favor} AS favor, b.${contra} AS contra,
       coalesce('cal:' || c.event_competition_id, 'sport:' || c.id) AS equivalencia,
-      ${TEMPORADA_DEPORTIVA} AS temporada,
+      ${TEMPORADA_DEPORTIVA} AS temporada${ligero ? '' : `,
       e.name AS torneo,
       coalesce(b.occurred_on, c.competition_date, e.start_date) AS fecha,
-      coalesce(b.occurred_on, c.competition_date, e.start_date, '0001-01-01') AS fecha_orden`);
+      coalesce(b.occurred_on, c.competition_date, e.start_date, '0001-01-01') AS fecha_orden`}`);
+  const uniones = ligero ? sql.raw('JOIN sport_competition c ON c.id = b.competition_id') : UNIONES_ASALTO;
   // MATERIALIZED: si SQLite la inserta en `validos`, entra por la prueba y
   // recorre todos los asaltos de cada una (sport_bout_key) en vez de los de la persona.
   return sql`
     orientados AS MATERIALIZED (
       SELECT ${columnas('fencer_b_person_id', 'score_a', 'score_b')}
-      FROM sport_bout b ${UNIONES_ASALTO}
+      FROM sport_bout b ${uniones}
       WHERE b.fencer_a_person_id IN (${listaUuid(ids)}) AND c.format = 'INDIVIDUAL'
       UNION ALL
       SELECT ${columnas('fencer_a_person_id', 'score_b', 'score_a')}
-      FROM sport_bout b ${UNIONES_ASALTO}
+      FROM sport_bout b ${uniones}
       WHERE b.fencer_b_person_id IN (${listaUuid(ids)}) AND c.format = 'INDIVIDUAL'
         AND (b.fencer_a_person_id IS NULL OR b.fencer_a_person_id NOT IN (${listaUuid(ids)}))
     ), elegidas AS (
       SELECT equivalencia, min(prueba) AS prueba FROM orientados GROUP BY equivalencia
-    ), validos AS (
+    ), validos AS ${sql.raw(ligero ? 'MATERIALIZED ' : '')}(
       SELECT o.* FROM orientados o JOIN elegidas el ON el.prueba = o.prueba
     )`;
 }
@@ -61,6 +70,14 @@ const MEDIDAS_ASALTOS = sql.raw(`
   coalesce(sum(CASE WHEN favor = contra THEN 1 ELSE 0 END), 0) AS empates,
   coalesce(sum(favor), 0) AS "tocadosDados",
   coalesce(sum(contra), 0) AS "tocadosRecibidos"`);
+
+const SUMAS_ASALTOS = sql.raw(`
+  coalesce(sum(asaltos), 0) AS asaltos,
+  coalesce(sum(victorias), 0) AS victorias,
+  coalesce(sum(derrotas), 0) AS derrotas,
+  coalesce(sum(empates), 0) AS empates,
+  coalesce(sum("tocadosDados"), 0) AS "tocadosDados",
+  coalesce(sum("tocadosRecibidos"), 0) AS "tocadosRecibidos"`);
 
 export type FilaBalanceAsaltos = {
   clase: 'total' | 'fase' | 'temporada';
@@ -81,12 +98,17 @@ export type FilaBalanceAsaltos = {
  * La fila total cuenta además los rivales distintos: cada rival se lleva a la
  * persona que prevalece (un salto, las fusiones no encadenan) para que dos
  * fichas fundidas del mismo rival cuenten una vez.
+ *
+ * Los asaltos se recorren una vez, agrupados por fase y temporada (`grupos`,
+ * unas decenas de filas); total, fases y temporadas suman esos grupos.
  */
 export function sqlBalanceAsaltos(ids: readonly string[]) {
   return sql`
-    WITH ${asaltosValidos(ids)}, por_temporada AS (
-      SELECT 'temporada' AS clase, NULL AS fase, temporada, ${MEDIDAS_ASALTOS}, NULL AS rivales
-      FROM validos GROUP BY temporada ORDER BY temporada DESC
+    WITH ${asaltosValidos(ids, { ligero: true })}, grupos AS MATERIALIZED (
+      SELECT fase, temporada, ${MEDIDAS_ASALTOS} FROM validos GROUP BY fase, temporada
+    ), por_temporada AS (
+      SELECT 'temporada' AS clase, NULL AS fase, temporada, ${SUMAS_ASALTOS}, NULL AS rivales
+      FROM grupos GROUP BY temporada ORDER BY temporada DESC
       LIMIT ${LIMITE_TEMPORADAS_ASALTOS}
     ), rivales_distintos AS (
       SELECT count(DISTINCT coalesce(p.merged_into_person_id, p.id)) AS n
@@ -94,11 +116,11 @@ export function sqlBalanceAsaltos(ids: readonly string[]) {
       CROSS JOIN sport_person p ON p.id = d.rival_id
       WHERE coalesce(p.merged_into_person_id, p.id) NOT IN (${listaUuid(ids)})
     )
-    SELECT 'total' AS clase, NULL AS fase, NULL AS temporada, ${MEDIDAS_ASALTOS},
+    SELECT 'total' AS clase, NULL AS fase, NULL AS temporada, ${SUMAS_ASALTOS},
            (SELECT n FROM rivales_distintos) AS rivales
-    FROM validos
+    FROM grupos
     UNION ALL
-    SELECT 'fase' AS clase, fase, NULL AS temporada, ${MEDIDAS_ASALTOS}, NULL AS rivales FROM validos GROUP BY fase
+    SELECT 'fase' AS clase, fase, NULL AS temporada, ${SUMAS_ASALTOS}, NULL AS rivales FROM grupos GROUP BY fase
     UNION ALL
     SELECT * FROM por_temporada`;
 }

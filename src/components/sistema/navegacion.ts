@@ -35,6 +35,8 @@ export type DestinoBarra = {
   prefijos?: readonly string[];
   /** Punto rojo de novedades. */
   insignia?: boolean;
+  /** Foto redonda de 24 px en vez del icono (la propia en «Tú»); si no carga, el icono. */
+  retrato?: string | null;
 };
 
 function ruta(href: string): string {
@@ -64,33 +66,84 @@ export function pestanaActiva(pathname: string, destinos: readonly DestinoBarra[
 
 export type ToquePestana =
   | { accion: 'subir' }
-  | { accion: 'navegar'; tipos: TipoTransicion[] };
+  | { accion: 'navegar'; tipos: TipoTransicion[] }
+  /** Volver a la raíz de la pestaña activa sin apilar nada (ver `volverARaiz`). */
+  | { accion: 'raiz'; tipos: TipoTransicion[] };
 
 /**
  * Lo que hace un toque en la barra, como en Instagram:
  * - otra pestaña: se cambia con fundido;
- * - la pestaña en la que ya estás, desde una subpantalla: vuelve a su raíz;
- * - la pestaña en la que ya estás, en su raíz: sube al principio.
+ * - la pestaña en la que ya estás, desde una subpantalla: vuelve a su raíz
+ *   vaciando su pila, sin una entrada nueva en el historial;
+ * - la pestaña en la que ya estás, en su raíz: sube al principio (o cierra la
+ *   capa abierta encima, como la ficha del calendario).
  */
 export function toquePestana(pathname: string, destino: DestinoBarra, activa: string | null): ToquePestana {
   if (destino.clave !== activa) return { accion: 'navegar', tipos: [TIPO_TRANSICION.pestana] };
   if (ruta(pathname) === ruta(destino.href)) return { accion: 'subir' };
-  return { accion: 'navegar', tipos: [TIPO_TRANSICION.volver] };
+  return { accion: 'raiz', tipos: [TIPO_TRANSICION.volver] };
 }
+
+/** Clave de la memoria con la raíz de una pestaña tal y como se dejó (el mes y los filtros del calendario). */
+export const raizRecordada = (clave: string) => `${clave}@raiz`;
+
+const valeComoRuta = (r: string | undefined): r is string => Boolean(r && r.startsWith('/') && !r.startsWith('//'));
 
 /**
  * Cada pestaña recuerda dónde la dejaste (el mes y los filtros del
  * calendario, la ficha abierta en Explorar). La pestaña en la que estás
- * apunta siempre a su raíz.
+ * apunta a su raíz, con la consulta con la que se dejó si es la misma ruta.
  */
 export function hrefDePestana(
   destino: DestinoBarra,
   activa: string | null,
   recordadas: Readonly<Record<string, string>>,
 ): string {
-  if (destino.clave === activa) return destino.href;
+  if (destino.clave === activa) {
+    const raiz = recordadas[raizRecordada(destino.clave)];
+    return valeComoRuta(raiz) && ruta(raiz) === ruta(destino.href) ? raiz : destino.href;
+  }
   const r = recordadas[destino.clave];
-  return r && r.startsWith('/') && !r.startsWith('//') ? r : destino.href;
+  return valeComoRuta(r) ? r : destino.href;
+}
+
+/** ¿`url` es la raíz de esa pestaña (con o sin consulta)? */
+export function esRaizDe(destino: Pick<DestinoBarra, 'href'>, url: string): boolean {
+  return ruta(url) === ruta(destino.href);
+}
+
+/**
+ * Entrada del historial a la que volver para vaciar la pila de una pestaña:
+ * la raíz más cercana hacia atrás, siempre que todo lo que hay entre ella y la
+ * actual sea de la misma pestaña. `null` si no la hay (se llegó por un enlace
+ * directo, o entre medias hay otra pestaña): entonces se sustituye la entrada
+ * actual por la raíz.
+ */
+export function indiceRaizEnHistorial(
+  urls: readonly (string | null)[],
+  actual: number,
+  destino: Pick<DestinoBarra, 'href'>,
+  deLaPestana: (url: string) => boolean,
+): number | null {
+  for (let j = actual - 1; j >= 0; j--) {
+    const u = urls[j];
+    if (!u) return null;
+    if (esRaizDe(destino, u)) return j;
+    if (!deLaPestana(u)) return null;
+  }
+  return null;
+}
+
+/**
+ * Capas que apilan una entrada en el historial sin cambiar de ruta (la ficha
+ * del calendario, la hoja de una poule). Si hay una abierta, tocar la pestaña
+ * la cierra con «atrás», que es lo que cada capa escucha.
+ */
+export const CLAVES_CAPA = ['fichaCalendario', 'hojaPoule'] as const;
+
+export function hayCapaAbierta(estado: unknown): boolean {
+  if (!estado || typeof estado !== 'object') return false;
+  return CLAVES_CAPA.some((k) => Boolean((estado as Record<string, unknown>)[k]));
 }
 
 export const CLAVE_RECORDADAS = 'sistema:pestanas';

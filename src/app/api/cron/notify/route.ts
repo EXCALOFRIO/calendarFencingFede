@@ -22,6 +22,7 @@ import {
 import { sendPendingNotifications } from '@/lib/email/resend';
 import { generarAvisosProgramados } from '@/lib/notificaciones/programado';
 import { limpiarAutenticacionCaducada } from '@/lib/auth/mantenimiento';
+import { limpiarRegistrosIngesta } from '@/lib/ingest/retencion';
 import { autorizarCron } from '@/lib/cron/secreto';
 import { getDeadlineRules } from '@/lib/queries/calendar';
 import {
@@ -62,6 +63,9 @@ export async function GET(request: Request) {
   if (denegado) return denegado;
 
   const sesionesCaducadasEliminadas = await limpiarAutenticacionCaducada();
+  // Va aquí porque a las 07:00 ya han acabado las ingestas del día. Un fallo de la
+  // retención no debe dejar sin avisos: se informa y se reintenta mañana.
+  const registrosIngestaEliminados = await limpiarRegistrosIngesta(db).catch(() => null);
   const ahora = new Date();
 
   const avisos = await encolarAvisosDePlazo(ahora);
@@ -76,6 +80,7 @@ export async function GET(request: Request) {
     correo,
     notificaciones,
     autenticacionCaducadaEliminada: sesionesCaducadasEliminadas,
+    registrosIngestaEliminados,
   });
 }
 

@@ -13,6 +13,7 @@ import {
 import { newIcalToken, requireRole, requireWritableRole } from '@/lib/auth/session';
 import { ageOn, requiresGuardianAccount } from '@/lib/categories';
 import { aprobarVinculoPorNombre } from '@/lib/altas/por-nombre';
+import { invalidarCacheSinFallar } from '@/lib/cache';
 import { nowMilliseconds } from '@/db/d1/columns';
 
 export type ResultadoAccion =
@@ -356,6 +357,8 @@ export async function resolverSolicitudVinculo(formData: FormData): Promise<Resu
     }
     const resultado = await aprobarVinculoPorNombre({ solicitudId, adminProfileId: admin.profileId, evidencia });
     if (!resultado.ok) return { ok: false, error: resultado.error };
+    // Escribe `athlete` y `fie_fencer` (fuera de sport_*): el ledger no avisa a la caché.
+    await invalidarCacheSinFallar(['deporte', 'ranking-fie'], 'vinculo');
   } else {
     const resultado = await db.execute<{ id: string }>(sql`update athlete_link_request
       set state = 'RECHAZADA', reviewed_at = ${nowMilliseconds},

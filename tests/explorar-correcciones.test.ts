@@ -109,7 +109,7 @@ describe('selector de temporada con las claves de ambas fuentes', () => {
     expect(agruparTemporadas(opciones, '').sueltas).toEqual([]);
   });
 
-  it('el formulario con una temporada FIE en la URL se pinta con la clave exacta sin errores', () => {
+  it('una temporada FIE en la URL se conserva con la clave exacta, aunque los tiradores ya no la filtren', () => {
     const html = renderToStaticMarkup(
       React.createElement(FormularioFiltros, {
         criterios: criterios({ temporada: '2027' }),
@@ -117,8 +117,9 @@ describe('selector de temporada con las claves de ambas fuentes', () => {
         atajoEspana: false,
       }),
     );
-    expect(html).toContain('<span class="sr-only">, 1 activo</span>');
-    expect(html).toContain('for="explorar-temporada"');
+    expect(html).toContain('type="hidden" name="temporada" value="2027"');
+    expect(html).not.toContain('id="explorar-temporada"');
+    expect(html).toContain('Quitar filtros');
   });
 });
 
@@ -158,7 +159,7 @@ describe('fecha inválida en la URL', () => {
     expect(html).not.toContain('fecha no válida');
   });
 
-  it('el formulario abierto con una fecha de URL imposible la marca como inválida', () => {
+  it('una fecha de URL imposible viaja tal cual (no en blanco) y el formulario no la convierte en un campo', () => {
     const html = renderToStaticMarkup(
       React.createElement(FormularioFiltros, {
         criterios: criterios({ desde: '2026-99-99' }),
@@ -166,8 +167,9 @@ describe('fecha inválida en la URL', () => {
         atajoEspana: false,
       }),
     );
-    expect(html).toMatch(/id="explorar-desde"[^>]*aria-invalid="true"/);
-    expect(html).toContain('No se entiende esa fecha');
+    expect(html).toContain('type="hidden" name="desde" value="2026-99-99"');
+    expect(html).not.toContain('id="explorar-desde"');
+    expect(prepararBusqueda(criterios({ desde: '2026-99-99', arma: 'SABLE' })).ok).toBe(false);
   });
 
   it('esFechaIsoReal distingue formato de fecha existente', () => {

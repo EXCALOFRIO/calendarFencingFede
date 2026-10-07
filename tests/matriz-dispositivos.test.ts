@@ -135,7 +135,7 @@ const EJEMPLO = `<!doctype html><html lang="es"><head><meta name="viewport" cont
 describe('medirEnPagina con un HTML de ejemplo', () => {
   let navegador: Browser;
   beforeAll(async () => { navegador = await chromium.launch(); }, 60_000);
-  afterAll(async () => { await navegador?.close(); });
+  afterAll(async () => { await navegador?.close(); }, 60_000);
 
   async function medir(html: string, contexto: NonNullable<Parameters<Browser['newContext']>[0]>, guion?: string) {
     const ctx = await navegador.newContext(contexto);

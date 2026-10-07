@@ -35,14 +35,15 @@ const TOL_Y = 1.8;
 
 export function claveRonda(texto: string): string | null {
   const t = normalizar(texto);
-  const n = t.match(/^(?:TABLEAU OF|TABLA DE) (\d+)$/);
+  const n = t.match(/^(?:TABLEAU OF|TABLA DE|TABLEAU DE) (\d+)$/);
   if (n) {
     const v = Number(n[1]);
     return v >= 2 && (v & (v - 1)) === 0 ? `A${v}` : null;
   }
-  if (/^SEMI-?FINALES?$|^SEMIFINALS?$/.test(t)) return 'A4';
-  if (/^(QUARTS|CUARTOS) DE FINAL$/.test(t)) return 'A8';
-  if (t === 'FINAL') return 'A2';
+  // «Semi-finals» y el gallego «Semi-finais» también: sin ellos, la columna de semifinales tomaba el rótulo «Final».
+  if (/^SEMI-?FINAL(E?S)?$|^SEMI-?FINAIS$|^MEIAS?-?FINAIS$|^DEMI-?FINALES?$/.test(t)) return 'A4';
+  if (/^(QUARTS|CUARTOS) DE FINALE?$/.test(t)) return 'A8';
+  if (t === 'FINAL' || t === 'FINALE') return 'A2';
   if (/^TERCER (LUGAR|PUESTO)$/.test(t)) return 'C2';
   return null;
 }
@@ -110,6 +111,16 @@ export function leerCuadro(paginas: readonly PaginaAnalizada[], registro: readon
     // Cada encabezado rotula una columna; la última de un cuadro partido en páginas no avanza en ésta.
     if (columnas.length === 1) {
       rechazarPagina('Cuadro sin ninguna columna de ganadores: no hay cruce que resolver');
+      continue;
+    }
+    // El rótulo de cada ronda va encima de su columna de participantes: si uno no se reconoce, los
+    // demás se correrían de columna y las semifinales saldrían como final.
+    const xColumnas = [xNombre, ...centros];
+    const desalineado = encabezados.findIndex((e, k) =>
+      k < xColumnas.length && (e.x < xColumnas[k] - 25 || (k + 1 < xColumnas.length && e.x >= xColumnas[k + 1])));
+    if (desalineado >= 0) {
+      rechazarPagina(`Rótulo de ronda «${encabezados[desalineado].s}» fuera de su columna: rondas sin atribuir`);
+      excluidos.incoherente += 1;
       continue;
     }
     if (columnas.length < encabezados.length) {

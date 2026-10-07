@@ -84,6 +84,7 @@ import type { PasadoDeTarjeta } from './tarjeta-bloque';
 import { agruparEnBloques, rangoRealDeEvento } from '@/lib/calendario/bloques';
 import {
   construirUrlCalendario,
+  quitarEventoDeUrl,
   type Ambito,
   type ContextoCalendarioLeido,
   type Vista,
@@ -213,9 +214,12 @@ export function VistaCalendario({
   solicitarInscripcion,
   cargarInscritos,
   inicial,
+  eventoInicial = null,
   pasadoInicial = null,
   cargarPasado,
 }: {
+  /** Torneo cuya ficha se abre al llegar (`evento=` de la dirección). */
+  eventoInicial?: string | null;
   /**
    * Lo ya celebrado del tramo con el que se abre, leído en el servidor. El de
    * cualquier otro tramo se pide con `cargarPasado` al llegar a él.
@@ -507,6 +511,26 @@ export function VistaCalendario({
     (e: EventView) => (importados.has(e.id) ? setAbiertoPasado(e) : setAbierto(e)),
     [importados],
   );
+
+  /**
+   * `evento=<id>` (desde una edición o un aviso) abre esa ficha en cuanto el
+   * torneo está cargado: el mes de la dirección es el suyo, así que llega con
+   * los eventos o con el tramo pasado que se pide al arrancar. Antes de abrirla
+   * se quita `evento` de la dirección, sin entrada nueva: la ficha apila la
+   * suya (`useEntradaDeHistorial`) y al cerrarla se vuelve al calendario sin
+   * que se reabra. Si el tramo llega y el torneo no está, no se abre nada.
+   */
+  const eventoPendiente = React.useRef(eventoInicial);
+  React.useEffect(() => {
+    const id = eventoPendiente.current;
+    if (!id) return;
+    const e = todos.find((x) => x.id === id);
+    if (!e && estadoActual !== 'listo' && estadoActual !== 'fallo') return;
+    eventoPendiente.current = null;
+    const limpia = quitarEventoDeUrl(`${window.location.pathname}${window.location.search}${window.location.hash}`);
+    window.history.replaceState(window.history.state, '', limpia);
+    if (e) abrir(e);
+  }, [todos, estadoActual, abrir]);
 
   /**
    * Quién va al torneo abierto.
@@ -976,7 +1000,7 @@ export function VistaCalendario({
             {!enElMesActual ? (
               <Boton
                 tamano="sm"
-                aria-label="Ir al mes actual"
+                aria-label="Hoy: ir al mes actual"
                 {...intencionDePaso(0)}
                 onClick={() => {
                   setDireccion(0);
@@ -1492,15 +1516,6 @@ function FranjaDestacada({
           className="text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           data-evento={evento.id}
           onClick={() => onAbrir(evento)}
-          aria-label={
-            terminado
-              ? `${titularTorneo(evento.name)}, terminada. Abrir.`
-              : enMarcha
-                ? `${titularTorneo(evento.name)}, en marcha. Abrir la ficha.`
-                : `Faltan ${dias} ${dias === 1 ? 'día' : 'días'} para ${titularTorneo(
-                    evento.name,
-                  )}. Abrir la ficha.`
-          }
         >
           <ItemMedia className="min-w-[40px] flex-col items-start gap-0 self-center">
             {terminado ? (
@@ -1649,7 +1664,7 @@ function FiltrosCalendario({
           icono={SlidersHorizontal}
           marcado={enLaHoja > 0}
           contador={enLaHoja}
-          aria-label={`Filtros del calendario${enLaHoja > 0 ? `: ${categorias.length} categorías` : ''}`}
+          detalle={enLaHoja > 0 ? `del calendario: ${categorias.length} categorías` : 'del calendario'}
           onClick={() => setAbierta(true)}
         >
           Filtros
@@ -1690,6 +1705,9 @@ function FiltrosCalendario({
           </ChipFiltro>
         ))}
       </FilaChips>
+      <p role="status" className="sr-only">
+        {numTorneos} {numTorneos === 1 ? 'torneo' : 'torneos'}
+      </p>
 
       <HojaInferior
         abierta={abierta}

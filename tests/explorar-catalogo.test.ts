@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createD1Database } from '@/db/d1/runtime';
 import { localD1 } from '@/db/d1/testing';
 import { cargarCatalogoEdiciones, leerCatalogoEdiciones, LIMITE_CATALOGO } from '@/lib/sport/explorar/catalogo';
-import { leerCriteriosCatalogo, sanitizarRetornoCatalogo, urlCatalogo } from '@/lib/sport/explorar/catalogo-url';
+import { CRITERIOS_CATALOGO_VACIOS, leerCriteriosCatalogo, sanitizarRetornoCatalogo, urlCatalogo } from '@/lib/sport/explorar/catalogo-url';
 import { construirUrlEdicion, leerCriteriosEdicion, sanitizarRetornoEdicion } from '@/lib/sport/explorar/edicion-url';
 import { codificarCursor } from '@/lib/sport/explorar/cursor';
 import { leerEdicion } from '@/lib/sport/explorar/ediciones';
@@ -13,9 +13,16 @@ import { CLAVES_PRIVADAS, UUID_A, clavesDe, crearContexto } from './helpers/expl
 vi.mock('@opennextjs/cloudflare', () => ({
   getCloudflareContext: () => { throw new Error('Sin red en el test'); },
 }));
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/explorar/ediciones',
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 const { CatalogoEdiciones } = await import('@/components/explorar/catalogo-ediciones');
+/** Huella de los cursores SQL sin filtros (sólo q, fuente y temporada). */
 const VACIOS = { q: '', fuente: '', temporada: '' };
+const C = (parcial: Partial<typeof CRITERIOS_CATALOGO_VACIOS> = {}) => ({ ...CRITERIOS_CATALOGO_VACIOS, ...parcial });
 const cierres: (() => void)[] = [];
 afterEach(() => {
   cierres.splice(0).forEach((cerrar) => cerrar());
@@ -176,9 +183,9 @@ describe('catálogo: SQL D1 nativo y hechos sin calendario o identidad', () => {
 describe('catálogo: URL y pantalla de servidor', () => {
   it('conserva los filtros conocidos, elimina extras y admite parámetros repetidos', () => {
     const c = leerCriteriosCatalogo({ q: [' Córdoba ', 'otro'], fuente: 'rfee_pdf', temporada: '2025-2026', cursor: 'abc', secreto: 'no' });
-    expect(c).toEqual({ criterios: { q: 'Córdoba', fuente: 'rfee_pdf', temporada: '2025-2026' }, cursor: 'abc' });
+    expect(c).toEqual({ criterios: C({ q: 'Córdoba', fuente: 'rfee_pdf', temporada: '2025-2026' }), cursor: 'abc' });
     expect(urlCatalogo(c.criterios, c.cursor)).toBe('/explorar/ediciones?q=C%C3%B3rdoba&fuente=rfee_pdf&temporada=2025-2026&cursor=abc');
-    expect(urlCatalogo(VACIOS)).toBe('/explorar/ediciones');
+    expect(urlCatalogo(C())).toBe('/explorar/ediciones');
     expect(urlCatalogo(c.criterios)).not.toContain('cursor');
     const grandes = leerCriteriosCatalogo({ q: 'q'.repeat(5000), cursor: 'x'.repeat(5000), temporada: '2'.repeat(5000) });
     expect(grandes.criterios.q).toHaveLength(101);
@@ -188,7 +195,7 @@ describe('catálogo: URL y pantalla de servidor', () => {
 
   it('muestra etiquetas visibles, GET, fuente, enlaces y advertencia de completitud sin datos de cuenta', () => {
     const html = renderToStaticMarkup(React.createElement(CatalogoEdiciones, {
-      criterios: { q: 'Córdoba', fuente: 'rfee_pdf', temporada: '2025-2026' },
+      criterios: C({ q: 'Córdoba', fuente: 'rfee_pdf', temporada: '2025-2026' }),
       cursor: 'previo',
       vista: { estado: 'ok', total: 2, pruebas: 3, siguiente: 'siguiente', ediciones: [{
         id: UUID_A, nombre: 'Copa sintética', temporada: '2025-2026', fuente: 'rfee_pdf',
@@ -197,13 +204,14 @@ describe('catálogo: URL y pantalla de servidor', () => {
     }));
     expect(html).toContain('method="get"');
     expect(html).toContain('action="/explorar/ediciones"');
-    for (const campo of ['q', 'fuente', 'temporada']) {
-      expect(html).toContain(`for="catalogo-${campo}"`);
-      expect(html).toContain(`id="catalogo-${campo}"`);
-    }
+    expect(html).toContain('for="catalogo-q"');
+    expect(html).toContain('id="catalogo-q"');
+    expect(html).toContain('type="hidden" name="fuente" value="rfee_pdf"');
+    expect(html).toContain('type="hidden" name="temporada" value="2025-2026"');
+    expect(html).toContain('Temporada 2025-2026');
     expect(html).toContain('role="search"');
     expect(html).toContain('aria-label="Páginas del catálogo"');
-    expect(html).toContain('RFEE PDF');
+    expect(html).toContain('Nacional (PDF)');
     expect(html).toContain(`/explorar/ediciones/${UUID_A}`);
     expect(html).toContain('catalogo=%2Fexplorar%2Fediciones%3Fq%3DC%25C3%25B3rdoba');
     expect(html).toContain('cursor=siguiente');
@@ -214,7 +222,7 @@ describe('catálogo: URL y pantalla de servidor', () => {
   });
 
   it('conserva búsqueda y página en edición, clasificación y retorno de ficha, sin destinos externos', () => {
-    const catalogo = urlCatalogo({ q: 'Córdoba', fuente: 'rfee_pdf', temporada: '2025-2026' }, 'pagina');
+    const catalogo = urlCatalogo(C({ q: 'Córdoba', fuente: 'rfee_pdf', temporada: '2025-2026' }), 'pagina');
     expect(sanitizarRetornoCatalogo(`${catalogo}&desconocido=descartar`)).toBe(catalogo);
     expect(sanitizarRetornoEdicion(catalogo)).toBe(catalogo);
     const edicion = construirUrlEdicion(UUID_A, { catalogo });
@@ -233,12 +241,12 @@ describe('catálogo: URL y pantalla de servidor', () => {
 
   it('distingue vacío, error, esquema ausente y enlace inválido y escapa texto', () => {
     const vacio = renderToStaticMarkup(React.createElement(CatalogoEdiciones, {
-      criterios: VACIOS, vista: { estado: 'ok', total: 0, pruebas: 0, ediciones: [], siguiente: null },
+      criterios: C(), vista: { estado: 'ok', total: 0, pruebas: 0, ediciones: [], siguiente: null },
     }));
     expect(vacio).toContain('Sin ediciones con estos filtros');
     for (const estado of ['error', 'no_disponible', 'entrada_invalida', 'cursor_invalido'] as const) {
       const html = renderToStaticMarkup(React.createElement(CatalogoEdiciones, {
-        criterios: { ...VACIOS, q: '<script>peligro</script>' }, vista: { estado },
+        criterios: C({ q: '<script>peligro</script>' }), vista: { estado },
       }));
       expect(html).toContain('role="alert"');
       expect(html).not.toContain('Sin ediciones con estos filtros');

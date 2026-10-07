@@ -5,11 +5,13 @@ import { CRITERIOS_CARA_A_CARA_VACIOS, rivalValido, type CriteriosCaraACara } fr
 import { ERROR_NO_AUTENTICADO, exigirPerfil, type ContextoExplorador } from './contexto';
 import { UUID_RE } from './cursor';
 import { cargarCatalogoEdiciones, type VistaCatalogo } from './catalogo';
+import type { CriteriosCatalogo } from './catalogo-url';
 import type { CriteriosEdicion } from './edicion-url';
+import { construirIndiceEdiciones, leerDatosIndiceEdiciones, type DatosIndiceEdiciones, type IndiceEdiciones } from './indice-ediciones';
 import { cargarEdicion, cargarSeries, type VistaEdicion, type VistaSeries } from './ediciones-pantalla';
 import { cargarBuscarVacio } from './inicio-pantalla';
 import { cargarRelevosCaraACara, type RelevosCaraACara } from './relevos';
-import { leerDestacadosParaSeguir, leerSugeridosDePersona, type PersonaParaSeguir } from './siguiendo-pantalla';
+import { leerDestacadosParaSeguir, leerSugeridosDePersona, type FuentesPropuestas, type PersonaParaSeguir } from './siguiendo-pantalla';
 
 /**
  * Edición y cara a cara servidos desde la caché compartida.
@@ -42,6 +44,49 @@ const hoyIso = () => new Date().toISOString().slice(0, 10);
 
 function registrar(que: string, error: unknown) {
   console.error(`[explorar] ${que}:`, error instanceof Error ? error.name : 'desconocido');
+}
+
+// Lo que entra en una clave de caché viene de la URL: fuera de estos valores se lee directo,
+// para que inventarse filtros no llene la caché de entradas que nadie más pedirá.
+const TEMPORADA_RE = /^\d{4}(-\d{4})?$/;
+const FUENTES_CATALOGO: readonly string[] = ['fie', 'efc', 'skermo_rfee', 'rfee_pdf', 'engarde'];
+const ARMAS: readonly string[] = ['FLORETE', 'ESPADA', 'SABLE'];
+const FASES: readonly string[] = ['POULE', 'TABLEAU'];
+const AMBITOS: readonly string[] = ['nacional', 'internacional'];
+/** Texto libre más largo que esto (ya normalizado) no se cachea. */
+export const MAX_Q_CACHE = 40;
+
+const vacioO = (valor: string, valido: (v: string) => boolean) => valor === '' || valido(valor);
+
+/** La misma normalización que aplica `leerCatalogoEdiciones`: dos textos que buscan lo mismo, una clave. */
+export function qDeCatalogo(q: string): string | null {
+  const n = q.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[-,./]/g, ' ').replace(/\s+/g, ' ').trim();
+  return n.length <= MAX_Q_CACHE ? n : null;
+}
+
+const CATEGORIA_RE = /^(M\d{1,2}|ABS|VET)$/;
+const ANIO_RE = /^(19|20)\d{2}$/;
+
+/** Catálogo sin el índice en memoria: sólo combinaciones válidas entran en una clave. */
+export function criteriosCatalogoCacheables(c: Partial<CriteriosCatalogo> & { q: string; fuente: string; temporada: string }): CriteriosCatalogo | null {
+  const q = qDeCatalogo(c.q);
+  const { arma = '', categoria = '', desde = '', hasta = '' } = c;
+  if (q === null || !vacioO(c.fuente, (f) => FUENTES_CATALOGO.includes(f)) || !vacioO(c.temporada, (t) => TEMPORADA_RE.test(t))
+    || !vacioO(arma, (a) => ARMAS.includes(a)) || !vacioO(categoria, (x) => CATEGORIA_RE.test(x))
+    || !vacioO(desde, (x) => ANIO_RE.test(x)) || !vacioO(hasta, (x) => ANIO_RE.test(x))) return null;
+  return { q, fuente: c.fuente, temporada: c.temporada, arma, categoria, desde, hasta };
+}
+
+/**
+ * Cuánto vive en el isolate el índice de ediciones ya construido antes de
+ * volver a mirar la caché compartida (que es la que conoce la versión de los
+ * datos): una búsqueda por tecla no deserializa ~1 MB cada vez.
+ */
+export const VIDA_INDICE_MS = 60_000;
+
+export function filtrosDueloCacheables(c: { temporada: string; arma: string; fase: string; ambito: string }): boolean {
+  return vacioO(c.temporada, (t) => TEMPORADA_RE.test(t)) && vacioO(c.arma, (a) => ARMAS.includes(a))
+    && vacioO(c.fase, (f) => FASES.includes(f)) && vacioO(c.ambito, (a) => AMBITOS.includes(a));
 }
 
 /** `null` si hay sesión vigente; si no, el estado que pinta la pantalla. */
@@ -139,12 +184,43 @@ export function crearCachesExplorar({
     depende: ['deporte'],
     frescoMs: FRESCO,
     caducaMs: CADUCA,
-    cargar: (q: string, fuente: string, temporada: string) =>
-      cargarCatalogoEdiciones(publico(hoyIso()), {
-        ...(q ? { q } : {}), ...(fuente ? { fuente } : {}), ...(temporada ? { temporada } : {}),
-      }),
+    cargar: (q: string, fuente: string, temporada: string, arma: string, categoria: string, desde: string, hasta: string) =>
+      cargarCatalogoEdiciones(publico(hoyIso()), Object.fromEntries(
+        Object.entries({ q, fuente, temporada, arma, categoria, desde, hasta }).filter(([, v]) => v),
+      )),
     guardarSi: (v: VistaCatalogo) => v.estado === 'ok',
   });
+
+  // Los datos del índice de ediciones (públicos, sin cuenta): una lectura de D1 por versión.
+  const datosIndice = cache.definir({
+    espacio: 'ediciones-indice',
+    depende: ['deporte'],
+    frescoMs: FRESCO,
+    caducaMs: CADUCA,
+    cargar: () => leerDatosIndiceEdiciones(publico(hoyIso())),
+    guardarSi: (v: DatosIndiceEdiciones | null) => v !== null && v.v === 2,
+  });
+
+  let memoIndice: { indice: IndiceEdiciones | null; hasta: number } | null = null;
+  let indiceEnVuelo: Promise<IndiceEdiciones | null> | null = null;
+
+  /** El índice construido en este isolate; `null` si no se puede leer (se busca en D1). */
+  function indiceEdiciones(): Promise<IndiceEdiciones | null> {
+    if (memoIndice && memoIndice.hasta > Date.now()) return Promise.resolve(memoIndice.indice);
+    indiceEnVuelo ??= datosIndice()
+      .then((datos) => (datos && datos.v === 2 ? construirIndiceEdiciones(datos) : null))
+      .catch((error) => {
+        registrar('el índice de ediciones no se pudo leer', error);
+        return null;
+      })
+      .then((indice) => {
+        // Un fallo se recuerda poco: el siguiente intento llega pronto.
+        memoIndice = { indice, hasta: Date.now() + (indice ? VIDA_INDICE_MS : 5_000) };
+        indiceEnVuelo = null;
+        return indice;
+      });
+    return indiceEnVuelo;
+  }
 
   // Propuestas de Buscar vacío: las dos listas comunes. Lo de la cuenta (su
   // ficha y a quién sigue) lo quita `leerPropuestasParaSeguir` al vuelo.
@@ -164,9 +240,9 @@ export function crearCachesExplorar({
     cargar: (personaId: string) => leerSugeridosDePersona(publico(hoyIso()), personaId),
   });
 
-  /** Buscar sin texto: propuestas para seguir con las listas comunes de la caché. */
-  function cargarBuscarVacioCompartido(ctx: ContextoExplorador): Promise<PersonaParaSeguir[] | null> {
-    return cargarBuscarVacio(ctx, {
+  /** Las dos listas comunes de las propuestas para seguir, de la caché (Buscar vacío, feed y Siguiendo vacíos). */
+  function fuentesPropuestasCompartidas(ctx: ContextoExplorador): FuentesPropuestas {
+    return {
       destacados: () =>
         destacados().catch((error) => {
           registrar('la caché de destacados falló', error);
@@ -177,23 +253,38 @@ export function crearCachesExplorar({
           registrar('la caché de sugeridos falló', error);
           return leerSugeridosDePersona(ctx, personaId);
         }),
-    });
+    };
   }
 
-  /** Catálogo y series de `/explorar/ediciones`; con cursor (páginas siguientes), directo. */
+  /** Buscar sin texto: propuestas para seguir con las listas comunes de la caché. */
+  function cargarBuscarVacioCompartido(ctx: ContextoExplorador): Promise<PersonaParaSeguir[] | null> {
+    return cargarBuscarVacio(ctx, fuentesPropuestasCompartidas(ctx));
+  }
+
+  /**
+   * Catálogo y series de `/explorar/ediciones`. Con el índice en memoria la
+   * búsqueda se resuelve aquí mismo, sin D1 ni una entrada por texto en la
+   * caché; sin él, la primera página de cada búsqueda sale de la caché y las
+   * siguientes (con cursor) van directas.
+   */
   async function cargarCatalogoCompartido(
     ctx: ContextoExplorador,
-    criterios: { q: string; fuente: string; temporada: string },
+    criterios: Partial<CriteriosCatalogo> & { q: string; fuente: string; temporada: string },
     cursor: string | undefined,
   ): Promise<{ series: VistaSeries; catalogo: VistaCatalogo }> {
     const guarda = await guardaDeSesion(ctx);
     if (guarda) return { series: guarda, catalogo: { estado: guarda.tipo } };
-    const entrada = Object.fromEntries(Object.entries(criterios).filter(([, valor]) => valor));
-    const directo = () => cargarCatalogoEdiciones(ctx, { ...entrada, ...(cursor ? { cursor } : {}) });
-    const [s, c] = await Promise.all([
-      series().catch(() => cargarSeries(ctx)),
-      cursor ? directo() : catalogo(criterios.q, criterios.fuente, criterios.temporada).catch(directo),
-    ]);
+    const entrada = { ...Object.fromEntries(Object.entries(criterios).filter(([, valor]) => valor)), ...(cursor ? { cursor } : {}) };
+    const conCatalogo = async (): Promise<VistaCatalogo> => {
+      const indice = await indiceEdiciones();
+      if (indice) return cargarCatalogoEdiciones(ctx, entrada, { indice: async () => indice });
+      const directo = () => cargarCatalogoEdiciones(ctx, entrada);
+      const clave = cursor ? null : criteriosCatalogoCacheables(criterios);
+      return clave
+        ? catalogo(clave.q, clave.fuente, clave.temporada, clave.arma, clave.categoria, clave.desde, clave.hasta).catch(directo)
+        : directo();
+    };
+    const [s, c] = await Promise.all([series().catch(() => cargarSeries(ctx)), conCatalogo()]);
     return { series: s, catalogo: c };
   }
 
@@ -206,6 +297,7 @@ export function crearCachesExplorar({
     const guarda = await guardaDeSesion(ctx);
     if (guarda) return guarda;
     if (criterios.cursor) return cargarEdicion(ctx, edicionId, criterios);
+    if (!UUID_RE.test(edicionId) || !vacioO(criterios.prueba, (p) => UUID_RE.test(p))) return cargarEdicion(ctx, edicionId, criterios);
     try {
       return await edicion(edicionId, criterios.prueba);
     } catch (error) {
@@ -233,6 +325,9 @@ export function crearCachesExplorar({
       return { vista, relevos };
     };
     if (criterios.cursor) return directo();
+    // La búsqueda de rival por nombre es texto libre: no se cachea.
+    if (!criterios.rival && criterios.q) return directo();
+    if (criterios.rival && !filtrosDueloCacheables(criterios)) return directo();
     try {
       if (!criterios.rival) {
         return { vista: await eleccion(personaId, criterios.q, criterios.q ? ctx.hoy() : null), relevos: null };
@@ -245,5 +340,8 @@ export function crearCachesExplorar({
     }
   }
 
-  return { cargarEdicionCompartida, cargarCaraACaraCompartida, cargarCatalogoCompartido, cargarBuscarVacioCompartido };
+  return {
+    cargarEdicionCompartida, cargarCaraACaraCompartida, cargarCatalogoCompartido, cargarBuscarVacioCompartido, fuentesPropuestasCompartidas,
+    indiceEdiciones,
+  };
 }

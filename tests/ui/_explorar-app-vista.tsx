@@ -3,7 +3,13 @@
  * pero síncrono y con los datos ya leídos: el servidor de capturas lo pinta con
  * `renderToString` y el navegador lo hidrata con el mismo árbol.
  */
+import { BuscadorPaises } from '@/components/explorar/buscador-paises';
 import { PropuestasBuscador } from '@/components/explorar/buscador-social-fila';
+import { CabeceraExplorar } from '@/components/explorar/cabecera-explorar';
+import { PantallaEdiciones } from '@/components/explorar/catalogo-ediciones';
+import type { VistaCatalogo } from '@/lib/sport/explorar/catalogo';
+import type { CriteriosCatalogo } from '@/lib/sport/explorar/catalogo-url';
+import type { VistaSeries } from '@/lib/sport/explorar/ediciones-pantalla';
 import { PantallaListaSiguiendo } from '@/components/explorar/pantalla-siguiendo';
 import { CabeceraInicio, EstadoSiguiendo, FeedSiguiendo } from '@/components/explorar/siguiendo';
 import { VistaBuscar } from '@/components/explorar/vista-buscar';
@@ -25,6 +31,8 @@ export type DatosExplorarApp = { cuenta: string } & (
       propuestas: PersonaParaSeguir[] | null;
     }
   | { vista: 'siguiendo'; lista: Exclude<VistaListaSiguiendo, { tipo: 'sin_sesion' }> }
+  | { vista: 'ediciones'; catalogo: VistaCatalogo; criterios: CriteriosCatalogo; cursor?: string; series: VistaSeries; anioActual: number }
+  | { vista: 'paises'; q: string }
 );
 
 export function contenidoExplorar(d: DatosExplorarApp) {
@@ -51,6 +59,18 @@ export function contenidoExplorar(d: DatosExplorarApp) {
         profileId={d.cuenta}
         sugerencias={d.propuestas?.length === 0 ? null : <PropuestasBuscador propuestas={d.propuestas} className="lg:max-w-2xl" />}
       />
+    );
+  }
+  if (d.vista === 'ediciones') {
+    return <PantallaEdiciones catalogo={d.catalogo} criterios={d.criterios} cursor={d.cursor} series={d.series} anioActual={d.anioActual} />;
+  }
+  if (d.vista === 'paises') {
+    // Lo mismo que `PantallaPaises` de `pantalla-buscar.tsx`.
+    return (
+      <div className="flex w-full min-w-0 flex-col gap-3 lg:mx-auto lg:max-w-2xl">
+        <CabeceraExplorar activa="paises" />
+        <BuscadorPaises qInicial={d.q} />
+      </div>
     );
   }
   return <PantallaListaSiguiendo vista={d.lista} />;

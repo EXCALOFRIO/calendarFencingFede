@@ -17,6 +17,7 @@ import {
   chipsActivos,
   construirUrl,
   hayCriterios,
+  type ClaveCriterio,
   type CriteriosExplorar,
 } from '@/lib/sport/explorar/url';
 import { cn } from '@/lib/utils';
@@ -24,8 +25,15 @@ import { CLASE_LISTA_PERFILES, CLASE_VER_MAS, FilaPerfil } from './buscador-soci
 import { BotonSeguirCompacto } from './buscador-social-seguir';
 
 /** Filtros activos como pastillas de una línea que los quitan uno a uno. */
-export function ChipsActivos({ criterios }: { criterios: CriteriosExplorar }) {
-  const todos = chipsActivos(criterios);
+export function ChipsActivos({
+  criterios,
+  omitir = [],
+}: {
+  criterios: CriteriosExplorar;
+  /** Criterios que ya se ven (y se quitan) en otro control, como los chips de filtro de Buscar. */
+  omitir?: readonly ClaveCriterio[];
+}) {
+  const todos = chipsActivos(criterios).filter((c) => !omitir.includes(c.clave));
   // El nombre solo ya está a la vista en la barra de búsqueda (con su X); como pastilla repetiría lo mismo.
   const chips = todos.length === 1 && todos[0].clave === 'q' ? [] : todos;
   if (chips.length === 0) return null;
@@ -42,7 +50,7 @@ export function ChipsActivos({ criterios }: { criterios: CriteriosExplorar }) {
           >
             <span
               className={cn(
-                'inline-flex h-[30px] max-w-full items-center gap-1 rounded-full border bg-secondary px-2.5 text-[12px] whitespace-nowrap group-hover:bg-accent group-focus-visible:ring-[3px] group-focus-visible:ring-ring/50',
+                'inline-flex h-[30px] max-w-full items-center gap-1 rounded-full border bg-secondary px-2.5 text-[12px] whitespace-nowrap group-hover:bg-accent group-focus-visible:ring-[3px] group-focus-visible:ring-ring',
                 chip.fechaInvalida && 'border-danger',
               )}
             >

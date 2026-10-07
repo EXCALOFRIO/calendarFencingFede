@@ -94,10 +94,32 @@ export async function leerIndiceSkermo(red: Red, season: string): Promise<Skermo
   return indice.rows;
 }
 
+/**
+ * Skermo sometimes edits a licence with a lowercase letter (`jMM00400` for `JMM00400`). Every
+ * licence already loaded is uppercase, and both the result key (`lic:<licencia>`) and the
+ * `rfee_license` lookup are case-sensitive: without this, the same placing would come back as a
+ * second, unlinked row.
+ */
+export function licenciasEnMayusculas(h: HechosPrueba): HechosPrueba {
+  if (!h.results.some((r) => r.license && r.license !== r.license.toUpperCase())) return h;
+  const usados = new Set<string>();
+  const results = h.results.map((r) => {
+    if (!r.license) { usados.add(r.factKey); return r; }
+    const license = r.license.toUpperCase();
+    const base = `lic:${license}`;
+    let k = base;
+    for (let n = 2; usados.has(k); n += 1) k = `${base}~${n}`;
+    usados.add(k);
+    return { ...r, license, factKey: k };
+  });
+  return { ...h, results };
+}
+
 export async function leerClasificacionSkermo(red: Red, competitionId: string, hoy: string): Promise<LecturaHechos> {
   const html = await red.texto(skermoCompetitionResultsUrl('RFEE', competitionId));
-  const h = hechosSkermo(competitionId, html, sha(html));
-  if (!h) return { hechos: [], final: false, esperar: 'skermo_sin_clasificacion' };
+  const leida = hechosSkermo(competitionId, html, sha(html));
+  if (!leida) return { hechos: [], final: false, esperar: 'skermo_sin_clasificacion' };
+  const h = licenciasEnMayusculas(leida);
   if ((h.competition.date ?? hoy) >= hoy) return { hechos: [], final: false, esperar: 'skermo_en_curso' };
   return { hechos: [h], final: h.status.results === 'completo' };
 }

@@ -34,7 +34,7 @@ export function IconoFuente({ url, fuente, className }: { url: string | null; fu
       rel="noopener noreferrer"
       title={`Ver en ${nombreFuente(fuente)}`}
       className={cn(
-        'inline-flex size-[40px] shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+        'inline-flex size-[40px] shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
         className,
       )}
     >
@@ -59,7 +59,7 @@ export function FilaResultado({ r, conArma = false }: { r: FilaListaPerfil; conA
       <Link
         href={r.href}
         prefetch={false}
-        className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-3 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:pl-4"
+        className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-3 focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:pl-4"
       >
         <DiscoPuesto puesto={r.puesto} puestoPublicado={r.puestoPublicado} />
         <span className="flex min-w-0 flex-1 flex-col gap-1">
@@ -73,10 +73,11 @@ export function FilaResultado({ r, conArma = false }: { r: FilaListaPerfil; conA
             {conArma ? <span className="truncate text-xs text-muted-foreground">{WEAPON_LABEL[r.arma]}</span> : null}
             {r.asaltos ? <Asaltos v={r.asaltos.victorias} d={r.asaltos.derrotas} className="ml-auto pl-1" /> : null}
           </span>
-          <span className="flex min-w-0 items-center gap-1.5 overflow-hidden text-xs whitespace-nowrap text-muted-foreground">
+          <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
             <time dateTime={r.fecha ?? undefined} className="shrink-0">{fechaCorta(r.fecha)}</time>
             {r.pais || r.ciudad ? <span aria-hidden>·</span> : null}
-            {r.pais ? <BanderaPais pais={r.pais} /> : null}
+            {/* Sólo la bandera: con el código, a 320 px y texto grande la línea no cabía y se cortaba. */}
+            {r.pais ? <BanderaPais pais={r.pais} soloBandera className="shrink-0" /> : null}
             {r.ciudad ? <span className="min-w-0 truncate">{titular(r.ciudad)}</span> : null}
           </span>
         </span>

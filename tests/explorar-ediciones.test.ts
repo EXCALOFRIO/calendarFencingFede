@@ -481,7 +481,9 @@ describe('pantallas de ediciones', () => {
     );
     expect(marcado).toContain(`href="/explorar/${UUID_C}?volver=${encodeURIComponent(volver).replace(/&/g, '&amp;')}"`);
     expect(marcado).not.toContain('/perfil');
-    expect(marcado.match(/<a /g)).toHaveLength(1);
+    // Una ficha; las banderas son aparte y llevan al país.
+    expect(marcado.match(/<a (?![^>]*data-enlace)/g)).toHaveLength(1);
+    expect(marcado.match(/href="\/explorar\/pais\/ESP"/g)).toHaveLength(2);
     expect(marcado).toContain('<span class="sr-only">Oro, puesto </span>');
     expect(marcado).toContain('<span class="sr-only">Plata, puesto </span>');
     expect(marcado).not.toContain('aria-label="Puesto');

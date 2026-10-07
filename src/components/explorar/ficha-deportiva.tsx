@@ -6,11 +6,9 @@ import type { DiferidosPerfil } from '@/lib/sport/explorar/perfil-diferido';
 import type { RivalesPorAmbito } from '@/lib/sport/explorar/rivales-ambito';
 import type { ResumenAmbito } from '@/lib/sport/explorar/tipos-social';
 import { medallaMasValiosa, type MedallaPerfil } from '@/lib/sport/explorar/medallas-perfil';
-import { Skeleton } from '@/components/ui/skeleton';
 import { RivalesPorAmbitoVista } from './perfil/rivales-ambito';
 import { RelevosPerfilDiferido } from './relevos';
 import { TarjetaGiratoria, type CaraTarjeta } from './perfil/tarjeta-giratoria';
-import { BanderaPais } from '@/components/bandera';
 import { InsigniaOlimpica } from '@/components/olimpica/insignia-olimpica';
 import { EnlacePrecarga } from '@/components/sistema/enlace-precarga';
 import { Button } from '@/components/ui/button';
@@ -27,7 +25,7 @@ import { tipoPorNombre } from '@/lib/sport/explorar/tipo-competicion';
 import type { FichaConPerfil } from '@/lib/sport/explorar/tipos-perfil';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bloque, Nota, enlaceSeguro, type Nivel } from './piezas';
+import { Bloque, EnlacePais, Nota, enlaceSeguro, type Nivel } from './piezas';
 import { AvatarAnillo } from './avatar-anillo';
 import { clasificarResultado } from './etiqueta-competicion';
 import { AmbitoPerfil } from './perfil/ambito-perfil';
@@ -74,7 +72,7 @@ function Contador({ etiqueta, valor }: { etiqueta: string; valor: number }) {
   return (
     <div className="flex min-w-0 flex-col items-center gap-1">
       <dd className="cifra text-[1.75rem] leading-none whitespace-nowrap sm:text-4xl">{valor.toLocaleString('es-ES')}</dd>
-      <dt className="max-w-full truncate text-[0.625rem] leading-none tracking-tight text-muted-foreground sm:text-xs sm:tracking-normal">{etiqueta}</dt>
+      <dt className="max-w-full truncate text-[12px] leading-none tracking-tight text-muted-foreground sm:text-xs sm:tracking-normal">{etiqueta}</dt>
     </div>
   );
 }
@@ -118,13 +116,13 @@ export function MedallasCabecera({
             <PuntoMedalla medalla={m} className={cn('size-2.5', n[m] === 0 && 'opacity-40')} />
             <span className="cifra text-2xl leading-none">{n[m]}</span>
           </dd>
-          <dt className="truncate text-[0.6875rem] leading-none font-medium">{n[m] === 1 ? uno : varios}</dt>
+          <dt className="truncate text-[12px] leading-none font-medium">{n[m] === 1 ? uno : varios}</dt>
         </div>
       ))}
       {hitos.map((h) => (
         <div key={h.clave} data-hito={h.clave} className={cn(BALDOSA, 'bg-card', h.resaltado ? CONTORNO_MEDALLA.oro : 'border-filete-alto')}>
           <dd className="cifra truncate text-2xl leading-none" title={h.detalle}>{h.cifra}</dd>
-          <dt className="line-clamp-2 text-[0.6875rem] leading-tight font-medium text-muted-foreground max-[359px]:text-[0.625rem]" title={h.detalle ? `${h.rotulo} · ${h.detalle}` : h.rotulo}>
+          <dt className="line-clamp-2 text-[12px] leading-tight font-medium text-muted-foreground" title={h.detalle ? `${h.rotulo} · ${h.detalle}` : h.rotulo}>
             {h.rotulo}
           </dt>
         </div>
@@ -182,9 +180,9 @@ export function FilasRanking({ chips }: { chips: readonly ChipRanking[] }) {
       {chips.map((c, i) => {
         const { texto, detalle } = textoChip(c);
         return (
-          <li key={c.ambito} data-fila-ranking={c.ambito} title={detalle} className="flex min-w-0 max-w-full items-baseline gap-1">
+          <li key={c.ambito} data-fila-ranking={c.ambito} title={detalle} className="flex min-w-0 max-w-full flex-wrap items-baseline gap-x-1 gap-y-0.5">
             {i > 0 ? <span aria-hidden className="text-muted-foreground">·</span> : null}
-            {/* En un móvil la línea entera cabe con el rótulo corto; el largo queda para lectores de pantalla. */}
+            {/* En un móvil la línea entera cabe con el rótulo corto; el largo queda para lectores de pantalla. Con el texto al 200 % la marca olímpica baja de renglón en vez de salirse. */}
             <span className="text-muted-foreground">
               <span className="max-[399px]:hidden">{c.ambito === 'internacional' ? 'Internacional' : 'Nacional'}</span>
               <span aria-hidden className="min-[400px]:hidden">{c.ambito === 'internacional' ? 'Intl.' : 'Nac.'}</span>
@@ -194,7 +192,7 @@ export function FilasRanking({ chips }: { chips: readonly ChipRanking[] }) {
               {c.puesto}º
             </span>
             {/* «Florete» solo sobra: sólo se escribe lo que añade (categoría, federación o «mejor»). */}
-            {texto !== WEAPON_LABEL[c.arma] ? <span className="min-w-0 truncate text-[0.6875rem] text-muted-foreground">{texto}</span> : null}
+            {texto !== WEAPON_LABEL[c.arma] ? <span className="min-w-0 truncate text-[12px] text-muted-foreground">{texto}</span> : null}
             {c.olimpica ? <InsigniaOlimpica anotacion={c.olimpica} /> : null}
           </li>
         );
@@ -250,7 +248,7 @@ function BarraAmbitos({ internacional, nacional }: { internacional: number; naci
         <span className="h-full bg-primary-text" style={{ width: `${pct}%` }} />
         <span className="h-full flex-1 bg-org-rfee-relleno" />
       </div>
-      <p className="flex justify-between gap-2 text-[0.6875rem] leading-none text-muted-foreground">
+      <p className="flex justify-between gap-2 text-[12px] leading-none text-muted-foreground">
         <span>Internacional <span className="cifra text-foreground">{internacional}</span></span>
         <span>Nacional <span className="cifra text-foreground">{nacional}</span></span>
       </p>
@@ -380,16 +378,17 @@ export function CabeceraFicha({
           <FotoDeportista personaId={ficha.id} nombre={nombre} tamano="heroe" decorativa />
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          {/* El `<h1>` es el título de la cabecera compacta («Perfil»): el nombre va justo debajo. */}
+          {/* El `<h1>` es el nombre: «Perfil», en la cabecera compacta, es sólo un rótulo (`encabezado: false`). */}
           {titulo ? (
-            <h2 className="min-w-0 text-[1.625rem] leading-[0.95] break-words sm:text-4xl">{nombre}</h2>
+            <h1 className="min-w-0 text-[1.625rem] leading-[0.95] break-words sm:text-4xl">{nombre}</h1>
           ) : (
             <p className="min-w-0 font-display text-[1.625rem] leading-[0.95] break-words sm:text-4xl">{nombre}</p>
           )}
           <ul className="flex min-w-0 flex-wrap items-center gap-1" aria-label="Datos">
             {ficha.pais ? (
               <li className="inline-flex shrink-0">
-                <BanderaPais pais={ficha.pais} tamaño="ficha" />
+                {/* 44 px de toque sin que la fila de datos crezca: el margen negativo devuelve lo que sobra. */}
+                <EnlacePais pais={ficha.pais} soloBandera={false} tamaño="ficha" className="-my-[10px] justify-start" />
               </li>
             ) : null}
             {perfil?.armas.map((arma) => (
@@ -426,6 +425,7 @@ export function CabeceraFicha({
             <a href={enlaceFie} target="_blank" rel="noopener noreferrer" title="Perfil en la FIE">
               FIE
               <ExternalLink aria-hidden />
+              <span className="sr-only"> (se abre en otra pestaña)</span>
             </a>
           </Button>
         ) : null}
@@ -635,7 +635,7 @@ export function FichaCompleta({
   extras?: ExtrasPerfil;
   /**
    * Rendimiento y rivales que llegan después (streaming). Con ellos, la ficha
-   * no los espera: sus pestañas se pintan con un esqueleto hasta que llegan.
+   * no los espera: sus pestañas se pintan vacías, sin esqueleto, hasta que llegan.
    */
   diferidos?: DiferidosPerfil;
 }) {
@@ -685,7 +685,7 @@ export function FichaCompleta({
         </TabsContent>
         <TabsContent value="estadisticas" forceMount className={panel}>
           {diferidos ? (
-            <Suspense fallback={<CargandoPestana texto="Cargando el rendimiento…" />}>
+            <Suspense fallback={null}>
               <RendimientoDiferido promesa={diferidos.rendimiento} ficha={ficha} rankingEnRendimiento={rankingEnRendimiento} nivel={nivel} />
             </Suspense>
           ) : (
@@ -698,7 +698,7 @@ export function FichaCompleta({
               bloques={bloques}
               nivel={nivel}
               europeo={diferidos ? (
-                <Suspense fallback={soloEuropeo ? <CargandoPestana texto="Cargando el ranking…" /> : null}>
+                <Suspense fallback={null}>
                   <EuropeoDiferido
                     promesa={diferidos.europeo}
                     nivel={nivel}
@@ -713,7 +713,7 @@ export function FichaCompleta({
           {!perfil ? (
             <EntradaCaraACara ficha={ficha} nivel={nivel} />
           ) : diferidos ? (
-            <Suspense fallback={<CargandoPestana texto="Cargando los rivales…" />}>
+            <Suspense fallback={null}>
               <RivalesDiferidosVista promesa={diferidos.rivales} ficha={ficha} nivel={nivel} />
             </Suspense>
           ) : (
@@ -761,23 +761,12 @@ export function PestanaRanking({
       {mundial ? <RankingMundialPerfil entradas={mundial} nivel={nivel} /> : null}
       {europeo}
       {nacional ? (
-        <SeccionRanking titulo="Nacional" detalle="RFEE" nivel={nivel}>
+        <SeccionRanking titulo="Nacional" nivel={nivel}>
           <RankingNacionalPerfil ranking={nacional} nivel={nivel} />
         </SeccionRanking>
       ) : null}
       {nacionalFuera ? <RankingAmbitoPerfil titulo="Nacional" bloque={nacionalFuera} nivel={nivel} /> : null}
     </>
-  );
-}
-
-function CargandoPestana({ texto }: { texto: string }) {
-  return (
-    <div role="status" aria-live="polite" className="flex min-w-0 flex-col gap-3">
-      <span className="sr-only">{texto}</span>
-      <Skeleton className="h-11 w-full rounded-full sm:w-96" />
-      <Skeleton className="h-40 w-full rounded-xl" />
-      <Skeleton className="h-40 w-full rounded-xl" />
-    </div>
   );
 }
 
@@ -905,7 +894,7 @@ export function VolverAExplorar({ volver }: { volver: string }) {
       <Link
         href={destino}
         prefetch={false}
-        className="inline-flex min-h-11 items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+        className="inline-flex min-h-11 items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
       >
         <ArrowLeft className="size-4" aria-hidden />
         {aFavoritos

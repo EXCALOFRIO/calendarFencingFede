@@ -215,6 +215,13 @@ describe('construirFila (privacidad y combinación)', () => {
     expect(posibleMenor(2007, '2026-10-05')).toBe(false);
   });
 
+  it('la fecha comodín de la FIE (1920-01-01) es desconocida: no da año ni propone vínculos', () => {
+    expect(leerAtletaFie({ id: 7, name: 'POPA Mihai', date: '1920-01-01' }, 7)?.fechaNacimiento).toBeNull();
+    const comodin = { ...fieBase, personaId: 'p4', fechaNacimiento: '1920-01-01' };
+    const { fila } = construirFila({ personaId: 'p4', actual: 'ZABALA Juan', variantes: [], fie: comodin, nacional: null }, '2026-10-05', false, 1);
+    expect(fila).toMatchObject({ birth_year: null, birth_source: null });
+  });
+
   it('sin fecha publicada, el año de la subdivisión del PDF', () => {
     const { fila } = construirFila({
       personaId: 'p3', actual: 'GARCIA Ana', variantes: [], fie: null,

@@ -19,7 +19,10 @@ vi.mock('next/navigation', () => ({
 }));
 
 const { DESTINOS_APP, cabeceraDeRuta, hayBusqueda, pestanaDeRuta } = await import('@/components/navegacion-app');
-const { hrefDePestana, toquePestana, CLAVE_RECORDADAS } = await import('@/components/sistema/navegacion');
+const { hrefDePestana, toquePestana, CLAVE_RECORDADAS, raizRecordada, indiceRaizEnHistorial, hayCapaAbierta } = await import(
+  '@/components/sistema/navegacion'
+);
+const { esRutaNeutra, pestanaQueRecuerda, sinFichaPropiaAjena } = await import('@/components/navegacion-app');
 const { NavMovil, NavEscritorio } = await import('@/components/nav');
 const { CabeceraApp } = await import('@/components/cabecera-app');
 const { seccionesDeTu } = await import('@/components/tu/filas');
@@ -72,9 +75,9 @@ describe('tocar la pestaña activa', () => {
   it('en su raíz sube al principio; en una subpantalla vuelve a la raíz; otra pestaña cambia con fundido', () => {
     expect(toquePestana('/', destino('calendario'), 'calendario')).toEqual({ accion: 'subir' });
     expect(toquePestana('/explorar', destino('explorar'), 'explorar')).toEqual({ accion: 'subir' });
-    expect(toquePestana('/explorar/abc', destino('explorar'), 'explorar')).toEqual({ accion: 'navegar', tipos: ['nav-volver'] });
-    expect(toquePestana('/estado', destino('tu'), 'tu')).toEqual({ accion: 'navegar', tipos: ['nav-volver'] });
-    expect(toquePestana('/explorar', destino('buscar'), 'buscar')).toEqual({ accion: 'navegar', tipos: ['nav-volver'] });
+    expect(toquePestana('/explorar/abc', destino('explorar'), 'explorar')).toEqual({ accion: 'raiz', tipos: ['nav-volver'] });
+    expect(toquePestana('/estado', destino('tu'), 'tu')).toEqual({ accion: 'raiz', tipos: ['nav-volver'] });
+    expect(toquePestana('/explorar', destino('buscar'), 'buscar')).toEqual({ accion: 'raiz', tipos: ['nav-volver'] });
     expect(toquePestana('/', destino('ranking'), 'calendario')).toEqual({ accion: 'navegar', tipos: ['nav-pestana'] });
   });
 
@@ -83,6 +86,128 @@ describe('tocar la pestaña activa', () => {
     expect(hrefDePestana(destino('tu'), 'tu', recordadas)).toBe('/explorar/yo');
     ir('/estado');
     expect(pintar(h(NavMovil, {}))).toMatch(/<a(?=[^>]*data-pestana="tu")(?=[^>]*href="\/explorar\/yo")/);
+  });
+});
+
+describe('la brújula no se queda con la ficha propia (bucle Explorar → ficha → Explorar)', () => {
+  const PROPIA = '/explorar/00000000-0000-4000-8000-0000000000aa';
+
+  it('causa: sin saber aún cuál es la ficha propia, su primer pintado marca Explorar y la memoria la guardaba', () => {
+    // Sin la ficha propia apuntada, la ruta cuelga de /explorar.
+    expect(pestanaDeRuta(PROPIA, false, null)).toBe('explorar');
+    // Con lo guardado, la brújula llevaba siempre a la ficha propia.
+    expect(hrefDePestana(destino('explorar'), 'tu', { explorar: PROPIA })).toBe(PROPIA);
+  });
+
+  it('arreglo: con la ficha propia ya conocida, Explorar no la recuerda y la memoria vieja se limpia', () => {
+    expect(pestanaQueRecuerda({ marcada: 'explorar', pathname: PROPIA, conBusqueda: false, fichaPropia: PROPIA, heredada: null })).toBeNull();
+    expect(pestanaQueRecuerda({ marcada: 'tu', pathname: PROPIA, conBusqueda: false, fichaPropia: PROPIA, heredada: null })).toBe('tu');
+    const limpia = sinFichaPropiaAjena({ explorar: PROPIA, tu: PROPIA, buscar: `${PROPIA}/temporadas`, ranking: `${PROPIA}/cara-a-cara?rival=x` }, PROPIA);
+    expect(limpia).toEqual({ tu: PROPIA, ranking: `${PROPIA}/cara-a-cara?rival=x` });
+    expect(hrefDePestana(destino('explorar'), 'tu', limpia)).toBe('/explorar');
+  });
+
+  it('una persona, una edición o un país abiertos desde una pestaña se quedan en ella', () => {
+    expect(esRutaNeutra('/explorar/abc')).toBe(true);
+    expect(esRutaNeutra('/explorar/abc/cara-a-cara')).toBe(true);
+    expect(esRutaNeutra('/explorar/ediciones/abc')).toBe(true);
+    expect(esRutaNeutra('/explorar/pais/ESP')).toBe(true);
+    for (const r of ['/', '/explorar', '/explorar/buscar', '/explorar/yo', '/explorar/siguiendo', '/explorar/ediciones', '/ranking']) {
+      expect(esRutaNeutra(r)).toBe(false);
+    }
+    for (const clave of ['calendario', 'explorar', 'buscar', 'ranking', 'tu']) {
+      expect(pestanaDeRuta('/explorar/abc', false, null, clave)).toBe(clave);
+      expect(pestanaDeRuta('/explorar/pais/ESP', false, null, clave)).toBe(clave);
+    }
+    // Las pantallas propias de una pestaña no heredan nada.
+    expect(pestanaDeRuta('/ranking', false, null, 'buscar')).toBe('ranking');
+    expect(pestanaDeRuta('/explorar/abc', false, null, 'inventada')).toBe('explorar');
+  });
+
+  it('la herencia: un enlace hereda la pestaña anterior; atrás y recargar usan lo anotado; un enlace directo no hereda', async () => {
+    const almacen = new Map<string, string>();
+    const oyentes: (() => void)[] = [];
+    vi.stubGlobal('window', {
+      sessionStorage: { getItem: (k: string) => almacen.get(k) ?? null, setItem: (k: string, v: string) => void almacen.set(k, v) },
+      addEventListener: (tipo: string, f: () => void) => tipo === 'popstate' && oyentes.push(f),
+    });
+    try {
+      vi.resetModules();
+      const herencia = await import('@/components/sistema/herencia-pestanas');
+      expect(herencia.pestanaHeredada('/explorar/abc', true)).toBeNull();
+      herencia.confirmarPestana('/ranking', 'ranking', false);
+      expect(herencia.pestanaHeredada('/explorar/abc', true)).toBe('ranking');
+      expect(herencia.pestanaHeredada('/ranking', false)).toBeNull();
+      herencia.confirmarPestana('/explorar/abc', 'ranking', true);
+      herencia.confirmarPestana('/explorar/buscar', 'buscar', false);
+      // Atrás hasta la persona: manda lo anotado, no la pantalla de la que se viene.
+      for (const f of oyentes) f();
+      expect(herencia.pestanaHeredada('/explorar/abc', true)).toBe('ranking');
+      expect(herencia.pestanaAnotada('/explorar/abc')).toBe('ranking');
+      // Recargar: lo anotado sigue en sessionStorage.
+      herencia.reiniciarHerencia();
+      expect(herencia.pestanaHeredada('/explorar/abc', true)).toBe('ranking');
+      expect(herencia.pestanaHeredada('/explorar/otra', true)).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    }
+  });
+});
+
+describe('tocar la pestaña activa vacía su pila', () => {
+  const deExplorar = (u: string) => pestanaDeRuta(u.split('?')[0], false, null) === 'explorar';
+
+  it('vuelve a la raíz del historial si todo lo de en medio es de la pestaña', () => {
+    const urls = ['/', '/explorar', '/explorar/abc', '/explorar/abc/temporadas'];
+    expect(indiceRaizEnHistorial(urls, 3, destino('explorar'), deExplorar)).toBe(1);
+  });
+
+  it('sin raíz detrás, o con otra pestaña en medio, sustituye la entrada actual', () => {
+    expect(indiceRaizEnHistorial(['/explorar/abc'], 0, destino('explorar'), deExplorar)).toBeNull();
+    expect(indiceRaizEnHistorial(['/explorar', '/ranking', '/explorar/abc'], 2, destino('explorar'), deExplorar)).toBeNull();
+    expect(indiceRaizEnHistorial(['/explorar', null, '/explorar/abc'], 2, destino('explorar'), deExplorar)).toBeNull();
+  });
+
+  it('en cada pestaña: raíz → subir; subpantalla → raíz; otra → cambiar', () => {
+    const casos: [string, string, string][] = [
+      ['calendario', '/', '/notificaciones'],
+      ['explorar', '/explorar', '/explorar/abc'],
+      ['buscar', '/explorar/buscar', '/explorar/ediciones/abc'],
+      ['ranking', '/ranking', '/explorar/abc'],
+      ['tu', '/explorar/yo', '/explorar/siguiendo'],
+    ];
+    for (const [clave, raiz, sub] of casos) {
+      expect(destino(clave).href).toBe(raiz);
+      expect(toquePestana(raiz, destino(clave), clave)).toEqual({ accion: 'subir' });
+      expect(toquePestana(sub, destino(clave), clave)).toEqual({ accion: 'raiz', tipos: ['nav-volver'] });
+      const otra = clave === 'ranking' ? 'tu' : 'ranking';
+      expect(toquePestana(sub, destino(otra), clave)).toEqual({ accion: 'navegar', tipos: ['nav-pestana'] });
+    }
+  });
+
+  it('la raíz conserva la consulta con la que se dejó (el mes del calendario), sin aceptar otra ruta', () => {
+    expect(hrefDePestana(destino('calendario'), 'calendario', { [raizRecordada('calendario')]: '/?mes=2026-11' })).toBe('/?mes=2026-11');
+    expect(hrefDePestana(destino('calendario'), 'calendario', { [raizRecordada('calendario')]: '/notificaciones' })).toBe('/');
+    expect(hrefDePestana(destino('calendario'), 'calendario', { [raizRecordada('calendario')]: '//malo.example' })).toBe('/');
+  });
+
+  it('en la raíz con la ficha del calendario o una poule abiertas, el toque cierra la capa', () => {
+    expect(hayCapaAbierta({ fichaCalendario: 'abc' })).toBe(true);
+    expect(hayCapaAbierta({ hojaPoule: 1 })).toBe(true);
+    expect(hayCapaAbierta({ __NA: true })).toBe(false);
+    expect(hayCapaAbierta(null)).toBe(false);
+  });
+});
+
+describe('cabecera del país', () => {
+  it('la ficha de un país vuelve a Buscar y el cara a cara de selecciones al país', () => {
+    expect(cabeceraDeRuta('/explorar/pais/ESP', false)).toMatchObject({ variante: 'subpantalla', titulo: 'País' });
+    expect(cabeceraDeRuta('/explorar/pais/ESP/contra/FRA', false)).toMatchObject({
+      variante: 'subpantalla',
+      titulo: 'Selecciones',
+      volverA: '/explorar/pais/ESP',
+    });
   });
 });
 
@@ -157,8 +282,8 @@ describe('cabecera compacta por pantalla', () => {
     expect(cabeceraDeRuta('/estado', false)).toMatchObject({ variante: 'subpantalla', volverA: '/explorar/yo' });
     expect(cabeceraDeRuta('/notificaciones', false)).toMatchObject({ variante: 'subpantalla', volverA: '/' });
     expect(cabeceraDeRuta('/admin/usuarios', false)).toMatchObject({ variante: 'subpantalla', volverA: '/admin' });
-    expect(cabeceraDeRuta('/explorar/abc/cara-a-cara', false)).toEqual({ variante: 'subpantalla', titulo: 'Cara a cara', volverA: '/explorar/abc' });
-    expect(cabeceraDeRuta('/explorar/ediciones/abc', false)).toEqual({ variante: 'subpantalla', titulo: 'Competición', volverA: '/explorar/ediciones' });
+    expect(cabeceraDeRuta('/explorar/abc/cara-a-cara', false)).toEqual({ variante: 'subpantalla', titulo: 'Cara a cara', volverA: '/explorar/abc', encabezado: false });
+    expect(cabeceraDeRuta('/explorar/ediciones/abc', false)).toEqual({ variante: 'subpantalla', titulo: 'Competición', volverA: '/explorar/ediciones', encabezado: false });
     expect(cabeceraDeRuta('/ranking', false)).toEqual({ variante: 'raiz', titulo: 'Ranking' });
   });
 

@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import { vetarEnlaceFie } from '@/lib/sport/explorar/anio-publico';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { construirAvisosResultados, type AvisoNuevo, type LineaResultado, type PruebaResultados } from './agrupar';
 import { guardarAvisos, leerPreferencias, type AvisoGuardado } from './bandeja';
@@ -90,7 +91,7 @@ export async function procesarEventosPendientes(db: DbAvisos, ahora = new Date()
 
   const avisos: AvisoNuevo[] = [];
   for (const [competitionId, personas] of porPrueba) {
-    avisos.push(...(await avisosDePrueba(db, competitionId, personas ? [...personas] : null)));
+    avisos.push(...(await avisosDePrueba(db, competitionId, personas ? [...personas] : null, ahora)));
   }
   const preferencias = await leerPreferencias(db, [...new Set(avisos.map((a) => a.profileId))]);
   const guardados = await guardarAvisos(db, avisos, preferencias, ahora);
@@ -222,7 +223,9 @@ async function canonicas(db: DbAvisos, ids: readonly string[]): Promise<Map<stri
   return new Map(filas.map((f) => [f.origen, f.canon]));
 }
 
-export async function avisosDePrueba(db: DbAvisos, competitionId: string, personas: readonly string[] | null): Promise<AvisoNuevo[]> {
+export async function avisosDePrueba(
+  db: DbAvisos, competitionId: string, personas: readonly string[] | null, ahora = new Date(),
+): Promise<AvisoNuevo[]> {
   const [prueba] = await filasDe<FilaPrueba>(db, sql`
     SELECT c.id, c.edition_id, c.weapon, c.gender, c.category, c.format, c.event_competition_id,
       e.name AS nombre, e.event_id
@@ -293,15 +296,28 @@ export async function avisosDePrueba(db: DbAvisos, competitionId: string, person
       SELECT g.canon, a.user_profile_id, a.guardian_profile_id
       FROM grupo g JOIN sport_person p ON p.id = g.id JOIN athlete a ON a.id = p.athlete_id
       WHERE a.active = 1`);
+    const vinculados = new Set<string>();
     for (const v of vinculos) {
       for (const profileId of [v.user_profile_id, v.guardian_profile_id]) {
         if (!profileId) continue;
+        vinculados.add(`${v.canon}\u0000${profileId}`);
         lineas.push({ profileId, motivo: 'perfil', clavePersona: v.canon, personaId: v.canon, nombre: nombres.get(v.canon) ?? '', puesto: puestoDe.get(v.canon) ?? null });
       }
     }
-    const seguidores = await filasDe<{ canon: string; profile_id: string }>(db, sql`
+    // A quien sigue a alguien que puede ser menor (o sin año conocido) no se le avisa de sus
+    // resultados. La propia cuenta del tirador y su tutor sí, aunque además lo sigan.
+    const aniosGrupo = new Map<string, (number | null)[]>();
+    for (const f of await filasDe<{ canon: string; anio: number | null }>(db, sql`
       ${sqlGrupo(objetivoLista)}
-      SELECT DISTINCT g.canon, f.profile_id FROM grupo g JOIN sport_favorite f ON f.person_id = g.id`);
+      SELECT g.canon, p.birth_year AS anio FROM grupo g JOIN sport_person p ON p.id = g.id`)) {
+      aniosGrupo.set(f.canon, [...(aniosGrupo.get(f.canon) ?? []), f.anio === null ? null : Number(f.anio)]);
+    }
+    const hoy = ahora.toISOString().slice(0, 10);
+    const vetados = new Set(objetivoLista.filter((c) => vetarEnlaceFie(aniosGrupo.get(c) ?? [], hoy)));
+    const seguidores = (await filasDe<{ canon: string; profile_id: string }>(db, sql`
+      ${sqlGrupo(objetivoLista)}
+      SELECT DISTINCT g.canon, f.profile_id FROM grupo g JOIN sport_favorite f ON f.person_id = g.id`))
+      .filter((s) => !vetados.has(s.canon) || vinculados.has(`${s.canon}\u0000${s.profile_id}`));
     for (const s of seguidores) {
       lineas.push({ profileId: s.profile_id, motivo: 'seguidos', clavePersona: s.canon, personaId: s.canon, nombre: nombres.get(s.canon) ?? '', puesto: puestoDe.get(s.canon) ?? null });
     }

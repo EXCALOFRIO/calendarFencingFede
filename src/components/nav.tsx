@@ -2,12 +2,15 @@
 
 import Link, { useLinkStatus } from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
-import { useFichaPropia } from '@/components/explorar/perfil/ficha-propia';
-import { DESTINOS_APP, hayBusqueda, pestanaDeRuta } from '@/components/navegacion-app';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { leerFichaPropia, useFichaPropia } from '@/components/explorar/perfil/ficha-propia';
+import { DESTINOS_APP, esRutaNeutra, hayBusqueda, pestanaDeRuta } from '@/components/navegacion-app';
+import { useRetratoPropio } from '@/components/retrato-propio';
 import { BarraInferior } from '@/components/sistema/barra-inferior';
-import { urlActual, useRecordadas } from '@/components/sistema/memoria-pestanas';
+import { confirmarPestana, pestanaAnotada, pestanaHeredada, useHerenciaLista } from '@/components/sistema/herencia-pestanas';
+import { useRecordadas } from '@/components/sistema/memoria-pestanas';
 import { hrefDePestana, toquePestana, type DestinoBarra } from '@/components/sistema/navegacion';
+import { recordarSiEsSuya, resolverToque, useRouterOpcional } from '@/components/sistema/toque-pestana';
 import type { Role } from '@/lib/auth/session';
 import { cn } from '@/lib/utils';
 
@@ -30,30 +33,76 @@ export const ACTIVO =
   'bg-marcado font-semibold text-primary-text ring-1 ring-primary-text ring-inset';
 export const INACTIVO = 'text-muted-foreground hover:bg-accent hover:text-foreground';
 
+/**
+ * La pestaña de una ruta con lo que se sabe AHORA, fuera del render: la ficha
+ * propia ya apuntada y la pestaña heredada (la de la ruta actual) o anotada
+ * (la de otra entrada del historial). La barra lo usa al guardar su memoria y
+ * al volver a la raíz.
+ */
+export function deLaPestanaApp(clave: string, url: string): boolean {
+  const [ruta, consulta = ''] = url.split('#')[0].split('?');
+  const neutra = esRutaNeutra(ruta);
+  const actual = typeof window !== 'undefined' && window.location.pathname === ruta;
+  const heredada = actual ? pestanaHeredada(ruta, neutra) : pestanaAnotada(ruta);
+  return pestanaDeRuta(ruta, hayBusqueda(new URLSearchParams(consulta)), leerFichaPropia(), heredada) === clave;
+}
+
+/**
+ * Pestaña marcada: la de la ruta, la ficha propia en «Tú» y, en una ruta
+ * neutra (persona, edición, país), la pestaña desde la que se abrió. Al
+ * pintarse se confirma (sólo una vez hidratada: antes lo heredado no cuenta y
+ * confirmar el prefijo borraría lo anotado).
+ */
+function usePestanaMarcada(pathname: string, conBusqueda: boolean, confirmar: boolean): string | null {
+  const propia = useFichaPropia();
+  const lista = useHerenciaLista();
+  const neutra = esRutaNeutra(pathname);
+  const activa = pestanaDeRuta(pathname, conBusqueda, propia, lista ? pestanaHeredada(pathname, neutra) : null);
+  useEffect(() => {
+    if (confirmar && lista) confirmarPestana(pathname, activa, neutra);
+  }, [confirmar, lista, pathname, activa, neutra]);
+  return activa;
+}
+
 /** Mientras no se conoce la consulta (`useSearchParams` sin resolver), sólo cuenta la ruta. */
-function useUbicacion(): { pathname: string; busqueda: string; activa: string | null } {
+function useUbicacion(confirmar: boolean): { pathname: string; busqueda: string; activa: string | null } {
   const pathname = usePathname() ?? '/';
   const params = useSearchParams();
-  const propia = useFichaPropia();
-  return { pathname, busqueda: params?.toString() ?? '', activa: pestanaDeRuta(pathname, hayBusqueda(params), propia) };
+  const activa = usePestanaMarcada(pathname, hayBusqueda(params), confirmar);
+  return { pathname, busqueda: params?.toString() ?? '', activa };
 }
 
-function BarraViva() {
-  const { busqueda, activa } = useUbicacion();
-  return <BarraInferior destinos={DESTINOS_APP} activa={activa} busqueda={busqueda} />;
+/** «Tú» lleva la foto de la ficha propia en vez del icono, cuando la hay. */
+function useDestinos(cuenta: string | undefined): readonly DestinoBarra[] {
+  const retrato = useRetratoPropio(cuenta);
+  return useMemo(
+    () => (retrato ? DESTINOS_APP.map((d) => (d.clave === 'tu' ? { ...d, retrato } : d)) : DESTINOS_APP),
+    [retrato],
+  );
 }
 
-function BarraSinConsulta() {
+function BarraViva({ destinos }: { destinos: readonly DestinoBarra[] }) {
+  // La barra del móvil es la que confirma la pestaña: está montada siempre (en escritorio, oculta por CSS).
+  const { busqueda, activa } = useUbicacion(true);
+  return <BarraInferior destinos={destinos} activa={activa} busqueda={busqueda} deLaPestana={deLaPestanaApp} />;
+}
+
+function BarraSinConsulta({ destinos }: { destinos: readonly DestinoBarra[] }) {
   const pathname = usePathname() ?? '/';
-  const propia = useFichaPropia();
-  return <BarraInferior destinos={DESTINOS_APP} activa={pestanaDeRuta(pathname, false, propia)} />;
+  const activa = usePestanaMarcada(pathname, false, false);
+  return <BarraInferior destinos={destinos} activa={activa} deLaPestana={deLaPestanaApp} />;
 }
 
-/** Barra inferior del móvil. `role` se acepta por compatibilidad: la barra es igual para todos. */
-export function NavMovil(_props: { role?: Role }) {
+/**
+ * Barra inferior del móvil. `role` se acepta por compatibilidad: la barra es
+ * igual para todos. `cuenta` (el `profileId` de la sesión) sólo sirve para
+ * pedir la foto propia después de pintar; sin ella, «Tú» lleva el icono.
+ */
+export function NavMovil({ cuenta }: { role?: Role; cuenta?: string }) {
+  const destinos = useDestinos(cuenta);
   return (
-    <Suspense fallback={<BarraSinConsulta />}>
-      <BarraViva />
+    <Suspense fallback={<BarraSinConsulta destinos={destinos} />}>
+      <BarraViva destinos={destinos} />
     </Suspense>
   );
 }
@@ -74,19 +123,19 @@ export function NavEscritorio(_props: { role?: Role }) {
 }
 
 function PastillasVivas() {
-  const u = useUbicacion();
+  const u = useUbicacion(false);
   return <PastillasEscritorio {...u} />;
 }
 
 function PastillasEscritorio({ pathname, busqueda, activa }: { pathname: string | null; busqueda: string; activa: string | null }) {
   const ruta = usePathname() ?? '/';
-  const propia = useFichaPropia();
-  const marcada = pathname === null ? pestanaDeRuta(ruta, false, propia) : activa;
-  const [recordadas, guardar] = useRecordadas();
+  const sinConsulta = usePestanaMarcada(ruta, false, false);
+  const marcada = pathname === null ? sinConsulta : activa;
+  const [recordadas] = useRecordadas();
 
   useEffect(() => {
-    if (marcada) guardar(marcada, urlActual());
-  }, [ruta, busqueda, marcada, guardar]);
+    recordarSiEsSuya(DESTINOS_APP, marcada, deLaPestanaApp);
+  }, [ruta, busqueda, marcada]);
 
   return (
     <nav aria-label="Secciones" data-barra="escritorio" className="hidden items-center gap-[2px] lg:flex">
@@ -97,9 +146,7 @@ function PastillasEscritorio({ pathname, busqueda, activa }: { pathname: string 
           href={hrefDePestana(d, marcada, recordadas)}
           activa={marcada}
           pathname={ruta}
-          alSalir={() => {
-            if (marcada) guardar(marcada, urlActual());
-          }}
+          alSalir={() => recordarSiEsSuya(DESTINOS_APP, marcada, deLaPestanaApp)}
         />
       ))}
     </nav>
@@ -119,6 +166,7 @@ function PastillaEscritorio({
   pathname: string;
   alSalir: () => void;
 }) {
+  const router = useRouterOpcional();
   const [intencion, setIntencion] = useState(false);
   const es = destino.clave === activa;
   const toque = toquePestana(pathname, destino, activa);
@@ -135,10 +183,8 @@ function PastillaEscritorio({
       onFocus={avisar}
       onClick={(e) => {
         if (!es) alSalir();
-        if (toque.accion !== 'subir') return;
-        e.preventDefault();
-        const quieto = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        window.scrollTo({ top: 0, behavior: quieto ? 'auto' : 'smooth' });
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+        if (resolverToque({ toque, destino, href, deLaPestana: deLaPestanaApp, router })) e.preventDefault();
       }}
       className="group relative flex h-[44px] items-center rounded-full outline-none [-webkit-tap-highlight-color:transparent]"
     >
@@ -156,7 +202,7 @@ function ContenidoPastilla({ destino, es }: { destino: DestinoBarra; es: boolean
     <span
       data-pendiente={pending || undefined}
       className={cn(
-        'inline-flex h-[34px] items-center gap-[6px] rounded-full px-[12px] text-[13px] transition-colors duration-150 ease-out group-focus-visible:ring-2 group-focus-visible:ring-ring',
+        'inline-flex h-[34px] items-center gap-[6px] rounded-full px-[12px] text-[13px] transition-[color,background-color,scale] duration-150 ease-out group-active:scale-[0.96] group-focus-visible:ring-2 group-focus-visible:ring-ring',
         marcada ? 'bg-secondary font-semibold text-foreground' : 'font-medium text-muted-foreground group-hover:bg-accent group-hover:text-foreground',
       )}
     >

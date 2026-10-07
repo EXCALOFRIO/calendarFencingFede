@@ -11,8 +11,10 @@
  *    nombre lo impide y la unión no tiene una prueba decisiva, vuelve a ser raíz
  *    (`merged_into_person_id = NULL`). Pruebas decisivas: la misma licencia o el mismo ID FIE
  *    (también una fusión `misma_licencia_*`), la continuidad del cuadro (`cadena_del_cuadro`), el
- *    mismo club con el mismo año de nacimiento, o la misma fecha de nacimiento exacta con ID FIE
- *    y licencia (`misma_fecha_nacimiento`). Hermanos y primos sólo se quedan con licencia o ID.
+ *    mismo club con el mismo año de nacimiento, la misma fecha de nacimiento exacta con ID FIE
+ *    y licencia (`misma_fecha_nacimiento`), o una revisión manual (`revision_manual`, cuyos
+ *    nombres cuentan además como nombres de la raíz). Hermanos y primos sólo se quedan con
+ *    licencia, ID o revisión manual.
  * 2) Puestos y lados de asalto por nombre (PDF, Engarde y EFC sin licencia, nación ESP o sin
  *    nación) cuyo nombre tiene los apellidos cruzados respecto a su persona: se desvinculan
  *    (`person_id = NULL`) para que el paso por nombre los vuelva a resolver con el orden. Un lado
@@ -53,6 +55,9 @@ type Fila = { id: string; n: string; m: string | null; atleta: string | null; pa
 
 /** Tipo de fusión del candidato (`misma_licencia_rfee:X` → `misma_licencia_rfee`). */
 const tipoFusion = (evidencia: string | null) => (evidencia ?? '').split(':')[0] || null;
+
+/** Evidencia (`revision_manual:<motivo>`) de las uniones decididas a mano tras revisar las fuentes. */
+export const FUSION_REVISION_MANUAL = 'revision_manual';
 
 export function separarUnionesPorNombre(db: DatabaseSync, nacimientos: ReadonlyMap<string, readonly string[]> = new Map()): InformeSeparacion {
   const inf: InformeSeparacion = {
@@ -100,6 +105,9 @@ export function separarUnionesPorNombre(db: DatabaseSync, nacimientos: ReadonlyM
   ).iterate() as Iterable<{ o: string; e: string | null }>) {
     if (c.e) fusionDe.set(c.o, c.e);
   }
+  // A merge reviewed by hand is decisive, and its names identify the root: otherwise step 2 would
+  // unlink the rows it brought (a PDF with the surnames swapped) in every later lote.
+  for (const [m, e] of fusionDe) if (tipoFusion(e) === FUSION_REVISION_MANUAL) conIdentidad.add(m);
   const miembros = new Map<string, string[]>();
   for (const p of personas.values()) {
     if (!p.m) continue;
@@ -137,7 +145,7 @@ export function separarUnionesPorNombre(db: DatabaseSync, nacimientos: ReadonlyM
         const compartido = [r, ...(miembros.get(r) ?? [])].some((x) => x !== m && [...(ids.get(x) ?? [])].some((v) => idsM.has(v)));
         const ar = anios(r);
         const pruebas: PruebasUnion = {
-          identidad: compartido || tipo === 'misma_licencia_rfee' || tipo === 'misma_licencia_engarde',
+          identidad: compartido || tipo === 'misma_licencia_rfee' || tipo === 'misma_licencia_engarde' || tipo === FUSION_REVISION_MANUAL,
           continuidad: tipo === 'cadena_del_cuadro',
           clubYAnio: tipo === 'misma_fecha_nacimiento' || (!!fusion?.includes('club:') && [...anios(m)].some((y) => ar.has(y))),
         };

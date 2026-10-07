@@ -273,7 +273,7 @@ describe('tipo de competición', () => {
     expect(tokens.has(tipo('Jeux Olympiques').tono)).toBe(true);
     expect(tipo('Jeux Olympiques').tono).toBe('gold');
     expect(tipo('TNR M20', 'rfee_pdf').tono).toBe('org-rfee');
-    expect(etiquetaCategoria('M17')).toBe('Cadete (M17)');
+    expect(etiquetaCategoria('M17')).toBe('M17');
     expect(etiquetaCategoria('XX')).toBe('XX');
   });
 });
@@ -307,7 +307,7 @@ describe('estadísticas por ámbito y categoría', () => {
     expect(d.internacional.porCategoria.map((c) => [c.clave, c.competiciones])).toEqual([['ABS', 1], ['M20', 1]]);
     expect(d.nacional).toMatchObject({ competiciones: 2, oros: 1, platas: 1, victorias: 1, indiceTocados: 5 });
     expect(d.porCategoria.map((c) => [c.clave, c.etiqueta, c.competiciones]))
-      .toEqual([['ABS', 'Absoluto', 2], ['M20', 'Júnior (M20)', 2]]);
+      .toEqual([['ABS', 'Absoluto', 2], ['M20', 'M20', 2]]);
     expect(d.porTipo.map((t) => [t.clave, t.competiciones, t.tono])).toEqual([
       ['CTO_MUNDO', 1, 'primary'], ['COPA_MUNDO', 1, 'org-fie'], ['CTO_ESPANA', 1, 'org-rfee'], ['TNR', 1, 'org-rfee'],
     ]);

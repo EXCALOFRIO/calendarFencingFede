@@ -1,6 +1,5 @@
 import type { VistaPrueba } from '@/lib/sport/explorar/edicion-url';
 import type { AsaltoDePrueba, FilaPoule, RondaCuadro } from '@/lib/sport/explorar/tipos-busqueda';
-import { nombreVisible, partesNombre } from '@/lib/sport/nombre-visible';
 
 /**
  * Lógica pura de la página de una prueba (búsqueda, rondas visibles del
@@ -22,16 +21,6 @@ export function coincideNombre(nombre: string, consulta: string): boolean {
   if (palabras.length === 0) return false;
   const objetivo = ` ${normalizarBusqueda(nombre)}`;
   return palabras.every((p) => objetivo.includes(` ${p}`));
-}
-
-/**
- * Nombre para una casilla estrecha del cuadro: «Kano K.» cuando la fuente
- * separa apellidos y nombre («KANO Koki»); si no, el nombre visible entero.
- */
-export function nombreCorto(publicado: string): string {
-  const { nombre, apellidos } = partesNombre(publicado);
-  if (!nombre || !apellidos) return nombreVisible(publicado);
-  return `${nombreVisible(apellidos)} ${nombre.charAt(0).toLocaleUpperCase('es')}.`;
 }
 
 export type Filtro = { consulta: string; persona?: string };

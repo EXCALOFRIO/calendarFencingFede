@@ -8,6 +8,22 @@ import { parsearRetryAfter } from '../http-retry';
  */
 export const HOSTS_PERMITIDOS = ['fie.org', 'app.skermo.org', 'engarde-service.com', 'www.engarde-service.com'] as const;
 
+/** Saltos de redirección que se siguen; cada uno cuenta como una petición más. */
+export const MAX_REDIRECCIONES = 3;
+
+function urlPermitida(url: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  return u.protocol === 'https:' && !u.username && !u.password && (!u.port || u.port === '443') &&
+    (HOSTS_PERMITIDOS as readonly string[]).includes(u.hostname);
+}
+
+const esRedireccion = (status: number) => status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+
 export class RedDetenida extends Error {
   constructor(public readonly motivo: 'peticiones' | 'tiempo' | 'limite_remoto' | 'fuente' | 'tamano',
     public readonly retryAfterMs: number | null = null) { super(`red_${motivo}`); }
@@ -36,11 +52,8 @@ export function crearRed(opciones: {
   let peticiones = 0;
   let ultima = 0;
   let parada: RedDetenida | null = null;
-  async function pedir(url: string, init: RequestInit & { form?: Record<string, string> } = {}, maxBytes = 3 * 1024 * 1024) {
+  async function pedirUna(url: string, init: { method?: string; form?: Record<string, string> }): Promise<Response> {
     if (parada) throw parada;
-    const u = new URL(url);
-    if (u.protocol !== 'https:' || u.username || u.password || (u.port && u.port !== '443') ||
-      !(HOSTS_PERMITIDOS as readonly string[]).includes(u.hostname)) throw new Error('resultados_auto_host_no_permitido');
     if (peticiones >= opciones.maxPeticiones) throw (parada = new RedDetenida('peticiones'));
     const espera = Math.max(0, pausa - (Date.now() - ultima));
     if (espera) await new Promise((r) => setTimeout(r, espera));
@@ -48,11 +61,11 @@ export function crearRed(opciones: {
     if (restante < 2_000) throw (parada = new RedDetenida('tiempo'));
     peticiones += 1;
     ultima = Date.now();
-    let res: Response;
     try {
-      res = await transporte(url, {
+      return await transporte(url, {
         method: init.method ?? 'GET',
-        redirect: 'follow',
+        // Las redirecciones se siguen a mano para comprobar el destino contra HOSTS_PERMITIDOS.
+        redirect: 'manual',
         cache: 'no-store',
         signal: AbortSignal.timeout(Math.min(15_000, restante - 1_000)),
         headers: {
@@ -63,6 +76,29 @@ export function crearRed(opciones: {
       });
     } catch {
       throw (parada = new RedDetenida('fuente'));
+    }
+  }
+  async function pedir(url: string, init: { method?: 'POST'; form?: Record<string, string> } = {}, maxBytes = 3 * 1024 * 1024) {
+    if (parada) throw parada;
+    if (!urlPermitida(url)) throw new Error('resultados_auto_host_no_permitido');
+    let actual = url;
+    let peticion: { method?: string; form?: Record<string, string> } = init;
+    let res = await pedirUna(actual, peticion);
+    for (let saltos = 0; esRedireccion(res.status); saltos++) {
+      const destino = res.headers.get('location');
+      await res.body?.cancel();
+      if (saltos >= MAX_REDIRECCIONES) throw new Error('resultados_auto_demasiadas_redirecciones');
+      let siguiente: string;
+      try {
+        siguiente = new URL(destino ?? '', actual).href;
+      } catch {
+        throw new Error('resultados_auto_redireccion_no_permitida');
+      }
+      if (!destino || !urlPermitida(siguiente)) throw new Error('resultados_auto_redireccion_no_permitida');
+      // Como fetch: 303, y 301/302 tras un POST, siguen con GET y sin cuerpo; 307/308 repiten tal cual.
+      if (res.status === 303 || ((res.status === 301 || res.status === 302) && peticion.method === 'POST')) peticion = {};
+      actual = siguiente;
+      res = await pedirUna(actual, peticion);
     }
     if (res.status === 429 || res.status >= 500) {
       await res.body?.cancel();

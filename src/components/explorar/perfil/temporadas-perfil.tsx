@@ -74,7 +74,7 @@ function Grafico({ serie }: { serie: NonNullable<ReturnType<typeof serieTemporad
           return (
             <li key={p.temporada} className="flex min-w-0 flex-col items-center">
               <span className={cn('cifra truncate text-sm leading-tight sm:block sm:text-base', denso && 'hidden')}>{p.texto}</span>
-              <span className="text-[0.625rem] leading-tight whitespace-nowrap text-muted-foreground sm:truncate sm:text-xs">
+              <span className="text-[12px] leading-tight whitespace-nowrap text-muted-foreground sm:truncate sm:text-xs">
                 <span className={cn('sm:hidden', !rotuladaEnMovil && 'invisible')}>
                   {p.temporada.replace(/^\d{2}(\d{2})-\d{2}(\d{2})$/, '$1-$2')}
                 </span>
@@ -98,15 +98,15 @@ function FilaTemporada({ t }: { t: TemporadaPerfil }) {
       </span>
       <span className="flex flex-col items-end leading-none">
         <span className="cifra text-xl">{t.pruebas > 0 ? t.pruebas : '—'}</span>
-        <span className="text-[0.625rem] text-muted-foreground">pruebas</span>
+        <span className="text-[12px] text-muted-foreground">pruebas</span>
       </span>
       <span className="flex flex-col items-end leading-none">
         <span className="cifra text-xl">{t.mejorPuesto !== null ? `${t.mejorPuesto}º` : '—'}</span>
-        <span className="text-[0.625rem] text-muted-foreground">mejor</span>
+        <span className="text-[12px] text-muted-foreground">mejor</span>
       </span>
       <span className="flex flex-col items-end leading-none">
         <span className="cifra text-xl">{pct !== null ? `${pct}%` : '—'}</span>
-        <span className="text-[0.625rem] text-muted-foreground">ganados</span>
+        <span className="text-[12px] text-muted-foreground">ganados</span>
       </span>
     </li>
   );

@@ -7,6 +7,7 @@ import {
   type VigenciaCalculada,
   calcularVigencia,
   resumirVigencia,
+  vigenciasQueCambian,
 } from './vigencia';
 
 /**
@@ -37,6 +38,8 @@ export async function recalcularVigencia(): Promise<{
   canceladas: number;
   duplicadas: number;
   familiasConVarias: number;
+  /** Filas de `documento_vigencia` insertadas o cambiadas en esta pasada. */
+  escritas: number;
   consultas: number;
   duracionMs: number;
 }> {
@@ -67,9 +70,34 @@ export async function recalcularVigencia(): Promise<{
   const calculadas = calcularVigencia(documentos);
   const resumen = resumirVigencia(calculadas);
 
+  /*
+    Antes se reescribían las ~280 filas en cada pasada aunque el cálculo diera
+    lo mismo (solo cambiaba `calculado_en`). Ahora solo van a la base las que
+    difieren de lo guardado; `calculado_en` pasa a ser «cuándo cambió».
+  */
+  const guardadas = await db
+    .select({
+      documentoId: documentoVigencia.documentoId,
+      familia: documentoVigencia.familia,
+      asunto: documentoVigencia.asunto,
+      temporada: documentoVigencia.temporada,
+      temporadaInferida: documentoVigencia.temporadaInferida,
+      numeroCircular: documentoVigencia.numeroCircular,
+      etiquetaVersion: documentoVigencia.etiquetaVersion,
+      ordenVersion: documentoVigencia.ordenVersion,
+      versionesEnFamilia: documentoVigencia.versionesEnFamilia,
+      estado: documentoVigencia.estado,
+      sustituidaPorId: documentoVigencia.sustituidaPorId,
+      duplicadoDeId: documentoVigencia.duplicadoDeId,
+      motivo: documentoVigencia.motivo,
+    })
+    .from(documentoVigencia);
+  consultas += 1;
+  const aEscribir = vigenciasQueCambian(calculadas, guardadas);
+
   // --- 3. Escritura en tandas ---
   const ahora = new Date();
-  for (const tanda of lotesDeInsercion(calculadas, documentoVigencia)) {
+  for (const tanda of lotesDeInsercion(aEscribir, documentoVigencia)) {
     await db
       .insert(documentoVigencia)
       .values(tanda.map((v) => aFila(v, ahora)))
@@ -100,7 +128,7 @@ export async function recalcularVigencia(): Promise<{
     consultas += 1;
   }
 
-  return { ...resumen, consultas, duracionMs: Date.now() - t0 };
+  return { ...resumen, escritas: aEscribir.length, consultas, duracionMs: Date.now() - t0 };
 }
 
 function aFila(

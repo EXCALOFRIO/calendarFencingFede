@@ -50,10 +50,69 @@ export function hayBusqueda(params: Pick<URLSearchParams, 'has'> | null | undefi
  * propia (`fichaPropia`, ver `ficha-propia.ts`) y sus secciones marcan «Tú»,
  * de donde se abre como «Mi perfil deportivo».
  */
-export function pestanaDeRuta(pathname: string, conBusqueda: boolean, fichaPropia: string | null = null): ClavePestana | null {
+export function pestanaDeRuta(
+  pathname: string,
+  conBusqueda: boolean,
+  fichaPropia: string | null = null,
+  /** Pestaña desde la que se abrió una ruta neutra (`herencia-pestanas.ts`). */
+  heredada: string | null = null,
+): ClavePestana | null {
   if (pathname === RUTA_INICIO && conBusqueda) return 'buscar';
   if (esFichaPropia(pathname, fichaPropia)) return 'tu';
+  if (heredada && esRutaNeutra(pathname) && DESTINOS_APP.some((d) => d.clave === heredada)) return heredada as ClavePestana;
   return pestanaActiva(pathname, DESTINOS_APP) as ClavePestana | null;
+}
+
+/** Segmentos de `/explorar/<x>` que son pantallas de una pestaña y no una persona. */
+const PROPIOS_DE_EXPLORAR = new Set(['buscar', 'yo', 'siguiendo', 'favoritos']);
+
+/**
+ * Rutas que no son de ninguna pestaña: una persona (y sus secciones y su cara
+ * a cara), una edición y un país. Como en Instagram, se quedan en la pestaña
+ * desde la que se abrieron; abiertas con un enlace directo, marcan la de su
+ * prefijo.
+ */
+export function esRutaNeutra(pathname: string): boolean {
+  const partes = segmentos(pathname);
+  if (partes[0] !== 'explorar' || !partes[1]) return false;
+  if (partes[1] === 'ediciones') return Boolean(partes[2]);
+  return !PROPIOS_DE_EXPLORAR.has(partes[1]);
+}
+
+/**
+ * ¿Se guarda la dirección actual como la última de `marcada`? Sólo si, con
+ * lo que se sabe AHORA (la ficha propia ya apuntada, la pestaña heredada), la
+ * ruta es de esa pestaña. El primer pintado de la ficha propia marca Explorar
+ * porque aún no se sabe que es la propia; sin esta comprobación, la memoria de
+ * Explorar se quedaba con ella y la brújula llevaba siempre a la ficha propia.
+ */
+export function pestanaQueRecuerda(o: {
+  marcada: string | null;
+  pathname: string;
+  conBusqueda: boolean;
+  fichaPropia: string | null;
+  heredada: string | null;
+}): string | null {
+  if (!o.marcada) return null;
+  return pestanaDeRuta(o.pathname, o.conBusqueda, o.fichaPropia, o.heredada) === o.marcada ? o.marcada : null;
+}
+
+/**
+ * La memoria de las pestañas sin la ficha propia fuera de «Tú»: al
+ * reconocerla, una pestaña que la recordaba (Explorar, casi siempre) vuelve a
+ * su raíz. El cara a cara propio no es la ficha y se queda.
+ */
+export function sinFichaPropiaAjena(
+  recordadas: Readonly<Record<string, string>>,
+  fichaPropia: string,
+): Record<string, string> {
+  const salida: Record<string, string> = {};
+  for (const [clave, url] of Object.entries(recordadas)) {
+    const ruta = url.split(/[?#]/)[0] ?? '';
+    if (clave !== 'tu' && esFichaPropia(ruta, fichaPropia)) continue;
+    salida[clave] = url;
+  }
+  return salida;
 }
 
 /** ¿`pathname` es la ficha propia (`/explorar/<id>`) o una de sus secciones? El cara a cara no. */
@@ -78,6 +137,8 @@ export type CabeceraDeRuta =
       /** `null` mientras la pantalla pinta su propio `<h1>`. */
       titulo: string | null;
       volverA: string;
+      /** `false`: el título es un rótulo y el `<h1>` (el nombre real) lo pinta la pantalla. */
+      encabezado?: boolean;
     };
 
 const segmentos = (pathname: string) => pathname.split('/').filter(Boolean);
@@ -101,14 +162,19 @@ export function cabeceraDeRuta(pathname: string, conBusqueda: boolean, fichaProp
   if (ruta === '/ranking') return { variante: 'raiz', titulo: 'Ranking' };
   if (ruta === RUTA_SIGUIENDO || ruta === RUTA_FAVORITOS) return { variante: 'subpantalla', titulo: 'Siguiendo', volverA: RUTA_YO };
   // La edición y su prueba (`?prueba=`) son la misma pantalla: el nombre del torneo va en el contenido.
-  if (ruta.startsWith(`${RUTA_EDICIONES}/`)) return { variante: 'subpantalla', titulo: 'Competición', volverA: RUTA_EDICIONES };
+  if (ruta.startsWith(`${RUTA_EDICIONES}/`)) return { variante: 'subpantalla', titulo: 'Competición', volverA: RUTA_EDICIONES, encabezado: false };
 
   const partes = segmentos(ruta);
+  // Ficha de país y cara a cara de selecciones: el nombre de los países va en el contenido.
+  if (partes[0] === 'explorar' && partes[1] === 'pais' && partes[2]) {
+    if (partes[3] === 'contra') return { variante: 'subpantalla', titulo: 'Selecciones', volverA: `/explorar/pais/${partes[2]}`, encabezado: false };
+    return { variante: 'subpantalla', titulo: 'País', volverA: RUTA_BUSCAR, encabezado: false };
+  }
   if (partes[0] === 'explorar' && partes[1]) {
     // `/explorar/[personaId]/cara-a-cara` vuelve a la ficha; la ficha y sus secciones, a Explorar.
-    if (partes[2] === 'cara-a-cara') return { variante: 'subpantalla', titulo: 'Cara a cara', volverA: `/explorar/${partes[1]}` };
+    if (partes[2] === 'cara-a-cara') return { variante: 'subpantalla', titulo: 'Cara a cara', volverA: `/explorar/${partes[1]}`, encabezado: false };
     // La ficha propia cuelga de «Tú» (Mi perfil deportivo); el nombre de la persona va en el contenido.
-    return { variante: 'subpantalla', titulo: 'Perfil', volverA: esFichaPropia(ruta, fichaPropia) ? RUTA_YO : RUTA_INICIO };
+    return { variante: 'subpantalla', titulo: 'Perfil', volverA: esFichaPropia(ruta, fichaPropia) ? RUTA_YO : RUTA_INICIO, encabezado: false };
   }
   if (ruta === '/notificaciones') return { variante: 'subpantalla', titulo: 'Notificaciones', volverA: '/' };
   // Se abre desde el engranaje de la bandeja: con un enlace directo, «Volver» sube a ella.

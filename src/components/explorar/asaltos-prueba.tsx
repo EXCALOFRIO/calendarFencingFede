@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { CSSProperties } from 'react';
 import { BanderaPais } from '@/components/bandera';
 import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
+import { construirUrlCaraACara } from '@/lib/sport/explorar/cara-a-cara-url';
 import { etiquetaCortaRonda } from '@/lib/sport/explorar/ediciones-asaltos';
 import type {
   AsaltoDePrueba,
@@ -10,14 +11,13 @@ import type {
   RondaCuadro,
   TiradorAsalto,
 } from '@/lib/sport/explorar/tipos-busqueda';
-import { nombreVisible } from '@/lib/sport/nombre-visible';
+import { nombreCompacto, nombreVisible } from '@/lib/sport/nombre-visible';
 import { cn } from '@/lib/utils';
 import type { EnlaceFicha } from './prueba/enlaces';
 import { HojaPoule } from './prueba/hoja-poule';
 import {
   huecosCuadro,
   inicioPorDefecto,
-  nombreCorto,
   resaltado,
   separarRondas,
   ventanaRondas,
@@ -28,12 +28,12 @@ import {
 /**
  * Poules y cuadro de una prueba, sin estado propio: la vista de la prueba
  * decide qué rondas se ven y a quién se resalta. Nada desborda en horizontal:
- * en móvil la poule es una lista (la matriz se abre a pantalla completa) y el
+ * en móvil la poule es una lista (la hoja de poule se abre a pantalla completa) y el
  * cuadro enseña dos rondas en lugar de tres.
  */
 
 const ENLACE_NOMBRE =
-  'rounded-sm underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
+  'rounded-sm underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none';
 
 const SIN_FILTRO: Filtro = { consulta: '' };
 
@@ -57,7 +57,7 @@ function Nombre({
   className?: string;
 }) {
   const completo = nombreVisible(t.nombre);
-  const texto = corto ? nombreCorto(t.nombre) : completo;
+  const texto = corto ? nombreCompacto(t.nombre) : completo;
   const titulo = texto === completo ? undefined : completo;
   if (!t.personaId || !enlace) {
     return (
@@ -72,10 +72,10 @@ function Nombre({
       prefetch={false}
       transitionTypes={AVANZAR}
       title={titulo}
-      aria-label={titulo ? `Ficha de ${completo}` : undefined}
       className={cn(ENLACE_NOMBRE, tactil ? 'flex min-h-[44px] flex-1 items-center' : 'truncate', className)}
     >
       {tactil ? <span className="min-w-0 truncate">{texto}</span> : texto}
+      {titulo ? <span className="sr-only">: {completo}</span> : null}
     </Link>
   );
 }
@@ -88,7 +88,8 @@ export function idPoule(ronda: string): string {
   return `poule-${ronda.replace(/[^A-Za-z0-9_-]/g, '')}`;
 }
 
-const COLUMNAS_LISTA = 'grid-cols-[1rem_minmax(0,1fr)_repeat(3,1.5rem)_2rem]';
+// En px: en rem, con el texto grande del sistema las cifras se comían la columna del nombre (24 px a 320 px).
+const COLUMNAS_LISTA = 'grid-cols-[16px_minmax(0,1fr)_repeat(3,24px)_32px]';
 
 function Poule({ poule, enlace, filtro }: { poule: PouleDePrueba; enlace?: EnlaceFicha; filtro: Filtro }) {
   const id = idPoule(poule.ronda);
@@ -106,14 +107,17 @@ function Poule({ poule, enlace, filtro }: { poule: PouleDePrueba; enlace?: Enlac
       <header className="flex min-h-[44px] items-center justify-between gap-2 border-b px-3 py-1.5">
         <span className="flex min-w-0 items-baseline gap-2">
           <h3 id={`${id}-titulo`} className="truncate text-base leading-tight">{poule.etiqueta}</h3>
-          <span className="text-xs text-muted-foreground">{poule.filas.length}</span>
+          <span className="text-xs text-muted-foreground">
+            {poule.filas.length}
+            <span className="sr-only"> tiradores</span>
+          </span>
         </span>
         <HojaPoule poule={poule} enlace={enlace} filtro={filtro} className="sm:hidden" />
       </header>
 
-      {/* Móvil: una fila por tirador con sus cifras; la matriz se abre en una hoja. */}
+      {/* Móvil: una fila por tirador con sus cifras; la hoja de poule se abre aparte. */}
       <div className="sm:hidden">
-        <div aria-hidden className={cn('grid gap-x-1.5 px-3 pt-1.5 text-[12px] text-muted-foreground', COLUMNAS_LISTA)}>
+        <div aria-hidden className={cn('grid gap-x-[6px] px-[12px] pt-1.5 text-[12px] text-muted-foreground', COLUMNAS_LISTA)}>
           <span />
           <span />
           <span className="text-center">V</span>
@@ -126,7 +130,7 @@ function Poule({ poule, enlace, filtro }: { poule: PouleDePrueba; enlace?: Enlac
             <li
               key={f.clave}
               className={cn(
-                'grid min-h-[44px] items-center gap-x-1.5 px-3 text-sm',
+                'grid min-h-[44px] items-center gap-x-[6px] px-[12px] text-sm',
                 COLUMNAS_LISTA,
                 resaltado(f, filtro) && 'bg-marcado',
               )}
@@ -134,7 +138,7 @@ function Poule({ poule, enlace, filtro }: { poule: PouleDePrueba; enlace?: Enlac
               <span className="cifra text-right text-muted-foreground">{i + 1}</span>
               <span className="flex min-w-0 items-center gap-1.5">
                 {f.pais ? <BanderaPais pais={f.pais} soloBandera /> : null}
-                {/* Por encima del área táctil del botón de la matriz, que cubre la tarjeta. */}
+                {/* Por encima del área táctil del botón de la hoja de poule, que cubre la tarjeta. */}
                 <Nombre t={f} enlace={enlace} corto tactil className="relative z-[1] min-w-0 font-medium" />
               </span>
               <span className="cifra text-center font-semibold">
@@ -158,7 +162,7 @@ function Poule({ poule, enlace, filtro }: { poule: PouleDePrueba; enlace?: Enlac
         </ol>
       </div>
 
-      {/* Desde sm: la matriz completa, con columnas fijas para que nunca se salga. */}
+      {/* Desde sm: la hoja de poule completa, con columnas fijas para que nunca se salga. */}
       <table className="hidden w-full table-fixed border-collapse text-sm sm:table">
         <caption className="sr-only">
           {poule.etiqueta}: tantos de cada fila contra cada columna. V indica victoria.
@@ -183,10 +187,10 @@ function Poule({ poule, enlace, filtro }: { poule: PouleDePrueba; enlace?: Enlac
                 <span className="sr-only">Contra el </span>{i + 1}
               </th>
             ))}
-            <th scope="col" className="py-1.5 text-center font-medium"><abbr title="Victorias">V</abbr></th>
-            <th scope="col" className="py-1.5 text-center font-medium"><abbr title="Tocados dados">TD</abbr></th>
-            <th scope="col" className="py-1.5 text-center font-medium"><abbr title="Tocados recibidos">TR</abbr></th>
-            <th scope="col" className="py-1.5 pr-2 text-right font-medium"><abbr title="Índice (TD − TR)">Ind</abbr></th>
+            <th scope="col" className="py-1.5 text-center font-medium"><abbr title="Victorias" aria-hidden>V</abbr><span className="sr-only">Victorias</span></th>
+            <th scope="col" className="py-1.5 text-center font-medium"><abbr title="Tocados dados" aria-hidden>TD</abbr><span className="sr-only">Tocados dados</span></th>
+            <th scope="col" className="py-1.5 text-center font-medium"><abbr title="Tocados recibidos" aria-hidden>TR</abbr><span className="sr-only">Tocados recibidos</span></th>
+            <th scope="col" className="py-1.5 pr-2 text-right font-medium"><abbr title="Índice (TD − TR)" aria-hidden>Ind</abbr><span className="sr-only">Índice</span></th>
           </tr>
         </thead>
         <tbody>
@@ -237,7 +241,7 @@ export function PoulesDePrueba({
     return <p className="text-sm text-muted-foreground">Sin poules.</p>;
   }
   return (
-    <div className="grid gap-3 lg:grid-cols-2">
+    <div className="grid gap-3 xl:grid-cols-2">
       {poules.map((p) => (
         <Poule key={p.ronda} poule={p} enlace={enlace} filtro={filtro} />
       ))}
@@ -254,18 +258,29 @@ function Lado({ t, gana, enlace, marcado }: { t: TiradorAsalto; gana: boolean; e
   return (
     <div
       className={cn(
-        'flex min-h-[40px] min-w-0 items-center gap-1.5 px-2',
+        'flex min-h-[40px] min-w-0 items-center gap-1.5 pl-2',
         gana ? 'font-semibold text-foreground' : 'text-muted-foreground',
         marcado && 'bg-marcado',
       )}
     >
       {t.pais ? <BanderaPais pais={t.pais} soloBandera /> : null}
       <Nombre t={t} enlace={enlace} corto tactil className="min-h-[40px] min-w-0 flex-1 text-[13px]" />
-      <span className="cifra shrink-0 text-sm tabular-nums">
-        {gana ? <span className="sr-only">ganó con </span> : null}
-        {t.tantos}
-      </span>
     </div>
+  );
+}
+
+function Tantos({ t, gana, marcado }: { t: TiradorAsalto; gana: boolean; marcado: boolean }) {
+  return (
+    <span
+      className={cn(
+        'cifra flex min-h-[40px] items-center justify-end pr-2 text-sm tabular-nums',
+        gana ? 'font-semibold text-foreground' : 'text-muted-foreground',
+        marcado && 'bg-marcado',
+      )}
+    >
+      {gana ? <span className="sr-only">ganó con </span> : null}
+      {t.tantos}
+    </span>
   );
 }
 
@@ -273,21 +288,58 @@ export function idAsalto(id: string): string {
   return `asalto-${id}`;
 }
 
+/**
+ * Cara a cara de los dos tiradores de un asalto, desde quien esté resaltado
+ * (si es uno de ellos) o desde el de arriba. `null` si a alguno le falta ficha.
+ */
+export function caraACaraDeAsalto(a: Pick<AsaltoDePrueba, 'a' | 'b'>, filtro: Filtro): string | null {
+  const { a: x, b: y } = a;
+  if (!x.personaId || !y.personaId || x.personaId === y.personaId) return null;
+  const [yo, rival] = filtro.persona && y.personaId === filtro.persona ? [y.personaId, x.personaId] : [x.personaId, y.personaId];
+  return construirUrlCaraACara(yo, { rival });
+}
+
 function Asalto({ a, enlace, filtro, ronda }: { a: AsaltoDePrueba; enlace?: EnlaceFicha; filtro: Filtro; ronda: string }) {
   const marcadoA = resaltado(a.a, filtro);
   const marcadoB = resaltado(a.b, filtro);
+  const ganaA = a.a.tantos > a.b.tantos;
+  const ganaB = a.b.tantos > a.a.tantos;
+  const duelo = caraACaraDeAsalto(a, filtro);
+  // Los tantos son el enlace al cara a cara: una columna de 44 px que se toca en las dos filas.
+  const tantos = (
+    <>
+      <Tantos t={a.a} gana={ganaA} marcado={marcadoA} />
+      <Tantos t={a.b} gana={ganaB} marcado={marcadoB} />
+    </>
+  );
   return (
     <div
       id={idAsalto(a.id)}
       data-resaltado={marcadoA || marcadoB ? 'true' : undefined}
       className={cn(
-        'min-w-0 scroll-mt-24 divide-y overflow-hidden rounded-md border bg-card',
+        'grid min-w-0 scroll-mt-24 grid-cols-[minmax(0,1fr)_44px] overflow-hidden rounded-md border bg-card',
         (marcadoA || marcadoB) && 'border-primary ring-1 ring-primary',
       )}
     >
       <span className="sr-only">{ronda}: </span>
-      <Lado t={a.a} gana={a.a.tantos > a.b.tantos} enlace={enlace} marcado={marcadoA} />
-      <Lado t={a.b} gana={a.b.tantos > a.a.tantos} enlace={enlace} marcado={marcadoB} />
+      <div className="min-w-0 divide-y">
+        <Lado t={a.a} gana={ganaA} enlace={enlace} marcado={marcadoA} />
+        <Lado t={a.b} gana={ganaB} enlace={enlace} marcado={marcadoB} />
+      </div>
+      {duelo ? (
+        <Link
+          href={duelo}
+          prefetch={false}
+          transitionTypes={AVANZAR}
+          data-enlace="cara-a-cara"
+          aria-label={`${a.a.tantos} a ${a.b.tantos}. Cara a cara de ${nombreVisible(a.a.nombre)} y ${nombreVisible(a.b.nombre)}`}
+          className="flex min-w-0 flex-col divide-y transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset motion-reduce:transition-none"
+        >
+          {tantos}
+        </Link>
+      ) : (
+        <div className="flex min-w-0 flex-col divide-y">{tantos}</div>
+      )}
     </div>
   );
 }
@@ -296,7 +348,7 @@ function Asalto({ a, enlace, filtro, ronda }: { a: AsaltoDePrueba; enlace?: Enla
 const FLECHA =
   'group inline-flex size-[44px] items-center justify-center rounded-full focus-visible:outline-none disabled:pointer-events-none';
 const FLECHA_VISIBLE =
-  'inline-flex size-[36px] items-center justify-center rounded-full border border-input bg-secondary text-foreground transition-colors group-hover:bg-accent group-focus-visible:ring-[3px] group-focus-visible:ring-ring/50 group-disabled:opacity-35 motion-reduce:transition-none';
+  'inline-flex size-[36px] items-center justify-center rounded-full border border-input bg-secondary text-foreground transition-colors group-hover:bg-accent group-focus-visible:ring-[3px] group-focus-visible:ring-ring group-disabled:opacity-35 motion-reduce:transition-none';
 
 function Flechas({
   desde,

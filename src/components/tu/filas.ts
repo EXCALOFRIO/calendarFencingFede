@@ -40,8 +40,8 @@ export function seccionesDeTu({ role, fichaPropia, convocatorias: conv }: Entrad
 
   const propias: FilaTu[] = [];
   // Sin ficha vinculada, un tirador va a su cuenta, que es donde se vincula; a quien no compite no se le ofrece.
-  if (fichaPropia) propias.push({ clave: 'perfil-deportivo', etiqueta: 'Mi perfil deportivo', href: fichaPropia });
-  else if (tirador) propias.push({ clave: 'perfil-deportivo', etiqueta: 'Mi perfil deportivo', href: '/perfil', detalle: 'Sin vincular' });
+  if (fichaPropia) propias.push({ clave: 'perfil-deportivo', etiqueta: 'Perfil deportivo', href: fichaPropia });
+  else if (tirador) propias.push({ clave: 'perfil-deportivo', etiqueta: 'Perfil deportivo', href: '/perfil', detalle: 'Sin vincular' });
   propias.push({ clave: 'siguiendo', etiqueta: 'Siguiendo', href: '/explorar/siguiendo' });
   if (tirador) propias.push({ clave: 'estado', etiqueta: 'Mi estado', href: '/estado' });
 

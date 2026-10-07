@@ -48,6 +48,8 @@ const TORNEOS = (
   process.env.TORNEOS ??
   [
     'takamatsu:85f9a75e-7014-458c-9290-f18c1d3d73f8',
+    // Copa del Mundo con la lista de la FIE (enlazada) y la de Skermo (sin ID: sin enlace).
+    'copa-inscritos:7c74175a-367f-4ea6-82e4-035849c772e1',
     'samsun-terminado:0a0f5913-7059-4c14-addc-323adeab3711',
     'medina-terminado:5564641d-700e-483a-a51c-c47e379dc5a9',
     // Terminado y sin nada vinculado: la banda de resultados no tiene que salir.
@@ -110,6 +112,18 @@ const binding: D1Binding = {
 const ctx = { ...crearContexto().ctx, db: createD1Database(binding) };
 
 const { getEvent } = await import('@/lib/queries/calendar');
+const { db } = await import('@/db');
+const { leerListaUnidaTrasGuarda } = await import('@/lib/queries/inscritos-union');
+const { aListaPublica, conExtras, paresDeLista } = await import('@/lib/queries/calendario-cache-modelo');
+const { leerExtrasInscritos } = await import('@/lib/queries/inscritos-extras');
+const { aListaVisible } = await import('@/lib/entries/union');
+
+/** La lista oficial con las mismas lecturas que la caché compartida, sin cuenta (nada es «tuyo»). */
+async function inscritosDe(id: string) {
+  const lista = aListaPublica(await leerListaUnidaTrasGuarda([id]));
+  const conTodo = conExtras(lista, await leerExtrasInscritos(db, paresDeLista(lista)));
+  return { oficiales: aListaVisible(conTodo.filas, new Set()), estados: conTodo.estados, pendientes: [] };
+}
 const { cargarPodiosEvento } = await import('@/lib/queries/evento-resultados');
 const { FichaEvento } = await import('@/components/calendario/ficha-evento');
 const { CabeceraFicha } = await import('@/components/calendario/cabecera-ficha');
@@ -147,8 +161,7 @@ async function pagina(id: string): Promise<string> {
       React.createElement(FichaEvento, {
         evento,
         tirador: null,
-        // La lista de inscritos exige sesión: aquí se pinta vacía.
-        inscritos: { oficiales: [], estados: {}, pendientes: [] },
+        inscritos: await inscritosDe(id),
       }),
     ),
   );
@@ -198,6 +211,7 @@ const BANDAS: [clave: string, selector: string][] = [
   ['resultados', 'section[aria-labelledby="resultados-torneo"]'],
   ['inscripcion', 'section:has(> header > h3:text-is("Inscripción"))'],
   ['donde', 'section:has(> header > h3:text-is("Dónde y cuándo"))'],
+  ['inscritos', 'section:has(> header > h3:text-is("¿Estás dentro?"))'],
   ['convocatoria', 'section:has(> header > h3:text-is("Convocatoria"))'],
 ];
 

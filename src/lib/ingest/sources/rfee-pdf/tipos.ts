@@ -100,7 +100,10 @@ export type ExclusionesPdf = {
   bye: number;
   /** El documento no publica marcador del cruce o de la celda. */
   sinMarcador: number;
-  /** Ningún ganador marcado (doble derrota o empate). */
+  /**
+   * Ningún ganador marcado (doble derrota o empate), o victoria por prioridad con los tocados
+   * iguales: el asalto se guarda sólo con su marcador y no diría quién ganó.
+   */
   sinGanador: number;
   /** El marcador, el ganador o la matriz se contradicen. */
   incoherente: number;

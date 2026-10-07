@@ -31,6 +31,7 @@ import { hoyMadrid } from '@/lib/callups/fechas';
 import { esEnlaceDeResultados } from '@/lib/calendario/enlaces-directo';
 
 import { BarraPlazos } from './barra-plazos';
+import { FilaInscrito } from './fila-inscrito';
 import { PastillaDirectoDePrueba } from './enlace-directo';
 import { AccesoAlPabellon, HorariosTorneo, horariosDelTorneo } from './horarios-torneo';
 import {
@@ -52,6 +53,7 @@ import {
   sedeDe,
 } from './ficha/datos-ficha';
 import { RelojSede } from './ficha/horas';
+import { sinDuplicadosEnPantalla } from '@/lib/entries/duplicados-pantalla';
 import { ResultadosTorneo } from './ficha/resultados-torneo';
 import { torneoTerminado } from './ficha/terminado';
 import {
@@ -427,6 +429,7 @@ export function FichaEvento({
           eventoId={evento.id}
           retorno={retornoCalendario}
           pruebaElegida={prueba?.id ?? null}
+          competicion={prueba}
         />
       ) : null}
 
@@ -743,8 +746,9 @@ export function BandaEstasDentro({
   const [todos, setTodos] = React.useState(false);
   React.useEffect(() => setTodos(false), [prueba.id]);
 
-  const oficiales = (inscritos?.oficiales ?? []).filter(
-    (i) => i.competitionId === prueba.id,
+  // La copia de Skermo de quien ya sale enlazado por la FIE no se pinta ni se cuenta dos veces.
+  const oficiales = sinDuplicadosEnPantalla(
+    (inscritos?.oficiales ?? []).filter((i) => i.competitionId === prueba.id),
   );
   const estasDentro = oficiales.some((o) => o.esMio);
 
@@ -826,30 +830,7 @@ export function BandaEstasDentro({
 
           <ItemGroup className="divide-y overflow-hidden rounded-md border">
             {visibles.map((i, n) => (
-              <Item
-                key={`${i.competitionId}-${i.equipo ?? ''}-${i.nombre}-${n}`}
-                size="sm"
-                className={cn(
-                  'rounded-none px-3 py-1.5',
-                  i.esMio && 'bg-marcado',
-                )}
-              >
-                <ItemContent className="min-w-0">
-                  <ItemTitle className="w-full min-w-0 flex-wrap text-[14px] leading-[20px]">
-                    <span className="min-w-0 break-words">{titular(i.nombre)}</span>
-                    {i.esMio ? (
-                      <Badge variant="secondary" className="ml-1">
-                        tú
-                      </Badge>
-                    ) : null}
-                  </ItemTitle>
-                </ItemContent>
-                {i.club ? (
-                  <ItemActions className="min-w-0 basis-full break-words text-[13px] text-muted-foreground sm:basis-auto">
-                    {titular(i.club)}
-                  </ItemActions>
-                ) : null}
-              </Item>
+              <FilaInscrito key={`${i.competitionId}-${i.equipo ?? ''}-${i.nombre}-${n}`} inscrito={i} />
             ))}
           </ItemGroup>
 
@@ -917,21 +898,25 @@ function BandaConvocatoria({
       {evento.documents.length > 0 || retransmisiones.length > 0 ? (
         <ItemGroup className="gap-1">
           {evento.documents.map((d) => (
-            <Item key={d.id} asChild size="sm" variant="outline" className={FILA_ENLACE}>
-              <a href={d.url} target="_blank" rel="noreferrer">
-                <ItemMedia variant="icon" className="size-[32px]">
-                  <FileText />
-                </ItemMedia>
-                <ItemContent>
-                  <ItemTitle className="text-[14px] leading-[20px]">
-                    {titularDocumento(d.title)}
-                  </ItemTitle>
-                </ItemContent>
-                <ItemActions>
-                  <ExternalLink className="size-4 text-muted-foreground" />
-                </ItemActions>
-              </a>
-            </Item>
+            // `ItemGroup` es `role="list"`: cada enlace va dentro de su `listitem`.
+            <div key={d.id} role="listitem">
+              <Item asChild size="sm" variant="outline" className={FILA_ENLACE}>
+                <a href={d.url} target="_blank" rel="noreferrer">
+                  <ItemMedia variant="icon" className="size-[32px]">
+                    <FileText />
+                  </ItemMedia>
+                  <ItemContent>
+                    <ItemTitle className="text-[14px] leading-[20px]">
+                      {titularDocumento(d.title)}
+                    </ItemTitle>
+                  </ItemContent>
+                  <ItemActions>
+                    <ExternalLink className="size-4 text-muted-foreground" aria-hidden />
+                    <span className="sr-only">(se abre en otra pestaña)</span>
+                  </ItemActions>
+                </a>
+              </Item>
+            </div>
           ))}
 
           {/*
@@ -939,21 +924,24 @@ function BandaConvocatoria({
             Fencing Time Live van como pastilla junto a la prueba elegida.
           */}
           {retransmisiones.map((l) => (
-            <Item key={l.id} asChild size="sm" variant="outline" className={FILA_ENLACE}>
-              <a href={l.url} target="_blank" rel="noreferrer">
-                <ItemMedia variant="icon" className="size-[32px] text-ok">
-                  <Radio />
-                </ItemMedia>
-                <ItemContent>
-                  <ItemTitle className="text-[14px] leading-[20px]">
-                    {l.label ? titular(l.label) : titular(l.platform)}
-                  </ItemTitle>
-                </ItemContent>
-                <ItemActions>
-                  <ExternalLink className="size-4 text-muted-foreground" />
-                </ItemActions>
-              </a>
-            </Item>
+            <div key={l.id} role="listitem">
+              <Item asChild size="sm" variant="outline" className={FILA_ENLACE}>
+                <a href={l.url} target="_blank" rel="noreferrer">
+                  <ItemMedia variant="icon" className="size-[32px] text-ok">
+                    <Radio />
+                  </ItemMedia>
+                  <ItemContent>
+                    <ItemTitle className="text-[14px] leading-[20px]">
+                      {l.label ? titular(l.label) : titular(l.platform)}
+                    </ItemTitle>
+                  </ItemContent>
+                  <ItemActions>
+                    <ExternalLink className="size-4 text-muted-foreground" aria-hidden />
+                    <span className="sr-only">(se abre en otra pestaña)</span>
+                  </ItemActions>
+                </a>
+              </Item>
+            </div>
           ))}
 
         </ItemGroup>
@@ -1035,7 +1023,7 @@ function BandaConvocatoria({
 }
 
 /** Documentos y retransmisiones en filas de 44 px: con `size="sm"` en rem y la raíz de 18 px medían 65. */
-const FILA_ENLACE = 'min-h-[44px] gap-[12px] px-[12px] py-[6px]';
+const FILA_ENLACE = 'min-h-[44px] gap-[12px] px-[12px] py-[5px]';
 
 /** Los enlaces del PDF llegan a veces sin esquema («www.uvehoteles.com»). */
 function urlAbsoluta(valor: string): string {

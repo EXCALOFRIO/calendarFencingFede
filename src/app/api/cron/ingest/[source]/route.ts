@@ -43,8 +43,11 @@ export async function GET(
     triggeredBy: forzar ? 'cron:forzado' : 'cron',
     forzar,
   });
-  // Con o sin error: una carga a medias también cambia datos. Nunca lanza.
-  const tras = await trasIngesta(source);
+  /*
+    Con o sin error: una carga a medias también cambia datos. Solo se salta la
+    invalidación si la fuente dice que no escribió nada. Nunca lanza.
+  */
+  const tras = await trasIngesta(source, { resultado });
 
   /**
    * Siempre 200, incluso si la ingestión falló: `runIngest` no lanza y deja

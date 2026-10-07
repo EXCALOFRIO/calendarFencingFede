@@ -18,6 +18,9 @@ export type MetadatosCabecera = {
   categoriaPublicada: string | null;
   fecha: string | null;
   errores: string[];
+  /** Todo lo que la cabecera nombra, aunque sea más de uno («masculino y femenino»). */
+  armasDeclaradas: Arma[];
+  generosDeclarados: Genero[];
 };
 
 const MESES: Record<string, string> = {
@@ -25,10 +28,19 @@ const MESES: Record<string, string> = {
   JUL: '07', AGO: '08', SEP: '09', SET: '09', OCT: '10', NOV: '11', DIC: '12',
 };
 
-const RE_ARMA = /\b(ESPADA|FLORETE|SABLE)\b/g;
-const RE_GENERO = /\b(MASCULIN[OA]S?|FEMENIN[OA]S?|MIXT[OA]S?)\b/g;
-const RE_FORMATO_EQ = /\bEQUIPOS?\b/;
-const RE_FORMATO_IND = /\b(INDIVIDUAL(ES)?|IND)\b/;
+// Castellano, catalán («espasa», «floret», «sabre»), francés («épée», «fleuret») e inglés («foil»).
+const RE_ARMA = /\b(ESPADA|FLORETE|SABLE|ESPASA|FLORET|SABRE|EPEE|FLEURET|FOIL|SABER)\b/g;
+const ARMA: Record<string, Arma> = {
+  ESPADA: 'ESPADA', ESPASA: 'ESPADA', EPEE: 'ESPADA',
+  FLORETE: 'FLORETE', FLORET: 'FLORETE', FLEURET: 'FLORETE', FOIL: 'FLORETE',
+  SABLE: 'SABLE', SABRE: 'SABLE', SABER: 'SABLE',
+};
+// Por la raíz («masculí», «femení», y erratas como «femeniono»), y las formas francesas e inglesas.
+const RE_GENERO = /\b(MASCUL[A-Z]*|FEMEN[A-Z]*|MIXT[A-Z]*|MIXED|HOMMES|MESSIEURS|DAMES|FEMMES|MEN|MEN'S|WOMEN|WOMEN'S)(?![A-Z'])/g;
+const generoDe = (s: string): Genero =>
+  /^(MASCUL|HOMMES|MESSIEURS|MEN)/.test(s) ? 'M' : /^(FEMEN|DAMES|FEMMES|WOMEN)/.test(s) ? 'F' : 'MIXTO';
+const RE_FORMATO_EQ = /\b(EQUIPOS?|EQUIPS|EQUIPES)\b/;
+const RE_FORMATO_IND = /\b(INDIVIDUAL(ES)?|INDIVIDUEL(LE)?S?|IND)\b/;
 const RE_FECHA_LARGA = /\b(\d{1,2})\s*(?:DE\s+)?([A-Z]{3,10})\.?\s*(?:DE\s+)?(\d{4})\b/;
 const RE_FECHA_CORTA = /\b(\d{1,2})-([A-Z]{3})-(\d{2}|\d{4})\b/;
 
@@ -75,12 +87,10 @@ export function metadatosDeCabecera(lineas: readonly string[]): MetadatosCabecer
   const norm = lineas.map(normalizar);
   const todo = norm.join(' | ');
 
-  const armas = unico([...todo.matchAll(RE_ARMA)].map((m) => m[1]));
-  const generos = unico(
-    [...todo.matchAll(RE_GENERO)].map((m): Genero => (m[1].startsWith('MASC') ? 'M' : m[1].startsWith('FEM') ? 'F' : 'MIXTO')),
-  );
+  const armas = unico([...todo.matchAll(RE_ARMA)].map((m) => ARMA[m[1]]));
+  const generos = unico([...todo.matchAll(RE_GENERO)].map((m) => generoDe(m[1])));
   let arma: Arma | null = null;
-  if (armas.length === 1) arma = armas[0] as Arma;
+  if (armas.length === 1) arma = armas[0];
   else errores.push(armas.length === 0 ? 'La cabecera no declara arma' : 'La cabecera declara más de un arma');
   let genero: Genero | null = null;
   if (generos.length === 1) genero = generos[0];
@@ -109,11 +119,13 @@ export function metadatosDeCabecera(lineas: readonly string[]): MetadatosCabecer
 
   // Subdivisión publicada en la línea del arma: año de nacimiento o «Categoría 0-1».
   let cohorte: string | null = null;
-  const iLinea = norm.findIndex((l) => /\b(ESPADA|FLORETE|SABLE)\b/.test(l));
+  const iLinea = norm.findIndex((l) => new RegExp(RE_ARMA.source).test(l));
   if (iLinea >= 0) {
     const resto = lineas[iLinea]
       .replace(/\b(espada|florete|sable)\b/gi, ' ')
       .replace(/\b(masculin[oa]s?|femenin[oa]s?|mixt[oa]s?)\b/gi, ' ')
+      .replace(/(?<!\p{L})(espasa|floret|sabre|[ée]p[ée]e|fleuret|foil|saber)(?!\p{L})/giu, ' ')
+      .replace(/(?<!\p{L})(mascul\p{L}*|femen\p{L}*|mixt\p{L}*|mixed|hommes|messieurs|dames|femmes|men|men's|women|women's)(?![\p{L}'])/giu, ' ')
       .replace(/\b(individual(es)?|equipos?|ind)\b/gi, ' ')
       .replace(/\s+/g, ' ')
       .trim();
@@ -122,5 +134,6 @@ export function metadatosDeCabecera(lineas: readonly string[]): MetadatosCabecer
 
   const fecha = [...lineas].reverse().map(parsearFecha).find((f) => f !== null) ?? null;
   const categoriaPublicada = [categoriaOriginal, cohorte].filter(Boolean).join(' ') || null;
-  return { arma, genero, formato, categoria, categoriaOriginal, cohorte, categoriaPublicada, fecha, errores };
+  return { arma, genero, formato, categoria, categoriaOriginal, cohorte, categoriaPublicada, fecha, errores,
+    armasDeclaradas: armas, generosDeclarados: generos };
 }

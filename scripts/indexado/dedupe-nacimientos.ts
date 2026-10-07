@@ -22,6 +22,7 @@ import { distanciaEdicion } from '../../src/lib/nombres';
 import { ahora, CARPETA_TRABAJO, normalizarNombre, palabrasNombre, uuid } from './comun';
 import { cabe } from './dedupe-pruebas';
 import { leerClasificacionSkermo } from './perfiles-datos';
+import { fechaFieReal } from './perfiles-fie';
 
 export const CACHE_SKERMO = join(CARPETA_TRABAJO, 'cache-skermo-competiciones');
 export const FIE_ATLETAS = join(CARPETA_TRABAJO, 'perfiles', 'fie-atletas-completo.jsonl');
@@ -49,7 +50,8 @@ export function leerFechasNacimiento(opciones: { cacheSkermo?: string; fieAtleta
     for (const linea of readFileSync(rutaFie, 'utf8').split('\n')) {
       if (!linea.trim()) continue;
       const o = JSON.parse(linea) as { fieId?: number | string; fechaNacimiento?: string };
-      if (o.fieId !== undefined && esFecha(o.fechaNacimiento)) fechas.fie.set(String(o.fieId), o.fechaNacimiento);
+      const fecha = fechaFieReal(o.fechaNacimiento);
+      if (o.fieId !== undefined && fecha && esFecha(fecha)) fechas.fie.set(String(o.fieId), fecha);
     }
   }
   const cache = opciones.cacheSkermo ?? CACHE_SKERMO;

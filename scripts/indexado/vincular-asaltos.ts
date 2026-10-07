@@ -11,7 +11,8 @@
  * Pasos, en este orden:
  *  1) Licencia Engarde (`lic:N-…`): una referencia de licencia cuyos puestos y
  *     asaltos vinculados apuntan a una sola persona raíz vincula los demás lados
- *     y puestos Engarde con esa referencia.
+ *     y puestos Engarde con esa referencia. La licencia comodín `N-000000` no cuenta
+ *     (`esLicenciaComodin`).
  *  2) Misma prueba: el nombre publicado en el asalto se compara con los puestos
  *     de su prueba (palabras iguales, subconjunto o la última palabra truncada,
  *     «RAMIREZ LARENA Al» ↔ «RAMIREZ LARENA Alejandro»), también con los otros
@@ -72,6 +73,15 @@ const PARTICULAS = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'y', 'i', 'da
  */
 const FUENTES_NOMBRE = ['rfee_pdf', 'engarde', 'efc'];
 const FUENTES_NOMBRE_SQL = FUENTES_NOMBRE.map((f) => `'${f}'`).join(', ');
+
+/**
+ * Engarde escribe `N-000000` (todo ceros tras el prefijo) a quien no tiene licencia: no identifica
+ * a nadie y, tomada como licencia, daría a una persona los puestos y asaltos de cualquier otro
+ * tirador sin licencia.
+ */
+export function esLicenciaComodin(ref: string): boolean {
+  return /^(?:lic:)?[A-Z]{0,3}-?0+$/i.test(ref.trim());
+}
 
 export type Nivel = 'exacto' | 'subconjunto' | 'prefijo';
 /** Cómo se decidió un vínculo en la prueba: por nombre o por la misma referencia ya vinculada. */
@@ -185,7 +195,11 @@ type AsaltoFila = {
 export type InformeVinculo = {
   antes: Medida;
   despues: Medida;
-  licencias: { refs: number; refsUnaPersona: number; refsVariasPersonas: number; ladosVinculados: number; puestosVinculados: number };
+  licencias: {
+    refs: number; refsUnaPersona: number; refsVariasPersonas: number; ladosVinculados: number; puestosVinculados: number;
+    /** Lados y puestos con la licencia comodín (`esLicenciaComodin`): no se usan. */
+    refsComodin: number;
+  };
   prueba: {
     pruebas: number;
     nombres: number;
@@ -304,6 +318,10 @@ class Vinculador {
   pasoLicencias(inf: InformeVinculo['licencias'], conflictos: Map<string, Set<string>>): void {
     const porRef = new Map<string, Set<string>>();
     const anotar = (ref: string, persona: string | null) => {
+      if (esLicenciaComodin(ref)) {
+        inf.refsComodin += 1;
+        return;
+      }
       const s = porRef.get(ref) ?? porRef.set(ref, new Set()).get(ref)!;
       const r = this.raiz(persona);
       if (r) s.add(r);
@@ -1029,7 +1047,7 @@ export function vincularAsaltos(
   const informe: InformeVinculo = {
     antes: medir(db),
     despues: undefined as unknown as Medida,
-    licencias: { refs: 0, refsUnaPersona: 0, refsVariasPersonas: 0, ladosVinculados: 0, puestosVinculados: 0 },
+    licencias: { refs: 0, refsUnaPersona: 0, refsVariasPersonas: 0, ladosVinculados: 0, puestosVinculados: 0, refsComodin: 0 },
     prueba: {
       pruebas: 0, nombres: 0, vinculados: { referencia: 0, exacto: 0, subconjunto: 0, prefijo: 0 }, ladosVinculados: 0,
       ladosRevinculados: 0, ambiguos: 0, sinPuesto: 0, puestoSinPersona: 0, descartadosHomonimo: 0, descartadosRonda: 0,

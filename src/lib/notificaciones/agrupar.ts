@@ -1,4 +1,4 @@
-import { construirUrlEdicion } from '@/lib/sport/explorar/edicion-url';
+import { destinoResultados } from './destinos';
 import { listaPersonas, nombrePrueba, puestoTexto, recortar, type DescripcionPrueba } from './textos';
 import type { Preferencias, TipoAviso, TipoNotificacion } from './tipos';
 
@@ -106,10 +106,7 @@ export function construirAvisosResultados(
       grupo: `competicion:${prueba.competitionId}`,
       titulo: recortar(titulo, 200),
       cuerpo: recortar(unica ? prueba.nombreEdicion : `${prueba.nombreEdicion}. ${listaPersonas(filas)}`, 1000),
-      url: construirUrlEdicion(prueba.editionId, {
-        prueba: prueba.competitionId,
-        ...(unica?.personaId ? { persona: unica.personaId } : {}),
-      }),
+      url: destinoResultados({ edicionId: prueba.editionId, pruebaId: prueba.competitionId, personaId: unica?.personaId }),
       datos: {
         contexto: recortar(prueba.nombreEdicion, 200),
         lineas: filas.slice(0, MAX_LINEAS).map((f) => ({ nombre: f.nombre, puesto: f.puesto, motivo: f.motivo })),

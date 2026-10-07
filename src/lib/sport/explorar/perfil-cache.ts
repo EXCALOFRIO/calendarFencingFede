@@ -83,22 +83,29 @@ export function rivalesGuardables(v: RivalesCompartidos): boolean {
  * se marca como propia y recupera el año de nacimiento que el veto de menores
  * quita a los demás.
  */
-async function conPropiedad(ctx: ContextoExplorador, vista: VistaFicha): Promise<VistaFicha> {
+async function conPropiedad(ctx: ContextoExplorador, vista: VistaFicha, propiaDeCuenta: Promise<string | null>): Promise<VistaFicha> {
   if (vista.tipo !== 'ok') return vista;
-  let propia = false;
-  try {
-    const perfil = await exigirPerfil(ctx);
-    const r = await resolverPersonaPropia(ctx, perfil.profileId);
-    propia = r.estado === 'confirmada' && r.personaId === vista.ficha.id;
-  } catch (error) {
-    registrar('la propiedad de la ficha no se pudo resolver', error);
-  }
+  const propia = (await propiaDeCuenta) === vista.ficha.id;
   if (!propia) return vista;
   let anio = vista.ficha.anioNacimiento;
   if (anio === null) {
     anio = (await leerCabeceras(ctx.db, [vista.ficha.id], { sinFiltrar: true }).catch(() => null))?.get(vista.ficha.id)?.anioNacimiento ?? null;
   }
   return { ...vista, ficha: { ...vista.ficha, esPropia: true, anioNacimiento: anio } };
+}
+
+/** La persona confirmada de la cuenta que mira; `null` si no tiene o no se pudo resolver. Nunca se rechaza. */
+async function personaDeCuenta(ctx: ContextoExplorador): Promise<string | null> {
+  try {
+    const perfil = await exigirPerfil(ctx);
+    const r = await resolverPersonaPropia(ctx, perfil.profileId);
+    return r.estado === 'confirmada' ? r.personaId : null;
+  } catch (error) {
+    if (!(error instanceof Error && error.message === ERROR_NO_AUTENTICADO)) {
+      registrar('la propiedad de la ficha no se pudo resolver', error);
+    }
+    return null;
+  }
 }
 
 export function crearCachesPerfil({
@@ -170,6 +177,9 @@ export function crearCachesPerfil({
     const guarda = await guardaDeSesion(ctx);
     if (guarda) return { vista: { tipo: guarda }, extras: EXTRAS_VACIOS };
     if (!UUID_RE.test(personaId)) return { vista: { tipo: 'entrada_invalida' }, extras: EXTRAS_VACIOS };
+    // La propiedad sólo depende de la cuenta: se resuelve mientras se lee la
+    // caché (o se calcula la cabecera en frío), no después.
+    const propia = personaDeCuenta(ctx);
     let leida: CabeceraCompartida;
     try {
       leida = await cabecera(personaId, ctx.hoy());
@@ -181,7 +191,7 @@ export function crearCachesPerfil({
       ]);
       return { vista, extras };
     }
-    return { vista: await conPropiedad(ctx, leida.vista), extras: leida.extras };
+    return { vista: await conPropiedad(ctx, leida.vista, propia), extras: leida.extras };
   }
 
   /** Una sección: la guarda de sesión, la caché y, si la caché falla, D1 directo. */

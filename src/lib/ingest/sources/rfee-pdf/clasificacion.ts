@@ -28,10 +28,10 @@ export type LecturaClasificacion = {
   paginas: number;
 };
 
-// Castellano, catalán («tiradors», «equips») e inglés («fencers», «teams»).
-const RE_TOTAL = /-\s*(\d+)\s+(TIRADORES|TIRADORAS|TIRADORS|EQUIPOS|EQUIPS|FENCERS|TEAMS)\)/;
-const UNIDAD_EQUIPOS = new Set(['EQUIPOS', 'EQUIPS', 'TEAMS']);
-export const RE_COLUMNA_PUESTO = /^(CL\.?|CLAS\.?|POS\.?|LUGAR|RANK|RAN)$/;
+// Castellano, catalán («tiradors», «equips»), inglés («fencers», «teams») y francés («tireurs», «équipes»).
+const RE_TOTAL = /-\s*(\d+)\s+(TIRADORES|TIRADORAS|TIRADORS|EQUIPOS|EQUIPS|FENCERS|TEAMS|TIREURS|TIREUSES|EQUIPES)\)/;
+const UNIDAD_EQUIPOS = new Set(['EQUIPOS', 'EQUIPS', 'TEAMS', 'EQUIPES']);
+export const RE_COLUMNA_PUESTO = /^(CL\.?|CLAS\.?|POS\.?|LUGAR|RANK|RAN|RG)$/;
 const RE_CABECERA_UNIDA = /^(CL\.?|CLAS\.?|POS\.?|LUGAR) (APELLIDO[- ]NOM(?:BRE)?|APELLIDOS? NOMBRE|NOMBRE|EQUIPOS?)$/;
 export const RE_PUESTO_TEXTO =
   /^(GANAN?DOR[A]?|FINALISTA|ABANDONO|ABANDONAMENT|ABAND\.?|RETIRAD[OA]|RET\.?|EXCLUID[OA]|EXCLOSA?|EXC\.?|DESCALIFICAD[OA]|DESC\.?|NO PRESENTAD[OA]|NP|DNS|DNF|DQ|FORFAIT|-+)$/;
@@ -50,7 +50,8 @@ const ETIQUETAS: [string, Columna][] = ([
   ['NAME AND FIRST NAME', 'nombre'], ['APELLIDOS NOMBRE', 'nombre'], ['APELLIDO NOMBRE', 'nombre'],
   ['APELLIDO-NOMBRE', 'nombre'], ['APELLIDO-NOM', 'nombre'], ['COGNOMS NOM', 'nombre'], ['COGNOM NOM', 'nombre'],
   ['FIRST NAME', 'nombre'], ['APELLIDOS', 'nombre'], ['APELLIDO', 'nombre'], ['COGNOMS', 'nombre'], ['COGNOM', 'nombre'],
-  ['SURNAME', 'nombre'], ['NOMBRE', 'nombre'], ['NAME', 'nombre'], ['NOM', 'nombre'],
+  ['SURNAME', 'nombre'], ['NOMBRE', 'nombre'], ['NAME', 'nombre'], ['NOM PRENOM', 'nombre'], ['NOM', 'nombre'],
+  ['RG', 'puesto'], ['DRAP', 'bandera'], ['NAT.', 'pais'], ['NAT', 'pais'], ['STATUT', 'condicion'],
   ['EQUIPOS', 'equipo'], ['EQUIPO', 'equipo'], ['EQUIPS', 'equipo'], ['EQUIP', 'equipo'], ['TEAMS', 'equipo'], ['TEAM', 'equipo'],
   ['CLAS.', 'puesto'], ['CLAS', 'puesto'], ['CL.', 'puesto'], ['CL', 'puesto'], ['POS.', 'puesto'], ['POS', 'puesto'],
   ['LUGAR', 'puesto'], ['RANK', 'puesto'], ['RAN', 'puesto'],

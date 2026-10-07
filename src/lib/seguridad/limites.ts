@@ -29,6 +29,7 @@ export const LIMITADORES = [
   'LIMITE_ARCHIVOS',
   'LIMITE_ACCIONES',
   'LIMITE_IP_SESION',
+  'LIMITE_PAGINAS',
 ] as const;
 export type NombreLimitador = (typeof LIMITADORES)[number];
 export type EntornoLimites = { [K in NombreLimitador]?: Limitador };
@@ -43,7 +44,8 @@ type Regla = {
 
 /**
  * Primera regla que coincide, gana. El orden importa: el POST de /entrar es
- * una acción de servidor, pero cuenta como acceso (por IP), no como acción.
+ * una acción de servidor, pero cuenta como acceso (por IP), no como acción; y
+ * `paginas`, que lo recoge todo, va la última.
  * Las cifras viven en `wrangler.jsonc`, una por binding.
  */
 export const REGLAS: readonly Regla[] = [
@@ -65,8 +67,13 @@ export const REGLAS: readonly Regla[] = [
   { nombre: 'archivos', limitador: 'LIMITE_ARCHIVOS', clave: 'sesion', aplica: (_p, ruta) => ruta.startsWith('/api/archivos/') },
   {
     nombre: 'acciones', limitador: 'LIMITE_ACCIONES', clave: 'sesion',
-    aplica: (p) => p.method === 'POST' && p.headers.has('next-action'),
+    // Next ejecuta como acción un POST multipart/form-data o urlencoded aunque
+    // no traiga `Next-Action` (server-action-request-meta.js): mirar la
+    // cabecera dejaría fuera esos envíos. Fuera de /api/, todo POST es acción.
+    aplica: (p, ruta) => p.method === 'POST' && !ruta.startsWith('/api/'),
   },
+  // Todo lo demás que llega al Worker: páginas, peticiones RSC, /api/notificaciones…
+  { nombre: 'paginas', limitador: 'LIMITE_PAGINAS', clave: 'ip', aplica: () => true },
 ];
 
 const COOKIES_SESION = [

@@ -31,21 +31,39 @@ function Icono({ tipo }: { tipo: TipoNotificacion }) {
   );
 }
 
-/** «Ana García 3.º · Luis Pérez 12.º y 2 más», en una línea que envuelve. */
+/**
+ * «Ana García 3.º · Luis Pérez 12.º y 2 más», en una línea que envuelve.
+ * Sin `<ul>`: va dentro del `<button>` de la fila, que sólo admite contenido
+ * de frase. Las comas para el lector van en `sr-only`.
+ */
 function Personas({ fila }: { fila: FilaBandeja }) {
   const lineas = fila.datos?.lineas ?? [];
   if (lineas.length < 2) return null;
   const vistas = lineas.slice(0, MAX_PERSONAS);
+  const resto = lineas.length - vistas.length;
   return (
-    <ul className="flex flex-wrap gap-x-[8px] text-[13px] leading-[16px] text-muted-foreground" aria-label="Personas">
+    <span className="flex flex-wrap gap-x-[8px] text-[13px] leading-[16px] text-muted-foreground">
       {vistas.map((l, i) => (
-        <li key={`${l.nombre}-${i}`} className="min-w-0 break-words">
-          <span className="text-foreground">{l.nombre}</span> <span className="whitespace-nowrap tabular-nums">{puestoTexto(l.puesto)}</span>
-        </li>
+        // Nombre y puesto como piezas separadas: un nombre que envuelve no monta sobre su puesto.
+        <span key={`${l.nombre}-${i}`} className="flex min-w-0 flex-wrap items-baseline gap-x-1 break-words">
+          <span className="min-w-0 text-foreground">{l.nombre}</span> <span className="whitespace-nowrap tabular-nums">{puestoTexto(l.puesto)}</span>
+          {i < vistas.length - 1 || resto > 0 ? <span className="sr-only">,</span> : null}
+        </span>
       ))}
-      {lineas.length > vistas.length ? <li className="whitespace-nowrap">y {lineas.length - vistas.length} más</li> : null}
-    </ul>
+      {resto > 0 ? <span className="whitespace-nowrap">y {resto} más</span> : null}
+    </span>
   );
+}
+
+/** «Esta semana» no vale como `id`: un `id` no lleva espacios. */
+function idSeccion(titulo: string): string {
+  const limpio = titulo
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  return `notif-${limpio || 'seccion'}`;
 }
 
 /**
@@ -69,6 +87,8 @@ function Grupo({ grupo, ahora, abrir }: { grupo: GrupoBandeja; ahora: number; ab
           data-leida={nueva ? 'no' : 'si'}
           className="flex min-h-[56px] w-full min-w-0 items-start gap-[12px] rounded-[12px] px-[8px] py-[10px] text-left transition-colors duration-150 outline-none [-webkit-tap-highlight-color:transparent] hover:bg-card focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
         >
+          {/* Lo primero que se oye; el punto rojo, al final, es sólo para la vista. */}
+          {nueva ? <span className="sr-only">Sin leer. </span> : null}
           <Icono tipo={fila.tipo} />
           <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
             <span className={cn('text-[14px] leading-[20px] break-words text-foreground', nueva ? 'font-semibold' : 'font-normal')}>
@@ -82,9 +102,7 @@ function Grupo({ grupo, ahora, abrir }: { grupo: GrupoBandeja; ahora: number; ab
             </span>
           </span>
           {nueva ? (
-            <span className="mt-[6px] size-[8px] shrink-0 rounded-full bg-primary">
-              <span className="sr-only">Sin leer</span>
-            </span>
+            <span aria-hidden className="mt-[6px] size-[8px] shrink-0 rounded-full bg-primary" />
           ) : null}
         </button>
       </form>
@@ -155,8 +173,8 @@ export function BandejaNotificaciones({
   return (
     <div className="flex flex-col gap-[16px]">
       {secciones.map((s) => (
-        <section key={s.titulo} aria-labelledby={`notif-${s.titulo}`} className="min-w-0">
-          <h2 id={`notif-${s.titulo}`} className="px-[8px] pb-[4px] font-sans text-[13px] leading-[16px] font-semibold tracking-normal text-muted-foreground">
+        <section key={s.titulo} aria-labelledby={idSeccion(s.titulo)} className="min-w-0">
+          <h2 id={idSeccion(s.titulo)} className="px-[8px] pb-[4px] font-sans text-[13px] leading-[16px] font-semibold tracking-normal text-muted-foreground">
             {s.titulo}
           </h2>
           <ul className="flex flex-col">

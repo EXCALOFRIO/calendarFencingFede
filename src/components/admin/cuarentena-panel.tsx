@@ -351,7 +351,7 @@ export function CuarentenaPanel({ filas }: { filas: FilaCuarentena[] }) {
                               </span>
                             ) : null}
                             {e.campo ? (
-                              <span className="min-w-0 break-words font-mono text-[11px] text-muted-foreground">
+                              <span className="min-w-0 break-words font-mono text-[12px] text-muted-foreground">
                                 {e.campo}
                               </span>
                             ) : null}
@@ -464,7 +464,7 @@ export function CuarentenaPanel({ filas }: { filas: FilaCuarentena[] }) {
                         {lista.map((e, i) => (
                           <li
                             key={`${fila.id}-crudo-${i}`}
-                            className="min-w-0 break-words font-mono text-[11px] leading-relaxed text-danger"
+                            className="min-w-0 break-words font-mono text-[12px] leading-relaxed text-danger"
                           >
                             {e.path ? `${e.path}: ` : ''}
                             {e.message ?? 'error sin mensaje'}

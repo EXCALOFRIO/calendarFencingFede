@@ -173,7 +173,7 @@ export function CeldaMarcador({
       >
         {valor}
       </span>
-      <span className="text-[0.7rem] leading-tight text-muted-foreground sm:text-xs">
+      <span className="text-[12px] leading-tight text-muted-foreground sm:text-xs">
         {palabra}
       </span>
     </div>

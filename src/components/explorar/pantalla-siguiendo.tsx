@@ -7,7 +7,7 @@ import { ListaSiguiendo } from './lista-siguiendo';
 import { PropuestasParaSeguir } from './siguiendo';
 
 const ENLACE =
-  'inline-flex min-h-[44px] items-center gap-1.5 text-[14px] text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
+  'inline-flex min-h-[44px] items-center gap-1.5 text-[14px] text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none';
 
 function Aviso({ alerta = false, icono, titulo, children }: {
   alerta?: boolean;

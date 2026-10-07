@@ -69,7 +69,7 @@ export function EstadoResultadosPrueba({
 }
 
 const ENLACE =
-  'inline-flex min-h-[44px] items-center gap-1 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none md:min-h-0';
+  'inline-flex min-h-[44px] items-center gap-1 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none';
 
 /**
  * Enlaces de resultados de una prueba. Sólo se pinta un enlace cuando el estado

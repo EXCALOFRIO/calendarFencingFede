@@ -312,7 +312,7 @@ function Circular({ fila }: { fila: FilaDocumento }) {
           <>
             <span className="cifra block text-lg text-foreground">{numero}</span>
             {anio ? (
-              <span className="block text-[11px] text-muted-foreground/70">{anio}</span>
+              <span className="block text-[12px] text-muted-foreground/70">{anio}</span>
             ) : null}
           </>
         ) : (
@@ -422,7 +422,7 @@ function Circular({ fila }: { fila: FilaDocumento }) {
           {formatDateEs(fila.publishedAt)}
         </span>
         {fila.seasonLabel ? (
-          <span className="block text-[11px] text-muted-foreground/70">
+          <span className="block text-[12px] text-muted-foreground/70">
             {fila.seasonLabel}
           </span>
         ) : null}
@@ -465,7 +465,7 @@ function Anteriores({ lista }: { lista: VersionAnterior[] }) {
         encima de cada título» es uno de los cinco rasgos de «generado por IA»
         que el usuario rechazó).
       */}
-      <li className="mb-1 text-[11px] text-muted-foreground/70">Lo que decía antes</li>
+      <li className="mb-1 text-[12px] text-muted-foreground/70">Lo que decía antes</li>
       {lista.map((v) => {
         /* Mismo criterio que arriba: sin PDF no hay enlace. */
         const Contenedor = v.pdfRoto ? 'span' : 'a';
@@ -483,7 +483,7 @@ function Anteriores({ lista }: { lista: VersionAnterior[] }) {
             */}
             <Contenedor
               {...propiedadesDeEnlace}
-              className={`flex items-baseline gap-2 py-1 text-[11px] text-muted-foreground ${
+              className={`flex items-baseline gap-2 py-1 text-[12px] text-muted-foreground ${
                 v.pdfRoto ? 'opacity-70' : 'transition-colors hover:text-foreground'
               }`}
             >

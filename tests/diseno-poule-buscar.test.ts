@@ -9,7 +9,8 @@ vi.mock('@/app/(app)/explorar/favoritos-acciones', () => ({
   quitarFavoritoAccion: vi.fn(),
 }));
 
-const { MatrizPoule, apellidoPoule } = await import('@/components/explorar/prueba/hoja-poule');
+const { MatrizPoule } = await import('@/components/explorar/prueba/hoja-poule');
+const { nombreCompacto } = await import('@/lib/sport/nombre-visible');
 const { PoulesDePrueba } = await import('@/components/explorar/asaltos-prueba');
 const { BotonSeguirCompacto } = await import('@/components/explorar/buscador-social-seguir');
 const { FilaPerfil } = await import('@/components/explorar/buscador-social-fila');
@@ -29,14 +30,14 @@ const poule: PouleDePrueba = {
   ],
 };
 
-describe('matriz de la poule: apellidos y totales fijos', () => {
-  it('se queda con el primer apellido y sus partículas', () => {
-    expect(apellidoPoule('ZABALA GUTIERREZ Juan')).toBe('Zabala');
-    expect(apellidoPoule('DE LA FUENTE RUIZ Bea')).toBe('De la Fuente');
-    expect(apellidoPoule('ANGULO SAN MARTIN Alejandro')).toBe('Angulo');
-    expect(apellidoPoule('SAN MARTIN Alejandro')).toBe('San Martin');
+describe('hoja de la poule: nombres compactos y totales fijos', () => {
+  it('primer apellido con sus partículas e inicial del nombre', () => {
+    expect(nombreCompacto('ZABALA GUTIERREZ Juan')).toBe('Zabala J.');
+    expect(nombreCompacto('DE LA FUENTE RUIZ Bea')).toBe('De la Fuente B.');
+    expect(nombreCompacto('ANGULO SAN MARTIN Alejandro')).toBe('Angulo A.');
+    expect(nombreCompacto('SAN MARTIN Alejandro')).toBe('San Martin A.');
     // Sin separar apellidos y nombre no se sabe cuál es el apellido.
-    expect(apellidoPoule('Juan Zabala')).toBe('Juan Zabala');
+    expect(nombreCompacto('Juan Zabala')).toBe('Juan Zabala');
   });
 
   it('los cinco totales van fijos a la derecha, apilados por su ancho', () => {
@@ -45,15 +46,18 @@ describe('matriz de la poule: apellidos y totales fijos', () => {
     expect(derechas).toEqual([['V', 94], ['TD', 72], ['TR', 50], ['Ind', 24], ['Pto', 0]]);
     // Cada fila repite los cinco fijos.
     expect(marcado.match(/<td class="[^"]*sticky[^"]*"/g)).toHaveLength(15);
-    // Ancho mínimo: nombre de 80 px + 3 casillas de 28 + 114 de totales.
-    expect(marcado).toContain('min-width:278px');
+    // Ancho mínimo: nombre de 96 px + 3 casillas de 26 + 114 de totales.
+    expect(marcado).toContain('min-width:288px');
   });
 
-  it('el nombre es un enlace de 44 px con el apellido y la ficha completa en la etiqueta', () => {
+  it('el nombre es un enlace de 44 px con el nombre compacto y el completo para el lector', () => {
     const marcado = html(React.createElement(MatrizPoule, { poule, enlace: (id: string) => `/explorar/${id}`, filtro: { consulta: '' } }));
-    expect(marcado).toMatch(/<a [^>]*aria-label="Ficha de Juan Zabala Gutierrez"[^>]*class="flex min-h-\[44px\][^"]*"/);
-    expect(marcado).toContain('>Zabala<');
-    expect(marcado).not.toContain('Zabala J.');
+    // Sin aria-label que tape el apellido visible (WCAG 2.5.3): el nombre entero va en sr-only.
+    expect(marcado).toMatch(/<a [^>]*class="flex min-h-\[44px\][^"]*"/);
+    expect(marcado).not.toContain('aria-label="Ficha de');
+    expect(marcado).toContain('<span class="sr-only">: Juan Zabala Gutierrez</span>');
+    expect(marcado).toContain('>Zabala J.<');
+    expect(marcado).toContain('>De la Fuente B.<');
     // Quien no tiene ficha conserva el nombre completo para el lector.
     expect(marcado).toContain('<span class="sr-only">: Carla Diaz</span>');
   });
@@ -62,7 +66,7 @@ describe('matriz de la poule: apellidos y totales fijos', () => {
 describe('lista de la poule en móvil', () => {
   it('el enlace del nombre llena su hueco con 44 px de alto sin engordar la fila', () => {
     const marcado = html(React.createElement(PoulesDePrueba, { poules: [poule], enlace: (id: string) => `/explorar/${id}`, filtro: { consulta: '' } }));
-    expect(marcado).toMatch(/<a [^>]*class="[^"]*flex min-h-\[44px\] flex-1 items-center[^"]*"[^>]*><span class="min-w-0 truncate">Zabala Gutierrez J\.<\/span><\/a>/);
+    expect(marcado).toMatch(/<a [^>]*class="[^"]*flex min-h-\[44px\] flex-1 items-center[^"]*"[^>]*><span class="min-w-0 truncate">Zabala J\.<\/span><span class="sr-only">: Juan Zabala Gutierrez<\/span><\/a>/);
     expect(marcado).toContain('grid min-h-[44px] items-center');
     expect(marcado).not.toContain('min-h-10');
     // En la tabla ancha el toque cubre la casilla del nombre.
@@ -93,7 +97,8 @@ describe('Buscar en 320 px', () => {
     })));
     expect(marcado).toContain('src="/banderas/es.png"');
     expect(marcado).not.toMatch(/<abbr[^>]*>ESP<\/abbr>/);
-    expect(marcado).toContain('<span class="sr-only">ESP</span>');
+    // El lector oye el país, no el código.
+    expect(marcado).toContain('<span class="sr-only">España</span>');
   });
 });
 

@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Seccion } from '@/components/estado/piezas';
 import { EstadoFicha, FichaCompleta } from '@/components/explorar/ficha-deportiva';
-import { Skeleton } from '@/components/ui/skeleton';
 import { cargarFichaPantalla } from '@/lib/sport/explorar/ficha-pantalla';
 import { RUTA_PERFIL, type CriteriosFicha } from '@/lib/sport/explorar/ficha-url';
 import { contextoReal } from '@/lib/sport/explorar/real';
@@ -37,14 +36,13 @@ export async function HistorialPropio({ criterios }: { criterios: CriteriosFicha
   return (
     <Seccion
       titulo={TITULO}
-      contexto="Lo que publican las federaciones sobre ti"
       accion={
         <Link
           href={rutaFicha(vista.ficha.id)}
           prefetch={false}
-          className="inline-flex min-h-11 items-center text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+          className="inline-flex min-h-11 items-center text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
         >
-          Abrir la ficha como la ven los demás
+          Ver ficha pública
         </Link>
       }
     >
@@ -57,24 +55,6 @@ export async function HistorialPropio({ criterios }: { criterios: CriteriosFicha
           nivel="seccion"
           conTitulo={false}
         />
-      </div>
-    </Seccion>
-  );
-}
-
-export function HistorialPropioCargando() {
-  return (
-    <Seccion titulo={TITULO}>
-      <div role="status" aria-live="polite" className="flex flex-col gap-3 pt-4">
-        <span className="sr-only">Cargando tu historial deportivo…</span>
-        <Skeleton className="h-6 w-1/2" />
-        <div className="flex flex-col divide-y rounded-md border bg-card" aria-hidden>
-          {Array.from({ length: 3 }, (_, i) => (
-            <div key={i} className="px-3 py-4">
-              <Skeleton className="h-5 w-3/4" />
-            </div>
-          ))}
-        </div>
       </div>
     </Seccion>
   );

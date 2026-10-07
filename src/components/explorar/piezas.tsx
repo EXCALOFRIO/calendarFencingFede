@@ -1,4 +1,7 @@
 import { ExternalLink } from 'lucide-react';
+import Link from 'next/link';
+import { BanderaPais, type TamañoBandera } from '@/components/bandera';
+import { rutaPaisDe } from '@/lib/sport/explorar/enlace-pais';
 import { cn, esFechaIsoReal, formatDateEs } from '@/lib/utils';
 
 /** Piezas de lectura que comparten la ficha deportiva y el cara a cara. */
@@ -57,7 +60,7 @@ export function Aclaracion({
 }) {
   return (
     <details className="min-w-0 text-sm">
-      <summary className="min-h-[44px] cursor-pointer content-center rounded-sm py-2 text-muted-foreground break-words hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none">
+      <summary className="min-h-[44px] cursor-pointer content-center rounded-sm py-2 text-muted-foreground break-words hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none">
         {titulo}
       </summary>
       <div className="flex min-w-0 flex-col gap-3 border-l pl-4 pb-3">{children}</div>
@@ -100,11 +103,45 @@ export function EnlaceFuente({ url, etiqueta }: { url: string | null; etiqueta: 
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex min-h-[44px] w-fit max-w-full items-center gap-1.5 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+      className="inline-flex min-h-[44px] w-fit max-w-full items-center gap-1.5 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
     >
       {etiqueta}
       <ExternalLink className="size-3.5 shrink-0" aria-hidden />
     </a>
+  );
+}
+
+/**
+ * Una bandera que abre la página de su país. Se toca en 44 × 44 aunque se vea
+ * de 18 px; sin país al que ir (código desconocido, «FIE») es la bandera sola.
+ * No puede ir dentro de otro enlace: quien la use la pone como hermana.
+ */
+export function EnlacePais({
+  pais,
+  soloBandera = true,
+  tamaño = 'fila',
+  className,
+}: {
+  pais: string | null | undefined;
+  soloBandera?: boolean;
+  tamaño?: TamañoBandera;
+  className?: string;
+}) {
+  const href = rutaPaisDe(pais);
+  if (!pais) return null;
+  if (!href) return <BanderaPais pais={pais} soloBandera={soloBandera} tamaño={tamaño} className={className} />;
+  return (
+    <Link
+      href={href}
+      prefetch={false}
+      data-enlace="pais"
+      className={cn(
+        'inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-sm focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
+        className,
+      )}
+    >
+      <BanderaPais pais={pais} soloBandera={soloBandera} tamaño={tamaño} />
+    </Link>
   );
 }
 

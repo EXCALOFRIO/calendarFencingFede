@@ -128,7 +128,7 @@ export function arneses(hoy = new Date()): Arnes[] {
   return [
     { alias: 'calendario', fichero: 'calendario-pasado.mts', paginas: /^\/\d{4}-\d{2}-(mes|resultados)$/, env: { MESES: `${mesIso(hoy)},${mesIso(anterior)}` }, cubre: 'Calendario (mes actual y pasado) y hoja de resultados' },
     { alias: 'ficha-evento', fichero: 'ficha-evento-v2.mts', paginas: /^\/[^?]+$/, cubre: 'Ficha de un torneo del calendario' },
-    { alias: 'explorar', fichero: 'explorar-app.mts', paginas: /^\/explorar(\/buscar|\/siguiendo|\/ediciones|\?q=alejandro)?$/, cubre: 'Explorar: feed, Buscar, lista, Siguiendo y Competiciones' },
+    { alias: 'explorar', fichero: 'explorar-app.mts', paginas: /^\/explorar(\/buscar(\?ver=paises)?|\/siguiendo|\/ediciones(\?q=mndial)?|\?q=alejandro)?$/, cubre: 'Explorar: feed, Buscar (tiradores, competiciones con y sin búsqueda, países), lista y Siguiendo' },
     { alias: 'perfil', fichero: 'perfil-secciones.mts', paginas: /^\/llavador-/, env: { SOLO: 'llavador' }, cubre: 'Perfil y sus secciones' },
     // La edición «por partes» por defecto no está en todas las copias y el arnés se para al no encontrarla.
     { alias: 'prueba', fichero: 'prueba-v2.mts', paginas: /^\/copa-(clasificacion|poules|directas)$/, env: { EDICION_PARTES: 'a8f16016-15ed-4f33-b5c6-beb73548a37c' }, cubre: 'Página de una prueba (clasificación, poules, directas)' },
