@@ -7,6 +7,12 @@ reproduce ningún dato personal.
 
 ## Resumen
 
+> **Actualización (7/10, 18:28 UTC):** aplicados en producción los rankings del
+> lote 13 (Estados Unidos, Singapur, Portugal y 4 temporadas más de Austria).
+> Producción tiene ahora **21 fuentes, 2.848 listas y 337.167 filas**. Las
+> cifras de abajo son las de antes de esa carga, salvo las filas marcadas
+> «lote 13».
+
 - **17 organismos y 18 fuentes**: FIE mundial (`fie_tiradores` + `fie_historico`),
   EFC europeo y 15 federaciones nacionales (RFEE y 14 extranjeras: Francia,
   Italia, Hong Kong, Hungría, Gran Bretaña, Canadá, Australia, Austria, Rumanía,
@@ -66,11 +72,11 @@ la de publicación.
 | KNAS · `knas_ranglijst` (Países Bajos) | Nacional | 2025-26–2026-27 | — | 29 | 208 | 100 % | 745 | 27,9 % | 135 | F/E/S · M/F | ABS, M23, M20, M17, M14 | 2026-09-01 (de la fuente) | Lote (lote 11b) |
 | FVE · `fve_clasificacion` (Venezuela) | Nacional | 2025-26 | sólo 1 temporada | 18 | 23 | 100 % | 776 | 3,0 % | 18 | F/E/S · M/F | ABS, M20, M17 | 2026-10-07 (observada) | Lote (lote 11b) |
 | БФФ · `bff_ranglista` (Bulgaria) | Nacional | 2025-26 | sólo 1 temporada | 26 | 430 | 100 % | 936 | 45,9 % | 230 | F/E/S · M/F | ABS, M23, M20, M17, M15, M14 | 2026-10-07 (observada) | Lote (lote 11b) |
-| **Total** | | | | **2.367** | **322.753** | **87,7 %** | | | | | | | |
-| USA Fencing · `usa_points` (Estados Unidos) — **lote 13, pendiente de aplicar** | Nacional | 2009-10–2026-27 | 2012-13 (no está en el archivo); 2009-10 sólo 2 listas | 269 | 15.338 | 100 % | 28.693 | 53,5 % | 2.447 | F/E/S · M/F | ABS, M20, M17 | 2026-09-28 (de la fuente) | Lote (lote 13) |
-| FS · `sgp_ranking` (Singapur) — **lote 13, pendiente de aplicar** | Nacional | 2019-20–2025-26 | 2026-27 todavía sin lista | 126 | 2.635 | 100 % | 6.512 | 40,5 % | 290 | F/E/S · M/F | ABS, M20, M17 | 2026-08-12 (de la fuente) | Lote (lote 13) |
-| FPE · `fpe_ranking` (Portugal) — **lote 13, pendiente de aplicar** | Nacional | 2026-27 | sólo 1 temporada (la fuente sólo publica la vigente) | 18 | 146 | 100 % | 417 | 35,0 % | 95 | F/E/S · M/F | ABS, M20, M17 | 2026-10-07 (observada) | Lote (lote 13) |
-| ÖFV · `oefv_rangliste` (Austria) — **ampliación lote 13, pendiente de aplicar** | Nacional | 2006-07, 2007-08, 2010-11 y 2011-12 | quedan 2015-16, 2018-19 y 2019-20 | 68 | 978 | 100 % | 2.229 | 43,9 % | 216 | F/E/S · M/F | ABS, M20, M17 | 2026-10-07 (observada) | Lote (lote 13) |
+| **Total antes del lote 13** | | | | **2.367** | **322.753** | **87,7 %** | | | | | | | |
+| USA Fencing · `usa_points` (Estados Unidos) — lote 13 | Nacional | 2009-10–2026-27 | 2012-13 (no está en el archivo); 2009-10 sólo 2 listas | 269 | 15.338 | 100 % | 28.693 | 53,5 % | 2.447 | F/E/S · M/F | ABS, M20, M17 | 2026-09-28 (de la fuente) | Lote (lote 13) |
+| FS · `sgp_ranking` (Singapur) — lote 13 | Nacional | 2019-20–2025-26 | 2026-27 todavía sin lista | 126 | 2.635 | 100 % | 6.512 | 40,5 % | 290 | F/E/S · M/F | ABS, M20, M17 | 2026-08-12 (de la fuente) | Lote (lote 13) |
+| FPE · `fpe_ranking` (Portugal) — lote 13 | Nacional | 2026-27 | sólo 1 temporada (la fuente sólo publica la vigente) | 18 | 146 | 100 % | 417 | 35,0 % | 95 | F/E/S · M/F | ABS, M20, M17 | 2026-10-07 (observada) | Lote (lote 13) |
+| ÖFV · `oefv_rangliste` (Austria) — ampliación lote 13 | Nacional | 2006-07, 2007-08, 2010-11 y 2011-12 | quedan 2015-16, 2018-19 y 2019-20 | 68 | 978 | 100 % | 2.229 | 43,9 % | 216 | F/E/S · M/F | ABS, M20, M17 | 2026-10-07 (observada) | Lote (lote 13) |
 
 Las cuatro filas del lote 13 son lo generado en `calendario-trabajo\rankings-lote13-int`
 (29 ficheros, 19.097 entradas, comprobados con `--comprobar`); no están en
