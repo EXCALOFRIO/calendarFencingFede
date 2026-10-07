@@ -36,7 +36,7 @@ export function clasesSeguir(siguiendo: boolean, error = false): string {
       ? 'bg-transparent text-danger ring-1 ring-danger/50 ring-inset'
       : siguiendo
         ? 'bg-secondary text-foreground ring-1 ring-filete-alto ring-inset group-hover:bg-accent'
-        : 'bg-primary text-primary-foreground group-hover:bg-primary/90',
+        : 'bg-primary text-primary-foreground group-hover:brightness-110',
   );
 }
 

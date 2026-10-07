@@ -41,20 +41,24 @@ describe('objetivos de 44 px', () => {
       } as never,
     }));
     const enlace = html.match(new RegExp(`<a [^>]*href="[^"]*${PERSONA}[^"]*"[^>]*>`))?.[0] ?? '';
-    expect(enlace).toContain('min-h-11');
+    expect(enlace).toContain('min-h-[44px]');
     expect(html.slice(html.indexOf(enlace))).toMatch(/^<a [^>]*>((?!<\/a>).)*Zhihe((?!<\/a>).)*Pekín/s);
-    expect(html).toMatch(/<span class="flex min-h-11[^"]*">((?!<\/li>).)*Natasza/s);
+    expect(html).toMatch(/<span class="flex min-h-\[44px\][^"]*">((?!<\/li>).)*Natasza/s);
   });
 
-  it('«Ver más» de Buscar mide 44 px dibujados', () => {
-    expect(CLASE_VER_MAS).toMatch(/\bh-11\b/);
+  it('«Ver más» de Buscar es texto de acento con 44 px de toque', () => {
+    expect(CLASE_VER_MAS).toMatch(/\bh-\[44px\]/);
     expect(CLASE_VER_MAS).not.toContain('before:');
   });
 
-  it('en el móvil, «Hoy» y los filtros del calendario tienen ancho fijo y la fila no salta al llegar la fuente', () => {
+  it('la cabecera del calendario usa los controles del sistema: 32 px a la vista y 44 de toque', () => {
     const vista = readFileSync(new URL('../src/components/calendario/vista.tsx', import.meta.url), 'utf8');
-    expect(vista).toContain('className="h-11 px-3 max-sm:w-11 max-sm:px-0"');
-    expect(vista).toMatch(/className="h-11 shrink-0 gap-1\.5 px-3 max-sm:max-w-24"/);
-    expect(vista).toContain('cifra min-w-0 truncate text-sm leading-none tracking-tight');
+    // Flechas y lupa como `BotonIcono` md (32 px); «Hoy» como `Boton` sm; los filtros, una fila de chips.
+    expect(vista).toMatch(/<BotonIcono\s+etiqueta=\{vista === 'mes' \? 'Mes anterior' : 'Trimestre anterior'\}\s+tamano="md"/);
+    expect(vista).toMatch(/<Boton\s+tamano="sm"\s+aria-label="Ir al mes actual"/);
+    expect(vista).toContain('<FilaChips etiqueta="Filtros del calendario">');
+    expect(vista).toContain('tipo="menu"');
+    // Nada de alturas en rem en la cabecera: con la raíz de 18 px crecían en el móvil.
+    expect(vista).not.toMatch(/className="h-11\b/);
   });
 });

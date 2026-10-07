@@ -1,4 +1,6 @@
+import { autorizarCron } from '@/lib/cron/secreto';
 import { isIngestSource, runIngest, SOURCE_DESCRIPTION } from '@/lib/ingest/runner';
+import { trasIngesta } from '@/lib/ingest/tras-ingesta';
 
 /**
  * Ingestión disparada por cron (ver `vercel.json`, una fuente por franja).
@@ -41,6 +43,8 @@ export async function GET(
     triggeredBy: forzar ? 'cron:forzado' : 'cron',
     forzar,
   });
+  // Con o sin error: una carga a medias también cambia datos. Nunca lanza.
+  const tras = await trasIngesta(source);
 
   /**
    * Siempre 200, incluso si la ingestión falló: `runIngest` no lanza y deja
@@ -53,45 +57,6 @@ export async function GET(
     fuente: source,
     descripcion: SOURCE_DESCRIPTION[source],
     ...resultado,
+    tras,
   });
-}
-
-/**
- * Protección del cron.
- *
- * Vercel añade `Authorization: Bearer $CRON_SECRET` a las invocaciones de cron
- * cuando la variable está definida en el proyecto. Sin ella, cualquiera podría
- * disparar los scrapers desde fuera y hacer que nos bloqueen las fuentes.
- *
- * Deliberadamente duplicado en las dos rutas de cron en lugar de extraído a un
- * módulo común: son quince líneas y así cada ruta se puede leer entera sin
- * saltar de fichero, que es justo lo que uno quiere al auditar un endpoint
- * público.
- */
-function autorizarCron(request: Request): Response | null {
-  const secret = process.env.CRON_SECRET;
-
-  if (!secret) {
-    // En producción sin secreto no se abre: un endpoint que dispara scrapers
-    // no puede quedar público por un despiste de configuración.
-    if (process.env.NODE_ENV === 'production') {
-      return Response.json(
-        {
-          ok: false,
-          error:
-            'Falta CRON_SECRET en el entorno. Defínela en Vercel para que el ' +
-            'cron pueda ejecutarse.',
-        },
-        { status: 503 },
-      );
-    }
-    // En desarrollo se permite, para poder probar con curl sin montar nada.
-    return null;
-  }
-
-  if (request.headers.get('authorization') !== `Bearer ${secret}`) {
-    return Response.json({ ok: false, error: 'No autorizado.' }, { status: 401 });
-  }
-
-  return null;
 }

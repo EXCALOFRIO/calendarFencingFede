@@ -168,7 +168,7 @@ function Historial({ ranking, nivel }: { ranking: RankingNacional; nivel: Nivel 
                   href={enlace(l, t)}
                   prefetch={false}
                   className={cn(
-                    'inline-flex h-11 max-w-full min-w-0 items-center gap-1.5 rounded-full border border-filete-alto px-3 text-xs hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+                    'inline-flex h-[40px] max-w-full min-w-0 items-center gap-1.5 rounded-full border border-filete-alto px-3 text-xs hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
                     medalla && CLASES_MEDALLA[medalla],
                   )}
                 >
@@ -190,7 +190,7 @@ function Historial({ ranking, nivel }: { ranking: RankingNacional; nivel: Nivel 
       <ol className="grid min-w-0 gap-px overflow-hidden rounded-xl border bg-border">{visibles.map(fila)}</ol>
       {resto.length > 0 ? (
         <details className="group min-w-0">
-          <summary className="inline-flex min-h-11 cursor-pointer items-center text-sm text-primary-text group-open:hidden">
+          <summary className="inline-flex min-h-[44px] cursor-pointer items-center text-sm text-primary-text group-open:hidden">
             Ver más
           </summary>
           <ol className="grid min-w-0 gap-px overflow-hidden rounded-xl border bg-border">{resto.map(fila)}</ol>

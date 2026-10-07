@@ -6,7 +6,7 @@ import { BotonFavorito } from '@/components/explorar/boton-favorito';
 import { CLASES_TONO, EtiquetaTipoCompeticion, EtiquetasCompeticion } from '@/components/explorar/etiqueta-competicion';
 import { AmbitoPerfil } from '@/components/explorar/perfil/ambito-perfil';
 import { BalanceFasesRivales, CuriosidadesPerfil, fraseCuriosidad } from '@/components/explorar/perfil/curiosidades-perfil';
-import { CabeceraSiguiendo, EnlaceSiguiendo, EstadoSiguiendo, FeedSiguiendo } from '@/components/explorar/siguiendo';
+import { CabeceraInicio, EnlaceSiguiendo, EstadoSiguiendo, FeedSiguiendo } from '@/components/explorar/siguiendo';
 import { createD1Database } from '@/db/d1/runtime';
 import { localD1 } from '@/db/d1/testing';
 import type { ContextoExplorador } from '@/lib/sport/explorar/contexto';
@@ -238,15 +238,21 @@ describe('pantalla Siguiendo', () => {
     const criterios = { cursor: '', soloMedallas: false };
     const salida = html(React.createElement(FeedSiguiendo, { items: vista.items, siguiente: 'CUR', criterios }));
     expect(salida).toContain(`href="/explorar/${RIVAL}"`);
-    expect(salida).toContain('href="/explorar/siguiendo?cursor=CUR"');
+    // El feed es Inicio: la página siguiente es `/explorar?cursor=…`, no la lista de Siguiendo.
+    expect(salida).toContain('href="/explorar?cursor=CUR"');
     expect(salida).toContain('Ver más');
     expect(salida).toContain('data-tipo="COPA_MUNDO"');
+    // Cada tarjeta lleva el retrato de la persona.
+    expect(salida.match(/data-slot="avatar"/g)?.length).toBe(3);
+    expect(salida).not.toMatch(/club/i);
     const fin = html(React.createElement(FeedSiguiendo, { items: vista.items, siguiente: null, criterios: { cursor: 'X', soloMedallas: true } }));
     expect(fin).not.toContain('Ver más');
-    expect(fin).toContain('href="/explorar/siguiendo?medallas=1"');
-    const cabecera = html(React.createElement(CabeceraSiguiendo, { siguiendo: 1, criterios }));
-    expect(cabecera).toContain('seguida');
-    expect(cabecera).toContain('aria-current="page"');
+    expect(fin).toContain('href="/explorar?medallas=1"');
+    const cabecera = html(React.createElement(CabeceraInicio, { criterios }));
+    // El título («Explorar») va en la cabecera compacta de la aplicación, no aquí.
+    expect(cabecera).not.toContain('<h1');
+    expect(cabecera).toMatch(/<a(?=[^>]*href="\/explorar")(?=[^>]*aria-current="page")/);
+    expect(cabecera).toContain('href="/explorar?medallas=1"');
     expect(html(React.createElement(EnlaceSiguiendo, { siguiendo: 1 }))).toContain('href="/explorar/siguiendo"');
     expect(html(React.createElement(EnlaceSiguiendo, { siguiendo: null }))).not.toMatch(/cifra/);
   });
@@ -259,8 +265,8 @@ describe('pantalla Siguiendo', () => {
     if (vista.tipo !== 'ok') throw new Error(vista.tipo);
     expect(vista.sinResultados).toBe(true);
     expect(vista.sugeridos?.map((s) => [s.id, s.motivo])).toEqual([
-      [ESTRELLA, '1º FIE'],
-      [OTRO, '4º FIE'],
+      [ESTRELLA, '1º internacional'],
+      [OTRO, '4º internacional'],
     ]);
     const salida = html(React.createElement(EstadoSiguiendo, { vista, criterios: { cursor: '', soloMedallas: false }, siguiendo: 0 }));
     expect(salida).toContain('Aún no sigues a nadie');

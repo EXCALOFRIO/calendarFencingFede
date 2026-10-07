@@ -213,7 +213,9 @@ describe('filas de ranking en una línea', () => {
     expect(salida).toContain('/explorar/00000000-0000-4000-8000-000000000009');
     expect(salida).toContain('CNE-NA');
     expect(salida).toContain('Tú');
-    expect(salida).toContain('min-h-11');
+    // Fila de 40 px y 2 px más de área táctil por arriba y por abajo: 44 px.
+    expect(salida).toContain('min-h-[40px]');
+    expect(salida).toContain('after:-inset-y-[2px]');
     expect(salida).not.toMatch(/whitespace-normal|break-words/);
   });
 

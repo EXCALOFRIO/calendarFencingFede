@@ -374,12 +374,12 @@ export function HorariosTorneo({
         huso de la sede y «tu hora»—. Sustituye a «Hora local de Japón (JST)
         | Tu hora (CEST)», que era una frase para decir dos palabras.
       */}
-      <header className="grid grid-cols-[3.25rem_minmax(0,1fr)_auto] items-baseline gap-x-3 border-b border-b-filete px-3 py-2">
-        <span className="text-[11px] text-muted-foreground">
+      <header className="grid grid-cols-[48px_minmax(0,1fr)_auto] items-baseline gap-x-[12px] border-b border-b-filete px-3 py-2">
+        <span className="text-[12px] text-muted-foreground">
           {dosRelojes && husoSede ? siglasHuso(husoSede, evento.startDate) : null}
         </span>
-        <h4 className="text-base leading-none sm:text-sm">Horario</h4>
-        <span className="text-right text-[11px] text-muted-foreground">
+        <h4 className="text-[14px] leading-[20px] font-semibold">Horario</h4>
+        <span className="text-right text-[12px] text-muted-foreground">
           {dosRelojes ? 'tu hora' : null}
         </span>
       </header>
@@ -388,12 +388,12 @@ export function HorariosTorneo({
         {dias.map((dia) => (
           <li key={dia.fecha} className="border-b border-b-filete last:border-b-0">
             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 px-3 pt-2.5 pb-1">
-              <h5 className="cifra text-sm text-muted-foreground">
+              <h5 className="cifra text-[14px] text-muted-foreground">
                 {tituloDeDia(dia.fecha)}
                 {dia.apertura ? (
                   <CitaConvocatoria dato={dia.apertura.dato} className="mx-0 inline px-1">
-                    <span className="font-sans text-xs">
-                      {' · '}abre <span className="cifra text-sm text-foreground">{dia.apertura.hora}</span>
+                    <span className="font-sans text-[12px]">
+                      {' · '}abre <span className="cifra text-[14px] text-foreground">{dia.apertura.hora}</span>
                     </span>
                   </CitaConvocatoria>
                 ) : null}
@@ -440,28 +440,28 @@ function FilaHito({
         /* La prueba que se está mirando, con el filete rojo a la izquierda:
            es la señal que el resto de la aplicación usa para «esto es lo
            tuyo», y no depende solo del color porque además es una arista. */
-        destacada && 'border-l-primary bg-primary/5',
+        destacada && 'border-l-primary bg-marcado',
       )}
     >
       <CitaConvocatoria dato={hito.dato} className="mx-0 w-full rounded-none px-0">
-        <div className="grid w-full grid-cols-[3.25rem_minmax(0,1fr)_auto] items-baseline gap-x-3 px-3 py-1.5">
+        <div className="grid w-full grid-cols-[48px_minmax(0,1fr)_auto] items-baseline gap-x-[12px] px-[12px] py-[6px]">
           <span
             className={cn(
-              'cifra text-lg leading-none sm:text-base',
+              'cifra text-[16px] leading-[20px]',
               sinRevisar && 'text-muted-foreground',
             )}
           >
             {hito.hora}
           </span>
           <span className="flex min-w-0 flex-col gap-0.5">
-            <span className="text-base leading-snug sm:text-sm">
+            <span className="text-[14px] leading-[20px] break-words hyphens-auto">
               {hito.rotulo}
               {hito.dato ? (
                 <MarcaConvocatoria className="ml-1.5 size-3 align-baseline text-muted-foreground/70" />
               ) : null}
             </span>
             {hito.aQue ? (
-              <span className="text-sm leading-snug text-muted-foreground sm:text-xs">
+              <span className="text-[13px] leading-[16px] text-muted-foreground">
                 {hito.aQue}
               </span>
             ) : null}

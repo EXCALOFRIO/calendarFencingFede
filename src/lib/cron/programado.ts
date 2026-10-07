@@ -26,8 +26,11 @@ export const TAREAS_CRON: Readonly<Record<string, string>> = Object.freeze({
   '0 6 * * *': '/api/cron/extraer',
   '45 6 * * *': '/api/cron/ingest/fie_tiradores',
   '0 7 * * *': '/api/cron/notify',
-  // Default-off sport corpus maintenance. Independent, <=50s and globally leased.
-  '15 * * * *': '/api/cron/sport',
+  // `/api/cron/sport` (incremento antiguo) no tiene franja a propósito: lo sustituye
+  // `/api/cron/resultados` para los resultados. Ver docs/tareas-programadas.md.
+  // Resultados automáticos; fuera de triggers.crons y apagado hasta activarlo.
+  // Evita la franja 03:00-07:59 de las ingestiones diarias.
+  '20 0-2,8-23 * * *': '/api/cron/resultados',
 });
 
 export type ReservaCron = { tarea: string; minutoUtc: number };

@@ -16,6 +16,7 @@ import { alias } from 'drizzle-orm/sqlite-core';
 import { contieneSinMayusculas as ilike, enLista as inArray } from '@/lib/sqlite';
 import { cache } from 'react';
 import { db } from '@/db';
+import { cacheCompartida, DIA, MINUTO } from '@/lib/cache';
 import {
   club,
   deadlineRule,
@@ -282,8 +283,7 @@ export type CalendarFilters = {
   conPlazos?: boolean;
 };
 
-/** Temporada marcada como actual, con sus categorías. */
-export const getCurrentSeason = cache(async () => {
+async function leerTemporadaActual() {
   const [row] = await db
     .select()
     .from(season)
@@ -309,7 +309,25 @@ export const getCurrentSeason = cache(async () => {
     })),
     categoryRows: categories,
   };
+}
+
+/*
+  Lo leen el armazón y casi todas las pantallas: en la caché compartida, para
+  que no sean dos consultas a D1 por petición. Cambia sólo desde Gestión ›
+  Normativa, que invalida `calendario`; tras ese cambio se espera a la nueva
+  en vez de servir la anterior.
+*/
+const temporadaCompartida = cacheCompartida.definir({
+  espacio: 'temporada-actual',
+  depende: ['calendario'],
+  frescoMs: 10 * MINUTO,
+  caducaMs: DIA,
+  anteriorMientrasRevalida: false,
+  cargar: leerTemporadaActual,
 });
+
+/** Temporada marcada como actual, con sus categorías. */
+export const getCurrentSeason = cache(() => temporadaCompartida());
 
 /** Reglas de plazos vigentes de la temporada actual. */
 export const getDeadlineRules = cache(async (): Promise<DeadlineRuleRow[]> => {
@@ -1411,16 +1429,28 @@ export const listClubs = cache(async () =>
  * podido actualizar desde el ...". El silencio es el peor fallo posible.
  */
 export const getDataFreshness = cache(async () => {
-  const [row] = await db
-    .select({ lastSeenAt: event.lastSeenAt })
-    .from(event)
-    .orderBy(desc(event.lastSeenAt))
-    .limit(1);
+  // Se guarda la fecha, no la edad: la edad se calcula al leer.
+  const lastSeenAt = await ultimaLecturaCompartida();
+  if (!lastSeenAt) return { lastSeenAt: null, ageHours: null, stale: true };
 
-  if (!row) return { lastSeenAt: null, ageHours: null, stale: true };
+  const ageHours = Math.floor((Date.now() - lastSeenAt.getTime()) / 3_600_000);
+  return { lastSeenAt, ageHours, stale: ageHours > 48 };
+});
 
-  const ageHours = Math.floor((Date.now() - row.lastSeenAt.getTime()) / 3_600_000);
-  return { lastSeenAt: row.lastSeenAt, ageHours, stale: ageHours > 48 };
+/* Cada ingesta del calendario invalida `calendario` (`trasIngesta`); el aviso salta a las 48 h. */
+const ultimaLecturaCompartida = cacheCompartida.definir({
+  espacio: 'calendario-frescura',
+  depende: ['calendario'],
+  frescoMs: 5 * MINUTO,
+  caducaMs: DIA,
+  cargar: async (): Promise<Date | null> => {
+    const [row] = await db
+      .select({ lastSeenAt: event.lastSeenAt })
+      .from(event)
+      .orderBy(desc(event.lastSeenAt))
+      .limit(1);
+    return row?.lastSeenAt ?? null;
+  },
 });
 
 /**

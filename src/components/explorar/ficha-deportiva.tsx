@@ -12,6 +12,7 @@ import { RelevosPerfilDiferido } from './relevos';
 import { TarjetaGiratoria, type CaraTarjeta } from './perfil/tarjeta-giratoria';
 import { BanderaPais } from '@/components/bandera';
 import { InsigniaOlimpica } from '@/components/olimpica/insignia-olimpica';
+import { EnlacePrecarga } from '@/components/sistema/enlace-precarga';
 import { Button } from '@/components/ui/button';
 import { rutaCaraACara } from '@/lib/sport/explorar/cara-a-cara-url';
 import { explicacionSinVinculo } from '@/lib/sport/explorar/etiquetas';
@@ -45,6 +46,7 @@ import { RankingMundialPerfil, RankingNacionalPerfil } from './perfil/ranking-pe
 import { EuropeoDiferido, RankingAmbitoPerfil, SeccionRanking } from './perfil/ranking-ambito';
 import { bloquesRankingPerfil, type BloquesRankingPerfil } from '@/lib/sport/explorar/ranking-ambitos';
 import { ManoAMano } from './perfil/rivales-perfil';
+import { ACCION_COMPACTA } from './perfil/tactil';
 import { SugeridosPerfil } from './perfil/sugeridos-perfil';
 import { AnioAAnio } from './perfil/temporadas-perfil';
 import {
@@ -56,7 +58,7 @@ import {
 import type { HistorialVista, VistaFicha } from '@/lib/sport/explorar/ficha-pantalla';
 import type { FichaDeportiva, ResultadoHistorial } from '@/lib/sport/explorar/tipos';
 import { etiquetaTemporada } from '@/lib/sport/explorar/url';
-import { WEAPON_LABEL, cn, titular } from '@/lib/utils';
+import { WEAPON_LABEL, cn } from '@/lib/utils';
 
 /**
  * Ficha deportiva de una persona indexada.
@@ -120,7 +122,7 @@ export function MedallasCabecera({
         </div>
       ))}
       {hitos.map((h) => (
-        <div key={h.clave} data-hito={h.clave} className={cn(BALDOSA, 'bg-background/40', h.resaltado ? CONTORNO_MEDALLA.oro : 'border-filete-alto')}>
+        <div key={h.clave} data-hito={h.clave} className={cn(BALDOSA, 'bg-card', h.resaltado ? CONTORNO_MEDALLA.oro : 'border-filete-alto')}>
           <dd className="cifra truncate text-2xl leading-none" title={h.detalle}>{h.cifra}</dd>
           <dt className="line-clamp-2 text-[0.6875rem] leading-tight font-medium text-muted-foreground max-[359px]:text-[0.625rem]" title={h.detalle ? `${h.rotulo} · ${h.detalle}` : h.rotulo}>
             {h.rotulo}
@@ -168,30 +170,36 @@ function textoChip(c: ChipRanking): { texto: string; detalle: string } {
 }
 
 /**
- * Ranking de la cabecera en dos filas: Internacional (si alguna vez tuvo
- * puesto) y Nacional. Puesto grande, el resto en una línea que se recorta
- * con el detalle en `title`.
+ * Ranking de la cabecera en una sola línea de texto, fuera de cualquier caja:
+ * «Internacional 25º · Nacional 3º». El arma, la categoría o la temporada de
+ * un «mejor» van detrás en pequeño (y entero en `title`); en un móvil
+ * estrecho la línea parte por los puntos, nunca a mitad de un ámbito.
  */
 export function FilasRanking({ chips }: { chips: readonly ChipRanking[] }) {
   if (chips.length === 0) return null;
   return (
-    <dl aria-label="Ranking" className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 rounded-xl border border-filete-alto px-3 py-2">
-      {chips.map((c) => {
+    <ul aria-label="Ranking" className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[0.8125rem] leading-snug">
+      {chips.map((c, i) => {
         const { texto, detalle } = textoChip(c);
         return (
-          <div key={c.ambito} className="contents" data-fila-ranking={c.ambito}>
-            <dt className="text-xs text-muted-foreground">{c.ambito === 'internacional' ? 'Internacional' : 'Nacional'}</dt>
-            <dd className="flex min-w-0 items-center gap-2" title={detalle}>
-              <span data-chip-ranking={c.ambito} className={cn('cifra shrink-0 text-xl leading-none', c.actual ? 'text-primary-text' : 'text-foreground')}>
-                {c.puesto}º
-              </span>
-              <span className="min-w-0 truncate text-xs text-muted-foreground">{texto}</span>
-              {c.olimpica ? <InsigniaOlimpica anotacion={c.olimpica} /> : null}
-            </dd>
-          </div>
+          <li key={c.ambito} data-fila-ranking={c.ambito} title={detalle} className="flex min-w-0 max-w-full items-baseline gap-1">
+            {i > 0 ? <span aria-hidden className="text-muted-foreground">·</span> : null}
+            {/* En un móvil la línea entera cabe con el rótulo corto; el largo queda para lectores de pantalla. */}
+            <span className="text-muted-foreground">
+              <span className="max-[399px]:hidden">{c.ambito === 'internacional' ? 'Internacional' : 'Nacional'}</span>
+              <span aria-hidden className="min-[400px]:hidden">{c.ambito === 'internacional' ? 'Intl.' : 'Nac.'}</span>
+              <span className="sr-only min-[400px]:hidden">{c.ambito === 'internacional' ? 'Internacional' : 'Nacional'}</span>
+            </span>
+            <span data-chip-ranking={c.ambito} className={cn('cifra shrink-0 text-lg leading-none', c.actual ? 'text-primary-text' : 'text-foreground')}>
+              {c.puesto}º
+            </span>
+            {/* «Florete» solo sobra: sólo se escribe lo que añade (categoría, federación o «mejor»). */}
+            {texto !== WEAPON_LABEL[c.arma] ? <span className="min-w-0 truncate text-[0.6875rem] text-muted-foreground">{texto}</span> : null}
+            {c.olimpica ? <InsigniaOlimpica anotacion={c.olimpica} /> : null}
+          </li>
         );
       })}
-    </dl>
+    </ul>
   );
 }
 
@@ -240,7 +248,7 @@ function BarraAmbitos({ internacional, nacional }: { internacional: number; naci
     <div data-barra-ambitos className="flex min-w-0 flex-col gap-1">
       <div className="flex h-1.5 min-w-0 overflow-hidden rounded-full bg-muted" aria-hidden>
         <span className="h-full bg-primary-text" style={{ width: `${pct}%` }} />
-        <span className="h-full flex-1 bg-org-rfee/70" />
+        <span className="h-full flex-1 bg-org-rfee-relleno" />
       </div>
       <p className="flex justify-between gap-2 text-[0.6875rem] leading-none text-muted-foreground">
         <span>Internacional <span className="cifra text-foreground">{internacional}</span></span>
@@ -272,37 +280,13 @@ function CaraAmbito({ r, destacada }: { r: ResumenAmbito; destacada: MedallaPerf
   );
 }
 
-/** Acciones en pastillas de 44 px de alto: el objetivo táctil mínimo. */
-const ACCION = 'h-11 min-h-11 rounded-full px-4 text-sm';
-
 /**
- * Cabecera tipo perfil social: retrato con anillo, nombre completo, bandera,
- * armas y datos sueltos en pastillas (edad, mano, altura, club; lo que no hay
- * no sale). Debajo, cuatro cifras grandes, medallas e hitos en rejilla y las
- * acciones en una sola fila. Un posible menor no lleva retrato ni enlace a
- * la FIE.
+ * Cifras de la carrera en la tarjeta que gira (General, Internacional y
+ * Nacional): pruebas, asaltos, rivales y medallas, hitos y la medalla más
+ * valiosa. `null` si la persona no tiene nada que contar.
  */
-export function CabeceraFicha({
-  ficha,
-  titulo = true,
-  acciones,
-  datos = null,
-  chips = [],
-  caraInicial = 0,
-}: {
-  ficha: FichaConPerfil;
-  titulo?: boolean;
-  /** Controles propios de la cuenta que mira, como guardar en favoritos. */
-  acciones?: React.ReactNode;
-  datos?: DatosPersonales | null;
-  /** Puesto nacional e internacional (ver `chipsRanking`). */
-  chips?: readonly ChipRanking[];
-  /** Cara de la tarjeta de cifras con la que se abre (0 General, 1 Internacional, 2 Nacional). */
-  caraInicial?: number;
-}) {
-  const nombre = datos?.nombreCompleto || nombreVisible(ficha.nombre) || ficha.nombre;
+export function CifrasCarrera({ ficha, caraInicial = 0 }: { ficha: FichaConPerfil; caraInicial?: number }) {
   const perfil = ficha.perfil;
-  const enlaceFie = ficha.esMenor ? null : enlaceSeguro(perfil?.enlaceFie ?? null);
   // La lectura por prueba ya funde las copias de dos fuentes: cuenta igual que la lista.
   const total = perfil?.ambito?.total;
   const competiciones = total ? total.competiciones : perfil?.resumen.pruebas ?? null;
@@ -320,7 +304,7 @@ export function CabeceraFicha({
   const hitos: Ficha[] = perfil
     ? [
         ...(pct !== null ? [{ clave: 'ganados', cifra: `${pct}%`, rotulo: 'Ganados' }] : []),
-        // El ranking ya tiene sus dos filas encima, con la lectura oficial: aquí no se repite.
+        // El ranking ya va en la línea de la cabecera, con la lectura oficial: aquí no se repite.
         ...destacadosPerfil(perfil, ficha.estadisticas.porTipo).filter((d) => d.clave !== 'ranking' && d.clave !== 'mejor-ranking'),
       ].slice(0, 3)
     : [];
@@ -335,46 +319,74 @@ export function CabeceraFicha({
       <MedallaDestacada m={medallaMasValiosa(items)} />
     </div>
   ) : null;
+  if (!general) return null;
   // Con un solo ámbito, su cara repetiría la general: entonces no se gira.
   const dosAmbitos = ambito && ambito.internacional.competiciones > 0 && ambito.nacional.competiciones > 0;
-  const caras: CaraTarjeta[] = general
-    ? [
-        { clave: 'general', rotulo: 'General', contenido: general },
-        ...(dosAmbitos
-          ? [
-              { clave: 'internacional', rotulo: 'Internacional', contenido: <CaraAmbito r={ambito.internacional} destacada={medallaMasValiosa(items, 'internacional')} /> },
-              { clave: 'nacional', rotulo: 'Nacional', contenido: <CaraAmbito r={ambito.nacional} destacada={medallaMasValiosa(items, 'nacional')} /> },
-            ]
-          : []),
-      ]
-    : [];
+  const caras: CaraTarjeta[] = [
+    { clave: 'general', rotulo: 'General', contenido: general },
+    ...(dosAmbitos
+      ? [
+          { clave: 'internacional', rotulo: 'Internacional', contenido: <CaraAmbito r={ambito.internacional} destacada={medallaMasValiosa(items, 'internacional')} /> },
+          { clave: 'nacional', rotulo: 'Nacional', contenido: <CaraAmbito r={ambito.nacional} destacada={medallaMasValiosa(items, 'nacional')} /> },
+        ]
+      : []),
+  ];
+  return <TarjetaGiratoria caras={caras} etiqueta="Cifras de la carrera" inicial={caraInicial} />;
+}
 
-  const edad = datos?.edad ?? edadDe(ficha.anioNacimiento);
+/**
+ * Cabecera compacta tipo perfil social, sin caja: retrato con anillo, nombre
+ * completo, bandera, armas y datos sueltos en pastillas (edad, mano, altura;
+ * lo que no hay no sale), el ranking en una línea y las acciones pequeñas.
+ * El club no se enseña: el publicado en una prueba suelta (un campeonato
+ * universitario, por ejemplo) no es el club de la persona. Un posible menor
+ * no lleva retrato ni enlace a la FIE. Con `conCifras`, debajo va la tarjeta
+ * de cifras de la carrera (en el perfil por secciones vive en Estadísticas).
+ */
+export function CabeceraFicha({
+  ficha,
+  titulo = true,
+  acciones,
+  datos = null,
+  chips = [],
+  caraInicial = 0,
+  conCifras = true,
+}: {
+  ficha: FichaConPerfil;
+  titulo?: boolean;
+  /** Controles propios de la cuenta que mira, como guardar en favoritos. */
+  acciones?: React.ReactNode;
+  datos?: DatosPersonales | null;
+  /** Puesto nacional e internacional (ver `chipsRanking`). */
+  chips?: readonly ChipRanking[];
+  /** Cara de la tarjeta de cifras con la que se abre (0 General, 1 Internacional, 2 Nacional). */
+  caraInicial?: number;
+  conCifras?: boolean;
+}) {
+  const nombre = datos?.nombreCompleto || nombreVisible(ficha.nombre) || ficha.nombre;
+  const perfil = ficha.perfil;
+  const enlaceFie = ficha.esMenor ? null : enlaceSeguro(perfil?.enlaceFie ?? null);
+  // Las dos fuentes llegan ya vetadas del servidor para un posible menor ajeno;
+  // el veto de los datos personales manda también sobre el año de la ficha.
+  const edad = datos?.edad ?? (datos?.edadVetada && !ficha.esPropia ? null : edadDe(ficha.anioNacimiento));
   const mujer = ficha.genero === 'F';
-  const club = datos?.club?.nombre
-    ? { texto: titular(datos.club.nombre), codigo: false }
-    : perfil?.club
-      ? { texto: titular(perfil.club.nombre), codigo: false }
-      : datos?.club?.codigo
-        ? { texto: datos.club.codigo, codigo: true }
-        : null;
 
   return (
-    <header className="flex min-w-0 flex-col gap-4 rounded-2xl border bg-card px-4 pt-5 pb-4 max-[359px]:px-3 sm:gap-5 sm:px-6 sm:pt-6">
+    <header className="flex min-w-0 flex-col gap-3 pt-1 sm:gap-4">
       <div className="flex min-w-0 items-center gap-4 sm:gap-6">
         {ficha.esMenor ? (
           <AvatarAnillo nombre={nombre} tamano="lg" apagado />
         ) : (
-          // El sello «Foto FIE» del retrato es el único span hijo directo: aquí no se enseña.
-          <FotoDeportista personaId={ficha.id} nombre={nombre} tamano="heroe" decorativa className="[&>span]:hidden" />
+          <FotoDeportista personaId={ficha.id} nombre={nombre} tamano="heroe" decorativa />
         )}
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          {/* El `<h1>` es el título de la cabecera compacta («Perfil»): el nombre va justo debajo. */}
           {titulo ? (
-            <h1 className="min-w-0 text-[1.75rem] leading-[0.95] break-words sm:text-5xl">{nombre}</h1>
+            <h2 className="min-w-0 text-[1.625rem] leading-[0.95] break-words sm:text-4xl">{nombre}</h2>
           ) : (
-            <p className="min-w-0 font-display text-[1.75rem] leading-[0.95] break-words sm:text-5xl">{nombre}</p>
+            <p className="min-w-0 font-display text-[1.625rem] leading-[0.95] break-words sm:text-4xl">{nombre}</p>
           )}
-          <ul className="flex min-w-0 flex-wrap items-center gap-1.5" aria-label="Datos">
+          <ul className="flex min-w-0 flex-wrap items-center gap-1" aria-label="Datos">
             {ficha.pais ? (
               <li className="inline-flex shrink-0">
                 <BanderaPais pais={ficha.pais} tamaño="ficha" />
@@ -390,39 +402,27 @@ export function CabeceraFicha({
               </Pastilla>
             ) : null}
             {datos?.alturaCm ? <Pastilla className="text-muted-foreground">{datos.alturaCm} cm</Pastilla> : null}
-            {club ? (
-              <Pastilla
-                title={club.texto}
-                className={cn('text-muted-foreground', club.codigo && 'font-mono text-[0.6875rem] tracking-wide uppercase')}
-              >
-                {club.texto}
-              </Pastilla>
-            ) : null}
-            {ficha.esPropia ? <Pastilla className="border-primary-text/50 text-primary-text">Tu ficha</Pastilla> : null}
+            {ficha.esPropia ? <Pastilla className="border-primary-text text-primary-text">Tu ficha</Pastilla> : null}
           </ul>
+          <FilasRanking chips={chips} />
         </div>
       </div>
 
-      <FilasRanking chips={chips} />
-
-      {caras.length > 0 ? <TarjetaGiratoria caras={caras} etiqueta="Cifras de la carrera" inicial={caraInicial} /> : null}
-
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <Button asChild variant="secondary" size="sm" className={ACCION}>
-          <Link href={rutaCaraACara(ficha.id)} prefetch={false}>
+        <Button asChild variant="secondary" size="sm" className={ACCION_COMPACTA}>
+          <EnlacePrecarga href={rutaCaraACara(ficha.id)}>
             <Swords aria-hidden />
             Cara a cara
-          </Link>
+          </EnlacePrecarga>
         </Button>
         {acciones ? (
           // El control de Seguir trae su propio alto de 44 px: aquí se iguala a las otras pastillas.
-          <div className="min-w-0 [&_button]:rounded-full [&_button>span:first-child]:h-11 [&_button>span:first-child]:rounded-full [&_button>span:first-child]:px-4">
-
+          <div className="min-w-0 [&_button]:relative [&_button]:rounded-full [&_button]:after:absolute [&_button]:after:inset-x-0 [&_button]:after:-inset-y-1 [&_button]:after:content-[''] [&_button>span:first-child]:h-[32px] [&_button>span:first-child]:rounded-full [&_button>span:first-child]:px-[12px] [&_button>span:first-child]:text-[13px]">
             {acciones}
           </div>
         ) : null}
         {enlaceFie ? (
-          <Button asChild variant="outline" size="sm" className={ACCION}>
+          <Button asChild variant="outline" size="sm" className={ACCION_COMPACTA}>
             <a href={enlaceFie} target="_blank" rel="noopener noreferrer" title="Perfil en la FIE">
               FIE
               <ExternalLink aria-hidden />
@@ -430,6 +430,8 @@ export function CabeceraFicha({
           </Button>
         ) : null}
       </div>
+
+      {conCifras ? <CifrasCarrera ficha={ficha} caraInicial={caraInicial} /> : null}
     </header>
   );
 }
@@ -519,7 +521,7 @@ export function HistorialFicha({
       {historial.tipo === 'ok' ? (
         historial.sinResultados ? (
           <p role="status" className="medida text-sm text-muted-foreground">
-            No hay puestos finales importados para esta persona.
+            Sin puestos finales importados.
           </p>
         ) : (
           <>
@@ -779,7 +781,7 @@ function CargandoPestana({ texto }: { texto: string }) {
   );
 }
 
-function PanelRendimiento({
+export function PanelRendimiento({
   ficha,
   rendimiento: leido,
   rankingEnRendimiento,
@@ -963,38 +965,34 @@ export function EstadoFicha({
       return (
         <Aviso incrustado={incrustado} titulo={e.titulo}>
           <p>{e.texto}</p>
-          <p>Mientras tanto puedes buscar tu nombre en Explorar y abrir la ficha que sea tuya.</p>
           {volver}
         </Aviso>
       );
     }
     case 'no_encontrada':
       return (
-        <Aviso incrustado={incrustado} titulo="Esta ficha no existe">
-          <p>No hay ninguna persona deportiva con ese identificador. Puede que el enlace sea antiguo.</p>
+        <Aviso incrustado={incrustado} titulo="Ficha no encontrada">
+          <p>Puede que el enlace sea antiguo.</p>
           {volver}
         </Aviso>
       );
     case 'entrada_invalida':
       return (
-        <Aviso alerta incrustado={incrustado} titulo="El enlace no es válido">
-          <p>Alguno de los valores de la dirección no se entiende, por eso no se ha abierto ninguna ficha.</p>
+        <Aviso alerta incrustado={incrustado} titulo="Enlace no válido">
+          <p>Revisa la dirección o busca la ficha en Explorar.</p>
           {volver}
         </Aviso>
       );
     case 'no_disponible':
       return (
-        <Aviso alerta incrustado={incrustado} titulo="Las fichas aún no están activas">
-          <p>
-            Los datos deportivos todavía no están preparados en esta instalación. No es que la
-            persona no tenga resultados.
-          </p>
+        <Aviso alerta incrustado={incrustado} titulo="Fichas aún no activas">
+          <p>Los datos deportivos aún no están cargados.</p>
         </Aviso>
       );
     default:
       return (
-        <Aviso alerta incrustado={incrustado} titulo="No se ha podido abrir la ficha">
-          <p>Ha fallado la consulta; no es que no haya datos. Inténtalo de nuevo; si sigue fallando, avisa a la dirección técnica.</p>
+        <Aviso alerta incrustado={incrustado} titulo="No se pudo abrir la ficha">
+          <p>Inténtalo de nuevo en un momento.</p>
         </Aviso>
       );
   }

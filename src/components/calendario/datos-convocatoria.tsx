@@ -115,7 +115,7 @@ export function CitaConvocatoria({
             nada. Se conservan los saltos de línea del PDF: en una dirección,
             son la dirección.
           */}
-          <blockquote className="border-l-2 border-primary/50 pl-2.5 text-sm leading-snug whitespace-pre-line">
+          <blockquote className="border-l-2 border-primary-text pl-[10px] text-[14px] leading-[20px] whitespace-pre-line">
             «{dato.cita.trim()}»
           </blockquote>
 

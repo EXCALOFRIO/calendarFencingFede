@@ -15,20 +15,36 @@ export type Alto = keyof typeof ALTO;
 
 /** Separación mínima entre rótulos, en % del ancho: a 393 px caben unos siete de cinco cifras. */
 const HUECO_ROTULO = 13;
+/** Por debajo de 640 px (320 px, o el texto grande del sistema) un rótulo ocupa más del ancho: menos rótulos. */
+const HUECO_ESTRECHO = 20;
 
-export function EjeX({ rotulos, className }: { rotulos: { x: number; texto: string }[]; className?: string }) {
-  // De derecha a izquierda, para que el último (lo más reciente) siempre quede.
-  const visibles: { x: number; texto: string }[] = [];
+/** El primero y el último se alinean hacia dentro para no salirse del ancho. */
+const enBorde = (x: number) => x < 8 || x > 92;
+
+type Rotulo = { x: number; texto: string };
+
+/** De derecha a izquierda, para que el último (lo más reciente) siempre quede. */
+function espaciar(rotulos: readonly Rotulo[], base: number): Rotulo[] {
+  const visibles: Rotulo[] = [];
   for (const r of [...rotulos].sort((a, b) => b.x - a.x)) {
-    if (visibles.length === 0 || visibles[visibles.length - 1].x - r.x >= HUECO_ROTULO) visibles.push(r);
+    const ultimo = visibles[visibles.length - 1];
+    // Un rótulo alineado al borde ocupa todo su ancho hacia dentro, no la mitad: su vecino necesita más hueco.
+    const hueco = ultimo && (enBorde(ultimo.x) || enBorde(r.x)) ? base * 1.5 : base;
+    if (!ultimo || ultimo.x - r.x >= hueco) visibles.push(r);
   }
+  return visibles;
+}
+
+export function EjeX({ rotulos, className }: { rotulos: Rotulo[]; className?: string }) {
+  const visibles = espaciar(rotulos, HUECO_ROTULO);
+  // Sale de los ya elegidos: en estrecho sólo se ocultan rótulos, nunca aparece otro.
+  const estrechos = new Set(espaciar(visibles, HUECO_ESTRECHO));
   return (
     <div aria-hidden className={cn('relative h-4 text-[0.625rem] leading-4 text-muted-foreground tabular-nums', className)}>
       {visibles.map((r, i) => {
-        // El primero y el último se alinean hacia dentro para no salirse del ancho.
         const borde = r.x < 8 ? 'translate-x-0' : r.x > 92 ? '-translate-x-full' : '-translate-x-1/2';
         return (
-          <span key={`${r.texto}-${i}`} className={cn('absolute top-0 whitespace-nowrap', borde)} style={{ left: `${r.x}%` }}>
+          <span key={`${r.texto}-${i}`} className={cn('absolute top-0 whitespace-nowrap', borde, !estrechos.has(r) && 'max-sm:hidden')} style={{ left: `${r.x}%` }}>
             {r.texto}
           </span>
         );

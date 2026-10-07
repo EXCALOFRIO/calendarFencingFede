@@ -327,6 +327,7 @@ export function TarjetaConvocatoria({
               value={motivo}
               onChange={(e) => setMotivo(e.target.value)}
               rows={4}
+              maxLength={500}
               placeholder="Lesión, examen, coste del viaje…"
             />
             {motivo.trim().length > 0 && motivo.trim().length < 3 ? (

@@ -136,7 +136,8 @@ export async function cargarPodiosEvento(
   if (vista.ediciones.length === 0 && porClave && typeof eventoId === 'string') {
     try {
       const ids = [...new Set(await porClave(eventoId))].slice(0, MAXIMO_EDICIONES);
-      const leidas = await Promise.all(ids.map((edicionId) => leerEdicion(ctx, { edicionId })));
+      // Sólo las pruebas: la clasificación y los asaltos de cada edición no hacen falta para el podio.
+      const leidas = await Promise.all(ids.map((edicionId) => leerEdicion(ctx, { edicionId }, { soloPruebas: true })));
       const ediciones = leidas.flatMap((r) => {
         if (r.estado !== 'ok') return [];
         const { clasificacion: _c, asaltos: _a, pruebaDesconocida: _p, ...edicion } = r.edicion;

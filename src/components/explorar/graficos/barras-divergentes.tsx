@@ -45,12 +45,12 @@ export function BarrasDivergentes({
           {columnas.map((c, i) => (
             <div key={`${c.etiqueta}-${i}`} data-lectura={c.lectura ?? undefined} className="relative flex min-w-0 flex-1 flex-col items-center">
               <div className="flex w-full flex-1 flex-col items-center justify-end">
-                {cifras && c.arriba > 0 ? <span className="cifra mb-0.5 text-[0.6875rem] leading-none">{c.arriba}</span> : null}
+                {cifras && c.arriba > 0 ? <span className="cifra mb-0.5 text-[12px] leading-none">{c.arriba}</span> : null}
                 <span className="block w-full max-w-6 shrink-0 rounded-t-[2px]" style={{ height: `${(c.arriba / tope) * 100}%`, background: arriba.color }} />
               </div>
               <div className="flex w-full flex-1 flex-col items-center justify-start">
                 <span className="block w-full max-w-6 shrink-0 rounded-b-[2px]" style={{ height: `${(c.abajo / tope) * 100}%`, background: abajo.color }} />
-                {cifras && c.abajo > 0 ? <span className="cifra mt-0.5 text-[0.6875rem] leading-none text-muted-foreground">{c.abajo}</span> : null}
+                {cifras && c.abajo > 0 ? <span className="cifra mt-0.5 text-[12px] leading-none text-muted-foreground">{c.abajo}</span> : null}
               </div>
             </div>
           ))}

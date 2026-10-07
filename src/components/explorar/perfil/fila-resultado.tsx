@@ -34,7 +34,7 @@ export function IconoFuente({ url, fuente, className }: { url: string | null; fu
       rel="noopener noreferrer"
       title={`Ver en ${nombreFuente(fuente)}`}
       className={cn(
-        'inline-flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+        'inline-flex size-[40px] shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
         className,
       )}
     >
@@ -55,7 +55,7 @@ export function Asaltos({ v, d, className }: { v: number; d: number; className?:
 
 export function FilaResultado({ r, conArma = false }: { r: FilaListaPerfil; conArma?: boolean }) {
   return (
-    <li className="flex min-w-0 items-center bg-card pr-1 hover:bg-secondary/60">
+    <li className="flex min-w-0 items-center bg-card pr-1 hover:bg-secondary">
       <Link
         href={r.href}
         prefetch={false}
@@ -64,11 +64,12 @@ export function FilaResultado({ r, conArma = false }: { r: FilaListaPerfil; conA
         <DiscoPuesto puesto={r.puesto} puestoPublicado={r.puestoPublicado} />
         <span className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="truncate text-[0.9375rem] leading-tight font-medium">{r.nombre}</span>
-          <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+          {/* Si no caben las pastillas y los asaltos, los asaltos bajan de línea en vez de recortarse. */}
+          <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
             {r.tipoEnNombre ? null : (
-              <EtiquetaTipoCompeticion clasificacion={r.clasificacion} className="h-5 px-2 text-[0.6875rem]" />
+              <EtiquetaTipoCompeticion clasificacion={r.clasificacion} className="h-[20px] px-2 text-[12px]" />
             )}
-            <EtiquetaCategoria codigo={r.categoria} className="h-5 px-2 text-[0.6875rem]" />
+            <EtiquetaCategoria codigo={r.categoria} className="h-[20px] px-2 text-[12px]" />
             {conArma ? <span className="truncate text-xs text-muted-foreground">{WEAPON_LABEL[r.arma]}</span> : null}
             {r.asaltos ? <Asaltos v={r.asaltos.victorias} d={r.asaltos.derrotas} className="ml-auto pl-1" /> : null}
           </span>

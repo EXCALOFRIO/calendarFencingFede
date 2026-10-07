@@ -88,7 +88,9 @@ describe('sugerencias: normalización y navegación, nunca fusión', () => {
 });
 
 describe('API de sugerencias: política de sesión y validación', () => {
-  beforeEach(() => dependencias.contexto.mockReturnValue(crearContexto().ctx));
+  // Con el índice de Explorar construido: sin él la API responde no_disponible.
+  const conIndice = (t = crearContexto()) => ({ ...t.ctx, indiceExplorar: async () => true });
+  beforeEach(() => dependencias.contexto.mockReturnValue(conIndice()));
   const llamar = (query: string) => GET(new Request(`https://example.test/api/explorar/sugerencias${query}`));
 
   it('sin sesión o con acceso revocado devuelve 401 antes de validar entrada', async () => {
@@ -113,6 +115,24 @@ describe('API de sugerencias: política de sesión y validación', () => {
     expect(fallback).not.toHaveBeenCalled();
   });
 
+  it.each([undefined, async () => false])('sin índice de Explorar (%s) responde no_disponible sin recorrer tablas', async (indice) => {
+    const t = crearContexto();
+    dependencias.contexto.mockReturnValue({ ...t.ctx, indiceExplorar: indice });
+    const r = await llamar('?q=carlos');
+    expect(r.status).toBe(503);
+    expect(await r.json()).toEqual({ estado: 'no_disponible' });
+    expect(t.sentencias).toEqual([]);
+  });
+
+  it.each(['a', 'ab', 'a b', 'ab cd', '--'])('con menos de tres letras seguidas (%j) no consulta la base', async (q) => {
+    const t = crearContexto();
+    dependencias.contexto.mockReturnValue({ ...t.ctx, indiceExplorar: vi.fn(async () => true) });
+    const r = await llamar(`?q=${encodeURIComponent(q)}`);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ estado: 'ok', items: [] });
+    expect(t.sentencias).toEqual([]);
+  });
+
   it('acepta un límite de 1 a 20 una sola vez', async () => {
     expect((await llamar('?q=carlos&limite=20')).status).toBe(200);
     expect((await llamar('?q=carlos&limite=1')).status).toBe(200);
@@ -133,7 +153,7 @@ describe('API de sugerencias: política de sesión y validación', () => {
   it('sesión normal, vista previa vigente y QA vigente pueden leer sin habilitar escrituras', async () => {
     for (const lectura of [{}, { preview: {} }, { qa: {} }]) {
       const sesion = vi.fn(async () => ({ ...perfil(), ...lectura }));
-      dependencias.contexto.mockReturnValue({ ...crearContexto().ctx, perfil: sesion });
+      dependencias.contexto.mockReturnValue({ ...conIndice(), perfil: sesion });
       const r = await llamar('?q=carlos');
       expect(r.status).toBe(200);
       expect(await r.json()).toEqual({ estado: 'ok', items: [] });
@@ -142,7 +162,7 @@ describe('API de sugerencias: política de sesión y validación', () => {
   });
 
   it('un fallo interno devuelve una respuesta discreta y mantiene disponible la búsqueda manual', async () => {
-    const ctx = crearContexto().ctx;
+    const ctx = conIndice();
     dependencias.contexto.mockReturnValue({
       ...ctx, db: { execute: () => { throw new Error('detalle con nombre privado'); } },
     });

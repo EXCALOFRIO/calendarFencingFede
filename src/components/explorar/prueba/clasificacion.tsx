@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
+import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
 import type { FilaClasificacion } from '@/lib/sport/explorar/edicion-modelo';
 import { CLASES_MEDALLA, medallaDe, type Medalla } from '@/lib/sport/explorar/presentacion';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
@@ -54,23 +55,20 @@ function Fila({ fila, enlace, filtro }: { fila: FilaClasificacion; enlace?: Enla
   const nombre = nombreVisible(fila.nombre);
   const marcada = resaltado(fila, filtro);
   const podio = medallaDe(fila.puesto) !== null;
-  const club = fila.club && !repiteNombre(nombre, fila.club) ? fila.club : null;
+  // Sin club: en Explorar no se enseña. En equipos, el nombre ya es el del equipo.
   const contenido = (
     <>
       <Puesto puesto={fila.puesto} />
       <span className="flex min-w-0 flex-col">
         <span className={cn('truncate font-medium', podio && 'font-semibold')}>{nombre}</span>
-        {club || (fila.puesto === null && fila.puestoPublicado) ? (
-          <span className="flex min-w-0 gap-2 text-xs text-muted-foreground">
-            {fila.puesto === null && fila.puestoPublicado ? <span className="shrink-0">{fila.puestoPublicado}</span> : null}
-            {club ? <span className="truncate">{club}</span> : null}
-          </span>
+        {fila.puesto === null && fila.puestoPublicado ? (
+          <span className="text-xs text-muted-foreground">{fila.puestoPublicado}</span>
         ) : null}
       </span>
       {fila.pais ? <BanderaPais pais={fila.pais} /> : <span aria-hidden />}
     </>
   );
-  const rejilla = 'grid min-h-11 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-1';
+  const rejilla = 'grid min-h-[44px] grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-1';
   return (
     <li
       id={idFilaClasificacion(fila.id)}
@@ -81,6 +79,7 @@ function Fila({ fila, enlace, filtro }: { fila: FilaClasificacion; enlace?: Enla
         <Link
           href={enlace(fila.personaId)}
           prefetch={false}
+          transitionTypes={[TIPO_TRANSICION.avanzar]}
           aria-label={`Abrir la ficha deportiva de ${nombre}`}
           className={cn(
             rejilla,
@@ -96,7 +95,7 @@ function Fila({ fila, enlace, filtro }: { fila: FilaClasificacion; enlace?: Enla
   );
 }
 
-/** Clasificación final: puesto (con medalla en el podio), nombre, club y país. */
+/** Clasificación final: puesto (con medalla en el podio), nombre y país. */
 export function ListaClasificacion({
   filas,
   enlace,

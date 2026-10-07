@@ -233,6 +233,19 @@ export async function inscritosUnidosDeTorneos(
   opciones: { incluirRetirados?: boolean } = {},
 ): Promise<ListaUnida> {
   await requireProfile();
+  return leerListaUnidaTrasGuarda(eventIds, opciones);
+}
+
+/**
+ * La misma lectura sin pedir la sesión, para la caché compartida de la ficha
+ * del calendario (`calendario-cache.ts`), que comprueba la sesión ANTES de
+ * llegar aquí y no puede leerla dentro (el recálculo en segundo plano corre
+ * fuera de la petición). Quien la llame responde de esa guarda.
+ */
+export function leerListaUnidaTrasGuarda(
+  eventIds: string[],
+  opciones: { incluirRetirados?: boolean } = {},
+): Promise<ListaUnida> {
   return leerListaUnida(depsDb, eventIds, opciones);
 }
 

@@ -6,6 +6,7 @@ import type { VistaCatalogo } from '@/lib/sport/explorar/catalogo';
 import { RUTA_EDICIONES } from '@/lib/sport/explorar/edicion-url';
 import type { VistaSeries } from '@/lib/sport/explorar/ediciones-pantalla';
 import { EstadoSeries, FilaEdicion, ListaSeries } from './ediciones';
+import { CabeceraExplorar } from './cabecera-explorar';
 import { SelectorFuenteCatalogo } from './selector-fuente-catalogo';
 
 /** Pantalla de `/explorar/ediciones`: catálogo y series. Volver es la flecha de la cabecera. */
@@ -21,8 +22,8 @@ export function PantallaEdiciones({
   series: VistaSeries;
 }) {
   return (
-    <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-4">
-      <h1 className="text-3xl leading-tight sm:text-4xl">Ediciones</h1>
+    <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-3">
+      <CabeceraExplorar activa="competiciones" />
       <CatalogoEdiciones vista={catalogo} criterios={criterios} cursor={cursor} />
       <section aria-labelledby="titulo-series" className="flex flex-col gap-3 pt-4">
         <h2 id="titulo-series" className="text-2xl">Series</h2>
@@ -37,7 +38,7 @@ export function PantallaEdiciones({
 }
 
 const CAMPO =
-  'h-10 min-w-0 rounded-full border border-input bg-card px-4 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm';
+  'h-[40px] min-w-0 rounded-full border border-input bg-card px-4 text-[16px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50';
 
 /**
  * Catálogo de ediciones: buscador de una fila (nombre o ciudad, fuente y
@@ -67,11 +68,11 @@ export function CatalogoEdiciones({
         <label htmlFor="catalogo-temporada" className="sr-only">Temporada</label>
         <input id="catalogo-temporada" name="temporada" maxLength={9} defaultValue={criterios.temporada}
           placeholder="Temporada" inputMode="numeric" className={`${CAMPO} w-28`} />
-        <Button type="submit" size="icon" aria-label="Buscar" className="size-10 rounded-full">
+        <Button type="submit" size="icon" aria-label="Buscar" className="size-[40px] min-h-0! min-w-0! rounded-full">
           <Search aria-hidden className="size-4" />
         </Button>
         {filtrado ? (
-          <Button asChild variant="ghost" size="icon" className="size-10 rounded-full text-muted-foreground">
+          <Button asChild variant="ghost" size="icon" className="size-[40px] min-h-0! min-w-0! rounded-full text-muted-foreground">
             <Link href={RUTA_EDICIONES} prefetch={false} aria-label="Quitar filtros" title="Quitar filtros">
               <X aria-hidden className="size-4" />
             </Link>
@@ -91,14 +92,14 @@ export function CatalogoEdiciones({
           ) : (
             <p role="status" className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
               <SearchX aria-hidden className="size-5" />
-              {cursor ? 'No hay más ediciones.' : 'No hay ediciones importadas con estos filtros.'}
+              {cursor ? 'No hay más ediciones.' : 'Sin ediciones con estos filtros.'}
             </p>
           )}
           {cursor || vista.siguiente ? (
             <nav aria-label="Páginas del catálogo" className="flex flex-wrap items-center justify-center gap-2">
               {cursor ? (
                 <Button asChild variant="ghost" size="sm" className="rounded-full text-muted-foreground">
-                  <Link href={urlCatalogo(criterios)} prefetch={false} scroll={false}>Inicio de la búsqueda</Link>
+                  <Link href={urlCatalogo(criterios)} prefetch={false} scroll={false}>Primeras</Link>
                 </Button>
               ) : null}
               {vista.siguiente ? (

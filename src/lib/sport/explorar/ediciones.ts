@@ -306,8 +306,16 @@ type FilaPuesto = {
  * El cursor de página sólo vale con la prueba escrita en la petición.
  * Una fila lleva `personaId` sólo si el resultado está vinculado a una persona
  * deportiva: nunca se busca por nombre ni se usa una cuenta.
+ *
+ * Con `{ soloPruebas: true }` no se leen la clasificación ni los asaltos: es
+ * lo que necesita quien sólo quiere las pruebas (los podios del calendario),
+ * y son la parte cara de la lectura.
  */
-export async function leerEdicion(ctx: ContextoExplorador, entrada: unknown): Promise<ResultadoEdicion> {
+export async function leerEdicion(
+  ctx: ContextoExplorador,
+  entrada: unknown,
+  opciones: { soloPruebas?: boolean } = {},
+): Promise<ResultadoEdicion> {
   await exigirPerfil(ctx);
   const analizada = esquemaEdicion.safeParse(entrada);
   if (!analizada.success) return { estado: 'entrada_invalida' };
@@ -340,7 +348,7 @@ export async function leerEdicion(ctx: ContextoExplorador, entrada: unknown): Pr
 
   let clasificacion: Clasificacion | null = null;
   let asaltos: AsaltosEdicion = null;
-  if (elegida) {
+  if (elegida && !opciones.soloPruebas) {
     const huellaElegida = { edicionId, prueba: elegida.id };
     [clasificacion, asaltos] = await Promise.all([
       leerClasificacion(ctx, elegida.id, huellaElegida, clave, pedido ?? LIMITE_CLASIFICACION),

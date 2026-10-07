@@ -15,7 +15,9 @@ export type FuenteRankingInternacional =
   | 'ffe_classement'
   | 'fis_ranking'
   | 'hkfa_ranking'
-  | 'mvsz_ranglista';
+  | 'mvsz_ranglista'
+  | 'bf_ranking'
+  | 'cff_ranking';
 
 export type DescripcionFuente = {
   ambito: AmbitoRanking;
@@ -39,6 +41,8 @@ export const FUENTES_RANKING: Record<FuenteRankingInternacional | 'fie_tiradores
   fis_ranking: { ambito: 'nacional', organismo: 'FIS', nombre: 'Ranking nazionale FIS', pais: 'ITA', continente: null, web: 'https://federscherma.it/' },
   hkfa_ranking: { ambito: 'nacional', organismo: 'FAHK', nombre: 'Ranking de Hong Kong', pais: 'HKG', continente: null, web: 'https://www.hkfa.org.hk/EN/ranking.html' },
   mvsz_ranglista: { ambito: 'nacional', organismo: 'MVSZ', nombre: 'Ranglista MVSZ (Hungría)', pais: 'HUN', continente: null, web: 'https://versenyinfo.hunfencing.hu/index.php?p=pRanglista' },
+  bf_ranking: { ambito: 'nacional', organismo: 'BF', nombre: 'British Fencing rankings (Gran Bretaña)', pais: 'GBR', continente: null, web: 'https://www.britishfencing.com/rankings/' },
+  cff_ranking: { ambito: 'nacional', organismo: 'CFF', nombre: 'Canadian Fencing Federation rankings (Canadá)', pais: 'CAN', continente: null, web: 'https://fencing.ca/rankings-and-classifications/' },
 };
 
 export const FUENTES_MUNDIALES = ['fie_tiradores', 'fie_historico'] as const;

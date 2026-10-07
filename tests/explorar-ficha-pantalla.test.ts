@@ -236,7 +236,7 @@ describe('cargarFichaPantalla: ficha de otra persona', () => {
         }),
       );
       expect(html).toContain('role="alert"');
-      expect(html).not.toContain('No hay puestos finales importados');
+      expect(html).not.toContain('Sin puestos finales importados');
     }
     expect(JSON.stringify(espia.mock.calls)).not.toMatch(/caída|Ana/);
     espia.mockRestore();
@@ -278,11 +278,30 @@ describe('menores y ausencia honesta', () => {
     expect(p.ficha).toMatchObject({ esMenor: true, esPropia: true, anioNacimiento: 2013 });
 
     const adulto = crearContexto({
-      respuestas: [...personaSimple(UUID_B), cabecera(UUID_B, 'Adulto Ajeno', { anioNacimiento: 1985 }), ...base],
+      respuestas: [
+        ...personaSimple(UUID_B),
+        // El año de un ajeno sólo sale si el grupo de identidad entero demuestra la mayoría de edad.
+        { cuando: /SELECT birth_year AS anio FROM sport_person/, filas: [{ anio: 1985 }] },
+        cabecera(UUID_B, 'Adulto Ajeno', { anioNacimiento: 1985 }),
+        ...base,
+      ],
     });
     const a = await cargarFichaPantalla(adulto.ctx, UUID_B, CRITERIOS_FICHA_VACIOS);
     if (a.tipo !== 'ok') throw new Error(a.tipo);
     expect(a.ficha).toMatchObject({ esMenor: false, anioNacimiento: 1985 });
+
+    // Un miembro fundido que puede ser menor veta el año del adulto.
+    const fundido = crearContexto({
+      respuestas: [
+        ...personaSimple(UUID_B),
+        { cuando: /SELECT birth_year AS anio FROM sport_person/, filas: [{ anio: 1985 }, { anio: 2012 }] },
+        cabecera(UUID_B, 'Adulto Ajeno', { anioNacimiento: 1985 }),
+        ...base,
+      ],
+    });
+    const f = await cargarFichaPantalla(fundido.ctx, UUID_B, CRITERIOS_FICHA_VACIOS);
+    if (f.tipo !== 'ok') throw new Error(f.tipo);
+    expect(f.ficha.anioNacimiento).toBeNull();
   });
 
   it('un dato pendiente o sin importar se dice como ausencia, no como cero participaciones ni derrotas', async () => {
@@ -300,7 +319,7 @@ describe('menores y ausencia honesta', () => {
         nivel: 'pagina',
       }),
     );
-    expect(html).toContain('No hay puestos finales importados');
+    expect(html).toContain('Sin puestos finales importados');
     // Sin pruebas no se pintan cifras ni medallas a cero.
     expect(html).not.toContain('aria-label="Medallas y hitos"');
     expect(html).not.toContain('aria-label="En cifras"');
@@ -437,10 +456,10 @@ describe('historial en la ficha', () => {
 
   it('sin resultados y cursor inválido son estados distintos', () => {
     const vacio = render(historial({ sinResultados: true }));
-    expect(vacio).toContain('No hay puestos finales importados');
+    expect(vacio).toContain('Sin puestos finales importados');
     const invalido = render({ tipo: 'cursor_invalido' });
     expect(invalido).toContain('role="alert"');
-    expect(invalido).not.toContain('No hay puestos finales importados');
+    expect(invalido).not.toContain('Sin puestos finales importados');
   });
 });
 
@@ -479,11 +498,19 @@ describe('rutas y perfil', () => {
   const leer = (ruta: string) => readFileSync(ruta, 'utf8');
 
   it('la ficha comprueba la sesión antes de leer parámetros o datos', () => {
-    const fuente = leer('src/app/(app)/explorar/[personaId]/page.tsx');
-    expect(fuente.indexOf('getSessionProfile()')).toBeGreaterThan(-1);
-    expect(fuente.indexOf("redirect('/entrar')")).toBeLessThan(fuente.indexOf('cargarFichaPantalla(contextoReal'));
-    expect(fuente.indexOf('getSessionProfile()')).toBeLessThan(fuente.indexOf('Promise.all([params'));
-    expect(fuente).not.toMatch(/getManagedAthletes|user_profile|icalToken|email/);
+    const datos = leer('src/app/(app)/explorar/[personaId]/(perfil)/datos.ts');
+    expect(datos.indexOf('getSessionProfile()')).toBeGreaterThan(-1);
+    expect(datos.indexOf("redirect('/entrar')")).toBeLessThan(datos.indexOf('cargarCabeceraPerfil(contextoReal'));
+    // El layout y cada sección exigen sesión antes de tocar parámetros o datos.
+    const rutas = ['layout.tsx', 'page.tsx', 'estadisticas/page.tsx', 'rivales/page.tsx', 'curiosidades/page.tsx', 'ranking/page.tsx'];
+    for (const r of rutas) {
+      const fuente = leer(`src/app/(app)/explorar/[personaId]/(perfil)/${r}`);
+      const sesion = fuente.indexOf('await exigirSesion()');
+      const lecturaParams = Math.max(fuente.indexOf('await params'), fuente.indexOf('Promise.all([params'));
+      expect(sesion, r).toBeGreaterThan(-1);
+      expect(lecturaParams, r).toBeGreaterThan(sesion);
+      expect(fuente, r).not.toMatch(/getManagedAthletes|user_profile|icalToken|email/);
+    }
   });
 
   it('/perfil pinta el historial propio por defecto, no sólo un enlace, y conserva las secciones de cuenta', () => {

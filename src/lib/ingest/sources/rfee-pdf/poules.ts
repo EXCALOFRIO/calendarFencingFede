@@ -1,6 +1,7 @@
 import { AcumuladorAsaltos, exclusionesVacias } from './asaltos';
 import { normalizar, redondear, textoFila, type Fila } from './geometria';
-import { resolverParticipante, type Atribucion, type Participante } from './identidad';
+import { candidatosParticipante, resolverParticipante, type Atribucion, type Participante } from './identidad';
+import { nombreEnIntermedia, type FilaIntermedia } from './intermedia';
 import { RE_POULE_N, type PaginaAnalizada } from './paginas';
 import type { AsaltoPdf, ExclusionesPdf, OrigenMarcador, Rechazo, Region } from './tipos';
 
@@ -43,8 +44,8 @@ export type LecturaPoules = {
   publicado: number;
 };
 
-type Celda = { gana: boolean; puntos: number | null; origen: OrigenMarcador };
-type FilaMatriz = {
+export type Celda = { gana: boolean; puntos: number | null; origen: OrigenMarcador };
+export type FilaMatriz = {
   y: number;
   nombre: string;
   club: string | null;
@@ -102,7 +103,7 @@ function aCelda(t: string): Celda {
   return { gana: false, puntos: Number(t), origen: 'explicito' };
 }
 
-type Matriz = { celdas: Celda[][]; sinResolver: number };
+export type Matriz = { celdas: Celda[][]; sinResolver: number };
 
 /**
  * Valida la matriz y fija cada `V` sin número que los totales publicados
@@ -241,7 +242,7 @@ function limiteDeVuelta(e: Evidencia | undefined): number | null {
   return valor >= e.maximoPublicado ? valor : null;
 }
 
-type PouleLeida = {
+export type PouleLeida = {
   reg: Region;
   vuelta: number;
   ronda: string;
@@ -250,12 +251,22 @@ type PouleLeida = {
   matriz: Matriz;
 };
 
-export function leerPoules(paginas: readonly PaginaAnalizada[], registro: readonly Participante[]): LecturaPoules {
-  const excluidos = exclusionesVacias();
-  const rechazos: Rechazo[] = [];
-  const acumulador = new AcumuladorAsaltos(excluidos);
+export type PouleRechazada = Rechazo & { filas?: FilaMatriz[] };
+
+export type MatricesPoules = {
+  /** En orden de documento: cada poule leída o el rechazo de su región (con sus filas si se llegaron a leer). */
+  lecturas: (PouleLeida | PouleRechazada)[];
+  grupos: number;
+  publicado: number;
+};
+
+/**
+ * Matrices de poule validadas contra sus propios totales, sin atribuir todavía los
+ * tiradores a la clasificación. Con el tope de la vuelta ya aplicado donde no contradice.
+ */
+export function leerMatricesPoules(paginas: readonly PaginaAnalizada[]): MatricesPoules {
   // En orden de página: el tope de una vuelta se decide con todas sus poules antes de emitir ninguna.
-  const lecturas: (PouleLeida | Rechazo)[] = [];
+  const lecturas: (PouleLeida | PouleRechazada)[] = [];
   const evidencia = new Map<number, Evidencia>();
   let grupos = 0;
   let publicado = 0;
@@ -316,7 +327,7 @@ export function leerPoules(paginas: readonly PaginaAnalizada[], registro: readon
 
       const matriz = validarMatriz(filas);
       if (typeof matriz === 'string') {
-        rechazar(matriz);
+        lecturas.push({ seccion: 'poules', region: reg, motivo: matriz, filas });
         continue;
       }
 
@@ -339,21 +350,89 @@ export function leerPoules(paginas: readonly PaginaAnalizada[], registro: readon
   }
 
   for (const lectura of lecturas) {
+    if (!('matriz' in lectura) || lectura.matriz.sinResolver === 0) continue;
+    const limite = limiteDeVuelta(evidencia.get(lectura.vuelta));
+    if (limite === null) continue;
+    // Si el tope contradice algún total de esta poule, se queda la lectura aritmética.
+    const conLimite = validarMatriz(lectura.filas, limite);
+    if (typeof conLimite !== 'string') lectura.matriz = conLimite;
+  }
+  return { lecturas, grupos, publicado };
+}
+
+/**
+ * Hermanos con el mismo nombre truncado y el mismo club: sus filas de poule encajan con las
+ * dos filas de la clasificación final y quedarían sin atribuir. Lo resuelve la clasificación
+ * después de poules, que repite V/M, índice y TD de cada fila: si esos totales señalan una
+ * sola fila intermedia, y ésta es de un eliminado tras las poules, su puesto es el final y
+ * señala a uno solo de los candidatos. El que queda, dentro de la misma vuelta, es del otro.
+ */
+export function desempatarHomonimos(
+  filas: readonly (readonly { nombre: string; club: string | null; vm: number; ind: number; td: number; vuelta: number }[])[],
+  atribuciones: Atribucion[][],
+  registro: readonly Participante[],
+  intermedia: readonly FilaIntermedia[],
+): number {
+  type Duda = { p: number; i: number; vuelta: number; candidatos: Participante[] };
+  const dudas: Duda[] = [];
+  for (const [p, fs] of filas.entries()) {
+    for (const [i, f] of fs.entries()) {
+      const a = atribuciones[p][i];
+      if (a.ok || a.motivo !== 'ambiguo') continue;
+      dudas.push({ p, i, vuelta: f.vuelta, candidatos: candidatosParticipante(registro, f.nombre, f.club) });
+    }
+  }
+  if (dudas.length === 0) return 0;
+  let resueltas = 0;
+  const asignar = (d: Duda, x: Participante) => {
+    atribuciones[d.p][d.i] = { ok: true, ref: x.ref, nombre: x.nombre };
+    resueltas += 1;
+  };
+  for (const d of dudas) {
+    const f = filas[d.p][d.i];
+    const enIntermedia = intermedia.filter((x) => Math.abs(x.vm - f.vm) <= 0.0015 && x.ind === f.ind && x.td === f.td && nombreEnIntermedia(f.nombre, x));
+    if (enIntermedia.length !== 1 || enIntermedia[0].eliminado !== true) continue;
+    const porPuesto = d.candidatos.filter((c) => c.posicion === enIntermedia[0].posicion);
+    if (porPuesto.length === 1) asignar(d, porPuesto[0]);
+  }
+  // Por exclusión: mismas candidatas, misma vuelta, una sola fila y una sola candidata libres.
+  const grupos = new Map<string, Duda[]>();
+  for (const d of dudas) {
+    const k = `${d.vuelta}|${d.candidatos.map((c) => c.ref).sort().join(',')}`;
+    (grupos.get(k) ?? grupos.set(k, []).get(k)!).push(d);
+  }
+  for (const g of grupos.values()) {
+    const usadas = new Set(g.flatMap((d) => { const a = atribuciones[d.p][d.i]; return a.ok ? [a.ref] : []; }));
+    const libres = g.filter((d) => !atribuciones[d.p][d.i].ok);
+    const candidatas = g[0].candidatos.filter((c) => !usadas.has(c.ref));
+    if (libres.length === 1 && candidatas.length === 1 && g.length === g[0].candidatos.length) asignar(libres[0], candidatas[0]);
+  }
+  return resueltas;
+}
+
+export function leerPoules(
+  paginas: readonly PaginaAnalizada[],
+  registro: readonly Participante[],
+  intermedia: readonly FilaIntermedia[] = [],
+): LecturaPoules {
+  const excluidos = exclusionesVacias();
+  const rechazos: Rechazo[] = [];
+  const acumulador = new AcumuladorAsaltos(excluidos);
+  const { lecturas, grupos, publicado } = leerMatricesPoules(paginas);
+  const leidas = lecturas.filter((l): l is PouleLeida => 'matriz' in l);
+  const atribucionesDe = leidas.map((l) => l.filas.map((f) => resolverParticipante(registro, f.nombre, f.club)));
+  desempatarHomonimos(leidas.map((l) => l.filas.map((f) => ({ ...f, vuelta: l.vuelta }))), atribucionesDe, registro, intermedia);
+  const atribucionDe = new Map(leidas.map((l, k) => [l, atribucionesDe[k]]));
+
+  for (const lectura of lecturas) {
     if (!('matriz' in lectura)) {
-      rechazos.push(lectura);
+      rechazos.push({ seccion: lectura.seccion, region: lectura.region, motivo: lectura.motivo });
       continue;
     }
-    const { reg, ronda, rondaOriginal, filas } = lectura;
+    const { reg, ronda, rondaOriginal, filas, matriz } = lectura;
     const rechazar = (motivo: string) => rechazos.push({ seccion: 'poules', region: reg, motivo });
-    let matriz = lectura.matriz;
-    const limite = limiteDeVuelta(evidencia.get(lectura.vuelta));
-    if (matriz.sinResolver > 0 && limite !== null) {
-      // Si el tope contradice algún total de esta poule, se queda la lectura aritmética.
-      const conLimite = validarMatriz(filas, limite);
-      if (typeof conLimite !== 'string') matriz = conLimite;
-    }
 
-    const atribuciones: Atribucion[] = filas.map((f) => resolverParticipante(registro, f.nombre, f.club));
+    const atribuciones: Atribucion[] = atribucionDe.get(lectura)!;
     const usadas = new Map<string, number>();
     for (const a of atribuciones) if (a.ok) usadas.set(a.ref, (usadas.get(a.ref) ?? 0) + 1);
     const validas = atribuciones.map((a) => (a.ok && usadas.get(a.ref) === 1 ? a : null));

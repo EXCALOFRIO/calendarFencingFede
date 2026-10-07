@@ -41,7 +41,7 @@ function FilaRival({ personaId, r }: { personaId: string; r: RivalFrecuente }) {
         </span>
         <span className="flex flex-col items-end" title={`${r.asaltos} ${r.asaltos === 1 ? 'asalto' : 'asaltos'}`}>
           <span className="cifra text-2xl leading-none">{r.victorias}–{r.derrotas}</span>
-          <span className="text-[0.625rem] text-muted-foreground">{r.asaltos} {r.asaltos === 1 ? 'asalto' : 'asaltos'}</span>
+          <span className="text-[12px] text-muted-foreground">{r.asaltos} {r.asaltos === 1 ? 'asalto' : 'asaltos'}</span>
         </span>
       </Link>
     </li>
@@ -66,7 +66,7 @@ export function ManoAMano({
   enPestana?: boolean;
 }) {
   const otro = (
-    <Button asChild variant="outline" size="sm" className="h-11 min-h-11 rounded-full px-4">
+    <Button asChild variant="outline" size="sm" className="h-[40px] min-h-[40px] rounded-full px-4">
       <Link href={rutaCaraACara(personaId)} prefetch={false}>
         <Swords aria-hidden />
         Elegir otro rival

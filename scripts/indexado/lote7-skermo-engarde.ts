@@ -49,6 +49,8 @@ import { argumento, bandera, CARPETA_TRABAJO } from './comun';
 import { torneosCacheados } from './asaltos-rfee-engarde';
 import { cargarPruebasNacionales, nombresEnComun, prepararNombre, type NombrePreparado, type PruebaNacional } from './dedupe-pruebas';
 import { categoriaEngarde, convertirPrueba, generoEngarde, temporadaRfee, type Paginas, type PruebaIndice } from './engarde-a-hechos';
+import { asaltoValido, casarConSkermo, nombresDeHechos, validarMarcadores, type Casamiento } from '../../src/lib/ingest/hechos/engarde';
+export { asaltoValido, casarConSkermo, validarMarcadores, type Casamiento };
 import { CacheEngarde, CARPETA_ENGARDE, claveCache, enlaceEngarde, formularioIndiceEngarde, paginasDePrueba } from './engarde-descargar';
 import { CARPETA_ENGARDE_HISTORICO, fechaTorneoLista, ORGANIZADORES_ES } from './engarde-historico-descargar';
 import { CACHE_LOTE7_SKERMO, SALIDA_LOTE7_SKERMO, USER_AGENT_LOTE7 } from './lote7-skermo-comun';
@@ -125,46 +127,7 @@ export function huecosSkermo(db: DatabaseSync, pruebas: readonly PruebaNacional[
 
 // --------------------------------------------------------- validación de marcadores
 
-/** Asalto con marcador coherente: ganador determinable y con más tocados, poule ≤ 5, cuadro ≤ 15. */
-export function asaltoValido(b: Pick<AsaltoHecho, 'phase' | 'scoreA' | 'scoreB' | 'winner'>): boolean {
-  const max = b.phase === 'POULE' ? 5 : 15;
-  if (b.scoreA > max || b.scoreB > max) return false;
-  if (b.winner === null) return b.scoreA !== b.scoreB;
-  return b.winner === 'A' ? b.scoreA >= b.scoreB : b.scoreB >= b.scoreA;
-}
-
-export function validarMarcadores(h: HechosPrueba): { hechos: HechosPrueba; descartados: Record<Fase, number> } {
-  const descartados: Record<Fase, number> = { POULE: 0, TABLEAU: 0 };
-  const bouts = h.bouts.filter((b) => {
-    if (asaltoValido(b)) return true;
-    descartados[b.phase] += 1;
-    return false;
-  });
-  const status = { ...h.status, notes: [...h.status.notes] };
-  for (const f of FASES) {
-    if (descartados[f] === 0) continue;
-    const clave = f === 'POULE' ? 'pools' : 'tableau';
-    const quedan = bouts.some((b) => b.phase === f);
-    status[clave] = quedan ? 'parcial' : 'ilegible';
-    status.notes.push(`${f === 'POULE' ? 'Poules' : 'Cuadro'}: ${descartados[f]} asalto(s) descartado(s) por marcador incoherente`);
-  }
-  return { hechos: hechosPrueba.parse({ ...h, status, bouts }), descartados };
-}
-
 // ------------------------------------------------------------------ emparejado
-
-function nombresDeHechos(h: HechosPrueba): NombrePreparado[] {
-  const vistos = new Set<string>();
-  const out: NombrePreparado[] = [];
-  const fuente = h.results.length > 0 ? h.results.map((r) => r.name) : h.bouts.flatMap((b) => [b.aName, b.bName]);
-  for (const n of fuente) {
-    const p = prepararNombre(n);
-    if (!p.norm || vistos.has(p.norm)) continue;
-    vistos.add(p.norm);
-    out.push(p);
-  }
-  return out;
-}
 
 /** Mayor fracción de tiradores de un hueco cuyas palabras del nombre salen todas en el HTML. */
 export function prefiltroNombres(html: string, huecos: readonly Pick<PruebaNacional, 'nombres'>[]): number {
@@ -178,31 +141,6 @@ export function prefiltroNombres(html: string, huecos: readonly Pick<PruebaNacio
     mejor = Math.max(mejor, presentes / h.nombres.length);
   }
   return mejor;
-}
-
-export type Casamiento = { casan: PruebaNacional[]; cobertura: number };
-
-/**
- * Pruebas de Skermo que son esta prueba de Engarde: cada una con al menos el 80 % de sus
- * tiradores en Engarde y, entre todas, al menos el 60 % de los tiradores de Engarde.
- */
-export function casarConSkermo(
-  e: { weapon: string; gender: string; fecha: string; nombres: readonly NombrePreparado[] },
-  skermo: readonly PruebaNacional[],
-): Casamiento {
-  if (e.nombres.length === 0) return { casan: [], cobertura: 0 };
-  const casan = skermo.filter((s) => {
-    if (s.source !== 'skermo_rfee' || s.weapon !== e.weapon || s.nombres.length === 0) return false;
-    if (e.gender !== 'MIXTO' && s.gender !== 'MIXTO' && s.gender !== e.gender) return false;
-    if (Math.abs(dia(s.fecha) - dia(e.fecha)) > 1) return false;
-    return nombresEnComun(s.nombres, e.nombres) >= Math.max(1, Math.ceil(0.8 * s.nombres.length));
-  });
-  const union = casan.flatMap((s) => s.nombres);
-  const cobertura = casan.length ? nombresEnComun(e.nombres, union) / e.nombres.length : 0;
-  // Un TNR abierto a extranjeros: Skermo sólo clasifica a los licenciados, que están todos en la
-  // prueba de Engarde, pero son menos del 60 % de sus tiradores.
-  const contenida = casan.some((s) => s.nombres.length >= 10 && nombresEnComun(s.nombres, e.nombres) >= Math.ceil(0.95 * s.nombres.length));
-  return cobertura >= 0.6 || (contenida && cobertura >= 0.3) ? { casan, cobertura } : { casan: [], cobertura };
 }
 
 /**

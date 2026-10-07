@@ -13,10 +13,10 @@ import {
   userProfile,
 } from '@/db/schema';
 import { getManagedAthletes, requireRole, requireWritableProfile, requireWritableRole } from '@/lib/auth/session';
-import { storeFile, storageBackend } from '@/lib/storage';
+import { z } from 'zod';
 import { formatDateRangeEs, formatDateTimeEs } from '@/lib/utils';
 import { enLista as inArray, lotesDeInsercion } from '@/lib/sqlite';
-import { parseFechaMadrid } from './fechas';
+import { crearConvocatoriaPara } from './crear';
 
 export type ResultadoAccion =
   | { ok: true; message: string }
@@ -40,12 +40,31 @@ export type ResultadoAccion =
  * seleccionador: no puede saber si es una lesión, un examen o que el viaje no
  * se puede pagar, y son decisiones distintas.
  */
+const MAX_MOTIVO = 500;
+
+/** Una acción de servidor es un endpoint: los tipos de TS no llegan al cliente. */
+const entradaRespuesta = z.object({
+  callUpAthleteId: z.string().min(1).max(64),
+  respuesta: z.enum(['confirmado', 'rechazado']),
+  motivo: z.string().max(MAX_MOTIVO).optional(),
+});
+
 export async function responderConvocatoria(
   callUpAthleteId: string,
   respuesta: 'confirmado' | 'rechazado',
   motivo?: string,
 ): Promise<ResultadoAccion> {
   const profile = await requireWritableProfile();
+
+  const entrada = entradaRespuesta.safeParse({ callUpAthleteId, respuesta, motivo: motivo ?? undefined });
+  if (!entrada.success) {
+    return {
+      ok: false,
+      error: motivo && motivo.length > MAX_MOTIVO
+        ? `El motivo no puede pasar de ${MAX_MOTIVO} caracteres.`
+        : 'La respuesta no es válida.',
+    };
+  }
 
   const [fila] = await db
     .select({
@@ -148,11 +167,10 @@ async function avisarAlSeleccionador(
   await db
     .insert(notification)
     .values({
-      // El mismo tirador puede cambiar de respuesta; el minuto entra en la
-      // clave para que el cambio se avise, pero dos clics seguidos no.
-      dedupeKey: `callup-response:${fila.id}:${respuesta}:${cuando
-        .toISOString()
-        .slice(0, 16)}`,
+      // Como mucho un correo por convocado y hora, cambie o no de respuesta:
+      // alternar confirmar/rechazar no puede llenar la cola de correo (que
+      // tiene tope diario). El panel siempre muestra la respuesta vigente.
+      dedupeKey: `callup-response:${fila.id}:${cuando.toISOString().slice(0, 13)}`,
       toEmail: destino.email,
       kind: 'respuesta_convocatoria',
       subject: `${fila.eventName}: ${nombre} ${verbo.toLowerCase()}`,
@@ -178,71 +196,9 @@ export async function crearConvocatoria(
   formData: FormData,
 ): Promise<ResultadoAccion & { callUpId?: string }> {
   const profile = await requireWritableRole('admin');
-
-  const eventId = String(formData.get('eventId') ?? '').trim();
-  const title = String(formData.get('title') ?? '').trim();
-  const body = String(formData.get('body') ?? '').trim();
-  const travelNotes = String(formData.get('travelNotes') ?? '').trim();
-  const respondBy = parseFechaMadrid(String(formData.get('respondBy') ?? ''));
-
-  if (!eventId) return { ok: false, error: 'Elige el evento de la convocatoria.' };
-  if (title.length < 3) return { ok: false, error: 'Ponle un título a la convocatoria.' };
-
-  const [evento] = await db
-    .select({ id: event.id, name: event.name })
-    .from(event)
-    .where(eq(event.id, eventId))
-    .limit(1);
-  if (!evento) return { ok: false, error: 'Ese evento ya no existe.' };
-
-  let pdfUrl: string | null = null;
-  let pdfName: string | null = null;
-
-  const pdf = formData.get('pdf');
-  if (pdf instanceof File && pdf.size > 0) {
-    if (pdf.type && pdf.type !== 'application/pdf') {
-      return { ok: false, error: 'El documento de la convocatoria tiene que ser un PDF.' };
-    }
-    if (!storageBackend()) {
-      return {
-        ok: false,
-        error:
-          'No hay almacenamiento de ficheros configurado, así que el PDF no se ' +
-          'puede guardar. Crea la convocatoria sin PDF o configura el almacenamiento.',
-      };
-    }
-    const bytes = new Uint8Array(await pdf.arrayBuffer());
-    const limpio = pdf.name.replace(/[^\w.\-]+/g, '_').slice(-80);
-    const guardado = await storeFile(
-      `convocatorias/${eventId}/${Date.now()}-${limpio}`,
-      bytes,
-      { contentType: 'application/pdf' },
-    );
-    pdfUrl = guardado?.url ?? null;
-    pdfName = pdf.name;
-  }
-
-  const [creada] = await db
-    .insert(callUp)
-    .values({
-      eventId,
-      title,
-      body: body || null,
-      travelNotes: travelNotes || null,
-      respondBy,
-      pdfUrl,
-      pdfName,
-      createdByProfileId: profile.profileId,
-    })
-    .returning({ id: callUp.id });
-
-  revalidatePath('/admin/convocatorias');
-
-  return {
-    ok: true,
-    callUpId: creada.id,
-    message: `Convocatoria creada en borrador para "${evento.name}". Ahora elige a quién convocas.`,
-  };
+  // Las acciones admiten 1 MB (next.config.ts): un PDF mayor sube por
+  // /api/admin/convocatorias, que usa esta misma función.
+  return crearConvocatoriaPara(profile, formData);
 }
 
 export type SeleccionConvocado = {

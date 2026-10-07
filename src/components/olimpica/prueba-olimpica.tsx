@@ -72,7 +72,7 @@ function Fila({
       data-propio={propio ? '' : undefined}
       className={cn(
         'min-w-0 rounded-sm px-2 py-1.5',
-        propio && 'bg-primary/10 font-semibold',
+        propio && 'bg-marcado font-semibold',
       )}
     >
       <div className="grid min-w-0 grid-cols-[4.75rem_auto_minmax(0,1fr)_auto] items-center gap-2">
@@ -184,7 +184,7 @@ export function PruebaOlimpica({
               data-propio={fueraEquipos.noc === nocPropio ? '' : undefined}
               className={cn(
                 'grid min-w-0 grid-cols-[4.75rem_auto_minmax(0,1fr)_auto] items-center gap-2 px-2 py-1.5 text-muted-foreground',
-                fueraEquipos.noc === nocPropio && 'bg-primary/10 font-semibold text-foreground',
+                fueraEquipos.noc === nocPropio && 'bg-marcado font-semibold text-foreground',
               )}
             >
               <span className="text-xs">1.º fuera</span>

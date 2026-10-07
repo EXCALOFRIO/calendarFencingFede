@@ -3,6 +3,7 @@ import { parseSetCookieHeader } from 'better-auth/cookies';
 import { cookies } from 'next/headers';
 import { db } from '@/db';
 import { createManagedAuth } from './managed-auth';
+import { otpDailyLimit } from './rate-limit';
 
 /** Lazy: importing a page during a build must not resolve a Worker binding or secret. */
 export function getAuth() {
@@ -18,6 +19,7 @@ export function getAuth() {
   const handlers = managed.handler();
   return createManagedAuth(db, {
     secret, origin,
+    otpDailyLimit: otpDailyLimit(),
     request: (request, path) => {
       const context = { params: Promise.resolve({ path: path.split('/') }) };
       return request.method === 'GET' ? handlers.GET(request, context) : handlers.POST(request, context);

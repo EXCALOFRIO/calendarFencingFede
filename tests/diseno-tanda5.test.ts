@@ -61,7 +61,7 @@ const pasada: PruebaPasada = {
 };
 
 describe('pantalla de prueba', () => {
-  it('solo ofrece las vistas con datos, a 44 px y con «Clasif.» en el móvil', () => {
+  it('solo ofrece las vistas con datos, de 32 px con toque de 44 y con «Clasif.» en el móvil', () => {
     const marcado = html(React.createElement(VistaPrueba, {
       edicionId: 'e', base: { prueba: 'p', cursor: '' }, clasificacion: [fila],
       asaltos: { poules: [], cuadro: [{ ronda: 'T8', etiqueta: 'Cuartos', asaltos: [asalto(1)] }] } as never,
@@ -72,11 +72,11 @@ describe('pantalla de prueba', () => {
     expect(marcado).toContain('grid-cols-2');
     expect(marcado).toContain('aria-label="Clasificación"');
     expect(marcado).toContain('>Clasif.<');
-    expect(marcado).toMatch(/role="tab"[^>]*class="inline-flex h-11/);
+    expect(marcado).toMatch(/role="tab"[^>]*class="inline-flex h-\[32px\][^"]*after:h-\[max\(100%,44px\)\]/);
     expect(marcado).not.toMatch(/\bh-10\b|\bsize-10\b/);
   });
 
-  it('Individual y Equipos miden 44 px', () => {
+  it('Individual y Equipos se ven de 32 px y se tocan en 44', () => {
     const marcado = html(React.createElement(SelectorPrueba, {
       formatos: [
         { valor: 'INDIVIDUAL', etiqueta: 'Individual', href: '/a', activa: true },
@@ -85,14 +85,16 @@ describe('pantalla de prueba', () => {
       actual: { titulo: 'Espada femenina', categoria: 'Absoluto' },
       grupos: [],
     }));
-    expect(marcado.match(/<a [^>]*class="inline-flex h-11/g)).toHaveLength(2);
+    expect(marcado.match(/<a [^>]*class="inline-flex h-\[32px\][^"]*after:h-\[max\(100%,44px\)\]/g)).toHaveLength(2);
     expect(marcado).not.toMatch(/\bh-8\b|\bh-9\b/);
   });
 
-  it('las colecciones de Explorar miden 44 px dibujadas', () => {
-    const marcado = html(React.createElement(CabeceraExplorar, { siguiendo: 3 }));
-    expect(marcado.match(/class="flex h-11 /g)).toHaveLength(3);
-    expect(marcado).not.toContain('before:-inset-y-1');
+  it('Buscar tiene dos pestañas de 44 px de toque, sin pastillas de colecciones', () => {
+    const marcado = html(React.createElement(CabeceraExplorar, { activa: 'competiciones' }));
+    expect(marcado.match(/class="flex h-\[36px\] [^"]*after:h-\[max\(100%,44px\)\]/g)).toHaveLength(2);
+    expect(marcado).toContain('href="/explorar/buscar"');
+    expect(marcado).toMatch(/<a[^>]*aria-current="page"[^>]*>Competiciones</);
+    expect(marcado).not.toContain('/explorar/favoritos');
   });
 });
 
@@ -120,16 +122,16 @@ describe('ficha de evento', () => {
     }));
     expect(marcado).toContain('href="https://www.google.com/maps/search/?api=1&amp;query=x"');
     expect(marcado).toContain('truncate');
-    expect(marcado).toContain('min-h-11');
+    expect(marcado).toContain('min-h-[44px]');
     expect(marcado).toContain('abrir en el mapa');
   });
 
-  it('el enlace a la circular mide 44 px', () => {
+  it('el enlace a la circular se ve de 32 px y se toca en 44', () => {
     const marcado = html(React.createElement(BarraPlazos, {
       plazos: [{ type: 'L1', label: 'Límite', deadlineAt: new Date('2026-10-02T21:59:00Z'), surchargeEur: null, blocking: false, origin: 'PUBLICADO', sourceDocument: 'Calendario oficial', sourceUrl: 'https://example.test/c' }],
       estado: ESTADO,
     }));
-    expect(marcado).toMatch(/href="https:\/\/example\.test\/c"[^>]*class="[^"]*size-11/);
+    expect(marcado).toMatch(/href="https:\/\/example\.test\/c"[^>]*class="[^"]*size-\[32px\][^"]*after:h-\[max\(100%,44px\)\]/);
   });
 
   it('la cabecera lleva la insignia del organismo, no una pastilla gris', () => {
@@ -174,8 +176,8 @@ describe('calendario', () => {
     expect(tarjeta('apilada')).toContain('data-organismo="FIE"');
   });
 
-  it('«Resultados oficiales» en la hoja mide 44 px', () => {
+  it('«Resultados oficiales» en la hoja se ve de 32 px y se toca en 44', () => {
     const marcado = html(React.createElement(ResultadosPasados, { evento, pruebas: [pasada] }));
-    expect(marcado).toMatch(/class="inline-flex size-11 [^"]*"[^>]*aria-label="Resultados oficiales/);
+    expect(marcado).toMatch(/class="inline-flex size-\[32px\] [^"]*after:h-\[max\(100%,44px\)\][^"]*"[^>]*aria-label="Resultados oficiales/);
   });
 });

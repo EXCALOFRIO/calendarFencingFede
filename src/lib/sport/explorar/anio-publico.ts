@@ -9,6 +9,17 @@ export function posibleMenor(anioNacimiento: number | null, hoy: string): boolea
 }
 
 /**
+ * Veto de todo lo que delata la edad (foto, enlace FIE, edad, año) para un
+ * grupo de identidad: sin ningún año conocido no se puede descartar que sea
+ * menor, y basta un miembro que pueda serlo (o un año que no es un año).
+ */
+export function vetarEnlaceFie(anios: readonly (number | null)[], hoy: string): boolean {
+  if (!Number.isInteger(Number(hoy.slice(0, 4)))) return true;
+  if (anios.every((a) => a === null)) return true;
+  return anios.some((a) => a !== null && (!Number.isInteger(Number(a)) || posibleMenor(Number(a), hoy)));
+}
+
+/**
  * El año de nacimiento que puede salir hacia el cliente en listas (búsqueda,
  * favoritos, homónimos): `null` si falta, no es un año válido o la persona
  * puede ser menor.

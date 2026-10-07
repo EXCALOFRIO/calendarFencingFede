@@ -57,10 +57,11 @@ export function anioNacimientoVisible(
  * fie.org: nunca en categorías de menores (M17, M20…) ni para quien, por la
  * fecha que conocemos de él, pueda ser menor. La FIE no publica la fecha en la
  * clasificación; sólo la tenemos de los tiradores con ficha en `fie_fencer`.
+ * Sin fecha no se puede descartar que sea menor, así que tampoco se enlaza.
  */
 export function fichaFieVisible(categoria: string, nacimiento: string | null, hoy: string): boolean {
   if (CATEGORIAS_MENORES.has(categoria)) return false;
-  if (!nacimiento) return true;
+  if (!nacimiento) return false;
   const anio = Number(nacimiento.slice(0, 4));
   return Number.isInteger(anio) && !posibleMenor(anio, hoy);
 }

@@ -4,7 +4,7 @@ import { GENDER_LABEL, WEAPON_LABEL } from '@/lib/utils';
 import { filas } from './contexto';
 import { listaUuid } from './filtros-sql';
 import { categoriaVisible } from './presentacion';
-import { crearDetectorConjuntas, pruebaConjuntaDe } from './pruebas-conjuntas';
+import { detectorConjuntasDe, pruebaConjuntaDe } from './pruebas-conjuntas';
 
 /**
  * Lo que la página de una prueba enseña de su prueba conjunta: desde una parte,
@@ -53,7 +53,7 @@ export function etiquetasDePartes(pruebas: readonly FilaPrueba[]): Map<string, s
 export async function leerConjuntaDePrueba(
   db: Ejecutor,
   pruebaId: string,
-  hayTabla: () => Promise<boolean> = crearDetectorConjuntas(db),
+  hayTabla: () => Promise<boolean> = detectorConjuntasDe(db),
 ): Promise<VistaConjunta | null> {
   try {
     const enlace = await pruebaConjuntaDe(db, pruebaId, hayTabla);

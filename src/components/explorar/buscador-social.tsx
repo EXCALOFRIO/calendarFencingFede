@@ -2,7 +2,6 @@
 
 import { ArrowRight, LoaderCircle, Search, X } from 'lucide-react';
 import * as React from 'react';
-import { Button } from '@/components/ui/button';
 import { rutaFichaConRetorno } from '@/lib/sport/explorar/ficha-url';
 import {
   anadirReciente,
@@ -197,13 +196,14 @@ export function BuscadorSocial({
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-2">
       <div className="relative w-full lg:max-w-2xl">
         <label htmlFor="explorar-q" className="sr-only">Buscar tiradores</label>
+        {/* Medidas en px: con la raíz de 18 px del móvil, `h-12` dibujaba una barra de 54. */}
         {cargando || pendiente ? (
-          <LoaderCircle className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden />
+          <LoaderCircle className="pointer-events-none absolute top-1/2 left-3 size-[18px] -translate-y-1/2 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden />
         ) : (
-          <Search className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-[18px] -translate-y-1/2 text-muted-foreground" aria-hidden />
         )}
         <input
           ref={entrada}
@@ -219,7 +219,7 @@ export function BuscadorSocial({
           placeholder="Buscar tiradores"
           aria-controls="explorar-perfiles"
           aria-describedby="explorar-q-estado"
-          className="h-12 min-h-12 w-full rounded-full border border-input bg-secondary pr-12 pl-12 text-base shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [&::-webkit-search-cancel-button]:appearance-none"
+          className="h-[40px] min-h-[40px] w-full rounded-xl border border-transparent bg-secondary pr-[40px] pl-[38px] text-[16px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [&::-webkit-search-cancel-button]:appearance-none"
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.nativeEvent.isComposing) return;
@@ -228,16 +228,14 @@ export function BuscadorSocial({
           }}
         />
         {valor ? (
-          <Button
+          <button
             type="button"
-            variant="ghost"
-            size="icon"
             aria-label="Borrar búsqueda"
-            className="absolute top-1/2 right-1 -translate-y-1/2 rounded-full text-muted-foreground hover:text-foreground"
+            className="absolute top-1/2 right-0 flex size-[44px] -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
             onClick={() => { onChange(''); entrada.current?.focus(); }}
           >
-            <X aria-hidden />
-          </Button>
+            <X className="size-[18px]" aria-hidden />
+          </button>
         ) : null}
       </div>
 
@@ -273,8 +271,8 @@ export function BuscadorSocial({
             ) : (
               <ul aria-hidden="true" className={CLASE_LISTA_PERFILES}>
                 {[0, 1, 2, 3].map((i) => (
-                  <li key={i} className="flex min-h-16 items-center gap-3 px-0.5 py-2 sm:px-3">
-                    <span className="size-12 shrink-0 rounded-full bg-secondary" />
+                  <li key={i} className="flex min-h-[56px] items-center gap-3 px-0.5 sm:px-3">
+                    <span className="size-[48px] shrink-0 rounded-full bg-secondary" />
                     <span className="flex flex-1 flex-col gap-2">
                       <span className="h-3.5 w-2/5 rounded bg-secondary" />
                       <span className="h-3 w-3/5 rounded bg-secondary" />
@@ -283,14 +281,13 @@ export function BuscadorSocial({
                 ))}
               </ul>
             )}
-            <Button
+            <button
               type="submit"
-              variant="ghost"
-              className="h-auto min-h-12 w-full justify-between rounded-xl px-3 text-left whitespace-normal text-primary-text hover:text-primary-text"
+              className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl px-0.5 text-left text-[14px] font-medium text-primary-text outline-none hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:px-3"
             >
               <span>Ver todos los resultados de «{vivo}»</span>
-              <ArrowRight aria-hidden />
-            </Button>
+              <ArrowRight className="size-[16px] shrink-0" aria-hidden />
+            </button>
             {avisoFiltros ? (
               <p className="px-3 text-xs text-muted-foreground">
                 Estos perfiles son sólo por nombre: los filtros se aplican al ver todos los resultados.
@@ -298,13 +295,17 @@ export function BuscadorSocial({
             ) : null}
           </section>
         ) : (
-          <div className="flex min-w-0 flex-col gap-6">
+          <div className="flex min-w-0 flex-col gap-3">
             {valor.trim() === '' && recientes.length > 0 ? (
               <section aria-labelledby="explorar-recientes" className="flex min-w-0 flex-col gap-1 lg:max-w-2xl">
                 <EncabezadoSeccion id="explorar-recientes" titulo="Recientes">
-                  <Button type="button" variant="ghost" size="sm" className="text-primary-text hover:text-primary-text" onClick={borrar}>
+                  <button
+                    type="button"
+                    className="flex h-[44px] items-center px-1 text-[13px] font-semibold text-primary-text outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    onClick={borrar}
+                  >
                     Borrar todo
-                  </Button>
+                  </button>
                 </EncabezadoSeccion>
                 <ul className={CLASE_LISTA_PERFILES} aria-labelledby="explorar-recientes">
                   {recientes.map((p) => (

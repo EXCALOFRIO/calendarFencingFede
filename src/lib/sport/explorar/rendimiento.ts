@@ -414,7 +414,9 @@ function vista(rows: readonly Clasificada[]): VistaRendimiento {
   const porTipo: TipoResumen[] = [...tipos.entries()]
     .sort(([a], [b]) => ORDEN_TIPOS.indexOf(a) - ORDEN_TIPOS.indexOf(b))
     .map(([clave, a]) => ({ ...cerrar(a), clave, ...TIPOS_RENDIMIENTO[clave] }));
+  // Una categoría sin puesto ni asaltos (copias sin clasificación) sería una fila vacía: no sale.
   const porCategoria: CategoriaResumen[] = [...categorias.entries()]
+    .filter(([, a]) => a.conPuesto > 0 || a.asaltos.asaltos > 0)
     .sort(([a], [b]) => ordenCategoriaVisible(a) - ordenCategoriaVisible(b) || a.localeCompare(b))
     .map(([clave, a]) => ({ ...cerrar(a), clave, etiqueta: categoriaVisible(clave) }));
   const porArma = armas.size > 1

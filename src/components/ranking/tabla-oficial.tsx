@@ -1,15 +1,9 @@
 'use client';
 
 import { ChevronRight, ExternalLink, Scissors } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 import * as React from 'react';
-import { Button } from '@/components/ui/button';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
+import { HojaInferior } from '@/components/sistema/hoja-inferior';
 import type {
   BreakdownEntry,
   FilaOficial,
@@ -21,13 +15,34 @@ import type { Weapon } from '@/lib/auth/session';
 import { puedeVerInterno } from '@/lib/ranking/acceso-interno';
 import type { CutoffStatus } from '@/lib/ranking/compute';
 import { nombreCasa } from '@/lib/nombres';
+import { temporadaCorta } from '@/lib/ranking/url-nacional';
 import { cn, formatDateEs } from '@/lib/utils';
 import { Desglose } from './desglose';
+import { escribirUrl, urlDeGrupo, useRanking } from './estado-ranking';
 import { FilaLinea } from './fila-linea';
-import { SelectoresGrupo } from './selectores-grupo';
-import { clave, etiquetaGrupo, puntos } from './formato';
+import { Procedencia, VerMas } from './piezas';
+import { BarraFiltrosRanking } from './selectores-grupo';
+import { clave, etiquetaGrupo, grupoMasParecido, puntos } from './formato';
 
 type Grupo = RankingGroupKey & { tiradores: number };
+
+/**
+ * Los datos de la tabla, tal cual los arma el servidor (`armarDatosNacional`).
+ * `grupos` son todos los que tienen clasificación; `tablas` (y lo que cuelga
+ * de cada grupo) sólo los que ya se han pedido: de entrada, uno.
+ */
+export type DatosTablaOficial = {
+  grupos: Grupo[];
+  /** El grupo que trae esta respuesta (`groupKey`). */
+  grupoCargado?: string | null;
+  tablas: Record<string, TablaOficial>;
+  cortes: Record<string, Record<string, CutoffStatus>>;
+  desgloses: Record<string, BreakdownEntry[]>;
+  internos: Record<string, RankingRowView>;
+  mios: string[];
+  armasAutorizadas: readonly Weapon[];
+  personas: Record<string, string>;
+};
 
 /**
  * Cuántas filas de la clasificación se pintan de golpe.
@@ -103,7 +118,7 @@ const PASO = 50;
  *    es el censo ESPAÑOL** —343 tiradores, 433 filas de `fie_world_ranking`—,
  *    así que también son todos `ESP`. No es una carencia que se arregle
  *    raspando más: el censo se pide por país a propósito, para no bajarse el
- *    ranking mundial de los otros once mil (ver la cabecera de
+ *    ranking internacional de los otros once mil (ver la cabecera de
  *    `src/lib/ingest/sources/fie-tiradores.ts`).
  *
  * O sea que hoy una bandera no distinguiría nada en ninguno de los dos, y el
@@ -124,7 +139,14 @@ export function TablaRankingOficial({
   armasAutorizadas = [],
   personas = {},
   selectorTemporada = null,
+  cargarGrupo,
 }: {
+  /**
+   * Trae un grupo que no ha venido en la primera carga. Mientras llega, se
+   * sigue viendo la tabla de antes (sin esqueleto) y el filtro ya marca el
+   * grupo pedido.
+   */
+  cargarGrupo?: (grupo: RankingGroupKey) => Promise<DatosTablaOficial>;
   /** Fila (`official_ranking_entry.id`) → persona deportiva, para el retrato y el enlace. */
   personas?: Record<string, string>;
   /** El selector de temporada, primero en la fila de filtros. */
@@ -156,32 +178,90 @@ export function TablaRankingOficial({
    */
   conMiFicha?: boolean;
 }) {
-  const [claveActual, setClaveActual] = React.useState(grupoInicial);
-  const [abierto, setAbierto] = React.useState<string | null>(null);
-  const [tope, setTope] = React.useState(PASO);
-  const [busqueda, setBusqueda] = React.useState('');
-
-  const grupo = grupos.find((g) => clave(g) === claveActual) ?? grupos[0];
-  const tabla = tablas[clave(grupo)];
-  const corteDelGrupo = cortes[clave(grupo)] ?? {};
-  const verCalculo = puedeVerInterno(armasAutorizadas, grupo.weapon);
+  const ranking = useRanking();
+  // Fuera del enrutador (pruebas, capturas sin servidor) no hay parámetros.
+  const parametros = useSearchParams() as URLSearchParams | null;
 
   /**
-   * Al cambiar de arma se conservan género y categoría SI existen para la nueva
-   * arma. Si no, se cae al primer grupo que sí exista: hoy hay espada femenina
-   * M17 y M20 pero no absoluta, y el selector no puede quedarse apuntando a una
-   * combinación vacía.
+   * El grupo más parecido al pedido que tenga datos. Al cambiar de arma se
+   * conservan género y categoría SI existen para la nueva arma; si no, se cae
+   * al primer grupo que sí exista: hoy hay espada femenina M17 y M20 pero no
+   * absoluta, y el selector no puede quedarse apuntando a una combinación vacía.
+   */
+  const masParecido = (deseado: RankingGroupKey) => grupoMasParecido(grupos, deseado) ?? grupos[0];
+
+  /** Lo pedido después de la primera carga, cosido a lo que vino del servidor. */
+  const [pedidos, setPedidos] = React.useState<Pick<DatosTablaOficial, 'tablas' | 'cortes' | 'desgloses' | 'internos' | 'personas'>>(
+    () => ({ tablas: {}, cortes: {}, desgloses: {}, internos: {}, personas: {} }),
+  );
+  const todasLasTablas = { ...tablas, ...pedidos.tablas };
+  const todosLosCortes = { ...cortes, ...pedidos.cortes };
+
+  // Si se viene de otra tabla, se abre en el mismo grupo (si ya está; si no, se pide).
+  const [claveActual, setClaveActual] = React.useState(() => {
+    const recordado = ranking?.memoria.current.grupo;
+    const k = recordado ? clave(masParecido(recordado)) : grupoInicial;
+    return tablas[k] ? k : grupoInicial;
+  });
+  const [pendiente, setPendiente] = React.useState<RankingGroupKey | null>(null);
+  const peticion = React.useRef(0);
+  const [abierto, setAbierto] = React.useState<string | null>(null);
+  const [tope, setTope] = React.useState(PASO);
+  const [busqueda, setBusqueda] = React.useState(() => ranking?.memoria.current.q ?? parametros?.get('q') ?? '');
+
+  const grupo = grupos.find((g) => clave(g) === claveActual) ?? grupos[0];
+  const tabla: TablaOficial = todasLasTablas[clave(grupo)] ?? {
+    group: grupo, seasonLabel: '', rows: [], clasificados: 0, actualizadoEl: null, sourceUrl: null, rule: null,
+  };
+  const corteDelGrupo = todosLosCortes[clave(grupo)] ?? {};
+  const verCalculo = puedeVerInterno(armasAutorizadas, grupo.weapon);
+  const personaDe = (id: string) => personas[id] ?? pedidos.personas[id] ?? null;
+  const desgloseDe = (k: string) => desgloses[k] ?? pedidos.desgloses[k];
+  const internoDe = (k: string) => internos[k] ?? pedidos.internos[k];
+
+  const mostrar = (destino: RankingGroupKey) => {
+    setClaveActual(clave(destino));
+    setPendiente(null);
+    setTope(PASO);
+  };
+
+  /**
+   * Al cambiar de grupo se vuelve al tope de partida y se vacía el buscador:
+   * arrastrar «ver más» de una categoría de 259 filas a una de 32 pintaría la
+   * lista entera sin que nadie lo haya pedido. Si el grupo no ha llegado, se
+   * pide y la tabla de antes sigue a la vista; gana la última petición.
    */
   function elegir(cambio: Partial<RankingGroupKey>) {
-    const deseado = { ...grupo, ...cambio };
-    const exacto = grupos.find((g) => clave(g) === clave(deseado));
-    if (exacto) return setClaveActual(clave(exacto));
+    const destino = masParecido({ ...(pendiente ?? grupo), ...cambio });
+    const mia = ++peticion.current;
+    setBusqueda('');
+    if (ranking) ranking.memoria.current = { ...ranking.memoria.current, grupo: destino, q: '' };
+    escribirUrl({ ...urlDeGrupo(destino), q: null });
+    if (todasLasTablas[clave(destino)] || !cargarGrupo) {
+      mostrar(destino);
+      return;
+    }
+    setPendiente(destino);
+    cargarGrupo(destino)
+      .then((d) => {
+        setPedidos((p) => ({
+          tablas: { ...p.tablas, ...d.tablas },
+          cortes: { ...p.cortes, ...d.cortes },
+          desgloses: { ...p.desgloses, ...d.desgloses },
+          internos: { ...p.internos, ...d.internos },
+          personas: { ...p.personas, ...d.personas },
+        }));
+        if (peticion.current === mia) mostrar(destino);
+      })
+      .catch(() => {
+        if (peticion.current === mia) setPendiente(null);
+      });
+  }
 
-    const porArmaGenero = grupos.find(
-      (g) => g.weapon === deseado.weapon && g.gender === deseado.gender,
-    );
-    const porArma = grupos.find((g) => g.weapon === deseado.weapon);
-    setClaveActual(clave(porArmaGenero ?? porArma ?? grupos[0]));
+  function buscar(q: string) {
+    setBusqueda(q);
+    if (ranking) ranking.memoria.current = { ...ranking.memoria.current, q };
+    escribirUrl({ q });
   }
 
   const misFilas = tabla.rows.filter(
@@ -220,14 +300,6 @@ export function TablaRankingOficial({
     return suelo;
   }, [hayCorte, plazas, tabla.rows, mios]);
 
-  // Al cambiar de grupo se vuelve al tope de partida: arrastrar «ver más» de
-  // una categoría de 259 filas a una de 32 pintaría la lista entera sin que
-  // nadie lo haya pedido.
-  React.useEffect(() => {
-    setTope(PASO);
-    setBusqueda('');
-  }, [claveActual]);
-
   /**
    * El buscador filtra y, mientras hay algo escrito, NO se recorta: quien
    * escribe un nombre quiere ese nombre, y esconderlo detrás de «ver más»
@@ -241,23 +313,21 @@ export function TablaRankingOficial({
   const quedan = filtradas.length - filasVisibles.length;
 
   return (
-    <div className="ranking flex min-w-0 flex-col gap-4">
+    <div className="ranking flex min-w-0 flex-col gap-3">
       {/*
-        Los controles, compartidos con la tabla del ranking mundial.
-
-        Estaban escritos aquí —dos `ToggleGroup` y un `Select`— y se han ido a
-        `selectores-grupo.tsx` cuando apareció la segunda tabla: dos juegos de
-        selectores que se eligen igual acaban siendo distintos el día que se
-        toca uno. De paso traen el buscador, que aquí hacía más falta que allí:
-        el grupo más grande son 259 filas.
+        Los controles, compartidos con la tabla internacional
+        (`selectores-grupo.tsx`): dos juegos de selectores que se eligen igual
+        acaban siendo distintos el día que se toca uno. La temporada va dentro
+        de la hoja, primera.
       */}
-      <SelectoresGrupo
+      <BarraFiltrosRanking
         grupos={grupos}
-        grupo={grupo}
+        grupo={pendiente ?? grupo}
         onElegir={elegir}
         busqueda={busqueda}
-        onBuscar={setBusqueda}
-        antes={selectorTemporada}
+        onBuscar={buscar}
+        antesEnHoja={selectorTemporada}
+        resultados={`Ver ${filtradas.length} ${filtradas.length === 1 ? 'tirador' : 'tiradores'}`}
       />
 
       {/*
@@ -268,40 +338,39 @@ export function TablaRankingOficial({
         números del mismo tamaño y, sin este contraste, el tuyo se pierde.
       */}
       {misFilas.map((fila) => (
-        <Button
-          variant="ghost"
+        <button
           key={fila.id}
           type="button"
           onClick={() => setAbierto(fila.athleteId)}
-          className="flex h-auto min-w-0 cursor-pointer items-start justify-start gap-4 rounded-xl border border-filete-alto bg-card px-4 py-3 text-left whitespace-normal transition-colors hover:bg-accent"
+          className="flex min-h-0! min-w-0 cursor-pointer items-start gap-3 rounded-xl border border-filete-alto bg-card px-3 py-2.5 text-left transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
         >
           {conMiFicha ? null : (
-            <span className="flex w-16 shrink-0 flex-col">
-              <span className="cifra text-5xl text-primary-text sm:text-6xl">
+            <span className="flex w-12 shrink-0 flex-col">
+              <span className="cifra text-4xl leading-none text-primary-text">
                 {fila.position ?? '—'}
               </span>
-              <span className="mt-1 text-xs leading-tight text-muted-foreground">
+              <span className="mt-1 text-[11px] leading-tight text-muted-foreground">
                 {fila.position ? 'tu puesto oficial' : 'sin clasificar todavía'}
               </span>
             </span>
           )}
-          <span className="flex min-w-0 flex-1 flex-col gap-1">
-            <span className="text-base font-medium">
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="text-[14px] font-medium">
               {conMiFicha ? 'A cuánto estás del corte' : fila.nombre}
             </span>
-            <span className="medida text-sm text-muted-foreground">
+            <span className="medida text-[13px] text-muted-foreground">
               <Corte
                 corte={fila.athleteId ? (corteDelGrupo[fila.athleteId] ?? null) : null}
                 puntosTotales={fila.totalPoints}
                 deCuantos={tabla.clasificados}
               />
             </span>
-            <span className="mt-1 inline-flex items-center gap-1 text-sm text-primary-text">
+            <span className="mt-0.5 inline-flex items-center gap-1 text-[13px] text-primary-text">
               {verCalculo ? 'Ver tus datos y el cálculo' : 'Ver tus datos'}
               <ChevronRight className="size-4 shrink-0" aria-hidden />
             </span>
           </span>
-        </Button>
+        </button>
       ))}
 
       {/*
@@ -327,22 +396,11 @@ export function TablaRankingOficial({
         otra vez el «mucho texto» de la queja. Aquí queda solo lo que el
         subtítulo no dice: cuándo se leyó y dónde está el original.
       */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-filete-alto pt-2 text-xs text-muted-foreground">
-        <span>Ranking nacional · clasificación oficial de la RFEE</span>
-        {tabla.actualizadoEl ? <span>Leída {formatDateEs(tabla.actualizadoEl)}</span> : null}
-        {tabla.sourceUrl ? (
-          <Button variant="link" size="sm" className="px-0 text-xs text-primary-text" asChild>
-            <a
-              href={tabla.sourceUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Ver la fuente
-              <ExternalLink className="size-3 shrink-0" aria-hidden />
-            </a>
-          </Button>
-        ) : null}
-      </div>
+      <Procedencia
+        temporada={tabla.seasonLabel ? `Temporada ${temporadaCorta(tabla.seasonLabel)}` : null}
+        leida={tabla.actualizadoEl ? formatDateEs(tabla.actualizadoEl) : null}
+        url={tabla.sourceUrl}
+      />
 
       {filasVisibles.length === 0 ? (
         <p className="border-y border-filete-alto py-6 text-sm text-muted-foreground">
@@ -358,7 +416,8 @@ export function TablaRankingOficial({
       {filasVisibles.length > 0 ? (
         <ol
           aria-label={`Ranking nacional, ${etiquetaGrupo(grupo)}`}
-          className="grid w-full min-w-0 max-w-3xl gap-px overflow-hidden rounded-xl border bg-border"
+          aria-busy={pendiente ? true : undefined}
+          className={cn('grid w-full min-w-0 max-w-3xl gap-px overflow-hidden rounded-xl border bg-border transition-opacity duration-150', pendiente && 'opacity-60')}
         >
           {filasVisibles.map((fila) => {
             const esMia = fila.athleteId !== null && mios.includes(fila.athleteId);
@@ -367,7 +426,7 @@ export function TablaRankingOficial({
                 <FilaLinea
                   puesto={fila.position}
                   nombre={fila.nombre}
-                  personaId={personas[fila.id] ?? null}
+                  personaId={personaDe(fila.id)}
                   club={fila.club}
                   puntos={fila.totalPoints}
                   mio={esMia}
@@ -377,7 +436,7 @@ export function TablaRankingOficial({
                         type="button"
                         onClick={() => setAbierto(fila.athleteId)}
                         aria-label={`Ver los datos de ${fila.nombre}`}
-                        className="-mr-2 inline-flex size-11 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                        className="relative -mr-1 inline-flex size-7 min-h-0! min-w-0! items-center justify-center rounded-full text-muted-foreground after:absolute after:-inset-2 after:content-[''] hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
                       >
                         <ChevronRight className="size-4" aria-hidden />
                       </button>
@@ -385,7 +444,7 @@ export function TablaRankingOficial({
                   }
                 />
                 {hayCorte && fila.position === plazas ? (
-                  <li className="flex items-center gap-2 border-y border-dashed border-gold/60 bg-gold/5 px-2 py-1.5 text-xs text-gold">
+                  <li className="flex items-center gap-2 border-y border-gold bg-[color-mix(in_oklab,var(--color-gold)_7%,var(--card))] px-2 py-1.5 text-xs text-gold">
                     <Scissors className="size-3.5 shrink-0" aria-hidden />
                     <span>
                       Corte de convocatoria: las {plazas} primeras plazas salen por ranking
@@ -403,23 +462,15 @@ export function TablaRankingOficial({
       ) : null}
 
       {/*
-        «Ver más», con el número de lo que falta.
-
-        Es un botón de 44 px de alto y ancho completo porque se toca con el
-        pulgar al final de una lista larga, y dice cuántas filas quedan: «ver
-        50 más» de «209» informa de dónde estás; «ver más» a secas, no.
+        «Ver más», con el número de lo que falta: «ver 50 más» de «209»
+        informa de dónde estás; «ver más» a secas, no. Ancho completo porque
+        se toca con el pulgar al final de una lista larga.
       */}
       {quedan > 0 ? (
-        <Button
-          variant="outline"
-          className="h-11 w-full"
-          onClick={() => setTope(limite + PASO)}
-        >
-          Ver {Math.min(quedan, PASO)} puestos más
-          <span className="cifra text-xs text-muted-foreground">
-            quedan {quedan}
-          </span>
-        </Button>
+        <VerMas onClick={() => setTope(limite + PASO)}>
+          Ver {Math.min(quedan, PASO)} más
+          <span className="cifra text-[12px] text-muted-foreground">de {filtradas.length}</span>
+        </VerMas>
       ) : null}
 
       {conFicha < tabla.rows.length ? (
@@ -431,49 +482,26 @@ export function TablaRankingOficial({
         </p>
       ) : null}
 
-      <Sheet
-        open={filaAbierta !== null}
-        onOpenChange={(v) => {
+      <HojaInferior
+        abierta={filaAbierta !== null}
+        alCambiar={(v) => {
           if (!v) setAbierto(null);
         }}
+        titulo={filaAbierta?.nombre ?? ''}
+        descripcion={filaAbierta ? `${etiquetaGrupo(grupo)}${filaAbierta.club ? ` · ${filaAbierta.club}` : ''}` : undefined}
       >
-        <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
-          {filaAbierta ? (
-            <>
-              <SheetHeader className="pb-0">
-                <SheetTitle className="pr-10 text-xl">{filaAbierta.nombre}</SheetTitle>
-                <SheetDescription className="pr-10">
-                  {etiquetaGrupo(grupo)}
-                  {filaAbierta.club ? `. Código de club ${filaAbierta.club}` : ''}
-                </SheetDescription>
-              </SheetHeader>
-              <DetalleFilaOficial
-                fila={filaAbierta}
-                tabla={tabla}
-                corte={
-                  filaAbierta.athleteId
-                    ? (corteDelGrupo[filaAbierta.athleteId] ?? null)
-                    : null
-                }
-                desglose={
-                  filaAbierta.athleteId
-                    ? (desgloses[`${clave(grupo)}|${filaAbierta.athleteId}`] ?? null)
-                    : null
-                }
-                interno={
-                  filaAbierta.athleteId
-                    ? (internos[`${clave(grupo)}|${filaAbierta.athleteId}`] ?? null)
-                    : null
-                }
-                esTuyo={
-                  filaAbierta.athleteId !== null && mios.includes(filaAbierta.athleteId)
-                }
-                verCalculo={verCalculo}
-              />
-            </>
-          ) : null}
-        </SheetContent>
-      </Sheet>
+        {filaAbierta ? (
+          <DetalleFilaOficial
+            fila={filaAbierta}
+            tabla={tabla}
+            corte={filaAbierta.athleteId ? (corteDelGrupo[filaAbierta.athleteId] ?? null) : null}
+            desglose={filaAbierta.athleteId ? (desgloseDe(`${clave(grupo)}|${filaAbierta.athleteId}`) ?? null) : null}
+            interno={filaAbierta.athleteId ? (internoDe(`${clave(grupo)}|${filaAbierta.athleteId}`) ?? null) : null}
+            esTuyo={filaAbierta.athleteId !== null && mios.includes(filaAbierta.athleteId)}
+            verCalculo={verCalculo}
+          />
+        ) : null}
+      </HojaInferior>
     </div>
   );
 }
@@ -504,7 +532,7 @@ export function DetalleFilaOficial({
   verCalculo: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-6 px-4 pb-10">
+    <div className="flex flex-col gap-6 pt-2">
       <Oficial
         fila={fila}
         temporada={tabla.seasonLabel}

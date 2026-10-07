@@ -72,6 +72,41 @@
   },
 
   /**
+   * Techo de CPU por invocación (HTTP y scheduled). 30 s es el valor por
+   * defecto de Workers Paid; se fija para que no se pueda subir sin querer
+   * y para cortar una petición desbocada. Los crons de ingestión y de
+   * extracción de PDF son lo más pesado: si alguno se corta, se sube aquí
+   * (máximo 300000) en lugar de quitarlo.
+   */
+  "limits": {
+    "cpu_ms": 30000
+  },
+
+  /**
+   * Límites de peticiones (Rate Limiting API de Workers). Los aplica
+   * `src/lib/seguridad/limites.ts` desde worker/index.ts antes de servir.
+   * `namespace_id` es un entero elegido aquí, único en la CUENTA (no hay que
+   * crear nada): si otro de los Workers de la cuenta usara el mismo número,
+   * compartirían contadores. `period` sólo admite 10 o 60 segundos.
+   *
+   * Acceso: 20 y no 10 por minuto e IP porque en un pabellón o con CGNAT
+   * muchas personas comparten IP, y cada entrada son dos POST; detrás siguen
+   * los límites exactos de D1 (5 envíos/min e IP, 1/min por correo).
+   * IP_SESION: tope por IP de las rutas que cuentan por sesión, para que
+   * inventarse una cookie nueva en cada petición no estrene contador.
+   */
+  "ratelimits": [
+    { "name": "LIMITE_ACCESO", "namespace_id": "84101", "simple": { "limit": 20, "period": 60 } },
+    { "name": "LIMITE_CRON", "namespace_id": "84102", "simple": { "limit": 5, "period": 60 } },
+    { "name": "LIMITE_IMAGENES", "namespace_id": "84103", "simple": { "limit": 60, "period": 60 } },
+    { "name": "LIMITE_SUGERENCIAS", "namespace_id": "84104", "simple": { "limit": 30, "period": 60 } },
+    { "name": "LIMITE_FOTOS", "namespace_id": "84105", "simple": { "limit": 120, "period": 60 } },
+    { "name": "LIMITE_ARCHIVOS", "namespace_id": "84106", "simple": { "limit": 30, "period": 60 } },
+    { "name": "LIMITE_ACCIONES", "namespace_id": "84107", "simple": { "limit": 120, "period": 60 } },
+    { "name": "LIMITE_IP_SESION", "namespace_id": "84108", "simple": { "limit": 600, "period": 60 } }
+  ],
+
+  /**
    * Crons. Traducción literal de `vercel.json`, una franja por fuente para que
    * una fuente lenta no arrastre a las demás. Las horas son UTC.
    *
@@ -91,7 +126,9 @@
       "30 5 * * *",
       "0 6 * * *",
       "45 6 * * *",
-      "0 7 * * *"
+      "0 7 * * *",
+      // Resultados automáticos (/api/cron/resultados), cada hora fuera de la franja de los diarios.
+      "20 0-2,8-23 * * *"
     ]
   },
 
@@ -127,6 +164,17 @@
   ],
 
   /**
+   * Caché compartida de datos que no dependen de la cuenta (src/lib/cache):
+   * sin este binding la caché queda solo en la memoria de cada isolate.
+   */
+  "kv_namespaces": [
+    {
+      "binding": "CACHE_DATOS",
+      "id": "2edbbc5335a0435fa5844899ac49d4eb"
+    }
+  ],
+
+  /**
    * Datos consultables de la aplicación. Base nueva e independiente de las
    * otras aplicaciones, con jurisdicción UE. El código no vuelve a Neon si
    * falta este binding.
@@ -149,11 +197,23 @@
     "INGEST_SNAPSHOT_HTML": "true",
     "INGEST_USER_AGENT": "CalendarioEsgrima/1.0 (+https://calendario-fie-fede.excalofrio.workers.dev)",
     "RESEND_DAILY_LIMIT": "100",
+    // Códigos de acceso al día en toda la app, sólo a correos invitados. Los
+    // envía Neon Auth, no Resend. Ver `otpDailyLimit` en src/lib/auth/rate-limit.ts.
+    "AUTH_OTP_DAILY_LIMIT": "2000",
     // Asignación propia de 8 GiB (techo del CHECK de sport_write_context tras
     // 0005), por debajo de los 10 GB por base de D1 en el plan de pago. No es un
     // tope de gasto, no activa el incremental ni modifica el plan de facturación.
     "D1_STORAGE_BUDGET_BYTES": "8589934592",
     "SPORT_INCREMENTAL_ENABLED": "false",
+    // Resultados automáticos (/api/cron/resultados), con su franja en
+    // triggers.crons; necesita 0017 aplicada. La IA solo lee los PDF que el
+    // lector determinista no completa, con validación estricta y tope diario
+    // (docs/tareas-programadas.md).
+    "RESULTADOS_AUTO_ENABLED": "true",
+    "RESULTADOS_AUTO_IA_ENABLED": "true",
+    // Clave pública VAPID de las notificaciones push; la privada es el secreto
+    // VAPID_PRIVATE_KEY.
+    "VAPID_PUBLIC_KEY": "BM73BDdcqk5EE6aUCmV6h2v044g9fOT6oTBU2_tLK8RMKelGX-8IYMk5GqNY1nanStlNL3PbZufMDLfKjp3gvL4",
     // Solo se activa deliberadamente para congelar escrituras durante el corte.
     "MIGRATION_MAINTENANCE": "false",
     // Encendida. Con el interruptor en "false" el cron de extracción responde

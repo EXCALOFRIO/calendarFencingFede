@@ -1,5 +1,5 @@
 import { TriangleAlert } from 'lucide-react';
-import Link from 'next/link';
+import { EnlacePrecarga } from '@/components/sistema/enlace-precarga';
 import { BanderaPais } from '@/components/bandera';
 import { construirUrlCaraACara } from '@/lib/sport/explorar/cara-a-cara-url';
 import type { AmbitoRivales, ListasRivales, RivalAmbito, RivalesPorAmbito } from '@/lib/sport/explorar/rivales-ambito';
@@ -38,11 +38,10 @@ function FilaRival({ personaId, r }: { personaId: string; r: RivalAmbito }) {
   const nombre = nombreVisible(r.nombre) || r.nombre;
   return (
     <li>
-      <Link
+      <EnlacePrecarga
         href={construirUrlCaraACara(personaId, { rival: r.id })}
-        prefetch={false}
         data-rival={r.id}
-        className="grid min-h-12 min-w-0 grid-cols-[minmax(0,1fr)_6.5rem] items-center gap-x-2.5 px-3 py-1.5 hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none max-[359px]:grid-cols-[minmax(0,1fr)_5.75rem] sm:grid-cols-[minmax(0,1fr)_12rem] sm:px-4"
+        className="grid min-h-[44px] min-w-0 grid-cols-[minmax(0,1fr)_6.5rem] items-center gap-x-2.5 px-3 py-1.5 hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none max-[359px]:grid-cols-[minmax(0,1fr)_5.75rem] sm:grid-cols-[minmax(0,1fr)_12rem] sm:px-4"
       >
         <span className="flex min-w-0 items-center gap-2.5">
           <FotoDeportista personaId={r.id} nombre={nombre} tamano="fila" apagado />
@@ -51,13 +50,13 @@ function FilaRival({ personaId, r }: { personaId: string; r: RivalAmbito }) {
               {r.pais ? <BanderaPais pais={r.pais} soloBandera className="shrink-0" /> : null}
               <span className="truncate text-sm font-medium">{nombre}</span>
             </span>
-            <span className="text-[0.6875rem] leading-tight text-muted-foreground">
+            <span className="text-[12px] leading-tight text-muted-foreground">
               {r.asaltos} {r.asaltos === 1 ? 'asalto' : 'asaltos'}
             </span>
           </span>
         </span>
         <BarraVictorias victorias={r.victorias} derrotas={r.derrotas} />
-      </Link>
+      </EnlacePrecarga>
     </li>
   );
 }
@@ -123,7 +122,7 @@ export function RivalesPorAmbitoVista({
                 <label
                   key={o.clave}
                   className={cn(
-                    'relative inline-flex min-h-11 min-w-0 cursor-pointer flex-col items-center justify-center rounded-full px-2 py-1 text-center text-[0.8125rem] leading-tight text-muted-foreground sm:flex-row sm:gap-x-1.5 sm:px-4 sm:text-sm',
+                    'relative inline-flex min-h-[40px] min-w-0 cursor-pointer flex-col items-center justify-center rounded-full px-2 py-1 text-center text-[0.8125rem] leading-tight text-muted-foreground sm:flex-row sm:gap-x-1.5 sm:px-4 sm:text-sm',
                     'hover:text-foreground has-[:checked]:bg-marcado has-[:checked]:font-semibold has-[:checked]:text-primary-text',
                     'has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/50',
                   )}

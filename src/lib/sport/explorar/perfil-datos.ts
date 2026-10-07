@@ -2,7 +2,6 @@ import { filas, type ContextoExplorador } from './contexto';
 import type { FilasPerfil } from './perfil-modelo';
 import {
   sqlBalanceAsaltos,
-  sqlClubesRecientes,
   sqlIdFieConfirmado,
   sqlMejorRanking,
   sqlRivalesFrecuentes,
@@ -42,10 +41,11 @@ export async function leerFilasPerfil(
   // Con `diferirRivales` las tres lecturas de rivales (las más caras tras los
   // asaltos) no se hacen aquí: la pestaña Rivales las pide aparte, en streaming.
   const nada = async () => undefined;
-  const [asaltos, rivales, clubes, idsFie, mejorRanking, sugeridos, rivalesStats, pruebas] = await Promise.all([
+  // El club no se lee: el perfil no enseña clubes (el publicado en una prueba
+  // suelta, como un campeonato universitario, no es el club de la persona).
+  const [asaltos, rivales, idsFie, mejorRanking, sugeridos, rivalesStats, pruebas] = await Promise.all([
     tolerante<FilaBalanceAsaltos>(() => db.execute(sqlBalanceAsaltos(ids)), 'el balance de asaltos'),
     diferirRivales ? nada() : tolerante<FilaRivalFrecuente>(() => db.execute(sqlRivalesFrecuentes(ids, canonicaId)), 'la lista de rivales'),
-    tolerante<FilaClubPublicado>(() => db.execute(sqlClubesRecientes(ids)), 'el club'),
     tolerante<{ valor: string }>(() => db.execute(sqlIdFieConfirmado(ids)), 'el enlace FIE'),
     tolerante<FilaMejorRanking>(() => db.execute(sqlMejorRanking(ids)), 'el mejor ranking'),
     diferirRivales ? nada() : tolerante<FilaSugerido>(() => db.execute(sqlTiradoresSugeridos(ids, canonicaId)), 'los tiradores sugeridos'),
@@ -59,7 +59,7 @@ export async function leerFilasPerfil(
     rivalesStats,
     ambito: pruebas ? aEstadisticasPorAmbito(pruebas) : null,
     resultados: pruebas ? aResultadosPerfil(pruebas) : null,
-    clubes: clubes ?? [],
+    clubes: [] as FilaClubPublicado[],
     idsFie: idsFie ?? [],
     mejorRanking: mejorRanking ?? [],
   };

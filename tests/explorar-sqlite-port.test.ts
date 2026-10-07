@@ -124,24 +124,20 @@ describe('SQL deportivo nativo, con esquema D1 real y SQLite efímero', () => {
     expect(conTorneo.items.map((p) => p.id)).toEqual([A]);
   });
 
-  it('sugerencias con acentos, erratas, orden inverso, alias y homónimos se ejecutan y sólo devuelven DTO público', async () => {
+  it('sin índice de Explorar las sugerencias no recorren tablas: no_disponible y ninguna sentencia', async () => {
     const t = entorno();
     t.persona(C, 'Carlos Llavador Fernández');
     t.persona(A, 'Carlos Llavador', C);
     t.alias(A, 'CARLOS YAVADOR');
     t.persona(B, 'Carlos Llavador Fernández', null, 'FRA');
     t.sqlite.prepare('UPDATE sport_person SET birth_year = 2001 WHERE id = ?').run(B);
-    for (const q of ['LLÁVADOR Cárlos', 'carlos llavdor', 'yavador carlos']) {
+    const antes = t.calls.length;
+    for (const q of ['LLÁVADOR Cárlos', 'carlos llavdor', 'yavador carlos', 'carlos llavador']) {
       const r = await sugerirPersonas(t.ctx, { q });
-      if (r.estado !== 'ok') throw new Error(r.estado);
-      expect(r.items.map((p) => p.id)).toContain(C);
-      expect(r.items.map((p) => p.id)).not.toContain(A);
+      expect(r).toEqual({ estado: 'no_disponible' });
       expect(CLAVES_PRIVADAS.filter((k) => clavesDe(r).has(k))).toEqual([]);
     }
-    const homonimos = await sugerirPersonas(t.ctx, { q: 'carlos llavador' });
-    if (homonimos.estado !== 'ok') throw new Error(homonimos.estado);
-    expect(homonimos.items).toHaveLength(2);
-    expect(homonimos.items.map((p) => [p.pais, p.anioNacimiento])).toEqual([['FRA', 2001], ['ESP', 1998]]);
+    expect(t.calls).toHaveLength(antes);
     const consulta = new SQLiteSyncDialect().sqlToQuery(sqlCandidatosSugerencias('carlos llavador fernandez'));
     const planes = t.sqlite.prepare(`EXPLAIN QUERY PLAN ${consulta.sql}`).all(...consulta.params as never[]);
     expect(planes.filter((p) => String(p.detail).includes('sport_person_name_idx')).length).toBeGreaterThan(0);
@@ -156,9 +152,7 @@ describe('SQL deportivo nativo, con esquema D1 real y SQLite efímero', () => {
     const raw = await t.db.execute(sqlCandidatosSugerencias('carlos garcia fernandez lopez'));
     expect(raw.rows.length).toBeLessThanOrEqual(216);
     expect(t.calls.at(-1)?.parameters).toBe(50);
-    const r = await sugerirPersonas(t.ctx, { q: 'carlos' });
-    if (r.estado !== 'ok') throw new Error(r.estado);
-    expect(r.items).toHaveLength(8);
+    expect(await sugerirPersonas(t.ctx, { q: 'carlos' })).toEqual({ estado: 'no_disponible' });
     const antes = t.calls.length;
     expect(await sugerirPersonas(t.ctx, { q: 'a b' })).toEqual({ estado: 'ok', items: [] });
     expect(await sugerirPersonas(t.ctx, { q: 'x'.repeat(81) })).toEqual({ estado: 'entrada_invalida' });

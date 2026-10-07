@@ -1,6 +1,8 @@
 import { sql } from 'drizzle-orm';
 import { exigirPerfil, filas, type ContextoExplorador } from './contexto';
+import { vetarEnlaceFie } from './anio-publico';
 import { UUID_RE } from './cursor';
+import { listaUuid } from './filtros-sql';
 import { resolverPersona } from './personas';
 import {
   leerRankingMundial,
@@ -26,6 +28,11 @@ export type DatosPersonales = {
   edad: number | null;
   mano: 'L' | 'R' | null;
   alturaCm: number | null;
+  /**
+   * La persona puede ser menor (o ningún año del grupo es conocido): no se
+   * enseña su edad por ninguna vía, salvo en su propia ficha.
+   */
+  edadVetada?: true;
   /** Nombre legible del club; si sólo hay código, va en `codigo`. */
   club: { nombre: string | null; codigo: string | null } | null;
 };
@@ -61,12 +68,23 @@ const limpio = (s: string | null | undefined) => {
   return t ? t : null;
 };
 
-/** Edad por año (sin fecha exacta): la que cumple o ya cumplió este año. */
-export function aDatosPersonales(f: FilaPerfilDeportista | undefined, hoy: string): DatosPersonales | null {
+/**
+ * Edad por año (sin fecha exacta): la que cumple o ya cumplió este año. Sale
+ * `null` si la persona puede ser menor o no hay ningún año conocido, con el
+ * mismo veto que la foto y el enlace FIE (`vetarEnlaceFie`) sobre el año de
+ * esta fila y los de todo el grupo de identidad (`aniosGrupo`). La ficha
+ * propia recupera su edad aparte, por `FichaDeportiva.anioNacimiento`.
+ */
+export function aDatosPersonales(
+  f: FilaPerfilDeportista | undefined,
+  hoy: string,
+  aniosGrupo: readonly (number | null)[] = [],
+): DatosPersonales | null {
   if (!f) return null;
   const anioActual = Number(hoy.slice(0, 4));
   const anio = f.anio === null ? null : Number(f.anio);
-  const edad = anio !== null && Number.isInteger(anio) && anio > 1900 && anio <= anioActual ? anioActual - anio : null;
+  const vetada = vetarEnlaceFie([anio, ...aniosGrupo.map((a) => (a === null ? null : Number(a)))], hoy);
+  const edad = !vetada && anio !== null && Number.isInteger(anio) && anio > 1900 && anio <= anioActual ? anioActual - anio : null;
   const altura = f.altura === null ? null : Number(f.altura);
   const nombre = limpio(f.clubNombre);
   const codigo = limpio(f.clubCodigo);
@@ -76,8 +94,12 @@ export function aDatosPersonales(f: FilaPerfilDeportista | undefined, hoy: strin
     mano: f.mano === 'L' || f.mano === 'R' ? f.mano : null,
     alturaCm: altura !== null && Number.isInteger(altura) && altura > 0 ? altura : null,
     club: nombre || codigo ? { nombre, codigo: nombre ? null : codigo } : null,
+    ...(vetada ? { edadVetada: true as const } : {}),
   };
-  const vacio = !datos.nombreCompleto && datos.edad === null && !datos.mano && datos.alturaCm === null && !datos.club;
+  // Una fila vetada por un año de menor se devuelve aunque no traiga nada más: el veto también
+  // manda sobre el año de la ficha. Sin ningún año conocido, la ficha tampoco tiene uno que enseñar.
+  const porMenor = vetada && [anio, ...aniosGrupo].some((a) => a !== null);
+  const vacio = !porMenor && !datos.nombreCompleto && datos.edad === null && !datos.mano && datos.alturaCm === null && !datos.club;
   return vacio ? null : datos;
 }
 
@@ -89,15 +111,18 @@ export async function leerDatosPersonales(
   db: ContextoExplorador['db'],
   canonicaId: string,
   hoy: string,
+  ids: readonly string[] = [canonicaId],
 ): Promise<DatosPersonales | null> {
   try {
-    const [fila] = filas<FilaPerfilDeportista>(
-      await db.execute(sql`
+    const [[fila], anios] = await Promise.all([
+      db.execute(sql`
         SELECT full_name AS "nombreCompleto", birth_year AS anio, hand AS mano, height_cm AS altura,
                club_name AS "clubNombre", club_code AS "clubCodigo"
-        FROM perfil_deportista WHERE person_id = ${canonicaId} LIMIT 1`),
-    );
-    return aDatosPersonales(fila, hoy);
+        FROM perfil_deportista WHERE person_id = ${canonicaId} LIMIT 1`).then((r) => filas<FilaPerfilDeportista>(r)),
+      db.execute(sql`SELECT birth_year AS anio FROM sport_person WHERE id IN (${listaUuid(ids)})`)
+        .then((r) => filas<{ anio: number | null }>(r).map((a) => a.anio)),
+    ]);
+    return aDatosPersonales(fila, hoy, anios);
   } catch {
     return null;
   }
@@ -118,7 +143,7 @@ export async function cargarExtrasPerfil(
     if (!persona) return EXTRAS_VACIOS;
     const resumen = leerResumenMundial(ctx.db, persona.ids);
     const [datos, rendimiento, rankingNacional, rankingMundial, resumenMundial, rankingAmbitos, olimpica] = await Promise.all([
-      leerDatosPersonales(ctx.db, persona.canonicaId, ctx.hoy()),
+      leerDatosPersonales(ctx.db, persona.canonicaId, ctx.hoy(), persona.ids),
       conRendimiento ? leerRendimientoDe(ctx.db, persona.ids) : null,
       leerRankingNacional(ctx.db, persona.ids),
       leerRankingMundial(ctx.db, persona.ids),

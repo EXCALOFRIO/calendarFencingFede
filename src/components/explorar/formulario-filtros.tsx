@@ -43,8 +43,8 @@ type Opcion = { valor: string; etiqueta: string };
 type Grupo = { etiqueta: string; opciones: Opcion[] };
 
 const NOMBRE_FUENTE: Record<OpcionTemporada['fuente'], string> = {
-  FIE: 'FIE (internacional, año en que termina)',
-  RFEE: 'RFEE y EFC (septiembre a agosto)',
+  FIE: 'Internacional (año en que termina)',
+  RFEE: 'Nacional y Europeo (septiembre a agosto)',
 };
 
 export const ARMAS: Opcion[] = Object.entries(WEAPON_LABEL).map(([valor, etiqueta]) => ({ valor, etiqueta }));
@@ -63,6 +63,15 @@ const AMBITOS: Opcion[] = [
 
 /** Radix no admite un valor vacío en una opción: este centinela significa «sin filtro». */
 const CUALQUIERA = 'cualquiera';
+
+/**
+ * Píldora de 32 px dibujados dentro de un control de 44 de alto: el área
+ * táctil no cambia, pero no se ve grande (la regla global de 44 px se cumple
+ * en el botón, no en el dibujo).
+ */
+const TOQUE = 'group flex h-[44px] min-w-0 items-center rounded-full outline-none disabled:cursor-wait disabled:opacity-60';
+const PILDORA =
+  'inline-flex h-[32px] items-center gap-1 rounded-full border bg-card px-3 text-[13px] font-medium whitespace-nowrap transition-colors group-hover:bg-accent group-focus-visible:ring-[3px] group-focus-visible:ring-ring/50';
 
 const CLAVES_AVANZADAS = [
   'categoria',
@@ -102,7 +111,7 @@ export function CampoSelect({
         value={valor === '' ? CUALQUIERA : valor}
         onValueChange={(v) => onChange(v === CUALQUIERA ? '' : v)}
       >
-        <SelectTrigger id={id} className="min-h-11 w-full min-w-0 bg-secondary">
+        <SelectTrigger id={id} className="min-h-[40px] w-full min-w-0 bg-secondary">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -269,60 +278,52 @@ export function FormularioFiltros({
         pendiente={pendiente}
         herramientas={(
           <Collapsible open={abierto} onOpenChange={setAbierto} className="flex min-w-0 flex-col gap-3">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-x-1.5">
               <CollapsibleTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  aria-controls="explorar-panel-filtros"
-                  className={cn('rounded-full px-4', filtrosActivos > 0 && 'border-primary-text text-primary-text')}
-                >
-                  <SlidersHorizontal aria-hidden />
-                  Filtros
-                  {filtrosActivos > 0 ? (
-                    <span aria-hidden="true" className="cifra inline-flex min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs leading-5 text-primary-foreground">
-                      {filtrosActivos}
+                <button type="button" aria-controls="explorar-panel-filtros" className={TOQUE}>
+                  <span className={cn(PILDORA, filtrosActivos > 0 && 'border-primary-text text-primary-text')}>
+                    <SlidersHorizontal className="size-[15px]" aria-hidden />
+                    Filtros
+                    {filtrosActivos > 0 ? (
+                      <span aria-hidden="true" className="cifra inline-flex min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[12px] leading-[18px] text-primary-foreground">
+                        {filtrosActivos}
+                      </span>
+                    ) : null}
+                    <span className="sr-only">
+                      {filtrosActivos > 0 ? `, ${filtrosActivos} ${filtrosActivos === 1 ? 'activo' : 'activos'}` : ''}
                     </span>
-                  ) : null}
-                  <span className="sr-only">
-                    {filtrosActivos > 0 ? `, ${filtrosActivos} ${filtrosActivos === 1 ? 'activo' : 'activos'}` : ''}
+                    <ChevronDown
+                      className={cn('size-[15px]', abierto ? 'rotate-180 transition-transform motion-reduce:transition-none' : 'transition-transform motion-reduce:transition-none')}
+                      aria-hidden
+                    />
                   </span>
-                  <ChevronDown
-                    className={abierto ? 'rotate-180 transition-transform motion-reduce:transition-none' : 'transition-transform motion-reduce:transition-none'}
-                    aria-hidden
-                  />
-                </Button>
+                </button>
               </CollapsibleTrigger>
               {atajoEspana ? (
                 <>
-                  <Button
+                  <button
                     type="button"
-                    variant="outline"
-                    size="sm"
                     aria-pressed={espanaActiva}
                     aria-describedby="explorar-espana-ayuda"
                     disabled={pendiente}
-                    className={cn('rounded-full px-4', espanaActiva && ACTIVO)}
+                    className={TOQUE}
                     onClick={() => {
                       const siguiente = alternarEspana(borrador);
                       setBorrador(siguiente);
                       buscar(siguiente);
                     }}
                   >
-                    Solo España
-                  </Button>
+                    <span className={cn(PILDORA, espanaActiva && ACTIVO)}>Solo España</span>
+                  </button>
                   <p id="explorar-espana-ayuda" className="sr-only">
                     Todas las personas españolas indexadas, tengan cuenta o no, estén activas o retiradas. Combínalo con arma o categoría.
                   </p>
                 </>
               ) : null}
               {hayCriterios({ ...criterios, q: '' }) ? (
-                <Button asChild variant="ghost" size="sm" className="rounded-full text-primary-text hover:text-primary-text">
-                  <Link href={construirUrl({ ...CRITERIOS_VACIOS, q: criterios.q })} prefetch={false}>
-                    Quitar filtros
-                  </Link>
-                </Button>
+                <Link href={construirUrl({ ...CRITERIOS_VACIOS, q: criterios.q })} prefetch={false} className={TOQUE}>
+                  <span className={cn(PILDORA, 'border-transparent bg-transparent text-primary-text')}>Quitar filtros</span>
+                </Link>
               ) : null}
             </div>
             {/* Montado aunque esté plegado: los campos conservan su estado y la URL inválida se ve al abrir. */}
@@ -394,7 +395,7 @@ export function FormularioFiltros({
                     id="explorar-pais-ayuda"
                     className={errores.nacionalidad ? 'text-xs text-danger' : 'sr-only'}
                   >
-                    {errores.nacionalidad ?? 'Código FIE de tres letras, por ejemplo ESP, FRA o ITA.'}
+                    {errores.nacionalidad ?? 'Tres letras: ESP, FRA o ITA.'}
                   </p>
                 </div>
                 <div className="col-span-2 flex min-w-0 flex-col gap-1.5">

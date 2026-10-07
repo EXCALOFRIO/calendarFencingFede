@@ -13,10 +13,15 @@ import {
   userProfile,
 } from '@/db/schema';
 import { getManagedAthletes, requireProfile, requireWritableProfile } from '@/lib/auth/session';
+import { z } from 'zod';
 import { lotesDeInsercion } from '@/lib/sqlite';
 import { canTransition, type EntryStatus } from './state-machine';
 
 export type ActionResult = { ok: true; message: string } | { ok: false; error: string };
+
+/** Cada id del lote son varias consultas a D1: el lote tiene techo. */
+const MAX_LOTE = 100;
+const idsLote = z.array(z.string().min(1).max(64)).max(MAX_LOTE);
 
 /**
  * Solicitud de inscripción del tirador (o de su tutor).
@@ -306,6 +311,16 @@ export async function transitionEntries(
   reason?: string,
 ): Promise<ActionResult> {
   await requireWritableProfile();
+  const ids = idsLote.safeParse(entryIds);
+  if (!ids.success) {
+    return {
+      ok: false,
+      error: Array.isArray(entryIds) && entryIds.length > MAX_LOTE
+        ? `Como mucho ${MAX_LOTE} inscripciones a la vez. Selecciona menos y repite.`
+        : 'La selección no es válida.',
+    };
+  }
+  entryIds = [...new Set(ids.data)];
   if (entryIds.length === 0) return { ok: false, error: 'No has seleccionado ninguna.' };
 
   let ok = 0;

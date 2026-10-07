@@ -545,8 +545,18 @@ describe('endpoints de cron (peticiones reales al servidor de desarrollo)', () =
 });
 
 describe('/api/admin/ingest exige sesión de admin', () => {
+  it('sin cabecera Origin, o con otro origen: 403 antes de mirar la sesión', async () => {
+    for (const headers of [{}, { Origin: 'https://otro.example.test' }] as Record<string, string>[]) {
+      const res = await fetch(`${BASE_URL}/api/admin/ingest?source=fie`, { method: 'POST', headers });
+      expect(res.status).toBe(403);
+    }
+  });
+
   it('sin sesión: 401', async () => {
-    const res = await fetch(`${BASE_URL}/api/admin/ingest?source=fie`, { method: 'POST' });
+    const res = await fetch(`${BASE_URL}/api/admin/ingest?source=fie`, {
+      method: 'POST',
+      headers: { Origin: new URL(BASE_URL).origin },
+    });
     expect(res.status).toBe(401);
     const cuerpo = (await res.json()) as { ok: boolean };
     expect(cuerpo.ok).toBe(false);
@@ -555,7 +565,7 @@ describe('/api/admin/ingest exige sesión de admin', () => {
   it('con una cookie inventada: 401 (no se acepta cualquier cosa)', async () => {
     const res = await fetch(`${BASE_URL}/api/admin/ingest?source=fie`, {
       method: 'POST',
-      headers: { Cookie: '__Secure-neon-auth.session_token=inventada' },
+      headers: { Cookie: '__Secure-neon-auth.session_token=inventada', Origin: new URL(BASE_URL).origin },
     });
     expect(res.status).toBe(401);
   });

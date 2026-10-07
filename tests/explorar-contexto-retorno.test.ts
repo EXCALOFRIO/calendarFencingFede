@@ -182,9 +182,19 @@ describe('cambio de modalidad y enlaces de ficha conservan el contexto', () => {
 
 describe('la ruta de la ficha usa el retorno sin tocar la política de acceso', () => {
   it('deja la vuelta a la flecha global de la cabecera y no sustituye el botón Atrás del navegador', () => {
-    const fuente = readFileSync('src/app/(app)/explorar/[personaId]/page.tsx', 'utf8');
-    expect(fuente).not.toContain('<VolverAExplorar');
-    expect(fuente).not.toMatch(/history\.back|router\.back|'use client'/);
-    expect(fuente.indexOf("redirect('/entrar')")).toBeLessThan(fuente.indexOf('cargarFichaPantalla(contextoReal'));
+    for (const r of ['layout.tsx', 'page.tsx']) {
+      const fuente = readFileSync(`src/app/(app)/explorar/[personaId]/(perfil)/${r}`, 'utf8');
+      expect(fuente).not.toContain('<VolverAExplorar');
+      expect(fuente).not.toMatch(/history\.back|router\.back|'use client'/);
+    }
+    const datos = readFileSync('src/app/(app)/explorar/[personaId]/(perfil)/datos.ts', 'utf8');
+    expect(datos).toMatch(/exigirSesion[\s\S]*redirect\('\/entrar'\)/);
+    for (const r of ['layout.tsx', 'page.tsx', 'estadisticas/page.tsx', 'rivales/page.tsx', 'curiosidades/page.tsx', 'ranking/page.tsx']) {
+      const fuente = readFileSync(`src/app/(app)/explorar/[personaId]/(perfil)/${r}`, 'utf8');
+      const guarda = fuente.indexOf('await exigirSesion()');
+      const lectura = fuente.search(/(cabeceraPerfil|fichaPerfil|extrasPerfil|favoritoPerfil|cargar\w+Compartid\w*)\(/);
+      expect(guarda, r).toBeGreaterThan(-1);
+      if (lectura > -1) expect(guarda, r).toBeLessThan(lectura);
+    }
   });
 });

@@ -227,7 +227,10 @@ describe('índice de palabras de Explorar (0004)', () => {
     // Por popularidad: Marta tiene seis resultados en su grupo y Carlos, dos.
     expect(r.items.map((p) => [p.nombre, p.resultadosImportados, p.armas, p.trayectoria.oros]))
       .toEqual([['Marta Martínez', 6, ['ESPADA'], 2], ['Carlos Martínez Ruiz', 2, ['ESPADA'], 0]]);
-    expect(t.calls.length - antes).toBe(1);
+    // Una sentencia para la página; la otra son las marcas olímpicas de sus personas.
+    const nuevas = t.calls.slice(antes);
+    expect(nuevas).toHaveLength(2);
+    expect(nuevas.filter((c) => !c.sql.includes('fie_clasificacion'))).toHaveLength(1);
     const planes = t.plan(sqlBusquedaIndexada({ q: 'garcia lopez' }, 24, null));
     expect(planes.some((d) => d.includes('explorar_token') || /SEARCH t USING PRIMARY KEY \(token>\? AND token<\?\)/.test(d))).toBe(true);
     expect(planes.filter((d) => /^SCAN (sport_person|sport_person_alias|explorar_token|explorar_persona)\b/.test(d))).toEqual([]);
@@ -260,11 +263,13 @@ describe('índice de palabras de Explorar (0004)', () => {
     expect(t.calls.every((c) => c.parameters <= 100)).toBe(true);
   });
 
-  it('sin índice sigue sugiriendo; y ninguna sentencia supera el límite de D1 de SELECT compuesto', async () => {
+  it('sin índice no sugiere (no recorre tablas con LIKE); y ninguna sentencia supera el límite de D1 de SELECT compuesto', async () => {
     const t = entorno();
     poblar(t);
+    const antes = t.calls.length;
     const r = await sugerirPersonas(t.sinIndice, { q: 'carlos llavador fernandez lopez' });
-    expect(r.estado).toBe('ok');
+    expect(r.estado).toBe('no_disponible');
+    expect(t.calls).toHaveLength(antes);
     const dialecto = new SQLiteSyncDialect();
     const textos = [
       sqlCandidatosSugerencias('carlos llavador fernandez lopez'),

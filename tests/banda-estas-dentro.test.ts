@@ -125,11 +125,10 @@ describe('BandaEstasDentro: aviso de lectura fallida', () => {
     expect(html).not.toContain('Lista vacía');
   });
 
-  it('sin evento abierto y sin fallo muestra la carga', () => {
+  it('sin evento abierto y sin fallo no pinta nada mientras llega (ni esqueleto)', () => {
     const html = render(
       propsDeLectura(SIN_EVENTO as LecturaDeEvento<QuienVa>),
     );
-    expect(html).toContain('Mirando quién va');
-    expect(html).not.toContain(AVISO);
+    expect(html).toBe('');
   });
 });

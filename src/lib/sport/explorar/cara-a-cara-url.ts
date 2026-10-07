@@ -15,6 +15,8 @@ export type CriteriosCaraACara = {
   temporada: string;
   arma: string;
   fase: string;
+  /** `nacional` o `internacional`; vacío = los dos. */
+  ambito: string;
   /** Búsqueda de rival por nombre; sólo tiene sentido sin rival elegido. */
   q: string;
   cursor: string;
@@ -25,6 +27,7 @@ export const CRITERIOS_CARA_A_CARA_VACIOS: CriteriosCaraACara = {
   temporada: '',
   arma: '',
   fase: '',
+  ambito: '',
   q: '',
   cursor: '',
 };
@@ -46,6 +49,7 @@ export function leerCriteriosCaraACara(params: Parametros): CriteriosCaraACara {
     temporada: primero(params.temporada).slice(0, 12),
     arma: primero(params.arma).slice(0, 12).toUpperCase(),
     fase: primero(params.fase).slice(0, 12).toUpperCase(),
+    ambito: primero(params.ambito).slice(0, 16).toLowerCase(),
     q: primero(params.q).slice(0, 80),
     cursor: primero(params.cursor).slice(0, 600),
   };
@@ -71,6 +75,7 @@ export function construirUrlCaraACara(
   if (c.temporada) params.set('temporada', c.temporada);
   if (c.arma) params.set('arma', c.arma);
   if (c.fase) params.set('fase', c.fase);
+  if (c.ambito) params.set('ambito', c.ambito);
   if (!c.rival && c.q) params.set('q', c.q);
   if (c.cursor) params.set('cursor', c.cursor);
   const texto = params.toString();
@@ -83,7 +88,7 @@ export function urlVistaDelRival(
   rivalId: string,
   c: Partial<CriteriosCaraACara>,
 ): string {
-  return construirUrlCaraACara(rivalId, { temporada: c.temporada, arma: c.arma, fase: c.fase, rival: personaId });
+  return construirUrlCaraACara(rivalId, { temporada: c.temporada, arma: c.arma, fase: c.fase, ambito: c.ambito, rival: personaId });
 }
 
 /**
@@ -105,6 +110,7 @@ export function aEntradaCaraACara(personaId: string, c: CriteriosCaraACara): Rec
   if (c.temporada) entrada.temporada = c.temporada;
   if (c.arma) entrada.arma = c.arma;
   if (c.fase) entrada.fase = c.fase;
+  if (c.ambito) entrada.ambito = c.ambito;
   if (c.cursor) entrada.cursor = c.cursor;
   return entrada;
 }
@@ -122,8 +128,13 @@ export const FASE_FILTRO: ReadonlyArray<{ valor: 'POULE' | 'TABLEAU'; etiqueta: 
   { valor: 'TABLEAU', etiqueta: 'Eliminación directa' },
 ];
 
+export const AMBITO_FILTRO: ReadonlyArray<{ valor: 'nacional' | 'internacional'; etiqueta: string }> = [
+  { valor: 'nacional', etiqueta: 'Nacional' },
+  { valor: 'internacional', etiqueta: 'Internacional' },
+];
+
 export type ChipCaraACara = {
-  clave: 'temporada' | 'arma' | 'fase';
+  clave: 'temporada' | 'arma' | 'fase' | 'ambito';
   etiqueta: string;
   valor: string;
   /** Misma consulta sin este criterio y desde la primera página. */
@@ -144,6 +155,10 @@ export function chipsCaraACara(personaId: string, c: CriteriosCaraACara): ChipCa
   if (c.fase) {
     const fase = FASE_FILTRO.find((f) => f.valor === c.fase);
     chips.push({ clave: 'fase', etiqueta: 'Fase', valor: fase?.etiqueta ?? c.fase, quitar: sin('fase') });
+  }
+  if (c.ambito) {
+    const ambito = AMBITO_FILTRO.find((a) => a.valor === c.ambito);
+    chips.push({ clave: 'ambito', etiqueta: 'Ámbito', valor: ambito?.etiqueta ?? c.ambito, quitar: sin('ambito') });
   }
   return chips;
 }

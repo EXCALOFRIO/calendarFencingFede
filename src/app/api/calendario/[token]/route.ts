@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { enLista as inArray } from '@/lib/sqlite';
 import { db } from '@/db';
 import { callUp, callUpAthlete, userProfile } from '@/db/schema';
@@ -53,13 +53,18 @@ export async function GET(
   const [perfil] = await db
     .select({ id: userProfile.id })
     .from(userProfile)
-    .where(eq(userProfile.icalToken, token))
+    .where(and(
+      eq(userProfile.icalToken, token),
+      ne(userProfile.inviteStatus, 'revocada'),
+      inArray(userProfile.role, ['admin', 'coach', 'athlete']),
+    ))
     .limit(1);
 
   /**
-   * Token desconocido: 404 seco, sin decir si el token existió alguna vez ni
-   * devolver un calendario vacío. Un calendario vacío confirmaría que la ruta
-   * es válida y dejaría al cliente suscrito a algo que no es suyo.
+   * Token desconocido, cuenta revocada o rol sin acceso a la app: 404 seco,
+   * sin decir si el token existió alguna vez ni devolver un calendario vacío.
+   * Un calendario vacío confirmaría que la ruta es válida y dejaría al cliente
+   * suscrito a algo que no es suyo. Revocar además rota el token.
    */
   if (!perfil) return noEncontrado();
 

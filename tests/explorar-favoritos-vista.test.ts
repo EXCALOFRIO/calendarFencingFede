@@ -32,7 +32,7 @@ const { ControlFavoritoFicha, EnlaceFavoritos, EstadoFavoritos, ListaFavoritos }
   '@/components/explorar/favoritos'
 );
 const { VolverAExplorar } = await import('@/components/explorar/ficha-deportiva');
-const { visibles } = await import('@/components/nav');
+const { DESTINOS_APP, pestanaDeRuta } = await import('@/components/navegacion-app');
 
 const html = (nodo: React.ReactElement) => renderToStaticMarkup(nodo);
 const sinEscapar = (s: string) => s.replaceAll('&amp;', '&');
@@ -289,40 +289,38 @@ describe('control en la ficha', () => {
 });
 
 describe('Favoritos alcanzable sin otro destino principal', () => {
-  it('la barra de navegación no gana ningún destino para ningún papel', () => {
-    for (const rol of ['athlete', 'coach', 'admin'] as const) {
-      const hrefs = visibles(rol).map((d) => d.href);
-      expect(hrefs).not.toContain('/explorar/favoritos');
-      expect(hrefs.length).toBeLessThanOrEqual(5);
-    }
-    expect(visibles('athlete').map((d) => d.href)).toEqual(['/', '/estado', '/explorar', '/ranking']);
+  it('la barra de navegación no gana ningún destino: Favoritos es Tú › Siguiendo', () => {
+    const hrefs = DESTINOS_APP.map((d) => d.href);
+    expect(hrefs).not.toContain('/explorar/favoritos');
+    expect(hrefs).toEqual(['/', '/explorar', '/explorar/buscar', '/ranking', '/explorar/yo']);
+    expect(pestanaDeRuta('/explorar/favoritos', false)).toBe('tu');
   });
 
   it('el enlace lleva a la lista y no precarga datos privados', () => {
     const salida = html(React.createElement(EnlaceFavoritos));
     expect(salida).toContain('href="/explorar/favoritos"');
     expect(salida).toContain('Mis favoritos');
-    expect(salida).toContain('min-h-11');
+    expect(salida).toContain('min-h-[44px]');
   });
 
-  it('Explorar y el perfil incluyen el enlace', () => {
-    expect(readFileSync('src/app/(app)/explorar/page.tsx', 'utf8')).toContain('<CabeceraExplorar');
-    expect(readFileSync('src/components/explorar/cabecera-explorar.tsx', 'utf8')).toContain('href={RUTA_FAVORITOS}');
+  it('Explorar (por su barra) y el perfil incluyen el enlace', () => {
+    expect(readFileSync('src/components/explorar/vista-buscar.tsx', 'utf8')).toContain('<CabeceraExplorar');
     expect(readFileSync('src/app/(app)/perfil/page.tsx', 'utf8')).toContain('<EnlaceFavoritos');
   });
 
-  it('la ruta de la lista comprueba la sesión antes de leer y sólo recibe el cursor', () => {
+  it('la ruta vieja de favoritos lleva a Siguiendo sin leer nada', () => {
     const fuente = readFileSync('src/app/(app)/explorar/favoritos/page.tsx', 'utf8');
-    expect(fuente.indexOf("redirect('/entrar')")).toBeLessThan(fuente.indexOf('cargarFavoritos(contextoReal'));
-    expect(fuente).toContain('leerCursorFavoritos(await searchParams)');
-    expect(fuente).not.toMatch(/profileId|perfil\.profileId|personaId/);
+    expect(fuente).toContain('redirect(RUTA_SIGUIENDO)');
+    expect(fuente).not.toMatch(/cargarFavoritos|searchParams|profileId/);
   });
 
   it('la ficha lee el estado de favorito junto a la ficha y exige sesión antes', () => {
-    const fuente = readFileSync('src/app/(app)/explorar/[personaId]/page.tsx', 'utf8');
-    expect(fuente).toContain('cargarEstadoFavorito(contextoReal(), personaId)');
-    expect(fuente.indexOf("redirect('/entrar')")).toBeLessThan(fuente.indexOf('cargarEstadoFavorito(contextoReal'));
-    expect(fuente).toContain('<ControlFavoritoFicha');
+    const datos = readFileSync('src/app/(app)/explorar/[personaId]/(perfil)/datos.ts', 'utf8');
+    expect(datos).toContain('cargarEstadoFavorito(contextoReal(), personaId)');
+    expect(datos.indexOf("redirect('/entrar')")).toBeLessThan(datos.indexOf('cargarEstadoFavorito(contextoReal'));
+    const layout = readFileSync('src/app/(app)/explorar/[personaId]/(perfil)/layout.tsx', 'utf8');
+    expect(layout.indexOf('await exigirSesion()')).toBeLessThan(layout.indexOf('favoritoPerfil(personaId)'));
+    expect(layout).toContain('<ControlFavoritoFicha');
   });
 });
 

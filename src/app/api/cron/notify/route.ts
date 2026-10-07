@@ -20,7 +20,9 @@ import {
   mergeDeadlines,
 } from '@/lib/deadlines';
 import { sendPendingNotifications } from '@/lib/email/resend';
+import { generarAvisosProgramados } from '@/lib/notificaciones/programado';
 import { limpiarAutenticacionCaducada } from '@/lib/auth/mantenimiento';
+import { autorizarCron } from '@/lib/cron/secreto';
 import { getDeadlineRules } from '@/lib/queries/calendar';
 import {
   CATEGORY_LABEL,
@@ -36,7 +38,10 @@ import {
  *
  * Hace dos cosas, en este orden:
  *   a) encola los avisos de plazo próximo, y
- *   b) vacía la cola de correo.
+ *   b) vacía la cola de correo, y
+ *   c) genera los avisos de la campana y del móvil (`src/lib/notificaciones/programado.ts`):
+ *      resultados pendientes de la ingesta, cambios de perfil, competiciones
+ *      nuevas y cierres de inscripción de «tu calendario».
  *
  * Encolar y enviar están separados a propósito: si el envío falla a mitad, los
  * avisos ya están guardados y salen mañana; y si el correo no está configurado,
@@ -61,12 +66,15 @@ export async function GET(request: Request) {
 
   const avisos = await encolarAvisosDePlazo(ahora);
   const correo = await sendPendingNotifications(CORREOS_POR_PASADA, ahora);
+  // Campana y push. Nunca lanza: cada paso informa de su estado por separado.
+  const notificaciones = await generarAvisosProgramados(db, ahora);
 
   return Response.json({
     ok: true,
     avisosEncolados: avisos.encolados,
     inscripcionesRevisadas: avisos.revisadas,
     correo,
+    notificaciones,
     autenticacionCaducadaEliminada: sesionesCaducadasEliminadas,
   });
 }
@@ -337,34 +345,4 @@ function cuerpoDelAviso(
   }
 
   return `${lineas.join('\n')}\n`;
-}
-
-/**
- * Protección del cron. Mismo esquema que la ruta de ingestión y duplicado por
- * el mismo motivo: que cada endpoint público se pueda auditar sin saltar a otro
- * fichero.
- */
-function autorizarCron(request: Request): Response | null {
-  const secret = process.env.CRON_SECRET;
-
-  if (!secret) {
-    if (process.env.NODE_ENV === 'production') {
-      return Response.json(
-        {
-          ok: false,
-          error:
-            'Falta CRON_SECRET en el entorno. Defínela en Vercel para que el ' +
-            'cron pueda ejecutarse.',
-        },
-        { status: 503 },
-      );
-    }
-    return null;
-  }
-
-  if (request.headers.get('authorization') !== `Bearer ${secret}`) {
-    return Response.json({ ok: false, error: 'No autorizado.' }, { status: 401 });
-  }
-
-  return null;
 }

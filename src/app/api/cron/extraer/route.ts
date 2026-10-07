@@ -7,6 +7,8 @@ import {
   procesarDocumentoOficial,
   type ResumenProceso,
 } from '@/lib/ai/extract';
+import { invalidarCacheSinFallar } from '@/lib/cache';
+import { autorizarCron } from '@/lib/cron/secreto';
 
 /**
  * Extracción asistida por IA de las circulares en PDF, en lotes pequeños.
@@ -117,19 +119,26 @@ export async function GET(request: Request) {
         }),
       );
     } catch (error) {
-      // Una circular que revienta no puede tumbar el lote entero.
+      // Una circular que revienta no puede tumbar el lote entero. El mensaje
+      // no sale en la respuesta (puede llevar SQL, URLs firmadas o texto del
+      // PDF): sólo el tipo de error, y el detalle al registro del Worker.
+      const tipo = error instanceof Error ? error.name : 'Error';
+      console.error(`[extraer] ${documento.id}: ${tipo}`);
       resultados.push({
         documentoId: documento.id,
         documentoUrl: documento.pdfUrl,
         titulo: documento.titulo,
         estado: 'error',
-        motivo: error instanceof Error ? error.message : String(error),
+        motivo: `Fallo al procesar la circular (${tipo}).`,
       });
     }
   }
 
   const cuenta = (estado: ResumenProceso['estado']) =>
     resultados.filter((r) => r.estado === estado).length;
+  const encoladas = resultados.reduce((suma, r) => suma + (r.encoladas ?? 0), 0);
+  // Lo extraído de un dossier ya ligado al torneo se ve (en gris) en su ficha.
+  if (encoladas > 0) await invalidarCacheSinFallar(['calendario'], 'extraer');
 
   return Response.json({
     ok: true,
@@ -142,45 +151,11 @@ export async function GET(request: Request) {
     sinTexto: cuenta('sin_texto'),
     bloqueadasPorDatosPersonales: cuenta('bloqueado_datos_personales'),
     errores: cuenta('error'),
-    encoladas: resultados.reduce((suma, r) => suma + (r.encoladas ?? 0), 0),
+    encoladas,
     descartadasPorCitaFalsa: resultados.reduce(
       (suma, r) => suma + (r.descartadas ?? 0),
       0,
     ),
     detalle: resultados,
   });
-}
-
-/**
- * Protección del cron.
- *
- * Deliberadamente duplicado en las tres rutas de cron en lugar de extraído a
- * un módulo común: son quince líneas y así cada endpoint público se puede
- * auditar entero sin saltar de fichero, que es justo lo que uno quiere al
- * mirar una ruta que gasta dinero en llamadas a un modelo.
- */
-function autorizarCron(request: Request): Response | null {
-  const secret = process.env.CRON_SECRET;
-
-  if (!secret) {
-    if (process.env.NODE_ENV === 'production') {
-      return Response.json(
-        {
-          ok: false,
-          error:
-            'Falta CRON_SECRET en el entorno. Defínela en el Worker para que el ' +
-            'cron pueda ejecutarse.',
-        },
-        { status: 503 },
-      );
-    }
-    // En desarrollo se permite, para poder probar con curl sin montar nada.
-    return null;
-  }
-
-  if (request.headers.get('authorization') !== `Bearer ${secret}`) {
-    return Response.json({ ok: false, error: 'No autorizado.' }, { status: 401 });
-  }
-
-  return null;
 }

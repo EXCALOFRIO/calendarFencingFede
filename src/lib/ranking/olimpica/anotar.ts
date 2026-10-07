@@ -14,14 +14,25 @@ import type { ZonaFie } from './zonas';
  * La marca olímpica de CADA fila del ranking internacional (FIE sénior).
  *
  *   clasificado  entra hoy por algún camino.
- *   cerca        está entre los `cercanos` primeros que se quedan fuera de un
- *                camino; se da el más corto (menos puntos que le faltan).
+ *   cerca        es el primer reserva de algún camino: quien heredaría la
+ *                plaza si el último que entra por él la perdiera, en el orden
+ *                de reasignación del sistema oficial (F.1). Equipos: el
+ *                siguiente del ranking (top 4 y plaza libre) y el siguiente
+ *                de su zona. Individual: el siguiente del AOR y el siguiente
+ *                de su zona en el AOR. Los tres mejores tiradores de un
+ *                equipo reserva lo heredan («Con su equipo»). Además no le
+ *                puede faltar más de un tercio de los puntos de quien tiene
+ *                que pasar (`FALTA_MAXIMA_CERCA`). Si hay varios caminos, se
+ *                da el más corto (menos puntos que le faltan). `cercanos` y
+ *                `faltaMaxima` cambian los dos límites.
  *   pendiente    RUS, BLR y neutrales: se enseñan pero no ocupan plaza.
  *   null         nada que enseñar (puede llevar `camino: 'TORNEO_ZONAL'`, que
  *                es la vía que le queda, sin diferencia que medir).
  *
  * Las diferencias de los caminos por equipos se miden en puntos del ranking
  * por equipos; las individuales, en puntos del ranking individual.
+ *
+ * Cómo se pinta cada estado (verde, amarillo, gris o nada): `colorOlimpico`.
  */
 
 export type EstadoOlimpico = 'clasificado' | 'cerca' | 'pendiente';
@@ -54,6 +65,23 @@ export type AnotacionOlimpica = {
   motivo: MotivoPendiente | null;
   /** «pendiente»: lo que tendría si contara. */
   sinVeto: { estado: 'clasificado' | 'cerca'; camino: CaminoOlimpico; zona: ZonaFie | null } | null;
+  /**
+   * El puesto que cuenta para su camino y sus puntos: los del ranking por
+   * equipos en los caminos de equipo (`EQUIPO_*` y `POR_EQUIPO`), los del
+   * individual en el resto.
+   */
+  puesto?: number | null;
+  puntos?: number | null;
+  /**
+   * «cerca»: rivales que tiene que pasar en ese camino. En el top 4, todos los
+   * elegibles entre él y el 4.º; en los demás, los de su lista (de su zona, del
+   * AOR o de los que heredan plaza) hasta el último que entra, incluido.
+   */
+  puestosFaltan?: number | null;
+  /** Fecha del ranking usado, cuando la anotación viaja sola (perfil, Buscar). */
+  fechaRanking?: string | null;
+  /** La prueba, cuando la anotación viaja sola. */
+  prueba?: { arma: EntradaPrueba['arma']; genero: EntradaPrueba['genero'] };
 };
 
 export type AnotacionesPrueba = {
@@ -66,11 +94,31 @@ export type AnotacionesPrueba = {
   individual: Record<string, AnotacionOlimpica>;
 };
 
+/**
+ * Cuántos reservas de cada camino cuentan como «cerca»: solo el primero, que es
+ * a quien la reasignación (F.1) daría la plaza. Con tres por camino los
+ * amarillos de una prueba llegan a ser tantos como las plazas, muchos a más de
+ * cien puntos.
+ */
+export const RESERVAS_POR_CAMINO = 1;
+
+/**
+ * Lo más que le puede faltar a un reserva para ser «cerca», en fracción de los
+ * puntos de quien tiene que pasar: un tercio. El segundo equipo de África o de
+ * América suele ser el reserva de su zona a 140–190 puntos (60–75 %), y eso no
+ * es estar cerca.
+ */
+export const FALTA_MAXIMA_CERCA = 1 / 3;
+
 export type OpcionesAnotacion = {
   /** Cuántos de los primeros fuera de cada camino cuentan como «cerca». */
   cercanos?: number;
+  /** Fracción de los puntos del rival que puede faltar como mucho (ver `FALTA_MAXIMA_CERCA`). */
+  faltaMaxima?: number;
   pendientes?: Readonly<Record<string, MotivoPendiente>>;
 };
+
+type Criterio = { cercanos: number; faltaMaxima: number };
 
 const redondear = (n: number) => Math.round(n * 1000) / 1000;
 
@@ -85,6 +133,9 @@ const VACIA: AnotacionOlimpica = {
   puestoFuera: null,
   motivo: null,
   sinVeto: null,
+  puesto: null,
+  puntos: null,
+  puestosFaltan: null,
 };
 
 function anotacion(parcial: Partial<AnotacionOlimpica>): AnotacionOlimpica {
@@ -117,26 +168,35 @@ type Candidato = {
   contra: Referencia;
   faltan: number;
   puestoFuera: number;
+  puestosFaltan: number;
   siguiente: Referencia | null;
+  puesto: number;
   puntos: number;
 };
 
-/** De una lista de los que están fuera, el candidato si está entre los N primeros. */
-function enLista<T extends { puntos: number }>(
+/**
+ * De una lista de los que están fuera, el candidato si está entre los N
+ * primeros y no le falta más de la fracción permitida de los puntos del rival.
+ */
+function enLista<T extends { puntos: number; posicion: number }>(
   lista: T[],
   indice: number,
-  cercanos: number,
+  criterio: Criterio,
   ref: (x: T) => Referencia,
-  base: Omit<Candidato, 'faltan' | 'puestoFuera' | 'siguiente' | 'puntos'>,
+  base: Omit<Candidato, 'faltan' | 'puestoFuera' | 'puestosFaltan' | 'siguiente' | 'puesto' | 'puntos'>,
 ): Candidato | null {
-  if (indice < 0 || indice >= cercanos) return null;
+  if (indice < 0 || indice >= criterio.cercanos) return null;
   const yo = lista[indice];
   const siguiente = lista[indice + 1];
+  const faltan = redondear(Math.max(0, base.contra.puntos - yo.puntos));
+  if (faltan > base.contra.puntos * criterio.faltaMaxima) return null;
   return {
     ...base,
-    faltan: redondear(Math.max(0, base.contra.puntos - yo.puntos)),
+    faltan,
     puestoFuera: indice + 1,
+    puestosFaltan: indice + 1,
     siguiente: siguiente ? ref(siguiente) : null,
+    puesto: yo.posicion,
     puntos: yo.puntos,
   };
 }
@@ -155,12 +215,32 @@ function deCandidato(c: Candidato): AnotacionOlimpica {
     contra: c.contra,
     faltan: c.faltan,
     puestoFuera: c.puestoFuera,
+    puestosFaltan: c.puestosFaltan,
     margen: c.siguiente ? redondear(Math.max(0, c.puntos - c.siguiente.puntos)) : null,
     sobre: c.siguiente,
+    puesto: c.puesto,
+    puntos: c.puntos,
   });
 }
 
-function anotarNucleo(d: DetalleOlimpico, cercanos: number) {
+/** El tirador de un equipo reserva: hereda lo que le falta a su equipo. */
+function conSuEquipo(eq: AnotacionOlimpica): AnotacionOlimpica {
+  return anotacion({
+    estado: 'cerca',
+    camino: 'POR_EQUIPO',
+    zona: eq.zona,
+    contra: eq.contra,
+    faltan: eq.faltan,
+    margen: eq.margen,
+    sobre: eq.sobre,
+    puestoFuera: eq.puestoFuera,
+    puestosFaltan: eq.puestosFaltan ?? null,
+    puesto: eq.puesto ?? null,
+    puntos: eq.puntos ?? null,
+  });
+}
+
+function anotarNucleo(d: DetalleOlimpico, criterio: Criterio) {
   const R = REGLAS_LA2028;
   const r = d.resultado;
   const equipos: Record<string, AnotacionOlimpica> = {};
@@ -187,6 +267,8 @@ function anotarNucleo(d: DetalleOlimpico, cercanos: number) {
       camino: e.via === 'TOP' ? 'EQUIPO_TOP' : e.via === 'ZONA' ? 'EQUIPO_ZONA' : 'EQUIPO_SIGUIENTE',
       zona: e.plazaDeZona,
       ...margenSobre(e.puntos, pf),
+      puesto: e.posicion,
+      puntos: e.puntos,
     });
   }
 
@@ -195,25 +277,29 @@ function anotarNucleo(d: DetalleOlimpico, cercanos: number) {
     const contraZona = e.zona ? (ganadorZona(e.zona) ?? ultimoTramo) : null;
     const c = mejor([
       ultimoTop
-        ? enLista(fuera, i, cercanos, refEquipo, { camino: 'EQUIPO_TOP', zona: null, contra: refEquipo(ultimoTop) })
+        ? enLista(fuera, i, criterio, refEquipo, { camino: 'EQUIPO_TOP', zona: null, contra: refEquipo(ultimoTop) })
         : null,
       e.zona && contraZona
-        ? enLista(deSuZona, deSuZona.indexOf(e), cercanos, refEquipo, {
+        ? enLista(deSuZona, deSuZona.indexOf(e), criterio, refEquipo, {
             camino: 'EQUIPO_ZONA',
             zona: e.zona,
             contra: refEquipo(contraZona),
           })
         : null,
       herederos.length > 0
-        ? enLista(fuera, i, cercanos, refEquipo, {
+        ? enLista(fuera, i, criterio, refEquipo, {
             camino: 'EQUIPO_SIGUIENTE',
             zona: herederos.at(-1)?.plazaDeZona ?? null,
             contra: refEquipo(herederos.at(-1) as EquipoRankeado),
           })
         : null,
     ]);
+    // En el top 4 hay que pasar también a los que entran por zona y están delante.
+    if (c?.camino === 'EQUIPO_TOP' && ultimoTop) c.puestosFaltan = e.orden - ultimoTop.orden;
     if (c) equipos[e.noc] = deCandidato(c);
-    else if (e.noc === R.anfitrion) equipos[e.noc] = anotacion({ estado: 'cerca', camino: 'ANFITRION' });
+    else if (e.noc === R.anfitrion) {
+      equipos[e.noc] = anotacion({ estado: 'cerca', camino: 'ANFITRION', puesto: e.posicion, puntos: e.puntos });
+    }
   });
 
   // --------------------------------------------------------- Individual ---
@@ -246,6 +332,8 @@ function anotarNucleo(d: DetalleOlimpico, cercanos: number) {
           camino: 'POR_EQUIPO',
           margen: eq?.margen ?? null,
           sobre: eq?.sobre ?? null,
+          puesto: eq?.puesto ?? null,
+          puntos: eq?.puntos ?? null,
         });
       }
       continue;
@@ -257,17 +345,28 @@ function anotarNucleo(d: DetalleOlimpico, cercanos: number) {
         camino: q.camino,
         zona: q.zona,
         ...margenSobre(t.puntos, q.pf),
+        puesto: t.posicion,
+        puntos: t.puntos,
       });
       continue;
     }
-    // Su CON ya tiene plaza en esta arma con otro tirador: no hay camino.
-    if ((r.plazasPorNoc[t.noc] ?? 0) > 0) continue;
+    const eq = equipos[t.noc];
+    const porEquipoCerca =
+      eq?.estado === 'cerca' &&
+      eq.camino !== 'ANFITRION' &&
+      (mejoresDeSuNoc.get(t.noc)?.has(t.fieId) ?? false);
+
+    // Su CON ya tiene plaza individual con otro tirador: solo le queda que entre el equipo.
+    if ((r.plazasPorNoc[t.noc] ?? 0) > 0) {
+      if (porEquipoCerca) individual[clave] = conSuEquipo(eq);
+      continue;
+    }
 
     const candidatos: (Candidato | null)[] = [];
     if (representante.has(t.fieId)) {
       if (ultimoAor) {
         candidatos.push(
-          enLista(fueraAor, fueraAor.indexOf(t), cercanos, refTirador, {
+          enLista(fueraAor, fueraAor.indexOf(t), criterio, refTirador, {
             camino: 'AOR',
             zona: null,
             contra: refTirador(ultimoAor),
@@ -278,7 +377,7 @@ function anotarNucleo(d: DetalleOlimpico, cercanos: number) {
       if (t.zona && qz) {
         const deSuZona = fueraAor.filter((x) => x.zona === t.zona);
         candidatos.push(
-          enLista(deSuZona, deSuZona.indexOf(t), cercanos, refTirador, {
+          enLista(deSuZona, deSuZona.indexOf(t), criterio, refTirador, {
             camino: 'AOR_ZONA',
             zona: t.zona,
             contra: refTirador(qz),
@@ -287,27 +386,14 @@ function anotarNucleo(d: DetalleOlimpico, cercanos: number) {
       }
     }
     const c = mejor(candidatos);
-    const eq = equipos[t.noc];
-    const porEquipoCerca =
-      eq?.estado === 'cerca' &&
-      eq.camino !== 'ANFITRION' &&
-      (mejoresDeSuNoc.get(t.noc)?.has(t.fieId) ?? false);
 
     if (c && (!porEquipoCerca || (eq.faltan ?? Infinity) >= c.faltan)) {
       individual[clave] = deCandidato(c);
     } else if (porEquipoCerca) {
-      individual[clave] = anotacion({
-        estado: 'cerca',
-        camino: 'POR_EQUIPO',
-        zona: eq.zona,
-        contra: eq.contra,
-        faltan: eq.faltan,
-        margen: eq.margen,
-        sobre: eq.sobre,
-        puestoFuera: eq.puestoFuera,
-      });
-    } else if (t.noc === R.anfitrion) {
-      individual[clave] = anotacion({ estado: 'cerca', camino: 'ANFITRION' });
+      individual[clave] = conSuEquipo(eq);
+    } else if (t.noc === R.anfitrion && (mejoresDeSuNoc.get(t.noc)?.has(t.fieId) ?? false)) {
+      // Con sus 6 plazas EE. UU. puede meter, como mucho, un equipo de 3 por arma.
+      individual[clave] = anotacion({ estado: 'cerca', camino: 'ANFITRION', puesto: t.posicion, puntos: t.puntos });
     } else if (t.zona) {
       individual[clave] = anotacion({ camino: 'TORNEO_ZONAL', zona: t.zona });
     }
@@ -320,13 +406,16 @@ export function anotarRankingOlimpico(
   entrada: EntradaPrueba,
   opciones: OpcionesAnotacion = {},
 ): AnotacionesPrueba {
-  const cercanos = Math.max(0, opciones.cercanos ?? 3);
+  const criterio: Criterio = {
+    cercanos: Math.max(0, opciones.cercanos ?? RESERVAS_POR_CAMINO),
+    faltaMaxima: Math.max(0, opciones.faltaMaxima ?? FALTA_MAXIMA_CERCA),
+  };
   const pendientes = opciones.pendientes ?? PENDIENTES_LA2028;
   const nocsPendientes = Object.keys(pendientes);
 
   const nucleo = anotarNucleo(
     calcularDetalleOlimpico(entrada, { nocsNoElegibles: nocsPendientes, nocsSeguidos: [] }),
-    cercanos,
+    criterio,
   );
 
   const vetados = (noc: string | null) => {
@@ -344,7 +433,7 @@ export function anotarRankingOlimpico(
           nocsNoElegibles: nocsPendientes.filter((n) => pendientes[n] === 'NEUTRAL'),
           nocsSeguidos: [],
         }),
-        cercanos,
+        criterio,
       )
     : null;
 
@@ -360,6 +449,8 @@ export function anotarRankingOlimpico(
       estado: 'pendiente',
       motivo: v.motivo,
       sinVeto: deSinVeto(sinVeto?.equipos[v.noc]),
+      puesto: f.posicion,
+      puntos: f.puntos,
     });
   }
   for (const f of entrada.individual) {
@@ -370,6 +461,8 @@ export function anotarRankingOlimpico(
       estado: 'pendiente',
       motivo: v.motivo,
       sinVeto: deSinVeto(sinVeto?.individual[clave]),
+      puesto: f.posicion,
+      puntos: f.puntos,
     });
   }
 

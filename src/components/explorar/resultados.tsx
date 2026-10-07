@@ -12,7 +12,7 @@ import type { DeportistaResumen } from '@/lib/sport/explorar/tipos';
 import { TRAYECTORIA_VACIA, type TrayectoriaPersona } from '@/lib/sport/explorar/tipos-busqueda';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import {
-  RUTA_EXPLORAR,
+  RUTA_BUSCAR,
   aEntrada,
   chipsActivos,
   construirUrl,
@@ -30,22 +30,27 @@ export function ChipsActivos({ criterios }: { criterios: CriteriosExplorar }) {
   const chips = todos.length === 1 && todos[0].clave === 'q' ? [] : todos;
   if (chips.length === 0) return null;
   return (
-    <ul aria-label="Filtros activos" className="flex min-w-0 flex-wrap gap-2">
+    <ul aria-label="Filtros activos" className="flex min-w-0 flex-wrap gap-x-1.5">
       {chips.map((chip) => (
         <li key={chip.clave} className="min-w-0 max-w-full">
+          {/* Pastilla de 30 px dibujados dentro de un enlace de 44 de alto. */}
           <Link
             href={chip.quitar}
             prefetch={false}
             aria-label={`Quitar filtro ${chip.etiqueta}: ${chip.valor}${chip.fechaInvalida ? ' (fecha no válida)' : ''}`}
-            className={cn(
-              'inline-flex h-11 max-w-full items-center gap-1.5 rounded-full border bg-secondary pr-3 pl-3 text-[0.8125rem] whitespace-nowrap hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
-              chip.fechaInvalida && 'border-danger/40',
-            )}
+            className="group flex h-[44px] max-w-full items-center outline-none"
           >
-            <span className="shrink-0 text-muted-foreground">{chip.etiqueta}</span>
-            <span className="min-w-0 truncate font-medium">{chip.valor}</span>
-            {chip.fechaInvalida ? <span className="shrink-0 text-xs text-danger">no válida</span> : null}
-            <X className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+            <span
+              className={cn(
+                'inline-flex h-[30px] max-w-full items-center gap-1 rounded-full border bg-secondary px-2.5 text-[12px] whitespace-nowrap group-hover:bg-accent group-focus-visible:ring-[3px] group-focus-visible:ring-ring/50',
+                chip.fechaInvalida && 'border-danger',
+              )}
+            >
+              <span className="shrink-0 text-muted-foreground">{chip.etiqueta}</span>
+              <span className="min-w-0 truncate font-medium">{chip.valor}</span>
+              {chip.fechaInvalida ? <span className="shrink-0 text-[12px] text-danger">no válida</span> : null}
+              <X className="size-[14px] shrink-0 text-muted-foreground" aria-hidden />
+            </span>
           </Link>
         </li>
       ))}
@@ -68,7 +73,7 @@ function Medallas({ t }: { t: TrayectoriaPersona }) {
       {metales.map((m) => (
         <span
           key={m.clave}
-          className={cn('inline-flex h-[1.125rem] items-center gap-1 rounded-full border px-1.5 text-[0.6875rem] leading-none font-semibold tabular-nums', CLASES_MEDALLA[m.medalla])}
+          className={cn('inline-flex h-[18px] items-center gap-1 rounded-full border px-1.5 text-[12px] leading-none font-semibold tabular-nums', CLASES_MEDALLA[m.medalla])}
         >
           <span aria-hidden="true" className="size-1.5 rounded-full" style={{ backgroundColor: COLOR_MEDALLA[m.medalla] }} />
           {t[m.clave]}
@@ -80,7 +85,7 @@ function Medallas({ t }: { t: TrayectoriaPersona }) {
 }
 
 /** Sin trayectoria (lecturas antiguas o pruebas) la fila sólo enseña la actividad. */
-type FilaBuscada = DeportistaResumen & Partial<Pick<DeportistaListado, 'trayectoria' | 'seguida'>>;
+type FilaBuscada = DeportistaResumen & Partial<Pick<DeportistaListado, 'trayectoria' | 'seguida' | 'olimpica'>>;
 
 function FilaDeportista({ d, volver }: { d: FilaBuscada; volver: string }) {
   const t = d.trayectoria ?? TRAYECTORIA_VACIA;
@@ -88,7 +93,7 @@ function FilaDeportista({ d, volver }: { d: FilaBuscada; volver: string }) {
   const homonimo = d.mismoNombre > 1;
   return (
     <FilaPerfil
-      p={{ id: d.id, nombre: d.nombre, pais: d.pais, armas: d.armas, resultados: d.resultadosImportados, alias: d.alias }}
+      p={{ id: d.id, nombre: d.nombre, pais: d.pais, armas: d.armas, resultados: d.resultadosImportados, alias: d.alias, olimpica: d.olimpica }}
       href={rutaFichaConRetorno(d.id, volver)}
       meta={homonimo ? (
         <span className="text-warn" title={`${d.mismoNombre} personas con este nombre`}>
@@ -171,11 +176,11 @@ export function ListaDeportistas({
   const n = lista.length;
   return (
     <section aria-labelledby="explorar-resultados" className="flex min-w-0 flex-col gap-1 lg:max-w-2xl">
-      <div className="flex min-h-11 items-center justify-between gap-3 px-0.5 sm:px-3">
-        <h2 id="explorar-resultados" className="text-base font-semibold tracking-normal">Deportistas</h2>
+      <div className="flex min-h-[40px] items-center justify-between gap-3 px-0.5 sm:px-3">
+        <h2 id="explorar-resultados" className="text-[15px] font-semibold tracking-normal">Deportistas</h2>
         <p role="status" className="text-xs text-muted-foreground tabular-nums">
           {n.toLocaleString('es-ES')}{cursor ? '+' : ''}
-          <span className="sr-only">{n === 1 ? ' deportista' : ' deportistas'}{cursor ? ', hay más' : ''}</span>
+          <span className="sr-only">{n === 1 ? ' tirador' : ' tiradores'}{cursor ? ', hay más' : ''}</span>
         </p>
       </div>
 
@@ -195,22 +200,21 @@ export function ListaDeportistas({
         ))}
       </ul>
 
-      <div className="flex flex-col items-center gap-2 px-0.5 pt-3 sm:px-3">
+      <div className="flex flex-col items-center gap-2 px-0.5 pt-1 sm:px-3">
         {cursor ? (
-          <Button asChild variant="secondary" className={CLASE_VER_MAS}>
-            <Link
-              href={construirUrl(criterios, cursor)}
-              prefetch={false}
-              rel="next"
-              aria-disabled={estado === 'cargando'}
-              onClick={verMas}
-            >
-              {estado === 'cargando' ? (
-                <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden />
-              ) : null}
-              {estado === 'cargando' ? 'Cargando…' : 'Ver más'}
-            </Link>
-          </Button>
+          <Link
+            href={construirUrl(criterios, cursor)}
+            prefetch={false}
+            rel="next"
+            aria-disabled={estado === 'cargando'}
+            onClick={verMas}
+            className={CLASE_VER_MAS}
+          >
+            {estado === 'cargando' ? (
+              <LoaderCircle className="size-[16px] animate-spin motion-reduce:animate-none" aria-hidden />
+            ) : null}
+            Ver más
+          </Link>
         ) : null}
         {estado === 'error' ? (
           <p role="alert" className="text-center text-sm text-danger">
@@ -273,7 +277,7 @@ export function EstadoSinLista({
             No se ha buscado.
           </p>
           <Button asChild variant="outline">
-            <Link href={RUTA_EXPLORAR} prefetch={false}>
+            <Link href={RUTA_BUSCAR} prefetch={false}>
               Empezar de nuevo
             </Link>
           </Button>
@@ -316,7 +320,7 @@ export function EstadoSinCoincidencias({ criterios }: { criterios: CriteriosExpl
       <p>Prueba con menos palabras o menos filtros.</p>
       {hayCriterios(criterios) ? (
         <Button asChild variant="outline">
-          <Link href={RUTA_EXPLORAR} prefetch={false}>
+          <Link href={RUTA_BUSCAR} prefetch={false}>
             Quitar todos los filtros
           </Link>
         </Button>

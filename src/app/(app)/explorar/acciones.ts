@@ -5,6 +5,8 @@ import { leerCaraACara, listarRivales } from '@/lib/sport/explorar/cara-a-cara';
 import { leerFicha, leerHistorial } from '@/lib/sport/explorar/ficha';
 import { cargarPaginaExplorar } from '@/lib/sport/explorar/pantalla';
 import { contextoReal } from '@/lib/sport/explorar/real';
+import { leerFeedSiguiendo } from '@/lib/sport/explorar/seguidos';
+import { leerListaSiguiendo } from '@/lib/sport/explorar/siguiendo-lista';
 
 /**
  * Acciones de servidor del explorador deportivo.
@@ -24,6 +26,16 @@ export async function buscarDeportistasAccion(entrada: unknown) {
 /** «Ver más» de la lista completa: la página siguiente, con «Seguir» de cada persona. */
 export async function masDeportistasAccion(entrada: unknown) {
   return cargarPaginaExplorar(contextoReal(), entrada);
+}
+
+/** Carga incremental del feed de Inicio: la página siguiente de la cuenta de la sesión. */
+export async function masFeedAccion(entrada: unknown) {
+  return leerFeedSiguiendo(contextoReal(), entrada);
+}
+
+/** «Ver más» de la lista de Siguiendo. */
+export async function masSiguiendoAccion(entrada: unknown) {
+  return leerListaSiguiendo(contextoReal(), entrada);
 }
 
 export async function leerFichaAccion(entrada: unknown) {

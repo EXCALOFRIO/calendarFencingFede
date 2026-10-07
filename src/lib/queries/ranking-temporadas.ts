@@ -9,6 +9,15 @@ import {
 } from '@/lib/sport/explorar/ranking-nacional';
 import { personaDeFilaOficial } from './personas-ranking';
 import type { ArmaNacional, FiltroRankingNacional, GeneroNacional } from '@/lib/ranking/url-nacional';
+import { type CutoffStatus, cutoffStatus, loadRankingRules, pickRule } from '@/lib/ranking/compute';
+import { titular } from '@/lib/utils';
+import {
+  type FilaOficial,
+  type RankingGroupKey,
+  type TablaOficial,
+  anioNacimientoVisible,
+  getRankingSeason,
+} from './ranking';
 
 /**
  * Clasificación nacional OFICIAL de la RFEE de cualquier temporada, leída de
@@ -179,6 +188,153 @@ export async function leerTablaNacional(db: Ejecutor, temporada: string, grupo: 
     };
   });
   return { grupo, temporada, filas };
+}
+
+// ----------------------------------------- Temporada vigente, por grupo ---
+
+/**
+ * Los grupos de la clasificación oficial vigente (`official_ranking_entry`),
+ * con cuántas filas tiene cada uno. Es lo único de la tabla nacional que va
+ * entero a la pantalla: la tabla de cada grupo se pide aparte
+ * (`leerTablaOficialVigente`). Mismo orden y misma temporada que
+ * `getRankingOficialScreenData`: la más reciente que trae la fuente.
+ */
+export const SQL_GRUPOS_OFICIALES_VIGENTES = sql`
+  SELECT season_label AS temporada, weapon, gender, category, count(*) AS tiradores
+  FROM official_ranking_entry
+  WHERE season_label = (SELECT max(season_label) FROM official_ranking_entry)
+  GROUP BY season_label, weapon, gender, category
+  ORDER BY weapon, category, gender`;
+
+export type GruposOficialesVigentes = {
+  seasonLabel: string | null;
+  groups: (RankingGroupKey & { tiradores: number })[];
+};
+
+export async function leerGruposOficialesVigentes(db: Ejecutor): Promise<GruposOficialesVigentes> {
+  const filas = filasDe<{ temporada: string; weapon: string; gender: string; category: string; tiradores: number }>(
+    await db.execute(SQL_GRUPOS_OFICIALES_VIGENTES),
+  );
+  return {
+    seasonLabel: filas[0]?.temporada ?? null,
+    groups: filas.map((f) => ({
+      weapon: f.weapon as RankingGroupKey['weapon'],
+      gender: f.gender as RankingGroupKey['gender'],
+      category: f.category as RankingGroupKey['category'],
+      tiradores: Number(f.tiradores),
+    })),
+  };
+}
+
+/**
+ * Las filas de UN grupo de la clasificación oficial, con la persona de cada
+ * una en la misma sentencia (`personaDeFilaOficial`). Antes la persona se
+ * buscaba para las ~1.350 filas de la temporada en cada visita (35-120 ms de
+ * motor y ~14.000 filas leídas); ahora sólo para las del grupo que se mira, y
+ * el resultado va a la caché compartida.
+ */
+export function sqlTablaOficialVigente(temporada: string, g: RankingGroupKey) {
+  return sql`
+    SELECT o.id, o.position, o.total_points AS "totalPoints", o.source_athlete_name AS nombre,
+           o.source_club AS club, o.source_birth_date AS nacimiento, o.athlete_id AS "athleteId",
+           o.source_url AS "sourceUrl", o.updated_at AS "updatedAt", ${personaDeFilaOficial} AS persona
+    FROM official_ranking_entry o
+    WHERE o.season_label = ${temporada} AND o.weapon = ${g.weapon} AND o.gender = ${g.gender} AND o.category = ${g.category}
+    ORDER BY o.position ASC NULLS LAST, o.source_athlete_name ASC`;
+}
+
+export type TablaOficialVigente = {
+  tabla: TablaOficial;
+  /** `athleteId` → distancia al corte, medida sobre el puesto oficial. */
+  cortes: Record<string, CutoffStatus>;
+  /** Fila → persona deportiva. */
+  personas: Record<string, string>;
+};
+
+type FilaOficialLeida = {
+  id: string;
+  position: number | null;
+  totalPoints: string | null;
+  nombre: string;
+  club: string | null;
+  nacimiento: string | null;
+  athleteId: string | null;
+  sourceUrl: string | null;
+  updatedAt: number | string | null;
+  persona: string | null;
+};
+
+/**
+ * Una tabla de la clasificación oficial vigente, con su normativa y la
+ * distancia al corte. Hace por grupo lo mismo que `getRankingOficialScreenData`
+ * hace para todos (si se toca la regla allí, se toca aquí).
+ */
+export async function leerTablaOficialVigente(
+  db: Ejecutor,
+  temporada: string,
+  grupo: RankingGroupKey,
+  hoy: string,
+): Promise<TablaOficialVigente | null> {
+  const [filas, temporadaReglas] = await Promise.all([
+    db.execute(sqlTablaOficialVigente(temporada, grupo)).then((r) => filasDe<FilaOficialLeida>(r)),
+    getRankingSeason(),
+  ]);
+  if (filas.length === 0) return null;
+  const { rules } = temporadaReglas ? await loadRankingRules(temporadaReglas.id) : { rules: [] };
+  const regla = pickRule(rules, grupo.weapon, grupo.category);
+
+  const personas: Record<string, string> = {};
+  let actualizadoEl: Date | null = null;
+  const rows: FilaOficial[] = filas.map((f) => {
+    if (f.persona) personas[f.id] = f.persona;
+    const leida = f.updatedAt === null ? null : new Date(typeof f.updatedAt === 'number' ? f.updatedAt : Number(f.updatedAt) || f.updatedAt);
+    if (leida && !Number.isNaN(leida.getTime()) && (!actualizadoEl || leida > actualizadoEl)) actualizadoEl = leida;
+    return {
+      id: f.id,
+      position: f.position === null ? null : Number(f.position),
+      nombre: titular(f.nombre),
+      club: f.club,
+      totalPoints: f.totalPoints === null ? null : Number.parseFloat(f.totalPoints),
+      anioNacimiento: anioNacimientoVisible(f.nacimiento, grupo.category, hoy),
+      athleteId: f.athleteId,
+    };
+  });
+
+  const tabla: TablaOficial = {
+    group: { weapon: grupo.weapon, gender: grupo.gender, category: grupo.category },
+    seasonLabel: temporada,
+    rows,
+    clasificados: rows.filter((r) => r.position !== null).length,
+    actualizadoEl,
+    sourceUrl: filas[0].sourceUrl,
+    rule: regla
+      ? {
+          countingEvents: regla.countingEvents,
+          rankingPlaces: regla.rankingPlaces,
+          technicalPlaces: regla.technicalPlaces,
+          cutoffDate: regla.cutoffDate,
+          sourceDocument: regla.sourceDocument,
+          sourceUrl: regla.sourceUrl,
+        }
+      : null,
+  };
+
+  const cortes: Record<string, CutoffStatus> = {};
+  if (tabla.rule) {
+    const clasificados = rows
+      .filter((r) => r.position !== null)
+      .map((r) => ({ athleteId: r.athleteId ?? r.id, position: r.position as number, totalPoints: r.totalPoints ?? 0 }));
+    for (const fila of rows) {
+      if (!fila.athleteId || fila.position === null) continue;
+      const corte = cutoffStatus(clasificados, fila.athleteId, {
+        rankingPlaces: tabla.rule.rankingPlaces,
+        technicalPlaces: tabla.rule.technicalPlaces,
+        cutoffDate: tabla.rule.cutoffDate,
+      });
+      if (corte) cortes[fila.athleteId] = corte;
+    }
+  }
+  return { tabla, cortes, personas };
 }
 
 /** `athleteId` → persona de Explorar, para el retrato de «tus tiradores». */

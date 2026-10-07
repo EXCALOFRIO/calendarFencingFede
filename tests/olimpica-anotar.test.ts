@@ -70,8 +70,8 @@ describe('anotarRankingOlimpico: selecciones', () => {
     expect(a.fechaRanking).toBe('2026-10-01T06:00:00.000Z');
   });
 
-  it('«cerca»: el camino más corto entre los 3 primeros fuera, con rival, puntos y margen', () => {
-    // CHN: a 30 del 4.º, pero a 10 de KOR (mejor de Asia-Oceanía).
+  it('«cerca»: solo el primer reserva de cada camino, por el camino más corto, con rival, puntos y margen', () => {
+    // CHN: primero fuera del top 4 (a 30 de JPN) y reserva de Asia-Oceanía (a 10 de KOR).
     expect(a.equipos.CHN).toMatchObject({
       estado: 'cerca',
       camino: 'EQUIPO_ZONA',
@@ -82,18 +82,26 @@ describe('anotarRankingOlimpico: selecciones', () => {
     });
     expect(a.equipos.CHN.contra?.noc).toBe('KOR');
     expect(a.equipos.CHN.sobre?.noc).toBe('KAZ');
-    expect(a.equipos.ESP).toMatchObject({ estado: 'cerca', camino: 'EQUIPO_ZONA', faltan: 50, puestoFuera: 2, margen: 10 });
-    expect(a.equipos.SUI).toMatchObject({ estado: 'cerca', camino: 'EQUIPO_ZONA', puestoFuera: 3 });
-    expect(a.equipos.ALG).toMatchObject({ estado: 'cerca', camino: 'EQUIPO_ZONA', zona: 'AFRICA', faltan: 170 });
-    // UKR es el 4.º europeo fuera y el 5.º fuera del top 4: nada.
-    expect(a.equipos.UKR).toBeUndefined();
+    // Reservas de Europa y América.
+    expect(a.equipos.POL).toMatchObject({ estado: 'cerca', camino: 'EQUIPO_ZONA', zona: 'EUROPA', faltan: 40, puestoFuera: 1 });
+    expect(a.equipos.VEN).toMatchObject({ estado: 'cerca', camino: 'EQUIPO_ZONA', zona: 'AMERICA', faltan: 50 });
+    // ESP y SUI son el 2.º y 3.º europeos fuera: no heredarían la plaza.
+    expect(a.equipos.ESP).toBeUndefined();
+    expect(a.equipos.SUI).toBeUndefined();
+    // ALG es el reserva de África, pero a 170 de EGY (330): más de un tercio.
+    expect(a.equipos.ALG).toBeUndefined();
+    const amarillos = Object.values(a.equipos).filter((x) => x.estado === 'cerca').length;
+    expect(amarillos).toBe(3);
   });
 
-  it('`cercanos` es configurable', () => {
-    const b = anotarRankingOlimpico(entrada(), { cercanos: 1 });
-    expect(b.equipos.CHN?.estado).toBe('cerca');
-    expect(b.equipos.POL?.estado).toBe('cerca');
-    expect(b.equipos.ESP).toBeUndefined();
+  it('`cercanos` y `faltaMaxima` son configurables', () => {
+    const b = anotarRankingOlimpico(entrada(), { cercanos: 3 });
+    expect(b.equipos.ESP).toMatchObject({ estado: 'cerca', camino: 'EQUIPO_ZONA', faltan: 50, puestoFuera: 2, margen: 10 });
+    expect(b.equipos.SUI).toMatchObject({ estado: 'cerca', camino: 'EQUIPO_ZONA', puestoFuera: 3 });
+    expect(b.equipos.ALG).toBeUndefined();
+    const c = anotarRankingOlimpico(entrada(), { faltaMaxima: 1 });
+    expect(c.equipos.ALG).toMatchObject({ estado: 'cerca', camino: 'EQUIPO_ZONA', zona: 'AFRICA', faltan: 170 });
+    expect(c.equipos.ESP).toBeUndefined();
   });
 
   it('anfitrión fuera de los cercanos: queda como «cerca» por la vía del anfitrión', () => {
@@ -126,9 +134,12 @@ describe('anotarRankingOlimpico: individual', () => {
     });
     expect(a.individual[id('HEINE Lukas')].contra?.nombre).toBe('FREILICH Yuval');
     expect(a.individual[id('HEINE Lukas')].sobre?.nombre).toBe('GARCIA Pablo');
-    // HKG: su equipo está «cerca» a 120 pts; la vía individual (15) es más corta.
-    expect(a.individual[id('NG Ho Tin')]).toMatchObject({ camino: 'AOR_ZONA', faltan: 15 });
-    expect(a.individual[id('GARCIA Pablo')]).toMatchObject({ camino: 'AOR_ZONA', faltan: 30, puestoFuera: 2 });
+    // Reservas de Asia-Oceanía, África y América.
+    expect(a.individual[id('NG Ho Tin')]).toMatchObject({ camino: 'AOR_ZONA', zona: 'ASIA_OCEANIA', faltan: 15 });
+    expect(a.individual[id('BEN Ali')]).toMatchObject({ camino: 'AOR_ZONA', zona: 'AFRICA', faltan: 10 });
+    expect(a.individual[id('PEREZ Juan')]).toMatchObject({ camino: 'AOR_ZONA', zona: 'AMERICA', faltan: 25 });
+    // GARCIA es el 2.º europeo fuera (tras HEINE): le queda el torneo zonal.
+    expect(a.individual[id('GARCIA Pablo')]).toMatchObject({ estado: null, camino: 'TORNEO_ZONAL', zona: 'EUROPA' });
   });
 
   it('sin camino cercano, le queda el torneo zonal (sin diferencia)', () => {
@@ -140,8 +151,10 @@ describe('anotarRankingOlimpico: individual', () => {
   });
 
   it('por su equipo cuando es el camino más corto', () => {
-    // Un equipo español a 5 puntos de HUN y un tirador muy lejos.
-    const lista = equipos(EQUIPOS_BASE).map((e) => (e.noc === 'ESP' ? { ...e, puntos: 355 } : e));
+    // Sin POL, España es el reserva de Europa a 5 puntos de HUN; su tirador no es reserva de nada.
+    const lista = equipos(EQUIPOS_BASE)
+      .filter((e) => e.noc !== 'POL')
+      .map((e) => (e.noc === 'ESP' ? { ...e, puntos: 355 } : e));
     const b = anotarRankingOlimpico(entrada({ equipos: lista }));
     expect(b.equipos.ESP).toMatchObject({ estado: 'cerca', faltan: 5 });
     expect(b.individual[id('GARCIA Pablo')]).toMatchObject({ estado: 'cerca', camino: 'POR_EQUIPO', faltan: 5 });
@@ -150,15 +163,15 @@ describe('anotarRankingOlimpico: individual', () => {
 
 describe('RUS, BLR y neutrales: se ven pero no ocupan plaza', () => {
   const lista = ['ITA', 'RUS', ...EQUIPOS_BASE.slice(1)];
-  const ent = entrada({
-    equipos: equipos(lista),
-    individual: individual([
-      ['RUS', 'RUSO Uno'], // 1000
-      ['FIE', 'NEUTRAL Uno'], // 1001
-      ...INDIVIDUAL_BASE,
-      ['BLR', 'LEJANO Uno'], // 1016
-    ]),
-  });
+  const filas = individual([
+    ['RUS', 'RUSO Uno'], // 1000
+    ['FIE', 'NEUTRAL Uno'], // 1001
+    ...INDIVIDUAL_BASE,
+    ['BLR', 'CERCANO Uno'], // 1016
+  ]);
+  // Empatado en puesto con GER (10.º, 205) y con más puntos: sería el reserva de Europa.
+  filas[16] = { ...filas[16], posicion: 10, puntos: 207 };
+  const ent = entrada({ equipos: equipos(lista), individual: filas });
   const a = anotarRankingOlimpico(ent);
 
   it('se calculan sin ellos', () => {
@@ -180,7 +193,7 @@ describe('RUS, BLR y neutrales: se ven pero no ocupan plaza', () => {
       sinVeto: { estado: 'clasificado', camino: 'POR_EQUIPO' },
     });
     expect(a.individual['1001']).toMatchObject({ estado: 'pendiente', motivo: 'NEUTRAL', sinVeto: null });
-    // El bielorruso sería el 3.º europeo fuera: «cerca» si contara.
+    // El bielorruso sería el primer europeo fuera: «cerca» si contara.
     expect(a.individual['1016']).toMatchObject({
       estado: 'pendiente',
       sinVeto: { estado: 'cerca', camino: 'AOR_ZONA' },
@@ -215,7 +228,7 @@ describe('ordenarSoloJjoo', () => {
       'BEN Ali',
       'NG Ho Tin',
       'PEREZ Juan',
-      'GARCIA Pablo',
+      // GARCIA (2.º europeo fuera) no sale.
       // pendiente que entraría.
       'RUSO Uno',
     ]);

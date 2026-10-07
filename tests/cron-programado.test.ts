@@ -28,7 +28,7 @@ const tareas = [
   ['0 6 * * *', '/api/cron/extraer'],
   ['45 6 * * *', '/api/cron/ingest/fie_tiradores'],
   ['0 7 * * *', '/api/cron/notify'],
-  ['15 * * * *', '/api/cron/sport'],
+  ['20 0-2,8-23 * * *', '/api/cron/resultados'],
 ] as const;
 
 /**
@@ -106,8 +106,9 @@ describe('despacho con reserva persistente', () => {
     expect(contexto.waitUntil).not.toHaveBeenCalled();
   });
 
-  it('mantiene las tareas anteriores y el incremento deportivo independiente', () => {
+  it('mantiene las tareas anteriores; el incremento deportivo antiguo ya no tiene franja', () => {
     expect(Object.entries(TAREAS_CRON)).toEqual(tareas);
+    expect(Object.values(TAREAS_CRON)).not.toContain('/api/cron/sport');
   });
 
   it('reclama antes de despachar y sólo gana una invocación concurrente :04/:56', async () => {

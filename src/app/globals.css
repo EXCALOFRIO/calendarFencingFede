@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import '../components/sistema/sistema.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -495,6 +496,8 @@
   --org-fie-tinte: color-mix(in oklab, var(--org-fie) 14%, var(--card));
   --org-efc-tinte: color-mix(in oklab, var(--org-efc) 14%, var(--card));
   --org-aut-tinte: color-mix(in oklab, var(--org-aut) 14%, var(--card));
+  /* Avisos: tinte opaco, no `bg-warn/10` (que deja ver la retícula detrás). */
+  --warn-tinte: color-mix(in oklab, var(--warn) 12%, var(--card));
 
   /**
    * ---------------------------------------------------------------------
@@ -646,6 +649,7 @@
   --color-org-fie-tinte: var(--org-fie-tinte);
   --color-org-efc-tinte: var(--org-efc-tinte);
   --color-org-aut-tinte: var(--org-aut-tinte);
+  --color-warn-tinte: var(--warn-tinte);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -747,20 +751,16 @@
   }
 
   /**
-   * Objetivo táctil mínimo.
-   *
-   * Incluye los enlaces con aspecto de botón, que se escapaban de la regla
-   * y se quedaban en 38 × 32 px medidos. Se excluyen interruptor y casilla:
-   * tienen forma propia y se les da área con un pseudoelemento en vez de
-   * deformarlos.
-   *
-   * El mínimo también se aplica con ratón: un portátil táctil no tiene por
-   * qué declarar un puntero grueso. El calendario ya usa filas de altura
-   * natural, así que tampoco necesita excepciones para sus controles.
+   * Campos de texto, interruptores y casillas. El área táctil de los botones
+   * es un `::after` invisible (ver la regla del final de este bloque de
+   * capas); interruptor y casilla tienen forma propia y su área sale de un
+   * pseudoelemento en vez de deformarlos.
    */
+    /* Por debajo de 16 px iOS amplía la página al enfocar. */
     [data-slot='input'],
-    [data-slot='command-input'] {
-      min-height: 44px;
+    [data-slot='command-input'],
+    textarea {
+      font-size: max(16px, 1em);
     }
 
     [role='switch'],
@@ -775,26 +775,6 @@
       inset: -13px;
     }
 
-    /**
-     * El aspa de las hojas laterales.
-     *
-     * La regla de arriba le sube el alto a 44 px pero no el ancho, y el
-     * botón redondo se quedaba en un óvalo de 36 × 44. Aquí se le da el
-     * ancho que le corresponde.
-     *
-     * Y va con `min-width`, no con `width`. Esto **no estaba funcionando**:
-     * `width` aquí vive en `@layer base` y el botón lleva `size-10`, que
-     * vive en `@layer utilities`, así que la utilidad ganaba siempre. Medido
-     * en un iPhone 14 Pro: el aspa salía de **41 × 44 px**, no de 44 × 44,
-     * porque `size-10` son 2,5 rem y en el móvil la raíz está a 18 px.
-     * `min-width` no compite con `width`: son propiedades distintas y el
-     * ancho usado es el mayor de las dos, así que el objetivo táctil llega
-     * de verdad a los 44 px que exige `UI.md`.
-     */
-    .cerrar-hoja {
-      min-width: 44px;
-    }
-
   a[href]:focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 3px;
@@ -805,10 +785,19 @@
   .ranking a[href] {
     display: inline-flex;
     align-items: center;
-    min-height: 44px;
-    min-width: 44px;
+    position: relative;
     max-width: 100%;
     overflow-wrap: anywhere;
+  }
+  .calendario a[href]::after,
+  .ranking a[href]::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    translate: -50% -50%;
   }
 
   /* Una tabla nacional o mundial cabe sin recortar nombres en 320 px. */
@@ -916,35 +905,46 @@
   /**
    * El foco no queda debajo de la cabecera fija ni de la barra inferior.
    *
-   * La cabecera mide 3,5 rem (más una línea cuando hay aviso de datos viejos)
-   * y la barra del móvil 3,25 rem más el área segura. Sin este margen, al
-   * tabular hacia un control cercano al borde el navegador lo deja tapado
-   * (WCAG 2.4.11).
+   * La cabecera mide 48 px más el área segura y la barra del móvil 50 px más
+   * el área segura. Sin este margen, al tabular hacia un control cercano al
+   * borde el navegador lo deja tapado (WCAG 2.4.11).
    */
   html {
-    scroll-padding-top: 5rem;
-    scroll-padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+    scroll-padding-top: calc(48px + env(safe-area-inset-top) + 8px);
+    scroll-padding-bottom: calc(50px + env(safe-area-inset-bottom) + 8px);
   }
 
   @media (min-width: 1024px) {
     html {
+      scroll-padding-top: calc(56px + 8px);
       scroll-padding-bottom: 1rem;
     }
   }
 }
 
-/* Fuera de las capas: ni h-8 ni min-w-0 pueden reducir el área interactiva. */
-:where(
-  button:not([role='switch']):not([role='checkbox']),
-  a[role='button'],
-  [role='tab'],
-  [role='option'],
-  [data-slot='input'],
-  [data-slot='command-input'],
-  [data-slot='command-item']
-) {
-  min-height: 44px;
-  min-width: 44px;
+/*
+ * Objetivo táctil de 44 px SIN tamaño visual de 44 px: un `::after`
+ * transparente centrado en el control. En `@layer base` y con `:where()`
+ * (especificidad 0), así que cualquier utilidad lo puede cambiar: `absolute`
+ * o `fixed` ganan a este `relative`, y `after:*` gana a este `::after`.
+ */
+@layer base {
+  :where(button:not([role='switch']):not([role='checkbox']), a[role='button'], [role='tab']) {
+    position: relative;
+  }
+  :where(button:not([role='switch']):not([role='checkbox']), a[role='button'], [role='tab'])::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    translate: -50% -50%;
+  }
+  /* Filas de lista y campos: el área es la propia fila; 40 px bastan. */
+  :where([role='option'], [data-slot='command-item'], [data-slot='input'], [data-slot='command-input']) {
+    min-height: 40px;
+  }
 }
 
 @layer utilities {
@@ -1189,30 +1189,11 @@
   }
 
   /**
-   * Hueco de la barra inferior, que crece con el área segura del iPhone.
-   *
-   * 3,25 rem y no 4,5. Y en rem a propósito, porque en un teléfono la raíz
-   * son 18 px (ver «la letra grande» más arriba) y la barra también está
-   * medida en rem: las dos crecen juntas.
-   *
-   * Medido en el navegador, en un iPhone 14 Pro, después de quitarle a la
-   * barra el relleno de más —petición del usuario, *«la barra inferior es
-   * demasiado alta y come alto vertical, que es lo que más falta en el
-   * calendario»*—:
-   *
-   *   la barra          55,0 px
-   *   este hueco        58,5 px  (3,25 rem × 18)
-   *   holgura            3,5 px
-   *
-   * Antes eran 63 px de barra contra 81 de hueco: **18 px de nada** entre el
-   * final del contenido y la barra, que en el feed del calendario es un
-   * divisor de semanas libres entero.
-   *
-   * El `env(safe-area-inset-bottom)` se suma aparte, así que esto solo tiene
-   * que cubrir la barra.
+   * Hueco de la barra inferior (`BarraInferior`, 50 px en px y no en rem, la
+   * misma en toda la aplicación), más el área segura del iPhone.
    */
   .hueco-barra {
-    padding-bottom: calc(3.25rem + env(safe-area-inset-bottom));
+    padding-bottom: calc(50px + env(safe-area-inset-bottom));
   }
 
   @media (min-width: 1024px) {

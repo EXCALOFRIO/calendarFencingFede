@@ -9,6 +9,7 @@ import { vetarEnlaceFie } from '@/lib/sport/explorar/ficha';
 import { leerCabeceras } from '@/lib/sport/explorar/personas';
 import { sugerirPersonas } from '@/lib/sport/explorar/sugerencias';
 import { crearContexto, perfil, UUID_A as A, UUID_B as B, UUID_C as C } from './helpers/explorar';
+import { construirIndiceExplorar } from './helpers/indice-explorar';
 
 vi.mock('@opennextjs/cloudflare', () => ({
   getCloudflareContext: () => { throw new Error('El test no puede acceder a Cloudflare'); },
@@ -32,7 +33,7 @@ function entorno() {
       VALUES (?,?,?,NULL,?,'M',?)`).run(id, nombre, normalizarNombre(nombre), pais, anio);
   const favorito = (id: string, fecha: number) =>
     local.sqlite.prepare('INSERT INTO sport_favorite VALUES (?,?,?)').run(cuenta, id, fecha);
-  return { db, ctx, persona, favorito };
+  return { db, ctx, persona, favorito, sqlite: local.sqlite };
 }
 
 describe('anioNacimientoPublico', () => {
@@ -85,7 +86,8 @@ describe('el año de un posible menor no sale del servidor', () => {
     t.persona(A, 'Ana Perez', 2012);
     t.persona(B, 'Ana Perez', 1990);
     t.persona(C, 'Ana Perez', null);
-    const s = await sugerirPersonas(t.ctx, { q: 'ana perez' });
+    construirIndiceExplorar(t.sqlite);
+    const s = await sugerirPersonas({ ...t.ctx, indiceExplorar: async () => true }, { q: 'ana perez' });
     if (s.estado !== 'ok') throw new Error(s.estado);
     expect(Object.fromEntries(s.items.map((p) => [p.id, p.anioNacimiento]))).toEqual({ [A]: null, [B]: 1990, [C]: null });
   });

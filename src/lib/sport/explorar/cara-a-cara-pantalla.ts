@@ -82,7 +82,8 @@ async function leerOtrosVista(
   nombre: string,
 ): Promise<OtrosVista | null> {
   try {
-    const r = await buscarDeportistas(ctx, { q: nombre, limite: OTROS_POR_BUSQUEDA });
+    // Sin marcas olímpicas: esta lista no las pinta.
+    const r = await buscarDeportistas(ctx, { q: nombre, limite: OTROS_POR_BUSQUEDA }, { olimpica: false });
     if (r.estado === 'ok') return { tipo: 'ok', items: r.items };
     // Un nombre demasiado corto no es una búsqueda: no hay nada que ofrecer, y tampoco es un fallo.
     return r.estado === 'sin_criterio' ? null : { tipo: 'error' };
@@ -94,8 +95,8 @@ async function leerOtrosVista(
 }
 
 /**
- * Los gráficos del duelo cubren toda la historia: no aceptan temporada, arma
- * ni fase, así que con un filtro activo no se piden (contradirían las cifras
+ * Los gráficos del duelo cubren toda la historia: no aceptan temporada, arma,
+ * fase ni ámbito, así que con un filtro activo no se piden (contradirían las cifras
  * filtradas). Son un añadido: si fallan, la pantalla sigue sin ellos.
  */
 async function leerRendimientoVista(
@@ -103,7 +104,7 @@ async function leerRendimientoVista(
   personaId: string,
   criterios: CriteriosCaraACara,
 ): Promise<RendimientoCaraACara | null> {
-  if (criterios.temporada || criterios.arma || criterios.fase) return null;
+  if (criterios.temporada || criterios.arma || criterios.fase || criterios.ambito) return null;
   try {
     const r = await leerRendimientoCaraACara(ctx, { personaId, rivalId: criterios.rival });
     return r.estado === 'ok' ? r.datos : null;

@@ -79,11 +79,84 @@ export function sqlDestacadosRanking(limite: number) {
 type FilaDestacado = { id: string; nombre: string; pais: string | null; puesto: number; arma: Arma; genero: Genero };
 
 /**
+ * La lista de destacados es la misma para todas las cuentas y sólo cambia al
+ * importar un ranking, pero leerla recorre todas las publicaciones semanales
+ * de dos temporadas (~65 ms en la copia de producción). Se recuerda un rato
+ * por base: `db` es un objeto por isolate en producción y uno por fixture en
+ * las pruebas, así que nada se cruza entre bases.
+ */
+const VIGENCIA_DESTACADOS_MS = 10 * 60_000;
+/** Dos por arma y género: nunca pasan de unas decenas. */
+const TOPE_DESTACADOS = 200;
+const destacadosRecordados = new WeakMap<object, { hasta: number; filas: Promise<FilaDestacado[]> }>();
+
+function destacadosRanking(ctx: ContextoExplorador): Promise<FilaDestacado[]> {
+  const clave = ctx.db as object;
+  const recordado = destacadosRecordados.get(clave);
+  if (recordado && recordado.hasta > Date.now()) return recordado.filas;
+  const promesa = ctx.db.execute(sqlDestacadosRanking(TOPE_DESTACADOS)).then((r) => filas<FilaDestacado>(r));
+  destacadosRecordados.set(clave, { hasta: Date.now() + VIGENCIA_DESTACADOS_MS, filas: promesa });
+  promesa.catch(() => {
+    if (destacadosRecordados.get(clave)?.filas === promesa) destacadosRecordados.delete(clave);
+  });
+  return promesa;
+}
+
+/** Los destacados del ranking como propuestas, sin filtrar. Igual para todas las cuentas. */
+export async function leerDestacadosParaSeguir(ctx: ContextoExplorador): Promise<PersonaParaSeguir[]> {
+  return (await destacadosRanking(ctx)).map((d) => ({
+    id: d.id,
+    nombre: d.nombre,
+    pais: d.pais,
+    motivo: `${Number(d.puesto)}º internacional`,
+  }));
+}
+
+/**
+ * Tiradores sugeridos de una persona (rivales, mismo club, pruebas
+ * compartidas), sin filtrar por cuenta: son hechos deportivos publicados y
+ * valen para cualquiera. `null` si la persona no existe.
+ */
+export async function leerSugeridosDePersona(
+  ctx: ContextoExplorador,
+  personaId: string,
+): Promise<{ canonicaId: string; sugeridos: PersonaParaSeguir[] } | null> {
+  const persona = await resolverPersona(ctx.db, personaId);
+  if (!persona) return null;
+  const sugeridos = aTiradoresSugeridos(
+    filas<FilaSugerido>(await ctx.db.execute(sqlTiradoresSugeridos(persona.ids, persona.canonicaId))),
+  ).map((s) => ({
+    id: s.id,
+    nombre: s.nombre,
+    pais: s.pais,
+    // En Explorar no se enseñan clubes: quien comparte club sale como «Mismas pruebas».
+    motivo: s.motivo === 'rival_frecuente' ? 'Rival frecuente'
+      : s.motivo === 'asaltos' ? 'Rival'
+      : 'Mismas pruebas',
+  }));
+  return { canonicaId: persona.canonicaId, sugeridos };
+}
+
+/**
+ * De dónde salen las listas comunes a todas las cuentas. Por defecto, de D1;
+ * Buscar las pasa por la caché compartida (`cache-pantallas.ts`).
+ */
+export type FuentesPropuestas = {
+  destacados?: () => Promise<PersonaParaSeguir[]>;
+  sugeridosDe?: (personaId: string) => Promise<{ canonicaId: string; sugeridos: PersonaParaSeguir[] } | null>;
+};
+
+/**
  * Propuestas para un feed vacío: si la cuenta tiene ficha propia confirmada,
  * sus tiradores sugeridos (rivales, mismo club, pruebas compartidas); si no,
- * los españoles mejor situados en el ranking FIE. Nunca quien ya se sigue.
+ * los españoles mejor situados en el ranking FIE. Nunca quien ya se sigue:
+ * las listas son comunes y lo de la cuenta (su ficha y a quién sigue) se
+ * aplica aquí, al vuelo.
  */
-export async function leerPropuestasParaSeguir(ctx: ContextoExplorador): Promise<PersonaParaSeguir[]> {
+export async function leerPropuestasParaSeguir(
+  ctx: ContextoExplorador,
+  fuentes: FuentesPropuestas = {},
+): Promise<PersonaParaSeguir[]> {
   const perfil = await exigirPerfil(ctx);
   const [propia, seguidas] = await Promise.all([
     resolverPersonaPropia(ctx, perfil.profileId),
@@ -91,35 +164,15 @@ export async function leerPropuestasParaSeguir(ctx: ContextoExplorador): Promise
   ]);
   const yaSeguidas = new Set(filas<{ id: string }>(seguidas).map((f) => f.id));
   if (propia.estado === 'confirmada') {
-    const persona = await resolverPersona(ctx.db, propia.personaId);
-    if (persona) {
-      yaSeguidas.add(persona.canonicaId);
-      const sugeridos = aTiradoresSugeridos(
-        filas<FilaSugerido>(await ctx.db.execute(sqlTiradoresSugeridos(persona.ids, persona.canonicaId))),
-      ).filter((s) => !yaSeguidas.has(s.id));
-      if (sugeridos.length > 0) {
-        return sugeridos.slice(0, MAX_PROPUESTAS).map((s) => ({
-          id: s.id,
-          nombre: s.nombre,
-          pais: s.pais,
-          motivo: s.motivo === 'rival_frecuente' ? 'Rival frecuente'
-            : s.motivo === 'mismo_club' ? 'Tu club'
-            : s.motivo === 'asaltos' ? 'Rival'
-            : 'Mismas pruebas',
-        }));
-      }
+    const propios = await (fuentes.sugeridosDe ?? ((id: string) => leerSugeridosDePersona(ctx, id)))(propia.personaId);
+    if (propios) {
+      yaSeguidas.add(propios.canonicaId);
+      const sugeridos = propios.sugeridos.filter((s) => !yaSeguidas.has(s.id));
+      if (sugeridos.length > 0) return sugeridos.slice(0, MAX_PROPUESTAS);
     }
   }
-  const destacados = filas<FilaDestacado>(await ctx.db.execute(sqlDestacadosRanking(MAX_PROPUESTAS + yaSeguidas.size)));
-  return destacados
-    .filter((d) => !yaSeguidas.has(d.id))
-    .slice(0, MAX_PROPUESTAS)
-    .map((d) => ({
-      id: d.id,
-      nombre: d.nombre,
-      pais: d.pais,
-      motivo: `${Number(d.puesto)}º FIE`,
-    }));
+  const destacados = await (fuentes.destacados ?? (() => leerDestacadosParaSeguir(ctx)))();
+  return destacados.filter((d) => !yaSeguidas.has(d.id)).slice(0, MAX_PROPUESTAS);
 }
 
 /** Página del feed. Una primera página vacía trae además propuestas para seguir. */

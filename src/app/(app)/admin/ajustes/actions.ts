@@ -446,9 +446,11 @@ export async function revocarAcceso(profileId: string): Promise<ResultadoEquipo>
     return { ok: false, error: ERROR_ULTIMO_ADMIN };
   }
 
+  // Se rota el token del feed iCal: las suscripciones ya copiadas en Google o
+  // Apple dejan de recibir datos, y restaurar el acceso no las resucita.
   await db
     .update(userProfile)
-    .set({ inviteStatus: 'revocada', updatedAt: new Date() })
+    .set({ inviteStatus: 'revocada', icalToken: newIcalToken(), updatedAt: new Date() })
     .where(eq(userProfile.id, profileId));
 
   await registrarCambio(

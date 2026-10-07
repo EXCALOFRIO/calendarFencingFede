@@ -566,3 +566,74 @@ describe('cara a cara contra SQLite real: repetidas y relevos', () => {
     }
   });
 });
+
+describe('cara a cara por ámbito', () => {
+  function cargar() {
+    const local = localD1();
+    const s = local.sqlite;
+    for (const [id, nombre] of [[UUID_A, 'Lucia Garcia'], [UUID_B, 'Marta Ruiz']]) {
+      s.prepare(`INSERT INTO sport_person (id,display_name,name_normalized,country_code,gender,birth_year)
+        VALUES (?,?,?,'ESP','F',2000)`).run(id, nombre, nombre.toLowerCase());
+    }
+    const prueba = (id: string, fuente: string, nombre: string, fecha: string, pais: string | null) => {
+      s.prepare(`INSERT INTO sport_edition (id,source,season,tournament_key,name,start_date,country_code)
+        VALUES (?,?,'2023-2024',?,?,?,?)`).run(`ed-${id}`, fuente, `ed-${id}`, nombre, fecha, pais);
+      s.prepare(`INSERT INTO sport_competition (id,edition_id,source,season,competition_key,weapon,gender,category,format,competition_date)
+        VALUES (?,?,?,'2023-2024',?,'FLORETE','F','ABS','INDIVIDUAL',?)`).run(id, `ed-${id}`, fuente, id, fecha);
+    };
+    const asalto = s.prepare(`INSERT INTO sport_bout
+      (id,competition_id,source,phase,round_key,fencer_a_ref,fencer_b_ref,fencer_a_person_id,fencer_b_person_id,
+      fencer_a_name,fencer_b_name,score_a,score_b,content_hash)
+      VALUES (?,?,?,?,?,'a','b',?,?,'A','B',?,?,'hash')`);
+    prueba('tnr', 'rfee_pdf', 'TNR ABS', '2024-03-03', 'ESP');
+    prueba('copa', 'fie', 'Coupe du Monde', '2024-01-20', 'FRA');
+    prueba('efc', 'efc', 'European Cup', '2023-11-12', 'ITA');
+    asalto.run('tnr-p', 'tnr', 'rfee_pdf', 'POULE', 'P1', UUID_A, UUID_B, 5, 3);
+    asalto.run('tnr-d', 'tnr', 'rfee_pdf', 'TABLEAU', 'A16', UUID_B, UUID_A, 15, 10);
+    asalto.run('copa-p', 'copa', 'fie', 'POULE', 'P2', UUID_A, UUID_B, 5, 4);
+    asalto.run('efc-d', 'efc', 'efc', 'TABLEAU', 'A32', UUID_A, UUID_B, 15, 12);
+    return { local, ctx: { ...crearContexto().ctx, db: createD1Database(local.binding) } };
+  }
+
+  it('cada ámbito da su recuento en balance, asaltos y pruebas; un asalto EFC es internacional', async () => {
+    const { local, ctx } = cargar();
+    try {
+      const leer = async (ambito?: string) => {
+        const r = await leerCaraACara(ctx, { personaId: UUID_A, rivalId: UUID_B, ...(ambito ? { ambito } : {}) });
+        if (r.estado !== 'ok') throw new Error(r.estado);
+        return r;
+      };
+      const todos = await leer();
+      const nacional = await leer('nacional');
+      const internacional = await leer('internacional');
+      expect(todos.resumen).toMatchObject({ asaltos: 4, victorias: 3, derrotas: 1 });
+      expect(nacional.resumen).toMatchObject({ asaltos: 2, victorias: 1, derrotas: 1 });
+      expect(internacional.resumen).toMatchObject({ asaltos: 2, victorias: 2, derrotas: 0 });
+      expect(nacional.items.map((a) => a.id).sort()).toEqual(['tnr-d', 'tnr-p']);
+      expect(internacional.items.map((a) => a.id)).toEqual(['copa-p', 'efc-d']);
+      expect(internacional.encuentros!.map((e) => e.pruebaId)).toEqual(['copa', 'efc']);
+      expect(nacional.encuentros!.map((e) => e.pruebaId)).toEqual(['tnr']);
+      expect(internacional.cobertura.pruebasComunes).toBe(2);
+      expect(internacional.resumenEncuentros!.directa).toEqual({ victorias: 1, derrotas: 0 });
+    } finally {
+      local.close();
+    }
+  });
+
+  it('filtra en las mismas consultas, valida el valor y liga el cursor al ámbito', async () => {
+    const sin = crearContexto({ respuestas: respuestasH2h({ comunes: [comun()] }) });
+    await leerCaraACara(sin.ctx, { personaId: UUID_A, rivalId: UUID_B });
+    const con = crearContexto({ respuestas: respuestasH2h({ comunes: [comun()] }) });
+    await leerCaraACara(con.ctx, { personaId: UUID_A, rivalId: UUID_B, ambito: 'internacional' });
+    expect(con.sentencias).toHaveLength(sin.sentencias.length);
+    const deAsaltos = con.sentencias.filter((s) => /count\(\*\) FILTER|ORDER BY coalesce\(b\.occurred_on/.test(s.text));
+    for (const s of deAsaltos) expect(s.params).toContain(JSON.stringify(['c1']));
+    expect(sin.texto()).not.toMatch(/b\.competition_id IN \(SELECT value/);
+
+    const { ctx } = crearContexto();
+    expect(await leerCaraACara(ctx, { personaId: UUID_A, rivalId: UUID_B, ambito: 'AUTONOMICO' })).toEqual({ estado: 'entrada_invalida' });
+    const huella = { personaId: UUID_A, rivalId: UUID_B };
+    const cursor = codificarCursor('h2h', huella, ['2024-01-01', BOUT1]);
+    expect(await leerCaraACara(ctx, { ...huella, ambito: 'nacional', cursor })).toEqual({ estado: 'cursor_invalido' });
+  });
+});

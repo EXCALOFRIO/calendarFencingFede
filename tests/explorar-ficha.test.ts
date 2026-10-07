@@ -240,6 +240,8 @@ describe('ficha ajena: sólo hechos deportivos', () => {
     const { ctx, texto } = crearContexto({
       respuestas: [
         ...personaSimple(UUID_A),
+        // El año sólo sale si el grupo entero demuestra la mayoría de edad.
+        { cuando: /SELECT birth_year AS anio FROM sport_person/, filas: [{ anio: 1990 }] },
         cabecera(UUID_A, 'Retirada Sin Cuenta'),
         { cuando: /FROM sport_person_alias/, filas: [{ nombre: 'Retirada Sin Cuenta' }, { nombre: 'GARCIA Lucia' }] },
         { cuando: /una_por_prueba/, filas: [] },

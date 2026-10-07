@@ -31,6 +31,19 @@ export function clave(g: ClaveGrupo): string {
   return `${g.weapon}|${g.gender}|${g.category}`;
 }
 
+/**
+ * El grupo con datos más parecido al pedido: el mismo, o misma arma y género,
+ * o misma arma. `null` si no hay ninguno parecido (quien llama decide si cae
+ * al primero). Lo usan el servidor, para saber qué grupo mandar, y la tabla,
+ * para saber cuál enseñar: tienen que dar lo mismo.
+ */
+export function grupoMasParecido<G extends ClaveGrupo>(grupos: readonly G[], deseado: ClaveGrupo): G | null {
+  return grupos.find((g) => clave(g) === clave(deseado))
+    ?? grupos.find((g) => g.weapon === deseado.weapon && g.gender === deseado.gender)
+    ?? grupos.find((g) => g.weapon === deseado.weapon)
+    ?? null;
+}
+
 /** "Espada femenino M17" */
 export function etiquetaGrupo(g: ClaveGrupo): string {
   const arma = WEAPON_LABEL[g.weapon as keyof typeof WEAPON_LABEL] ?? g.weapon;

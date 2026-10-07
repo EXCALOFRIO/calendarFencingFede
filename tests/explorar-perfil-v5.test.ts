@@ -97,7 +97,7 @@ describe('datos personales del perfil', () => {
       nombreCompleto: 'Carlos Llavador Fernández', edad: 30, mano: 'L', alturaCm: 183, club: { nombre: null, codigo: 'SAMA-M' },
     });
     expect(aDatosPersonales({ nombreCompleto: null, anio: 2013, mano: null, altura: null, clubNombre: 'CE Madrid', clubCodigo: 'X' }, '2026-10-06'))
-      .toEqual({ nombreCompleto: null, edad: 13, mano: null, alturaCm: null, club: { nombre: 'CE Madrid', codigo: null } });
+      .toEqual({ nombreCompleto: null, edad: null, mano: null, alturaCm: null, club: { nombre: 'CE Madrid', codigo: null }, edadVetada: true });
     expect(aDatosPersonales({ nombreCompleto: '', anio: null, mano: 'X', altura: null, clubNombre: null, clubCodigo: null }, '2026-10-06')).toBeNull();
     expect(aDatosPersonales(undefined, '2026-10-06')).toBeNull();
   });

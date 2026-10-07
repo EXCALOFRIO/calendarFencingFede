@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { sqlAsaltosOrientados } from './asaltos-orientados-sql';
+import { MAX_TOCADOS_INDIVIDUAL } from './asaltos-orientados-sql';
 import { lecturasDescartadas } from './cara-a-cara';
 import { filas, type ContextoExplorador } from './contexto';
 import { listaUuid } from './filtros-sql';
@@ -58,13 +58,35 @@ export type FilaRivalAmbito = {
   fuenteEvento: string | null;
 };
 
-/** Una fila por rival (persona raíz) y prueba, con lo que hace falta para clasificar la prueba. */
+/**
+ * Una fila por rival (persona raíz) y prueba, con lo que hace falta para
+ * clasificar la prueba.
+ *
+ * Mismos asaltos que `sqlAsaltosOrientados`, pero agrupados por prueba y
+ * rival ANTES de cruzar con la prueba: el formato es de la prueba, así que
+ * filtrarlo después del GROUP BY da lo mismo y la prueba se lee una vez por
+ * grupo, no por asalto (y sin la fecha de la edición, que aquí no se usa).
+ */
 export function sqlRivalesPorPrueba(ids: readonly string[], canonicaId: string) {
+  const grupo = listaUuid(ids);
   return sql`
-    WITH ${sqlAsaltosOrientados(ids)}, por_prueba AS MATERIALIZED (
+    WITH crudos AS MATERIALIZED (
+      SELECT b.competition_id AS prueba, b.fencer_b_person_id AS rival_id, count(*) AS asaltos,
+             sum(b.score_a > b.score_b) AS victorias, sum(b.score_a < b.score_b) AS derrotas
+      FROM sport_bout b
+      WHERE b.fencer_a_person_id IN (${grupo}) AND max(b.score_a, b.score_b) <= ${MAX_TOCADOS_INDIVIDUAL}
+      GROUP BY 1, 2
+      UNION ALL
+      SELECT b.competition_id, b.fencer_a_person_id, count(*),
+             sum(b.score_b > b.score_a), sum(b.score_b < b.score_a)
+      FROM sport_bout b
+      WHERE b.fencer_b_person_id IN (${grupo}) AND max(b.score_a, b.score_b) <= ${MAX_TOCADOS_INDIVIDUAL}
+        AND (b.fencer_a_person_id IS NULL OR b.fencer_a_person_id NOT IN (${grupo}))
+      GROUP BY 1, 2
+    ), por_prueba AS MATERIALIZED (
       SELECT coalesce(rp.merged_into_person_id, rp.id) AS rival, o.prueba AS prueba,
-             count(*) AS asaltos, sum(o.favor > o.contra) AS victorias, sum(o.favor < o.contra) AS derrotas
-      FROM orientados o CROSS JOIN sport_person rp ON rp.id = o.rival_id
+             sum(o.asaltos) AS asaltos, sum(o.victorias) AS victorias, sum(o.derrotas) AS derrotas
+      FROM crudos o CROSS JOIN sport_person rp ON rp.id = o.rival_id
       WHERE coalesce(rp.merged_into_person_id, rp.id) <> ${canonicaId}
       GROUP BY 1, 2
     )
@@ -78,7 +100,8 @@ export function sqlRivalesPorPrueba(ids: readonly string[], canonicaId: string) 
     CROSS JOIN sport_competition c ON c.id = pp.prueba
     CROSS JOIN sport_edition e ON e.id = c.edition_id
     LEFT JOIN event ev0 ON ev0.id = e.event_id
-    LEFT JOIN sport_person p ON p.id = pp.rival`;
+    LEFT JOIN sport_person p ON p.id = pp.rival
+    WHERE c.format = 'INDIVIDUAL'`;
 }
 
 const UN_DIA = 86_400_000;

@@ -52,11 +52,9 @@ const edicion = {
 };
 
 describe('banda de resultados del calendario', () => {
-  it('la ficha no espera: el primer render es un estado de lectura, no «sin resultados»', () => {
+  it('la ficha no espera: mientras se lee no pinta nada (ni esqueleto ni «sin resultados»)', () => {
     const marcado = html(React.createElement(BandaResultados, { eventoId: UUID_A }));
-    expect(marcado).toContain('Resultados');
-    expect(marcado).toContain('Leyendo resultados');
-    expect(marcado).not.toMatch(/no tiene todavía una edición/);
+    expect(marcado).toBe('');
   });
 
   it('cada vista sin datos tiene su propio texto y el error nunca se lee como vacío', () => {

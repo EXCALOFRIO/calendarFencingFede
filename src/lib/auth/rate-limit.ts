@@ -29,8 +29,32 @@ export async function takeAuthLimit(
   return !!row && row.count <= maximum;
 }
 
+/**
+ * Daily ceiling for access codes across the whole application.
+ *
+ * The codes are e-mailed by the managed Neon Auth provider, NOT by Resend:
+ * Resend (free plan: 100 e-mails/day, 3,000/month, 2 requests/second, see
+ * `RESEND_DAILY_LIMIT`) only carries the notification queue. This ceiling
+ * protects the provider's own sending quota and our reputation if every
+ * per-IP and per-address control is bypassed at once. Only sends to invited
+ * addresses count, so invented addresses cannot use it up.
+ */
+export const OTP_DAILY_LIMIT_DEFAULT = 2000;
+
+export function otpDailyLimit(value = process.env.AUTH_OTP_DAILY_LIMIT): number {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : OTP_DAILY_LIMIT_DEFAULT;
+}
+
+export type OtpRequestOptions = {
+  /** Whether the address has a live invitation; checked BEFORE any per-address counter. */
+  invited: boolean;
+  dailyLimit?: number;
+};
+
 export async function allowOtpRequest(
   db: AuthDatabase, secret: string, email: string, headers: Headers, send: boolean,
+  { invited, dailyLimit = otpDailyLimit() }: OtpRequestOptions,
 ): Promise<boolean> {
   // Cloudflare overwrites this header. Never trust forwarded-for/client-supplied IP aliases.
   const ip = headers.get('cf-connecting-ip') ?? 'local-or-missing-ip';
@@ -38,10 +62,12 @@ export async function allowOtpRequest(
   const hour = 60 * minute;
   if (!await takeAuthLimit(db, secret, send ? 'send-ip-minute' : 'verify-ip-minute', ip, send ? 5 : 20, minute)) return false;
   if (!await takeAuthLimit(db, secret, send ? 'send-ip-hour' : 'verify-ip-hour', ip, send ? 20 : 100, hour)) return false;
+  // Uninvited addresses never reach the provider: no per-address rows, no global quota.
+  if (!invited) return false;
   if (!await takeAuthLimit(db, secret, send ? 'send-email-hour' : 'verify-email-hour', email, send ? 5 : 20, hour)) return false;
   if (send) {
     if (!await takeAuthLimit(db, secret, 'send-delay', email, 1, minute)) return false;
-    if (!await takeAuthLimit(db, secret, 'send-global-day', 'all', 80, 24 * hour)) return false;
+    if (!await takeAuthLimit(db, secret, 'send-global-day', 'all', dailyLimit, 24 * hour)) return false;
   }
   return true;
 }

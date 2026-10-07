@@ -2,7 +2,7 @@ import { UUID_RE } from './cursor';
 import { RUTA_EDICIONES, sanitizarRetornoEdicion } from './edicion-url';
 import { LONGITUD_MAXIMA_CURSOR, RUTA_FAVORITOS, construirUrlFavoritos } from './favoritos-url';
 import type { AmbitoCompeticion } from './tipos-social';
-import { CLAVES_CRITERIO, RUTA_EXPLORAR, construirUrl, leerCriterios, rutaFicha } from './url';
+import { CLAVES_CRITERIO, RUTA_EXPLORAR, construirUrl, hayCriterios, leerCriterios, rutaFicha } from './url';
 
 /**
  * Criterios de la ficha deportiva en la URL: temporada del ranking oficial,
@@ -64,7 +64,8 @@ export function sanitizarRetorno(valor: string | undefined): string {
     if (v !== null) params[clave] = v;
   }
   const { criterios, cursor } = leerCriterios(params);
-  return construirUrl(criterios, cursor);
+  // Sin nada que buscar, `construirUrl` daría la pestaña Buscar; el retorno sigue siendo `/explorar`.
+  return !cursor && !hayCriterios(criterios) ? RUTA_EXPLORAR : construirUrl(criterios, cursor);
 }
 
 export function leerCriteriosFicha(params: Parametros): CriteriosFicha {

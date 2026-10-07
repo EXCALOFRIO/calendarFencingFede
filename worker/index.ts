@@ -22,13 +22,16 @@ import { default as aplicacion } from '../.open-next/worker.js';
 import { crearAlmacenCronD1 } from '../src/lib/cron/almacen-d1';
 import { crearManejadorProgramado, type FetchCron } from '../src/lib/cron/programado';
 import { conMantenimiento } from '../src/lib/cron/mantenimiento';
+import { conLimites } from '../src/lib/seguridad/limites';
 
 const servir = (aplicacion as { fetch: FetchCron }).fetch;
 
 export default conMantenimiento(
   // HTTP manual conserva la autorización de las rutas y permite un rerun
   // deliberado; sólo los disparos scheduled pasan por la reserva persistente.
-  servir,
+  // Los límites de peticiones (bindings `ratelimits`) sólo cubren el HTTP:
+  // el `scheduled` de abajo llama a `servir` directamente.
+  conLimites(servir),
   // Esperar al EOF y al cierre, no lanzar el trabajo y dejarlo en waitUntil.
   crearManejadorProgramado({ servir, crearAlmacen: crearAlmacenCronD1 }),
 );

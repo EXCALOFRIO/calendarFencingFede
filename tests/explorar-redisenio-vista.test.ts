@@ -112,7 +112,8 @@ describe('clasificación, poules y cuadro de una edición', () => {
     expect(marcado.match(/>Bronce, puesto </g)).toHaveLength(1);
     expect(marcado).toContain('bg-amber-100');
     expect(marcado).toContain('Lucia Garcia Perez');
-    expect(marcado).toContain('Club Sintético');
+    // En Explorar no se enseñan clubes.
+    expect(marcado).not.toContain('Club Sintético');
     expect(marcado).toContain('aria-label="Abrir la ficha deportiva de Lucia Garcia Perez"');
   });
 

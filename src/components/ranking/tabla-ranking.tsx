@@ -28,7 +28,7 @@ import type {
 import type { CutoffStatus } from '@/lib/ranking/compute';
 import { cn, formatDateEs } from '@/lib/utils';
 import { Desglose } from './desglose';
-import { SelectoresGrupo } from './selectores-grupo';
+import { BarraFiltrosRanking } from './selectores-grupo';
 import { clave, etiquetaGrupo, puntos } from './formato';
 
 type Grupo = RankingGroupKey & { athletes: number };
@@ -97,7 +97,7 @@ export function TablaRanking({
   return (
     <div className="ranking flex min-w-0 flex-col gap-5">
       {/* Controles: una sola fila que envuelve. */}
-      <SelectoresGrupo grupos={grupos} grupo={grupo} onElegir={elegir} />
+      <BarraFiltrosRanking grupos={grupos} grupo={grupo} onElegir={elegir} />
 
       {/*
         Dónde estás tú, y a cuánto del corte.
@@ -178,7 +178,7 @@ export function TablaRanking({
               {hayCorte && fila.position === plazas ? (
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={6} className="px-0 py-0">
-                    <div className="flex items-center gap-2 border-y border-dashed border-gold/60 bg-gold/5 px-2 py-1.5 text-xs text-gold">
+                    <div className="flex items-center gap-2 border-y border-gold bg-[color-mix(in_oklab,var(--color-gold)_7%,var(--card))] px-2 py-1.5 text-xs text-gold">
                       <Scissors className="size-3.5 shrink-0" aria-hidden />
                       <span className="whitespace-normal">
                         Corte de convocatoria: las {plazas} primeras plazas salen por

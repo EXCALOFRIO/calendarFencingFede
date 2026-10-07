@@ -264,11 +264,11 @@ export function ParDato({
   return (
     <CitaConvocatoria dato={dato} className={cn('py-0.5', className)}>
       <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-sm text-muted-foreground sm:text-xs">{linea.rotulo}</span>
+        <span className="text-[13px] text-muted-foreground">{linea.rotulo}</span>
         <span
           className={cn(
             'min-w-0 break-words',
-            grande ? 'cifra text-2xl leading-none' : 'text-base font-medium leading-snug sm:text-sm',
+            grande ? 'cifra text-2xl leading-none' : 'text-[14px] leading-[20px] font-medium',
             dato && dato.estado !== 'aprobado' && 'text-foreground/85',
           )}
         >
@@ -303,7 +303,7 @@ export function Tarjeta({
     >
       {titulo || accion ? (
         <header className="flex flex-wrap items-center justify-between gap-2">
-          {titulo ? <h4 className="text-base leading-none sm:text-sm">{titulo}</h4> : <span />}
+          {titulo ? <h4 className="text-[14px] leading-[20px] font-semibold">{titulo}</h4> : <span />}
           {accion}
         </header>
       ) : null}
@@ -464,7 +464,7 @@ export function TarjetaOrganiza({ evento }: { evento: EventView }) {
       <div className="flex flex-col gap-1">
         {quien ? (
           <CitaConvocatoria dato={quien}>
-            <span className="text-base font-medium sm:text-sm">
+            <span className="text-[14px] leading-[20px] font-medium">
               {titular(quien.valor)}
               <MarcaConvocatoria className="ml-1.5 text-muted-foreground" />
             </span>
@@ -507,19 +507,19 @@ export function LineaDireccion({
           rel="noreferrer"
           title={texto}
           aria-label={`${texto}: abrir en el mapa`}
-          className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-md text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           {contenido}
           <Navigation className="size-4 shrink-0 text-primary-text" aria-hidden />
         </a>
       ) : (
-        <p title={texto} className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-sm text-muted-foreground">
+        <p title={texto} className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 text-sm text-muted-foreground">
           {contenido}
         </p>
       )}
       {leida ? (
         <CitaConvocatoria dato={leida} className="mx-0 px-0">
-          <span className="flex size-11 items-center justify-center text-muted-foreground">
+          <span className="flex size-[32px] items-center justify-center text-muted-foreground">
             <MarcaConvocatoria />
           </span>
         </CitaConvocatoria>
@@ -596,7 +596,7 @@ export function OtrosDatos({ datos }: { datos: DatoExtraidoView[] }) {
                 {esEnlace(d) ? (
                   <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                     <CitaConvocatoria dato={d}>
-                      <span className="text-sm text-muted-foreground sm:text-xs">
+                      <span className="text-[13px] text-muted-foreground">
                         <MarcaConvocatoria className="mr-1.5" />
                         {rotuloLimpio(d)}
                       </span>
@@ -615,11 +615,11 @@ export function OtrosDatos({ datos }: { datos: DatoExtraidoView[] }) {
                 ) : (
                   <CitaConvocatoria dato={d} className="w-full">
                     <div className="flex min-w-0 flex-col gap-0.5">
-                      <span className="text-sm text-muted-foreground sm:text-xs">
+                      <span className="text-[13px] text-muted-foreground">
                         {rotuloLimpio(d)}
                         {contexto ? ` · ${contexto}` : ''}
                       </span>
-                      <span className="min-w-0 break-words text-base font-medium sm:text-sm">
+                      <span className="min-w-0 break-words text-[14px] leading-[20px] font-medium">
                         {/*
                           El VALOR pasa por `titular()` y la CITA no: el valor
                           se va a leer y las convocatorias lo escriben todo en

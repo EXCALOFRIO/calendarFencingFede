@@ -10,7 +10,7 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
-import Link from 'next/link';
+import { EnlacePrecarga } from '@/components/sistema/enlace-precarga';
 import { BanderaPais } from '@/components/bandera';
 import { construirUrlCaraACara } from '@/lib/sport/explorar/cara-a-cara-url';
 import type {
@@ -22,9 +22,10 @@ import type {
 import { rutaFicha } from '@/lib/sport/explorar/url';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { cn, titular } from '@/lib/utils';
-import { AvatarAnillo } from '../avatar-anillo';
+import { FotoDeportista } from '../foto-deportista';
 import { Bloque, fechaLegible, type Nivel } from '../piezas';
 import { Cifra, Metrica, SinDato } from './piezas-perfil';
+import { TACTIL } from './tactil';
 
 const ICONOS: Record<ClaveCuriosidad, LucideIcon> = {
   rivalMasHabitual: Users,
@@ -103,7 +104,7 @@ function TarjetaCuriosidad({ personaId, c, nivel }: { personaId: string; c: Curi
       data-curiosidad={c.clave}
     >
       <span className="flex items-center gap-2.5">
-        <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-marcado text-primary-text">
+        <span className="inline-flex size-[36px] shrink-0 items-center justify-center rounded-full bg-marcado text-primary-text">
           <Icono className="size-4.5" aria-hidden />
         </span>
         <Titulo className="font-sans text-sm leading-tight font-semibold">{c.etiqueta}</Titulo>
@@ -121,28 +122,27 @@ function TarjetaCuriosidad({ personaId, c, nivel }: { personaId: string; c: Curi
       ) : null}
       <div className="flex min-w-0 flex-col gap-2 border-t pt-3 sm:mt-auto">
         <div className="flex min-w-0 items-center gap-2">
-          <Link
+          <EnlacePrecarga
             href={rutaFicha(c.rival.id)}
-            prefetch={false}
-            className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-sm underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+            className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2.5 rounded-sm underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
           >
-            <AvatarAnillo nombre={nombre} tamano="sm" apagado />
+            {/* La misma persona sale en varias tarjetas: `FotoDeportista` la pide una sola vez. */}
+            <FotoDeportista personaId={c.rival.id} nombre={nombre} tamano="lista" apagado />
             <span className="flex min-w-0 items-center gap-1.5">
               {c.rival.pais ? <BanderaPais pais={c.rival.pais} soloBandera className="shrink-0" /> : null}
               <span className="truncate text-sm leading-tight font-medium" title={nombre}>{nombre}</span>
             </span>
-          </Link>
+          </EnlacePrecarga>
           {/* En móvil sólo el icono: el nombre se queda con el ancho. */}
-          <Link
+          <EnlacePrecarga
             href={construirUrlCaraACara(personaId, { rival: c.rival.id })}
-            prefetch={false}
             aria-label={`Cara a cara con ${nombre}`}
             title="Cara a cara"
-            className="inline-flex size-11 shrink-0 items-center justify-center gap-1.5 rounded-full border text-sm font-medium hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto sm:px-3"
+            className={cn(TACTIL, 'inline-flex size-[32px] shrink-0 items-center justify-center gap-1.5 rounded-full border text-xs font-medium hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto sm:px-3')}
           >
             <Swords className="size-4" aria-hidden />
             <span className="hidden sm:inline">Cara a cara</span>
-          </Link>
+          </EnlacePrecarga>
         </div>
         <span className="flex min-w-0 flex-col gap-1.5">
           <span className="flex items-baseline justify-between gap-2 text-xs text-muted-foreground">
@@ -194,7 +194,7 @@ function RegistroFase({ etiqueta, r }: { etiqueta: string; r: RegistroAsaltos })
       detalle={r.asaltos > 0 ? `${r.asaltos} ${r.asaltos === 1 ? 'asalto' : 'asaltos'}${p !== null ? `, ${p}% ganados` : ''}` : undefined}
     >
       {r.asaltos === 0 ? <SinDato>Sin asaltos importados</SinDato> : (
-        <Cifra className={cn('text-4xl sm:text-5xl')}>{r.victorias}–{r.derrotas}</Cifra>
+        <Cifra className="text-[36px] sm:text-[44px]">{r.victorias}–{r.derrotas}</Cifra>
       )}
     </Metrica>
   );

@@ -54,10 +54,20 @@ export function createD1Database(binding: D1Binding) {
 
 export type Db = ReturnType<typeof createD1Database>;
 
+type ConSesiones = D1Binding & { withSession(constraint?: string): D1Binding };
+
+/**
+ * One D1 Session per request, keyed by OpenNext's request context object (a
+ * new object per request, see its `runWithCloudflareRequestContext`).
+ */
+const sesionesPorPeticion = new WeakMap<object, D1Binding>();
+
 export function resolveD1Binding(): D1Binding {
+  let contexto: ReturnType<typeof getCloudflareContext>;
   let binding: unknown;
   try {
-    binding = getCloudflareContext().env.DB;
+    contexto = getCloudflareContext();
+    binding = contexto.env.DB;
   } catch {
     throw new Error('Cloudflare D1 DB binding is unavailable in this request. Configure DB or inject a local binding explicitly.');
   }
@@ -66,18 +76,46 @@ export function resolveD1Binding(): D1Binding {
     || !('batch' in binding) || typeof binding.batch !== 'function') {
     throw new Error('Missing Cloudflare D1 DB binding. PostgreSQL fallback is disabled.');
   }
+  // Opt-in read replication (docs/rendimiento.md). Without a bookmark cookie a
+  // request may read a replica that has not yet seen the previous request's
+  // write (e.g. a new follow), so it stays off until that is in place.
+  const modo = (contexto.env as { D1_SESIONES?: unknown }).D1_SESIONES ?? process.env.D1_SESIONES;
+  if (modo === 'replicas' && 'withSession' in binding && typeof binding.withSession === 'function') {
+    let sesion = sesionesPorPeticion.get(contexto);
+    if (!sesion) {
+      sesion = (binding as ConSesiones).withSession('first-unconstrained');
+      sesionesPorPeticion.set(contexto, sesion);
+    }
+    return sesion;
+  }
   return binding as D1Binding;
 }
 
 /**
- * Resolve at property access, never at import time, and never cache a
- * request's binding/database in module state. Builders capture their own
- * request-local session. resolve can be injected into an isolated local proxy.
+ * Drizzle with the full schema walks every table to build its relational
+ * config (~0.4 ms of CPU); the lazy proxy did that on every property access,
+ * i.e. on every query. The cached instance holds nothing but the binding it
+ * is keyed by, so it carries no request state.
+ */
+const databasesPorBinding = new WeakMap<D1Binding, Db>();
+function databaseFor(binding: D1Binding): Db {
+  let database = databasesPorBinding.get(binding);
+  if (!database) {
+    database = createD1Database(binding);
+    databasesPorBinding.set(binding, database);
+  }
+  return database;
+}
+
+/**
+ * Resolve at property access, never at import time. Builders capture the
+ * binding resolved when they were created. resolve can be injected into an
+ * isolated local proxy.
  */
 export function createLazyD1Database(resolve: () => D1Binding = resolveD1Binding): Db {
   return new Proxy({} as Db, {
     get(_target, property) {
-      const database = createD1Database(resolve());
+      const database = databaseFor(resolve());
       const value: unknown = Reflect.get(database, property);
       return typeof value === 'function' ? value.bind(database) : value;
     },

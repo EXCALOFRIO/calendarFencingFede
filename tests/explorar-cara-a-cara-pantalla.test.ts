@@ -146,6 +146,18 @@ describe('URL del cara a cara', () => {
     for (const chip of chipsCaraACara(UUID_A, base)) expect(chip.quitar).not.toContain('cursor');
   });
 
+  it('el ámbito viaja en la URL, en la entrada, en la vista del rival y en su chip', () => {
+    const leidos = leerCriteriosCaraACara({ rival: UUID_B, ambito: 'Internacional' });
+    expect(leidos.ambito).toBe('internacional');
+    const url = construirUrlCaraACara(UUID_A, leidos);
+    expect(url).toBe(`/explorar/${UUID_A}/cara-a-cara?rival=${UUID_B}&ambito=internacional`);
+    expect(aEntradaCaraACara(UUID_A, leidos)).toEqual({ personaId: UUID_A, rivalId: UUID_B, ambito: 'internacional' });
+    expect(urlVistaDelRival(UUID_A, UUID_B, leidos)).toContain('ambito=internacional');
+    const [chip] = chipsCaraACara(UUID_A, leidos);
+    expect(chip).toMatchObject({ clave: 'ambito', etiqueta: 'Ámbito', valor: 'Internacional' });
+    expect(chip.quitar).toBe(`/explorar/${UUID_A}/cara-a-cara?rival=${UUID_B}`);
+  });
+
   it('ver desde el rival intercambia personas y conserva filtros, sin cursor', () => {
     const url = urlVistaDelRival(UUID_A, UUID_B, criterios({ temporada: '2027', cursor: 'abc' }));
     expect(url).toBe(`/explorar/${UUID_B}/cara-a-cara?rival=${UUID_A}&temporada=2027`);
@@ -799,8 +811,9 @@ describe('cara a cara: cifras y cruces', () => {
     expect(marcado).toContain('aria-label="Lucia Garcia gana el 50 % de los asaltos decididos"');
     expect(marcado).toContain('aria-label="Últimos asaltos, del más reciente: victoria, derrota"');
     expect(marcado).not.toContain('Volver');
-    expect(marcado).toMatch(/<h1 class="[^"]*">Cara a cara<\/h1>/);
-    expect(marcado).toContain('<span class="text-xs text-muted-foreground">Últimos</span>');
+    // El título va en la cabecera compacta de la aplicación (`cabeceraDeRuta`), no aquí.
+    expect(marcado).not.toContain('<h1');
+    expect(marcado).toContain('<span class="shrink-0 text-xs text-muted-foreground">Últimos</span>');
     expect(marcado).not.toMatch(/tracking-\[/);
     expect(marcado).toContain('>Lucia Garcia<');
     expect(marcado).toContain('>Marta Ruiz<');
@@ -873,7 +886,7 @@ describe('cabecera y entradas al cara a cara', () => {
     const marcado = html(
       React.createElement(CabeceraCaraACara, { datos, criterios: criterios({ temporada: '2027', fase: 'POULE' }) }),
     );
-    expect(marcado).toContain('<h1');
+    expect(marcado).not.toContain('<h1');
     expect(marcado).toContain(`href="/explorar/${UUID_A}"`);
     expect(marcado).toContain(`href="/explorar/${UUID_B}"`);
     expect(marcado).toContain(`href="/explorar/${UUID_B}/cara-a-cara?rival=${UUID_A}&amp;temporada=2027&amp;fase=POULE"`);

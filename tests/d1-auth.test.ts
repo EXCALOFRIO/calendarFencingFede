@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createManagedAuth } from '@/lib/auth/managed-auth';
-import { allowOtpRequest, privateAuthKey, takeAuthLimit } from '@/lib/auth/rate-limit';
+import {
+  allowOtpRequest, OTP_DAILY_LIMIT_DEFAULT, otpDailyLimit, privateAuthKey, takeAuthLimit,
+} from '@/lib/auth/rate-limit';
 import { localAuthDatabase } from './d1-auth-local';
 
 const ORIGIN = 'https://auth.example.test';
@@ -277,9 +279,36 @@ describe('bounded, persistent and privacy-safe app-side OTP controls', () => {
     const results = await Promise.all(Array.from({ length: 20 }, () => takeAuthLimit(local.db, SECRET, 'atomic', EMAIL, 3, 60_000)));
     expect(results.filter(Boolean)).toHaveLength(3);
     const headers = new Headers({ 'cf-connecting-ip': '192.0.2.2', 'x-forwarded-for': '198.51.100.1' });
-    for (let i = 0; i < 5; i++) expect(await allowOtpRequest(local.db, SECRET, `email${i}@example.test`, headers, true)).toBe(true);
+    for (let i = 0; i < 5; i++) expect(await allowOtpRequest(local.db, SECRET, `email${i}@example.test`, headers, true, { invited: true })).toBe(true);
     headers.set('x-forwarded-for', '198.51.100.2');
-    expect(await allowOtpRequest(local.db, SECRET, 'next@example.test', headers, true)).toBe(false);
+    expect(await allowOtpRequest(local.db, SECRET, 'next@example.test', headers, true, { invited: true })).toBe(false);
+  });
+  it('invented addresses never write per-address rows nor spend the global daily quota', async () => {
+    auth = createManagedAuth(local.db, { secret: SECRET, origin: ORIGIN, request: provider, writeCookies, otpDailyLimit: 1 });
+    for (let i = 0; i < 30; i++) {
+      const response = await auth.handler(request(SEND, { email: `invented${i}@example.test`, type: 'sign-in' }, { 'cf-connecting-ip': `198.51.100.${i}` }));
+      expect(await response.json()).toEqual({ success: true });
+    }
+    expect(provider).not.toHaveBeenCalled();
+    const keys = new Set(local.sqlite.prepare('SELECT key FROM auth_throttle').all().map((r) => r.key));
+    expect(keys.has(privateAuthKey(SECRET, 'send-global-day', 'all'))).toBe(false);
+    expect(keys.has(privateAuthKey(SECRET, 'send-email-hour', 'invented0@example.test'))).toBe(false);
+    invite();
+    expect((await send()).ok).toBe(true);
+    expect(provider.mock.calls.filter(([, path]) => path === SEND)).toHaveLength(1);
+  });
+  it('only sends to invited addresses count against the configurable daily quota', async () => {
+    auth = createManagedAuth(local.db, { secret: SECRET, origin: ORIGIN, request: provider, writeCookies, otpDailyLimit: 1 });
+    invite(); invite('second@example.test');
+    await send();
+    await auth.handler(request(SEND, { email: 'second@example.test', type: 'sign-in' }, { 'cf-connecting-ip': '192.0.2.9' }));
+    expect(provider.mock.calls.filter(([, path]) => path === SEND)).toHaveLength(1);
+  });
+  it.each([
+    [undefined, 2000], ['', 2000], ['abc', 2000], ['0', 2000], ['-5', 2000], ['5000', 5000],
+  ])('AUTH_OTP_DAILY_LIMIT=%s gives a daily quota of %d', (value, expected) => {
+    expect(otpDailyLimit(value)).toBe(expected);
+    expect(OTP_DAILY_LIMIT_DEFAULT).toBe(2000);
   });
   it('a rate window resets exactly at the boundary', async () => {
     expect(await takeAuthLimit(local.db, SECRET, 'boundary', EMAIL, 1, 60_000, 100_000)).toBe(true);
@@ -312,6 +341,31 @@ describe('bounded, persistent and privacy-safe app-side OTP controls', () => {
     provider.mockImplementationOnce(async () => Response.json({ success: true }));
     const result = await post('sign-out', {}, { cookie: '__Secure-neon-auth.session_token=synthetic-token' });
     expect(result.ok).toBe(false); expect(result.headers.has('set-cookie')).toBe(false);
+  });
+  it('over https only __Secure- managed cookies reach the provider or the browser', async () => {
+    invite(); await send(); const response = await redeem();
+    expect(response.ok).toBe(true);
+    provider.mockClear();
+    await auth.api.getSession({ headers: new Headers({
+      cookie: 'neon-auth.session_token=planted; __Secure-neon-auth.session_token=synthetic-token; other=1',
+    }) });
+    const forwarded = (provider.mock.calls[0][0] as Request).headers.get('cookie');
+    expect(forwarded).toBe('__Secure-neon-auth.session_token=synthetic-token; other=1');
+  });
+  it('over https a plain session cookie from the provider is neither accepted nor forwarded', async () => {
+    invite(); await send();
+    provider.mockImplementationOnce(async () => {
+      active = true;
+      return Response.json({ user: providerIdentity() }, { headers: { 'set-cookie': 'neon-auth.session_token=plain; Path=/; HttpOnly' } });
+    });
+    const response = await redeem();
+    expect(response.ok).toBe(false); expect(response.headers.has('set-cookie')).toBe(false);
+  });
+  it('plain http (local development and tests) keeps the unprefixed cookies', async () => {
+    const local8787 = 'http://localhost:8787';
+    auth = createManagedAuth(local.db, { secret: SECRET, origin: local8787, request: provider, writeCookies });
+    await auth.api.getSession({ headers: new Headers({ cookie: 'neon-auth.session_token=dev' }) });
+    expect((provider.mock.calls[0][0] as Request).headers.get('cookie')).toBe('neon-auth.session_token=dev');
   });
   it('server actions use the same guards and apply cookies only after successful authorization', async () => {
     invite();

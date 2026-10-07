@@ -5,7 +5,8 @@
  *
  * Existe por un motivo concreto: Chrome en Android **no ofrece instalar la
  * aplicación** si no hay uno registrado con un manejador de `fetch`. Con el
- * manifiesto solo no aparece el aviso de instalación.
+ * manifiesto solo no aparece el aviso de instalación. El segundo motivo son
+ * las notificaciones push, al final del fichero.
  *
  * Y hace lo mínimo a propósito. Un trabajador de servicio es la forma más
  * fácil que hay de romper una aplicación de manera invisible: se queda con
@@ -88,6 +89,72 @@ self.addEventListener('fetch', (evento) => {
         cache.put(peticion, respuesta.clone());
       }
       return respuesta;
+    })(),
+  );
+});
+
+/*
+ * ===========================================================================
+ * NOTIFICACIONES PUSH
+ * ===========================================================================
+ *
+ * El servidor (`src/lib/notificaciones/push/`) manda un JSON cifrado
+ * `{ titulo, cuerpo, url, etiqueta }`; el navegador lo descifra antes de
+ * llegar aquí. `etiqueta` hace que un aviso actualizado sustituya al anterior
+ * en vez de apilarse. `url` es SIEMPRE una ruta interna: si llega otra cosa,
+ * se abre la bandeja.
+ *
+ * En iPhone esto solo funciona con la aplicación añadida a la pantalla de
+ * inicio (iOS 16.4 o posterior), y Safari exige mostrar SIEMPRE una
+ * notificación por cada push: por eso nunca se sale sin `showNotification`.
+ */
+
+const RUTA_BANDEJA = '/notificaciones';
+
+function rutaSegura(url) {
+  return typeof url === 'string' && /^\/(?![/\\])[^\s]*$/.test(url) ? url : RUTA_BANDEJA;
+}
+
+self.addEventListener('push', (evento) => {
+  let datos = {};
+  try {
+    datos = evento.data ? evento.data.json() : {};
+  } catch {
+    datos = {};
+  }
+  const titulo = typeof datos.titulo === 'string' && datos.titulo ? datos.titulo : 'CalendarFencing';
+  const opciones = {
+    body: typeof datos.cuerpo === 'string' ? datos.cuerpo : '',
+    tag: typeof datos.etiqueta === 'string' && datos.etiqueta ? datos.etiqueta : undefined,
+    icon: '/iconos/icono-192.png',
+    badge: '/iconos/icono-192.png',
+    lang: 'es-ES',
+    data: { url: rutaSegura(datos.url) },
+  };
+  evento.waitUntil(
+    (async () => {
+      await self.registration.showNotification(titulo, opciones);
+      // Con la aplicación abierta, la campana se actualiza sin esperar a su sondeo.
+      const ventanas = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const v of ventanas) v.postMessage({ tipo: 'notificacion' });
+    })(),
+  );
+});
+
+self.addEventListener('notificationclick', (evento) => {
+  evento.notification.close();
+  const destino = new URL(rutaSegura(evento.notification.data && evento.notification.data.url), self.location.origin).href;
+  evento.waitUntil(
+    (async () => {
+      const ventanas = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      // Reutiliza una ventana de la aplicación si hay una abierta, en vez de abrir otra.
+      for (const v of ventanas) {
+        if (new URL(v.url).origin === self.location.origin && 'navigate' in v) {
+          await v.focus();
+          return v.navigate(destino);
+        }
+      }
+      return self.clients.openWindow(destino);
     })(),
   );
 });

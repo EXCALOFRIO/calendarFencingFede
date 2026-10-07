@@ -11,7 +11,7 @@ import {
 import { RUTA_FAVORITOS } from '@/lib/sport/explorar/favoritos-url';
 import { contextoReal } from '@/lib/sport/explorar/real';
 import { RUTA_SIGUIENDO } from '@/lib/sport/explorar/siguiendo-url';
-import { RUTA_EXPLORAR } from '@/lib/sport/explorar/url';
+import { RUTA_BUSCAR, RUTA_EXPLORAR } from '@/lib/sport/explorar/url';
 
 /**
  * Acciones de servidor de favoritos. La cuenta sale siempre de la sesión
@@ -31,6 +31,7 @@ function invalidarLista(r: ResultadoFavorito): ResultadoFavorito {
     revalidatePath(RUTA_FAVORITOS);
     revalidatePath(RUTA_SIGUIENDO);
     revalidatePath(RUTA_EXPLORAR);
+    revalidatePath(RUTA_BUSCAR);
   }
   return r;
 }

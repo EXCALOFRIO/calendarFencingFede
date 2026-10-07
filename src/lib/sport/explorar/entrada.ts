@@ -78,6 +78,8 @@ export const esquemaCaraACara = z
     hasta: camposPrueba.hasta,
     arma: camposPrueba.arma,
     fase: z.enum(['POULE', 'TABLEAU']).optional(),
+    /** Regla de `clasificarCompeticion`, como Rivales; no la de `camposPrueba.ambito` (calendario). */
+    ambito: z.enum(['nacional', 'internacional']).optional(),
     ...paginacion,
   })
   .strict()

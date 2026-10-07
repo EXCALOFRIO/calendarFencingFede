@@ -13,7 +13,7 @@ import { condicionesPrueba, listaUuid, unionesPrueba, y } from './filtros-sql';
 import { rondaCuadro } from './ediciones-asaltos';
 import { leerCabeceras, resolverPersona, SALTOS } from './personas';
 import { clasificarCompeticion, PUESTO_SIN_CLASIFICAR } from './tipo-competicion';
-import type { ClasificacionCompeticion } from './tipos-social';
+import type { AmbitoCompeticion, ClasificacionCompeticion } from './tipos-social';
 import type {
   Arma,
   AsaltoDto,
@@ -144,12 +144,14 @@ const MARCADOR_INDIVIDUAL = sql.raw(`max(b.score_a, b.score_b) <= ${MAX_TOCADOS_
 /**
  * `descartadas`: lecturas repetidas de una prueba ya contada (ver
  * `aEncuentros`); sus asaltos son los mismos otra vez y no se cuentan.
+ * `soloPruebas`: con filtro de ámbito, las pruebas comunes de ese ámbito.
  */
 function condicionesH2h(
   yo: readonly string[],
   rival: readonly string[],
   f: FiltrosH2h,
   descartadas: readonly string[],
+  soloPruebas: readonly string[] | null,
 ): SQL[] {
   const condiciones = [
     sql`c.format = 'INDIVIDUAL'`,
@@ -161,6 +163,7 @@ function condicionesH2h(
   if (descartadas.length > 0) {
     condiciones.push(sql`b.competition_id NOT IN (${listaUuid(descartadas)})`);
   }
+  if (soloPruebas) condiciones.push(sql`b.competition_id IN (${listaUuid(soloPruebas)})`);
   return condiciones;
 }
 
@@ -169,6 +172,7 @@ export function sqlResumenAsaltos(
   rival: readonly string[],
   f: FiltrosH2h,
   descartadas: readonly string[] = [],
+  soloPruebas: readonly string[] | null = null,
 ) {
   return sql`
     SELECT count(*) AS asaltos,
@@ -179,7 +183,7 @@ export function sqlResumenAsaltos(
     FROM (
       SELECT ${MIOS(yo)} AS mios, ${RIVAL(yo)} AS rival
       FROM sport_bout b ${unionesPrueba('b')}
-      WHERE ${y(condicionesH2h(yo, rival, f, descartadas))}
+      WHERE ${y(condicionesH2h(yo, rival, f, descartadas, soloPruebas))}
     ) s`;
 }
 
@@ -190,10 +194,11 @@ export function sqlAsaltos(
   limite: number,
   clave: readonly (string | number)[] | null,
   descartadas: readonly string[] = [],
+  soloPruebas: readonly string[] | null = null,
 ) {
   // Un marcador empatado no tiene ganador: cuenta como «sin decidir» en el
   // resumen y no se lista como victoria ni derrota.
-  const condiciones = [...condicionesH2h(yo, rival, f, descartadas), sql`b.score_a <> b.score_b`];
+  const condiciones = [...condicionesH2h(yo, rival, f, descartadas, soloPruebas), sql`b.score_a <> b.score_b`];
   if (clave) {
     condiciones.push(
       sql`(${FECHA_ORDEN_ASALTO}, b.id) < (${String(clave[0])}, ${String(clave[1])})`,
@@ -383,6 +388,25 @@ function delanteDe(yo: number | null, rival: number | null): EncuentroCaraACara[
   return yo === null || rival === null ? null : yo < rival ? 'yo' : yo > rival ? 'rival' : 'empate';
 }
 
+type DatosAmbito = Pick<FilaEncuentro, 'torneo' | 'fuente' | 'pais' | 'ambitoEvento' | 'circuitoEvento' | 'fuenteEvento'>;
+
+function datosCompeticion(f: DatosAmbito) {
+  return {
+    nombre: f.torneo ?? '', fuente: f.fuente ?? '', pais: f.pais ?? null,
+    ambitoEvento: f.ambitoEvento, circuitoEvento: f.circuitoEvento, fuenteEvento: f.fuenteEvento,
+  };
+}
+
+/**
+ * Ámbito de una prueba para el filtro del cara a cara: el de
+ * `clasificarCompeticion`, el mismo que reparte los rivales por ámbito. FIE y
+ * EFC (Europeos y circuito europeo, lleguen por la fuente que lleguen) son
+ * internacionales; la RFEE y las autonómicas, nacionales.
+ */
+export function ambitoDePrueba(f: DatosAmbito): AmbitoCompeticion {
+  return clasificarCompeticion(datosCompeticion(f)).ambito;
+}
+
 function aEncuentro(f: FilaEncuentro): EncuentroCaraACara {
   const yo = puestoReal(f.puestoYo);
   const rival = puestoReal(f.puestoRival);
@@ -401,10 +425,7 @@ function aEncuentro(f: FilaEncuentro): EncuentroCaraACara {
     formato: f.formato ?? null,
     temporada: f.temporada,
     fuente: f.fuente,
-    clasificacion: clasificarCompeticion({
-      nombre: f.torneo ?? '', fuente: f.fuente ?? '', pais: f.pais ?? null,
-      ambitoEvento: f.ambitoEvento, circuitoEvento: f.circuitoEvento, fuenteEvento: f.fuenteEvento,
-    }),
+    clasificacion: clasificarCompeticion(datosCompeticion(f)),
     puestos: {
       yo,
       rival,
@@ -627,9 +648,10 @@ export async function leerCaraACara(
 
   const analizada = esquemaCaraACara.safeParse(entrada);
   if (!analizada.success) return { estado: 'entrada_invalida' };
-  const { personaId, rivalId, cursor, limite: pedido, fase, ...resto } = analizada.data;
+  // `ambito` se saca antes de `filtrosPrueba`: allí `ambito` es el del calendario, con otra regla.
+  const { personaId, rivalId, cursor, limite: pedido, fase, ambito, ...resto } = analizada.data;
   const filtros: FiltrosH2h = { ...filtrosPrueba(resto), ...(fase ? { fase } : {}) };
-  const huella = { personaId, rivalId, ...filtros };
+  const huella = { personaId, rivalId, ...filtros, ...(ambito ? { ambitoH2h: ambito } : {}) };
 
   let clave: readonly (string | number)[] | null = null;
   if (cursor) {
@@ -659,23 +681,23 @@ export async function leerCaraACara(
 
   const comunes = filas<FilaEncuentro>(comunesRows);
   const truncado = comunes.length > MAX_COMUNES;
-  const { encuentros, resumen: resumenEncuentros } = aEncuentros(
-    comunes.slice(0, MAX_COMUNES),
-    truncado,
-    filtros.fase,
-  );
-  const descartadas = lecturasDescartadas(comunes.slice(0, MAX_COMUNES));
+  const leidas = comunes.slice(0, MAX_COMUNES);
+  // Como en Rivales: las lecturas repetidas se deciden con todas las pruebas, no por ámbito.
+  const descartadas = lecturasDescartadas(leidas);
+  const enAmbito = ambito ? leidas.filter((c) => ambitoDePrueba(c) === ambito) : leidas;
+  const { encuentros, resumen: resumenEncuentros } = aEncuentros(enAmbito, truncado, filtros.fase);
+  const soloPruebas = ambito ? enAmbito.map((c) => c.id) : null;
 
   // Después de las pruebas comunes: sus lecturas repetidas no deben contar dos veces cada asalto.
   const [resumenRows, asaltosRows] = await Promise.all([
-    ctx.db.execute(sqlResumenAsaltos(yo.ids, rival.ids, filtros, descartadas)),
-    ctx.db.execute(sqlAsaltos(yo.ids, rival.ids, filtros, limite, clave, descartadas)),
+    ctx.db.execute(sqlResumenAsaltos(yo.ids, rival.ids, filtros, descartadas, soloPruebas)),
+    ctx.db.execute(sqlAsaltos(yo.ids, rival.ids, filtros, limite, clave, descartadas, soloPruebas)),
   ]);
   const [r] = filas<Record<string, number>>(resumenRows);
   const asaltos = filas<FilaAsalto>(asaltosRows);
   const pagina = asaltos.slice(0, limite);
   const ultima = pagina[pagina.length - 1];
-  const pruebas = comunes.slice(0, MAX_COMUNES).map<PruebaComun>((c) => {
+  const pruebas = enAmbito.map<PruebaComun>((c) => {
     const n = Number(c.asaltos);
     return {
       id: c.id,
@@ -795,22 +817,28 @@ export async function listarRivales(
 
   // Una fila por rival y prueba: el recuento por rival se hace aquí, después
   // de quitar las lecturas repetidas de una misma prueba, como en el cara a cara.
+  // Los asaltos se leen UNA vez (`MATERIALIZED`) y ya traen lo que hace falta de
+  // la prueba: sin eso SQLite repetía la lectura de asaltos, pruebas y ediciones
+  // para la ruta de fusiones y otra vez para el resultado.
   const rows = filas<FilaRivalPrueba>(
     await ctx.db.execute(sql`
-      WITH RECURSIVE lados AS (
-        SELECT b.fencer_a_person_id IN (${lista}) AS es_a, b.fencer_a_person_id AS pa, b.fencer_b_person_id AS pb,
-               b.score_a AS sa, b.score_b AS sb, b.competition_id AS prueba
-        FROM sport_bout b ${unionesPrueba('b')}
-        WHERE ${y(condiciones)}
-      ), orientados AS (
+      WITH RECURSIVE orientados AS MATERIALIZED (
         SELECT CASE WHEN es_a THEN pb ELSE pa END AS rival_id, prueba,
+               equivalencia, fecha, arma, genero, categoria, formato,
                1 AS n,
                CASE WHEN (CASE WHEN es_a THEN sa - sb ELSE sb - sa END) > 0 THEN 1 ELSE 0 END AS v,
                CASE WHEN (CASE WHEN es_a THEN sa - sb ELSE sb - sa END) < 0 THEN 1 ELSE 0 END AS d
-        FROM lados
+        FROM (
+          SELECT b.fencer_a_person_id IN (${lista}) AS es_a, b.fencer_a_person_id AS pa, b.fencer_b_person_id AS pb,
+                 b.score_a AS sa, b.score_b AS sb, b.competition_id AS prueba,
+                 c.event_competition_id AS equivalencia, coalesce(c.competition_date, e.start_date) AS fecha,
+                 c.weapon AS arma, c.gender AS genero, c.category AS categoria, c.format AS formato
+          FROM sport_bout b ${unionesPrueba('b')}
+          WHERE ${y(condiciones)}
+        )
       ), ruta(rival_id, id, destino, salto) AS (
-        SELECT DISTINCT x.rival_id, p.id, p.merged_into_person_id, 0
-        FROM orientados x JOIN sport_person p ON p.id = x.rival_id
+        SELECT x.rival_id, p.id, p.merged_into_person_id, 0
+        FROM (SELECT DISTINCT rival_id FROM orientados) x JOIN sport_person p ON p.id = x.rival_id
         UNION ALL
         SELECT r.rival_id, p.id, p.merged_into_person_id, r.salto + 1
         FROM ruta r JOIN sport_person p ON p.id = r.destino WHERE r.salto < ${SALTOS}
@@ -818,13 +846,11 @@ export async function listarRivales(
       SELECT cp.id AS id, coalesce(cp.name_normalized, '') AS clave, cp.display_name AS nombre,
              cp.country_code AS pais, x.prueba AS prueba,
              sum(x.n) AS asaltos, sum(x.v) AS victorias, sum(x.d) AS derrotas,
-             c.event_competition_id AS equivalencia, coalesce(c.competition_date, e.start_date) AS fecha,
-             c.weapon AS arma, c.gender AS genero, c.category AS categoria, c.format AS formato
+             x.equivalencia AS equivalencia, x.fecha AS fecha,
+             x.arma AS arma, x.genero AS genero, x.categoria AS categoria, x.formato AS formato
       FROM orientados x
       JOIN ruta r ON r.rival_id = x.rival_id AND r.destino IS NULL
       JOIN sport_person cp ON cp.id = r.id
-      JOIN sport_competition c ON c.id = x.prueba
-      JOIN sport_edition e ON e.id = c.edition_id
       WHERE ${y(externas)}
       GROUP BY cp.id, cp.name_normalized, cp.display_name, cp.country_code, x.prueba`),
   );

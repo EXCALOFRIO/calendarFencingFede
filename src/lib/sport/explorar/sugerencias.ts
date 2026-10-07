@@ -5,6 +5,7 @@ import { exigirPerfil, filas, type ContextoExplorador } from './contexto';
 import { CTE_MARCAS, ctePalabras, ctesDelta } from './busqueda-indice';
 import { listaUuid } from './filtros-sql';
 import { MAX_LETRAS_VARIANTE } from './indice-sql';
+import { leerOlimpicaPersonas } from './olimpica-perfil';
 import { SALTOS } from './personas';
 import {
   consultaSugerencias, MAX_CANDIDATOS_SUGERENCIAS, MAX_CONSULTA_SUGERENCIAS, MAX_SUGERENCIAS,
@@ -254,19 +255,25 @@ export async function sugerirPersonas(ctx: ContextoExplorador, datos: unknown): 
   const perfil = await exigirPerfil(ctx);
   const parsed = entrada.safeParse(datos);
   if (!parsed.success) return { estado: 'entrada_invalida' };
+  // Sin una palabra de tres letras no se consulta la base (`consultaSugerencias`).
   const q = consultaSugerencias(parsed.data.q);
   if (!q) return { estado: 'ok', items: [] };
   if (!(await ctx.esquema()).identidad) return { estado: 'no_disponible' };
-  const indexada = ctx.indiceExplorar ? await ctx.indiceExplorar() : false;
+  // Sin el índice de Explorar no hay búsqueda: la variante con LIKE
+  // (`sqlCandidatosSugerencias`) recorre personas y alias en cada pulsación.
+  if (!ctx.indiceExplorar || !(await ctx.indiceExplorar())) return { estado: 'no_disponible' };
   const candidatos = filas<CandidatoSugerencia>(await ctx.db.execute(
-    indexada ? sqlCandidatosIndexados(q, perfil.profileId) : sqlCandidatosSugerencias(q, perfil.profileId),
+    sqlCandidatosIndexados(q, perfil.profileId),
   ));
   const elegidas = ordenarSugerencias(q, candidatos, parsed.data.limite ?? MAX_SUGERENCIAS);
   if (elegidas.length === 0) return { estado: 'ok', items: [] };
-  // Una sola consulta acotada a las elegidas, por grupo de fusión.
-  const resumen = filas<FilaResumenSugerencia>(
-    await ctx.db.execute(sqlResumenSugerencias(elegidas.map((s) => s.id), perfil.profileId)),
-  );
+  // Una sola consulta acotada a las elegidas, por grupo de fusión, y a la vez sus marcas olímpicas.
+  const ids = elegidas.map((s) => s.id);
+  const [crudo, marcas] = await Promise.all([
+    ctx.db.execute(sqlResumenSugerencias(ids, perfil.profileId)),
+    leerOlimpicaPersonas(ctx.db, ids),
+  ]);
+  const resumen = filas<FilaResumenSugerencia>(crudo);
   const porId = new Map(resumen.map((c) => [c.id, c]));
   const hoy = ctx.hoy();
   return {
@@ -280,6 +287,7 @@ export async function sugerirPersonas(ctx: ContextoExplorador, datos: unknown): 
         armas: c?.armas ? (c.armas.split(',').sort() as Arma[]) : [],
         ultimaFecha: typeof c?.ultimaFecha === 'string' ? c.ultimaFecha.slice(0, 10) : null,
         seguida: Boolean(Number(c?.seguida ?? 0)),
+        ...(marcas[s.id]?.length ? { olimpica: marcas[s.id] } : {}),
       };
     }),
   };

@@ -9,6 +9,7 @@ import { etiquetaRonda, leerAsaltosDePrueba } from '@/lib/sport/explorar/edicion
 import { sugerirPersonas } from '@/lib/sport/explorar/sugerencias';
 import { TRAYECTORIA_VACIA } from '@/lib/sport/explorar/tipos-busqueda';
 import { CLAVES_PRIVADAS, UUID_A as A, UUID_B as B, UUID_C as C, clavesDe, crearContexto } from './helpers/explorar';
+import { construirIndiceExplorar } from './helpers/indice-explorar';
 
 vi.mock('@opennextjs/cloudflare', () => ({
   getCloudflareContext: () => { throw new Error('El test no puede acceder a Cloudflare'); },
@@ -104,8 +105,9 @@ describe('sugerencias tolerantes al orden de palabras', () => {
     t.edicion(ED1, 'Copa', '2026-01-10');
     t.prueba(PR1, ED1, '2026-01-10');
     t.resultado(PR1, A, 5);
+    construirIndiceExplorar(t.sqlite);
     for (const q of ['juan perez', 'Pérez García Juan', 'GARCIA juan']) {
-      const r = await sugerirPersonas(t.ctx, { q });
+      const r = await sugerirPersonas({ ...t.ctx, indiceExplorar: async () => true }, { q });
       if (r.estado !== 'ok') throw new Error(r.estado);
       expect(r.items.map((p) => p.id)).toContain(A);
       const juan = r.items.find((p) => p.id === A);

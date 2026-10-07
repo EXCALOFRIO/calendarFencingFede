@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -12,7 +13,7 @@ import type { RankingGroupKey, RankingTableView, TablaOficial } from '@/lib/quer
 import type { TablaFieCompleta } from '@/lib/ranking/tabla-fie-completa';
 import type { ComputedDeadline } from '@/lib/deadlines';
 import type { QuienVa } from '@/app/(app)/inscritos';
-import { terminarNavegadorPropio } from './helpers/proceso-navegador';
+import { esperarSalidaPropia, perfilPropio, terminarNavegadorPropio, terminarRestosDelPerfil } from './helpers/proceso-navegador';
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/',
@@ -40,7 +41,8 @@ const tailwind = require('@tailwindcss/postcss') as typeof import('@tailwindcss/
 
 const { VistaCalendario } = await import('@/components/calendario/vista');
 const { TarjetaBloque } = await import('@/components/calendario/tarjeta-bloque');
-const { NavEscritorio, NavMovil, visibles } = await import('@/components/nav');
+const { NavEscritorio, NavMovil } = await import('@/components/nav');
+const { DESTINOS_APP } = await import('@/components/navegacion-app');
 const { TablaRankingOficial } = await import('@/components/ranking/tabla-oficial');
 const { TablaRankingFie } = await import('@/components/ranking/tabla-fie');
 const { TablaRanking } = await import('@/components/ranking/tabla-ranking');
@@ -209,24 +211,27 @@ const temporadas = () => React.createElement(TiraTemporadas, {
 });
 
 describe('calendario, navegación y ranking: contrato de presentación', () => {
-  it('mantiene los destinos de cada papel, sin añadir submenús', () => {
-    expect(visibles('athlete').map((d) => d.href)).toEqual(['/', '/estado', '/explorar', '/ranking']);
-    expect(visibles('coach').map((d) => d.href)).toEqual(['/', '/explorar', '/ranking']);
-    expect(visibles('admin').map((d) => d.href)).toEqual(['/', '/explorar', '/ranking', '/admin']);
+  it('una sola barra con los mismos cinco destinos para todos, sin submenús', () => {
+    expect(DESTINOS_APP.map((d) => d.href)).toEqual(['/', '/explorar', '/explorar/buscar', '/ranking', '/explorar/yo']);
     for (const Nav of [NavEscritorio, NavMovil]) {
       const marcado = html(React.createElement(Nav, { role: 'admin' }));
       expect(marcado).toContain('aria-current="page"');
-      expect(marcado).toContain('min-h-[44px]');
-      expect(marcado).toContain('focus-visible:outline');
+      expect(marcado).toContain('focus-visible:ring');
       expect(marcado).not.toContain('truncate');
+      expect(marcado).not.toContain('/admin');
     }
+    // La celda de la barra es el área táctil entera; la pastilla del escritorio se toca en 44.
+    expect(html(React.createElement(NavMovil, { role: 'admin' }))).toContain('h-[50px]');
+    expect(html(React.createElement(NavEscritorio, { role: 'admin' }))).toContain('h-[44px]');
   });
 
-  it('no vuelve a limitar el mínimo táctil al puntero grueso ni permite excepciones', () => {
+  it('no vuelve a limitar el área táctil al puntero grueso ni permite excepciones', () => {
     const css = fuente('src/app/globals.css');
     expect(css).not.toContain('@media (pointer: coarse)');
     expect(css).not.toContain(':not(.objetivo-libre)');
-    expect(css).toMatch(/:where\([\s\S]*?\)[\s\S]*?min-height: 44px;[\s\S]*?min-width: 44px;/);
+    // Área táctil invisible de 44 px en todos los botones, sin agrandar lo que se ve.
+    expect(css).toMatch(/:where\(button[\s\S]*?\)::after \{[\s\S]*?width: max\(100%, 44px\);[\s\S]*?height: max\(100%, 44px\);/);
+    expect(css).not.toMatch(/:where\([^)]*button[\s\S]*?\) \{\s*min-height: 44px;/);
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
     expect(css).not.toMatch(/overflow-x:\s*(hidden|clip)/);
   });
@@ -236,9 +241,10 @@ describe('calendario, navegación y ranking: contrato de presentación', () => {
     expect(marcado).toContain('aria-label="Trimestre anterior"');
     expect(marcado).toContain('aria-label="Trimestre siguiente"');
     expect(marcado).toContain('Buscar un torneo o una sede');
-    expect(marcado).toContain('Filtros del calendario: Todo');
+    expect(marcado).toContain('aria-label="Filtros del calendario"');
     expect(marcado).toContain('Ir a octubre 2026');
-    expect(fuente('src/components/calendario/vista.tsx')).toContain('bg-marcado font-semibold text-primary-text');
+    // Lo marcado es el del sistema (invertido), no un rojo propio de la pantalla.
+    expect(fuente('src/components/calendario/vista.tsx')).toContain('<ChipFiltro');
     expect(marcado).not.toContain('objetivo-libre');
   });
 
@@ -265,12 +271,14 @@ describe('calendario, navegación y ranking: contrato de presentación', () => {
     expect(nacionalHtml).toContain('</span> sin ficha</p>');
     expect(nacionalHtml).toContain('sin plazos ni inscripciones');
     expect(nacionalHtml).not.toContain('ni cálculo interno');
-    expect(nacionalHtml).toContain('clasificación oficial de la RFEE');
+    // Sin «Fuente: …» ni la sigla como rótulo (docs/diseno-sistema.md § 6): temporada, fecha y el enlace al original.
+    expect(nacionalHtml).not.toContain('clasificación oficial de la RFEE');
+    expect(nacionalHtml).toContain('Original');
     expect(nacionalHtml).toContain('https://example.test/rfee');
     expect(nacionalHtml).not.toContain('Se arregla de uno en uno');
     const mundialHtml = html(fie());
     expect(mundialHtml).toContain(nombre);
-    expect(mundialHtml).toContain('Ranking internacional individual · FIE');
+    expect(mundialHtml).not.toContain('· FIE');
     expect(mundialHtml).not.toMatch(/[Mm]undial/);
     expect(mundialHtml).toContain('Temporada');
     expect(mundialHtml).toContain('123');
@@ -303,7 +311,8 @@ describe('calendario, navegación y ranking: contrato de presentación', () => {
   it('distingue lista en lectura, no publicada, vacía y lectura fallida sin ocultar datos retenidos', () => {
     const banda = (inscritos: QuienVa | null, fallo = false) =>
       html(React.createElement(BandaEstasDentro, { evento, prueba, inscritos, fallo }));
-    expect(banda(null)).toContain('Mirando quién va');
+    // Mientras llega no se pinta nada (ni esqueleto): llega precargada con la intención.
+    expect(banda(null)).toBe('');
     // Sin lista publicada la banda no se pinta: no hay nada que mirar todavía.
     expect(banda({ oficiales: [], pendientes: [], estados: {} })).toBe('');
     expect(banda({ oficiales: [], pendientes: [], estados: { [prueba.id]: 'vacia' } })).toContain('Lista vacía');
@@ -362,7 +371,7 @@ describe('renderizado offline a 320, 393, 768 y 1440 px', () => {
       return route.abort();
     });
     page = await context.newPage();
-    await page.setContent(`<html lang="es" class="dark"><head><base href="https://offline.invalid/"><style>${css}</style></head><body style="--font-display:'Barlow Condensed',sans-serif;--font-sans-ui:Inter,sans-serif"><header class="ancho-app px-3 py-2">${html(React.createElement(NavEscritorio, { role: 'admin' }))}</header><main class="ancho-app hueco-barra px-3 py-3"></main>${html(React.createElement(NavMovil, { role: 'admin' }))}</body></html>`, { waitUntil: 'domcontentloaded' });
+    await page.setContent(`<html lang="es" class="dark"><head><base href="https://offline.invalid/"><style>${css}</style></head><body style="--font-display:'Barlow Condensed',sans-serif;--font-sans-ui:Inter,sans-serif"><header class="ancho-app px-3 py-2">${html(React.createElement(NavEscritorio, { role: 'admin' }))}</header><main class="ancho-app hueco-barra px-4 py-3"></main>${html(React.createElement(NavMovil, { role: 'admin' }))}</body></html>`, { waitUntil: 'domcontentloaded' });
     mkdirSync(salida, { recursive: true });
   }, 60_000);
 
@@ -378,20 +387,45 @@ describe('renderizado offline a 320, 393, 768 y 1440 px', () => {
         clearTimeout(timer);
       }
     };
-    // Libera primero el cliente WebSocket y sus rutas. Matar Chromium antes
-    // deja pipes heredados que pueden retrasar `close` aunque el PID no exista.
+    // Libera primero el cliente WebSocket y sus rutas. Si no responde, el
+    // cierre del servidor termina igualmente el navegador.
     try {
       if (context) await acotado(context.close(), 2_000, 'contexto');
       if (browser) await acotado(browser.close(), 2_000, 'cliente aislado');
-      await acotado(server.close(), 5_000, 'servidor y perfil temporal');
     } catch {
-      // Fallback acotado, solo sobre el proceso que lanzó esta suite. Un PID
-      // ausente no sustituye la confirmación de limpieza que devuelve kill().
-      const proceso = server.process();
-      if (process.platform === 'win32' && proceso) await terminarNavegadorPropio(proceso);
-      await acotado(server.kill(), 5_000, 'limpieza forzada del servidor y perfil');
+      // El servidor se cierra a continuación y arrastra contexto y cliente.
     }
-  }, 25_000);
+    const proceso = server.process();
+    // Playwright solo borra el perfil tras el evento `close` del proceso, que
+    // exige que se cierren todos sus pipes. En Windows los hijos de Chromium
+    // heredan esos pipes y pueden mantenerlos abiertos tras salir el padre, y
+    // el borrado del perfil reintenta durante varios segundos si hay ficheros
+    // bloqueados. Por eso se separa «el proceso ha salido» de «perfil borrado».
+    const cierre = server.close();
+    try {
+      await esperarSalidaPropia(proceso, 15_000);
+    } catch {
+      // Solo sobre el árbol del proceso que lanzó esta suite.
+      if (process.platform === 'win32') await terminarNavegadorPropio(proceso);
+      server.kill().catch(() => {});
+      await esperarSalidaPropia(proceso, 15_000).catch(() => {
+        throw new Error('Limpieza aislada agotada: salida forzada del navegador');
+      });
+    }
+    const perfil = perfilPropio(proceso);
+    if (process.platform === 'win32' && perfil) await terminarRestosDelPerfil(perfil);
+    for (const stream of proceso.stdio) stream?.destroy();
+    // Playwright borra el perfil solo cuando llega `close`, que en la batería
+    // completa a veces no llega nunca. Con el navegador ya muerto, el borrado
+    // se hace aquí y se comprueba, sin depender de ese evento.
+    cierre.catch(() => {});
+    if (perfil) {
+      await acotado(rm(perfil, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }), 30_000, 'borrado del perfil temporal');
+      if (existsSync(perfil)) throw new Error(`Limpieza aislada incompleta: perfil temporal ${perfil}`);
+    } else {
+      await acotado(cierre, 30_000, 'borrado del perfil temporal');
+    }
+  }, 90_000);
 
   const pantallas = {
     calendario,
@@ -405,7 +439,8 @@ describe('renderizado offline a 320, 393, 768 y 1440 px', () => {
       React.createElement(BarraPlazos, { plazos, estado: estadoPlazos })),
     temporadas,
     tamanos: () => React.createElement('div', { className: 'flex flex-wrap gap-2' },
-      React.createElement(Input, { className: 'h-8 w-8 min-w-0', 'aria-label': 'Entrada compacta' }),
+      // Sin `min-w-0`: ya no hay regla global que lo anule; el mínimo del campo es suyo (`ui/input.tsx`).
+      React.createElement(Input, { className: 'h-8 w-8', 'aria-label': 'Entrada compacta' }),
       ...(['default', 'xs', 'sm', 'lg', 'icon', 'icon-xs', 'icon-sm', 'icon-lg'] as const).map((size) =>
         React.createElement(Button, { size, key: size, className: 'h-8 w-8', 'aria-label': size }, 'X'))),
   };
@@ -422,17 +457,30 @@ describe('renderizado offline a 320, 393, 768 y 1440 px', () => {
               // Radix añade inputs invisibles, aria-hidden y tabindex=-1 para
               // formularios: no son controles que el usuario pueda tocar.
               .filter((el) => !el.closest('[aria-hidden="true"],[hidden],[inert]') && visibles(el));
+            /*
+              El área que recibe el toque. La etiqueta del Switch y la que
+              envuelve un campo son el objetivo real; y un control que se ve
+              pequeño pero amplía su área con un `::after` transparente
+              (`src/components/filtros/chips.tsx`) cuenta con esa ampliación.
+            */
+            const areaTactil = (el: HTMLElement) => {
+              const caja = el.getAttribute('role') === 'switch' || el.matches('input') ? el.closest('label') ?? el : el;
+              const r = caja.getBoundingClientRect();
+              const tras = getComputedStyle(caja, '::after');
+              if (tras.content === 'none' || tras.position !== 'absolute') return { width: r.width, height: r.height };
+              const px = (v: string) => (v.endsWith('px') ? Number.parseFloat(v) : 0);
+              return {
+                width: Math.max(r.width, r.width - px(tras.left) - px(tras.right)),
+                height: Math.max(r.height, r.height - px(tras.top) - px(tras.bottom)),
+              };
+            };
             const pequenos = targets.flatMap((el) => {
-              // La etiqueta del Switch es el objetivo real; su forma no se estira.
-              const area = el.getAttribute('role') === 'switch' ? el.closest('label') ?? el : el;
-              const r = area.getBoundingClientRect();
+              const r = areaTactil(el);
               return r.width < 43.99 || r.height < 43.99
                 ? [{ etiqueta: el.getAttribute('aria-label') ?? el.textContent, ancho: r.width, alto: r.height }]
                 : [];
             });
-            const areas = targets.map((el) =>
-              (el.getAttribute('role') === 'switch' ? el.closest('label') ?? el : el).getBoundingClientRect(),
-            );
+            const areas = targets.map(areaTactil);
             const truncados = [...document.querySelectorAll<HTMLElement>('td, [data-barra="torneo"], [data-plazo], [data-slot="item-title"], [data-slot="item-actions"]')].filter(visibles).filter((el) =>
               el.scrollWidth > el.clientWidth + 1 || getComputedStyle(el).textOverflow === 'ellipsis',
             ).map((el) => el.textContent);

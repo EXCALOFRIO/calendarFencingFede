@@ -3,7 +3,9 @@ import { ERROR_NO_AUTENTICADO, exigirPerfil, filas, type ContextoExplorador } fr
 import { UUID_RE } from './cursor';
 import { condicionesPrueba, listaUuid, y } from './filtros-sql';
 import { resolverPersona } from './personas';
+import { ambitoDePrueba } from './cara-a-cara';
 import type { Arma, Genero } from './tipos';
+import type { AmbitoCompeticion } from './tipos-social';
 
 /**
  * Relevos de las pruebas por equipos (`sport_relay`, migración 0010).
@@ -102,7 +104,8 @@ export function sqlRelevosEntre(yo: readonly string[], rival: readonly string[],
            ${de('rl.touches_a', 'rl.touches_b')} AS mios, ${de('rl.touches_b', 'rl.touches_a')} AS rival,
            ${de('m.team_a_name', 'm.team_b_name')} AS "miEquipo", ${de('m.team_b_name', 'm.team_a_name')} AS "suEquipo",
            ${de('m.score_a', 'm.score_b')} AS "finalMios", ${de('m.score_b', 'm.score_a')} AS "finalRival",
-           ${COLUMNAS_PRUEBA}
+           ${COLUMNAS_PRUEBA}, e.country_code AS pais, ev0.scope AS "ambitoEvento",
+           ev0.circuit AS "circuitoEvento", ev0.source AS "fuenteEvento"
     FROM sport_relay rl ${UNIONES}
     WHERE ${y(condiciones)}
     ORDER BY ${FECHA} DESC NULLS LAST, m.id, rl.relay_number
@@ -131,13 +134,25 @@ export function sqlRelevosPerfil(ids: readonly string[]): SQL {
     LIMIT ${MAX_PRUEBAS_PERFIL + 1}`;
 }
 
-type FilaRelevo = Omit<RelevoCaraACara, 'final'> & { finalMios: number; finalRival: number };
+type FilaRelevo = Omit<RelevoCaraACara, 'final'> & {
+  finalMios: number;
+  finalRival: number;
+  pais?: string | null;
+  ambitoEvento?: string | null;
+  circuitoEvento?: string | null;
+  fuenteEvento?: string | null;
+};
 
 const n = (v: unknown) => Number(v ?? 0);
 
-export function aRelevosCaraACara(rows: readonly FilaRelevo[]): RelevosCaraACara {
+/** Con `ambito`, sólo los relevos de pruebas de ese ámbito (`ambitoDePrueba`, como los asaltos). */
+export function aRelevosCaraACara(rows: readonly FilaRelevo[], ambito?: AmbitoCompeticion): RelevosCaraACara {
   const truncado = rows.length > MAX_RELEVOS_CARA_A_CARA;
-  const items = rows.slice(0, MAX_RELEVOS_CARA_A_CARA).map<RelevoCaraACara>(({ finalMios, finalRival, ...r }) => ({
+  const leidos = rows.slice(0, MAX_RELEVOS_CARA_A_CARA);
+  const enAmbito = ambito ? leidos.filter((r) => ambitoDePrueba(r) === ambito) : leidos;
+  const items = enAmbito.map<RelevoCaraACara>(({
+    finalMios, finalRival, pais: _pais, ambitoEvento: _ambito, circuitoEvento: _circuito, fuenteEvento: _fuente, ...r
+  }) => ({
     ...r,
     numero: n(r.numero),
     mios: n(r.mios),
@@ -180,7 +195,8 @@ function registrar(error: unknown, que: string): void {
   // Sin la 0010 o sin sesión no hay nada que avisar: la sección simplemente no sale.
   const mensaje = error instanceof Error ? error.message : '';
   if (mensaje === ERROR_NO_AUTENTICADO || /no such table: sport_(relay|team_match)/.test(mensaje)) return;
-  console.error(`[explorar] ${que}:`, error instanceof Error ? error.message.slice(0, 120) : 'desconocido');
+  // Sólo el tipo: el mensaje de D1 puede llevar el SQL y los ids consultados.
+  console.error(`[explorar] ${que}:`, error instanceof Error ? error.name : 'desconocido');
 }
 
 /** Relevos de una persona (todas las ids de su grupo de fusión); `null` si no hay o no se pudo leer. */
@@ -204,7 +220,7 @@ export async function cargarRelevosCaraACara(
   ctx: ContextoExplorador,
   personaId: string,
   rivalId: string,
-  filtros: { temporada?: string; arma?: string; fase?: string } = {},
+  filtros: { temporada?: string; arma?: string; fase?: string; ambito?: string } = {},
 ): Promise<RelevosCaraACara | null> {
   try {
     await exigirPerfil(ctx);
@@ -216,7 +232,8 @@ export async function cargarRelevosCaraACara(
       ...(filtros.arma && ARMAS.has(filtros.arma) ? { arma: filtros.arma as Arma } : {}),
       ...(filtros.fase === 'POULE' || filtros.fase === 'TABLEAU' ? { fase: filtros.fase } : {}),
     };
-    return aRelevosCaraACara(filas<FilaRelevo>(await ctx.db.execute(sqlRelevosEntre(yo.ids, rival.ids, f))));
+    const ambito = filtros.ambito === 'nacional' || filtros.ambito === 'internacional' ? filtros.ambito : undefined;
+    return aRelevosCaraACara(filas<FilaRelevo>(await ctx.db.execute(sqlRelevosEntre(yo.ids, rival.ids, f))), ambito);
   } catch (error) {
     registrar(error, 'relevos del cara a cara');
     return null;

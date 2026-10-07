@@ -18,6 +18,13 @@ import {
 
 export const RUTA_EXPLORAR = '/explorar';
 
+/**
+ * Pestaña «Buscar» sin nada escrito. `/explorar` a secas es el feed de Inicio;
+ * una búsqueda con criterios sigue viajando como `/explorar?…` para que los
+ * enlaces y los retornos de ficha de siempre sigan valiendo.
+ */
+export const RUTA_BUSCAR = `${RUTA_EXPLORAR}/buscar`;
+
 /** El orden de esta lista es el de la URL y el de los chips. */
 export const CLAVES_CRITERIO = [
   'q',
@@ -118,7 +125,12 @@ export function construirUrl(criterios: CriteriosExplorar, cursor?: string): str
   }
   if (cursor) params.set('cursor', cursor);
   const texto = params.toString();
-  return texto ? `${RUTA_EXPLORAR}?${texto}` : RUTA_EXPLORAR;
+  return texto ? `${RUTA_EXPLORAR}?${texto}` : RUTA_BUSCAR;
+}
+
+/** Hay búsqueda en la URL aunque esté vacía (`?q=`): entonces `/explorar` es Buscar, no Inicio. */
+export function esBusqueda(params: ParametrosPagina): boolean {
+  return CLAVES_CRITERIO.some((clave) => params[clave] !== undefined);
 }
 
 export function alternarEspana(criterios: CriteriosExplorar): CriteriosExplorar {

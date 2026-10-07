@@ -67,7 +67,7 @@ export function BotonSeguirCompacto({
   return (
     <span className={cn('relative shrink-0', className)}>
       {/*
-        La pastilla mide 32 px, pero el botón ocupa los 44 px de alto de un toque.
+        La pastilla mide 30 px, pero el botón ocupa los 44 px de alto de un toque.
         Por debajo de 360 px la palabra se come el nombre: queda sólo el icono en
         un botón de 44 × 44, y la etiqueta lo dice entero.
       */}
@@ -79,19 +79,19 @@ export function BotonSeguirCompacto({
         aria-label={etiqueta}
         title={optimista ? `Dejar de seguir a ${nombre}` : `Seguir a ${nombre}: es privado y no le avisa`}
         data-estado={optimista ? 'favorito' : 'sin-guardar'}
-        className="group relative flex h-11 cursor-pointer items-center justify-center rounded-lg outline-none aria-disabled:cursor-wait max-[359px]:size-[44px]"
+        className="group relative flex h-[44px] cursor-pointer items-center justify-center rounded-lg outline-none aria-disabled:cursor-wait max-[359px]:size-[44px]"
       >
         <span
           className={cn(
             clasesSeguir(optimista, error),
-            'h-8 gap-1 rounded-full px-3 text-sm group-focus-visible:ring-[3px] group-focus-visible:ring-ring/50',
-            'max-[359px]:size-[36px] max-[359px]:px-0',
+            'h-[30px] gap-1 rounded-full px-3 text-[13px] group-focus-visible:ring-[3px] group-focus-visible:ring-ring/50',
+            'max-[359px]:size-[32px] max-[359px]:px-0',
             pendiente && 'opacity-70',
           )}
         >
           <span className="max-[359px]:sr-only">{error ? 'Reintentar' : optimista ? 'Siguiendo' : 'Seguir'}</span>
           <Icono
-            className={cn('size-4', !optimista || error ? 'min-[360px]:hidden' : 'min-[360px]:size-3.5')}
+            className={cn('size-[16px]', !optimista || error ? 'min-[360px]:hidden' : 'min-[360px]:size-[14px]')}
             strokeWidth={2.5}
             aria-hidden
           />

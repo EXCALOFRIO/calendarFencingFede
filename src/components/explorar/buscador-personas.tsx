@@ -34,7 +34,7 @@ export function ContenidoSugerencia({ p }: { p: Sugerida }) {
           <span className="flex flex-wrap gap-1">
             <span className="sr-only">Armas: </span>
             {p.armas.map((a) => (
-              <span key={a} className="rounded-full border border-filete-alto px-2 text-[0.6875rem] leading-5 text-foreground">
+              <span key={a} className="rounded-full border border-filete-alto px-2 text-[12px] leading-5 text-foreground">
                 {WEAPON_LABEL[a]}
               </span>
             ))}
@@ -45,7 +45,7 @@ export function ContenidoSugerencia({ p }: { p: Sugerida }) {
       {typeof p.resultados === 'number' ? (
         <span className="flex shrink-0 flex-col items-end text-right">
           <span className="cifra text-2xl leading-none">{p.resultados}</span>
-          <span className="text-[0.6875rem] text-muted-foreground">
+          <span className="text-[12px] text-muted-foreground">
             {p.resultados === 1 ? 'resultado' : 'resultados'}
           </span>
         </span>

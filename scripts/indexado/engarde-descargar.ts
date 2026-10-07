@@ -238,17 +238,8 @@ class Cliente {
 }
 
 /** Clasificación final, poules y cuadros que ofrece la página de una prueba, sólo de esa prueba. */
-export function paginasDePrueba(html: string, org: string, evt: string, compe: string): string[] {
-  const raiz = `/competition/${org}/${evt}/${compe}/`.toLowerCase();
-  const vistas = new Set<string>();
-  for (const m of html.matchAll(/href="([^"]+)"/gi)) {
-    const ruta = m[1].replace(/^https?:\/\/(www\.)?engarde-service\.com/i, '').replace(/^\/\/(www\.)?engarde-service\.com/i, '');
-    if (!ruta.toLowerCase().startsWith(raiz)) continue;
-    const pagina = ruta.slice(raiz.length).split(/[?#]/)[0];
-    if (/^(clasfinal|poules\d{1,2}|tableau[\w-]{1,20})\.htm$/i.test(pagina)) vistas.add(pagina);
-  }
-  return [...vistas].sort();
-}
+export { paginasDePrueba } from '../../src/lib/ingest/hechos/engarde';
+import { paginasDePrueba } from '../../src/lib/ingest/hechos/engarde';
 
 export type InformeDescarga = {
   generado: string;

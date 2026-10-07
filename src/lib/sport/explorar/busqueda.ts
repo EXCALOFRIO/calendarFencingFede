@@ -22,6 +22,7 @@ import { leerTrayectorias } from './busqueda-trayectoria';
 import { PESO_RESULTADO_SQL } from './indice-sql';
 import { SALTOS, sqlGrupoDe } from './personas';
 import { anioNacimientoPublico } from './anio-publico';
+import { leerOlimpicaPersonas, type OlimpicaPerfil } from './olimpica-perfil';
 import type { Arma, FiltrosBusqueda, Genero } from './tipos';
 import { TRAYECTORIA_VACIA, type DeportistaBuscado } from './tipos-busqueda';
 
@@ -476,6 +477,14 @@ function deportistaIndexado(p: FilaIndexada, hoy: string): DeportistaBuscado {
   };
 }
 
+/** Pone a cada persona sus marcas olímpicas; quien no tiene ninguna se queda sin el campo. */
+export function conMarcas<T extends { id: string }>(
+  items: T[],
+  marcas: Readonly<Record<string, OlimpicaPerfil[]>>,
+): (T & { olimpica?: OlimpicaPerfil[] })[] {
+  return items.map((d) => (marcas[d.id]?.length ? { ...d, olimpica: marcas[d.id] } : d));
+}
+
 export async function complementos(
   db: ContextoExplorador['db'],
   ids: readonly string[],
@@ -526,12 +535,18 @@ export async function complementos(
  * un alias coincidente, y excluye las fundidas en otra: se llega a ellas por
  * la persona que prevalece, a través de los alias y hechos de todo su grupo.
  * Nunca dispara una lectura de fuentes externas.
+ *
+ * Cada persona lleva sus marcas olímpicas (`olimpica`) salvo con
+ * `{ olimpica: false }`: quien las lee aparte, en paralelo con otra cosa
+ * (`cargarPaginaExplorar`), o quien no las pinta (el cara a cara).
  */
 export async function buscarDeportistas(
   ctx: ContextoExplorador,
   entrada: unknown,
+  opciones: { olimpica?: boolean } = {},
 ): Promise<ResultadoBusqueda> {
   await exigirPerfil(ctx);
+  const conOlimpica = opciones.olimpica !== false;
 
   const analizada = esquemaBusqueda.safeParse(entrada);
   if (!analizada.success) return { estado: 'entrada_invalida' };
@@ -569,10 +584,11 @@ export async function buscarDeportistas(
     );
     const pagina = encontradas.slice(0, limite);
     const ultima = pagina[pagina.length - 1];
+    const marcas = conOlimpica ? await leerOlimpicaPersonas(ctx.db, pagina.map((p) => p.id)) : {};
     return {
       estado: 'ok',
       filtros,
-      items: pagina.map((p) => deportistaIndexado(p, ctx.hoy())),
+      items: conMarcas(pagina.map((p) => deportistaIndexado(p, ctx.hoy())), marcas),
       siguiente: encontradas.length > limite && ultima
         ? codificarCursor(CLASE_POPULAR, filtros, [Number(ultima.relevancia), ultima.claveOrden, ultima.id])
         : null,
@@ -585,9 +601,10 @@ export async function buscarDeportistas(
   const pagina = encontradas.slice(0, limite);
 
   const ids = pagina.map((p) => p.id);
-  const [{ conteos, nombres }, trayectorias] = await Promise.all([
+  const [{ conteos, nombres }, trayectorias, marcas] = await Promise.all([
     complementos(ctx.db, ids, [...new Set(pagina.map((p) => p.claveNombre))]),
     leerTrayectorias(ctx.db, ids),
+    conOlimpica ? leerOlimpicaPersonas(ctx.db, ids) : Promise.resolve({}),
   ]);
   const porId = new Map(conteos.map((c) => [c.id, c]));
   const porClave = new Map(nombres.map((n) => [n.clave, Number(n.personas)]));
@@ -612,7 +629,7 @@ export async function buscarDeportistas(
   return {
     estado: 'ok',
     filtros,
-    items,
+    items: conMarcas(items, marcas),
     siguiente:
       hayMas && ultima ? codificarCursor(CLASE, filtros, [ultima.claveNombre, ultima.id]) : null,
     sinResultados: items.length === 0,

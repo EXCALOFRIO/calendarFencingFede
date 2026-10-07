@@ -84,7 +84,7 @@ describe('Buscar en 320 px', () => {
   it('siguiendo, la etiqueta dice cómo dejar de seguir y queda la marca', () => {
     const marcado = html(React.createElement(BotonSeguirCompacto, { personaId: UUID_A, nombre: 'Juan Zabala', inicial: true, lectura }));
     expect(marcado).toContain('aria-label="Siguiendo: toca para dejar de seguir a Juan Zabala"');
-    expect(marcado).toMatch(/<svg[^>]*class="lucide lucide-check[^"]*min-\[360px\]:size-3.5"/);
+    expect(marcado).toMatch(/<svg[^>]*class="lucide lucide-check[^"]*min-\[360px\]:size-\[14px\]"/);
   });
 
   it('la fila enseña la bandera sin repetir el código del país', () => {
@@ -106,7 +106,7 @@ describe('clasificación de equipos con nombre en código', () => {
     expect(repiteNombre('Vce-Va', null)).toBe(false);
   });
 
-  it('pinta el club sólo cuando añade algo', () => {
+  it('no pinta el club: el equipo ya se llama por su nombre', () => {
     const marcado = html(React.createElement(ListaClasificacion, {
       filas: [
         { id: 'e1', puesto: 2, puestoPublicado: null, nombre: 'VCE-VA', pais: 'ESP', club: 'VCE-VA', personaId: null },
@@ -114,6 +114,6 @@ describe('clasificación de equipos con nombre en código', () => {
       ],
     }));
     expect(marcado.match(/VCE-VA|Vce-Va/g)).toHaveLength(1);
-    expect(marcado).toContain('<span class="truncate">Club Madrid</span>');
+    expect(marcado).not.toContain('Club Madrid');
   });
 });

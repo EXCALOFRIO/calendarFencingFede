@@ -323,7 +323,7 @@ function Capsula({
       <span className="text-xs font-medium leading-none text-muted-foreground">
         {capsula.mes.toLocaleLowerCase('es-ES')}
       </span>
-      <span className="cifra text-[0.62rem] leading-none tracking-wide text-muted-foreground">
+      <span className="cifra text-[12px] leading-none tracking-wide text-muted-foreground">
         {capsula.semana}
       </span>
       <PildorasSemana ocupa={ocupa} color={color} />
@@ -391,7 +391,7 @@ function PildorasSemana({ ocupa, color }: { ocupa: boolean[]; color: ColorOrgani
  */
 function EntreSemana() {
   return (
-    <span className="cifra mt-0.5 rounded-[3px] bg-secondary px-1 py-px text-[0.58rem] leading-none tracking-tight text-warn">
+    <span className="cifra mt-0.5 rounded-[3px] bg-secondary px-1 py-px text-[12px] leading-none tracking-tight text-warn">
       Entre semana
     </span>
   );
@@ -402,7 +402,7 @@ function Inscrito({ clase }: { clase?: string }) {
   return (
     <span
       className={cn(
-        'flex shrink-0 items-center gap-0.5 rounded-[3px] bg-secondary px-1 py-px text-[0.62rem] font-medium leading-none text-ok',
+        'flex shrink-0 items-center gap-0.5 rounded-[3px] bg-secondary px-1 py-px text-[12px] font-medium leading-none text-ok',
         clase,
       )}
     >
@@ -429,7 +429,7 @@ function PastillaCircuito({ evento }: { evento: EventView }) {
   // La misma insignia que la ficha del torneo y la página de la prueba.
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5">
-      <InsigniaOrganismo organismo={organismoDe(evento.source, evento.scope, evento.circuit)} />
+      <InsigniaOrganismo organismo={organismoDe(evento.source, evento.scope, evento.circuit)} className="h-[24px] text-[12px]" />
       {circuito ? (
         <span className="min-w-0 text-xs leading-tight font-medium text-secondary-foreground">{circuito}</span>
       ) : null}
@@ -451,7 +451,7 @@ function Pastilla({
     <span
       title={titulo}
       className={cn(
-        'cifra shrink-0 rounded-[3px] bg-secondary px-1 py-px text-[0.65rem] leading-[1.3] tracking-tight text-secondary-foreground',
+        'cifra shrink-0 rounded-[3px] bg-secondary px-1 py-px text-[12px] leading-[1.3] tracking-tight text-secondary-foreground',
         clase,
       )}
     >
@@ -493,7 +493,7 @@ function PastillasPrueba({
         <EtiquetaArma
           key={a}
           arma={a}
-          className="cifra text-[0.65rem] leading-[1.3] text-muted-foreground"
+          className="cifra text-[12px] leading-[1.3] text-muted-foreground"
         />
       ))}
       {generos.map((g) => (
@@ -519,7 +519,7 @@ function Sede({ evento, clase }: { evento: EventView; clase?: string }) {
       )}
     >
       {evento.country ? (
-        <BanderaPais pais={evento.country} className="shrink-0 normal-case tracking-tight" />
+        <BanderaPais pais={evento.country} className="shrink-0 text-[12px] normal-case tracking-tight" />
       ) : (
         <MapPin className="size-3 shrink-0 opacity-60" aria-hidden />
       )}
@@ -616,7 +616,7 @@ function PieDeEvento({
   return (
     <div
       className={cn(
-        'flex min-h-11 min-w-0 items-center justify-end gap-x-2 border-t border-filete px-3 text-xs',
+        'flex min-h-[44px] min-w-0 items-center justify-end gap-x-2 border-t border-filete px-3 text-xs',
         clase,
       )}
     >
@@ -661,7 +661,7 @@ function CuerpoUnico({
     <Button
       variant="ghost"
       type="button"
-      data-barra="torneo"
+      data-barra="torneo" data-evento={evento.id}
       data-terminado={terminado || undefined}
       onClick={() => onAbrir(evento)}
       className="flex h-auto w-full min-w-0 cursor-pointer flex-col items-stretch gap-2 rounded-none px-3 py-3 text-left whitespace-normal transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
@@ -793,7 +793,7 @@ function CuerpoMultiple({
           variant="ghost"
           type="button"
           onClick={() => setTodos(true)}
-          className="mt-2 h-auto w-full justify-start border-t border-filete px-1 py-2 text-left text-xs whitespace-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          className="mt-[8px] h-auto min-h-[36px] w-full justify-start border-t border-filete px-[4px] py-[10px] text-left text-[13px] leading-[16px] whitespace-normal text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
           Ver {ocultos === 1 ? 'el otro torneo' : `los otros ${ocultos} torneos`}
         </Button>
@@ -835,7 +835,7 @@ function FilaEvento({
     <Button
       variant="ghost"
       type="button"
-      data-barra="torneo"
+      data-barra="torneo" data-evento={evento.id}
       data-terminado={terminado || undefined}
       onClick={() => onAbrir(evento)}
       className={cn(
@@ -951,7 +951,7 @@ function ApiladaUnica({
       variant="ghost"
       type="button"
       data-agenda="tarjeta"
-      data-barra="torneo"
+      data-barra="torneo" data-evento={evento.id}
       data-terminado={terminado || undefined}
       onClick={() => onAbrir(evento)}
       className="flex h-auto w-full min-w-0 cursor-pointer flex-col items-stretch gap-2 rounded-none px-3 py-3 text-left whitespace-normal transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
@@ -1046,7 +1046,7 @@ function ApiladaMultiple({
               variant="ghost"
               type="button"
               data-agenda="tarjeta"
-              data-barra="torneo"
+              data-barra="torneo" data-evento={evento.id}
               data-terminado={terminado || undefined}
               onClick={() => onAbrir(evento)}
               className={cn(
@@ -1122,7 +1122,7 @@ export function DivisorHueco({
   return (
     <div
       className={cn(
-        'flex items-center gap-2 text-[0.65rem] text-muted-foreground',
+        'flex items-center gap-2 text-[12px] text-muted-foreground',
         compacto ? 'py-1' : 'py-1.5',
       )}
     >

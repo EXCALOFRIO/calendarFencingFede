@@ -3,6 +3,7 @@
 import { Grid3x3 } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import type { PouleDePrueba } from '@/lib/sport/explorar/tipos-busqueda';
@@ -82,7 +83,7 @@ export function MatrizPoule({ poule, enlace, filtro }: { poule: PouleDePrueba; e
             <col key={t.clave} style={{ width: t.ancho }} />
           ))}
         </colgroup>
-        <thead className="sticky top-0 z-[2] bg-popover text-[0.6875rem] text-muted-foreground">
+        <thead className="sticky top-0 z-[2] bg-popover text-[12px] text-muted-foreground">
           <tr>
             <th scope="col" className={cn(FIJA_IZQUIERDA, 'z-[3] border-b py-2 pr-1 pl-1.5 text-left font-medium')}>
               <span className="sr-only">Tirador</span>
@@ -127,15 +128,16 @@ export function MatrizPoule({ poule, enlace, filtro }: { poule: PouleDePrueba; e
                     <Link
                       href={enlace(f.personaId)}
                       prefetch={false}
+                      transitionTypes={[TIPO_TRANSICION.avanzar]}
                       title={completo}
                       aria-label={`Ficha de ${completo}`}
-                      className="flex min-h-[44px] min-w-0 items-center gap-1 rounded-sm pr-1 pl-1.5 text-[0.8125rem] font-medium underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset"
+                      className="flex min-h-[44px] min-w-0 items-center gap-1 rounded-sm pr-1 pl-1.5 text-[13px] font-medium underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset"
                     >
                       <span className="cifra w-3 shrink-0 text-right text-xs text-muted-foreground">{i + 1}</span>
                       <span className="min-w-0 truncate">{apellido}</span>
                     </Link>
                   ) : (
-                    <span title={completo} className="flex min-h-[44px] min-w-0 items-center gap-1 pr-1 pl-1.5 text-[0.8125rem] font-medium">
+                    <span title={completo} className="flex min-h-[44px] min-w-0 items-center gap-1 pr-1 pl-1.5 text-[13px] font-medium">
                       <span className="cifra w-3 shrink-0 text-right text-xs text-muted-foreground">{i + 1}</span>
                       <span className="min-w-0 truncate">{apellido}</span>
                       <span className="sr-only">: {completo}</span>
@@ -160,7 +162,7 @@ export function MatrizPoule({ poule, enlace, filtro }: { poule: PouleDePrueba; e
                 {valores.map((v, k) => {
                   const fija = totalFijo(k, fila);
                   return (
-                    <td key={TOTALES[k].clave} className={cn(fija.className, 'cifra text-[0.8125rem]', v.clase)} style={fija.style}>
+                    <td key={TOTALES[k].clave} className={cn(fija.className, 'cifra text-[13px]', v.clase)} style={fija.style}>
                       {v.texto}
                     </td>
                   );
@@ -227,7 +229,7 @@ export function HojaPoule({
           size="sm"
           aria-label={`Abrir la matriz de ${poule.etiqueta}`}
           className={cn(
-            "h-8 min-h-8 gap-1.5 rounded-full px-3 text-xs after:absolute after:inset-0 after:content-['']",
+            "h-[32px] min-h-0! gap-1.5 rounded-full px-3 text-[13px] after:absolute after:inset-0 after:content-['']",
             className,
           )}
         >

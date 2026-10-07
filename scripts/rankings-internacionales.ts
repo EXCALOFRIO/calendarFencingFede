@@ -16,6 +16,8 @@ import {
   urlBusquedaFis,
   type DocumentoFis,
 } from '../src/lib/ingest/rankings-internacionales/fis';
+import { archivoBf, elegirListasBf, entradasSitemapBf, listaBf, urlsSitemapBf, type EntradaBf } from '../src/lib/ingest/rankings-internacionales/bf';
+import { CFF_PAGINA, CFF_PAUSA_MS, documentosCff, leerCsv, listasCff } from '../src/lib/ingest/rankings-internacionales/cff';
 import { COMBOS_HKFA, archivoHkfa, listaHkfa, urlHkfa } from '../src/lib/ingest/rankings-internacionales/hkfa';
 import { archivoMvsz, combosMvsz, listaMvsz, temporadasMvsz, urlFormularioMvsz, urlMvsz } from '../src/lib/ingest/rankings-internacionales/mvsz';
 import { sentenciasLista, type FilaSql } from '../src/lib/ingest/rankings-internacionales/sql';
@@ -28,10 +30,10 @@ import { componerChunk, proyeccion } from './indexado/sincronizar-d1';
 
 /**
  * Rankings internacionales: histórico FIE, EFC (europeo), FFE (Francia), FIS
- * (Italia), FAHK (Hong Kong) y MVSZ (Hungría), a
- * `sport_ranking_publication`/`sport_ranking_entry`.
+ * (Italia), FAHK (Hong Kong), MVSZ (Hungría), BF (Gran Bretaña) y CFF
+ * (Canadá), a `sport_ranking_publication`/`sport_ranking_entry`.
  *
- *   node node_modules/tsx/dist/cli.mjs scripts/rankings-internacionales.ts --descargar [--fuentes fie,efc,ffe,fis,hkfa,mvsz]
+ *   node node_modules/tsx/dist/cli.mjs scripts/rankings-internacionales.ts --descargar [--fuentes fie,efc,ffe,fis,hkfa,mvsz,bf,cff]
  *   ... --generar --base <copia .sqlite> --salida <dir> [--fuentes ...] [--todas-las-filas] [--dia YYYY-MM-DD]
  *   ... --comprobar --base <copia .sqlite> --salida <dir>
  *
@@ -45,10 +47,13 @@ import { componerChunk, proyeccion } from './indexado/sincronizar-d1';
  *   `published_total` conserva el tamaño de la lista.
  * --comprobar: aplica los ficheros sobre una base en memoria con el esquema y
  *   las guardas de la copia; comprueba recuentos, idempotencia y claves ajenas.
+ *
+ * `CACHE_RANKINGS_INT` cambia la carpeta de caché (por defecto
+ * `calendario-trabajo/cache-rankings-int`).
  */
 
 const TRABAJO = join(process.env.USERPROFILE ?? process.env.HOME ?? '.', 'calendario-datos', 'calendario-trabajo');
-const CACHE = join(TRABAJO, 'cache-rankings-int');
+const CACHE = process.env.CACHE_RANKINGS_INT ?? join(TRABAJO, 'cache-rankings-int');
 const PAUSA_MS = 500;
 const CONCURRENCIA = 2;
 const MAX_CUERPO_BYTES = 8 * 1024 * 1024;
@@ -294,6 +299,61 @@ function listasMvszCache(): ListaInternacional[] {
   return salida;
 }
 
+// ------------------------------------------------------------------- BF ---
+
+async function entradasBf(descargarSitemaps: boolean): Promise<EntradaBf[]> {
+  const entradas: EntradaBf[] = [];
+  for (const [i, url] of urlsSitemapBf().entries()) {
+    const ruta = join('bf', `post-sitemap-${i + 1}.xml`);
+    const b = descargarSitemaps ? await enCache(ruta, url) : leerCache(ruta);
+    if (b) entradas.push(...entradasSitemapBf(b.toString('utf8')));
+  }
+  return entradas;
+}
+
+async function descargarBf() {
+  const elegidas = elegirListasBf(await entradasBf(true), HOY);
+  console.log(`bf: ${elegidas.length} listas (última de cada temporada y la más reciente de la vigente)`);
+  await enParalelo(elegidas, async (e) => {
+    await enCache(join('bf', archivoBf(e)), e.url);
+  }, 'bf');
+}
+
+async function listasBfCache(): Promise<{ lista: ListaInternacional; cerrada: boolean }[]> {
+  const salida: { lista: ListaInternacional; cerrada: boolean }[] = [];
+  for (const e of elegirListasBf(await entradasBf(false), HOY)) {
+    const b = leerCache(join('bf', archivoBf(e)));
+    const l = b && listaBf(e, b.toString('utf8'));
+    if (l) salida.push({ lista: l, cerrada: e.cerrada });
+  }
+  return salida;
+}
+
+// ------------------------------------------------------------------ CFF ---
+
+async function descargarCff() {
+  // fencing.ca pide `Crawl-delay: 10`: una petición cada vez y diez segundos entre dos.
+  const pagina = (await enCache(join('cff', 'pagina.html'), CFF_PAGINA)).toString('utf8');
+  for (const d of documentosCff(pagina)) {
+    if (leerCache(join('cff', d.archivo))) continue;
+    await espera(CFF_PAUSA_MS);
+    await enCache(join('cff', d.archivo), d.url);
+  }
+}
+
+function listasCffCache(): ListaInternacional[] {
+  const pagina = leerCache(join('cff', 'pagina.html'));
+  if (!pagina) return [];
+  const salida: ListaInternacional[] = [];
+  for (const d of documentosCff(pagina.toString('utf8'))) {
+    const b = leerCache(join('cff', d.archivo));
+    if (!b || b.length === 0) continue;
+    const filas = d.archivo.endsWith('.csv') ? leerCsv(b.toString('utf8')) : (leerXlsx(b)[0]?.filas ?? []);
+    salida.push(...listasCff(d, filas, HOY).filter((l) => l.filas.length));
+  }
+  return salida;
+}
+
 // -------------------------------------------------------------- Generar ---
 
 type Candidata = { lista: ListaInternacional; cerrada: boolean };
@@ -310,6 +370,8 @@ async function candidatas(fuentes: Set<string>): Promise<Candidata[]> {
   }
   if (fuentes.has('hkfa')) for (const lista of await listasHkfaCache()) salida.push({ lista, cerrada: false });
   if (fuentes.has('mvsz')) for (const lista of listasMvszCache()) salida.push({ lista, cerrada: Number(lista.temporada.slice(5)) < TEMPORADA_FIE });
+  if (fuentes.has('bf')) salida.push(...(await listasBfCache()));
+  if (fuentes.has('cff')) for (const lista of listasCffCache()) salida.push({ lista, cerrada: Number(lista.temporada.slice(5)) < TEMPORADA_FIE });
   return salida;
 }
 
@@ -362,7 +424,7 @@ async function generar() {
   if (!arg('salida')) throw new Error('falta --salida <dir>');
   const salida = resolve(arg('salida'));
   const base = abrirBase(arg('base'));
-  const fuentes = new Set((arg('fuentes') || 'fie,efc,ffe,fis,hkfa,mvsz').split(','));
+  const fuentes = new Set((arg('fuentes') || 'fie,efc,ffe,fis,hkfa,mvsz,bf,cff').split(','));
   const todas = bandera('todas-las-filas');
   const indice = indicePersonas(personasFie(base));
   console.log(`Personas con id FIE: ${indice.porFieId.size}; claves de nombre: ${indice.porNombre.size}`);
@@ -437,7 +499,7 @@ async function generar() {
     cuerpos.set(grupo, partes);
   }
 
-  const orden = ['fie_historico', 'efc_ranking', 'ffe_classement', 'fis_ranking', 'hkfa_ranking', 'mvsz_ranglista'];
+  const orden = ['fie_historico', 'efc_ranking', 'ffe_classement', 'fis_ranking', 'hkfa_ranking', 'mvsz_ranglista', 'bf_ranking', 'cff_ranking'];
   const medido = statSync(resolve(arg('base'))).size;
   const ficheros: { archivo: string; fuente: string; temporada: string; listas: number; entradas: number; cargoBytes: number; bytes: number; sha256: string }[] = [];
   let n = 0;
@@ -564,6 +626,8 @@ const DESCARGAS: Record<string, () => Promise<void>> = {
   fis: descargarFis,
   hkfa: descargarHkfa,
   mvsz: descargarMvsz,
+  bf: descargarBf,
+  cff: descargarCff,
 };
 
 async function descargar() {

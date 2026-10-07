@@ -1,13 +1,11 @@
 'use client';
 
-import { ExternalLink, Loader2 } from 'lucide-react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import * as React from 'react';
+import { OpcionesFiltro } from '@/components/filtros/chips';
 import { BurbujaOlimpica } from '@/components/olimpica/burbuja-olimpica';
 import { FiltroOlimpico } from '@/components/olimpica/filtro-olimpico';
-import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { ChipFiltro, clasesChip } from '@/components/sistema/chip-filtro';
 import type {
   FilaFie,
   FormatoClasificacion,
@@ -18,9 +16,11 @@ import { nombreCasa } from '@/lib/nombres';
 import { ordenarSoloJjoo } from '@/lib/ranking/olimpica';
 import type { TablaFieCompleta } from '@/lib/ranking/tabla-fie-completa';
 import { cn, formatDateEs } from '@/lib/utils';
+import { claveTablaFie, escribirUrl, urlDeGrupo, useRanking } from './estado-ranking';
 import { FilaLinea } from './fila-linea';
 import { clave } from './formato';
-import { SelectoresGrupo } from './selectores-grupo';
+import { Procedencia, VerMas } from './piezas';
+import { BarraFiltrosRanking, type Quitable } from './selectores-grupo';
 
 /** Filas por tanda. Igual que en la tabla oficial. */
 const PASO = 50;
@@ -68,20 +68,45 @@ export function TablaRankingFie({
     category: RankingGroupKey['category'];
   }) => Promise<TablaFieCompleta | null>;
 }) {
-  const router = useRouter();
-  const ruta = usePathname();
-  const parametros = useSearchParams();
-  const [format, setFormat] = React.useState<FormatoClasificacion>(inicial.format);
-  const [grupo, setGrupo] = React.useState<RankingGroupKey>({
-    weapon: inicial.weapon,
-    gender: inicial.gender,
-    category: inicial.category,
+  const ranking = useRanking();
+  // Fuera del enrutador (pruebas, capturas sin servidor) no hay parámetros.
+  const parametros = useSearchParams() as URLSearchParams | null;
+
+  /**
+   * Con qué abre: lo que se recuerda de la otra tabla (mismo grupo, mismo
+   * texto en el buscador) o, si no, lo que trae el servidor. Si lo recordado
+   * no es la tabla que vino pintada, se pide al montar.
+   */
+  const [arranque] = React.useState(() => {
+    const memoria = ranking?.memoria.current;
+    const format = memoria?.formato ?? inicial.format;
+    const disponibles = grupos.filter((g) => g.format === format);
+    const deseado = memoria?.grupo;
+    const encontrado = deseado
+      ? (disponibles.find((g) => clave(g) === clave(deseado)) ??
+        disponibles.find((g) => g.weapon === deseado.weapon && g.gender === deseado.gender) ??
+        disponibles.find((g) => g.weapon === deseado.weapon))
+      : undefined;
+    const grupo: RankingGroupKey = encontrado
+      ? { weapon: encontrado.weapon, gender: encontrado.gender, category: encontrado.category }
+      : { weapon: inicial.weapon, gender: inicial.gender, category: inicial.category };
+    const formato = encontrado ? format : inicial.format;
+    const esLaPintada = primeraTabla !== null && formato === inicial.format && clave(grupo) === clave(inicial);
+    const enCache = ranking?.tablasFie.current.get(claveTablaFie(formato, grupo));
+    return {
+      formato,
+      grupo,
+      tabla: esLaPintada ? primeraTabla : (enCache ?? null),
+      pedir: !esLaPintada && enCache === undefined,
+    };
   });
-  const [tabla, setTabla] = React.useState<TablaFieCompleta | null>(primeraTabla);
-  const [cargando, setCargando] = React.useState(false);
-  const [soloEspana, setSoloEspana] = React.useState(false);
-  const [jjooPedido, setJjooPedido] = React.useState(() => parametros.get('jjoo') === '1');
-  const [busqueda, setBusqueda] = React.useState('');
+  const [format, setFormat] = React.useState<FormatoClasificacion>(arranque.formato);
+  const [grupo, setGrupo] = React.useState<RankingGroupKey>(arranque.grupo);
+  const [tabla, setTabla] = React.useState<TablaFieCompleta | null>(arranque.tabla);
+  const [cargando, setCargando] = React.useState(arranque.pedir);
+  const [soloEspana, setSoloEspana] = React.useState(() => parametros?.get('espana') === '1');
+  const [jjooPedido, setJjooPedido] = React.useState(() => parametros?.get('jjoo') === '1');
+  const [busqueda, setBusqueda] = React.useState(() => ranking?.memoria.current.q ?? parametros?.get('q') ?? '');
   const [tope, setTope] = React.useState(PASO);
 
   const gruposDelFormato = React.useMemo(
@@ -89,40 +114,69 @@ export function TablaRankingFie({
     [grupos, format],
   );
 
+  const recordar = (cambios: { grupo?: RankingGroupKey; formato?: FormatoClasificacion; q?: string }) => {
+    if (ranking) ranking.memoria.current = { ...ranking.memoria.current, ...cambios };
+  };
+
   /**
    * Pide un grupo y lo pinta. Si llegan dos respuestas cruzadas —se toca arma
    * dos veces seguidas— gana la última que se pidió, no la última que llega.
+   * Lo ya pedido en esta visita no se vuelve a pedir.
    */
   const peticion = React.useRef(0);
+  const cache = ranking?.tablasFie;
   const pedir = React.useCallback(
     async (f: FormatoClasificacion, g: RankingGroupKey) => {
       const mia = ++peticion.current;
+      const k = claveTablaFie(f, g);
+      const guardada = cache?.current.get(k);
+      if (guardada !== undefined) {
+        setTabla(guardada);
+        setTope(PASO);
+        setCargando(false);
+        return;
+      }
       setCargando(true);
       try {
         const r = await cargar({ format: f, ...g });
+        cache?.current.set(k, r);
         if (peticion.current === mia) {
           setTabla(r);
           setTope(PASO);
-          setBusqueda('');
         }
       } finally {
         if (peticion.current === mia) setCargando(false);
       }
     },
-    [cargar],
+    [cargar, cache],
   );
+
+  React.useEffect(() => {
+    if (primeraTabla) cache?.current.set(claveTablaFie(inicial.format, inicial), primeraTabla);
+    if (arranque.pedir) void pedir(arranque.formato, arranque.grupo);
+    // Sólo al montar: lo que se pide después lo piden `elegir` y `cambiarFormato`.
+  }, []);
+
+  const irA = (f: FormatoClasificacion, destino: RankingGroupKey) => {
+    const siguiente = { weapon: destino.weapon, gender: destino.gender, category: destino.category };
+    setFormat(f);
+    setGrupo(siguiente);
+    setBusqueda('');
+    recordar({ grupo: siguiente, formato: f, q: '' });
+    escribirUrl({ ...urlDeGrupo(siguiente), formato: f === 'EQUIPOS' ? 'equipos' : null, q: null });
+    void pedir(f, siguiente);
+  };
 
   /** Al cambiar de formato se conserva el grupo si existe allí. */
   const cambiarFormato = (f: FormatoClasificacion) => {
+    if (f === format) return;
     const disponibles = grupos.filter((g) => g.format === f);
     const destino =
       disponibles.find((g) => clave(g) === clave(grupo)) ??
+      disponibles.find((g) => g.weapon === grupo.weapon && g.gender === grupo.gender) ??
       disponibles.find((g) => g.weapon === grupo.weapon) ??
       disponibles[0];
-    if (!destino) return;
-    setFormat(f);
-    setGrupo({ weapon: destino.weapon, gender: destino.gender, category: destino.category });
-    void pedir(f, destino);
+    if (destino) irA(f, destino);
   };
 
   const elegir = (parcial: Partial<RankingGroupKey>) => {
@@ -136,10 +190,13 @@ export function TablaRankingFie({
             (parcial.gender ? g.gender === parcial.gender : true) &&
             (parcial.category ? g.category === parcial.category : true),
         ) ?? gruposDelFormato[0]);
-    if (!destino) return;
-    const siguiente = { weapon: destino.weapon, gender: destino.gender, category: destino.category };
-    setGrupo(siguiente);
-    void pedir(format, siguiente);
+    if (destino) irA(format, destino);
+  };
+
+  const buscar = (q: string) => {
+    setBusqueda(q);
+    recordar({ q });
+    escribirUrl({ q });
   };
 
   const porEquipos = format === 'EQUIPOS';
@@ -149,11 +206,11 @@ export function TablaRankingFie({
 
   const cambiarJjoo = (activo: boolean) => {
     setJjooPedido(activo);
-    const siguiente = new URLSearchParams(parametros.toString());
-    if (activo) siguiente.set('jjoo', '1');
-    else siguiente.delete('jjoo');
-    const consulta = siguiente.toString();
-    router.replace(consulta ? `${ruta}?${consulta}` : ruta, { scroll: false });
+    escribirUrl({ jjoo: activo ? '1' : null });
+  };
+  const cambiarEspana = (activo: boolean) => {
+    setSoloEspana(activo);
+    escribirUrl({ espana: activo ? '1' : null });
   };
 
   const anotacionDe = React.useCallback(
@@ -189,79 +246,82 @@ export function TablaRankingFie({
   const quedan = filtradas.length - visibles.length;
   const conBandera = !soloEspana;
 
+  /*
+    «Solo España» y «Solo JJOO» como chips que se encienden y se apagan, igual
+    que «Solo España» en Buscar. Con la cifra de lo que queda al lado: «45»
+    españoles de 907 dice si merece la pena tocarlo.
+  */
   const interruptores = (
     <>
-      {/* Interruptor y no pastilla: «España» no es una categoría más. */}
-      <label className="flex min-h-[44px] cursor-pointer items-center gap-2.5 text-sm">
-        <Switch checked={soloEspana} onCheckedChange={setSoloEspana} aria-label="Enseñar solo España" />
-        <span className={cn(soloEspana ? 'text-foreground' : 'text-muted-foreground')}>
-          Solo España
-          {tabla ? (
-            <span className="ml-1.5 text-muted-foreground tabular-nums">
-              ({tabla.espanoles} de {tabla.rows.length})
-            </span>
-          ) : null}
-        </span>
-      </label>
-      {olimpica ? <FiltroOlimpico activo={soloJjoo} onCambio={cambiarJjoo} cuantos={conJjoo.length} /> : null}
-      {cargando ? (
-        <span className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" aria-hidden />
-          Cargando la clasificación…
-        </span>
+      <ChipFiltro
+        marcado={soloEspana}
+        onClick={() => cambiarEspana(!soloEspana)}
+        contador={tabla ? tabla.espanoles : undefined}
+        aria-label={`Solo España${tabla ? `: ${tabla.espanoles} de ${tabla.rows.length}` : ''}`}
+      >
+        Solo España
+      </ChipFiltro>
+      {olimpica ? (
+        <FiltroOlimpico
+          activo={soloJjoo}
+          onCambio={cambiarJjoo}
+          cuantos={conJjoo.length}
+          className={cn(clasesChip(soloJjoo), 'border-0 shadow-none', soloJjoo && '[&_span.text-xs]:text-background')}
+        />
       ) : null}
     </>
   );
 
-  return (
-    <div className="ranking flex min-w-0 flex-col gap-4">
-      <ToggleGroup
-        type="single"
-        variant="outline"
-        value={format}
-        onValueChange={(v) => v && cambiarFormato(v as FormatoClasificacion)}
-        aria-label="Qué clasificación internacional"
-        spacing={1}
-        className="w-full sm:w-auto"
-      >
-        <ToggleGroupItem value="INDIVIDUAL" className="h-11 flex-1 sm:flex-none">
-          Individual
-        </ToggleGroupItem>
-        <ToggleGroupItem value="EQUIPOS" className="h-11 flex-1 sm:flex-none">
-          Selecciones
-        </ToggleGroupItem>
-      </ToggleGroup>
+  const quitables: Quitable[] = porEquipos
+    ? [{ clave: 'formato', texto: 'Selecciones', etiqueta: 'Selecciones', onQuitar: () => cambiarFormato('INDIVIDUAL') }]
+    : [];
+  const activos = (porEquipos ? 1 : 0) + (soloEspana ? 1 : 0) + (soloJjoo ? 1 : 0);
+  const restablecer = activos > 0 ? () => {
+    if (soloEspana) cambiarEspana(false);
+    if (jjooPedido) cambiarJjoo(false);
+    if (porEquipos) cambiarFormato('INDIVIDUAL');
+  } : null;
 
-      <SelectoresGrupo
+  return (
+    <div className="ranking flex min-w-0 flex-col gap-3">
+      <BarraFiltrosRanking
         grupos={gruposDelFormato}
         grupo={grupo}
         onElegir={elegir}
         busqueda={busqueda}
-        onBuscar={setBusqueda}
+        onBuscar={buscar}
         etiquetaBusqueda={porEquipos ? 'Buscar un país' : 'Buscar un tirador'}
-        despues={interruptores}
+        chips={interruptores}
+        quitables={quitables}
+        activos={activos}
+        onRestablecer={restablecer}
+        resultados={`Ver ${filtradas.length} ${porEquipos ? (filtradas.length === 1 ? 'selección' : 'selecciones') : filtradas.length === 1 ? 'tirador' : 'tiradores'}`}
+        antesEnHoja={
+          <OpcionesFiltro
+            titulo="Clasificación"
+            valor={format}
+            opciones={[
+              { valor: 'INDIVIDUAL', etiqueta: 'Individual' },
+              { valor: 'EQUIPOS', etiqueta: 'Selecciones' },
+            ]}
+            onCambio={(v) => cambiarFormato(v as FormatoClasificacion)}
+          />
+        }
       />
 
       {tabla ? (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-filete-alto pt-2 text-xs text-muted-foreground">
-          <span>{porEquipos ? 'Ranking internacional de selecciones · FIE' : 'Ranking internacional individual · FIE'}</span>
-          <span>Temporada {tabla.season}</span>
-          {tabla.actualizadoEl ? <span>Leído {formatDateEs(tabla.actualizadoEl)}</span> : null}
-          {tabla.sourceUrl ? (
-            <Button variant="link" size="sm" className="px-0 text-xs text-primary-text" asChild>
-              <a href={tabla.sourceUrl} target="_blank" rel="noreferrer">
-                Ver la fuente
-                <ExternalLink className="size-3 shrink-0" aria-hidden />
-              </a>
-            </Button>
-          ) : null}
-        </div>
+        <Procedencia
+          temporada={`Temporada ${tabla.season}`}
+          leida={tabla.actualizadoEl ? formatDateEs(tabla.actualizadoEl) : null}
+          url={tabla.sourceUrl}
+        />
       ) : null}
 
       {visibles.length > 0 ? (
         <ol
           aria-label={porEquipos ? 'Ranking internacional de selecciones' : 'Ranking internacional individual'}
-          className="grid w-full min-w-0 max-w-3xl gap-px overflow-hidden rounded-xl border bg-border"
+          aria-busy={cargando || undefined}
+          className={cn('grid w-full min-w-0 max-w-3xl gap-px overflow-hidden rounded-xl border bg-border transition-opacity duration-150', cargando && 'opacity-60')}
         >
           {visibles.map((fila) => {
             const mio = fila.athleteId !== null && mios.includes(fila.athleteId);
@@ -291,17 +351,18 @@ export function TablaRankingFie({
           {busqueda
             ? 'Ningún nombre coincide. Prueba otro nombre o país.'
             : soloJjoo
-              ? 'Nadie de esta lista entra hoy ni está cerca de entrar en los Juegos.'
+              ? 'Nadie entra hoy ni está cerca de entrar en los Juegos.'
               : soloEspana
-                ? 'España no tiene a nadie clasificado en esta prueba. Apaga «Solo España» para ver el resto.'
-                : 'La FIE no publica clasificación de esta prueba.'}
+                ? 'Nadie de España en esta prueba.'
+                : 'Sin clasificación internacional en esta prueba.'}
         </p>
       ) : null}
 
       {quedan > 0 ? (
-        <Button variant="outline" className="h-11 w-full" onClick={() => setTope(tope + PASO)}>
-          Ver {Math.min(quedan, PASO)} más de {filtradas.length}
-        </Button>
+        <VerMas onClick={() => setTope(tope + PASO)}>
+          Ver {Math.min(quedan, PASO)} más
+          <span className="cifra text-[12px] text-muted-foreground">de {filtradas.length}</span>
+        </VerMas>
       ) : null}
     </div>
   );

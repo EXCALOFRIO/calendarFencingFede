@@ -343,25 +343,21 @@ export type ResumenMundial = {
 
 /**
  * Puestos de la persona en `fie_clasificacion` de su última temporada. Entra
- * por la clave (temporada, arma, género, categoría, formato, fie_id) grupo a
- * grupo: la tabla no tiene índice por `fie_id` y recorrer sus ~11.500 filas
- * costaba 90 ms.
+ * por `fie_clasificacion_fie_idx (fie_id, season)` (migración 0015): unas
+ * decenas de filas en lugar de las ~11.700 que leía el recorrido grupo a grupo
+ * de la temporada entera. Sin el índice sigue siendo correcta, sólo más cara.
  */
 export function sqlClasificacionFieDePersonas(ids: readonly string[]) {
   return sql`
     WITH ids AS MATERIALIZED (
       SELECT DISTINCT CAST(x.value AS INTEGER) AS fie FROM sport_external_id x
       WHERE x.scheme = 'fie_addr_id' AND x.link_status = 'CONFIRMADO' AND x.person_id IN (${listaUuid(ids)})
-    ), g AS MATERIALIZED (
-      SELECT DISTINCT season, weapon, gender, category_raw FROM fie_clasificacion
-      WHERE season = (SELECT max(season) FROM fie_clasificacion)
     )
     SELECT f.weapon AS arma, f.gender AS genero, f.category AS categoria, f.position AS puesto,
            CAST(f.season AS TEXT) AS temporada, f.fie_id AS "fieId"
-    FROM g CROSS JOIN ids CROSS JOIN fie_clasificacion f
-      ON f.season = g.season AND f.weapon = g.weapon AND f.gender = g.gender
-     AND f.category_raw = g.category_raw AND f.format = 'INDIVIDUAL' AND f.fie_id = ids.fie
-    WHERE f.position IS NOT NULL`;
+    FROM ids CROSS JOIN fie_clasificacion f
+      ON f.fie_id = ids.fie AND f.season = (SELECT max(season) FROM fie_clasificacion)
+    WHERE f.format = 'INDIVIDUAL' AND f.position IS NOT NULL`;
 }
 
 export function sqlMejoresMundiales(ids: readonly string[]) {

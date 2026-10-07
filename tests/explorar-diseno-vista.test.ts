@@ -74,7 +74,7 @@ describe('Explorar: jerarquía y explicación progresiva', () => {
     expect(salida).toMatch(/<details\b[^>]*>/);
     expect(salida).not.toMatch(/<details[^>]*\bopen\b/);
     expect(salida).toContain('Una prueba, un resultado.');
-    expect(salida).toMatch(/<summary[^>]*min-h-11[^>]*focus-visible:ring/);
+    expect(salida).toMatch(/<summary[^>]*min-h-\[44px\][^>]*focus-visible:ring/);
   });
 
   it('las celdas conservan etiquetas visibles en escritorio y móvil', () => {
@@ -109,7 +109,8 @@ describe('Explorar: jerarquía y explicación progresiva', () => {
     expect(salida).toContain('24 años');
     expect(salida).toContain('Zurda');
     expect(salida).toContain('171 cm');
-    expect(salida).toContain('SAMA-M');
+    // El club no se enseña: el de una prueba suelta no es el de la persona.
+    expect(salida).not.toContain('SAMA-M');
     expect(salida).not.toMatch(/Altura|Mano|Edad/);
   });
 
@@ -146,7 +147,7 @@ describe('Explorar: jerarquía y explicación progresiva', () => {
 
   it('enlaces de fuente conservan 44 px también en escritorio y rechazan esquemas inseguros', () => {
     const salida = html(React.createElement(EnlaceFuente, { url: 'https://example.test/lista', etiqueta: 'Fuente' }));
-    expect(salida).toContain('min-h-11');
+    expect(salida).toContain('min-h-[44px]');
     expect(salida).not.toContain('md:min-h-0');
     expect(salida).toContain('rel="noopener noreferrer"');
     expect(html(React.createElement(EnlaceFuente, { url: 'javascript:alert(1)', etiqueta: 'Fuente' }))).toBe('');
@@ -160,7 +161,8 @@ describe('Explorar: jerarquía y explicación progresiva', () => {
       },
     } as DatosCaraACara;
     const salida = html(React.createElement(CabeceraCaraACara, { datos, criterios: CRITERIOS_CARA_A_CARA_VACIOS }));
-    expect(salida).toMatch(/<h1[^>]*>Cara a cara<\/h1>/);
+    // «Cara a cara» es el título de la cabecera compacta; aquí sólo van los nombres.
+    expect(salida).not.toContain('<h1');
     expect(salida).toContain(ficha.nombre);
     expect(salida).toContain('Invertir perspectiva');
     expect(salida).toContain('aria-label="Verlo desde Marta Ruiz"');
@@ -188,7 +190,7 @@ describe('Explorar: jerarquía y explicación progresiva', () => {
     expect(salida).not.toContain('bg-accent/40');
   });
 
-  it('el club queda bajo el nombre, y un puesto sin número no pasa a ser cero', () => {
+  it('sin club bajo el nombre, y un puesto sin número no pasa a ser cero', () => {
     const salida = html(React.createElement(ClasificacionDePrueba, {
       edicion,
       prueba,
@@ -210,7 +212,7 @@ describe('Explorar: jerarquía y explicación progresiva', () => {
       },
     }));
     expect(salida).toContain('>Abandono<');
-    expect(salida).toContain('>Sala de Armas<');
+    expect(salida).not.toContain('Sala de Armas');
     expect(salida).toContain('Sin puesto numérico');
     expect(salida).not.toContain('<a ');
     expect(salida).not.toContain('>0<');

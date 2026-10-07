@@ -207,7 +207,7 @@ describe('catálogo: URL y pantalla de servidor', () => {
     expect(html).toContain(`/explorar/ediciones/${UUID_A}`);
     expect(html).toContain('catalogo=%2Fexplorar%2Fediciones%3Fq%3DC%25C3%25B3rdoba');
     expect(html).toContain('cursor=siguiente');
-    expect(html).toContain('Inicio de la búsqueda');
+    expect(html).toContain('>Primeras<');
     expect(html).not.toContain('name="cursor"');
     expect(html).not.toContain('cuenta@example.test');
     expect(html).not.toContain('token-privado');
@@ -235,13 +235,13 @@ describe('catálogo: URL y pantalla de servidor', () => {
     const vacio = renderToStaticMarkup(React.createElement(CatalogoEdiciones, {
       criterios: VACIOS, vista: { estado: 'ok', total: 0, pruebas: 0, ediciones: [], siguiente: null },
     }));
-    expect(vacio).toContain('No hay ediciones importadas');
+    expect(vacio).toContain('Sin ediciones con estos filtros');
     for (const estado of ['error', 'no_disponible', 'entrada_invalida', 'cursor_invalido'] as const) {
       const html = renderToStaticMarkup(React.createElement(CatalogoEdiciones, {
         criterios: { ...VACIOS, q: '<script>peligro</script>' }, vista: { estado },
       }));
       expect(html).toContain('role="alert"');
-      expect(html).not.toContain('No hay ediciones importadas');
+      expect(html).not.toContain('Sin ediciones con estos filtros');
       expect(html).not.toContain('<script>');
       expect(html).toContain('&lt;script&gt;');
     }

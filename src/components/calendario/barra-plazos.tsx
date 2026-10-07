@@ -1,4 +1,5 @@
 import { FileText } from 'lucide-react';
+import { AREA_TACTIL } from '@/components/sistema/tactil';
 import type { ComputedDeadline, DeadlineStatus } from '@/lib/deadlines';
 import { cn, formatEur } from '@/lib/utils';
 
@@ -70,9 +71,9 @@ type Tramo = {
 
 const PINTA: Record<'pasado' | 'actual' | 'futuro', { barra: string; texto: string }> = {
   // Lo ya vencido se apaga: está ahí para situarte, no para leerlo.
-  pasado: { barra: 'bg-muted-foreground/25', texto: 'text-muted-foreground' },
+  pasado: { barra: 'bg-[color-mix(in_oklab,var(--muted-foreground)_25%,var(--card))]', texto: 'text-muted-foreground' },
   actual: { barra: 'bg-current', texto: '' },
-  futuro: { barra: 'bg-muted-foreground/15', texto: 'text-muted-foreground' },
+  futuro: { barra: 'bg-[color-mix(in_oklab,var(--muted-foreground)_15%,var(--card))]', texto: 'text-muted-foreground' },
 };
 
 /** El color del tramo encendido sale del semáforo, que ya lo decide una vez. */
@@ -192,7 +193,7 @@ export function BarraPlazos({ plazos, estado, conEstado = true }: Props) {
               <div
                 data-plazo="importe"
                 className={cn(
-                  'break-words text-[0.68rem] leading-tight font-medium tabular-nums sm:text-xs',
+                  'break-words text-[12px] leading-[16px] font-medium tabular-nums',
                   t.estado === 'pasado'
                     ? 'text-muted-foreground'
                     : t.estado === 'actual'
@@ -234,7 +235,7 @@ export function BarraPlazos({ plazos, estado, conEstado = true }: Props) {
                   */
                   <span
                     aria-hidden
-                    className="absolute inset-y-0 w-[3px] rounded-full bg-background/90"
+                    className="absolute inset-y-0 w-[3px] rounded-full bg-background"
                     style={{
                       left: `clamp(0px, calc(${(t.avance * 100).toFixed(1)}% - 1.5px), calc(100% - 3px))`,
                     }}
@@ -251,7 +252,7 @@ export function BarraPlazos({ plazos, estado, conEstado = true }: Props) {
               */}
               <div
                 className={cn(
-                  'flex min-w-0 flex-col items-end pl-1.5 text-right text-[0.68rem] leading-tight tabular-nums sm:text-xs',
+                  'flex min-w-0 flex-col items-end pl-1.5 text-right text-[12px] leading-[16px] tabular-nums',
                   t.estado === 'pasado'
                     ? 'text-muted-foreground'
                     : 'text-muted-foreground',
@@ -308,7 +309,7 @@ export function BarraPlazos({ plazos, estado, conEstado = true }: Props) {
         <p
           className={cn(
             'text-xs text-muted-foreground',
-            grita && 'text-sm font-medium text-current sm:text-xs',
+            grita && 'text-[13px] font-medium text-current',
           )}
         >
           {estado.label}
@@ -326,7 +327,10 @@ export function BarraPlazos({ plazos, estado, conEstado = true }: Props) {
           target="_blank"
           rel="noreferrer"
           title={plazos[0].sourceDocument ?? undefined}
-          className="-ml-3 inline-flex size-11 items-center justify-center self-start rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className={cn(
+            '-ml-[6px] inline-flex size-[32px] items-center justify-center self-start rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+            AREA_TACTIL,
+          )}
         >
           <FileText className="size-4" aria-hidden />
           <span className="sr-only">{plazos[0].sourceDocument ?? 'Circular'}</span>

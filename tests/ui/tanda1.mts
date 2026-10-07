@@ -12,7 +12,7 @@
  * dentro. Salida en `capturas/tanda1/`, a 320, 393 y 1440 px. Falla si la
  * página desborda en horizontal en móvil.
  */
-import { mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
@@ -167,10 +167,22 @@ const paginas: { nombre: string; html: string; bajar?: string }[] = [
 ];
 
 const html = new Map(paginas.map((p) => [`/${p.nombre}`, p.html]));
+const PUBLICO = path.join(RAIZ, 'public');
 const servidor = createServer((pet, res) => {
-  const contenido = html.get(decodeURIComponent(new URL(pet.url ?? '/', 'http://x').pathname));
-  if (contenido) res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(contenido);
-  else res.writeHead(404).end();
+  const ruta = decodeURIComponent(new URL(pet.url ?? '/', 'http://x').pathname);
+  const contenido = html.get(ruta);
+  if (contenido) {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(contenido);
+    return;
+  }
+  // Las banderas y los iconos son ficheros estáticos de `public/`, como en producción.
+  const fichero = path.join(PUBLICO, path.normalize(ruta).replace(/^([/\\])+/, ''));
+  if (fichero.startsWith(PUBLICO) && existsSync(fichero) && statSync(fichero).isFile()) {
+    const tipo = fichero.endsWith('.png') ? 'image/png' : fichero.endsWith('.svg') ? 'image/svg+xml' : 'application/octet-stream';
+    res.writeHead(200, { 'content-type': tipo }).end(readFileSync(fichero));
+  } else {
+    res.writeHead(404).end();
+  }
 });
 await new Promise<void>((ok) => servidor.listen(0, '127.0.0.1', ok));
 const puerto = (servidor.address() as AddressInfo).port;

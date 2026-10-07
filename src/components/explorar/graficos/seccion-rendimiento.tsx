@@ -6,6 +6,7 @@ import type {
 } from '@/lib/sport/explorar/rendimiento';
 import { cn } from '@/lib/utils';
 import { Bloque, type Nivel } from '../piezas';
+import { TACTIL } from '../perfil/tactil';
 import { BarrasApiladas } from './barras-apiladas';
 import { BarrasTipo, type FilaDesglose } from './barras-tipo';
 import { COLOR, COLOR_AMBITO, conSigno, decimal, MEDALLAS, pct, top } from './comun';
@@ -267,7 +268,8 @@ function Panel({ v, ambito, nivel }: { v: VistaRendimiento; ambito: AmbitoRendim
         <Subtitulo nivel={nivel}>Por tipo</Subtitulo>
         <BarrasTipo filas={tipos} titulo="Rendimiento por tipo de competición" />
       </section>
-      {categorias.length > 1 ? (
+      {/* Con una sola categoría también sale: es la lectura que se busca (mejor puesto, poule y directa). */}
+      {categorias.length > 0 ? (
         <section className="flex min-w-0 flex-col gap-2">
           <Subtitulo nivel={nivel}>Por categoría</Subtitulo>
           <BarrasTipo filas={categorias} titulo="Rendimiento por categoría" />
@@ -318,7 +320,8 @@ export function SeccionRendimiento({
                   key={o.clave}
                   className={cn(
                     // Con cifras de tres dígitos «Internacional» no cabe en un tercio de 393 px: en móvil la cifra va debajo en los tres.
-                    'relative inline-flex min-h-11 min-w-0 cursor-pointer flex-col items-center justify-center rounded-full px-2 py-1 text-center text-[0.8125rem] leading-tight text-muted-foreground sm:flex-row sm:gap-x-1.5 sm:px-4 sm:text-sm',
+                    TACTIL,
+                    'inline-flex min-h-[32px] min-w-0 cursor-pointer flex-row items-center justify-center gap-x-1 rounded-full px-1.5 py-0.5 text-center text-xs leading-tight text-muted-foreground max-[359px]:flex-col sm:gap-x-1.5 sm:px-3 sm:text-[0.8125rem]',
                     'hover:text-foreground has-[:checked]:bg-marcado has-[:checked]:font-semibold has-[:checked]:text-primary-text',
                     'has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/50',
                   )}
@@ -331,7 +334,7 @@ export function SeccionRendimiento({
                     className={cn(RADIO[o.clave], 'sr-only')}
                   />
                   <span>{o.rotulo}</span>
-                  <span className="cifra text-base leading-none">{vistas[o.clave].total.competiciones}</span>
+                  <span className="cifra text-sm leading-none">{vistas[o.clave].total.competiciones}</span>
                 </label>
               ))}
             </div>

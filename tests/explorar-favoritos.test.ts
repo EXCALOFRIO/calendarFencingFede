@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import type { SQL } from 'drizzle-orm';
+import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core';
 import {
   CLAVES_PRIVADAS,
   UUID_A,
@@ -13,6 +15,7 @@ import {
   consultarFavorito,
   guardarFavorito,
   listarFavoritos,
+  MAX_FAVORITOS,
   quitarFavorito,
 } from '@/lib/sport/explorar/favoritos';
 
@@ -88,7 +91,7 @@ describe('favoritos: guardar', () => {
       expect(s.text).not.toMatch(/user_profile|athlete|notif|email|sport_person\s+SET|sport_result/i);
     }
     expect(w[0].text).toMatch(/ON CONFLICT .*DO UPDATE .*created_at < EXCLUDED\.created_at/is);
-    expect(w[0].params).toEqual([perfil().profileId, UUID_A, perfil().profileId, JSON.stringify([UUID_A])]);
+    expect(w[0].params).toEqual([perfil().profileId, UUID_A, perfil().profileId, JSON.stringify([UUID_A]), perfil().profileId, MAX_FAVORITOS]);
     expect(favoritos.has(`${perfil().profileId}|${UUID_A}`)).toBe(true);
   });
 
@@ -113,13 +116,50 @@ describe('favoritos: guardar', () => {
     const r = await guardarFavorito(ctx, { personaId: UUID_A });
     expect(r).toEqual({ estado: 'ok', personaId: UUID_B, favorito: true });
     const insert = sentencias.find((s) => /^\s*INSERT/i.test(s.text));
-    expect(insert?.params).toEqual([perfil().profileId, UUID_B, perfil().profileId, JSON.stringify([UUID_B, UUID_A])]);
+    expect(insert?.params).toEqual([perfil().profileId, UUID_B, perfil().profileId, JSON.stringify([UUID_B, UUID_A]), perfil().profileId, MAX_FAVORITOS]);
     // Consolida una relación previa con el miembro fundido sin tocar otras cuentas.
     const borrado = sentencias.find((s) => /^\s*DELETE/i.test(s.text));
     expect(borrado?.text).toMatch(/profile_id = \?/);
     expect(borrado?.params).toContain(perfil().profileId);
     expect(JSON.parse(String(borrado?.params[1]))).toEqual([UUID_A]);
     expect(lotes).toEqual([2]);
+  });
+
+  it(`con ${MAX_FAVORITOS} favoritos no guarda uno más, pero sí vuelve a guardar uno que ya está`, async () => {
+    const llenos = Array.from({ length: MAX_FAVORITOS }, (_, n) =>
+      `00000000-0000-4000-8000-${String(n + 1).padStart(12, '0')}`);
+    const { ctx, sentencias, de } = crearContexto({
+      filas: llenos.map((id, n) => [perfil().profileId, id, 1_700_000_000_000 + n] as [string, string, number]),
+    });
+    expect(await guardarFavorito(ctx, { personaId: UUID_A })).toEqual({ estado: 'limite_alcanzado' });
+    expect(escrituras(sentencias)).toHaveLength(0);
+    expect(de(perfil().profileId)).toHaveLength(MAX_FAVORITOS);
+    expect(await guardarFavorito(ctx, { personaId: llenos[0] }))
+      .toEqual({ estado: 'ok', personaId: llenos[0], favorito: true });
+    expect(de(perfil().profileId)).toHaveLength(MAX_FAVORITOS);
+  });
+
+  it('el tope también está dentro del INSERT: si otra alta llena la lista entre medias, no escribe', async () => {
+    const llenos = Array.from({ length: MAX_FAVORITOS - 1 }, (_, n) =>
+      `00000000-0000-4000-8000-${String(n + 1).padStart(12, '0')}`);
+    const { ctx, de, ...local } = crearContexto({
+      personas: [{ id: UUID_A }, { id: UUID_B }],
+      filas: llenos.map((id, n) => [perfil().profileId, id, 1_700_000_000_000 + n] as [string, string, number]),
+    });
+    const ejecutar = ctx.db.execute;
+    const dialecto = new SQLiteSyncDialect();
+    ctx.db.execute = (async (query: SQL) => {
+      const resultado = await ejecutar(query);
+      // Justo después de la comprobación previa, y antes del INSERT, entra otra alta.
+      if (/AS total/.test(dialecto.sqlToQuery(query).sql)) {
+        local.sqlite.prepare('INSERT INTO sport_favorite(profile_id,person_id,created_at) VALUES (?,?,?)')
+          .run(perfil().profileId, UUID_B, 1);
+      }
+      return resultado;
+    }) as typeof ctx.db.execute;
+    await guardarFavorito(ctx, { personaId: UUID_A });
+    expect(de(perfil().profileId)).toHaveLength(MAX_FAVORITOS);
+    expect(de(perfil().profileId).map(([k]) => k)).not.toContain(`${perfil().profileId}|${UUID_A}`);
   });
 
   it('persona inexistente: no_encontrada y ninguna escritura', async () => {

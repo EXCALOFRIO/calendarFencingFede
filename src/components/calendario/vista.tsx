@@ -6,14 +6,18 @@ import {
   ChevronRight,
   CircleCheck,
   Flag,
+  Search,
   SlidersHorizontal,
   X,
 } from 'lucide-react';
 import Link from 'next/link';
 import * as React from 'react';
 import { toast } from 'sonner';
+import { Boton, BotonIcono } from '@/components/sistema/boton';
+import { ChipFiltro, FilaChips } from '@/components/sistema/chip-filtro';
+import { HojaInferior } from '@/components/sistema/hoja-inferior';
+import { TransicionContenido } from '@/components/sistema/transicion';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
 import {
   Command,
   CommandEmpty,
@@ -29,23 +33,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from '@/components/ui/empty';
-import { FieldGroup, FieldLegend, FieldSet } from '@/components/ui/field';
 import { Item, ItemContent, ItemMedia } from '@/components/ui/item';
-import { Kbd } from '@/components/ui/kbd';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTrigger,
-  SheetTitle,
-} from '@/components/ui/sheet';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { COLOR_ORGANISMO } from '@/lib/colores';
 import type { EventView, Weapon } from '@/lib/queries/calendar';
 import {
@@ -87,6 +75,8 @@ import {
 } from '@/lib/queries/calendario-pasado-tramo';
 import { CabeceraFicha } from './cabecera-ficha';
 import { FichaEvento } from './ficha-evento';
+import { PantallaFicha, useEntradaDeHistorial } from './pantalla-ficha';
+import { fichaRecibida, leerFicha, precargarFicha } from './ficha/precarga';
 import { LoQueViene, diasHasta, plazoDelEvento } from './lo-que-viene';
 import { ResultadosPasados } from './pasado/resultados-pasados';
 import { ColumnaMes, FeedMovil, type EstadoDelMes } from './timeline';
@@ -255,8 +245,11 @@ export function VistaCalendario({
     competitionId: string,
     athleteId: string,
   ) => Promise<{ ok: true; message: string } | { ok: false; error: string }>;
-  /** Quién va a un torneo. Se pide al abrir la ficha, no antes. */
-  cargarInscritos: (eventId: string) => Promise<QuienVa>;
+  /**
+   * Quién va a un torneo. Sin él (lo normal) sale de la lectura única de la
+   * ficha (`ficha/precarga.ts`), que se lanza ya con la intención de abrirla.
+   */
+  cargarInscritos?: (eventId: string) => Promise<QuienVa>;
 }) {
   /**
    * Con quién se está mirando el calendario.
@@ -309,10 +302,16 @@ export function VistaCalendario({
     esgrima se planifica por trimestres —hay que pedir vuelos y pedir días—, y
     un mes solo deja fuera justo lo que se está decidiendo.
   */
-  const [vista, setVista] = React.useState<Vista>(
+  /*
+    Lo PEDIDO (`vistaPedida`, `anclaPedida`) y lo que SE PINTA (`vista`,
+    `ancla`, más abajo) son dos cosas: un tramo ya celebrado que aún no ha
+    llegado no se pinta a medias con un aviso de carga; se sigue viendo el
+    anterior hasta que llega entero, como una navegación sin esqueleto.
+  */
+  const [vistaPedida, setVista] = React.useState<Vista>(
     inicial?.vista ?? 'trimestre',
   );
-  const [ancla, setAncla] = React.useState(() => {
+  const [anclaPedida, setAncla] = React.useState(() => {
     if (!inicial?.mes) return new Date();
     const [anio, mes] = inicial.mes.split('-').map(Number);
     return new Date(anio, mes - 1, 1);
@@ -362,10 +361,15 @@ export function VistaCalendario({
    * atrás en la temporada, que en un calendario es la orientación básica, y
    * dura 200 ms.
    */
-  const [direccion, setDireccion] = React.useState<-1 | 0 | 1>(0);
+  const [, setDireccion] = React.useState<-1 | 0 | 1>(0);
   const [abierto, setAbierto] = React.useState<EventView | null>(null);
   /** El torneo pasado cuya hoja de resultados está abierta. */
   const [abiertoPasado, setAbiertoPasado] = React.useState<EventView | null>(null);
+  const cerrarFichas = React.useCallback(() => {
+    setAbierto(null);
+    setAbiertoPasado(null);
+  }, []);
+  useEntradaDeHistorial(abierto !== null || abiertoPasado !== null, cerrarFichas);
 
   /**
    * ===========================================================================
@@ -380,6 +384,10 @@ export function VistaCalendario({
    *
    * Un tramo que falla se queda marcado como fallo, se dice en pantalla, y se
    * reintenta la próxima vez que se llega a él.
+   *
+   * Y no se espera a llegar: el tramo de al lado se pide en cuanto hay
+   * intención (el puntero sobre una flecha, un toque, el foco), y mientras el
+   * pedido no ha llegado se sigue pintando el que había.
    */
   const hoy = isoDeHoy();
   const [tramos, setTramos] = React.useState<
@@ -389,11 +397,13 @@ export function VistaCalendario({
       ? { [claveDeTramo(pasadoInicial)]: { estado: 'listo', datos: pasadoInicial } }
       : {},
   );
-  const cuantosMeses = vista === 'mes' ? 1 : 3;
-  const tramoActual = React.useMemo(() => {
-    const t = tramoDeMeses(ancla.getFullYear(), ancla.getMonth(), cuantosMeses);
-    return tramoPasadoDe(t.desde, t.hasta, hoy);
-  }, [ancla, cuantosMeses, hoy]);
+  const tramoDe = React.useCallback(
+    (a: Date, v: Vista) => {
+      const t = tramoDeMeses(a.getFullYear(), a.getMonth(), v === 'mes' ? 1 : 3);
+      return tramoPasadoDe(t.desde, t.hasta, hoy);
+    },
+    [hoy],
+  );
 
   /** El tramo guardado que ya cubre `t`, si lo hay: un mes dentro de un trimestre ya leído. */
   const cubiertoPor = React.useCallback(
@@ -404,23 +414,63 @@ export function VistaCalendario({
     [tramos],
   );
 
-  const claveActual = tramoActual ? claveDeTramo(tramoActual) : null;
+  // Lo último de `tramos` para las peticiones lanzadas desde un evento, y lo que ya va en camino.
+  const tramosVistos = React.useRef(tramos);
   React.useEffect(() => {
-    if (!tramoActual || !claveActual || !cargarPasado) return;
-    if (cubiertoPor(tramoActual)) return;
-    const previo = tramos[claveActual];
-    if (previo && previo.estado !== 'fallo') return;
-    setTramos((t) => ({ ...t, [claveActual]: { estado: 'cargando', datos: null } }));
-    cargarPasado(tramoActual.desde, tramoActual.hasta)
-      .then((datos) =>
-        setTramos((t) => ({ ...t, [claveActual]: { estado: 'listo', datos } })),
-      )
-      .catch(() =>
-        setTramos((t) => ({ ...t, [claveActual]: { estado: 'fallo', datos: null } })),
+    tramosVistos.current = tramos;
+  }, [tramos]);
+  const enCamino = React.useRef(new Set<string>());
+  const pedirTramo = React.useCallback(
+    (t: { desde: string; hasta: string } | null) => {
+      if (!t || !cargarPasado) return;
+      const clave = claveDeTramo(t);
+      const guardados = tramosVistos.current;
+      if (enCamino.current.has(clave) || guardados[clave]?.estado === 'listo') return;
+      const cubre = Object.values(guardados).some(
+        (x) => x.estado === 'listo' && x.datos && x.datos.desde <= t.desde && x.datos.hasta >= t.hasta,
       );
-    // Solo al llegar a otro tramo: el propio `tramos` cambia con cada respuesta.
+      if (cubre) return;
+      enCamino.current.add(clave);
+      setTramos((x) => ({ ...x, [clave]: { estado: 'cargando', datos: x[clave]?.datos ?? null } }));
+      cargarPasado(t.desde, t.hasta)
+        // En una Transition: si el periodo pedido esperaba este tramo, el cambio entra con fundido.
+        .then((datos) =>
+          enTransicion(() => setTramos((x) => ({ ...x, [clave]: { estado: 'listo', datos } }))),
+        )
+        .catch(() => setTramos((x) => ({ ...x, [clave]: { estado: 'fallo', datos: null } })))
+        .finally(() => enCamino.current.delete(clave));
+    },
+    [cargarPasado],
+  );
+
+  const tramoPedido = React.useMemo(
+    () => tramoDe(anclaPedida, vistaPedida),
+    [tramoDe, anclaPedida, vistaPedida],
+  );
+  const clavePedida = tramoPedido ? claveDeTramo(tramoPedido) : null;
+  React.useEffect(() => {
+    pedirTramo(tramoPedido);
+    // Solo al pedir otro tramo: el propio `tramoPedido` es un objeto nuevo en cada render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [claveActual, cargarPasado]);
+  }, [clavePedida, pedirTramo]);
+
+  /** Lo pedido ya se puede pintar: no tiene pasado, ya llegó, o falló (y el fallo se dice). */
+  const pedidaLista =
+    !tramoPedido ||
+    !cargarPasado ||
+    Boolean(cubiertoPor(tramoPedido)) ||
+    tramos[clavePedida!]?.estado === 'fallo';
+  const [mostrada, setMostrada] = React.useState({ ancla: anclaPedida, vista: vistaPedida });
+  if (pedidaLista && (mostrada.ancla !== anclaPedida || mostrada.vista !== vistaPedida)) {
+    setMostrada({ ancla: anclaPedida, vista: vistaPedida });
+  }
+  const ancla = pedidaLista ? anclaPedida : mostrada.ancla;
+  const vista = pedidaLista ? vistaPedida : mostrada.vista;
+  /** Hay un tramo pedido en camino y se sigue pintando el anterior. */
+  const esperando = !pedidaLista;
+
+  const tramoActual = React.useMemo(() => tramoDe(ancla, vista), [tramoDe, ancla, vista]);
+  const claveActual = tramoActual ? claveDeTramo(tramoActual) : null;
 
   const estadoActual: EstadoDelMes =
     !tramoActual || cubiertoPor(tramoActual) || !cargarPasado
@@ -469,20 +519,57 @@ export function VistaCalendario({
     LecturaDeEvento<QuienVa>
   >(SIN_EVENTO);
   const abiertoId = abierto?.id ?? null;
+  const abiertoFin = abierto?.endDate ?? null;
   const lecturaAbierta = lecturaDelEvento(lecturaInscritos, abiertoId);
-  const inscritos = datosVigentes(lecturaAbierta);
+  // Lo precargado con la intención de abrir la ficha se pinta ya en la primera vuelta.
+  const inscritos =
+    datosVigentes(lecturaAbierta) ?? (abierto ? (fichaRecibida(abierto)?.inscritos ?? null) : null);
   const falloInscritos = lecturaAbierta.tipo === 'error';
 
   // Depende del id y no del objeto del evento: reabrir el mismo torneo no
   // borra lo leído, y un fallo se señala aparte sin disfrazarse de lista vacía.
   React.useEffect(() => {
-    if (!abiertoId) return;
+    if (!abiertoId || !abiertoFin) return;
     return iniciarLectura({
       eventoId: abiertoId,
-      cargar: cargarInscritos,
+      cargar: cargarInscritos
+        ?? ((id) =>
+          leerFicha({ id, endDate: abiertoFin }).then((f) => {
+            if (!f.inscritos) throw new Error('inscritos');
+            return f.inscritos;
+          })),
       actualizar: setLecturaInscritos,
     });
-  }, [abiertoId, cargarInscritos]);
+  }, [abiertoId, abiertoFin, cargarInscritos]);
+
+  /**
+   * INTENCIÓN DE ABRIR UNA FICHA: se pide antes de que llegue el toque.
+   *
+   * Un solo manejador para toda la pantalla, por delegación: cada tarjeta lleva
+   * `data-evento`. Con ratón espera a que el puntero se pare un instante sobre
+   * la tarjeta (pasar por encima de diez no pide diez fichas); con el dedo y el
+   * teclado, al momento.
+   */
+  const porId = React.useMemo(() => new Map(todos.map((e) => [e.id, e])), [todos]);
+  const temporizadorFicha = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const intencionDeFicha = React.useCallback(
+    (destino: EventTarget | null, esperaMs: number) => {
+      if (temporizadorFicha.current) clearTimeout(temporizadorFicha.current);
+      temporizadorFicha.current = null;
+      const id = destino instanceof Element ? destino.closest('[data-evento]')?.getAttribute('data-evento') : null;
+      const evento = id ? porId.get(id) : undefined;
+      if (!evento || importados.has(evento.id)) return;
+      if (esperaMs === 0) precargarFicha(evento);
+      else temporizadorFicha.current = setTimeout(() => precargarFicha(evento), esperaMs);
+    },
+    [porId, importados],
+  );
+  React.useEffect(
+    () => () => {
+      if (temporizadorFicha.current) clearTimeout(temporizadorFicha.current);
+    },
+    [],
+  );
 
   const todoPuesto =
     armas.length === ARMAS.length &&
@@ -583,7 +670,7 @@ export function VistaCalendario({
 
   const irA = React.useCallback((iso: string) => {
     const d = new Date(`${iso}T12:00:00`);
-    setAncla((previa) => {
+    enTransicion(() => setAncla((previa) => {
       if (
         previa.getFullYear() === d.getFullYear() &&
         previa.getMonth() === d.getMonth()
@@ -596,7 +683,7 @@ export function VistaCalendario({
           : -1,
       );
       return new Date(d.getFullYear(), d.getMonth(), 1);
-    });
+    }));
   }, []);
 
   // El salto de mes va en un efecto y no en el `onSelect` para que también
@@ -761,10 +848,31 @@ export function VistaCalendario({
 
   const mover = (paso: number) => {
     setDireccion(paso > 0 ? 1 : -1);
-    setAncla(
-      (p) => new Date(p.getFullYear(), p.getMonth() + paso * (vista === 'mes' ? 1 : 3), 1),
+    enTransicion(() =>
+      setAncla(
+        (p) => new Date(p.getFullYear(), p.getMonth() + paso * (vistaPedida === 'mes' ? 1 : 3), 1),
+      ),
     );
   };
+  /** Intención de ir al tramo de al lado (o al de hoy): se pide ya, para que al pulsar esté. */
+  const precargarPaso = (paso: number) =>
+    pedirTramo(
+      tramoDe(
+        paso === 0
+          ? new Date()
+          : new Date(
+              anclaPedida.getFullYear(),
+              anclaPedida.getMonth() + paso * (vistaPedida === 'mes' ? 1 : 3),
+              1,
+            ),
+        vistaPedida,
+      ),
+    );
+  const intencionDePaso = (paso: number) => ({
+    onPointerEnter: () => precargarPaso(paso),
+    onTouchStart: () => precargarPaso(paso),
+    onFocus: () => precargarPaso(paso),
+  });
 
   // El mes de hoy en hora española: el día 1 a la una de la mañana, el huso
   // del servidor y el del navegador no coinciden ni en el mes.
@@ -802,50 +910,27 @@ export function VistaCalendario({
   const mostrarCategoria = categorias.length > 1;
 
   return (
-    <div className="calendario flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+    <div
+      className="calendario flex min-h-0 min-w-0 flex-1 flex-col gap-3"
+      onPointerOver={(e) => intencionDeFicha(e.target, e.pointerType === 'touch' ? 0 : 120)}
+      onFocus={(e) => intencionDeFicha(e.target, 0)}
+    >
       {/*
-        UNA FILA. NO CUATRO.
-        ---------------------------------------------------------------------
-        Esto es el encargo del usuario, marcado a mano sobre una captura: una
-        flecha que sube desde «Noviembre 2026» hasta la barra de herramientas
-        —o sea, «júntalo»—, una flecha de doble punta en el hueco entre la
-        cabecera y la rejilla —«esto sobra»— y un círculo alrededor de la
-        barra y del «Inscripción cerrada» que flotaba solo en la esquina.
+        EL TÍTULO DE LA PANTALLA ESTÁ EN LA CABECERA COMPACTA.
 
-        Antes había cuatro pisos antes de ver un día del mes: el título en un
-        renglón, la navegación y los filtros en otro, el marcador en un
-        tercero y sus datos —fecha y sede— en un cuarto. Medido:
-
-          iPhone 14 Pro   144,9 px de cabecera de los 500 útiles (29 %)
-          1440×900        130,0 px
-          2560×1400       130,0 px
-
-        Ahora es **una fila**: mes, navegación, marcador y herramientas. El
-        marcador deja de ser una banda propia y pasa a ser la parte elástica
-        del medio, con el plazo pegado al nombre del torneo del que habla en
-        vez de en el otro extremo de la pantalla.
-
-        Por debajo de `lg` el marcador baja a un renglón propio porque no
-        cabe, y por debajo de `sm` **desaparece**: ahí manda el feed
-        (`timeline.tsx`) y su primera tarjeta ya es lo próximo, con su fecha
-        grande y además tocable. Cuando se está buscando vuelve, porque
-        entonces lleva el contador de coincidencias y las flechas, y el estado
-        de búsqueda tiene que verse.
+        La cabecera de la aplicación pinta la marca en la raíz del Calendario
+        (`cabeceraDeRuta`); aquí queda el periodo que se mira, como `<h2>`, con
+        las flechas y la lupa en la misma fila, y debajo los filtros en una
+        fila de chips (`docs/diseno-sistema.md` § 1.2 y § 7).
       */}
-      <div className="shrink-0 border-b border-filete-alto pb-3">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+      <h1 className="sr-only">Calendario</h1>
+      <div className="flex shrink-0 flex-col gap-[8px]">
+        <div className="flex min-h-[36px] items-center gap-[4px]">
           {/*
-            El mes en dos pesos en la misma línea: el nombre golpea y el año
-            acompaña. Se lee «octubre» de un tirón y el año si te fijas. Es el
-            recurso de la ficha de tirador de la FIE, donde el apellido va
-            grueso y el nombre fino.
-
-            Y el año se calla en el móvil cuando es el de hoy: son 57 px, y
-            eran justo los que hacían caer el botón de filtros a un renglón
-            propio en cuanto aparecía «Hoy». Si estás mirando otro año, el año
-            sale, que es cuando de verdad hace falta saberlo.
+            El año se calla en el móvil cuando es el de hoy; si se mira otro
+            año, sale, que es cuando hace falta saberlo.
           */}
-          <h1 className="order-1 w-full min-w-0 text-3xl leading-none sm:w-auto sm:text-4xl">
+          <h2 className="min-w-0 flex-1 truncate text-[20px] leading-[24px]">
             {vista === 'mes' ? (
               <>
                 {nombreMes(ancla, false)}{' '}
@@ -859,32 +944,6 @@ export function VistaCalendario({
                 </span>
               </>
             ) : (
-              /*
-                LA CABECERA TIENE QUE CABER EN UNA LÍNEA. MEDIDO Y ARREGLADO.
-
-                El usuario lo marcó con captura: en un iPhone el título
-                «Septiembre – Noviembre 2026» y los dos botones —buscar y
-                filtros— se partían en dos filas.
-
-                Medido en el navegador a 393 px, con las piezas de esta misma
-                fila:
-
-                  título entero    242 px      título abreviado   121 px
-                  flechas           72 px
-                  herramientas     132 px
-                  dos huecos        18 px
-                  ------------------------------------------------------
-                  con el entero    464 px      con el abreviado   343 px
-                  y caben          366 px (393 menos el margen de la página)
-
-                O sea que con el nombre entero **sobraban 98 px** y la fila se
-                partía; abreviado sobran 23 de sitio, que es lo que hace falta
-                para que quepa también «Hoy» cuando aparece. Comprobado: la
-                fila mide 44 px de alto, o sea un renglón.
-
-                De `sm` para arriba el nombre entero, que es lo que se prefiere
-                cuando hay sitio.
-              */
               <>
                 <span className="sm:hidden">
                   {nombreMes(meses[0], false).slice(0, 3)} –{' '}
@@ -898,135 +957,98 @@ export function VistaCalendario({
                 </span>
               </>
             )}
-          </h1>
+          </h2>
 
-          {/* Navegación: botones fantasma pegados, una altura, un radio. */}
-          <ButtonGroup className="order-2 shrink-0">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-11"
+          {/* Con un tramo pedido en camino se sigue viendo el anterior; sólo cambia el cursor. */}
+          <div
+            className={cn('flex shrink-0 items-center gap-[4px]', esperando && 'cursor-progress')}
+            aria-busy={esperando || undefined}
+          >
+            <BotonIcono
+              etiqueta={vista === 'mes' ? 'Mes anterior' : 'Trimestre anterior'}
+              tamano="md"
               onClick={() => mover(-1)}
-              aria-label={vista === 'mes' ? 'Mes anterior' : 'Trimestre anterior'}
+              {...intencionDePaso(-1)}
             >
-              <ChevronLeft />
-            </Button>
-            {/*
-              «Hoy» solo cuando lleva a otro sitio. Estando en el mes en curso
-              es un botón que no hace nada, y en un iPhone son 44 px que le
-              quita a la rejilla.
-
-              En el móvil, «Hoy» y el botón de filtros tienen ancho fijo: a
-              320 px la fila cabía con la letra de la app y no con la de
-              reserva, y al llegar la fuente saltaba de dos renglones a uno.
-            */}
+              <ChevronLeft aria-hidden />
+            </BotonIcono>
+            {/* «Hoy» solo cuando lleva a otro sitio. */}
             {!enElMesActual ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-11 px-3 max-sm:w-11 max-sm:px-0"
+              <Boton
+                tamano="sm"
                 aria-label="Ir al mes actual"
+                {...intencionDePaso(0)}
                 onClick={() => {
                   setDireccion(0);
-                  setAncla(new Date());
+                  enTransicion(() => setAncla(new Date()));
                 }}
               >
                 Hoy
-              </Button>
+              </Boton>
             ) : null}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-11"
+            <BotonIcono
+              etiqueta={vista === 'mes' ? 'Mes siguiente' : 'Trimestre siguiente'}
+              tamano="md"
               onClick={() => mover(1)}
-              aria-label={vista === 'mes' ? 'Mes siguiente' : 'Trimestre siguiente'}
+              {...intencionDePaso(1)}
             >
-              <ChevronRight />
-            </Button>
-          </ButtonGroup>
-
-          {/*
-            El buscador es un icono, no un campo. Y va pegado a los filtros:
-            las dos son herramientas de la pantalla, no contenido, así que
-            comparten grupo y se leen como un bloque en vez de como dos trastos
-            sueltos de formas distintas.
-
-            El campo medía media anchura de la cabecera y estaba vacío el 99 %
-            del tiempo. Ese sitio se lo queda la rejilla. En escritorio se
-            anuncia el atajo con su `Kbd`; en el móvil, solo el icono.
-
-            `ml-auto` hasta `lg` para que las herramientas se peguen al canto
-            derecho cuando el marcador está en su propio renglón; a partir de
-            `lg` sobra, porque el marcador lleva `flex-1` y es él quien empuja.
-          */}
-          <ButtonGroup className="order-3 ml-auto shrink-0 lg:order-4 lg:ml-0">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-11 gap-2 px-3 text-muted-foreground"
+              <ChevronRight aria-hidden />
+            </BotonIcono>
+            <BotonIcono
+              etiqueta="Buscar un torneo o una sede"
+              tamano="md"
               onClick={() => setBuscando(true)}
-              aria-label="Buscar un torneo o una sede"
             >
-              <CalendarSearch className="size-4" />
-              <span className="hidden sm:inline">Buscar</span>
-              <Kbd className="ml-1 hidden sm:inline-flex">⌘K</Kbd>
-            </Button>
-
-            <PanelFiltros
-            ambito={ambito}
-            setAmbito={setAmbito}
-            vista={vista}
-            setVista={setVista}
-            armas={armas}
-            setArmas={setArmas}
-            generos={generos}
-            setGeneros={setGeneros}
-            categorias={categorias}
-            setCategorias={setCategorias}
-            categoriasDisponibles={categoriasDisponibles}
-            tiradores={tiradores}
-            tiradorId={tirador?.id ?? null}
-            cambiarTirador={cambiarTirador}
-            propio={propio}
-            todoPuesto={todoPuesto}
-            verTodo={verTodo}
-            verLoMio={verLoMio}
-            numPruebas={numPruebas}
-            numTorneos={filtrados.length}
-              temporada={temporada}
-              actualizado={actualizado}
-            />
-          </ButtonGroup>
-
-          {/*
-            EL MARCADOR, DENTRO DE LA MISMA FILA.
-
-            Cuando no se está buscando enseña lo próximo; cuando se está
-            buscando, la coincidencia en la que se está. Es el mismo sitio con
-            dos contenidos en vez de dos secciones: buscar no añade una barra
-            de estado, se apropia de esta.
-
-            Y es la parte elástica: `flex-1` a partir de `lg`, renglón propio
-            por debajo, y callado del todo por debajo de `sm` salvo buscando.
-          */}
-          <FranjaDestacada
-            clase={cn(
-              'order-4 w-full min-w-0 lg:order-3 lg:w-auto lg:flex-1',
-              !busqueda.trim() && 'hidden sm:flex',
-            )}
-            evento={encontrado ?? proximo}
-            buscando={Boolean(busqueda.trim())}
-            cual={cual}
-            total={coincidencias.length}
-            hayTiradores={tiradores.length > 0}
-            onAnterior={() =>
-              setCual((p) => (p - 1 + coincidencias.length) % coincidencias.length)
-            }
-            onSiguiente={() => setCual((p) => (p + 1) % coincidencias.length)}
-            onLimpiar={() => setBusqueda('')}
-            onAbrir={abrir}
-          />
+              <Search aria-hidden />
+            </BotonIcono>
+          </div>
         </div>
+
+        <FiltrosCalendario
+          ambito={ambito}
+          setAmbito={setAmbito}
+          // Lo pedido: el conmutador responde al toque aunque el trimestre aún esté llegando.
+          vista={vistaPedida}
+          setVista={setVista}
+          armas={armas}
+          setArmas={setArmas}
+          generos={generos}
+          setGeneros={setGeneros}
+          categorias={categorias}
+          setCategorias={setCategorias}
+          categoriasDisponibles={categoriasDisponibles}
+          tiradores={tiradores}
+          tiradorId={tirador?.id ?? null}
+          cambiarTirador={cambiarTirador}
+          propio={propio}
+          todoPuesto={todoPuesto}
+          verTodo={verTodo}
+          verLoMio={verLoMio}
+          numPruebas={numPruebas}
+          numTorneos={filtrados.length}
+          temporada={temporada}
+          actualizado={actualizado}
+        />
+
+        {/*
+          El marcador: lo próximo o, buscando, la coincidencia en la que se
+          está. En el móvil solo buscando: ahí la primera tarjeta del feed ya
+          es lo próximo.
+        */}
+        <FranjaDestacada
+          clase={cn('w-full min-w-0', !busqueda.trim() && 'hidden sm:flex')}
+          evento={encontrado ?? proximo}
+          buscando={Boolean(busqueda.trim())}
+          cual={cual}
+          total={coincidencias.length}
+          hayTiradores={tiradores.length > 0}
+          onAnterior={() =>
+            setCual((p) => (p - 1 + coincidencias.length) % coincidencias.length)
+          }
+          onSiguiente={() => setCual((p) => (p + 1) % coincidencias.length)}
+          onLimpiar={() => setBusqueda('')}
+          onAbrir={abrir}
+        />
       </div>
 
       {/*
@@ -1046,33 +1068,35 @@ export function VistaCalendario({
             dan el borde y el título en `text-primary-text`, que es el rojo
             medido para texto (5,60:1). Mismo aviso, sin velo.
           */
-          className="flex shrink-0 items-center gap-3 rounded-md border border-primary/40 bg-card px-3 py-2 text-sm transition-colors hover:bg-accent"
+          className="flex min-h-[44px] shrink-0 items-center gap-[12px] rounded-[12px] border border-primary-text bg-card px-[12px] py-[8px] text-[14px] leading-[20px] transition-colors hover:bg-accent"
         >
           <span className="min-w-0 flex-1">
             <span className="font-medium text-primary-text">Vincula tu ficha</span>{' '}
-            <span className="text-muted-foreground">
-              para ver tu arma y categoría.
-            </span>
+            <span className="text-muted-foreground">para ver tu arma y categoría</span>
           </span>
-          <ChevronRight className="size-4 shrink-0" aria-hidden />
+          <ChevronRight className="size-[18px] shrink-0" aria-hidden />
         </Link>
       ) : null}
 
       {filtrados.length === 0 ? (
         <Empty className="flex-1 border border-dashed">
           <EmptyHeader>
-            <EmptyTitle>Ninguna prueba con estos filtros</EmptyTitle>
-            <EmptyDescription>
-              No hay pruebas cargadas para esta combinación. Cambia los filtros
-              o consulta el calendario completo.
-            </EmptyDescription>
+            <EmptyTitle>Sin pruebas</EmptyTitle>
+            <EmptyDescription>Ninguna encaja con estos filtros.</EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <Button onClick={verTodo}>Ver el calendario entero</Button>
+            <Boton tamano="lg" variante="claro" onClick={verTodo}>
+              Ver todo
+            </Boton>
           </EmptyContent>
         </Empty>
       ) : (
-        <>
+        <TransicionContenido
+          // El periodo pintado: al cambiar de mes o de trimestre, fundido (§ 4).
+          clave={`${vista}-${ancla.getFullYear()}-${ancla.getMonth()}`}
+          nombre="calendario-periodo"
+        >
+        <div className="flex min-h-0 flex-1 flex-col">
           {/*
             ===============================================================
             EL MÓVIL: UNA SOLA COLUMNA, LAS DOS VISTAS IGUAL
@@ -1182,25 +1206,12 @@ export function VistaCalendario({
               )}
             >
               {meses.map((m) => (
-                <div
-                  key={`${m.getFullYear()}-${m.getMonth()}`}
-                  className={cn(
-                    'flex min-w-0 flex-col',
-                    'animate-in fade-in-0 duration-200',
-                    direccion === 1 && 'slide-in-from-right-6',
-                    direccion === -1 && 'slide-in-from-left-6',
-                  )}
-                >
+                <div key={`${m.getFullYear()}-${m.getMonth()}`} className="flex min-w-0 flex-col">
                   <ColumnaMes
                     anio={m.getFullYear()}
                     mes={m.getMonth()}
                     bloques={bloques}
-                    /*
-                      El título del mes solo en trimestre. En la vista de un mes
-                      el nombre ya está en el `<h1>` de la cabecera, a 40 px de
-                      distancia: repetirlo es gastar un renglón en decir lo
-                      mismo.
-                    */
+                    // Solo en trimestre: con un mes, su nombre ya está en el título del periodo.
                     conTitulo={vista === 'trimestre'}
                     inscripciones={inscripciones}
                     resaltados={resaltados}
@@ -1229,10 +1240,11 @@ export function VistaCalendario({
             </div>
 
           </div>
-
-          <Leyenda />
-        </>
+        </div>
+        </TransicionContenido>
       )}
+
+      {filtrados.length > 0 ? <Leyenda /> : null}
 
       {/*
         La paleta de búsqueda.
@@ -1266,25 +1278,22 @@ export function VistaCalendario({
                   onSelect={() => {
                     const destino = new Date(saltoDeMes.anio, saltoDeMes.mes, 1);
                     setDireccion(destino.getTime() > ancla.getTime() ? 1 : -1);
-                    setAncla(destino);
+                    enTransicion(() => setAncla(destino));
                     setBusqueda('');
                     setBuscando(false);
                   }}
-                  className="min-h-[44px] gap-2 py-3 font-medium"
+                  className="min-h-[44px] gap-2 py-3 text-[14px] font-medium"
                 >
-                  <CalendarSearch className="size-4" aria-hidden />
+                  <CalendarSearch className="size-[16px]" aria-hidden />
                   Ir a {nombreMes(new Date(saltoDeMes.anio, saltoDeMes.mes, 1)).toLowerCase()}
                 </CommandItem>
               ) : null}
               {busqueda.trim() === '' ? (
-                <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                  Busca un torneo o una ciudad para ir a su mes, o escribe un
-                  mes y un año («marzo 2019») para ir a él.
-                </div>
+                <p className="px-[16px] py-[24px] text-center text-[14px] text-muted-foreground">
+                  Torneo, ciudad o mes («marzo 2019»)
+                </p>
               ) : saltoDeMes && coincidencias.length === 0 ? null : coincidencias.length === 0 ? (
-                <CommandEmpty>
-                  Ningún torneo se llama así, ni se tira en esa ciudad.
-                </CommandEmpty>
+                <CommandEmpty>Sin coincidencias</CommandEmpty>
               ) : (
                 coincidencias.slice(0, 40).map((e, i) => (
                   <CommandItem
@@ -1298,24 +1307,24 @@ export function VistaCalendario({
                     className="min-h-[44px] flex-col items-start gap-1 py-3"
                   >
                     <span className="flex w-full flex-wrap items-baseline gap-x-2 gap-y-1">
-                      <span className="min-w-0 flex-1 break-words font-medium">
+                      <span className="min-w-0 flex-1 break-words text-[14px] leading-[20px] font-medium">
                         {titularTorneo(e.name)}
                       </span>
-                      <span className="cifra shrink-0 text-xs text-muted-foreground">
+                      <span className="cifra shrink-0 text-[13px] text-muted-foreground">
                         {formatDateRangeEs(e.startDate, e.endDate)}
                       </span>
                     </span>
-                    <span className="flex w-full flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                      <span className="shrink-0">
-                        {organismoDe(e.source, e.scope, e.circuit)}
-                      </span>
+                    {/* Dos datos y no tres: el circuito ya dice de quién es. */}
+                    <span className="flex w-full flex-wrap items-baseline gap-x-2 gap-y-1 text-[12px] leading-[16px] text-muted-foreground">
                       <span className="min-w-0 break-words">
                         {CIRCUIT_SHORT[e.circuit] ?? CIRCUIT_LABEL[e.circuit] ?? e.circuit}
                       </span>
-                      <span className="min-w-0 break-words">
-                        {e.city ? titular(e.city) : 'Sede sin publicar'}
-                        {e.country ? `, ${e.country}` : ''}
-                      </span>
+                      {e.city ? (
+                        <span className="min-w-0 break-words">
+                          {titular(e.city)}
+                          {e.country ? `, ${e.country}` : ''}
+                        </span>
+                      ) : null}
                     </span>
                   </CommandItem>
                 ))
@@ -1325,65 +1334,60 @@ export function VistaCalendario({
         </DialogContent>
       </Dialog>
 
-      <Sheet open={abierto !== null} onOpenChange={(o) => !o && setAbierto(null)}>
-        <SheetContent className="w-full gap-0 overflow-y-auto p-0 sm:max-w-xl">
-          {abierto ? <CabeceraFicha evento={abierto} /> : null}
-          {abierto ? (
-            <FichaEvento
-              evento={abierto}
-              tirador={tirador}
-              inscripciones={inscripciones}
-              inscritos={inscritos}
-              falloInscritos={falloInscritos}
-              retornoCalendario={retornoCalendario}
-              onSolicitar={async (competitionId) => {
-                if (!tirador) return;
-                const r = await solicitarInscripcion(competitionId, tirador.id);
-                setAbierto(null);
-                /*
-                  El resultado va a un aviso flotante y no a un renglón dentro
-                  de la pantalla. Antes aparecía una fila entre los controles y
-                  la rejilla: el calendario daba un salto de 40 px justo al
-                  volver de la ficha, que es el peor momento para moverle la
-                  pantalla a nadie.
-                */
-                if (r.ok) toast.success(r.message);
-                else toast.error(r.error);
-              }}
-            />
-          ) : null}
-        </SheetContent>
-      </Sheet>
-
       {/*
-        La hoja de resultados de un torneo pasado: lo único que se abre para un
-        torneo que solo está en Explorar, y lo que abre «Resultados» cuando
-        detrás hay más de una edición. La cabecera es la misma de la ficha.
+        La ficha del torneo y la hoja de resultados de un torneo pasado, como
+        subpantalla. Las dos comparten la entrada del historial: pasar de los
+        resultados a la ficha del mismo torneo no apila otra.
       */}
-      <Sheet
-        open={abiertoPasado !== null}
-        onOpenChange={(o) => !o && setAbiertoPasado(null)}
+      <PantallaFicha
+        abierta={abierto !== null}
+        alCerrar={() => setAbierto(null)}
+        titulo={abierto ? titularTorneo(abierto.name) : ''}
       >
-        <SheetContent className="w-full gap-0 overflow-y-auto p-0 sm:max-w-xl">
-          {abiertoPasado ? <CabeceraFicha evento={abiertoPasado} /> : null}
-          {abiertoPasado ? (
-            <ResultadosPasados
-              evento={abiertoPasado}
-              pruebas={resultadosPasados[abiertoPasado.id] ?? []}
-              retorno={retornoCalendario}
-              onAbrirFicha={
-                importados.has(abiertoPasado.id)
-                  ? undefined
-                  : () => {
-                      const evento = abiertoPasado;
-                      setAbiertoPasado(null);
-                      setAbierto(evento);
-                    }
-              }
-            />
-          ) : null}
-        </SheetContent>
-      </Sheet>
+        {abierto ? <CabeceraFicha evento={abierto} /> : null}
+        {abierto ? (
+          <FichaEvento
+            evento={abierto}
+            tirador={tirador}
+            inscripciones={inscripciones}
+            inscritos={inscritos}
+            falloInscritos={falloInscritos}
+            retornoCalendario={retornoCalendario}
+            onSolicitar={async (competitionId) => {
+              if (!tirador) return;
+              const r = await solicitarInscripcion(competitionId, tirador.id);
+              setAbierto(null);
+              // A un aviso flotante: una fila nueva movería el calendario justo al volver de la ficha.
+              if (r.ok) toast.success(r.message);
+              else toast.error(r.error);
+            }}
+          />
+        ) : null}
+      </PantallaFicha>
+
+      <PantallaFicha
+        abierta={abiertoPasado !== null}
+        alCerrar={() => setAbiertoPasado(null)}
+        titulo={abiertoPasado ? titularTorneo(abiertoPasado.name) : ''}
+      >
+        {abiertoPasado ? <CabeceraFicha evento={abiertoPasado} /> : null}
+        {abiertoPasado ? (
+          <ResultadosPasados
+            evento={abiertoPasado}
+            pruebas={resultadosPasados[abiertoPasado.id] ?? []}
+            retorno={retornoCalendario}
+            onAbrirFicha={
+              importados.has(abiertoPasado.id)
+                ? undefined
+                : () => {
+                    const evento = abiertoPasado;
+                    setAbiertoPasado(null);
+                    setAbierto(evento);
+                  }
+            }
+          />
+        ) : null}
+      </PantallaFicha>
     </div>
   );
 }
@@ -1393,9 +1397,8 @@ export function VistaCalendario({
  *
  * Es lo que arregla «se ve plano». Plano quiere decir que todo pesa igual; la
  * cura no es una sombra, es que **una cosa pese mucho más que las demás**. La
- * cifra de los días va en condensada a `text-3xl` y el rótulo de al lado a
- * `0.6rem`: cinco veces, que es de sobra para que la jerarquía se lea, y viene
- * del marcador de un asalto.
+ * cifra de los días va en condensada a 32 px y su rótulo a 12: la jerarquía
+ * se lee sola, y viene del marcador de un asalto.
  *
  * Toda la franja es el botón que abre la ficha, así que hay **una** acción
  * principal en la pantalla y está donde se mira primero.
@@ -1406,17 +1409,15 @@ export function VistaCalendario({
  * 1. **De banda a renglón.** Era una banda propia de dos líneas —nombre
  *    arriba, fecha y sede abajo— debajo de la fila de controles: 52 px más
  *    los 6 del filete y el aire. Ahora es la parte elástica de la fila de
- *    controles y todo va en una línea; la cifra baja de `text-4xl/5xl` a
- *    `text-3xl`, que es lo que cabe al lado de un control de 32 px sin
- *    estirar la fila.
+ *    controles y todo va en una línea.
  *
  * 2. **El plazo pegado al nombre.** «Inscripción cerrada» iba en la línea del
  *    título pero con el nombre en `flex-1`, así que el plazo se iba al canto
  *    derecho de la fila: en un escritorio de 1440, **a 900 px del torneo del
  *    que hablaba**. Eso es lo que el usuario rodeó con un círculo. Ahora va
  *    justo detrás del nombre y se lee como una frase: «Copa del Mundo Cadete
- *    — Inscripción cerrada». Lo que ahora se estira es la cola —fecha, sede y
- *    organismo—, que sí puede irse al canto sin que nadie la eche de menos.
+ *    — Inscripción cerrada». Lo que ahora se estira es la cola —fecha y
+ *    sede—, que sí puede irse al canto sin que nadie la eche de menos.
  */
 function FranjaDestacada({
   clase,
@@ -1445,92 +1446,51 @@ function FranjaDestacada({
     return (
       <div
         className={cn(
-          'flex min-h-[44px] min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground',
+          'flex min-h-[44px] min-w-0 items-center gap-[8px] text-[14px] text-muted-foreground',
           clase,
         )}
       >
-        {/*
-          La segunda frase se calla en el móvil. Con las dos y el botón al
-          lado, en 393 px se leía «Ningún torneo coincide. …»: el `truncate`
-          se comía justo la parte tranquilizadora y dejaba unos puntos
-          suspensivos que parecen un fallo. Lo que hay que saber cabe en la
-          primera frase.
-        */}
-        <span className="min-w-0 flex-1">
-          Ningún torneo coincide.
-          <span className="hidden sm:inline"> El calendario sigue como estaba.</span>
-        </span>
-        <Button variant="ghost" size="sm" className="h-11 shrink-0 px-2 text-xs" onClick={onLimpiar}>
-          Quitar la búsqueda
-        </Button>
+        <span className="min-w-0 flex-1">Sin coincidencias</span>
+        <Boton tamano="sm" onClick={onLimpiar}>
+          Quitar búsqueda
+        </Boton>
       </div>
     );
   }
 
   if (!evento) {
     return (
-      /* El mismo `h-11` que el marcador: si el renglón midiera lo que mide su
-         texto, quedarse sin competiciones por delante movería la rejilla. */
+      // El mismo alto que el marcador: quedarse sin competiciones por delante no mueve la rejilla.
       <p
         className={cn(
-          'flex min-h-[44px] min-w-0 items-center text-sm text-muted-foreground',
+          'flex min-h-[44px] min-w-0 items-center text-[14px] text-muted-foreground',
           clase,
         )}
       >
-        {hayTiradores
-          ? 'Sin próximas competiciones cargadas para ti.'
-          : 'Sin próximos torneos cargados.'}{' '}
-        Cambia los filtros.
+        {hayTiradores ? 'Sin próximas competiciones' : 'Sin próximos torneos'}
       </p>
     );
   }
 
   const dias = diasHasta(evento.startDate);
-  /*
-    Buscando, la coincidencia puede ser de hace años: un torneo de 2019 no está
-    «en marcha» por haber empezado antes de hoy.
-  */
+  // Buscando, la coincidencia puede ser de hace años: no está «en marcha» por haber empezado antes de hoy.
   const terminado = diasHasta(evento.endDate) < 0;
   const enMarcha = dias <= 0 && !terminado;
-  const organismo = organismoDe(evento.source, evento.scope, evento.circuit);
   const plazo = terminado ? null : plazoDelEvento(evento);
-  const circuito = CIRCUIT_SHORT[evento.circuit] ?? CIRCUIT_LABEL[evento.circuit] ?? null;
 
   return (
-    /*
-      ALTO FIJO: LA FILA NO DEPENDE DE UNA FUENTE QUE LLEGA TARDE.
-      -----------------------------------------------------------------------
-      La cifra del marcador es `.cifra`, o sea Barlow Condensed, y entra con
-      `font-display: swap`. Siendo el elemento más alto de la fila, su métrica
-      decidía el alto de la cabecera, y el alto de la cabecera decide el hueco
-      que mide la rejilla: al llegar la fuente, `planificar()` volvía a
-      repartir el mes entero. Con `h-11` eso ya no puede pasar, y se comprobó
-      midiendo los nodos de cada `layout-shift`: el de la fila del marcador
-      pasó a mover **0,000** (cambia de ancho, 836→825 px, y no de alto).
-
-      Lo que sigue moviendo la rejilla es otra cosa, y está medido: la caja del
-      mes pasa de 572 a 1197 px a los 3,3 s, cuando empieza a aplicar el
-      estirado a `min-h-dvh`. En `next dev` la hoja de estilos llega como
-      recurso a los 2,64 s —Turbopack la inyecta después de hidratar— así que
-      **hay que volver a medirlo sobre una compilación de producción** antes de
-      tocar nada por esto: en producción el `<link>` es bloqueante y esta causa
-      no existe. Está en el informe.
-
-      Y 44 px no es un número redondo: es el objetivo táctil mínimo, y esta
-      fila entera es la acción principal de la pantalla.
-    */
-    <div className={cn('flex min-h-[44px] flex-wrap items-center gap-2', clase)}>
+    // Alto fijo: la cifra es Barlow con `font-display: swap` y su métrica no debe mover la rejilla al llegar.
+    <div className={cn('flex min-h-[44px] items-center gap-[8px]', clase)}>
       <Item
         asChild
         size="sm"
-        className="min-h-[44px] min-w-0 flex-1 cursor-pointer gap-3 rounded-md px-2 py-2 hover:bg-accent"
+        className="min-h-[44px] min-w-0 flex-1 cursor-pointer gap-[12px] rounded-[12px] px-[8px] py-[6px] hover:bg-accent"
       >
         <button
           type="button"
-          /* `text-left`: un `<button>` centra su texto por defecto y arrastra a
-             todos sus hijos. Sin esto, el nombre del torneo salía centrado
-             sobre su propia línea de datos y la franja parecía un cartel. */
+          // Un `<button>` centra su texto por defecto y arrastra a todos sus hijos.
           className="text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          data-evento={evento.id}
           onClick={() => onAbrir(evento)}
           aria-label={
             terminado
@@ -1542,35 +1502,22 @@ function FranjaDestacada({
                   )}. Abrir la ficha.`
           }
         >
-          <ItemMedia className="min-w-[2.4rem] flex-col items-start gap-0 self-center">
+          <ItemMedia className="min-w-[40px] flex-col items-start gap-0 self-center">
             {terminado ? (
               <>
-                <Flag className="size-5 text-muted-foreground" aria-hidden />
-                <span className="text-xs leading-none text-muted-foreground">
-                  terminada
-                </span>
+                <Flag className="size-[18px] text-muted-foreground" aria-hidden />
+                <span className="text-[12px] leading-[16px] text-muted-foreground">terminada</span>
               </>
             ) : enMarcha ? (
-              /*
-                «Ahora» y no «Hoy»: a dos dedos hay un botón que dice «Hoy» y
-                lleva al mes en curso. Dos «Hoy» en la misma fila significando
-                cosas distintas es el mismo fallo que el usuario cazó en la
-                fila de filtros, en pequeño.
-              */
+              // «Ahora» y no «Hoy»: a dos dedos está el botón «Hoy», que lleva al mes en curso.
               <>
-                <span className="cifra text-2xl leading-none text-primary-text">
-                  Ahora
-                </span>
-                <span className="text-xs leading-none text-muted-foreground">
-                  en marcha
-                </span>
+                <span className="cifra text-[24px] leading-none text-primary-text">Ahora</span>
+                <span className="text-[12px] leading-[16px] text-muted-foreground">en marcha</span>
               </>
             ) : (
               <>
-                <span className="cifra text-4xl leading-none text-foreground">
-                  {dias}
-                </span>
-                <span className="text-xs leading-none text-muted-foreground">
+                <span className="cifra text-[32px] leading-none text-foreground">{dias}</span>
+                <span className="text-[12px] leading-[16px] text-muted-foreground">
                   {dias === 1 ? 'día' : 'días'}
                 </span>
               </>
@@ -1578,77 +1525,44 @@ function FranjaDestacada({
           </ItemMedia>
 
           {/*
-            Todo en una línea: `flex-row` y `flex-nowrap`, y lo que cede es la
-            cola. El nombre y su plazo van juntos y no se separan nunca; la
-            fecha, la sede y el organismo se apagan por orden según el ancho
-            que haya, que es el orden en que dejan de hacer falta.
+            El nombre y su plazo van juntos; detrás, dos datos como mucho
+            (fecha y sede), que se apagan por anchura.
           */}
-          <ItemContent className="min-w-0 flex-row flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="min-w-0 basis-full break-words text-sm font-semibold">
+          <ItemContent className="min-w-0 flex-row flex-wrap items-baseline gap-x-[8px] gap-y-[2px]">
+            <span className="min-w-0 basis-full break-words text-[14px] leading-[20px] font-semibold">
               {titularTorneo(evento.name)}
             </span>
             {plazo ? (
-              <span className={cn('shrink-0 text-xs font-medium', plazo.tono)}>
-                {plazo.texto}
-              </span>
+              <span className={cn('shrink-0 text-[13px] font-medium', plazo.tono)}>{plazo.texto}</span>
             ) : null}
-            {/* La fecha en pastilla, como la ficha de la FIE: se lee como un
-                dato con forma propia y no como una cadena más. Sólida
-                (`bg-secondary`): esta fila va sobre el lienzo con textura y un
-                blanco al 10 % dejaba la retícula de cruces dentro de la
-                pastilla. */}
-            <span className="cifra hidden shrink-0 rounded-full bg-secondary px-1.5 py-px text-xs text-foreground sm:inline">
+            <span className="cifra hidden shrink-0 rounded-full bg-secondary px-[6px] text-[13px] text-foreground sm:inline">
               {formatDateRangeEs(evento.startDate, evento.endDate)}
             </span>
-            <span className="hidden min-w-0 break-words text-xs text-muted-foreground sm:inline">
-              {evento.city ? titular(evento.city) : 'Sede sin publicar'}
-              {evento.country ? `, ${evento.country}` : ''}
-            </span>
-            <span className="hidden min-w-0 flex-wrap gap-x-2 text-xs text-muted-foreground xl:inline-flex">
-              <span>{organismo}</span>
-              {circuito ? <span>{circuito}</span> : null}
-            </span>
+            {evento.city ? (
+              <span className="hidden min-w-0 break-words text-[13px] text-muted-foreground sm:inline">
+                {titular(evento.city)}
+                {evento.country ? `, ${evento.country}` : ''}
+              </span>
+            ) : null}
           </ItemContent>
         </button>
       </Item>
 
-      {/*
-        Con búsqueda puesta, aquí van el contador y las flechas: se pasa de una
-        coincidencia a otra como en el buscar de un navegador, y el aspa
-        devuelve el calendario a lo normal.
-      */}
+      {/* Buscando: contador y flechas, como el buscar de un navegador; el aspa vuelve a lo normal. */}
       {buscando ? (
-        <div className="flex shrink-0 items-center gap-0.5">
-          <span className="cifra px-1 text-xs text-muted-foreground">
+        <div className="flex shrink-0 items-center gap-[4px]">
+          <span className="cifra px-[4px] text-[13px] text-muted-foreground">
             {cual + 1}/{total}
           </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-11"
-            aria-label="Coincidencia anterior"
-            onClick={onAnterior}
-          >
-            <ChevronLeft />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-11"
-            aria-label="Coincidencia siguiente"
-            onClick={onSiguiente}
-          >
-            <ChevronRight />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-11"
-            aria-label="Quitar la búsqueda"
-            onClick={onLimpiar}
-          >
-            <X />
-          </Button>
+          <BotonIcono etiqueta="Coincidencia anterior" tamano="md" onClick={onAnterior}>
+            <ChevronLeft aria-hidden />
+          </BotonIcono>
+          <BotonIcono etiqueta="Coincidencia siguiente" tamano="md" onClick={onSiguiente}>
+            <ChevronRight aria-hidden />
+          </BotonIcono>
+          <BotonIcono etiqueta="Quitar la búsqueda" tamano="md" onClick={onLimpiar}>
+            <X aria-hidden />
+          </BotonIcono>
         </div>
       ) : null}
     </div>
@@ -1656,21 +1570,17 @@ function FranjaDestacada({
 }
 
 /**
- * Todos los filtros detrás de UN botón.
+ * Los filtros, en una fila de chips (`docs/diseno-sistema.md` § 1.4 y § 7).
  *
- * Por qué no van a la vista: se tocan una vez y se dejan puestos. Medido en un
- * iPhone, la fila con el buscador, las pestañas, la navegación, tres armas,
- * dos géneros, la categoría y el tirador necesitaba tres renglones y 140 px,
- * que es media rejilla. El botón dice en su propia etiqueta qué está filtrando
- * —«Florete», «2 armas», «Todo»— así que no hay que abrirlo para saberlo, y
- * eso es lo que distingue esto de un submenú.
+ * Lo que se cambia a menudo va a la vista: el ámbito, el arma y el género.
+ * Lo demás (vista de uno o tres meses, categorías, tirador) va en la hoja de
+ * «Filtros», que es la misma en el móvil y en el escritorio.
  *
- * Y una sola convención dentro: selección múltiple con `ToggleGroup` marcado
- * en fondo secundario, elegir-uno con `Select`, y la lista larga de categorías
- * con búsqueda, que es lo que pide `Combobox` cuando hay más de cuatro
- * opciones.
+ * Un grupo con todo puesto no marca ningún chip: sin marcar quiere decir «sin
+ * filtro». Tocar un chip estando todo puesto deja sólo ese; quitar el último
+ * vuelve a ponerlo todo, porque un calendario en blanco no responde nada.
  */
-function PanelFiltros({
+function FiltrosCalendario({
   ambito,
   setAmbito,
   vista,
@@ -1717,413 +1627,173 @@ function PanelFiltros({
   temporada: string | null;
   actualizado: string | null;
 }) {
+  const [abierta, setAbierta] = React.useState(false);
+  const todasLasArmas = armas.length === ARMAS.length;
+  const ambosGeneros = generos.length === GENEROS.length;
   const todasLasCategorias = categorias.length === categoriasDisponibles.length;
+  const enLaHoja = todasLasCategorias ? 0 : 1;
 
-  /** Qué dice el botón sin abrirlo. */
-  const rotulo = todoPuesto
-    ? 'Todo'
-    : armas.length === 1
-      ? WEAPON_SHORT[armas[0]]
-      : `${armas.length} armas`;
-
-  /*
-    ========================================================================
-    EN EL MÓVIL ES UNA HOJA DE ABAJO, NO UN MENÚ COLGADO DEL BOTÓN
-    ========================================================================
-
-    Medido, que es de donde sale esto. Con las seis secciones el contenido
-    mide 571 px. Como menú anclado al botón, el hueco que queda por debajo
-    es de 470 px en un iPhone 14 Pro y de **327 px en un iPhone SE**, porque
-    el botón está a media pantalla y Radix solo puede usar lo que hay
-    debajo. O sea que por mucho que se recorte, un panel de seis filtros
-    colgado de ese botón no cabe: el problema no es el contenido, es el
-    anclaje.
-
-    Una hoja que sube desde abajo no está anclada a nada y dispone de la
-    pantalla entera menos un margen. Además cae donde está el pulgar, que es
-    lo que hace cualquier aplicación con los filtros en el móvil.
-
-    En escritorio se queda el menú: ahí sobra sitio (el contenido mide 495 px
-    en una ventana de 900) y una hoja a pantalla completa para cambiar un
-    arma sería aparatosa.
-
-    Son dos disparadores y no uno con una consulta de medios en JavaScript:
-    `useMediaQuery` devuelve algo distinto en el servidor y en el navegador y
-    eso es un desajuste de hidratación garantizado. Con CSS, el que no toca
-    ni existe para un lector de pantalla.
-  */
-  const cuerpo = (
-<FieldGroup className="gap-2.5">
-          {/*
-            Lo que se está mirando, en cifras. Va aquí y no en la cabecera:
-            «126 pruebas en 70 torneos» no cambia ninguna decisión, así que no
-            merece un renglón de la pantalla, pero sí saberlo al tocar los
-            filtros, que es cuando se está preguntando cuánto hay.
-          */}
-          {/*
-            En un renglón, y la temporada abajo con la fecha de los datos.
-
-            Decía «410 pruebas en 178 torneos · temporada 2026-2027» y en un
-            móvil estrecho eso son dos renglones: 28 px de cabecera para un
-            dato que no cambia ninguna decisión. Las cifras responden «cuánto
-            estoy viendo» y se quedan arriba; la temporada y la fecha son
-            procedencia y van al pie, que es donde se mira cuando se duda.
-
-            Y fuera el filete: el hueco ya separa, y eran 25 px con el suyo.
-          */}
-          {/*
-            LAS CIFRAS Y «VER TODO», EN LA MISMA FILA.
-
-            «Ver todo» estaba abajo del todo, detrás de un filete y en un
-            renglón propio: 73 px para un botón. Y aquí encaja mejor de lo que
-            encajaba allí, porque las dos cosas responden a la misma pregunta
-            —cuánto estoy viendo, y cómo vuelvo a verlo todo—. El renglón que
-            se ahorra es el que necesitan Género y Vista para no pisarse.
-          */}
-          {/*
-            Pegado a las cifras y NO al borde derecho: ahí, en la hoja del
-            móvil, está la ✕ de cerrar, y «Ver todo» se le montaba encima
-            (45×37 px de solape, medido). En el menú del escritorio no hay ✕,
-            pero un solo sitio para las dos formas es una regla menos que
-            recordar.
-          */}
-          <div className="flex flex-wrap items-center gap-3 pr-10">
-            <div className="flex flex-wrap items-baseline gap-3 text-xs text-muted-foreground">
-              <span><span className="cifra text-3xl text-foreground">{numPruebas}</span>{' '}
-                {numPruebas === 1 ? 'prueba' : 'pruebas'}</span>
-              <span><span className="cifra text-3xl text-foreground">{numTorneos}</span>{' '}
-                {numTorneos === 1 ? 'torneo' : 'torneos'}</span>
-            </div>
-
-            {/*
-              «Solo lo mío» únicamente cuando «lo mío» y «todo» son cosas
-              distintas: para la dirección técnica lo suyo ES todo.
-            */}
-            {propio.propio ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-11 shrink-0 px-2 text-xs"
-                onClick={todoPuesto ? verLoMio : verTodo}
-              >
-                {todoPuesto ? 'Solo lo mío' : 'Ver todo'}
-              </Button>
-            ) : (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="h-11 shrink-0 px-2 text-xs"
-                onClick={verTodo}
-                disabled={todoPuesto}
-              >
-                Ver todo
-              </Button>
-            )}
-          </div>
-
-          {/*
-            EL ÁMBITO VA EL PRIMERO porque es la decisión más gruesa: parte
-            el calendario en dos mitades y cambia el sentido de todo lo de
-            abajo. Elegir «internacional» y después el arma es el orden en
-            que se piensa; al revés hay que volver a subir.
-          */}
-          <FieldSet>
-            <FieldLegend variant="label" className="mb-1 text-xs">
-              Calendario
-            </FieldLegend>
-            <ToggleGroup
-              type="single"
-              value={ambito}
-              onValueChange={(v) => v && setAmbito(v as Ambito)}
-              variant="outline"
-              className="w-full"
-            >
-              {AMBITOS.map((a) => (
-                <ToggleGroupItem key={a.v} value={a.v} className="h-11 min-w-0 flex-1 px-2 text-sm">
-                  {a.largo}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </FieldSet>
-
-          <FieldSet>
-            <FieldLegend variant="label" className="mb-1 text-xs">
-              Armas
-            </FieldLegend>
-            {/*
-              Nunca se queda vacío: un calendario en blanco no es una
-              respuesta útil, así que al intentar quitar la última se ignora.
-              Y aquí van los nombres enteros, no los iconos: a 14 px las tres
-              armas son la misma línea con un bulto, y en un panel hay sitio
-              para la palabra.
-            */}
-            <ToggleGroup
-              type="multiple"
-              value={armas}
-              onValueChange={(v) => v.length > 0 && setArmas(v.filter(esArma))}
-              variant="outline"
-              className="w-full"
-            >
-              {ARMAS.map((a) => (
-                <ToggleGroupItem key={a} value={a} className="h-11 min-w-0 flex-1 px-2 text-sm">
-                  {WEAPON_LABEL[a]}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </FieldSet>
-
-          {/*
-            GÉNERO Y VISTA, CADA UNO A LO ANCHO.
-
-            Estuvieron media columna cada uno, para ahorrar un renglón. No
-            cabían: «Masculino / Femenino» necesita más de la mitad del panel
-            a cualquier anchura, y el grupo se pintaba **encima** del selector
-            de vista. Medido: 33 px de solape en el escritorio (panel de 304)
-            y 10 px en un iPhone 14 Pro. Los 10 px casi no se ven en una
-            captura, que es justo por lo que se me pasó y por lo que el guion
-            de medida ahora compara los rectángulos de todos los controles en
-            vez de fiarse del alto.
-
-            El renglón que se ahorraba se recupera arriba: «Ver todo» se ha
-            ido a la fila de las cifras, donde además está mejor.
-          */}
-          <FieldSet>
-            <FieldLegend variant="label" className="mb-1 text-xs">
-              Género
-            </FieldLegend>
-            <ToggleGroup
-              type="multiple"
-              value={generos}
-              onValueChange={(v) =>
-                v.length > 0 &&
-                setGeneros(v.filter((g): g is 'M' | 'F' => g === 'M' || g === 'F'))
-              }
-              variant="outline"
-              className="w-full"
-            >
-              {GENEROS.map((g) => (
-                <ToggleGroupItem key={g.v} value={g.v} className="h-11 min-w-0 flex-1 px-2 text-sm">
-                  {g.largo}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </FieldSet>
-
-          <FieldSet>
-            {/*
-              El rótulo, solo para quien no ve la pantalla.
-
-              «Un mes / Tres meses» dice lo que es sin que nadie se lo
-              explique, y ese renglón de rótulo son 22 px que en un iPhone SE
-              deciden si el panel cabe o hay que desplazarlo. Los de Armas y
-              Género se quedan visibles: ahí «Florete» o «Masculino» sí
-              podrían leerse como otra cosa en una lista de pastillas.
-
-              `sr-only` y no borrarlo: el grupo sigue teniendo nombre para un
-              lector de pantalla, que es lo que no se puede perder.
-            */}
-            <FieldLegend variant="label" className="sr-only">
-              Vista
-            </FieldLegend>
-            <ToggleGroup
-              type="single"
-              value={vista}
-              onValueChange={(v) => v && setVista(v as Vista)}
-              variant="outline"
-              className="w-full"
-            >
-              <ToggleGroupItem value="mes" className="h-11 flex-1 text-sm">
-                Un mes
-              </ToggleGroupItem>
-              <ToggleGroupItem value="trimestre" className="h-11 flex-1 text-sm">
-                Tres meses
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </FieldSet>
-
-          <FieldSet>
-            <FieldLegend variant="label" className="mb-1 text-xs">
-              Categoría
-              <span className="ml-1.5 font-normal text-muted-foreground">
-                {todasLasCategorias
-                  ? 'todas'
-                  : `${categorias.length} de ${categoriasDisponibles.length}`}
-              </span>
-            </FieldLegend>
-            {/*
-              PASTILLAS, NO UNA LISTA CON BUSCADOR DENTRO DE UNA CAJA QUE SE
-              DESPLAZA.
-
-              Eran diez opciones dentro de un `Command` con su `CommandInput`
-              y un `ScrollArea` de 128 px. O sea: una barra de desplazamiento
-              **dentro** de un panel que ya se desplazaba, en 304 px de
-              ancho. Arrastrando con el pulgar encima de las categorías se
-              movía una; un dedo más allá, la otra.
-
-              Y el buscador no ganaba nada: filtrar diez etiquetas de cuatro
-              caracteres escribiendo es más trabajo que mirarlas. Son
-              `M9 M11 M13 M15 M17 M20 ABS VET` — en pastillas que envuelven
-              caben en tres renglones y se ven todas a la vez, que es lo que
-              hace falta para elegir varias.
-
-              Se marcan con fondo y con el icono, no solo con color: la regla
-              de que el estado nunca se comunique únicamente por color vale
-              también aquí.
-            */}
-            <div className="flex flex-wrap gap-1.5">
-              {categoriasDisponibles.map((c) => {
-                const puesta = categorias.includes(c);
-                const nombre = CATEGORY_LABEL[c as keyof typeof CATEGORY_LABEL] ?? c;
-                return (
-                  <Button
-                    variant="outline"
-                    key={c}
-                    type="button"
-                    aria-pressed={puesta}
-                    onClick={() =>
-                      setCategorias((previas) => {
-                        const siguientes = puesta
-                          ? previas.filter((x) => x !== c)
-                          : ordenarCategorias([...previas, c]);
-                        // Nunca vacío: un calendario en blanco no responde a
-                        // ninguna pregunta.
-                        return siguientes.length > 0 ? siguientes : previas;
-                      })
-                    }
-                    className={cn(
-                      'inline-flex h-11 items-center gap-1 rounded-md border px-2 text-sm transition-colors',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                      puesta
-                        ? 'border-primary-text bg-marcado font-semibold text-primary-text'
-                        : 'border-input bg-secondary text-muted-foreground hover:bg-accent',
-                    )}
-                  >
-                    <CircleCheck
-                      className={cn('size-3.5', puesta ? 'opacity-100' : 'opacity-25')}
-                      aria-hidden
-                    />
-                    {nombre}
-                  </Button>
-                );
-              })}
-            </div>
-          </FieldSet>
-
-          {/*
-            Selector de tirador: solo cuando la cuenta lleva a más de uno. Con
-            un solo tirador sería un control que nunca cambia nada.
-          */}
-          {tiradores.length > 1 ? (
-            <FieldSet>
-              <FieldLegend variant="label" className="mb-1.5">
-                Tirador
-              </FieldLegend>
-              <ToggleGroup
-                type="single"
-                value={tiradorId ?? ''}
-                onValueChange={(v) => v && cambiarTirador(v)}
-                variant="outline"
-                className="w-full flex-wrap gap-2"
-              >
-                {tiradores.map((t) => (
-                  <ToggleGroupItem key={t.id} value={t.id} className="h-auto min-h-[44px] min-w-0 flex-1 whitespace-normal text-sm">
-                    {t.fullName}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-            </FieldSet>
-          ) : null}
-
-          {temporada || actualizado ? (
-            <div className="flex flex-wrap gap-x-3 gap-y-1 border-t pt-2 text-xs text-muted-foreground">
-              {temporada ? <span>Temporada {temporada}</span> : null}
-              {actualizado ? <span>Actualizado {actualizado}</span> : null}
-            </div>
-          ) : null}
-        </FieldGroup>
-  );
-
-  /*          UNA ALTURA PARA TODA LA FILA, y este botón era el que se salía.
-
-          Medido en el navegador a 1440 px, la fila tenía tres cantos de
-          arriba y tres de abajo distintos:
-
-            grupo de flechas   75 → 107   (32 px)
-            botón «Buscar»     73 → 105   (32 px)
-            botón de filtros   73 → 109   (36 px)   ← este
-
-          O sea que dentro del MISMO `ButtonGroup` la mitad derecha sobresalía
-          **4 px por abajo** de la izquierda, y el grupo de flechas quedaba
-          descolgado 2 px de las dos. Es lo que se ve en
-          `capturas/lupa/A-barra-antes.png`: un escalón en la costura.
-
-          La causa es tonta y no se arregla con `items-stretch`, que es lo que
-          ya lleva `ButtonGroup`: un elemento con alto explícito (`h-8`) no se
-          estira. Había que igualar el número. `h-8` en los tres, y el radio
-          ya era el mismo (4 px) en toda la fila.
-        */
-  const disparador = (
-    <Button variant="outline" size="sm" className="h-11 shrink-0 gap-1.5 px-3 max-sm:max-w-24" aria-label={`Filtros del calendario: ${rotulo}${generos.length === 1 ? `, ${GENDER_LABEL[generos[0]]}` : ''}`}>
-          <SlidersHorizontal className="size-4" aria-hidden />
-          <span className="cifra min-w-0 truncate text-sm leading-none tracking-tight">{rotulo}</span>
-          {generos.length === 1 ? (
-            /*
-              LA PASTILLA DEL GÉNERO EXISTÍA Y NO SE VEÍA.
-
-              Iba con `bg-secondary` **dentro de un botón que también es
-              `bg-secondary`** (`variant="outline"`), así que la pastilla y el
-              botón eran exactamente el mismo color: la «M» quedaba como una
-              letra suelta flotando al lado de «FLO», sin caja y a otro
-              tamaño. Eso es la mitad del desalineado que se ve en la captura.
-
-              Ahora sube un nivel (`--accent`, el realce) para que la caja
-              exista, y lleva `py-0.5` y `leading-none`: sin aire vertical la
-              pastilla medía 9,6 px de alto dentro de un botón de 32 y no se
-              leía como pastilla ni con lupa.
-            */
-            <span className="cifra rounded-[3px] bg-accent px-1 py-0.5 text-[0.65rem] leading-none">
-              {generos[0]}
-            </span>
-          ) : null}
-          <span className="sr-only">Filtros del calendario</span>
-        </Button>
-  );
+  const alternar = <T extends string>(todos: readonly T[], puestos: T[], valor: T): T[] => {
+    if (puestos.length === todos.length) return [valor];
+    if (puestos.includes(valor)) {
+      return puestos.length === 1 ? [...todos] : puestos.filter((x) => x !== valor);
+    }
+    return todos.filter((x) => x === valor || puestos.includes(x));
+  };
 
   return (
     <>
-      <Sheet>
-        <SheetTrigger asChild className="sm:hidden">
-          {disparador}
-        </SheetTrigger>
-        <SheetContent
-          side="bottom"
-          className="max-h-[94dvh] overflow-y-auto rounded-t-xl px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]"
+      <FilaChips etiqueta="Filtros del calendario">
+        <ChipFiltro
+          tipo="menu"
+          icono={SlidersHorizontal}
+          marcado={enLaHoja > 0}
+          contador={enLaHoja}
+          aria-label={`Filtros del calendario${enLaHoja > 0 ? `: ${categorias.length} categorías` : ''}`}
+          onClick={() => setAbierta(true)}
         >
-          <SheetHeader className="sr-only">
-            <SheetTitle>Filtros del calendario</SheetTitle>
-            <SheetDescription>
-              Qué competiciones se enseñan y cómo.
-            </SheetDescription>
-          </SheetHeader>
-          {cuerpo}
-        </SheetContent>
-      </Sheet>
+          Filtros
+        </ChipFiltro>
+        {AMBITOS.filter((a) => a.v !== 'TODO').map((a) => (
+          <ChipFiltro
+            key={a.v}
+            marcado={ambito === a.v}
+            onClick={() => setAmbito(ambito === a.v ? 'TODO' : a.v)}
+          >
+            {a.largo}
+          </ChipFiltro>
+        ))}
+        {ARMAS.map((a) => (
+          <ChipFiltro
+            key={a}
+            marcado={!todasLasArmas && armas.includes(a)}
+            onClick={() => setArmas(alternar(ARMAS, armas, a))}
+          >
+            {WEAPON_LABEL[a]}
+          </ChipFiltro>
+        ))}
+        {GENEROS.map((g) => (
+          <ChipFiltro
+            key={g.v}
+            marcado={!ambosGeneros && generos.includes(g.v)}
+            onClick={() =>
+              setGeneros(
+                alternar(
+                  GENEROS.map((x) => x.v),
+                  generos,
+                  g.v,
+                ),
+              )
+            }
+          >
+            {g.largo}
+          </ChipFiltro>
+        ))}
+      </FilaChips>
 
-      <Popover>
-        <PopoverTrigger asChild className="hidden sm:inline-flex">
-          {disparador}
-        </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        className="max-h-[var(--radix-popover-content-available-height)] w-[19rem] overflow-y-auto p-3"
+      <HojaInferior
+        abierta={abierta}
+        alCambiar={setAbierta}
+        titulo="Filtros"
+        pie={
+          <Boton variante="claro" tamano="lg" ancho="completo" onClick={() => setAbierta(false)}>
+            Ver {numTorneos} {numTorneos === 1 ? 'torneo' : 'torneos'}
+          </Boton>
+        }
       >
-        {cuerpo}
-      </PopoverContent>
-      </Popover>
+        <div className="flex flex-col gap-[24px] pt-[4px]">
+          <div className="flex flex-wrap items-center justify-between gap-[8px]">
+            <p className="text-[13px] text-muted-foreground">
+              <span className="cifra text-[28px] leading-none text-foreground">{numPruebas}</span>{' '}
+              {numPruebas === 1 ? 'prueba' : 'pruebas'}
+            </p>
+            {propio.propio ? (
+              <Boton tamano="md" onClick={todoPuesto ? verLoMio : verTodo}>
+                {todoPuesto ? 'Solo lo mío' : 'Ver todo'}
+              </Boton>
+            ) : (
+              <Boton tamano="md" onClick={verTodo} disabled={todoPuesto}>
+                Ver todo
+              </Boton>
+            )}
+          </div>
+
+          <GrupoHoja titulo="Vista">
+            <ChipFiltro marcado={vista === 'mes'} onClick={() => setVista('mes')}>
+              1 mes
+            </ChipFiltro>
+            <ChipFiltro marcado={vista === 'trimestre'} onClick={() => setVista('trimestre')}>
+              3 meses
+            </ChipFiltro>
+          </GrupoHoja>
+
+          <GrupoHoja
+            titulo="Categoría"
+            cola={todasLasCategorias ? 'todas' : `${categorias.length} de ${categoriasDisponibles.length}`}
+          >
+            {categoriasDisponibles.map((c) => {
+              const puesta = !todasLasCategorias && categorias.includes(c);
+              return (
+                <ChipFiltro
+                  key={c}
+                  marcado={puesta}
+                  onClick={() =>
+                    setCategorias((previas) =>
+                      ordenarCategorias(alternar(categoriasDisponibles, previas, c)),
+                    )
+                  }
+                >
+                  {CATEGORY_LABEL[c as keyof typeof CATEGORY_LABEL] ?? c}
+                </ChipFiltro>
+              );
+            })}
+          </GrupoHoja>
+
+          {/* Solo cuando la cuenta lleva a más de un tirador. */}
+          {tiradores.length > 1 ? (
+            <GrupoHoja titulo="Tirador">
+              {tiradores.map((t) => (
+                <ChipFiltro key={t.id} marcado={t.id === tiradorId} onClick={() => cambiarTirador(t.id)}>
+                  {t.fullName}
+                </ChipFiltro>
+              ))}
+            </GrupoHoja>
+          ) : null}
+
+          {temporada || actualizado ? (
+            <p className="text-[12px] leading-[16px] text-muted-foreground">
+              {temporada ? `Temporada ${temporada}` : null}
+              {temporada && actualizado ? ' · ' : null}
+              {actualizado ? `Actualizado ${actualizado}` : null}
+            </p>
+          ) : null}
+        </div>
+      </HojaInferior>
     </>
   );
 }
 
+function GrupoHoja({
+  titulo,
+  cola,
+  children,
+}: {
+  titulo: string;
+  cola?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <fieldset className="flex min-w-0 flex-col gap-[8px]">
+      <legend className="mb-[8px] text-[13px] leading-[16px] font-semibold">
+        {titulo}
+        {cola ? <span className="ml-[6px] font-normal text-muted-foreground">{cola}</span> : null}
+      </legend>
+      <FilaChips etiqueta={titulo} envolver>
+        {children}
+      </FilaChips>
+    </fieldset>
+  );
+}
 
 /**
  * Leyenda, en un solo renglón.
@@ -2141,7 +1811,7 @@ function PanelFiltros({
  */
 function Leyenda() {
   return (
-    <ul className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 text-[0.7rem] text-muted-foreground sm:gap-x-4">
+    <ul className="flex shrink-0 flex-wrap items-center gap-x-[12px] gap-y-[4px] text-[12px] leading-[16px] text-muted-foreground sm:gap-x-[16px]">
       {(['RFEE', 'FIE', 'EFC'] as const).map((o) => {
         const c = COLOR_ORGANISMO[o];
         return (
@@ -2177,6 +1847,11 @@ function Leyenda() {
       </li>
     </ul>
   );
+}
+
+/** `<ViewTransition>` sólo anima lo que llega en una Transition; un `setState` suelto cambia sin fundido. */
+function enTransicion(cambio: () => void) {
+  React.startTransition(cambio);
 }
 
 function nombreMes(d: Date, conAnio = true): string {

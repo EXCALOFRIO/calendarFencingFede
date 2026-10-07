@@ -5,6 +5,7 @@ import {
   isIngestSource,
   runIngest,
 } from '@/lib/ingest/runner';
+import { trasIngesta } from '@/lib/ingest/tras-ingesta';
 
 /**
  * Botón "Actualizar ahora" del panel de administración.
@@ -20,6 +21,16 @@ export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
+  /**
+   * Misma comprobación de origen que /api/auth. La cookie de sesión es
+   * SameSite=Lax, pero los demás Workers del subdominio de la cuenta en
+   * workers.dev son "same-site" para el navegador: sin esto, una página suya
+   * podría lanzar ingestiones con la sesión del admin.
+   */
+  if (request.headers.get('origin') !== new URL(request.url).origin) {
+    return Response.json({ ok: false, error: 'Origen no permitido.' }, { status: 403 });
+  }
+
   let perfil: Awaited<ReturnType<typeof requireWritableRole>>;
   try {
     perfil = await requireWritableRole('admin');
@@ -74,12 +85,14 @@ export async function POST(request: Request) {
     triggeredBy: `admin:${perfil.email}`,
     forzar: true,
   });
+  const tras = await trasIngesta(source);
 
   return Response.json({
     ok: resultado.status !== 'error',
     fuente: source,
     descripcion: SOURCE_DESCRIPTION[source],
     ...resultado,
+    tras,
   });
 }
 

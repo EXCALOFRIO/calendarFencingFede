@@ -4,6 +4,7 @@
  * datos de cuenta, ni licencias, ni fotos, ni ranking interno.
  */
 
+import type { OlimpicaPerfil } from './olimpica-perfil';
 import type { SugerenciaPersona } from './sugerencias-modelo';
 import type { Arma, DeportistaResumen } from './tipos';
 
@@ -29,7 +30,11 @@ export const TRAYECTORIA_VACIA: TrayectoriaPersona = {
   bronces: 0,
 };
 
-export type DeportistaBuscado = DeportistaResumen & { trayectoria: TrayectoriaPersona };
+export type DeportistaBuscado = DeportistaResumen & {
+  trayectoria: TrayectoriaPersona;
+  /** Marcas olímpicas vigentes (`leerOlimpicaPersonas`); falta si no tiene o no se pidieron. */
+  olimpica?: OlimpicaPerfil[];
+};
 
 /**
  * Resumen de una sugerencia: cuántas clasificaciones, de qué armas, la fecha
@@ -42,6 +47,8 @@ export type ResumenSugerencia = {
   /** YYYY-MM-DD del resultado más reciente con fecha del grupo de fusión. */
   ultimaFecha?: string | null;
   seguida?: boolean;
+  /** Marcas olímpicas vigentes; falta si no tiene ninguna. */
+  olimpica?: OlimpicaPerfil[];
 };
 
 export type SugerenciaConResumen = SugerenciaPersona & ResumenSugerencia;

@@ -31,9 +31,23 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
-import { crearConvocatoria } from '@/lib/callups/actions';
 import type { EventoConvocable } from '@/lib/callups/tipos';
 import { cn, formatDateEs, formatDateRangeEs, titular } from '@/lib/utils';
+
+/**
+ * Por la ruta propia y no por la acción de servidor: las acciones admiten
+ * 1 MB y el PDF puede pasar de eso. Ver /api/admin/convocatorias.
+ */
+async function enviarConvocatoria(datos: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const respuesta = await fetch('/api/admin/convocatorias', { method: 'POST', body: datos });
+    const cuerpo = (await respuesta.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+    if (respuesta.ok && cuerpo?.ok) return { ok: true };
+    return { ok: false, error: cuerpo?.error ?? 'No se ha podido crear la convocatoria. Inténtalo de nuevo.' };
+  } catch {
+    return { ok: false, error: 'No se ha podido crear la convocatoria. Comprueba la conexión.' };
+  }
+}
 
 /**
  * Crear la convocatoria.
@@ -80,7 +94,7 @@ export function NuevaConvocatoria({ eventos }: { eventos: EventoConvocable[] }) 
     datos.set('respondBy', plazo === SIN_PLAZO ? '' : plazo);
     if (pdf) datos.set('pdf', pdf);
 
-    const r = await crearConvocatoria(datos);
+    const r = await enviarConvocatoria(datos);
     setEnviando(false);
 
     if (!r.ok) return setError(r.error);

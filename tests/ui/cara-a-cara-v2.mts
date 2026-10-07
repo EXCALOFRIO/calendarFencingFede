@@ -114,6 +114,8 @@ const paginas = [
   { nombre: 'zabala-ramirez', html: documento(css, await pagina(ZABALA, { rival: RAMIREZ })) },
   { nombre: 'ramirez-zabala', html: documento(css, await pagina(RAMIREZ, { rival: ZABALA })) },
   { nombre: 'zabala-ramirez-poule', html: documento(css, await pagina(ZABALA, { rival: RAMIREZ, fase: 'POULE' })) },
+  { nombre: 'zabala-ramirez-nacional', html: documento(css, await pagina(ZABALA, { rival: RAMIREZ, ambito: 'nacional' })) },
+  { nombre: 'zabala-ramirez-internacional', html: documento(css, await pagina(ZABALA, { rival: RAMIREZ, ambito: 'internacional' })) },
 ];
 
 const html = new Map(paginas.map((p) => [`/${p.nombre}`, p.html]));

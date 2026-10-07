@@ -1,9 +1,10 @@
 'use client';
 
 import { ChevronRight, ExternalLink, FileText, Flag, Trophy } from 'lucide-react';
-import Link from 'next/link';
+import { EnlaceIntencion } from '@/components/enlace-intencion';
 import * as React from 'react';
 import { BanderaPais } from '@/components/bandera';
+import { AREA_TACTIL } from '@/components/sistema/tactil';
 import type { EventView } from '@/lib/queries/calendar';
 import type { PruebaPasada } from '@/lib/queries/calendario-pasado-modelo';
 import { categoriaVisible, COLOR_MEDALLA } from '@/lib/sport/explorar/presentacion';
@@ -32,7 +33,7 @@ export function Terminada({ clase }: { clase?: string }) {
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center gap-1 rounded-[3px] bg-muted px-1.5 py-px text-[0.68rem] font-medium leading-[1.4] text-muted-foreground',
+        'inline-flex shrink-0 items-center gap-1 rounded-[3px] bg-muted px-1.5 py-px text-[12px] font-medium leading-[1.4] text-muted-foreground',
         clase,
       )}
     >
@@ -104,13 +105,15 @@ export function nombreDePruebaPasada(p: PruebaPasada, { conTramo = true } = {}):
  * que se ve es la pastilla de dentro, de 28 px.
  */
 const AREA_PASTILLA =
-  'group inline-flex min-h-11 shrink-0 items-center rounded-full focus-visible:outline-none';
+  'group inline-flex min-h-[44px] shrink-0 items-center rounded-full focus-visible:outline-none';
 const PASTILLA =
-  'inline-flex h-7 items-center gap-1 rounded-full border border-filete px-2.5 text-xs font-semibold text-primary-text transition-colors group-hover:bg-muted group-focus-visible:ring-2 group-focus-visible:ring-ring';
+  'inline-flex h-[28px] items-center gap-1 rounded-full border border-filete px-[10px] text-[12px] font-semibold text-primary-text transition-colors group-hover:bg-muted group-focus-visible:ring-2 group-focus-visible:ring-ring';
 
-/** Solo icono, con los 44 px táctiles en la propia caja. */
-const ICONO_EXTERNO =
-  'inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+/** Solo icono: se ve de 32 px y se toca en 44 (AREA_TACTIL). */
+const ICONO_EXTERNO = cn(
+  'inline-flex size-[32px] shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+  AREA_TACTIL,
+);
 
 /**
  * El punto de oro y el nombre de quien ganó, con su bandera. En el pie de la
@@ -142,7 +145,7 @@ function Ganador({
         {ganador.nombre}
       </span>
       {ganador.pais ? (
-        <BanderaPais pais={ganador.pais} soloBandera={recortar} className="shrink-0 normal-case tracking-tight" />
+        <BanderaPais pais={ganador.pais} soloBandera={recortar} className="shrink-0 text-[12px] normal-case tracking-tight" />
       ) : null}
     </span>
   );
@@ -188,7 +191,7 @@ export function PieResultados({
     return (
       <div
         className={cn(
-          'flex min-h-11 min-w-0 items-center justify-end gap-x-2 border-t border-filete px-3 text-xs',
+          'flex min-h-[44px] min-w-0 items-center justify-end gap-x-2 border-t border-filete px-3 text-xs',
           clase,
         )}
       >
@@ -232,20 +235,20 @@ export function PieResultados({
     </>
   );
   const fila =
-    'flex min-h-11 min-w-0 flex-1 items-center gap-x-2 rounded-md pr-1 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+    'flex min-h-[44px] min-w-0 flex-1 items-center gap-x-2 rounded-md pr-1 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
   return (
     <div
       data-resultados={visibles.length}
       className={cn(
-        'flex min-h-11 min-w-0 items-center gap-x-1 border-t border-filete pl-3 text-xs text-muted-foreground',
+        'flex min-h-[44px] min-w-0 items-center gap-x-1 border-t border-filete pl-3 text-xs text-muted-foreground',
         clase,
       )}
     >
       {destino ? (
-        <Link href={destino} className={fila}>
+        <EnlaceIntencion href={destino} className={fila}>
           {cuerpo}
-        </Link>
+        </EnlaceIntencion>
       ) : (
         <button type="button" onClick={() => onVer(evento)} className={fila}>
           {cuerpo}
@@ -341,12 +344,12 @@ export function ResultadosPasados({
                 className="flex min-w-0 items-center gap-1 rounded-md border border-filete bg-card pr-1"
               >
                 {p.conResultados ? (
-                  <Link
+                  <EnlaceIntencion
                     href={construirUrlEdicion(p.edicionId, { prueba: p.id, origen: retorno })}
                     className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-md py-2 pl-3 pr-1 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     {cuerpo}
-                  </Link>
+                  </EnlaceIntencion>
                 ) : (
                   <div className="flex min-h-12 min-w-0 flex-1 items-center gap-2 py-2 pl-3 pr-1">{cuerpo}</div>
                 )}

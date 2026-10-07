@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
 import { BanderaPais } from '@/components/bandera';
+import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
 import { etiquetaCortaRonda } from '@/lib/sport/explorar/ediciones-asaltos';
 import type {
   AsaltoDePrueba,
@@ -36,6 +37,8 @@ const ENLACE_NOMBRE =
 
 const SIN_FILTRO: Filtro = { consulta: '' };
 
+const AVANZAR = [TIPO_TRANSICION.avanzar];
+
 function Nombre({
   t,
   enlace,
@@ -67,6 +70,7 @@ function Nombre({
     <Link
       href={enlace(t.personaId)}
       prefetch={false}
+      transitionTypes={AVANZAR}
       title={titulo}
       aria-label={titulo ? `Ficha de ${completo}` : undefined}
       className={cn(ENLACE_NOMBRE, tactil ? 'flex min-h-[44px] flex-1 items-center' : 'truncate', className)}
@@ -99,7 +103,7 @@ function Poule({ poule, enlace, filtro }: { poule: PouleDePrueba; enlace?: Enlac
         marcada && 'border-primary ring-1 ring-primary',
       )}
     >
-      <header className="flex min-h-11 items-center justify-between gap-2 border-b px-3 py-1.5">
+      <header className="flex min-h-[44px] items-center justify-between gap-2 border-b px-3 py-1.5">
         <span className="flex min-w-0 items-baseline gap-2">
           <h3 id={`${id}-titulo`} className="truncate text-base leading-tight">{poule.etiqueta}</h3>
           <span className="text-xs text-muted-foreground">{poule.filas.length}</span>
@@ -109,7 +113,7 @@ function Poule({ poule, enlace, filtro }: { poule: PouleDePrueba; enlace?: Enlac
 
       {/* Móvil: una fila por tirador con sus cifras; la matriz se abre en una hoja. */}
       <div className="sm:hidden">
-        <div aria-hidden className={cn('grid gap-x-1.5 px-3 pt-1.5 text-[0.6875rem] text-muted-foreground', COLUMNAS_LISTA)}>
+        <div aria-hidden className={cn('grid gap-x-1.5 px-3 pt-1.5 text-[12px] text-muted-foreground', COLUMNAS_LISTA)}>
           <span />
           <span />
           <span className="text-center">V</span>
@@ -189,11 +193,11 @@ function Poule({ poule, enlace, filtro }: { poule: PouleDePrueba; enlace?: Enlac
           {poule.filas.map((f, i) => (
             <tr key={f.clave} className={cn('border-t', resaltado(f, filtro) && 'bg-marcado')}>
               <td className="cifra py-1.5 pr-1 text-right text-muted-foreground">{i + 1}</td>
-              <th scope="row" className="relative px-2 py-1.5 text-left font-normal">
+              <th scope="row" className="px-2 py-0 text-left font-normal">
                 <span className="flex min-w-0 items-center gap-1.5">
                   {f.pais ? <BanderaPais pais={f.pais} /> : null}
-                  {/* La zona del toque es la casilla entera, sin que la fila crezca. */}
-                  <Nombre t={f} enlace={enlace} className="min-w-0 font-medium after:absolute after:inset-0 after:content-['']" />
+                  {/* El enlace llena la casilla: la fila mide un toque, 44 px. */}
+                  <Nombre t={f} enlace={enlace} tactil className="min-w-0 font-medium" />
                 </span>
               </th>
               {f.celdas.map((c, j) => (
@@ -250,13 +254,13 @@ function Lado({ t, gana, enlace, marcado }: { t: TiradorAsalto; gana: boolean; e
   return (
     <div
       className={cn(
-        'flex min-h-8 min-w-0 items-center gap-1.5 px-2 sm:min-h-9',
+        'flex min-h-[40px] min-w-0 items-center gap-1.5 px-2',
         gana ? 'font-semibold text-foreground' : 'text-muted-foreground',
         marcado && 'bg-marcado',
       )}
     >
       {t.pais ? <BanderaPais pais={t.pais} soloBandera /> : null}
-      <Nombre t={t} enlace={enlace} corto className="min-w-0 flex-1 text-[0.8125rem]" />
+      <Nombre t={t} enlace={enlace} corto tactil className="min-h-[40px] min-w-0 flex-1 text-[13px]" />
       <span className="cifra shrink-0 text-sm tabular-nums">
         {gana ? <span className="sr-only">ganó con </span> : null}
         {t.tantos}
@@ -290,9 +294,9 @@ function Asalto({ a, enlace, filtro, ronda }: { a: AsaltoDePrueba; enlace?: Enla
 
 /** Botón redondo de 36 px a la vista con 44 px de área táctil. */
 const FLECHA =
-  'group inline-flex size-11 items-center justify-center rounded-full focus-visible:outline-none disabled:pointer-events-none';
+  'group inline-flex size-[44px] items-center justify-center rounded-full focus-visible:outline-none disabled:pointer-events-none';
 const FLECHA_VISIBLE =
-  'inline-flex size-9 items-center justify-center rounded-full border border-input bg-secondary text-foreground transition-colors group-hover:bg-accent group-focus-visible:ring-[3px] group-focus-visible:ring-ring/50 group-disabled:opacity-35 motion-reduce:transition-none';
+  'inline-flex size-[36px] items-center justify-center rounded-full border border-input bg-secondary text-foreground transition-colors group-hover:bg-accent group-focus-visible:ring-[3px] group-focus-visible:ring-ring/50 group-disabled:opacity-35 motion-reduce:transition-none';
 
 function Flechas({
   desde,

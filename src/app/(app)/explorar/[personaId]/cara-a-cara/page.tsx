@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation';
-import { Suspense } from 'react';
-import { RelevosCaraACaraDiferido } from '@/components/explorar/relevos';
+import { RelevosCaraACaraVista } from '@/components/explorar/relevos';
 import {
   CabeceraCaraACara,
   CaraACaraCompleto,
@@ -10,11 +9,10 @@ import {
 import { FiltrosCaraACara } from '@/components/explorar/filtros-cara-a-cara';
 import { SeccionRendimientoCaraACara } from '@/components/explorar/graficos/seccion-rendimiento-cara-a-cara';
 import { getSessionProfile } from '@/lib/auth/session';
-import { cargarCaraACaraPantalla } from '@/lib/sport/explorar/cara-a-cara-pantalla';
+import { cargarCaraACaraCompartida } from '@/lib/sport/explorar/cache-real';
 import { construirUrlCaraACara, leerCriteriosCaraACara } from '@/lib/sport/explorar/cara-a-cara-url';
 import { personaDeRuta } from '@/lib/sport/explorar/ficha-url';
 import { contextoReal } from '@/lib/sport/explorar/real';
-import { cargarRelevosCaraACara } from '@/lib/sport/explorar/relevos';
 import { opcionesTemporada } from '@/lib/sport/explorar/url';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { titular } from '@/lib/utils';
@@ -47,9 +45,10 @@ export default async function Pagina({
   const personaId = personaDeRuta(segmento);
   const criterios = leerCriteriosCaraACara(consulta);
 
-  const vista = personaId
-    ? await cargarCaraACaraPantalla(contextoReal(), personaId, criterios)
-    : ({ tipo: 'entrada_invalida' } as const);
+  // Duelo y relevos llegan juntos de la caché compartida: la página se pinta entera de una vez.
+  const { vista, relevos } = personaId
+    ? await cargarCaraACaraCompartida(contextoReal(), personaId, criterios)
+    : ({ vista: { tipo: 'entrada_invalida' }, relevos: null } as const);
   if (vista.tipo === 'sin_sesion') redirect('/entrar');
 
   const hoy = new Date().toISOString().slice(0, 10);
@@ -73,8 +72,6 @@ export default async function Pagina({
 
   if (vista.tipo === 'ok') {
     const { yo, rival } = vista.datos.personas;
-    // Aparte y sin esperarla: los relevos no suman al balance de asaltos.
-    const relevos = cargarRelevosCaraACara(contextoReal(), yo.id, rival.id, criterios);
     return (
       <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-4">
         <CabeceraCaraACara datos={vista.datos} criterios={criterios} />
@@ -94,20 +91,18 @@ export default async function Pagina({
             ) : null
           }
         />
-        <Suspense fallback={null}>
-          <RelevosCaraACaraDiferido promesa={relevos} yo={yo} rival={rival} />
-        </Suspense>
+        {/* Aparte del balance: los relevos no suman a los asaltos individuales. */}
+        <RelevosCaraACaraVista datos={relevos} yo={yo} rival={rival} />
       </div>
     );
   }
 
+  // El título («Cara a cara») lo pone la cabecera compacta de la aplicación (`cabeceraDeRuta`).
   return (
     <div className="flex flex-col gap-6">
       {vista.tipo === 'elegir' ? (
-        <h1 className="text-2xl break-words sm:text-3xl">Cara a cara de {nombre}</h1>
-      ) : (
-        <h1 className="text-2xl sm:text-3xl">Cara a cara</h1>
-      )}
+        <p className="text-[16px] leading-[20px] font-semibold break-words">{nombre}</p>
+      ) : null}
 
       {vista.tipo === 'elegir' ? filtros : null}
 

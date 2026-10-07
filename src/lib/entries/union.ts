@@ -185,7 +185,7 @@ export type InscritoPublicado = {
  * ajena pasan a la respuesta aunque la fila interna las tenga.
  */
 export function aListaVisible(
-  filas: readonly FilaUnida[],
+  filas: readonly Pick<FilaUnida, 'competitionId' | 'nombre' | 'equipo' | 'club' | 'athleteIds' | 'retiradoEn'>[],
   athleteIdsPropios: ReadonlySet<string>,
 ): InscritoPublicado[] {
   return filas.map((f) => ({

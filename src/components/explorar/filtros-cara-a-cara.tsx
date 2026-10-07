@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  AMBITO_FILTRO,
   construirUrlCaraACara,
   FASE_FILTRO,
   type CriteriosCaraACara,
@@ -24,8 +25,8 @@ type Props = {
 };
 
 /**
- * Filtros del cara a cara. Con rival elegido son tres pastillas en una fila
- * que se aplican al elegir; sin rival, el formulario de búsqueda de
+ * Filtros del cara a cara. Con rival elegido son cuatro pastillas (dos filas
+ * en móvil) que se aplican al elegir; sin rival, el formulario de búsqueda de
  * rival. En los dos casos la URL se escribe con `router.push`: Atrás vuelve a
  * la consulta anterior y cada cambio empieza en la primera página. La página
  * remonta este componente (`key`) cuando cambia la URL.
@@ -39,7 +40,7 @@ type GrupoPastilla = { etiqueta?: string; opciones: OpcionPastilla[] };
 
 /**
  * Pastilla de filtro: sin valor dice su nombre; con valor, el elegido,
- * resaltado. Al elegir se cierra y se aplica. El botón mide 44 px de alto
+ * invertido. Al elegir se cierra y se aplica. El botón mide 44 px de alto
  * (área táctil) y la pastilla visible, 36.
  */
 function PastillaFiltro({
@@ -68,16 +69,16 @@ function PastillaFiltro({
         <Button
           variant="ghost"
           aria-label={elegida ? `${etiqueta}: ${elegida.etiqueta}` : etiqueta}
-          className="group h-11 min-w-0 px-0 hover:bg-transparent"
+          className="group h-[44px] min-w-0 px-0 hover:bg-transparent"
         >
           <span
             className={cn(
-              'inline-flex h-9 w-full min-w-0 items-center justify-between gap-1.5 rounded-full border bg-card pr-2.5 pl-3.5 text-sm transition-colors group-hover:bg-secondary',
-              elegida ? 'border-primary-text/60 font-medium text-foreground' : 'border-filete-alto font-normal text-muted-foreground',
+              'inline-flex h-[36px] w-full min-w-0 items-center justify-between gap-1.5 rounded-full border pr-2.5 pl-3.5 text-[13px] transition-colors',
+              elegida ? 'border-transparent bg-foreground font-semibold text-background' : 'border-filete-alto bg-card font-medium text-foreground group-hover:bg-secondary',
             )}
           >
             <span className="truncate">{elegida?.etiqueta ?? etiqueta}</span>
-            <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+            <ChevronDown className={cn('size-4 shrink-0', elegida ? 'text-background' : 'text-muted-foreground')} aria-hidden />
           </span>
         </Button>
       </PopoverTrigger>
@@ -107,7 +108,7 @@ function PastillaFiltro({
   );
 }
 
-/** Temporada, arma y fase en una sola fila de pastillas que se aplican al elegir. */
+/** Temporada, ámbito, arma y fase en pastillas que se aplican al elegir. */
 function FiltrosCompactos({ personaId, criterios, temporadas }: Props) {
   const router = useRouter();
   const [pendiente, empezar] = React.useTransition();
@@ -121,7 +122,7 @@ function FiltrosCompactos({ personaId, criterios, temporadas }: Props) {
       aria-label="Filtros del cara a cara"
       aria-busy={pendiente}
       className={cn(
-        'grid grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 transition-opacity sm:flex sm:justify-end',
+        'grid grid-cols-2 gap-x-2 transition-opacity sm:flex sm:justify-end sm:gap-2',
         pendiente && 'opacity-60',
       )}
     >
@@ -131,6 +132,13 @@ function FiltrosCompactos({ personaId, criterios, temporadas }: Props) {
         valor={criterios.temporada}
         grupos={[...(sueltas.length > 0 ? [{ opciones: sueltas }] : []), ...grupos.filter((g) => g.opciones.length > 0)]}
         onElegir={(temporada) => poner({ temporada })}
+      />
+      <PastillaFiltro
+        etiqueta="Ámbito"
+        todas="Nacional e internacional"
+        valor={criterios.ambito}
+        grupos={[{ opciones: [...AMBITO_FILTRO] }]}
+        onElegir={(ambito) => poner({ ambito })}
       />
       <PastillaFiltro
         etiqueta="Arma"
@@ -188,7 +196,7 @@ function BuscarRival({ personaId, criterios }: Props) {
           autoComplete="off"
           enterKeyHint="search"
           placeholder="Rival"
-          className="h-11 rounded-full pl-9"
+          className="h-[40px] rounded-full pl-9 text-[16px] md:text-[16px]"
           aria-invalid={corta}
           aria-describedby={corta ? 'h2h-q-ayuda' : undefined}
           onChange={(e) => setQ(e.target.value)}
@@ -199,8 +207,8 @@ function BuscarRival({ personaId, criterios }: Props) {
           </p>
         ) : null}
       </div>
-      <Button type="submit" disabled={pendiente} className="h-11 rounded-full px-5">
-        {pendiente ? 'Buscando…' : 'Buscar'}
+      <Button type="submit" disabled={pendiente} className="h-[40px] rounded-full px-5">
+        Buscar
       </Button>
     </form>
   );

@@ -29,10 +29,52 @@ vi.mock('@/db', () => ({
   },
 }));
 
-import { elegirTemporadasOlimpicas, getEntradasOlimpicas } from '@/lib/queries/olimpica';
+import {
+  elegirTemporadasOlimpicas,
+  getAnotacionesOlimpicas,
+  getEntradasOlimpicas,
+  olvidarAnotacionesOlimpicas,
+} from '@/lib/queries/olimpica';
 
 beforeEach(() => {
   h.state.queue = [];
+  olvidarAnotacionesOlimpicas();
+});
+
+describe('getAnotacionesOlimpicas: memoria entre peticiones', () => {
+  const lectura = () => [
+    [
+      { season: 2027, weapon: 'FLORETE', gender: 'M', format: 'INDIVIDUAL' },
+      { season: 2027, weapon: 'FLORETE', gender: 'M', format: 'EQUIPOS' },
+    ],
+    [
+      { season: 2027, format: 'EQUIPOS', weapon: 'FLORETE', gender: 'M', fieId: 1, position: 1, points: '100', nombre: null, pais: 'ITA', updatedAt: new Date('2026-09-01T00:00:00Z') },
+      { season: 2027, format: 'INDIVIDUAL', weapon: 'FLORETE', gender: 'M', fieId: 7, position: 1, points: '90', nombre: 'X', pais: 'ITA', updatedAt: new Date('2026-09-01T00:00:00Z') },
+    ],
+  ];
+
+  it('la segunda lectura de la misma prueba no vuelve a la base durante diez minutos', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      h.state.queue = [...lectura(), ...lectura()];
+      const a = await getAnotacionesOlimpicas('FLORETE', 'M');
+      expect(a?.individual['7']?.estado).toBe('clasificado');
+      expect(h.state.queue).toHaveLength(2);
+      expect(await getAnotacionesOlimpicas('FLORETE', 'M')).toBe(a);
+      expect(h.state.queue).toHaveLength(2);
+      vi.setSystemTime(Date.now() + 10 * 60_000 + 1);
+      const b = await getAnotacionesOlimpicas('FLORETE', 'M');
+      expect(h.state.queue).toHaveLength(0);
+      expect(b).not.toBe(a);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('una combinación que no es olímpica no consulta', async () => {
+    expect(await getAnotacionesOlimpicas('FLORETE', 'MIXTO' as never)).toBeNull();
+    expect(h.state.queue).toHaveLength(0);
+  });
 });
 
 describe('elegirTemporadasOlimpicas', () => {

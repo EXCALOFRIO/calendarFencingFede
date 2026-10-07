@@ -11,6 +11,7 @@ import {
   seasonCategory,
 } from '@/db/schema';
 import { requireRole, requireWritableRole } from '@/lib/auth/session';
+import { invalidarCacheSinFallar, type Dependencia } from '@/lib/cache';
 import { parseFechaMadrid } from '@/lib/callups/fechas';
 
 export type ResultadoAccion =
@@ -65,11 +66,13 @@ async function registrarCambio(
   });
 }
 
-function revalidar() {
+async function revalidar(deps: readonly Dependencia[] = ['calendario']) {
   revalidatePath('/admin/normativa');
   // Los plazos alimentan el semáforo de todo el calendario.
   revalidatePath('/calendario');
   revalidatePath('/');
+  // La caché compartida no la ve `revalidatePath`: los plazos y la temporada actual van en ella.
+  await invalidarCacheSinFallar(deps, 'normativa');
 }
 
 // ------------------------------------------------------------ temporadas ---
@@ -122,7 +125,7 @@ export async function crearTemporada(formData: FormData): Promise<ResultadoAccio
     perfil.profileId,
   );
 
-  revalidar();
+  await revalidar();
   return { ok: true, message: `Temporada ${label} creada.` };
 }
 
@@ -147,7 +150,7 @@ export async function marcarTemporadaActual(seasonId: string): Promise<Resultado
     perfil.profileId,
   );
 
-  revalidar();
+  await revalidar();
   return { ok: true, message: `${actualizada.label} es ahora la temporada actual.` };
 }
 
@@ -222,7 +225,7 @@ export async function guardarPlazo(formData: FormData): Promise<ResultadoAccion>
 
     await db.update(deadlineRule).set(valores).where(eq(deadlineRule.id, id));
     await registrarCambio('deadline_rule', id, 'editar', antes, valores, perfil.profileId);
-    revalidar();
+    await revalidar();
     return { ok: true, message: `Plazo "${label}" actualizado.` };
   }
 
@@ -240,7 +243,7 @@ export async function guardarPlazo(formData: FormData): Promise<ResultadoAccion>
     perfil.profileId,
   );
 
-  revalidar();
+  await revalidar();
   return { ok: true, message: `Plazo "${label}" creado.` };
 }
 
@@ -257,7 +260,7 @@ export async function borrarPlazo(id: string): Promise<ResultadoAccion> {
   await db.delete(deadlineRule).where(eq(deadlineRule.id, id));
   await registrarCambio('deadline_rule', id, 'borrar', antes, null, perfil.profileId);
 
-  revalidar();
+  await revalidar();
   return { ok: true, message: `Plazo "${antes.label}" borrado.` };
 }
 
@@ -330,7 +333,7 @@ export async function guardarCategoria(formData: FormData): Promise<ResultadoAcc
       valores,
       perfil.profileId,
     );
-    revalidar();
+    await revalidar();
     return { ok: true, message: `Categoría ${code} actualizada.` };
   }
 
@@ -355,7 +358,7 @@ export async function guardarCategoria(formData: FormData): Promise<ResultadoAcc
     };
   }
 
-  revalidar();
+  await revalidar();
   return { ok: true, message: `Categoría ${code} creada.` };
 }
 
@@ -372,7 +375,7 @@ export async function borrarCategoria(id: string): Promise<ResultadoAccion> {
   await db.delete(seasonCategory).where(eq(seasonCategory.id, id));
   await registrarCambio('season_category', id, 'borrar', antes, null, perfil.profileId);
 
-  revalidar();
+  await revalidar();
   return { ok: true, message: `Categoría ${antes.code} borrada de la temporada.` };
 }
 
@@ -453,7 +456,7 @@ export async function guardarReglaRanking(
 
     await db.update(rankingRule).set(valores).where(eq(rankingRule.id, id));
     await registrarCambio('ranking_rule', id, 'editar', antes, valores, perfil.profileId);
-    revalidar();
+    await revalidar(['calendario', 'ranking']);
     return { ok: true, message: 'Coeficientes actualizados.' };
   }
 
@@ -480,7 +483,7 @@ export async function guardarReglaRanking(
     };
   }
 
-  revalidar();
+  await revalidar(['calendario', 'ranking']);
   return { ok: true, message: 'Coeficientes guardados.' };
 }
 
@@ -497,7 +500,7 @@ export async function borrarReglaRanking(id: string): Promise<ResultadoAccion> {
   await db.delete(rankingRule).where(eq(rankingRule.id, id));
   await registrarCambio('ranking_rule', id, 'borrar', antes, null, perfil.profileId);
 
-  revalidar();
+  await revalidar(['calendario', 'ranking']);
   return { ok: true, message: 'Regla de ranking borrada.' };
 }
 

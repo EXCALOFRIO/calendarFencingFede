@@ -19,9 +19,8 @@ import {
   ItemMedia,
   ItemTitle,
 } from '@/components/ui/item';
-import { Skeleton } from '@/components/ui/skeleton';
 import { BanderaPais } from '@/components/bandera';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { ChipFiltro, FilaChips } from '@/components/sistema/chip-filtro';
 import type {
   CompetitionView,
   DatoExtraidoView,
@@ -69,7 +68,7 @@ import {
   titularDocumento,
 } from '@/lib/utils';
 import type { QuienVa as QuienVaDatos } from '@/app/(app)/inscritos';
-import { detalleDelEvento } from '@/app/(app)/detalle-evento';
+import { fichaRecibida, leerFicha } from './ficha/precarga';
 import type { TiradorOpcion } from './vista';
 
 /**
@@ -145,17 +144,20 @@ import type { TiradorOpcion } from './vista';
  * Mientras llega no hay ni esqueleto ni espera: la ficha se pinta entera con
  * lo que ya se sabe y los datos del papel entran cuando entran. Bloquear la
  * ficha entera por el pabellón sería cambiar lo que funciona por lo que
- * mejora.
+ * mejora. Casi nunca hay que esperar: el detalle se pide al mostrar intención
+ * de abrir la tarjeta (`ficha/precarga.ts`) y aquí se usa lo ya recibido.
  */
 function useConDatosDeLosPdfs(base: EventView): EventView {
-  const [leidos, setLeidos] = React.useState<EventView | null>(null);
+  const [leidos, setLeidos] = React.useState<EventView | null>(
+    () => fichaRecibida(base)?.detalle ?? null,
+  );
 
   React.useEffect(() => {
     let vigente = true;
-    setLeidos(null);
-    detalleDelEvento(base.id)
+    setLeidos(fichaRecibida(base)?.detalle ?? null);
+    leerFicha(base)
       .then((r) => {
-        if (vigente) setLeidos(r);
+        if (vigente) setLeidos(r.detalle);
       })
       // Que no se puedan leer los PDFs no puede tumbar la ficha: se queda sin
       // esa parte y todo lo demás sigue estando.
@@ -224,16 +226,16 @@ function Banda({
   return (
     <section className="flex flex-col gap-3 border-t border-t-filete pt-4 pb-1 first:border-t-0 first:pt-0">
       <header className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
-        <h3 className="text-xl leading-none sm:text-lg">{titulo}</h3>
+        <h3 className="text-[20px] leading-[24px]">{titulo}</h3>
         {cifra !== undefined || rotulo ? (
           <p className={cn('flex shrink-0 items-baseline gap-1.5', tono)}>
             {cifra !== undefined && cifra !== null ? (
-              <span className="cifra text-3xl sm:text-2xl">{cifra}</span>
+              <span className="cifra text-[28px] leading-none">{cifra}</span>
             ) : null}
             {rotulo ? (
               <span
                 className={cn(
-                  'text-sm sm:text-xs',
+                  'text-[13px]',
                   tono ? '' : 'text-muted-foreground',
                 )}
               >
@@ -370,47 +372,26 @@ export function FichaEvento({
       ) : null}
 
       {evento.competitions.length > 1 ? (
-        <ToggleGroup
-          type="single"
-          value={elegida}
-          onValueChange={(v) => v && setElegida(v)}
-          variant="outline"
-          spacing={1.5}
-          aria-label="Prueba del torneo"
-          /*
-            SE PARTE EN VARIAS LÍNEAS, NO SE DESPLAZA DE LADO.
-            Era un carril con `overflow-x-auto` y `no-scrollbar`: con dos
-            pastillas cabía, y desde que la tarjeta enseña también las pruebas
-            por equipos son cuatro (seis en veinte torneos), así que la última
-            quedaba cortada a media palabra y sin nada que dijera que había
-            más a la derecha. Un contenido escondido sin aviso no existe.
-            Partido en líneas se lee entero, que es la regla de la casa.
-          */
-          className="grid w-full max-w-full grid-cols-2 justify-start py-0.5 sm:flex sm:flex-wrap"
-        >
-          {evento.competitions.map((c) => (
-            <ToggleGroupItem
-              key={c.id}
-              value={c.id}
-              /*
-                Solo la forma. El estado marcado lo pone `toggleVariants`, y
-                aquí NO se repite a propósito.
+        /*
+          Chips de 32 px que se parten en líneas: un carril que se desplaza
+          de lado dejaba la última prueba cortada y sin aviso de que había
+          más. Se elige una y sólo una, así que cada chip es un botón con
+          `aria-pressed` y el marcado es el del sistema (invertido).
 
-                Había tres clases de `data-[state=on]` escritas a mano
-                —borde tenue, fondo secundario, texto normal— y con
-                `tailwind-merge` **ganaban a la convención de la casa**, así que
-                cuando lo marcado pasó a llevar el rojo de la aplicación, esta
-                pastilla se quedó siendo **el único control marcado de toda la
-                interfaz que seguía en gris**. Un caso particular escrito a mano
-                no se nota el día que se escribe; se nota el día que se cambia
-                la regla general y este sitio no se entera.
-              */
-              className="h-11 w-full gap-1.5 rounded-full px-3 whitespace-nowrap sm:w-auto"
+          En el móvil van dos por fila, fijas: con `flex-wrap` el reparto
+          cambiaba al llegar la condensada y la ficha entera saltaba (CLS
+          0,18 a 393 y 412 px).
+        */
+        <FilaChips etiqueta="Prueba del torneo" envolver className="grid grid-cols-2 sm:flex">
+          {evento.competitions.map((c) => (
+            <ChipFiltro
+              key={c.id}
+              marcado={c.id === elegida}
+              onClick={() => setElegida(c.id)}
+              className="w-full justify-center sm:w-auto"
             >
-              <span className="cifra text-base leading-none sm:text-sm">
-                {WEAPON_SHORT[c.weapon]}
-              </span>
-              <span className="text-sm leading-none sm:text-xs">
+              <span className="cifra text-[14px] leading-none">{WEAPON_SHORT[c.weapon]}</span>{' '}
+              <span>
                 {GENDER_SHORT[c.gender]}
                 {variasCategorias
                   ? ` ${CATEGORY_SHORT[c.category] ??
@@ -419,9 +400,9 @@ export function FichaEvento({
                   : ''}
                 {c.format === 'EQUIPOS' ? ', equipos' : ''}
               </span>
-            </ToggleGroupItem>
+            </ChipFiltro>
           ))}
-        </ToggleGroup>
+        </FilaChips>
       ) : null}
 
       {evento.competitions.length > 1 && prueba && (prueba.enlaceDirecto ?? evento.enlaceDirecto) ? (
@@ -624,7 +605,7 @@ function BandaDondeYCuando({
       <Tarjeta titulo="Sede">
         {sede ? (
           <CitaConvocatoria dato={sedeLeida}>
-            <span className="text-lg leading-tight font-medium sm:text-base">
+            <span className="text-[16px] leading-[20px] font-medium">
               {titular(sede)}
               {sedeLeida ? (
                 <MarcaConvocatoria className="ml-1.5 size-3.5 text-muted-foreground" />
@@ -799,7 +780,7 @@ export function BandaEstasDentro({
    */
   const avisoDeFallo =
     inscritos !== null && fallo ? (
-      <p role="alert" className="text-sm text-warn sm:text-xs">
+      <p role="alert" className="text-[13px] text-warn">
         La última lectura falló.
       </p>
     ) : null;
@@ -808,6 +789,9 @@ export function BandaEstasDentro({
   const sinLista =
     inscritos !== null && !fallo && oficiales.length === 0 && inscritos.estados[prueba.id] !== 'vacia';
   if (sinLista) return null;
+  // Mientras llega tampoco se reserva su hueco ni se pinta un esqueleto: la
+  // lista se pide al mostrar intención de abrir la ficha y casi siempre ya está.
+  if (inscritos === null && !fallo) return null;
 
   return (
     <Banda
@@ -815,16 +799,10 @@ export function BandaEstasDentro({
       cifra={conteo?.n}
       rotulo={conteo?.rotulo}
     >
-      {inscritos === null && fallo ? (
-        <p role="alert" className="text-base text-warn sm:text-sm">
+      {inscritos === null ? (
+        <p role="alert" className="text-[14px] text-warn">
           No se ha podido leer la lista de inscritos.
         </p>
-      ) : inscritos === null ? (
-        <div className="flex flex-col gap-2" aria-busy>
-          <Skeleton className="h-9 w-full" />
-          <Skeleton className="h-9 w-4/5" />
-          <span className="sr-only">Mirando quién va…</span>
-        </div>
       ) : oficiales.length === 0 ? (
         <>
           {/*
@@ -832,7 +810,7 @@ export function BandaEstasDentro({
             importa es la respuesta —no hay lista, o está vacía—, no quién la
             publica ni cuándo.
           */}
-          <p className="text-base text-muted-foreground sm:text-sm">
+          <p className="text-[14px] text-muted-foreground">
             {inscritos?.estados[prueba.id] === 'vacia' ? 'Lista vacía' : 'Todavía no hay lista'}
           </p>
         {avisoDeFallo}
@@ -840,8 +818,8 @@ export function BandaEstasDentro({
       ) : (
         <>
           {estasDentro ? (
-            <p className="flex items-center gap-2 text-base font-medium text-ok sm:text-sm">
-              <CircleCheck className="size-5 shrink-0 sm:size-4" aria-hidden />
+            <p className="flex items-center gap-2 text-[14px] font-medium text-ok">
+              <CircleCheck className="size-[16px] shrink-0" aria-hidden />
               Estás en la lista oficial.
             </p>
           ) : null}
@@ -857,7 +835,7 @@ export function BandaEstasDentro({
                 )}
               >
                 <ItemContent className="min-w-0">
-                  <ItemTitle className="w-full min-w-0 flex-wrap text-base sm:text-sm">
+                  <ItemTitle className="w-full min-w-0 flex-wrap text-[14px] leading-[20px]">
                     <span className="min-w-0 break-words">{titular(i.nombre)}</span>
                     {i.esMio ? (
                       <Badge variant="secondary" className="ml-1">
@@ -867,7 +845,7 @@ export function BandaEstasDentro({
                   </ItemTitle>
                 </ItemContent>
                 {i.club ? (
-                  <ItemActions className="min-w-0 basis-full break-words text-sm text-muted-foreground sm:basis-auto sm:text-xs">
+                  <ItemActions className="min-w-0 basis-full break-words text-[13px] text-muted-foreground sm:basis-auto">
                     {titular(i.club)}
                   </ItemActions>
                 ) : null}
@@ -939,13 +917,13 @@ function BandaConvocatoria({
       {evento.documents.length > 0 || retransmisiones.length > 0 ? (
         <ItemGroup className="gap-1">
           {evento.documents.map((d) => (
-            <Item key={d.id} asChild size="sm" variant="outline">
+            <Item key={d.id} asChild size="sm" variant="outline" className={FILA_ENLACE}>
               <a href={d.url} target="_blank" rel="noreferrer">
-                <ItemMedia variant="icon">
+                <ItemMedia variant="icon" className="size-[32px]">
                   <FileText />
                 </ItemMedia>
                 <ItemContent>
-                  <ItemTitle className="text-base sm:text-sm">
+                  <ItemTitle className="text-[14px] leading-[20px]">
                     {titularDocumento(d.title)}
                   </ItemTitle>
                 </ItemContent>
@@ -961,13 +939,13 @@ function BandaConvocatoria({
             Fencing Time Live van como pastilla junto a la prueba elegida.
           */}
           {retransmisiones.map((l) => (
-            <Item key={l.id} asChild size="sm" variant="outline">
+            <Item key={l.id} asChild size="sm" variant="outline" className={FILA_ENLACE}>
               <a href={l.url} target="_blank" rel="noreferrer">
-                <ItemMedia variant="icon" className="text-ok">
+                <ItemMedia variant="icon" className="size-[32px] text-ok">
                   <Radio />
                 </ItemMedia>
                 <ItemContent>
-                  <ItemTitle className="text-base sm:text-sm">
+                  <ItemTitle className="text-[14px] leading-[20px]">
                     {l.label ? titular(l.label) : titular(l.platform)}
                   </ItemTitle>
                 </ItemContent>
@@ -995,8 +973,9 @@ function BandaConvocatoria({
         <Tarjeta titulo="Enlaces">
           <ul className="flex flex-wrap items-center gap-1.5">
             {enlaces.map((d) => (
-              <li key={d.id} className="flex min-w-0 items-center">
-                <Button variant="outline" size="sm" className="min-w-0 max-w-full rounded-full" asChild>
+              // El enlace cede y la marca de la cita no: juntos nunca pasan del ancho de la tarjeta.
+              <li key={d.id} className="flex min-w-0 max-w-full items-center">
+                <Button variant="outline" size="sm" className="min-w-0 shrink rounded-full" asChild>
                   <a
                     href={urlAbsoluta(d.valor)}
                     target="_blank"
@@ -1007,8 +986,8 @@ function BandaConvocatoria({
                     <span className="truncate">{nombreDeEnlace(d)}</span>
                   </a>
                 </Button>
-                <CitaConvocatoria dato={d} className="mx-0 px-1.5">
-                  <span className="flex size-8 items-center justify-center text-muted-foreground">
+                <CitaConvocatoria dato={d} className="mx-0 shrink-0 px-[4px]">
+                  <span className="flex size-[32px] items-center justify-center text-muted-foreground">
                     <MarcaConvocatoria />
                   </span>
                 </CitaConvocatoria>
@@ -1054,6 +1033,9 @@ function BandaConvocatoria({
     </Banda>
   );
 }
+
+/** Documentos y retransmisiones en filas de 44 px: con `size="sm"` en rem y la raíz de 18 px medían 65. */
+const FILA_ENLACE = 'min-h-[44px] gap-[12px] px-[12px] py-[6px]';
 
 /** Los enlaces del PDF llegan a veces sin esquema («www.uvehoteles.com»). */
 function urlAbsoluta(valor: string): string {

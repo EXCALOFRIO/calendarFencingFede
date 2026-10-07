@@ -57,7 +57,7 @@ export function Aclaracion({
 }) {
   return (
     <details className="min-w-0 text-sm">
-      <summary className="min-h-11 cursor-pointer content-center rounded-sm py-2 text-muted-foreground break-words hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none">
+      <summary className="min-h-[44px] cursor-pointer content-center rounded-sm py-2 text-muted-foreground break-words hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none">
         {titulo}
       </summary>
       <div className="flex min-w-0 flex-col gap-3 border-l pl-4 pb-3">{children}</div>
@@ -100,7 +100,7 @@ export function EnlaceFuente({ url, etiqueta }: { url: string | null; etiqueta: 
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex min-h-11 w-fit max-w-full items-center gap-1.5 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+      className="inline-flex min-h-[44px] w-fit max-w-full items-center gap-1.5 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
     >
       {etiqueta}
       <ExternalLink className="size-3.5 shrink-0" aria-hidden />

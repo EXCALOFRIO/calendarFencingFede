@@ -97,7 +97,8 @@ describe('acción inscritosDelEvento', () => {
 
   async function cargar() {
     vi.resetModules();
-    vi.doMock('@/lib/queries/inscritos-union', () => ({ inscritosUnidosDeTorneos: h.unidas }));
+    // La acción lee la lista ya tras su propia guarda (a través de la caché compartida).
+    vi.doMock('@/lib/queries/inscritos-union', () => ({ inscritosUnidosDeTorneos: h.unidas, leerListaUnidaTrasGuarda: h.unidas }));
     return (await import('@/app/(app)/inscritos')).inscritosDelEvento;
   }
 
@@ -263,7 +264,9 @@ describe('caller de la ficha: una lectura buena sobrevive a un reintento fallido
       new URL('../src/components/calendario/vista.tsx', import.meta.url),
       'utf8',
     );
-    expect(origen).toMatch(/\[abiertoId, cargarInscritos\]/);
+    // El id y su fecha de fin (texto), nunca el objeto del evento.
+    expect(origen).toMatch(/\[abiertoId, abiertoFin, cargarInscritos\]/);
+    expect(origen).toMatch(/const abiertoFin = abierto\?\.endDate \?\? null;/);
     expect(origen).not.toMatch(/setLecturaInscritos\(\{ tipo: 'sin_consultar' \}\)/);
   });
 });

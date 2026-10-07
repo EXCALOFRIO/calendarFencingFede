@@ -2,7 +2,10 @@ import { X } from 'lucide-react';
 import Link from 'next/link';
 import type * as React from 'react';
 import { BanderaPais } from '@/components/bandera';
+import { MarcaOlimpicaPersona } from '@/components/olimpica/burbuja-olimpica';
+import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
 import { Button } from '@/components/ui/button';
+import type { OlimpicaPerfil } from '@/lib/sport/explorar/olimpica-perfil';
 import type { PersonaParaSeguir } from '@/lib/sport/explorar/siguiendo-pantalla';
 import type { Arma } from '@/lib/sport/explorar/tipos';
 import { rutaFicha } from '@/lib/sport/explorar/url';
@@ -27,6 +30,8 @@ export type PerfilFila = {
   alias?: string | null;
   /** Motivo corto de una sugerencia («Rival frecuente», «30º FIE»), en pastilla. */
   motivo?: string;
+  /** Marcas olímpicas vigentes: la burbuja va al lado del enlace, antes de la acción. */
+  olimpica?: OlimpicaPerfil[];
 };
 
 /**
@@ -44,12 +49,13 @@ export function datoCorto(p: Pick<PerfilFila, 'armas' | 'resultados'>): string |
 
 export const CLASE_LISTA_PERFILES = 'flex min-w-0 flex-col';
 
-/** «Ver más» en pastilla de 44 px dibujados, no sólo de toque. */
-export const CLASE_VER_MAS = 'h-11 rounded-full px-5 text-sm font-semibold';
+/** «Ver más» como texto de acento: 44 px de toque, sin pastilla que ocupe más que las filas. */
+export const CLASE_VER_MAS =
+  'inline-flex h-[44px] items-center gap-1.5 px-4 text-[13px] font-semibold text-primary-text outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50';
 
 export function PastillaMotivo({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex h-5 min-w-0 items-center rounded-full bg-secondary px-2 text-[0.6875rem] leading-none font-medium text-foreground/80">
+    <span className="inline-flex h-[18px] min-w-0 items-center rounded-full bg-secondary px-1.5 text-[12px] leading-none font-medium text-foreground">
       <span className="truncate">{children}</span>
     </span>
   );
@@ -82,23 +88,24 @@ export function FilaPerfil({
   ) : datoCorto(p));
   const hayLinea = p.pais || detalle || p.motivo || dato;
   return (
-    <li className="relative flex min-w-0 items-center gap-2 rounded-xl px-0.5 hover:bg-accent/50 has-[a:focus-visible]:bg-accent/50 sm:px-3">
+    <li className="relative flex min-w-0 items-center gap-2 rounded-xl px-0.5 hover:bg-secondary has-[a:focus-visible]:bg-secondary sm:px-3">
       <Link
         id={idEnlace}
         href={href}
         prefetch={false}
+        transitionTypes={[TIPO_TRANSICION.avanzar]}
         data-fila-perfil=""
         data-persona={p.id}
         data-nombre={p.nombre}
         data-pais={p.pais ?? ''}
-        className="flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-lg py-1 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="flex min-h-[56px] min-w-0 flex-1 items-center gap-3 rounded-lg py-[4px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <FotoDeportista personaId={p.id} nombre={nombre} tamano="lista" apagado={p.resultados === 0} />
-        <span className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="truncate text-[0.9375rem] leading-tight font-semibold">{nombre}</span>
+        <span className="flex min-w-0 flex-1 flex-col gap-[5px]">
+          <span className="truncate text-[14px] leading-[18px] font-semibold">{nombre}</span>
           {hayLinea ? (
             // Sin el recorte, las medallas de quien tiene muchas montan sobre el botón de Seguir.
-            <span className="flex min-w-0 items-center gap-1.5 overflow-hidden py-px text-xs leading-none whitespace-nowrap text-muted-foreground">
+            <span className="flex min-w-0 items-center gap-1.5 overflow-hidden py-px text-[12px] leading-none whitespace-nowrap text-muted-foreground">
               {p.pais ? <BanderaPais pais={p.pais} soloBandera className="shrink-0" /> : null}
               {detalle}
               {p.motivo ? <PastillaMotivo>{p.motivo}</PastillaMotivo> : null}
@@ -107,6 +114,8 @@ export function FilaPerfil({
           ) : null}
         </span>
       </Link>
+      {/* Fuera del enlace: la burbuja abre su propia explicación al tocarla. */}
+      {p.olimpica?.length ? <MarcaOlimpicaPersona marcas={p.olimpica} className="shrink-0" /> : null}
       {accion}
     </li>
   );
@@ -130,8 +139,8 @@ export function BotonQuitarReciente({ nombre, onQuitar }: { nombre: string; onQu
 
 export function EncabezadoSeccion({ id, titulo, children }: { id: string; titulo: string; children?: React.ReactNode }) {
   return (
-    <div className="flex min-h-11 items-center justify-between gap-3 px-0.5 sm:px-3">
-      <h2 id={id} className="text-base font-semibold tracking-normal">{titulo}</h2>
+    <div className="flex min-h-[40px] items-center justify-between gap-3 px-0.5 sm:px-3">
+      <h2 id={id} className="text-[15px] font-semibold tracking-normal">{titulo}</h2>
       {children}
     </div>
   );

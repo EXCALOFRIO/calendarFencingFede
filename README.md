@@ -55,8 +55,9 @@ envían avisos ni piden permisos del navegador.
   servidor y el diseño común redirigen o deniegan sin sesión **antes** de leer
   datos. Las excepciones existentes son `/entrar`, los recursos estáticos, los
   feeds iCal (`/api/calendario/<token>`, con su propio token revocable).
-  `/api/archivos/*`, que sirve los PDF (también borradores) y snapshots
-  guardados en R2, **no es una excepción**: su handler comprueba
+  `/api/archivos/*`, que sirve sólo los PDF de convocatoria guardados en R2
+  (al admin, o a quien gestiona a un convocado de una convocatoria publicada,
+  comprobado en D1), **no es una excepción**: su handler comprueba
   `getSessionProfile` antes de leer el cubo, deniega con `401` sin sesión o con
   la cuenta revocada sin tocar R2 y responde siempre `Cache-Control: private,
   no-store`. No hay permisos por destinatario, solo sesión vigente. La guarda

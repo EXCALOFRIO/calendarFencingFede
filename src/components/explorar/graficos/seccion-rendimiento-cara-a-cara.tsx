@@ -34,7 +34,7 @@ function Marcador({ datos, a, b }: { datos: RendimientoCaraACara; a: string; b: 
           <Celda rotulo="Tocados por asalto" className="col-span-2 lg:col-span-4">
             <div className="flex items-end justify-between gap-3">
               <span className="cifra text-3xl leading-none">{decimal(tpa.yo)}</span>
-              <span className="text-[0.625rem] text-muted-foreground tabular-nums">
+              <span className="text-[12px] text-muted-foreground tabular-nums">
                 {total.dados}–{total.recibidos} en total
               </span>
               <span className="cifra text-3xl leading-none text-muted-foreground">{decimal(tpa.rival)}</span>

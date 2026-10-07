@@ -1,41 +1,38 @@
-import { Rss, Star, Trophy } from 'lucide-react';
 import Link from 'next/link';
+import { AREA_TACTIL } from '@/components/sistema/tactil';
 import { RUTA_EDICIONES } from '@/lib/sport/explorar/catalogo-url';
-import { RUTA_FAVORITOS } from '@/lib/sport/explorar/favoritos-url';
-import { NOMBRE_SECCION } from '@/lib/sport/explorar/nombre-seccion';
-import { RUTA_SIGUIENDO } from '@/lib/sport/explorar/siguiendo-url';
+import { RUTA_BUSCAR } from '@/lib/sport/explorar/url';
+import { cn } from '@/lib/utils';
 
-// 44 px de alto dibujados, no sólo de toque. Por debajo de 400 px la letra baja a 13 px y por debajo de 360 px se van los iconos, para que las tres quepan sin cortarse.
-const PASTILLA =
-  'flex h-11 min-w-0 shrink items-center gap-1 rounded-full border bg-card px-2 text-[0.8125rem] max-[359px]:px-2.5 max-[359px]:text-xs min-[400px]:px-3 min-[400px]:text-sm font-medium whitespace-nowrap hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
+export type PestanaBuscar = 'personas' | 'competiciones';
 
 /**
- * Cabecera de la pantalla principal: el nombre de la sección y sus tres
- * colecciones en una sola fila de pastillas con icono y palabra.
+ * Pestañas de Buscar: dos pestañas subrayadas (personas y competiciones), sin
+ * pastillas. El título («Buscar») está en la cabecera compacta de la
+ * aplicación, así que aquí no hay `<h1>`. Siguiendo está en Tú.
  */
-export function CabeceraExplorar({ siguiendo }: { siguiendo: number | null }) {
+export function CabeceraExplorar({ activa = 'personas' }: { activa?: PestanaBuscar }) {
+  const pestana = (clave: PestanaBuscar, href: string, texto: string) => (
+    <Link
+      href={href}
+      prefetch={false}
+      aria-current={activa === clave ? 'page' : undefined}
+      // Se ve de 36 px y se toca en 44 (el `::after`); el subrayado va en `::before`.
+      className={cn(
+        'flex h-[36px] min-w-0 flex-1 items-center justify-center text-[14px] whitespace-nowrap outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:flex-none sm:px-5',
+        AREA_TACTIL,
+        activa === clave
+          ? 'font-semibold text-foreground before:absolute before:inset-x-0 before:bottom-0 before:h-[2px] before:rounded-full before:bg-foreground'
+          : 'font-medium text-muted-foreground hover:text-foreground',
+      )}
+    >
+      {texto}
+    </Link>
+  );
   return (
-    <header className="flex min-w-0 flex-col gap-3">
-      <h1 className="text-3xl leading-none sm:text-4xl">{NOMBRE_SECCION}</h1>
-      <nav aria-label={`Colecciones de ${NOMBRE_SECCION}`} className="flex min-w-0 flex-nowrap gap-1 min-[400px]:gap-2">
-        <Link href={RUTA_SIGUIENDO} prefetch={false} className={PASTILLA}>
-          <Rss className="size-3.5 shrink-0 text-muted-foreground max-[359px]:hidden" aria-hidden />
-          <span className="truncate">Siguiendo</span>
-          {typeof siguiendo === 'number' && siguiendo > 0 ? (
-            <span className="shrink-0 rounded-full bg-secondary px-1.5 text-[0.6875rem] leading-[1.125rem] tabular-nums text-foreground">
-              {siguiendo.toLocaleString('es-ES')}
-            </span>
-          ) : null}
-        </Link>
-        <Link href={RUTA_EDICIONES} prefetch={false} className={PASTILLA}>
-          <Trophy className="size-3.5 shrink-0 text-muted-foreground max-[359px]:hidden" aria-hidden />
-          <span className="truncate">Ediciones</span>
-        </Link>
-        <Link href={RUTA_FAVORITOS} prefetch={false} className={PASTILLA}>
-          <Star className="size-3.5 shrink-0 text-muted-foreground max-[359px]:hidden" aria-hidden />
-          <span className="truncate">Favoritos</span>
-        </Link>
-      </nav>
-    </header>
+    <nav aria-label="Qué buscar" className="-mt-[4px] flex min-w-0 border-b border-filete-alto lg:max-w-2xl">
+      {pestana('personas', RUTA_BUSCAR, 'Tiradores')}
+      {pestana('competiciones', RUTA_EDICIONES, 'Competiciones')}
+    </nav>
   );
 }

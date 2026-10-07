@@ -87,7 +87,10 @@ describe('/ranking: la tarjeta de los tiradores de la cuenta', () => {
   });
 
   it('la página no pasa la licencia ni la fecha de nacimiento a la tarjeta', () => {
-    const pagina = readFileSync(path.join(process.cwd(), 'src', 'app', '(app)', 'ranking', 'page.tsx'), 'utf8');
+    // Las lecturas de la página viven en `datos.ts` y el pintado en `vista.tsx`.
+    const pagina = ['page.tsx', 'datos.ts', 'vista.tsx']
+      .map((f) => readFileSync(path.join(process.cwd(), 'src', 'app', '(app)', 'ranking', f), 'utf8'))
+      .join('\n');
     expect(pagina).toMatch(/ladoNacional\(suyos\)/);
     expect(pagina).not.toMatch(/birthDate/);
     expect(pagina).not.toMatch(/rfeeLicense/);
@@ -142,8 +145,12 @@ describe('relevos en la pestaña Rivales', () => {
   });
 
   it('la página del perfil ya no la pinta al final, fuera de las pestañas', () => {
-    const pagina = readFileSync(path.join(process.cwd(), 'src', 'app', '(app)', 'explorar', '[personaId]', 'page.tsx'), 'utf8');
+    const pagina = readFileSync(path.join(process.cwd(), 'src', 'app', '(app)', 'explorar', '[personaId]', '(perfil)', 'page.tsx'), 'utf8');
     expect(pagina).not.toContain('RelevosPerfil');
+    // En el perfil por secciones los relevos son el último bloque de Rivales.
+    const seccion = readFileSync(path.join(process.cwd(), 'src', 'components', 'explorar', 'perfil', 'secciones-perfil.tsx'), 'utf8');
+    const deSeccion = seccion.slice(seccion.indexOf('export function SeccionRivales'), seccion.indexOf('export function SeccionCuriosidades'));
+    expect(deSeccion.indexOf('<RelevosPerfilVista')).toBeGreaterThan(deSeccion.indexOf('<SugeridosPerfil'));
     const ficha = readFileSync(path.join(process.cwd(), 'src', 'components', 'explorar', 'ficha-deportiva.tsx'), 'utf8');
     const rivales = ficha.slice(ficha.indexOf('<TabsContent value="rivales"'), ficha.indexOf('</Tabs>'));
     expect(rivales).toContain('<RelevosPerfilDiferido');

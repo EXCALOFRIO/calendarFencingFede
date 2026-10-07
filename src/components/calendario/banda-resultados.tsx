@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import { EnlaceIntencion } from '@/components/enlace-intencion';
 import * as React from 'react';
 import { resultadosDelEvento } from '@/app/(app)/explorar/resultados-evento';
 import {
@@ -8,7 +8,6 @@ import {
   EstadoResultadosPrueba,
   nombreDePrueba,
 } from '@/components/explorar/prueba-resultados';
-import { Skeleton } from '@/components/ui/skeleton';
 import type { VistaResultadosEvento } from '@/lib/sport/explorar/ediciones-pantalla';
 import { construirUrlEdicion, urlExplorarDePrueba } from '@/lib/sport/explorar/edicion-url';
 
@@ -22,7 +21,7 @@ import { construirUrlEdicion, urlExplorarDePrueba } from '@/lib/sport/explorar/e
 type Lectura = { evento: string; vista: VistaResultadosEvento | 'fallo' };
 
 const ENLACE =
-  'inline-flex min-h-11 items-center text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none md:min-h-0';
+  'inline-flex min-h-[44px] items-center text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none md:min-h-0';
 
 export function BandaResultados({ eventoId, retorno }: { eventoId: string; retorno?: string }) {
   const [lectura, setLectura] = React.useState<Lectura | null>(null);
@@ -42,23 +41,18 @@ export function BandaResultados({ eventoId, retorno }: { eventoId: string; retor
   }, [eventoId]);
 
   const vista = lectura && lectura.evento === eventoId ? lectura.vista : null;
+  // Sin esqueleto mientras se lee: la banda aparece cuando hay algo que decir.
+  if (vista === null) return null;
 
   return (
     <section
       aria-labelledby="banda-resultados"
       className="flex flex-col gap-3 border-t border-t-filete pt-4 pb-1"
     >
-      <h3 id="banda-resultados" className="text-xl leading-none sm:text-lg">
+      <h3 id="banda-resultados" className="text-[20px] leading-[24px]">
         Resultados
       </h3>
-      {vista === null ? (
-        <div role="status" aria-label="Leyendo resultados" className="flex flex-col gap-2">
-          <Skeleton className="h-4 w-2/3" />
-          <Skeleton className="h-4 w-1/2" />
-        </div>
-      ) : (
-        <CuerpoResultados vista={vista} retorno={retorno} />
-      )}
+      <CuerpoResultados vista={vista} retorno={retorno} />
     </section>
   );
 }
@@ -112,9 +106,9 @@ export function CuerpoResultados({
     <ul className="flex flex-col gap-4">
       {vista.ediciones.map((edicion) => (
         <li key={edicion.id} className="flex flex-col gap-2">
-          <Link href={construirUrlEdicion(edicion.id, { origen: retorno })} className={ENLACE}>
+          <EnlaceIntencion href={construirUrlEdicion(edicion.id, { origen: retorno })} className={ENLACE}>
             {edicion.nombre} · temporada {edicion.temporada}
-          </Link>
+          </EnlaceIntencion>
           {edicion.pruebasDetalle.length === 0 ? (
             <Nota>Esta edición todavía no tiene pruebas importadas.</Nota>
           ) : (
@@ -125,12 +119,12 @@ export function CuerpoResultados({
                   <EstadoResultadosPrueba estado={prueba.resultados.estado} importados={prueba.resultados.importados} />
                   <EnlacesResultados enlaces={prueba.enlaces} />
                   <span className="flex flex-wrap gap-x-4">
-                    <Link href={construirUrlEdicion(edicion.id, { prueba: prueba.id, origen: retorno })} className={ENLACE}>
+                    <EnlaceIntencion href={construirUrlEdicion(edicion.id, { prueba: prueba.id, origen: retorno })} className={ENLACE}>
                       Ver clasificación
-                    </Link>
-                    <Link href={urlExplorarDePrueba(edicion.id, prueba)} className={ENLACE}>
+                    </EnlaceIntencion>
+                    <EnlaceIntencion href={urlExplorarDePrueba(edicion.id, prueba)} className={ENLACE}>
                       Buscar deportistas de esta prueba
-                    </Link>
+                    </EnlaceIntencion>
                   </span>
                 </li>
               ))}

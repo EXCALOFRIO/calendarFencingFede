@@ -4,6 +4,7 @@ import { dividirPaginaPorPruebas } from './bloques';
 import { metadatosDeCabecera } from './cabecera';
 import { leerClasificacion } from './clasificacion';
 import { leerCuadro } from './cuadro';
+import { leerClasificacionIntermedia, nombreEnIntermedia } from './intermedia';
 import { analizarPagina, type PaginaAnalizada } from './paginas';
 import { leerPoules } from './poules';
 import type {
@@ -118,9 +119,12 @@ function construirPrueba(
   let motivoEquipos: string | null = null;
 
   if (atribuible && formato === 'INDIVIDUAL') {
-    const registro = puestos.map((p) => ({ ref: p.ref, nombre: p.nombre, club: p.club, pais: p.pais ?? null }));
-    const poules = leerPoules(paginasPoules, registro);
-    const cuadro = leerCuadro(paginasCuadro, registro);
+    const registro = puestos.map((p) => ({ ref: p.ref, nombre: p.nombre, club: p.club, pais: p.pais ?? null, posicion: p.posicion }));
+    const intermedia = leerClasificacionIntermedia(porTipo('clasificacion_intermedia'));
+    const poules = leerPoules(paginasPoules, registro, intermedia);
+    // Quien quedó eliminado tras las poules no tira el cuadro: no compite por un nombre truncado con su homónimo.
+    const eliminados = new Set(registro.filter((p) => intermedia.some((x) => x.eliminado === true && x.posicion === p.posicion && nombreEnIntermedia(p.nombre, x))).map((p) => p.ref));
+    const cuadro = leerCuadro(paginasCuadro, eliminados.size > 0 ? registro.filter((p) => !eliminados.has(p.ref)) : registro);
     asaltos = [...poules.asaltos, ...cuadro.asaltos];
     exPoules = poules.excluidos;
     exCuadro = cuadro.excluidos;

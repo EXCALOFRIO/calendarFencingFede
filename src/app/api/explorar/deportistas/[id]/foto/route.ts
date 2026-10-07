@@ -12,11 +12,13 @@ const headers = {
 };
 
 /**
- * Una respuesta definitiva (foto o «no publicada») se puede reutilizar una
- * hora en el navegador de quien ya tiene sesión: sólo contiene enlaces
- * públicos de la FIE. `private` impide que la guarde un intermediario.
+ * Una respuesta definitiva (foto o «no publicada») se puede reutilizar un día
+ * en el navegador de quien ya tiene sesión, y una semana más mientras se
+ * revalida: sólo contiene enlaces públicos de la FIE, que no cambian de un día
+ * para otro. `private` impide que la guarde un intermediario. Lo pasajero
+ * (503) y lo de sesión siguen sin guardarse.
  */
-const headersCacheables = { ...headers, 'Cache-Control': 'private, max-age=3600' };
+const headersCacheables = { ...headers, 'Cache-Control': 'private, max-age=86400, stale-while-revalidate=604800' };
 
 /**
  * Devuelve metadatos, no píxeles: servir la foto desde nuestro dominio

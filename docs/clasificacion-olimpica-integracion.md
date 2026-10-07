@@ -11,7 +11,7 @@ Terminología: el ranking de la FIE es «Internacional», nunca «Mundial».
 | Pieza | Fichero | Tipo |
 |---|---|---|
 | `getAnotacionesOlimpicas(arma, genero)` | `src/lib/queries/olimpica.ts` | servidor, `cache` |
-| `anotarRankingOlimpico(entrada, { cercanos? })` | `src/lib/ranking/olimpica/anotar.ts` | puro |
+| `anotarRankingOlimpico(entrada, { cercanos?, faltaMaxima? })` | `src/lib/ranking/olimpica/anotar.ts` | puro |
 | `ordenarSoloJjoo(filas, datos)` | `src/lib/ranking/olimpica/anotar.ts` | puro |
 | `BurbujaOlimpica` | `src/components/olimpica/burbuja-olimpica.tsx` | cliente |
 | `InsigniaOlimpica` | `src/components/olimpica/insignia-olimpica.tsx` | sin estado |
@@ -40,7 +40,13 @@ diccionario.
 
 `AnotacionOlimpica.estado`: `'clasificado'` (verde), `'cerca'` (amarillo),
 `'pendiente'` (gris: RUS, BLR y neutrales `FIE`) o `null` (sin pastilla; puede
-llevar `camino: 'TORNEO_ZONAL'`).
+llevar `camino: 'TORNEO_ZONAL'`). Quién es cada cosa y cuántos salen por
+prueba (30 tiradores en verde y entre 5 y 9 en amarillo con el ranking de
+octubre de 2026):
+«Lo que enseña la aplicación» en `docs/clasificacion-olimpica-la2028.md`.
+
+El icono (`IconoAros`) es de trazo y de un solo color (`currentColor`): toma
+el color del estado del texto que lo rodea.
 
 ### Componentes
 

@@ -9,8 +9,11 @@ import { compatibles } from './geometria';
  * qué persona deportiva corresponde sigue exigiendo un ID con ámbito.
  */
 
-/** `pais`: código de la columna «Nación»; poules y cuadro pueden mostrar el club o la nación. */
-export type Participante = { ref: string; nombre: string; club: string | null; pais?: string | null };
+/**
+ * `pais`: código de la columna «Nación»; poules y cuadro pueden mostrar el club o la nación.
+ * `posicion`: puesto en la clasificación final, si se conoce.
+ */
+export type Participante = { ref: string; nombre: string; club: string | null; pais?: string | null; posicion?: number | null };
 
 export type Atribucion =
   | { ok: true; ref: string; nombre: string }
@@ -18,21 +21,22 @@ export type Atribucion =
 
 const afiliaciones = (p: Participante): string[] => [p.club, p.pais].filter((a): a is string => !!a);
 
-export function resolverParticipante(
-  registro: readonly Participante[],
-  nombre: string,
-  club: string | null,
-): Atribucion {
+/** Filas de la clasificación compatibles con un texto de poule o de cuadro. */
+export function candidatosParticipante(registro: readonly Participante[], nombre: string, club: string | null): Participante[] {
   const candidatos = registro.filter((p) => {
     if (!compatibles(nombre, p.nombre)) return false;
     const propias = afiliaciones(p);
     return !club || propias.length === 0 || propias.some((a) => compatibles(club, a, 1));
   });
-  if (candidatos.length === 0 && club === null) {
-    const unidos = conClubUnido(registro, nombre);
-    if (unidos.length === 1) return { ok: true, ref: unidos[0].ref, nombre: unidos[0].nombre };
-    if (unidos.length > 1) return { ok: false, motivo: 'ambiguo' };
-  }
+  return candidatos.length === 0 && club === null ? conClubUnido(registro, nombre) : candidatos;
+}
+
+export function resolverParticipante(
+  registro: readonly Participante[],
+  nombre: string,
+  club: string | null,
+): Atribucion {
+  const candidatos = candidatosParticipante(registro, nombre, club);
   if (candidatos.length === 1) return { ok: true, ref: candidatos[0].ref, nombre: candidatos[0].nombre };
   return { ok: false, motivo: candidatos.length === 0 ? 'desconocido' : 'ambiguo' };
 }

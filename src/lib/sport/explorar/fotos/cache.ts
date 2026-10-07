@@ -53,6 +53,8 @@ export type ResultadoCacheFoto = {
   foto: FotoPublicada | null;
   /** `false` sólo si no hay foto porque la fuente falló y no había marca previa. */
   definitivo: boolean;
+  /** No había marca vigente y `permitirRed` no dejó preguntar a la FIE: no se ha recordado nada. */
+  aplazado?: true;
 };
 
 export function claveMarcaFie(fieId: number): string {
@@ -138,7 +140,12 @@ export function olvidarFotosEnMemoria(): void {
 export async function fotoFieConCache(
   fieId: number,
   hoy: string,
-  opciones: OpcionesFuente & { almacen?: AlmacenMarcas | null; ahora?: () => number } = {},
+  opciones: OpcionesFuente & {
+    almacen?: AlmacenMarcas | null;
+    ahora?: () => number;
+    /** Lecturas en lote: cuántas resoluciones nuevas pueden ir a la FIE en una misma petición. */
+    permitirRed?: () => boolean;
+  } = {},
 ): Promise<ResultadoCacheFoto> {
   const ahora = opciones.ahora ?? Date.now;
   const recordada = memoria.get(fieId);
@@ -156,6 +163,7 @@ export async function fotoFieConCache(
     }
   }
 
+  if (opciones.permitirRed && !opciones.permitirRed()) return { foto: null, definitivo: false, aplazado: true };
   const resolucion = await resolverFotoOficial(fieId, hoy, opciones);
   if (resolucion.tipo === 'fallo') {
     const ultima = previa?.estado === 'publicada' ? previa : null;

@@ -77,7 +77,7 @@ describe('acciones de favoritos', () => {
     await guardarFavoritoAccion({ personaId: UUID_A });
     await quitarFavoritoAccion({ personaId: UUID_A });
     // Seguir es el mismo favorito: también caducan el feed y el «Siguiendo N» de Explorar.
-    const tanda = [['/explorar/favoritos'], ['/explorar/siguiendo'], ['/explorar']];
+    const tanda = [['/explorar/favoritos'], ['/explorar/siguiendo'], ['/explorar'], ['/explorar/buscar']];
     expect(vi.mocked(revalidatePath).mock.calls).toEqual([...tanda, ...tanda]);
   });
 

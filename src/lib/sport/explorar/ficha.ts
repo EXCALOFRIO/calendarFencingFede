@@ -21,7 +21,7 @@ import {
   y,
 } from './filtros-sql';
 import { leerCabeceras, resolverPersona } from './personas';
-import { posibleMenor } from './anio-publico';
+import { posibleMenor, vetarEnlaceFie } from './anio-publico';
 import { consultaEstadisticas } from './estadisticas-sql';
 import { aDetalleEstadistico, type FilaAgregadoEstadistico } from './estadisticas';
 import { TIPO_ESTADISTICO_DOCUMENTADO } from './estadisticas-tipo';
@@ -124,18 +124,8 @@ export function sqlCobertura(ids: readonly string[]) {
   ] as const;
 }
 
-export { posibleMenor };
-
-/**
- * Mismo criterio que la foto (`foto.ts`): el enlace a la ficha FIE sólo sale
- * si algún miembro del grupo de identidad tiene año conocido y ninguno puede
- * ser menor.
- */
-export function vetarEnlaceFie(anios: readonly (number | null)[], hoy: string): boolean {
-  if (!Number.isInteger(Number(hoy.slice(0, 4)))) return true;
-  if (anios.every((a) => a === null)) return true;
-  return anios.some((a) => a !== null && (!Number.isInteger(Number(a)) || posibleMenor(Number(a), hoy)));
-}
+/** Mismo criterio que la foto (`foto.ts`): ver `vetarEnlaceFie` en `anio-publico.ts`. */
+export { posibleMenor, vetarEnlaceFie };
 
 export type ResultadoFicha =
   | { estado: 'ok'; ficha: FichaConPerfil }
@@ -240,8 +230,8 @@ export async function leerFicha(
         .filter((n) => n !== cabecera.nombre),
       pais: cabecera.pais,
       genero: cabecera.genero,
-      // De un menor ajeno no sale ni el año: sólo hechos deportivos publicados.
-      anioNacimiento: esMenor && !esPropia ? null : cabecera.anioNacimiento,
+      // De un posible menor ajeno (por cualquier miembro del grupo) no sale ni el año.
+      anioNacimiento: (esMenor || vetarEnlaceFie(anios, ctx.hoy())) && !esPropia ? null : cabecera.anioNacimiento,
       esMenor,
       esPropia,
       estadisticas: {

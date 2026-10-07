@@ -22,7 +22,8 @@ tarea.
 | 06:00 | `/api/cron/extraer`               | Extracción de hasta 5 PDF nuevos al día (idempotente) |
 | 06:45 | `/api/cron/ingest/fie_tiradores`  | Fichas FIE de nuestros tiradores y clasificación mundial |
 | 07:00 | `/api/cron/notify`                | Envío de avisos; no pide nada a fuentes externas |
-| :15   | `/api/cron/sport`                 | Mantenimiento del corpus deportivo. Desactivado por defecto y fuera de `wrangler.jsonc` |
+| —     | `/api/cron/sport`                 | **Obsoleto, sin franja.** El incremento antiguo del corpus deportivo; los resultados los mantiene `/api/cron/resultados`. Solo queda como ejecución manual (y apagada, `SPORT_INCREMENTAL_ENABLED`) de las clasificaciones históricas de ranking, que la ingesta automática no cubre. No activarlo a la vez que `/api/cron/resultados` |
+| :20 (00–02 y 08–23) | `/api/cron/resultados` | Resultados automáticos (clasificación, poules y cuadro) en `sport_*`. Desactivado por defecto y fuera de `wrangler.jsonc`; ver [Resultados automáticos](#resultados-automáticos) |
 
 Cada disparo escribe dos filas de reserva (reclamar y cerrar) para no
 ejecutarse dos veces.
@@ -139,3 +140,147 @@ escrituras de Skermo y `rfee_wp` no depende de ella.
 
 Forzar solo salta los niveles. Las cadencias propias de cada fuente siguen
 aplicándose: la del ranking nacional y la de los inscritos FIE.
+
+## Resultados automáticos
+
+`/api/cron/resultados` (`src/lib/ingest/resultados-auto/`) lleva al corpus
+deportivo (`sport_*`) la clasificación, las poules y el cuadro de las pruebas
+acabadas, unas horas después de que la fuente los publique. Usa los MISMOS
+conversores que el lote manual (`src/lib/ingest/hechos/*`, que los scripts de
+`scripts/indexado/` reexportan) y la misma lógica de carga que
+`cargar-hechos.ts` (claves naturales, `content_hash`, modos de sección y
+cobertura), así que lo que escribe es lo que habría escrito el lote.
+
+### Qué lee
+
+| Fuente | Descubrimiento | Hechos |
+|---|---|---|
+| FIE | Catálogo de la temporada (`/api/fie/competitions`, 100 por página; una página por pasada, en bucle) | Clasificación, poules y cuadro de `fie.org/api/fie/competition/<temporada>/<id>` (pruebas por equipos: sólo clasificación) |
+| Skermo (RFEE) | Índice de resultados de la temporada, como mucho cada 3 h | Clasificación de Skermo; es la prueba de destino |
+| Engarde | Enlaces del índice de Skermo, de las filas hermanas (misma ciudad o nombre, ±1 día) y de `live_source` | Poules y cuadro de la prueba que case con la de Skermo (arma, género, ±1 día y ≥80 % de nombres) |
+| PDF RFEE | Documentos de `app.skermo.org` del índice | Lector determinista (`sources/rfee-pdf`); la IA sólo si la lectura no es completa |
+
+Los asaltos de Engarde o del PDF se cuelgan de la prueba de Skermo, como en
+`dedupe-pruebas.ts`: la clasificación de Skermo manda. EFC no está cubierta:
+su dominio sigue caído.
+
+### Reglas que protegen lo que ya hay
+
+- Una prueba cuyos asaltos ya cargó otra lectura (un lote manual) no se vuelve
+  a leer ni a reescribir; sólo se completan los asaltos que esta misma unidad
+  escribió (`resultado_auto_unidad.escrito`). Un PDF que un lote ya cargó
+  (`sport_import_coverage`, `doc:<fichero>`) tampoco se toca.
+- Antes de escribir una lectura determinista se sanean los asaltos
+  (`sanearAsaltos`): fuera la poule con parejas repetidas o más asaltos de los
+  posibles (y, en un PDF que se declara completo, la de alguien sin sus n−1
+  asaltos), fuera los asaltos incoherentes del cuadro. La sección queda
+  `parcial`. Mejor sin asaltos que con asaltos duplicados.
+- Una cobertura en `conflicto` (marca de revisión humana) no se limpia nunca.
+- Personas, de más a menos fuerte: ID FIE o licencia RFEE de la temporada;
+  misma licencia en otra temporada con el mismo nombre; nombre idéntico con
+  contexto (país en la FIE, club en los tres últimos años en las nacionales)
+  y un único candidato. Un identificador nunca enlaza con una persona de otro
+  género o con un año de nacimiento incompatible. Con ID publicado y sin
+  ningún homónimo se crea la persona; con homónimos el puesto queda sin
+  persona y los homónimos quedan como `sport_link_candidate` `PROPUESTO`
+  (`source = 'resultados_auto'`). Nunca se une ni se crea por la duda.
+
+### Cuándo vuelve a mirar
+
+Una unidad (prueba FIE, fila de Skermo, PDF) entra en cola 20 h después de su
+fecha. Si la fuente no está completa: cada hora los dos primeros días, cada
+6 h hasta el día 7 y diaria hasta el día 21. Completa: una revisión de
+correcciones a los dos días si es reciente. Una fuente igual a la ya escrita
+(misma huella) no escribe nada; si cambia, la carga compara fila a fila y sólo
+escribe lo que cambió.
+
+### Presupuesto
+
+Todo se puede cambiar con variables del Worker (`config.ts`), sin desplegar:
+
+| Tope | Por defecto | Variable |
+|---|---|---|
+| Reloj por pasada | 45 s | `RESULTADOS_AUTO_MAX_MS` |
+| Peticiones a fuentes por pasada | 40 (pausa de 0,4 s; un 429 o 5xx para la pasada) | `RESULTADOS_AUTO_MAX_PETICIONES` |
+| Filas `sport_*` por pasada / día | 1.500 / 6.000 (una prueba nunca se parte) | `RESULTADOS_AUTO_MAX_FILAS_PASADA`, `_DIA` |
+| Libro de capacidad por día | 48 MiB | `RESULTADOS_AUTO_MAX_BYTES_DIA` |
+| Margen mínimo del libro (8 GiB menos lo contabilizado) | 512 MiB | `RESULTADOS_AUTO_MARGEN_MIN_BYTES` |
+| Unidades por pasada | 6 | `RESULTADOS_AUTO_MAX_UNIDADES` |
+| IA por día | 4 llamadas, 6.000 neuronas estimadas (peor caso ≈650 por llamada) | `RESULTADOS_AUTO_IA_MAX_LLAMADAS_DIA`, `_NEURONAS_DIA` |
+| PDF | 4 MiB, 100 páginas | — |
+
+Escribe sólo dentro del lease global de `sport_*` (el del incremento y el del
+lote remoto, `dbConSportLease`) y cada lote paga en el libro de capacidad. Con
+poco margen no escribe, responde `ok:false, status:'ledger_bajo'` (el cron
+queda como fallido) y abre una revisión. Medido en la simulación sobre la copia
+de `nuevo9`: cargar las cuatro pruebas del TNR de octubre (324 puestos y 741
+asaltos) costó ≈1.400 filas y ≈3,4 MB de libro; un día normal sin pruebas
+nuevas son 0 filas y entre 1 y 25 peticiones por pasada.
+
+### Activar
+
+1. `npx wrangler d1 execute calendario-fie-fede-db --remote --file drizzle-d1/0017_resultados_automaticos.sql`
+   (sólo crea cuatro tablas `resultado_auto_*`, fuera de `sport_*`: no paga en
+   el libro ni las copia `sincronizar-d1.ts`).
+2. Añadir `"20 0-2,8-23 * * *"` a `triggers.crons` en `wrangler.jsonc`.
+3. `RESULTADOS_AUTO_ENABLED = "true"`. La IA aparte:
+   `RESULTADOS_AUTO_IA_ENABLED = "true"` (usa el binding `AI` existente).
+
+Sin la migración el cron responde `migracion_pendiente` y no escribe nada.
+
+### Cola de revisión
+
+Nada de lo que está en `resultado_auto_revision` se escribió en `sport_*`
+(salvo que `datos.escrito` sea `true`, p. ej. una prueba cargada con un PDF
+parcial).
+
+```sql
+SELECT id, clave, motivo, datos, datetime(creada_en/1000, 'unixepoch') FROM resultado_auto_revision
+ WHERE estado = 'abierta' ORDER BY creada_en DESC;
+-- Motivos: ledger_bajo, pdf_parcial, pdf_no_atribuible, pdf_sin_texto (escaneado),
+-- ia_no_valida (con los fallos de la validación estricta), errores_repetidos,
+-- conflicto / prueba_partida_por_lector_antiguo.
+UPDATE resultado_auto_revision SET estado = 'resuelta', resuelta_en = unixepoch()*1000 WHERE id = ?;
+-- Volver a leer una unidad en la siguiente pasada:
+UPDATE resultado_auto_unidad SET estado = 'pendiente', proxima = 0, intentos = 0 WHERE clave = 'skermo|2026-2027|10351';
+-- Estado de las unidades y consumo del día:
+SELECT clave, estado, detalle, intentos, datetime(proxima/1000,'unixepoch') FROM resultado_auto_unidad ORDER BY proxima;
+SELECT * FROM resultado_auto_consumo WHERE dia = date('now');
+```
+
+### Eventos para las notificaciones
+
+`leerEventosResultados(db, { desdeId, limite, tipos, personas })` y
+`eventosDisponibles(db)` en `src/lib/ingest/resultados-auto/eventos.ts`.
+Tipos: `prueba_publicada` (primera clasificación de una prueba),
+`fases_publicadas` (primeras poules o cuadro) y `resultado_persona` (puesto
+nuevo, o recién enlazado, de una persona). Cada evento se escribe una sola vez;
+el consumidor guarda su cursor (último `id`). Compara con `personaCanonica`,
+no con `personId`: un lote posterior puede fusionar personas. Se purgan a los
+120 días.
+
+Al acabar cada pasada que escribió filas o eventos, `despuesDePasada`
+(`runtime.ts`) llama a `trasIngesta('resultados_auto')`
+(`src/lib/ingest/tras-ingesta.ts`): sube la época `deporte` de la caché
+compartida y llama a `notificarResultadosNuevos(db)`, que lee estos eventos con
+su cursor, genera los avisos de la campana y los empuja al móvil. Las rutas de
+`runIngest` (cron y botón del panel) hacen lo mismo con su fuente. Ningún fallo
+de estos dos pasos rompe la ingesta: el resumen lleva `tras` con su estado y,
+si los avisos no salen, los recoge el cron de las 07:00.
+
+### Perfil y Explorar
+
+Tras cada prueba se recalculan `perfil_deportista` de las personas tocadas
+(si la tabla existe) y se marca su peso en el índice de Explorar (si existe).
+Es incremental y parcial: el recálculo completo sigue siendo el del lote.
+
+### Ensayo local
+
+```
+npx tsx scripts/resultados-auto-simular.ts --d1-local <copia.sqlite> --casete <dir> [--grabar] \
+  [--ahora 2026-10-07T01:20:00Z] [--pasadas 8] [--forzar] [--sin-huella]
+```
+
+Nunca sobre una exportación de producción (`nuevoN.sqlite`): copia antes.
+`--grabar` pide a las fuentes reales y guarda cada respuesta en el casete; sin
+él reproduce el casete sin red.

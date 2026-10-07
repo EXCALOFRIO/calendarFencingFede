@@ -88,14 +88,36 @@ describe('páginas sin sesión', () => {
         }),
     ],
     [
-      '/explorar/[personaId]',
-      '@/app/(app)/explorar/[personaId]/page',
+      '/explorar/[personaId] (layout del perfil)',
+      '@/app/(app)/explorar/[personaId]/(perfil)/layout',
       async () =>
-        (await import('@/app/(app)/explorar/[personaId]/page')).default({
+        (await import('@/app/(app)/explorar/[personaId]/(perfil)/layout')).default({
+          children: null,
+          params: rutaPersona,
+        }),
+    ],
+    [
+      '/explorar/[personaId]',
+      '@/app/(app)/explorar/[personaId]/(perfil)/page',
+      async () =>
+        (await import('@/app/(app)/explorar/[personaId]/(perfil)/page')).default({
           params: rutaPersona,
           searchParams: sinConsulta,
         }),
     ],
+    ...(['estadisticas', 'rivales', 'curiosidades', 'ranking'] as const).map((seccion): [string, string, () => Promise<unknown>] => [
+      `/explorar/[personaId]/${seccion}`,
+      `@/app/(app)/explorar/[personaId]/(perfil)/${seccion}/page`,
+      async () => {
+        const modulos = {
+          estadisticas: () => import('@/app/(app)/explorar/[personaId]/(perfil)/estadisticas/page'),
+          rivales: () => import('@/app/(app)/explorar/[personaId]/(perfil)/rivales/page'),
+          curiosidades: () => import('@/app/(app)/explorar/[personaId]/(perfil)/curiosidades/page'),
+          ranking: () => import('@/app/(app)/explorar/[personaId]/(perfil)/ranking/page'),
+        };
+        return (await modulos[seccion]()).default({ params: rutaPersona });
+      },
+    ]),
     [
       '/explorar/[personaId]/cara-a-cara',
       '@/app/(app)/explorar/[personaId]/cara-a-cara/page',
@@ -108,7 +130,7 @@ describe('páginas sin sesión', () => {
     [
       '/explorar/favoritos',
       '@/app/(app)/explorar/favoritos/page',
-      async () => (await import('@/app/(app)/explorar/favoritos/page')).default({ searchParams: sinConsulta }),
+      async () => (await import('@/app/(app)/explorar/favoritos/page')).default(),
     ],
   ];
 

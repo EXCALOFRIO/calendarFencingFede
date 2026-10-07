@@ -43,8 +43,8 @@ function Grafico({ serie }: { serie: NonNullable<ReturnType<typeof serieTemporad
     <figure className="flex min-w-0 flex-col gap-2">
       <figcaption className="text-xs text-muted-foreground">
         {serie.medida === 'victorias'
-          ? 'Porcentaje de asaltos ganados por temporada. La línea marca el 50 %.'
-          : 'Mejor puesto por temporada: cuanto más alta la barra, mejor puesto.'}
+          ? 'Asaltos ganados por temporada'
+          : 'Mejor puesto por temporada'}
       </figcaption>
       <svg
         viewBox={`0 0 ${ancho} ${ALTO}`}

@@ -12,8 +12,8 @@ const ARMAS: { valor: ArmaOlimpica; rotulo: string }[] = [
 ];
 
 const GENEROS: { valor: GeneroOlimpico; rotulo: string }[] = [
-  { valor: 'F', rotulo: 'Fem.' },
-  { valor: 'M', rotulo: 'Masc.' },
+  { valor: 'F', rotulo: 'Femenino' },
+  { valor: 'M', rotulo: 'Masculino' },
 ];
 
 /**

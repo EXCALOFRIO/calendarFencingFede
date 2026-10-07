@@ -42,13 +42,13 @@ export function HoraEnTuHuso({
         className,
       )}
     >
-      <span className="cifra text-base text-foreground/80 sm:text-sm">
+      <span className="cifra text-[14px] text-muted-foreground">
         {tuya.hora}
         <span className="sr-only"> tu hora</span>
       </span>
       {/* «tu hora» ya lo dice la cabecera de la columna; aquí solo el día cuando cambia. */}
       {tuya.dias !== 0 ? (
-        <span className="pt-0.5 text-[11px] text-warn">
+        <span className="pt-0.5 text-[12px] text-warn">
           {tuya.dias < 0 ? 'día antes' : 'día después'}
         </span>
       ) : null}
@@ -106,7 +106,7 @@ export function RelojSede({ evento }: { evento: EventView }) {
           </span>
           <span>{ciudad ? `en ${ciudad}` : 'allí'}</span>
           <span aria-hidden>·</span>
-          <span suppressHydrationWarning className="cifra text-base text-foreground/80">
+          <span suppressHydrationWarning className="cifra text-[16px] text-muted-foreground">
             {enHuso(ahora, huso).hora}
           </span>
           <span>tu hora</span>

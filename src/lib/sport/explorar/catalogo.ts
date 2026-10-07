@@ -41,11 +41,17 @@ export async function leerCatalogoEdiciones(ctx: ContextoExplorador, entrada: un
   if (filtros.fuente) condiciones.push(sql`e.source = ${filtros.fuente}`);
   if (filtros.temporada) condiciones.push(sql`e.season = ${filtros.temporada}`);
   const pagina = [...condiciones];
+  // Un filtro que no usa índice, a propósito: el recorrido lo marca el ORDER BY de abajo.
   if (clave) pagina.push(sql`(coalesce(e.start_date, '0000-01-01'), e.id) < (${clave[0]}, ${clave[1]})`);
 
   // Sólo metadatos y agregados. Nunca descarga todos los hechos ni una lista de personas.
   const [conteo, lista] = await Promise.all([
-    ctx.db.execute(sql`
+    // Sin filtros, dos recuentos sobre índices cubrientes; con filtros, por edición.
+    ctx.db.execute(condiciones.length === 0
+      ? sql`
+      SELECT (SELECT count(*) FROM sport_edition) AS total,
+        (SELECT count(*) FROM sport_competition c WHERE c.edition_id IS NOT NULL) AS pruebas`
+      : sql`
       SELECT count(*) AS total,
         coalesce(sum((SELECT count(*) FROM sport_competition c WHERE c.edition_id=e.id)), 0) AS pruebas
       FROM sport_edition e WHERE ${y(condiciones)}`),
@@ -58,7 +64,9 @@ export async function leerCatalogoEdiciones(ctx: ContextoExplorador, entrada: un
           WHERE c.edition_id = e.id) AS clasificados
       FROM (
         SELECT e.* FROM sport_edition e WHERE ${y(pagina)}
-        ORDER BY coalesce(e.start_date, '0000-01-01') DESC, e.id DESC
+        -- En SQLite un NULL va el último en DESC, como el '0000-01-01' de fuera; así
+        -- recorre sport_edition_dates_idx y para en la página en vez de ordenar todas.
+        ORDER BY e.start_date DESC, e.id DESC
         LIMIT ${LIMITE_CATALOGO + 1}
       ) e
       ORDER BY coalesce(e.start_date, '0000-01-01') DESC, e.id DESC`),

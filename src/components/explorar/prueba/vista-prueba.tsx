@@ -5,6 +5,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FilaClasificacion } from '@/lib/sport/explorar/edicion-modelo';
 import { construirUrlEdicion, type VistaPrueba as Vista } from '@/lib/sport/explorar/edicion-url';
 import type { AsaltosDePrueba } from '@/lib/sport/explorar/tipos-busqueda';
+import { AREA_TACTIL } from '@/components/sistema/tactil';
 import { cn } from '@/lib/utils';
 import { CuadroDePrueba, PoulesDePrueba } from '../asaltos-prueba';
 import { ListaClasificacion } from './clasificacion';
@@ -150,9 +151,10 @@ export function VistaPrueba({
                   aria-label={corta ? etiqueta : undefined}
                   onClick={() => cambiarVista(valor)}
                   className={cn(
-                    'inline-flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-full px-3 text-sm transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none',
+                    'inline-flex h-[32px] min-w-0 items-center justify-center gap-1.5 rounded-full px-3 text-[13px] transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none',
+                    AREA_TACTIL,
                     activa
-                      ? 'bg-marcado font-semibold text-primary-text ring-1 ring-primary-text ring-inset'
+                      ? 'bg-foreground font-semibold text-background'
                       : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                   )}
                 >
@@ -188,7 +190,7 @@ export function VistaPrueba({
             aria-label="Buscar un tirador en esta vista"
             enterKeyHint="search"
             autoComplete="off"
-            className="h-11 w-full min-w-0 rounded-full border border-input bg-card pr-24 pl-9 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm [&::-webkit-search-cancel-button]:hidden"
+            className="h-[40px] w-full min-w-0 rounded-full border border-input bg-card pr-24 pl-9 text-[16px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [&::-webkit-search-cancel-button]:hidden"
           />
           {consulta ? (
             <div className="absolute inset-y-0 right-0 flex items-center">
@@ -199,7 +201,7 @@ export function VistaPrueba({
                 <button
                   type="submit"
                   aria-label="Siguiente coincidencia"
-                  className="inline-flex size-11 items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                  className="inline-flex size-[40px] items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
                 >
                   <ChevronDown className="size-4" aria-hidden />
                 </button>
@@ -208,7 +210,7 @@ export function VistaPrueba({
                 type="button"
                 onClick={() => buscar('')}
                 aria-label="Borrar la búsqueda"
-                className="inline-flex size-11 items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                className="inline-flex size-[40px] items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
               >
                 <X className="size-4" aria-hidden />
               </button>

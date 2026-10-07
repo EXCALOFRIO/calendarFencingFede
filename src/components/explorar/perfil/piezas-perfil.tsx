@@ -118,7 +118,7 @@ export function Metrica({
   className?: string;
 }) {
   return (
-    <div className={cn('flex min-w-0 flex-col gap-2 bg-card px-4 py-4 sm:px-5 sm:py-5', className)}>
+    <div className={cn('flex min-w-0 flex-col gap-2 bg-card px-[16px] py-[16px] sm:px-[20px] sm:py-[20px]', className)}>
       <dt className="text-xs leading-tight text-muted-foreground">{etiqueta}</dt>
       <dd className="flex min-w-0 flex-col gap-1.5">
         {children}

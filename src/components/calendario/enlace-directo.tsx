@@ -39,13 +39,13 @@ export function PastillaDirecto({
       data-directo={estado}
       data-proveedor={enlace.proveedor}
       className={cn(
-        'group inline-flex min-h-11 shrink-0 items-center rounded-full focus-visible:outline-none',
+        'group inline-flex min-h-[44px] shrink-0 items-center rounded-full focus-visible:outline-none',
         clase,
       )}
     >
       <span
         className={cn(
-          'inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[0.7rem] font-semibold leading-none transition-colors group-hover:bg-muted group-focus-visible:ring-2 group-focus-visible:ring-ring',
+          'inline-flex h-[24px] items-center gap-1 rounded-full border px-2 text-[12px] font-semibold leading-none transition-colors group-hover:bg-muted group-focus-visible:ring-2 group-focus-visible:ring-ring',
           directo ? 'border-danger text-danger' : 'border-filete text-primary-text',
           soloIcono && !directo && 'px-1.5',
         )}

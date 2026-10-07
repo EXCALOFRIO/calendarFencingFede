@@ -49,8 +49,8 @@ describe('criterios de Explorar en la URL', () => {
     expect(leerCriterios(params).criterios).toEqual(criterios);
   });
 
-  it('sin criterios la URL es la pantalla limpia', () => {
-    expect(construirUrl(CRITERIOS_VACIOS)).toBe('/explorar');
+  it('sin criterios la URL es la pestaña Buscar limpia (`/explorar` a secas es Inicio)', () => {
+    expect(construirUrl(CRITERIOS_VACIOS)).toBe('/explorar/buscar');
     expect(hayCriterios(CRITERIOS_VACIOS)).toBe(false);
     expect(hayCriterios({ ...CRITERIOS_VACIOS, ambito: 'NACIONAL' })).toBe(true);
   });

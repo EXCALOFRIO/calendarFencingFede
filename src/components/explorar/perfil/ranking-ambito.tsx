@@ -139,7 +139,7 @@ export function RankingAmbitoPerfil({
       ) : null}
       {resto.length > 0 ? (
         <details className="group min-w-0">
-          <summary className="inline-flex min-h-11 cursor-pointer items-center text-sm text-primary-text group-open:hidden">
+          <summary className="inline-flex min-h-[44px] cursor-pointer items-center text-sm text-primary-text group-open:hidden">
             Ver más listas
           </summary>
           <ol className="grid min-w-0 gap-px overflow-hidden rounded-xl border bg-border">

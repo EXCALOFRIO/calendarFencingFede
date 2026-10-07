@@ -1,4 +1,5 @@
 import { sql, type SQL } from 'drizzle-orm';
+import { cache } from 'react';
 import { filas, type ContextoExplorador } from './contexto';
 import type { Genero } from './tipos';
 import { listaUuid } from './filtros-sql';
@@ -36,8 +37,15 @@ export type PersonaResuelta = {
  * (puestos, asaltos) conservan el ID con el que se guardaron, así que se leen
  * por el grupo completo. Una cadena más larga que `SALTOS` no se resuelve: es
  * «no encontrada», no una elección arbitraria.
+ *
+ * Memorizada por petición (React `cache`, por identidad de `db` e id): una
+ * pantalla resuelve la misma persona desde varios cargadores y eran dos
+ * consultas cada vez. Fuera de un render de servidor (pruebas, scripts, la
+ * revalidación en segundo plano) no memoriza nada.
  */
-export async function resolverPersona(
+export const resolverPersona = cache(resolverPersonaSinMemo);
+
+async function resolverPersonaSinMemo(
   db: ContextoExplorador['db'],
   personaId: string,
 ): Promise<PersonaResuelta | null> {

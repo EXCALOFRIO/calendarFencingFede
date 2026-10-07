@@ -13,8 +13,9 @@ import { puntos as formatoPuntos } from './formato';
  * (recortado con puntos suspensivos, nunca en dos renglones), lo que haga
  * falta detrás del nombre (la marca olímpica, «Tú») y los puntos. A 320 px no
  * se desplaza nada en horizontal: lo único que encoge es el nombre, y por debajo
- * de 360 px el retrato se quita y la marca olímpica pasa junto a los puntos
- * para dejarle sitio.
+ * de 360 px el código de club se quita y la marca olímpica pasa junto a los
+ * puntos para dejarle sitio. El retrato se queda siempre: es lo que hace
+ * reconocible la fila de un vistazo.
  *
  * El nombre lleva a la ficha de la persona en Explorar cuando se sabe quién
  * es; si no, a su ficha externa (FIE) si la hay, o a nada.
@@ -52,15 +53,20 @@ export function FilaLinea({
   /** Botón al final de la fila (abrir el detalle). */
   accion?: React.ReactNode;
 }) {
-  const claseNombre = cn('min-w-0 truncate text-sm', mio ? 'font-semibold' : 'font-medium');
-  // El enlace ocupa el alto de la fila: 44 px de objetivo táctil aunque el texto sea de 14.
-  const claseEnlace = 'flex min-h-11 items-center hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
+  const claseNombre = cn('min-w-0 truncate text-[14px] leading-tight', mio ? 'font-semibold' : 'font-medium');
+  /*
+    El enlace ocupa el alto de la fila (40 px, en px y no en rem para que no
+    crezca con la raíz del móvil) y un pseudoelemento le añade 2 px arriba y
+    abajo: 44 px de objetivo táctil aunque el texto sea de 14. Gana a
+    `.ranking a[href]` porque las utilidades van después de base.
+  */
+  const claseEnlace = "relative flex min-h-[40px] items-center after:absolute after:inset-x-0 after:-inset-y-[2px] after:content-[''] hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none";
   const conTras = tras !== undefined && tras !== null && tras !== false;
   return (
     <li
       data-mio={mio || undefined}
       className={cn(
-        'grid min-h-11 min-w-0 grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-2 bg-card px-2 sm:px-3',
+        'grid min-h-[40px] min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-x-2 bg-card px-2 sm:px-3',
         /*
           Con algo detrás del nombre, desde 360 px va en su columna pegada al
           nombre (que sólo ocupa lo que mide) y un hueco empuja los puntos a la
@@ -68,19 +74,19 @@ export function FilaLinea({
           botón de 44 px en la línea del nombre se comería medio nombre.
         */
         conTras
-          ? 'min-[360px]:grid-cols-[2rem_minmax(0,max-content)_auto_minmax(0,1fr)_auto] sm:grid-cols-[2.5rem_minmax(0,max-content)_auto_minmax(0,1fr)_auto]'
-          : 'sm:grid-cols-[2.5rem_minmax(0,1fr)_auto]',
+          ? 'min-[360px]:grid-cols-[1.75rem_minmax(0,max-content)_auto_minmax(0,1fr)_auto] sm:grid-cols-[2.25rem_minmax(0,max-content)_auto_minmax(0,1fr)_auto]'
+          : 'sm:grid-cols-[2.25rem_minmax(0,1fr)_auto]',
         (mio || resaltada) && 'bg-marcado',
       )}
     >
-      <span className={cn('cifra text-right text-lg leading-none tabular-nums', mio ? 'text-primary-text' : 'text-foreground')}>
+      <span className={cn('cifra text-right text-[15px] leading-none tabular-nums', mio ? 'text-primary-text' : puesto !== null && puesto <= 3 ? 'text-foreground' : 'text-muted-foreground')}>
         {puesto ?? '—'}
       </span>
       <span className="flex min-w-0 items-center gap-2">
         {sinRetrato ? null : personaId ? (
-          <FotoDeportista personaId={personaId} nombre={nombre} tamano="fila" apagado className="max-[359px]:hidden" />
+          <FotoDeportista personaId={personaId} nombre={nombre} tamano="fila" apagado />
         ) : (
-          <span aria-hidden className="flex size-[30px] shrink-0 items-center max-[359px]:hidden justify-center rounded-full border border-filete-alto font-display text-[0.6875rem] text-muted-foreground">
+          <span aria-hidden className="flex size-[28px] shrink-0 items-center justify-center rounded-full border border-filete-alto font-display text-[11px] text-muted-foreground">
             {inicialesVisibles(nombre) || '—'}
           </span>
         )}
@@ -98,12 +104,12 @@ export function FilaLinea({
           <span className={claseNombre} title={nombre} data-nombre>{nombre}</span>
         )}
         {mio ? (
-          <span className="shrink-0 rounded-full border border-primary/50 px-1.5 text-[0.6875rem] leading-4 text-primary-text">Tú</span>
+          <span className="shrink-0 rounded-full border border-primary-text px-1.5 text-[12px] leading-4 text-primary-text">Tú</span>
         ) : null}
         {club ? (
           <span
-            className="max-w-[5.5rem] shrink-0 truncate font-mono text-[0.6875rem] tracking-tight text-muted-foreground uppercase max-[359px]:hidden"
-            title={`Código de club de Skermo: ${club}. La fuente no publica el nombre completo.`}
+            className="max-w-[5.5rem] shrink-0 truncate font-mono text-[12px] tracking-tight text-muted-foreground uppercase max-[359px]:hidden"
+            title={`Club ${club}`}
           >
             {club}
           </span>
@@ -119,12 +125,12 @@ export function FilaLinea({
         )}
       >
         {puntos === null ? (
-          <span className="cifra text-sm tabular-nums">—</span>
+          <span className="cifra text-[13px] tabular-nums text-muted-foreground">—</span>
         ) : (
           <>
             {/* Por debajo de 360 px, sin decimales: el ancho que se ahorra es para el nombre. */}
-            <span className="cifra text-sm tabular-nums max-[359px]:hidden">{formatoPuntos(puntos)}</span>
-            <span className="cifra text-sm tabular-nums min-[360px]:hidden" title={formatoPuntos(puntos)}>{formatoPuntos(Math.round(puntos))}</span>
+            <span className="cifra text-[13px] tabular-nums max-[359px]:hidden">{formatoPuntos(puntos)}</span>
+            <span className="cifra text-[13px] tabular-nums min-[360px]:hidden" title={formatoPuntos(puntos)}>{formatoPuntos(Math.round(puntos))}</span>
           </>
         )}
         {accion}

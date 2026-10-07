@@ -1,9 +1,10 @@
 'use client';
 
 import { ChevronDown } from 'lucide-react';
-import Link from 'next/link';
+import { EnlaceIntencion } from '@/components/enlace-intencion';
 import { useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { AREA_TACTIL } from '@/components/sistema/tactil';
 import { cn } from '@/lib/utils';
 
 export type OpcionFormato = { valor: string; etiqueta: string; href: string; activa: boolean };
@@ -13,8 +14,8 @@ export type GrupoDePruebas = { clave: string; titulo: string; opciones: OpcionDe
 export type PruebaActual = { titulo: string; categoria: string; variante?: string };
 
 const PASTILLA =
-  'inline-flex h-11 min-w-0 items-center gap-1.5 rounded-full px-2.5 text-[0.8125rem] transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none';
-const MARCADA = 'bg-marcado font-semibold text-primary-text ring-1 ring-primary-text ring-inset';
+  'inline-flex h-[32px] min-w-0 items-center gap-1.5 rounded-full px-2.5 text-[13px] transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none motion-reduce:transition-none';
+const MARCADA = 'border-transparent bg-foreground font-semibold text-background';
 const LIBRE = 'text-muted-foreground hover:bg-accent hover:text-foreground';
 
 /**
@@ -46,15 +47,14 @@ export function SelectorPrueba({
       {formatos.length > 1 ? (
         <div role="group" aria-label="Formato" className="flex shrink-0 gap-0.5 rounded-full border bg-card p-0.5">
           {formatos.map((f) => (
-            <Link
+            <EnlaceIntencion
               key={f.valor}
               href={f.href}
-              prefetch={false}
               aria-current={f.activa ? 'true' : undefined}
-              className={cn(PASTILLA, 'px-3', f.activa ? MARCADA : LIBRE)}
+              className={cn(PASTILLA, AREA_TACTIL, 'px-3', f.activa ? MARCADA : LIBRE)}
             >
               {f.etiqueta}
-            </Link>
+            </EnlaceIntencion>
           ))}
         </div>
       ) : null}
@@ -74,16 +74,15 @@ export function SelectorPrueba({
                 <ul className="flex flex-wrap gap-1.5">
                   {g.opciones.map((o) => (
                     <li key={o.id}>
-                      <Link
+                      <EnlaceIntencion
                         href={o.href}
-                        prefetch={false}
                         onClick={() => setAbierto(false)}
                         aria-current={o.activa ? 'true' : undefined}
-                        className={cn(PASTILLA, 'border', o.activa ? MARCADA : LIBRE)}
+                        className={cn(PASTILLA, AREA_TACTIL, 'border', o.activa ? MARCADA : LIBRE)}
                       >
                         {o.etiqueta}
-                        {o.variante ? <span className="text-xs text-muted-foreground">{o.variante}</span> : null}
-                      </Link>
+                        {o.variante ? <span className={cn('text-[12px]', o.activa ? 'text-background' : 'text-muted-foreground')}>{o.variante}</span> : null}
+                      </EnlaceIntencion>
                     </li>
                   ))}
                 </ul>

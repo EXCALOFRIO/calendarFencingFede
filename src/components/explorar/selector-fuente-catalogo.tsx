@@ -35,7 +35,7 @@ export function SelectorFuenteCatalogo({
   return (
     <>
       <Select value={valor} onValueChange={setValor}>
-        <SelectTrigger id={id} size="sm" className="min-h-10 w-auto min-w-28 rounded-full bg-card px-4 data-[size=sm]:h-10">
+        <SelectTrigger id={id} size="sm" className="min-h-[40px] w-auto min-w-28 rounded-full bg-card px-4 data-[size=sm]:h-[40px]">
           <SelectValue>{etiqueta}</SelectValue>
         </SelectTrigger>
         <SelectContent>

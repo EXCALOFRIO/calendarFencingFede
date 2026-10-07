@@ -306,6 +306,29 @@ describe('lecturas de relevos', () => {
     }
   });
 
+  it('cara a cara: el filtro de ámbito usa la regla de Rivales; un Europeo es internacional venga de donde venga', async () => {
+    const local = cargada();
+    try {
+      const ctx = { ...crearContexto().ctx, db: local.db };
+      const numeros = async (ambito?: string) =>
+        (await cargarRelevosCaraACara(ctx, P2, P1, ambito ? { ambito } : {}))?.items.map((x) => x.numero);
+      expect(await numeros()).toEqual([1]);
+      expect(await numeros('nacional')).toEqual([1]);
+      expect(await numeros('internacional')).toEqual([]);
+      expect(await numeros('otro')).toEqual([1]);
+      const r = await cargarRelevosCaraACara(ctx, P2, P1, { ambito: 'nacional' });
+      expect(Object.keys(r!.items[0])).not.toContain('ambitoEvento');
+
+      local.ejecutar([`UPDATE sport_edition SET name = 'European Championships M-14' WHERE id = '${ED}'`], 1_000);
+      expect(await numeros('nacional')).toEqual([]);
+      expect(await numeros('internacional')).toEqual([1]);
+      expect((await cargarRelevosCaraACara(ctx, P2, P1, { ambito: 'internacional' }))?.resumen)
+        .toEqual({ relevos: 1, tocadosFavor: 3, tocadosContra: 5 });
+    } finally {
+      local.close();
+    }
+  });
+
   it('perfil: totales, índice y una fila por prueba, por todo el grupo de fusión', async () => {
     const local = cargada();
     try {

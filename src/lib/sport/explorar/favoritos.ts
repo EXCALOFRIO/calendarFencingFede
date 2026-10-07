@@ -43,10 +43,14 @@ function milisegundosMarca(marca: string): number {
     : `${iso}Z`);
 }
 
+/** Tope por cuenta: una lista de acceso rápido, no una copia del índice. */
+export const MAX_FAVORITOS = 500;
+
 export type ResultadoFavorito =
   | { estado: 'ok'; personaId: string; favorito: boolean }
   | { estado: 'entrada_invalida' }
   | { estado: 'no_encontrada' }
+  | { estado: 'limite_alcanzado' }
   /** El esquema deportivo (migración 0017) no está aplicado. */
   | { estado: 'no_disponible' };
 
@@ -105,11 +109,25 @@ export async function guardarFavorito(
   const p = await prepararPersona(ctx, entrada);
   if (p.estado !== 'ok') return { estado: p.estado };
 
+  // Volver a guardar (o consolidar) a quien ya está no cuenta contra el tope.
+  const [cupo] = filas<{ total: number; ya: number }>(await ctx.db.execute(sql`
+    SELECT (SELECT count(*) FROM sport_favorite WHERE profile_id = ${p.profileId}) AS total,
+           EXISTS (SELECT 1 FROM sport_favorite
+                   WHERE profile_id = ${p.profileId} AND person_id IN (${listaUuid(p.ids)})) AS ya`));
+  if (cupo && !Number(cupo.ya) && Number(cupo.total) >= MAX_FAVORITOS) return { estado: 'limite_alcanzado' };
+
+  // El tope se repite dentro de la misma sentencia para que dos altas a la vez
+  // no lo pasen; en esa carrera la segunda no escribe.
   const guardar = sql`
     INSERT INTO sport_favorite (profile_id, person_id, created_at)
-    SELECT ${p.profileId}, ${p.canonicaId}, COALESCE(max(f.created_at), ${AHORA_SQL})
-    FROM sport_favorite f
-    WHERE f.profile_id = ${p.profileId} AND f.person_id IN (${listaUuid(p.ids)})
+    SELECT ${p.profileId}, ${p.canonicaId}, COALESCE(previo.creado, ${AHORA_SQL})
+    FROM (
+      SELECT max(f.created_at) AS creado, count(f.person_id) AS filas
+      FROM sport_favorite f
+      WHERE f.profile_id = ${p.profileId} AND f.person_id IN (${listaUuid(p.ids)})
+    ) previo
+    WHERE previo.filas > 0
+      OR (SELECT count(*) FROM sport_favorite t WHERE t.profile_id = ${p.profileId}) < ${MAX_FAVORITOS}
     ON CONFLICT (profile_id, person_id)
     DO UPDATE SET created_at = EXCLUDED.created_at
     WHERE sport_favorite.created_at < EXCLUDED.created_at`;

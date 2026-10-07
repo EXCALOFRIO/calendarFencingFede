@@ -1,7 +1,11 @@
 'use server';
 
 import { requireProfile } from '@/lib/auth/session';
-import { type EventView, getEvent } from '@/lib/queries/calendar';
+import type { EventView } from '@/lib/queries/calendar';
+import { calendarioCompartido } from '@/lib/queries/calendario-cache';
+import { idDeEventoValido } from '@/lib/queries/calendario-cache-modelo';
+import type { VistaPodiosEvento } from '@/lib/queries/evento-resultados';
+import { quienVaDelEvento, type QuienVa } from '@/lib/queries/quien-va';
 
 /**
  * El detalle de un torneo, con lo que se sacó de sus PDFs.
@@ -28,5 +32,37 @@ export async function detalleDelEvento(
   eventId: string,
 ): Promise<EventView | null> {
   await requireProfile();
-  return getEvent(eventId);
+  if (!idDeEventoValido(eventId)) return null;
+  return calendarioCompartido.detalle(eventId);
+}
+
+export type FichaDelEvento = {
+  /** `null` si no existe o no se pudo leer: la ficha se queda con lo del calendario. */
+  detalle: EventView | null;
+  /** `null` si la lista no se pudo leer (no es lo mismo que una lista vacía). */
+  inscritos: QuienVa | null;
+  /** Sólo si se pidió (torneo terminado); `'fallo'` si no se pudo leer. */
+  podios: VistaPodiosEvento | 'fallo' | null;
+};
+
+/**
+ * Todo lo que la ficha de un torneo pide al abrirse, en UNA acción.
+ *
+ * Next despacha las acciones de servidor de una en una, así que las tres que
+ * pedía la ficha (detalle, quién va y podios) eran tres viajes en serie. Aquí
+ * se leen en paralelo, lo común desde la caché compartida y lo de la cuenta
+ * («es mío», pendientes de la dirección técnica) en la petición. El cliente la
+ * lanza también al mostrar intención de abrir la ficha (`ficha/precarga.ts`).
+ */
+export async function fichaDelEvento(eventId: unknown, conPodios: unknown): Promise<FichaDelEvento> {
+  const perfil = await requireProfile();
+  if (!idDeEventoValido(eventId)) return { detalle: null, inscritos: null, podios: null };
+  const [detalle, inscritos, podios] = await Promise.all([
+    calendarioCompartido.detalle(eventId).catch(() => null),
+    quienVaDelEvento(perfil, eventId, calendarioCompartido.listaPublica(eventId)).catch(() => null),
+    conPodios === true
+      ? calendarioCompartido.podios(eventId).catch(() => 'fallo' as const)
+      : Promise.resolve(null),
+  ]);
+  return { detalle, inscritos, podios };
 }

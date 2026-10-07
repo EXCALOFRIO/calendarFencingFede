@@ -1,0 +1,147 @@
+/*
+ * Movimiento del sistema (docs/diseno-sistema.md § 4).
+ *
+ * CSS plano, sin @apply: `globals.css` lo importa con
+ * `@import '../components/sistema/sistema.css';`. Las
+ * animaciones de componentes (hoja, chips, botones) van en sus clases de
+ * Tailwind; aquí sólo lo que Tailwind no alcanza: los pseudoelementos
+ * `::view-transition-*`, que cuelgan de `<html>` y no de un componente.
+ */
+
+:root {
+  --sis-salida: 120ms;
+  --sis-entrada: 200ms;
+  --sis-desplazar: 260ms;
+  --sis-curva: cubic-bezier(0.2, 0, 0, 1);
+  --sis-curva-salida: cubic-bezier(0.4, 0, 1, 1);
+  --sis-recorrido: 28px;
+}
+
+/* Mientras dura la transición, los toques pasan a la página viva. */
+::view-transition {
+  pointer-events: none;
+}
+
+/*
+ * Cabecera y barra inferior, ancladas: no se deslizan con la página y se
+ * pintan por encima de ella. Sin esto, la página que entra pasaría por
+ * encima de la barra fija durante el deslizamiento.
+ */
+::view-transition-group(cabecera),
+::view-transition-group(cabecera-escritorio),
+::view-transition-group(barra-inferior) {
+  animation: none;
+  z-index: 100;
+}
+::view-transition-old(cabecera),
+::view-transition-old(cabecera-escritorio),
+::view-transition-old(barra-inferior) {
+  display: none;
+}
+::view-transition-new(cabecera),
+::view-transition-new(cabecera-escritorio),
+::view-transition-new(barra-inferior) {
+  animation: none;
+}
+
+/* Avanzar: la vieja se va un poco a la izquierda, la nueva llega desde la derecha. */
+::view-transition-old(.nav-avanzar) {
+  animation:
+    var(--sis-salida) var(--sis-curva-salida) both sis-desvanecer,
+    var(--sis-desplazar) var(--sis-curva) both sis-hacia-izquierda;
+}
+::view-transition-new(.nav-avanzar) {
+  animation:
+    var(--sis-entrada) var(--sis-curva) 60ms both sis-aparecer,
+    var(--sis-desplazar) var(--sis-curva) both sis-desde-derecha;
+}
+
+/* Volver: el espejo. También para «atrás» por historial lanzado desde la cabecera. */
+::view-transition-old(.nav-volver),
+:root[data-navegacion='atras']::view-transition-old(.nav-historial) {
+  animation:
+    var(--sis-salida) var(--sis-curva-salida) both sis-desvanecer,
+    var(--sis-desplazar) var(--sis-curva) both sis-hacia-derecha;
+}
+::view-transition-new(.nav-volver),
+:root[data-navegacion='atras']::view-transition-new(.nav-historial) {
+  animation:
+    var(--sis-entrada) var(--sis-curva) 60ms both sis-aparecer,
+    var(--sis-desplazar) var(--sis-curva) both sis-desde-izquierda;
+}
+
+/* Cambio de pestaña: sólo fundido, rápido. */
+::view-transition-old(.nav-pestana) {
+  animation: 90ms var(--sis-curva-salida) both sis-desvanecer;
+}
+::view-transition-new(.nav-pestana) {
+  animation: 150ms var(--sis-curva) both sis-aparecer;
+}
+
+/* Atrás del navegador o gesto de iOS: el sistema ya anima; aquí nada. */
+::view-transition-old(.nav-historial),
+::view-transition-new(.nav-historial) {
+  animation: none;
+}
+
+/* Mismo sitio, otro contenido. */
+::view-transition-group(.sis-fundido) {
+  animation-duration: 160ms;
+  animation-timing-function: var(--sis-curva);
+}
+::view-transition-old(.sis-fundido) {
+  animation: 100ms var(--sis-curva-salida) both sis-desvanecer;
+}
+::view-transition-new(.sis-fundido) {
+  animation: 160ms var(--sis-curva) both sis-aparecer;
+}
+
+@keyframes sis-desvanecer {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes sis-aparecer {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes sis-hacia-izquierda {
+  to {
+    translate: calc(var(--sis-recorrido) * -1) 0;
+  }
+}
+@keyframes sis-desde-derecha {
+  from {
+    translate: var(--sis-recorrido) 0;
+  }
+}
+@keyframes sis-hacia-derecha {
+  to {
+    translate: var(--sis-recorrido) 0;
+  }
+}
+@keyframes sis-desde-izquierda {
+  from {
+    translate: calc(var(--sis-recorrido) * -1) 0;
+  }
+}
+
+/*
+ * Movimiento reducido: se quita el desplazamiento y se queda un fundido
+ * corto, que no marea y sigue diciendo que la pantalla ha cambiado. La regla
+ * de `globals.css` (`*, *::before, *::after`) no alcanza a los
+ * pseudoelementos de view transition, así que va aquí.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --sis-recorrido: 0px;
+  }
+  ::view-transition-group(*) {
+    animation-duration: 0s !important;
+  }
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-delay: 0s !important;
+  }
+}

@@ -11,10 +11,11 @@ import { allowOtpRequest, privateAuthKey, type AuthDatabase } from './rate-limit
 const SEND = 'email-otp/send-verification-otp';
 const VERIFY = 'sign-in/email-otp';
 const PRIVATE = { 'Cache-Control': 'private, no-store' };
-const NEON_COOKIES = new Set([
-  '__Secure-neon-auth.session_token', 'neon-auth.session_token',
-  '__Secure-neon-auth.local.session_data', 'neon-auth.local.session_data',
+const SECURE_NEON_COOKIES = new Set([
+  '__Secure-neon-auth.session_token', '__Secure-neon-auth.local.session_data',
 ]);
+// Plain names only exist on http://localhost, where browsers refuse `__Secure-`.
+const LOCAL_NEON_COOKIES = new Set(['neon-auth.session_token', 'neon-auth.local.session_data']);
 const DENIED = { code: 'ACCESO_NO_PERMITIDO', message: 'No se ha podido entrar. Pide un código nuevo.' };
 
 type Identity = { id: string; email: string; emailVerified: true };
@@ -25,6 +26,10 @@ export type ManagedAuthConfig = {
   origin: string;
   request: (request: Request, path: string) => Promise<Response>;
   writeCookies?: (response: Response) => Promise<void>;
+  /** Defaults to true for an https origin: plain `neon-auth.*` cookies are then ignored. */
+  secureCookiesOnly?: boolean;
+  /** Daily ceiling of codes sent to invited addresses. See `otpDailyLimit`. */
+  otpDailyLimit?: number;
 };
 
 function deny(status = 403) {
@@ -40,12 +45,34 @@ function identity(value: unknown): Identity | null {
   return z.email().max(254).safeParse(email).success ? { id: user.id, email, emailVerified: true } : null;
 }
 
-function withCookies(data: unknown, source: Response) {
+function allowedCookie(name: string, secureOnly: boolean) {
+  return SECURE_NEON_COOKIES.has(name) || (!secureOnly && LOCAL_NEON_COOKIES.has(name));
+}
+
+function withCookies(data: unknown, source: Response, secureOnly: boolean) {
   const response = Response.json(data, { headers: PRIVATE });
   for (const cookie of source.headers.getSetCookie()) {
-    if (NEON_COOKIES.has(cookie.split('=', 1)[0].trim())) response.headers.append('Set-Cookie', cookie);
+    if (allowedCookie(cookie.split('=', 1)[0].trim(), secureOnly)) response.headers.append('Set-Cookie', cookie);
   }
   return response;
+}
+
+/**
+ * Over https only the `__Secure-` names reach the provider: browsers only
+ * accept them from a Secure response, so a plain-http injection cannot plant
+ * one. This does NOT stop a sibling Worker under the same account subdomain
+ * of workers.dev (same site) from setting one with `Domain=`; only a custom
+ * domain or `__Host-` cookies would.
+ */
+function providerHeaders(headers: Headers, secureOnly: boolean): Headers {
+  const cookie = headers.get('cookie');
+  if (!secureOnly || !cookie) return headers;
+  const kept = cookie.split(';').map((c) => c.trim())
+    .filter((c) => c && !LOCAL_NEON_COOKIES.has(c.split('=', 1)[0].trim()));
+  const copy = new Headers(headers);
+  if (kept.length > 0) copy.set('cookie', kept.join('; '));
+  else copy.delete('cookie');
+  return copy;
 }
 
 async function readBody(request: Request): Promise<Record<string, unknown> | null> {
@@ -75,6 +102,7 @@ async function readBody(request: Request): Promise<Record<string, unknown> | nul
 export function createManagedAuth(db: AuthDatabase, config: ManagedAuthConfig) {
   if (config.secret.length < 32) throw new Error('Falta NEON_AUTH_COOKIE_SECRET (mínimo 32 caracteres).');
   const origin = new URL(config.origin).origin;
+  const secureOnly = config.secureCookiesOnly ?? origin.startsWith('https:');
   const challengeKey = (email: string) => privateAuthKey(config.secret, 'managed-otp', email);
 
   async function invitation(email: string, userId?: string) {
@@ -89,11 +117,11 @@ export function createManagedAuth(db: AuthDatabase, config: ManagedAuthConfig) {
     return row;
   }
 
-  async function session(request: Request): Promise<Session | null> {
+  async function session(headers: Headers): Promise<Session | null> {
     const url = new URL('/api/auth/get-session', origin);
     // Bypass both the SDK's local cookie cache and the upstream cookie cache.
     url.searchParams.set('disableCookieCache', 'true');
-    const result = await config.request(new Request(url, { headers: request.headers }), 'get-session');
+    const result = await config.request(new Request(url, { headers }), 'get-session');
     if (!result.ok) throw new Error('AUTH_PROVIDER_UNAVAILABLE');
     const body = await result.json() as { user?: unknown; session?: { id?: unknown; expiresAt?: unknown } } | null;
     const user = identity(body?.user);
@@ -110,9 +138,10 @@ export function createManagedAuth(db: AuthDatabase, config: ManagedAuthConfig) {
     const path = url.pathname.replace(/^\/api\/auth\//, '');
     const names = new Set((request.headers.get('cookie') ?? '').split(';').map((c) => c.trim().split('=')[0]));
     if (url.origin !== origin || names.has(COOKIE_ACCESO_QA)) return deny();
+    const forwarded = providerHeaders(request.headers, secureOnly);
     if (request.method === 'GET') {
       if (path !== 'get-session') return deny(404);
-      try { return Response.json(await session(request), { headers: PRIVATE }); }
+      try { return Response.json(await session(forwarded), { headers: PRIVATE }); }
       catch { return deny(503); }
     }
     if (request.method !== 'POST' || ![SEND, VERIFY, 'sign-out'].includes(path)) return deny();
@@ -125,16 +154,16 @@ export function createManagedAuth(db: AuthDatabase, config: ManagedAuthConfig) {
       if (!body) return deny(400);
       if (path === 'sign-out') {
         const response = await config.request(new Request(url, {
-          method: 'POST', headers: request.headers, body: '{}',
+          method: 'POST', headers: forwarded, body: '{}',
         }), path);
         if (!response.ok || (await response.clone().json())?.success !== true) return deny(503);
         // Confirm revocation using the ORIGINAL cookie, not the new deletion cookie.
         const checkUrl = new URL('/api/auth/get-session?disableCookieCache=true', origin);
-        const check = await config.request(new Request(checkUrl, { headers: request.headers }), 'get-session');
+        const check = await config.request(new Request(checkUrl, { headers: forwarded }), 'get-session');
         if (!check.ok) return deny(503);
         const remaining = await check.json() as { session?: unknown; user?: unknown } | null;
         if (remaining?.session || remaining?.user) return deny(503);
-        return withCookies({ success: true }, response);
+        return withCookies({ success: true }, response, secureOnly);
       }
 
       const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
@@ -142,8 +171,13 @@ export function createManagedAuth(db: AuthDatabase, config: ManagedAuthConfig) {
       const send = path === SEND;
       if (send && body.type !== 'sign-in') return deny();
       if (!send && (typeof body.otp !== 'string' || !/^\d{6}$/.test(body.otp))) return deny(400);
-      const allowed = await allowOtpRequest(db, config.secret, email, request.headers, send);
+      // The invitation is read first so that invented addresses never touch the
+      // per-address counters or the global daily quota.
       const profile = await invitation(email);
+      const allowed = await allowOtpRequest(db, config.secret, email, request.headers, send, {
+        invited: profile !== null,
+        ...(config.otpDailyLimit ? { dailyLimit: config.otpDailyLimit } : {}),
+      });
       if (!allowed || !profile) return send ? Response.json({ success: true }, { headers: PRIVATE }) : deny(400);
       const key = challengeKey(email);
 
@@ -157,7 +191,7 @@ export function createManagedAuth(db: AuthDatabase, config: ManagedAuthConfig) {
           set: { generation, attempts: 0, ready: false, expiresAt: now + 5 * 60_000 },
         });
         const response = await config.request(new Request(url, {
-          method: 'POST', headers: request.headers, body: JSON.stringify({ email, type: 'sign-in' }),
+          method: 'POST', headers: forwarded, body: JSON.stringify({ email, type: 'sign-in' }),
         }), path);
         if (response.ok) await db.update(authOtpChallenge).set({ ready: true })
           .where(and(eq(authOtpChallenge.key, key), eq(authOtpChallenge.generation, generation)));
@@ -173,13 +207,16 @@ export function createManagedAuth(db: AuthDatabase, config: ManagedAuthConfig) {
         )).returning({ generation: authOtpChallenge.generation });
       if (!challenge) return deny(400);
       const response = await config.request(new Request(url, {
-        method: 'POST', headers: request.headers, body: JSON.stringify({ email, otp: body.otp }),
+        method: 'POST', headers: forwarded, body: JSON.stringify({ email, otp: body.otp }),
       }), path);
       if (!response.ok) return deny(400);
       const result = await response.clone().json() as { user?: unknown } | null;
       const user = identity(result?.user);
+      const sessionCookie = secureOnly
+        ? /^__Secure-neon-auth\.session_token=[^;]+/
+        : /^(?:__Secure-)?neon-auth\.session_token=[^;]+/;
       if (!user || user.email !== email || !response.headers.getSetCookie().some((cookie) =>
-        /^(?:__Secure-)?neon-auth\.session_token=[^;]+/.test(cookie),
+        sessionCookie.test(cookie),
       )) return deny(400);
 
       // Only a freshly verified OTP can claim an unlinked invitation. Recheck
@@ -200,7 +237,7 @@ export function createManagedAuth(db: AuthDatabase, config: ManagedAuthConfig) {
       await db.delete(authOtpChallenge).where(and(
         eq(authOtpChallenge.key, key), eq(authOtpChallenge.generation, challenge.generation),
       ));
-      return withCookies({ user }, response);
+      return withCookies({ user }, response, secureOnly);
     } catch {
       // Never propagate SQL parameters, provider errors, identities, OTPs or cookies.
       return path === SEND ? Response.json({ success: true }, { headers: PRIVATE }) : deny(503);

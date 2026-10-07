@@ -1,9 +1,67 @@
 import type { NextConfig } from 'next';
 
+/**
+ * CSP en modo Report-Only: el navegador avisa en la consola de lo que
+ * bloquearía, sin bloquear nada. Next mete scripts en línea (el payload RSC,
+ * `self.__next_f.push(...)`) y estilos en línea; sin nonces por petición
+ * hacen falta `'unsafe-inline'` en ambos. Las imágenes externas son las que
+ * pinta la app con `<img>`: carteles de static.fie.org, retratos del
+ * redimensionador de fie.org (`/cdn-cgi/image/...`) y los logotipos de
+ * `escudo.tsx` (fie.org y esgrima.es).
+ */
+export const CSP_REPORT_ONLY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' https://static.fie.org https://fie.org https://esgrima.es data: blob:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join('; ');
+
+export const CABECERAS_SEGURIDAD = [
+  { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' },
+  { key: 'X-Frame-Options', value: 'DENY' },
+  { key: 'Content-Security-Policy-Report-Only', value: CSP_REPORT_ONLY },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+];
+
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
+
+  /**
+   * Sólo para HTML y API que sirve el Worker. `/_next/static` y `public/` los
+   * sirve Cloudflare Assets sin pasar por Next, así que no llevan estas
+   * cabeceras (y no las necesitan para lo que protegen).
+   */
+  async headers() {
+    return [
+      // '/(.*)' y no '/:path*': con el comparador estricto de Next, '/:path*' no casa con '/'.
+      { source: '/(.*)', headers: CABECERAS_SEGURIDAD },
+      {
+        // frame-ancestors sí se aplica, no sólo se informa. /api/archivos queda
+        // fuera porque pone su propia CSP (con `sandbox` y el mismo
+        // frame-ancestors) y una cabecera de aquí no debe pisarla.
+        source: '/((?!api/archivos/).*)',
+        headers: [{ key: 'Content-Security-Policy', value: "frame-ancestors 'none'" }],
+      },
+    ];
+  },
+
   experimental: {
-    // El scraper y las rutas de cron hacen fetch a fuentes externas; no cachear.
-    serverActions: { bodySizeLimit: '8mb' },
+    /**
+     * 1 MB (el valor por defecto de Next): ninguna acción necesita más. El
+     * PDF de convocatoria, que sí, sube por su propia ruta,
+     * `/api/admin/convocatorias`, con su propio tope.
+     */
+    serverActions: { bodySizeLimit: '1mb' },
+    // Volver a una pestaña vista hace menos de 30 s no repite el render de servidor.
+    staleTimes: { dynamic: 30 },
   },
 
   /**
@@ -22,9 +80,19 @@ const nextConfig: NextConfig = {
    * Los PDFs de convocatoria ya no están en Vercel Blob sino en R2, y se
    * sirven desde nuestro propio origen (`/api/archivos/...`), que no necesita
    * estar en esta lista.
+   *
+   * Hoy ninguna pantalla usa `next/image` (todo va con `<img>`), así que esto
+   * es lo mínimo por si se usa: sólo `/uploads/**`, que es donde la FIE cuelga
+   * carteles y fotos, una calidad y pocos anchos. Cada combinación distinta de
+   * URL, ancho y calidad es una transformación de pago, y además el Worker
+   * exige cookie de sesión y limita `/_next/image` por IP
+   * (src/lib/seguridad/limites.ts).
    */
   images: {
-    remotePatterns: [{ protocol: 'https', hostname: 'static.fie.org' }],
+    remotePatterns: [{ protocol: 'https', hostname: 'static.fie.org', pathname: '/uploads/**', search: '' }],
+    qualities: [75],
+    deviceSizes: [640, 1080],
+    imageSizes: [96, 256],
   },
 };
 

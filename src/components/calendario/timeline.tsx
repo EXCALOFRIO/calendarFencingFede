@@ -1,6 +1,6 @@
 'use client';
 
-import { CalendarOff, Loader2 } from 'lucide-react';
+import { CalendarOff } from 'lucide-react';
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -100,7 +100,7 @@ export function ColumnaMes({
       className="flex min-h-0 min-w-0 flex-1 flex-col"
     >
       {conTitulo ? (
-        <h2 className="mb-2 shrink-0 border-b border-filete-alto pb-2 text-2xl">{nombreDeMes(anio, mes, false)}</h2>
+        <h2 className="mb-[8px] shrink-0 border-b border-filete-alto pb-[8px] text-[20px] leading-[24px]">{nombreDeMes(anio, mes, false)}</h2>
       ) : null}
 
       {items.length === 0 ? (
@@ -120,27 +120,16 @@ export function ColumnaMes({
 }
 
 /**
- * Lo ya celebrado aún en camino, o que no llegó, debajo de lo que sí hay. Un
- * mes con media lista no puede parecer un mes completo.
+ * Lo ya celebrado que no llegó, debajo de lo que sí hay. Un mes con media
+ * lista no puede parecer un mes completo. Mientras llega no se dice nada: la
+ * vista sigue pintando el tramo anterior hasta tenerlo (ver `vista.tsx`), así
+ * que «en camino» sólo se da si falló la carga de la página, y se calla.
  */
 function AvisoPasado({ estado }: { estado: EstadoDelMes }) {
-  if (estado === 'listo') return null;
+  if (estado !== 'fallo') return null;
   return (
-    <p
-      role={estado === 'fallo' ? 'alert' : 'status'}
-      className="flex items-center gap-2 py-2 text-xs text-muted-foreground"
-    >
-      {estado === 'cargando' ? (
-        <>
-          <Loader2
-            className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none"
-            aria-hidden
-          />
-          Cargando…
-        </>
-      ) : (
-        'No se pudo cargar'
-      )}
+    <p role="alert" className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+      No se pudo cargar
     </p>
   );
 }
@@ -217,17 +206,10 @@ function MesVacioEscritorio({
   const nombre = nombreDeMes(anio, mes, false);
   return (
     <div className="flex min-h-[10rem] flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-6 text-center">
-      {estado === 'cargando' ? (
-        <Loader2
-          className="size-8 animate-spin opacity-30 motion-reduce:animate-none"
-          aria-hidden
-        />
-      ) : (
-        <CalendarOff className="size-8 opacity-20" aria-hidden />
-      )}
+      <CalendarOff className="size-[32px] text-off" aria-hidden />
       <p
-        role={estado === 'fallo' ? 'alert' : estado === 'cargando' ? 'status' : undefined}
-        className="medida text-xs text-muted-foreground"
+        role={estado === 'fallo' ? 'alert' : undefined}
+        className="medida text-[13px] text-muted-foreground"
       >
         {textoDeMesVacio(nombre, estado)}
       </p>
@@ -235,11 +217,15 @@ function MesVacioEscritorio({
   );
 }
 
+/**
+ * En camino no se dice «sin competiciones» (sería mentira: el mes puede tener
+ * setenta torneos ya tirados) ni un aviso de carga: el mes se queda sin texto.
+ */
 function textoDeMesVacio(nombre: string, estado: EstadoDelMes): string {
   const mes = nombre.toLowerCase();
-  if (estado === 'cargando') return 'Cargando…';
+  if (estado === 'cargando') return '';
   if (estado === 'fallo') return 'No se pudo cargar';
-  return `Sin competiciones cargadas en ${mes}. Consulta otro mes o cambia los filtros.`;
+  return `Sin competiciones cargadas en ${mes}`;
 }
 
 /**
@@ -340,7 +326,7 @@ export function FeedMovil({
                     });
                 }}
                 className={cn(
-                  'flex h-11 min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2 text-xs font-medium transition-colors',
+                  'flex h-[32px] min-w-0 flex-1 items-center gap-[6px] rounded-full border px-[8px] text-[13px] font-medium transition-colors',
                   cuantos === 0
                     ? 'border-border text-muted-foreground'
                     : 'border-input bg-card text-foreground',
@@ -353,7 +339,7 @@ export function FeedMovil({
               >
                 {nombreDeMes(m.anio, m.mes, false).slice(0, 3)}
                 {torneos > 0 ? (
-                  <span className="cifra text-[0.7rem] text-muted-foreground">
+                  <span className="cifra text-[12px] text-muted-foreground">
                     {torneos}
                   </span>
                 ) : null}
@@ -374,9 +360,9 @@ export function FeedMovil({
             */}
             <h2
               className={cn(
-                'sticky top-0 z-10 mb-2 border-b border-filete-alto bg-background py-2 text-2xl leading-none',
+                'sticky top-0 z-10 mb-[8px] border-b border-filete-alto bg-background py-[8px] text-[20px] leading-[24px]',
                 /*
-                  Con UN mes en pantalla el título sobra: el `<h1>` de la
+                  Con UN mes en pantalla el título sobra: el título del periodo
                   cabecera ya dice «Octubre» a 30 px de aquí, y en un iPhone
                   este renglón son 28 px de los 500 útiles gastados en
                   repetirlo. Con tres meses es imprescindible, porque el feed
@@ -437,20 +423,13 @@ function MesVacioMovil({
   const nombre = nombreDeMes(anio, mes, false);
   return (
     <div className="mb-2 flex items-center gap-2.5 rounded-lg border border-dashed px-3 py-3">
-      {estado === 'cargando' ? (
-        <Loader2
-          className="size-5 shrink-0 animate-spin opacity-30 motion-reduce:animate-none"
-          aria-hidden
-        />
-      ) : (
-        <CalendarOff className="size-5 shrink-0 opacity-20" aria-hidden />
-      )}
+      <CalendarOff className="size-[18px] shrink-0 text-off" aria-hidden />
       <p
-        role={estado === 'fallo' ? 'alert' : estado === 'cargando' ? 'status' : undefined}
-        className="min-w-0 text-xs text-muted-foreground"
+        role={estado === 'fallo' ? 'alert' : undefined}
+        className="min-w-0 text-[13px] text-muted-foreground"
       >
         {estado === 'listo'
-          ? `Sin competiciones cargadas en ${nombre.toLowerCase()}.`
+          ? `Sin competiciones cargadas en ${nombre.toLowerCase()}`
           : textoDeMesVacio(nombre, estado)}
       </p>
     </div>

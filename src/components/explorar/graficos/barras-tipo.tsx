@@ -19,7 +19,8 @@ function Barra({ valor, rotulo, color }: { valor: number | null; rotulo: string;
       <span aria-hidden className="relative h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
         {p !== null ? <span className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${p}%`, background: color }} /> : null}
       </span>
-      <span className="w-7 shrink-0 text-right text-[0.6875rem] leading-none tabular-nums text-foreground">{p === null ? '–' : `${p}%`}</span>
+      {/* Un mínimo en `ch` y no un ancho fijo: «100%» cabe sin recortarse. */}
+      <span className="min-w-[4.5ch] shrink-0 text-right text-[12px] leading-none whitespace-nowrap tabular-nums text-foreground">{p === null ? '–' : `${p}%`}</span>
     </span>
   );
 }
@@ -79,19 +80,22 @@ export function BarrasTipo({
                   <span className="cifra text-2xl leading-none">{f.competiciones}</span>
                   <span className="text-[0.625rem] leading-none text-muted-foreground">comp.</span>
                 </span>
-                <span className="flex w-12 flex-col items-end gap-0.5">
-                  <span className="cifra text-2xl leading-none">
-                    {p === null ? '–' : p}
-                    {p === null ? null : <span className="text-sm">%</span>}
+                {p !== null ? (
+                  <span className="flex w-12 flex-col items-end gap-0.5">
+                    <span className="cifra text-2xl leading-none">
+                      {p}
+                      <span className="text-sm">%</span>
+                    </span>
+                    <span className="text-[0.625rem] leading-none text-muted-foreground">ganados</span>
                   </span>
-                  <span className="text-[0.625rem] leading-none text-muted-foreground">ganados</span>
-                </span>
+                ) : null}
               </div>
             </div>
-            {f.asaltos.asaltos > 0 ? (
+            {/* Sólo las fases con asaltos importados: una barra sin dato sería una fila vacía. */}
+            {f.poule.porcentaje !== null || f.directa.porcentaje !== null ? (
               <div className="flex min-w-0 gap-4">
-                <Barra valor={f.poule.porcentaje} rotulo="Poule" color={COLOR.marca} />
-                <Barra valor={f.directa.porcentaje} rotulo="Directa" color={COLOR.texto} />
+                {f.poule.porcentaje !== null ? <Barra valor={f.poule.porcentaje} rotulo="Poule" color={COLOR.marca} /> : null}
+                {f.directa.porcentaje !== null ? <Barra valor={f.directa.porcentaje} rotulo="Directa" color={COLOR.texto} /> : null}
               </div>
             ) : null}
           </li>

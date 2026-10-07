@@ -1,7 +1,9 @@
 import { ArrowLeftRight, ChevronDown, SearchX, TriangleAlert, UserRoundSearch, Users, X } from 'lucide-react';
-import Link from 'next/link';
+import { EnlaceIntencion } from '@/components/enlace-intencion';
 import { BanderaPais } from '@/components/bandera';
-import { Button } from '@/components/ui/button';
+import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
+import { PULSACION } from '@/components/sistema/tactil';
+import { Boton } from '@/components/sistema/boton';
 import type { EncuentroCaraACara, MarcadorEncuentro, ResumenEncuentros } from '@/lib/sport/explorar/cara-a-cara';
 import { rutaEdicion } from '@/lib/sport/explorar/edicion-url';
 import { etiquetaRonda } from '@/lib/sport/explorar/ediciones-asaltos';
@@ -44,6 +46,12 @@ import { Bloque } from './piezas';
 const ENLACE_CLASES =
   'focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset';
 
+/** Entrar en una ficha, en una prueba o en un duelo desliza hacia delante (`docs/diseno-sistema.md` § 4). */
+const AVANZAR = [TIPO_TRANSICION.avanzar];
+
+/** Tinte opaco de la parte del rival en las barras: el gris apagado al 35 % sobre la tarjeta. */
+const RELLENO_RIVAL = 'bg-[color-mix(in_oklab,var(--muted-foreground)_35%,var(--card))]';
+
 /** El mismo nombre en toda la pantalla: «Juan Zabala», nunca «ZABALA Juan». */
 function visible(nombre: string): string {
   return nombreVisible(nombre) || titular(nombre);
@@ -70,15 +78,18 @@ function BotonIcono({
   titulo?: string;
   children: React.ReactNode;
 }) {
-  // El área táctil es la del botón (44 px); el círculo visible, 36 px.
+  // El enlace mide 44 px (el toque) y el círculo visible, 36. En px: con la raíz de 18 px, `size-9` serían 40,5.
   return (
-    <Button asChild variant="ghost" size="icon" className="group rounded-full text-muted-foreground hover:bg-transparent hover:text-foreground">
-      <Link href={href} prefetch={false} aria-label={etiqueta} title={titulo ?? etiqueta}>
-        <span className="inline-flex size-9 items-center justify-center rounded-full border border-filete-alto transition-colors group-hover:bg-secondary">
-          {children}
-        </span>
-      </Link>
-    </Button>
+    <EnlaceIntencion
+      href={href}
+      aria-label={etiqueta}
+      title={titulo ?? etiqueta}
+      className={cn('group inline-flex size-[44px] shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground', PULSACION, ENLACE_CLASES)}
+    >
+      <span className="inline-flex size-[36px] items-center justify-center rounded-full border border-filete-alto transition-colors group-hover:bg-secondary [&_svg]:size-[18px]">
+        {children}
+      </span>
+    </EnlaceIntencion>
   );
 }
 
@@ -96,22 +107,22 @@ function Contendiente({
   return (
     <div className={cn('flex min-w-0 flex-col items-center gap-2 text-center', className)}>
       {/* El nombre es el enlace accesible; el retrato repite el destino sin otra parada de tabulador. */}
-      <Link href={rutaFicha(persona.id)} prefetch={false} tabIndex={-1} aria-hidden className="block rounded-full">
+      <EnlaceIntencion href={rutaFicha(persona.id)} transitionTypes={AVANZAR} tabIndex={-1} aria-hidden className="block rounded-full">
         <FotoDeportista personaId={persona.id} nombre={nombre} tamano="heroe" />
-      </Link>
-      <Link
+      </EnlaceIntencion>
+      <EnlaceIntencion
         href={rutaFicha(persona.id)}
-        prefetch={false}
+        transitionTypes={AVANZAR}
         aria-label={`Ficha de ${nombre}`}
         title={nombre}
         className={cn(
           // 44 px de área táctil aunque el nombre ocupe una línea; un nombre largo, dos como mucho.
-          'inline-flex min-h-11 max-w-full items-center justify-center rounded-sm font-display text-xl leading-tight font-semibold underline-offset-4 hover:underline sm:text-3xl',
+          'inline-flex min-h-[44px] max-w-full items-center justify-center rounded-sm font-display text-xl leading-tight font-semibold underline-offset-4 hover:underline sm:text-3xl',
           ENLACE_CLASES,
         )}
       >
         <span className="line-clamp-2 break-words">{nombre}</span>
-      </Link>
+      </EnlaceIntencion>
       {bandera && persona.pais ? <BanderaPais pais={persona.pais} /> : null}
     </div>
   );
@@ -124,7 +135,7 @@ function BarraPartida({ yo, rival, className }: { yo: number; rival: number; cla
   return (
     <span aria-hidden className={cn('flex h-1.5 w-full gap-0.5', className)}>
       {pct > 0 ? <span className="rounded-full bg-primary" style={{ width: `${pct}%` }} /> : null}
-      {pct < 100 ? <span className="flex-1 rounded-full bg-muted-foreground/35" /> : null}
+      {pct < 100 ? <span className={cn('flex-1 rounded-full', RELLENO_RIVAL)} /> : null}
     </span>
   );
 }
@@ -156,17 +167,15 @@ export function CabeceraCaraACara({
   const banderas = Boolean(yo.pais || rival.pais) && yo.pais !== rival.pais;
 
   return (
-    <header className="flex min-w-0 flex-col gap-5 overflow-hidden rounded-md border border-t-filete-alto bg-linear-to-b from-marcado/70 via-card to-card px-3 pt-1 pb-5 sm:px-8 sm:pb-7">
-      <div className="-mx-1 flex items-center justify-between gap-2">
-        <h1 className="pl-1 text-sm text-muted-foreground">Cara a cara</h1>
-        <span className="flex">
-          <BotonIcono href={urlVistaDelRival(yo.id, rival.id, criterios)} etiqueta={`Verlo desde ${nRival}`} titulo="Invertir perspectiva">
-            <ArrowLeftRight className="size-4" aria-hidden />
-          </BotonIcono>
-          <BotonIcono href={cambiar} etiqueta="Cambiar de rival">
-            <UserRoundSearch className="size-4" aria-hidden />
-          </BotonIcono>
-        </span>
+    <header className="flex min-w-0 flex-col gap-5 overflow-hidden rounded-md border border-t-filete-alto bg-linear-to-b from-marcado via-card to-card px-3 pt-1 pb-5 sm:px-8 sm:pb-7">
+      {/* El título («Cara a cara») está en la cabecera compacta de la aplicación. */}
+      <div className="-mx-2 flex items-center justify-end">
+        <BotonIcono href={urlVistaDelRival(yo.id, rival.id, criterios)} etiqueta={`Verlo desde ${nRival}`} titulo="Invertir perspectiva">
+          <ArrowLeftRight aria-hidden />
+        </BotonIcono>
+        <BotonIcono href={cambiar} etiqueta="Cambiar de rival">
+          <UserRoundSearch aria-hidden />
+        </BotonIcono>
       </div>
 
       <div className="grid grid-cols-2 items-start gap-x-3 gap-y-5 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:gap-x-8">
@@ -180,7 +189,7 @@ export function CabeceraCaraACara({
                 className="cifra flex items-center gap-3 text-7xl leading-none sm:gap-5 sm:text-8xl"
               >
                 <span className={r.victorias >= r.derrotas ? 'text-foreground' : 'text-muted-foreground'}>{r.victorias}</span>
-                <span aria-hidden className="h-1.5 w-5 rounded-full bg-muted-foreground/40 sm:w-7" />
+                <span aria-hidden className={cn('h-1.5 w-5 rounded-full sm:w-7', RELLENO_RIVAL)} />
                 <span className={r.derrotas >= r.victorias ? 'text-foreground' : 'text-muted-foreground'}>{r.derrotas}</span>
               </p>
               <p className="flex gap-3 text-xs text-muted-foreground">
@@ -189,7 +198,7 @@ export function CabeceraCaraACara({
               </p>
             </>
           ) : (
-            <p className="font-display text-4xl text-muted-foreground/70 sm:text-5xl">vs</p>
+            <p className="font-display text-4xl text-muted-foreground sm:text-5xl">vs</p>
           )}
         </div>
         <Contendiente persona={rival} nombre={nRival} bandera={banderas} className="col-start-2 row-start-1 sm:col-start-3" />
@@ -204,8 +213,8 @@ export function CabeceraCaraACara({
       ) : null}
 
       {ultimos.length > 0 ? (
-        <div className="flex items-center justify-center gap-2.5">
-          <span className="text-xs text-muted-foreground">Últimos</span>
+        <div className="flex flex-wrap items-center justify-center gap-2.5">
+          <span className="shrink-0 text-xs text-muted-foreground">Últimos</span>
           <p
             role="img"
             aria-label={`Últimos asaltos, del más reciente: ${ultimos.map((a) => (a.resultado === 'victoria' ? 'victoria' : 'derrota')).join(', ')}`}
@@ -216,7 +225,7 @@ export function CabeceraCaraACara({
                 key={a.id}
                 aria-hidden
                 className={cn(
-                  'inline-flex size-6 items-center justify-center rounded-full text-[0.6875rem] font-bold text-background',
+                  'inline-flex size-6 items-center justify-center rounded-full text-[12px] font-bold text-background',
                   a.resultado === 'victoria' ? 'bg-ok' : 'bg-danger',
                 )}
               >
@@ -254,7 +263,7 @@ function TarjetaComparada({ c, nYo, nRival, className }: { c: Comparada; nYo: st
         <span className={cn('cifra text-3xl leading-none', c.yo >= c.rival ? 'text-foreground' : 'text-muted-foreground')}>
           {c.textoYo ?? c.yo}
         </span>
-        {c.detalle ? <span className="truncate text-[0.6875rem] text-muted-foreground">{c.detalle}</span> : null}
+        {c.detalle ? <span className="truncate text-[12px] text-muted-foreground">{c.detalle}</span> : null}
         <span className={cn('cifra text-3xl leading-none', c.rival >= c.yo ? 'text-foreground' : 'text-muted-foreground')}>
           {c.textoRival ?? c.rival}
         </span>
@@ -454,15 +463,16 @@ function FilaCruce({
       {fecha ? (
         <time dateTime={e.fecha!.slice(0, 10)} aria-hidden className="flex flex-col items-center pt-0.5 leading-none">
           <span className="cifra text-xl">{DIA.format(fecha)}</span>
-          <span className="text-[0.6875rem] text-muted-foreground">{MES.format(fecha).replace('.', '')}</span>
+          <span className="text-[12px] text-muted-foreground">{MES.format(fecha).replace('.', '')}</span>
         </time>
       ) : (
         <span aria-hidden className="pt-1 text-center text-xs text-muted-foreground">–</span>
       )}
       <span aria-hidden className="flex min-w-0 flex-col gap-1">
         <span className="line-clamp-2 text-sm leading-snug font-medium" title={corto === nombre ? undefined : nombre}>{corto}</span>
-        <span className="flex min-w-0 items-center gap-2 overflow-hidden text-xs whitespace-nowrap text-muted-foreground">
-          <EtiquetaTipoCompeticion clasificacion={e.clasificacion} className="h-5 px-2 text-[0.625rem]" />
+        {/* Envuelve en vez de recortar: a 320 px la pastilla y la categoría no caben en una línea. */}
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs whitespace-nowrap text-muted-foreground">
+          <EtiquetaTipoCompeticion clasificacion={e.clasificacion} className="h-[20px] px-2 text-[12px]" />
           {detalle.map((d, i) => (
             <span key={d} className={cn(i === detalle.length - 1 && 'min-w-0 truncate')}>{d}</span>
           ))}
@@ -482,14 +492,14 @@ function FilaCruce({
   return (
     <li>
       {e.edicionId ? (
-        <Link
+        <EnlaceIntencion
           href={urlCruce(e, yo)}
-          prefetch={false}
+          transitionTypes={AVANZAR}
           aria-label={etiqueta}
-          className={cn(FILA, 'py-3 transition-colors hover:bg-secondary/60', ENLACE_CLASES)}
+          className={cn(FILA, 'py-3 transition-colors hover:bg-secondary', ENLACE_CLASES)}
         >
           {contenido}
-        </Link>
+        </EnlaceIntencion>
       ) : (
         <div aria-label={etiqueta} role="group" className={cn(FILA, 'py-3')}>
           {contenido}
@@ -524,7 +534,7 @@ function ListaCruces({
 }) {
   return porAnio(encuentros).map((g, i) => (
     <div key={`${g.anio}-${i}`} className="min-w-0">
-      <h3 className="border-y border-filete bg-secondary/50 px-3 py-1 text-xs font-semibold text-muted-foreground sm:px-4">
+      <h3 className="border-y border-filete bg-secondary px-3 py-1 text-xs font-semibold text-muted-foreground sm:px-4">
         {g.anio}
       </h3>
       <ol className="divide-y divide-filete">
@@ -575,7 +585,7 @@ function FilaAsaltoDirecto({ a, yo, nYo, nRival }: { a: AsaltoDirecto; yo: strin
       {fecha ? (
         <time dateTime={e.fecha!.slice(0, 10)} aria-hidden className="flex flex-col items-center leading-none">
           <span className="cifra text-lg">{DIA.format(fecha)}</span>
-          <span className="text-[0.625rem] text-muted-foreground">
+          <span className="text-[12px] whitespace-nowrap text-muted-foreground">
             {MES.format(fecha).replace('.', '')} {ANIO_CORTO.format(fecha)}
           </span>
         </time>
@@ -585,7 +595,7 @@ function FilaAsaltoDirecto({ a, yo, nYo, nRival }: { a: AsaltoDirecto; yo: strin
       <span aria-hidden className="flex min-w-0 flex-col gap-1">
         <span className="truncate text-sm leading-tight font-medium" title={corto === nombre ? undefined : nombre}>{corto}</span>
         <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="inline-flex h-5 shrink-0 items-center rounded-full border border-filete-alto px-2 text-[0.6875rem] text-foreground/85">
+          <span className="inline-flex h-[20px] shrink-0 items-center rounded-full border border-filete-alto px-2 text-[12px] text-foreground">
             {ronda}
           </span>
           {e.categoria ? <span className="truncate">{categoriaVisible(e.categoria)}</span> : null}
@@ -600,7 +610,7 @@ function FilaAsaltoDirecto({ a, yo, nYo, nRival }: { a: AsaltoDirecto; yo: strin
         {gana ? (
           <span
             className={cn(
-              'inline-flex size-6 items-center justify-center rounded-full text-[0.6875rem] font-bold text-background',
+              'inline-flex size-6 items-center justify-center rounded-full text-[12px] font-bold text-background',
               gana === 'yo' ? 'bg-ok' : 'bg-danger',
             )}
           >
@@ -613,14 +623,14 @@ function FilaAsaltoDirecto({ a, yo, nYo, nRival }: { a: AsaltoDirecto; yo: strin
   return (
     <li>
       {e.edicionId ? (
-        <Link
+        <EnlaceIntencion
           href={urlCruce(e, yo)}
-          prefetch={false}
+          transitionTypes={AVANZAR}
           aria-label={etiqueta}
-          className={cn(FILA_ASALTO, 'transition-colors hover:bg-secondary/60', ENLACE_CLASES)}
+          className={cn(FILA_ASALTO, 'transition-colors hover:bg-secondary', ENLACE_CLASES)}
         >
           {contenido}
-        </Link>
+        </EnlaceIntencion>
       ) : (
         <div role="group" aria-label={etiqueta} className={FILA_ASALTO}>
           {contenido}
@@ -659,7 +669,7 @@ export function AsaltosCaraACara({ datos, encuentros }: { datos: DatosCaraACara;
           <details className="group min-w-0">
             <summary
               className={cn(
-                'flex min-h-11 cursor-pointer list-none items-center justify-center gap-1.5 border-t border-filete text-sm font-medium text-primary-text hover:bg-secondary/60 [&::-webkit-details-marker]:hidden',
+                'flex min-h-[44px] cursor-pointer list-none items-center justify-center gap-1.5 border-t border-filete text-sm font-medium text-primary-text hover:bg-secondary [&::-webkit-details-marker]:hidden',
                 ENLACE_CLASES,
               )}
             >
@@ -712,7 +722,7 @@ export function EncuentrosCaraACara({ datos, encuentros }: { datos: DatosCaraACa
       </div>
       {encuentros.length > 0 ? (
         <div className="min-w-0 overflow-hidden rounded-md border border-t-filete-alto bg-card">
-          <div aria-hidden className={cn(FILA, 'items-center py-2 text-[0.625rem] font-semibold text-muted-foreground')}>
+          <div aria-hidden className={cn(FILA, 'items-center py-2 text-[12px] font-semibold text-muted-foreground')}>
             <span />
             <span />
             <span className="flex gap-1">
@@ -725,7 +735,7 @@ export function EncuentrosCaraACara({ datos, encuentros }: { datos: DatosCaraACa
             <details className="group min-w-0">
               <summary
                 className={cn(
-                  'flex min-h-11 cursor-pointer list-none items-center justify-center gap-1.5 border-t border-filete text-sm font-medium text-primary-text hover:bg-secondary/60 [&::-webkit-details-marker]:hidden',
+                  'flex min-h-[44px] cursor-pointer list-none items-center justify-center gap-1.5 border-t border-filete text-sm font-medium text-primary-text hover:bg-secondary [&::-webkit-details-marker]:hidden',
                   ENLACE_CLASES,
                 )}
               >
@@ -761,11 +771,11 @@ function FilaPersona({
 }) {
   return (
     <li>
-      <Link
+      <EnlaceIntencion
         href={href}
-        prefetch={false}
+        transitionTypes={AVANZAR}
         className={cn(
-          'grid min-h-11 grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 px-4 py-4 hover:bg-accent focus-visible:bg-accent md:grid-cols-[auto_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.5fr)] md:items-center',
+          'grid min-h-[44px] grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 px-4 py-4 hover:bg-accent focus-visible:bg-accent md:grid-cols-[auto_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.5fr)] md:items-center',
           ENLACE_CLASES,
         )}
       >
@@ -784,7 +794,7 @@ function FilaPersona({
           )}
         </span>
         <span className="flex min-w-0 flex-col gap-0.5">{detalle}</span>
-      </Link>
+      </EnlaceIntencion>
     </li>
   );
 }
@@ -803,8 +813,7 @@ function OtrosCoincidentes({
       <p role="alert" className="flex items-start gap-2 text-sm">
         <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden />
         <span className="medida">
-          No se ha podido buscar a otras personas indexadas por ese nombre. Ha fallado la consulta; no es
-          que no haya coincidencias.
+          No se han podido buscar otras personas indexadas con ese nombre; no es que no haya coincidencias.
         </span>
       </p>
     );
@@ -852,12 +861,9 @@ function OtrosCoincidentes({
 }
 
 const MENSAJES_RIVALES: Record<'cursor_invalido' | 'entrada_invalida' | 'no_disponible' | 'error', string> = {
-  cursor_invalido:
-    'Esta página de rivales es de otra búsqueda o ha caducado. Vuelve a la primera página.',
-  entrada_invalida:
-    'Algún valor de la dirección no se entiende. No significa que no haya rivales.',
-  no_disponible:
-    'Los datos deportivos todavía no están preparados en esta instalación. No significa que no haya rivales.',
+  cursor_invalido: 'Esta página ha caducado. Vuelve a la primera.',
+  entrada_invalida: 'La dirección no es válida; no es que no haya rivales.',
+  no_disponible: 'Los datos deportivos aún no están listos.',
   error: 'Ha fallado la consulta; no es que no haya rivales. Inténtalo de nuevo.',
 };
 
@@ -899,22 +905,21 @@ export function ElegirRival({
               </ul>
               <nav aria-label="Páginas de rivales" className="flex flex-wrap items-center gap-3">
                 {criterios.cursor ? (
-                  <Button asChild variant="outline">
-                    <Link href={construirUrlCaraACara(persona.id, base)} prefetch={false}>
+                  <Boton asChild variante="contorno" tamano="lg">
+                    <EnlaceIntencion href={construirUrlCaraACara(persona.id, base)}>
                       Volver a la primera página
-                    </Link>
-                  </Button>
+                    </EnlaceIntencion>
+                  </Boton>
                 ) : null}
                 {rivales.siguiente ? (
-                  <Button asChild variant="outline">
-                    <Link
+                  <Boton asChild variante="contorno" tamano="lg">
+                    <EnlaceIntencion
                       href={construirUrlCaraACara(persona.id, { ...base, cursor: rivales.siguiente })}
-                      prefetch={false}
                       rel="next"
                     >
                       Ver más rivales
-                    </Link>
-                  </Button>
+                    </EnlaceIntencion>
+                  </Boton>
                 ) : null}
               </nav>
             </>
@@ -925,11 +930,11 @@ export function ElegirRival({
             <div className="flex flex-col items-start gap-2">
               <p className="medida">{MENSAJES_RIVALES[rivales.tipo]}</p>
               {rivales.tipo === 'cursor_invalido' ? (
-                <Button asChild variant="outline">
-                  <Link href={construirUrlCaraACara(persona.id, base)} prefetch={false}>
+                <Boton asChild variante="contorno" tamano="lg">
+                  <EnlaceIntencion href={construirUrlCaraACara(persona.id, base)}>
                     Volver a la primera página
-                  </Link>
-                </Button>
+                  </EnlaceIntencion>
+                </Boton>
               ) : null}
             </div>
           </div>
@@ -963,19 +968,18 @@ export function ChipsCaraACara({
     <ul aria-label="Filtros activos" className="flex flex-wrap gap-2">
       {chips.map((chip) => (
         <li key={chip.clave} className="min-w-0 max-w-full">
-          <Link
+          <EnlaceIntencion
             href={chip.quitar}
-            prefetch={false}
             aria-label={`Quitar filtro ${chip.etiqueta}: ${chip.valor}`}
             className={cn(
-              'inline-flex min-h-11 max-w-full flex-wrap items-center gap-1.5 rounded-full border bg-secondary px-3 text-sm hover:bg-accent',
+              'inline-flex min-h-[44px] max-w-full flex-wrap items-center gap-1.5 rounded-full border bg-secondary px-3 text-sm hover:bg-accent',
               ENLACE_CLASES,
             )}
           >
             <span className="text-muted-foreground">{chip.etiqueta}</span>
             <span className="max-w-48 min-w-0 py-1 font-medium break-words">{chip.valor}</span>
             <X className="size-3.5" aria-hidden />
-          </Link>
+          </EnlaceIntencion>
         </li>
       ))}
     </ul>
@@ -1021,78 +1025,66 @@ export function EstadoCaraACara({
   criterios: CriteriosCaraACara;
 }) {
   const buscar = (
-    <Button asChild variant="outline">
-      <Link href="/explorar" prefetch={false}>
+    <Boton asChild variante="contorno" tamano="lg">
+      <EnlaceIntencion href="/explorar">
         Buscar en Explorar
-      </Link>
-    </Button>
+      </EnlaceIntencion>
+    </Boton>
   );
   const empezar = personaId ? (
-    <Button asChild variant="outline">
-      <Link href={rutaCaraACara(personaId)} prefetch={false}>
+    <Boton asChild variante="contorno" tamano="lg">
+      <EnlaceIntencion href={rutaCaraACara(personaId)}>
         Empezar de nuevo
-      </Link>
-    </Button>
+      </EnlaceIntencion>
+    </Boton>
   ) : (
     buscar
   );
   switch (vista.tipo) {
     case 'entrada_invalida':
       return (
-        <Aviso alerta titulo="El enlace no es válido">
-          <p>
-            Alguno de los valores de la dirección no se entiende (una persona, una temporada, un arma o
-            una fase), por eso no se ha hecho el cara a cara. Esto no significa que no haya asaltos.
-          </p>
+        <Aviso alerta titulo="Enlace no válido">
+          <p>Revisa la dirección o empieza de nuevo.</p>
           {empezar}
         </Aviso>
       );
     case 'cursor_invalido':
       return (
-        <Aviso alerta titulo="Esta página ya no corresponde a la consulta">
-          <p>El enlace de página es de otro cara a cara o de otros filtros. Vuelve a los asaltos más recientes.</p>
+        <Aviso alerta titulo="Página caducada">
+          <p>Vuelve a los asaltos más recientes.</p>
           {personaId ? (
-            <Button asChild variant="outline">
-              <Link href={construirUrlCaraACara(personaId, { ...criterios, cursor: '' })} prefetch={false}>
+            <Boton asChild variante="contorno" tamano="lg">
+              <EnlaceIntencion href={construirUrlCaraACara(personaId, { ...criterios, cursor: '' })}>
                 Volver a los más recientes
-              </Link>
-            </Button>
+              </EnlaceIntencion>
+            </Boton>
           ) : null}
         </Aviso>
       );
     case 'no_encontrada':
       return (
-        <Aviso titulo="No se encuentra a una de las personas">
-          <p>No hay ninguna persona deportiva con ese identificador. Puede que el enlace sea antiguo.</p>
+        <Aviso titulo="Persona no encontrada">
+          <p>Puede que el enlace sea antiguo.</p>
           {buscar}
         </Aviso>
       );
     case 'misma_persona':
       return (
         <Aviso titulo="Es la misma persona">
-          <p>
-            Las dos direcciones apuntan a la misma persona (puede ser una ficha fusionada con otra). Elige
-            un rival distinto.
-          </p>
+          <p>Elige otro rival.</p>
           {empezar}
         </Aviso>
       );
     case 'no_disponible':
       return (
-        <Aviso alerta titulo="El cara a cara aún no está activo">
-          <p>
-            Los datos deportivos todavía no están preparados en esta instalación. No es que no haya
-            asaltos.
-          </p>
+        <Aviso alerta titulo="Aún no está activo">
+          <p>Los datos deportivos aún no están listos.</p>
         </Aviso>
       );
     default:
       return (
-        <Aviso alerta titulo="No se ha podido abrir el cara a cara">
-          <p>
-            Ha fallado la consulta; no es que no haya asaltos. Inténtalo de nuevo; si sigue fallando,
-            avisa a la dirección técnica.
-          </p>
+        <Aviso alerta titulo="No se ha podido abrir">
+          <p>Ha fallado la consulta; no es que no haya asaltos. Inténtalo de nuevo.</p>
           {empezar}
         </Aviso>
       );

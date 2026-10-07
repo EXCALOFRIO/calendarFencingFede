@@ -51,12 +51,14 @@ describe('anioNacimientoVisible', () => {
 });
 
 describe('enlace a la ficha FIE en la clasificación mundial', () => {
-  it('nunca en M17 ni M20, ni para quien pueda ser menor; sí para adultos o sin fecha en absoluto', () => {
+  it('nunca en M17 ni M20, ni para quien pueda ser menor o no tenga fecha; sí para adultos', () => {
     expect(fichaFieVisible('M17', null, HOY)).toBe(false);
     expect(fichaFieVisible('M20', '1990-01-01', HOY)).toBe(false);
     expect(fichaFieVisible('ABS', '2009-01-01', HOY)).toBe(false);
     expect(fichaFieVisible('ABS', '1990-01-01', HOY)).toBe(true);
-    expect(fichaFieVisible('ABS', null, HOY)).toBe(true);
+    // Sin fecha no se puede descartar que sea menor.
+    expect(fichaFieVisible('ABS', null, HOY)).toBe(false);
+    expect(fichaFieVisible('ABS', '', HOY)).toBe(false);
   });
 
   it('getClasificacionFie anula fichaUrl en el servidor', async () => {
@@ -66,7 +68,7 @@ describe('enlace a la ficha FIE en la clasificación mundial', () => {
     });
     h.state.queue = [[{ season: 2027 }], [fila(1, null), fila(2, '2010-03-01'), fila(3, '1990-03-01')]];
     const abs = await getClasificacionFie({ format: 'INDIVIDUAL', weapon: 'ESPADA', gender: 'M', category: 'ABS', hoy: HOY });
-    expect(abs?.rows.map((r) => r.fichaUrl === null)).toEqual([false, true, false]);
+    expect(abs?.rows.map((r) => r.fichaUrl === null)).toEqual([true, true, false]);
     h.state.queue = [[{ season: 2027 }], [fila(1, null), fila(3, '1990-03-01')]];
     const m20 = await getClasificacionFie({ format: 'INDIVIDUAL', weapon: 'ESPADA', gender: 'M', category: 'M20', hoy: HOY });
     expect(m20?.rows.map((r) => r.fichaUrl)).toEqual([null, null]);

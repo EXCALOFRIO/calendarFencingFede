@@ -31,10 +31,11 @@ export function Celda({
 }) {
   return (
     <div className={cn('flex min-w-0 flex-col gap-2 bg-card px-3 py-3 sm:px-4', className)}>
-      <div className="flex min-w-0 items-end justify-between gap-3">
-        <span className="min-w-0 text-xs leading-tight break-words text-muted-foreground">{rotulo}</span>
+      {/* Sin cortar palabras: si el rótulo no cabe junto a la cifra, la cifra baja de línea. */}
+      <div className="flex min-w-0 flex-wrap items-end justify-between gap-x-3 gap-y-1">
+        <span className="min-w-fit grow basis-0 text-xs leading-tight text-muted-foreground">{rotulo}</span>
         {cifra !== undefined && cifra !== null ? (
-          <span className="flex shrink-0 items-baseline gap-1">
+          <span className="ml-auto flex shrink-0 items-baseline gap-1">
             {contexto ? <span className="text-[0.625rem] leading-none text-muted-foreground">{contexto}</span> : null}
             <span className="cifra text-3xl leading-none">
               {cifra}

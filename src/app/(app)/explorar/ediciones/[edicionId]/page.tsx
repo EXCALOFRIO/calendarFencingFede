@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { EdicionCompleta, EstadoEdicion } from '@/components/explorar/ediciones';
 import { getSessionProfile } from '@/lib/auth/session';
 import { edicionDeRuta, leerCriteriosEdicion } from '@/lib/sport/explorar/edicion-url';
-import { cargarEdicion } from '@/lib/sport/explorar/ediciones-pantalla';
+import { cargarEdicionCompartida } from '@/lib/sport/explorar/cache-real';
 import { contextoReal } from '@/lib/sport/explorar/real';
 
 export const dynamic = 'force-dynamic';
@@ -34,7 +34,7 @@ export default async function Pagina({
   const criterios = leerCriteriosEdicion(consulta);
 
   const vista = edicionId
-    ? await cargarEdicion(contextoReal(), edicionId, criterios)
+    ? await cargarEdicionCompartida(contextoReal(), edicionId, criterios)
     : ({ tipo: 'entrada_invalida' } as const);
   if (vista.tipo === 'sin_sesion') redirect('/entrar');
 

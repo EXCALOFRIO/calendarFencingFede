@@ -2,13 +2,10 @@
 
 import { requireProfile } from '@/lib/auth/session';
 import { hoyMadrid } from '@/lib/callups/fechas';
-import { cargarTramoPasado } from '@/lib/queries/calendario-pasado';
+import { calendarioCompartido } from '@/lib/queries/calendario-cache';
 import type { TramoPasado } from '@/lib/queries/calendario-pasado-modelo';
 import { MAXIMO_DIAS_TRAMO, tramoPasadoDe } from '@/lib/queries/calendario-pasado-tramo';
 import { esFechaIsoReal } from '@/lib/utils';
-
-/** El mismo recorte de la pantalla principal: nacional e internacional. */
-const AMBITOS_CALENDARIO = ['NACIONAL', 'INTERNACIONAL'] as const;
 
 /**
  * Lo ya celebrado de un tramo del calendario, para cuando se navega hacia
@@ -29,5 +26,6 @@ export async function pasadoDelTramo(desde: unknown, hasta: unknown): Promise<Tr
   const hoy = hoyMadrid();
   const tramo = tramoPasadoDe(desde, hasta, hoy);
   if (!tramo) return null;
-  return cargarTramoPasado({ ...tramo, hoy, scope: [...AMBITOS_CALENDARIO] });
+  // Común a todas las cuentas: de la caché compartida (nacional e internacional).
+  return calendarioCompartido.tramoPasado({ ...tramo, hoy });
 }

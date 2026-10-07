@@ -121,7 +121,7 @@ export function DestacadosPerfil({ perfil, porTipo }: { perfil: PerfilDeportivo;
             <li
               key={d.clave}
               className={cn(
-                'flex min-w-0 items-center gap-2.5 rounded-xl border bg-background/40 px-3 py-2.5',
+                'flex min-w-0 items-center gap-2.5 rounded-xl border bg-card px-3 py-2.5',
                 d.resaltado && CONTORNO_MEDALLA.oro,
               )}
             >

@@ -8,7 +8,19 @@ import type { ResultadoFoto } from './foto-contrato';
 
 export const MAX_MIEMBROS_FOTO = 64;
 const SIN_FOTO = { estado: 'foto_no_publicada' } as const;
-type PersonaFoto = { id: string; destino: string | null; anio: number | null };
+export type PersonaFoto = { id: string; destino: string | null; anio: number | null };
+
+/**
+ * Veto conservador incluso para su propia ficha: nunca se revela un menor
+ * por invocar directamente la API aunque el encabezado oculte el retrato.
+ * Sin año conocido en ningún miembro no se puede descartar que sea menor.
+ * Compartido con la lectura en lote (`foto-lote.ts`): la regla es una sola.
+ */
+export function vetoMenores(grupo: readonly Pick<PersonaFoto, 'anio'>[], hoy: string): boolean {
+  const anioActual = Number(hoy.slice(0, 4));
+  return !Number.isInteger(anioActual) || grupo.every((p) => p.anio === null) || grupo.some((p) =>
+    p.anio !== null && (!Number.isInteger(Number(p.anio)) || anioActual - Number(p.anio) <= 18));
+}
 
 /**
  * Misma semántica reversible y profundidad que resolverPersona, con un límite
@@ -68,13 +80,7 @@ export async function leerFotoDeportista(
   if (typeof personaId !== 'string' || !UUID_RE.test(personaId)) return { estado: 'entrada_invalida' };
   if (!(await ctx.esquema()).identidad) return { estado: 'no_disponible' };
   const grupo = await grupoAcotado(ctx, personaId);
-  if (!grupo) return SIN_FOTO;
-  // Veto conservador incluso para su propia ficha: nunca se revela un menor
-  // por invocar directamente la API aunque el encabezado oculte el retrato.
-  // Sin año conocido en ningún miembro no se puede descartar que sea menor.
-  const anioActual = Number(ctx.hoy().slice(0, 4));
-  if (!Number.isInteger(anioActual) || grupo.every((p) => p.anio === null) || grupo.some((p) =>
-    p.anio !== null && (!Number.isInteger(Number(p.anio)) || anioActual - Number(p.anio) <= 18))) return SIN_FOTO;
+  if (!grupo || vetoMenores(grupo, ctx.hoy())) return SIN_FOTO;
 
   const ids = filas<{ valor: string }>(await ctx.db.execute(sql`
     SELECT DISTINCT value AS valor FROM sport_external_id

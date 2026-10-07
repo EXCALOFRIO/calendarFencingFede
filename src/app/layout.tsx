@@ -49,7 +49,8 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#09090b',
+  // `--background` (oklch(0.17 0.008 265)) en sRGB: la barra de estado del móvil, del mismo color que la cabecera.
+  themeColor: '#0e0f13',
   width: 'device-width',
   initialScale: 1,
   // Se permite ampliar: bloquear el zoom es un problema de accesibilidad real.

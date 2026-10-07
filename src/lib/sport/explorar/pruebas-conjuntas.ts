@@ -35,6 +35,22 @@ export function crearDetectorConjuntas(db: Ejecutor): () => Promise<boolean> {
     SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = 'sport_competition_combined' LIMIT 1`)).length > 0);
 }
 
+const detectores = new WeakMap<object, () => Promise<boolean>>();
+
+/**
+ * El detector de `db`, uno por base y no uno por llamada: creado en cada
+ * lectura no recordaba nada y cada edición pagaba su barrido de `sqlite_master`
+ * (256 filas). La base de la aplicación es un objeto único por isolate.
+ */
+export function detectorConjuntasDe(db: Ejecutor): () => Promise<boolean> {
+  let detector = detectores.get(db);
+  if (!detector) {
+    detector = crearDetectorConjuntas(db);
+    detectores.set(db, detector);
+  }
+  return detector;
+}
+
 /**
  * Enlace de una prueba con su conjunta: si `competitionId` es una parte, su conjunta y las
  * demás partes; si es la conjunta, ella misma con sus partes. `null` si no es ninguna.

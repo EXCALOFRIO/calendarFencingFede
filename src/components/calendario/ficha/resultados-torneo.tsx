@@ -1,7 +1,7 @@
 'use client';
 
 import { ChevronRight, ExternalLink, Trophy } from 'lucide-react';
-import Link from 'next/link';
+import { EnlaceIntencion } from '@/components/enlace-intencion';
 import * as React from 'react';
 import { BanderaPais } from '@/components/bandera';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import { construirUrlEdicion } from '@/lib/sport/explorar/edicion-url';
 import { CLASES_MEDALLA, categoriaVisible, medallaDe } from '@/lib/sport/explorar/presentacion';
 import { rutaFicha } from '@/lib/sport/explorar/url';
 import { GENDER_LABEL, WEAPON_LABEL, cn, titular } from '@/lib/utils';
+import { fichaRecibidaDe, pedirFicha } from './precarga';
 import { podiosDelEvento } from './resultados-accion';
 
 /**
@@ -41,7 +42,7 @@ import { podiosDelEvento } from './resultados-accion';
 type Lectura = { evento: string; vista: VistaPodiosEvento | 'fallo' };
 
 const ENLACE =
-  'inline-flex min-h-11 items-center gap-1 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none md:min-h-0';
+  'inline-flex min-h-[44px] items-center gap-1 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none md:min-h-0';
 
 export function ResultadosTorneo({
   eventoId,
@@ -53,11 +54,16 @@ export function ResultadosTorneo({
   /** Prueba del calendario seleccionada arriba: su podio va marcado. */
   pruebaElegida?: string | null;
 }) {
-  const [lectura, setLectura] = React.useState<Lectura | null>(null);
+  // Lo precargado con la intención de abrir la ficha, si ya llegó.
+  const [lectura, setLectura] = React.useState<Lectura | null>(() => {
+    const ya = fichaRecibidaDe(eventoId, true)?.podios;
+    return ya ? { evento: eventoId, vista: ya } : null;
+  });
 
   React.useEffect(() => {
     let vigente = true;
-    podiosDelEvento(eventoId)
+    pedirFicha(eventoId, true)
+      .then((ficha) => ficha.podios ?? podiosDelEvento(eventoId))
       .then((vista) => {
         if (vigente) setLectura({ evento: eventoId, vista });
       })
@@ -105,7 +111,7 @@ export function CuerpoPodios({
       aria-labelledby="resultados-torneo"
       className="flex flex-col gap-3 border-t border-t-filete pt-4 pb-1 first:border-t-0 first:pt-0"
     >
-      <h3 id="resultados-torneo" className="text-xl leading-none sm:text-lg">
+      <h3 id="resultados-torneo" className="text-[20px] leading-[24px]">
         Resultados
       </h3>
       <div className="flex flex-col gap-5">
@@ -115,10 +121,10 @@ export function CuerpoPodios({
           return (
             <div key={edicion.id} className="flex flex-col gap-3">
               <Button asChild size="sm" className="self-start rounded-full">
-                <Link href={construirUrlEdicion(edicion.id, { origen: retorno })}>
+                <EnlaceIntencion href={construirUrlEdicion(edicion.id, { origen: retorno })}>
                   <Trophy />
                   Clasificación
-                </Link>
+                </EnlaceIntencion>
               </Button>
               <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {edicion.pruebasDetalle.map((prueba) => (
@@ -169,16 +175,16 @@ function TarjetaPodio({
     <li
       className={cn(
         'flex min-w-0 flex-col gap-2 rounded-lg border border-filete bg-card p-3',
-        elegida && 'border-primary/60',
+        elegida && 'border-primary-text',
       )}
     >
-      <Link
+      <EnlaceIntencion
         href={construirUrlEdicion(edicionId, { prueba: prueba.id, origen: retorno })}
-        className={cn(ENLACE, 'justify-between text-base font-medium text-foreground sm:text-sm')}
+        className={cn(ENLACE, 'justify-between text-[14px] font-medium text-foreground')}
       >
         {nombreDePruebaCorto(prueba, conCategoria)}
         <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
-      </Link>
+      </EnlaceIntencion>
 
       {podio.length > 0 ? (
         <ol aria-label="Podio" className="flex flex-col gap-1.5">
@@ -225,14 +231,14 @@ function FilaPodio({ puesto }: { puesto: PuestoPodio }) {
       </span>
       {puesto.personaId ? (
         // La fila entera es el enlace: el nombre solo medía 23 px de alto.
-        <Link
+        <EnlaceIntencion
           href={rutaFicha(puesto.personaId)}
-          className="group flex min-h-11 min-w-0 flex-1 flex-col justify-center rounded-md leading-tight focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+          className="group flex min-h-[44px] min-w-0 flex-1 flex-col justify-center rounded-md leading-tight focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
         >
           <DatosPodio puesto={puesto} nombre={nombre} />
-        </Link>
+        </EnlaceIntencion>
       ) : (
-        <span className="flex min-h-11 min-w-0 flex-1 flex-col justify-center leading-tight">
+        <span className="flex min-h-[44px] min-w-0 flex-1 flex-col justify-center leading-tight">
           <DatosPodio puesto={puesto} nombre={nombre} />
         </span>
       )}
@@ -245,7 +251,7 @@ function DatosPodio({ puesto, nombre }: { puesto: PuestoPodio; nombre: string })
     <>
       <span className="flex min-w-0 items-center gap-1.5">
         <span className="min-w-0 truncate text-sm font-medium underline-offset-4 group-hover:underline">{nombre}</span>
-        <BanderaPais pais={puesto.pais} />
+        <BanderaPais pais={puesto.pais} className="text-[12px]" />
       </span>
       {puesto.club ? (
         <span className="truncate text-xs text-muted-foreground">{titular(puesto.club)}</span>

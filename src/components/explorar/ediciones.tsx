@@ -1,7 +1,8 @@
 import { CalendarDays, ExternalLink, MapPin, Medal, SearchX, Swords, TriangleAlert } from 'lucide-react';
 import type { VistaConjunta } from '@/lib/sport/explorar/conjunta-edicion';
 import { ETIQUETA_PRUEBA_CONJUNTA } from '@/lib/sport/explorar/pruebas-conjuntas';
-import Link from 'next/link';
+import { EnlaceIntencion } from '@/components/enlace-intencion';
+import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
 import { BanderaPais, codigoPais } from '@/components/bandera';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,26 +40,28 @@ import { SelectorPrueba, type GrupoDePruebas, type OpcionFormato } from './prueb
 import { VistaPrueba as VistaDePrueba } from './prueba/vista-prueba';
 import { armaYGenero, nombreDePrueba } from './prueba-resultados';
 
+const AVANZAR = [TIPO_TRANSICION.avanzar];
+
 const ENLACE =
-  'inline-flex min-h-11 items-center gap-1.5 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
+  'inline-flex min-h-[44px] items-center gap-1.5 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
 
 /** Entrada a las ediciones desde Explorar, sin ocupar sitio en la barra. */
 export function EnlaceEdiciones({ className }: { className?: string }) {
   return (
-    <Link href={RUTA_EDICIONES} prefetch={false} className={cn(ENLACE, className)}>
+    <EnlaceIntencion href={RUTA_EDICIONES} className={cn(ENLACE, className)}>
       <Medal className="size-4" aria-hidden />
       Ediciones y series
-    </Link>
+    </EnlaceIntencion>
   );
 }
 
 /** Vuelta a las ediciones desde Explorar cuando la búsqueda está acotada a una. */
 export function EnlaceVolverAEdicion({ edicionId }: { edicionId: string }) {
   return (
-    <Link href={rutaEdicion(edicionId)} prefetch={false} className={ENLACE}>
+    <EnlaceIntencion href={rutaEdicion(edicionId)} className={ENLACE}>
       <Medal className="size-4" aria-hidden />
       Ver la edición y su clasificación
-    </Link>
+    </EnlaceIntencion>
   );
 }
 
@@ -111,9 +114,9 @@ export function FilaEdicion({ e, catalogo }: { e: EdicionResumen & { clasificado
   const secundario = generico && ciudad ? null : ciudad;
   return (
     <li>
-      <Link
+      <EnlaceIntencion
         href={construirUrlEdicion(e.id, { catalogo })}
-        prefetch={false}
+        transitionTypes={AVANZAR}
         title={generico && ciudad ? `${nombre} ${ciudad}` : undefined}
         className="grid min-h-12 grid-cols-[3.75rem_minmax(0,1fr)_auto] items-center gap-x-3 px-1 py-2 transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset motion-reduce:transition-none"
       >
@@ -126,7 +129,7 @@ export function FilaEdicion({ e, catalogo }: { e: EdicionResumen & { clasificado
           {e.pais ? <BanderaPais pais={e.pais} soloBandera /> : null}
         </span>
         <EtiquetaTipoCompeticion clasificacion={tipo} />
-      </Link>
+      </EnlaceIntencion>
     </li>
   );
 }
@@ -158,9 +161,9 @@ export function EstadoSeries({ vista }: { vista: Exclude<VistaSeries, { tipo: 'o
   ) : (
     <Aviso alerta icono={<TriangleAlert className="size-5 text-danger" aria-hidden />} titulo="No se han podido leer las series">
       <Button asChild variant="outline" size="sm" className="rounded-full">
-        <Link href={RUTA_EDICIONES} prefetch={false}>
+        <EnlaceIntencion href={RUTA_EDICIONES}>
           Reintentar
-        </Link>
+        </EnlaceIntencion>
       </Button>
     </Aviso>
   );
@@ -300,20 +303,19 @@ function PieClasificacion({
         <nav aria-label="Páginas de la clasificación" className="flex flex-wrap items-center gap-2">
           {criterios.cursor ? (
             <Button asChild variant="ghost" size="sm" className="rounded-full text-muted-foreground">
-              <Link href={construirUrlEdicion(edicionId, { prueba: prueba.id, origen, catalogo, persona })} prefetch={false}>
+              <EnlaceIntencion href={construirUrlEdicion(edicionId, { prueba: prueba.id, origen, catalogo, persona })}>
                 Primeros puestos
-              </Link>
+              </EnlaceIntencion>
             </Button>
           ) : null}
           {clasificacion.siguiente ? (
             <Button asChild variant="outline" size="sm" className="rounded-full px-5">
-              <Link
+              <EnlaceIntencion
                 href={construirUrlEdicion(edicionId, { prueba: prueba.id, cursor: clasificacion.siguiente, origen, catalogo, persona })}
-                prefetch={false}
                 rel="next"
               >
                 Ver más
-              </Link>
+              </EnlaceIntencion>
             </Button>
           ) : null}
         </nav>
@@ -365,15 +367,14 @@ export function EnlaceConjunta({ conjunta, criterios }: { conjunta: VistaConjunt
   const { origen, catalogo, persona } = criterios;
   if (!conjunta.esConjunta) {
     return (
-      <Link
+      <EnlaceIntencion
         data-conjunta="parte"
         href={construirUrlEdicion(conjunta.conjunta.edicionId, { prueba: conjunta.conjunta.pruebaId, vista: 'poules', origen, catalogo, persona })}
-        prefetch={false}
         className={cn(ENLACE, 'self-start')}
       >
         <Swords className="size-4" aria-hidden />
         {ETIQUETA_PRUEBA_CONJUNTA}
-      </Link>
+      </EnlaceIntencion>
     );
   }
   if (conjunta.partes.length === 0) return null;
@@ -381,14 +382,13 @@ export function EnlaceConjunta({ conjunta, criterios }: { conjunta: VistaConjunt
     <p data-conjunta="conjunta" className="flex min-w-0 flex-wrap items-center gap-x-3 text-sm text-muted-foreground">
       <span>Clasificación oficial:</span>
       {conjunta.partes.map((p) => (
-        <Link
+        <EnlaceIntencion
           key={p.pruebaId}
           href={construirUrlEdicion(p.edicionId, { prueba: p.pruebaId, origen, catalogo, persona })}
-          prefetch={false}
           className={ENLACE}
         >
           {p.etiqueta}
-        </Link>
+        </EnlaceIntencion>
       ))}
     </p>
   );
@@ -415,7 +415,7 @@ export function EdicionCompleta({
     <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-4">
       <header className="flex min-w-0 flex-col gap-1">
         <div className="flex items-start justify-between gap-3">
-          <h1 className="min-w-0 text-3xl leading-tight break-words sm:text-4xl">{titulo}</h1>
+          <h2 className="min-w-0 text-[28px] leading-[32px] break-words sm:text-[36px] sm:leading-[40px]">{titulo}</h2>
           {oficial ? (
             <a
               href={oficial.url}
@@ -423,9 +423,9 @@ export function EdicionCompleta({
               rel="noopener noreferrer"
               aria-label={`Resultados oficiales en ${oficial.proveedor}`}
               title={`Resultados oficiales en ${oficial.proveedor}`}
-              className="group -m-1 inline-flex size-11 shrink-0 items-center justify-center rounded-full focus-visible:outline-none"
+              className="group -m-1 inline-flex size-[44px] shrink-0 items-center justify-center rounded-full focus-visible:outline-none"
             >
-              <span className="inline-flex size-9 items-center justify-center rounded-full border border-input bg-card text-muted-foreground transition-colors group-hover:bg-accent group-hover:text-foreground group-focus-visible:ring-[3px] group-focus-visible:ring-ring/50">
+              <span className="inline-flex size-[36px] items-center justify-center rounded-full border border-input bg-card text-muted-foreground transition-colors group-hover:bg-accent group-hover:text-foreground group-focus-visible:ring-[3px] group-focus-visible:ring-ring/50">
                 <ExternalLink className="size-4" aria-hidden />
               </span>
             </a>

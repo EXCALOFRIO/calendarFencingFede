@@ -1,4 +1,5 @@
 import { inArray } from 'drizzle-orm';
+import { cache } from 'react';
 import { db } from '@/db';
 import { sportPerson } from '@/db/schema';
 import { getManagedAthletes, getSessionProfile } from '@/lib/auth/session';
@@ -11,8 +12,13 @@ import { indiceExplorarDisponible } from './indice-db';
  * Único punto que conecta el explorador con D1 y con la sesión real. El
  * perfil sale de `getSessionProfile`, que devuelve `null` sin sesión y con
  * acceso revocado; no hay otra vía de identidad.
+ *
+ * Uno por petición (React `cache`): layout, página y cargadores comparten el
+ * mismo contexto. Fuera de un render de servidor crea uno nuevo cada vez.
  */
-export function contextoReal(): ContextoExplorador {
+export const contextoReal = cache(crearContextoReal);
+
+function crearContextoReal(): ContextoExplorador {
   return {
     db,
     perfil: getSessionProfile,

@@ -89,16 +89,58 @@ async function medirEnPagina() {
       .slice(0, 6).map((el) => `${Math.round(el.getBoundingClientRect().right - vw)}px ${quien(el)}`)
     : [];
 
+  /*
+   * Área táctil REAL: la caja del control o, si es mayor, su `::after`
+   * transparente (`AREA_TACTIL` del sistema y la regla base de
+   * `globals.css`), recortada por los antepasados con `overflow` distinto de
+   * `visible`, que es donde se pierde. Un control que se ve de 32 px y se
+   * toca en 44 no cuenta como pequeño; uno cuyo `::after` corta una fila
+   * desplazable, sí.
+   */
+  const areaTactil = (el: Element) => {
+    const r = el.getBoundingClientRect();
+    let caja = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    const tras = getComputedStyle(el, '::after');
+    if (tras.content !== 'none' && tras.content !== 'normal' && tras.position === 'absolute') {
+      const w = parseFloat(tras.width);
+      const h = parseFloat(tras.height);
+      if (Number.isFinite(w) && Number.isFinite(h)) {
+        const cx = (r.left + r.right) / 2;
+        const cy = (r.top + r.bottom) / 2;
+        const aw = Math.max(r.width, w);
+        const ah = Math.max(r.height, h);
+        caja = { left: cx - aw / 2, top: cy - ah / 2, right: cx + aw / 2, bottom: cy + ah / 2 };
+      }
+    }
+    for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+      const s = getComputedStyle(n);
+      const x = s.overflowX !== 'visible';
+      const y = s.overflowY !== 'visible';
+      if (!x && !y) continue;
+      const p = n.getBoundingClientRect();
+      if (x) caja = { ...caja, left: Math.max(caja.left, p.left), right: Math.min(caja.right, p.right) };
+      if (y) caja = { ...caja, top: Math.max(caja.top, p.top), bottom: Math.min(caja.bottom, p.bottom) };
+    }
+    return { width: Math.max(0, caja.right - caja.left), height: Math.max(0, caja.bottom - caja.top), visto: r };
+  };
+
   const interactivos = document.querySelectorAll('a[href], button, [role=button], [role=tab], [role=link], [role=switch], [role=checkbox], [role=radio], input:not([type=hidden]), select, textarea, summary');
   const pequenos: string[] = [];
+  let conAreaInvisible = 0;
   for (const el of interactivos) {
     if (!visible(el)) continue;
-    const r = el.getBoundingClientRect();
-    if (r.width >= 44 && r.height >= 44) continue;
+    const a = areaTactil(el);
+    if (a.width >= 43.5 && a.height >= 43.5) {
+      if (a.visto.width < 43.5 || a.visto.height < 43.5) conAreaInvisible += 1;
+      continue;
+    }
     // Un objetivo dentro de otro mayor ya cumple.
     const padre = el.parentElement?.closest('a[href], button, [role=button], [role=tab], label');
-    if (padre && padre.getBoundingClientRect().height >= 44 && padre.getBoundingClientRect().width >= 44) continue;
-    pequenos.push(`${Math.round(r.width)}x${Math.round(r.height)} ${quien(el)}`);
+    if (padre) {
+      const ap = areaTactil(padre);
+      if (ap.height >= 43.5 && ap.width >= 43.5) continue;
+    }
+    pequenos.push(`${Math.round(a.width)}x${Math.round(a.height)} (se ve ${Math.round(a.visto.width)}x${Math.round(a.visto.height)}) ${quien(el)}`);
   }
 
   const hojas = todos.filter((el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent!.trim().length > 0) && visible(el));
@@ -195,6 +237,7 @@ async function medirEnPagina() {
     culpables,
     pequenos: pequenos.length,
     pequenosEj: [...new Set(pequenos)].slice(0, 12),
+    conAreaInvisible,
     largos,
     repetidos,
     palabras,

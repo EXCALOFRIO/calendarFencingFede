@@ -1,6 +1,7 @@
 import { ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { Fragment } from 'react';
+import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
 import { rutaEdicion } from '@/lib/sport/explorar/edicion-url';
 import { categoriaVisible, nombrePrueba, nombrePruebaCorto } from '@/lib/sport/explorar/presentacion';
 import type { PruebaRelevosPerfil, RelevoCaraACara, RelevosCaraACara, RelevosPerfil } from '@/lib/sport/explorar/relevos';
@@ -50,7 +51,7 @@ function Fecha({ iso }: { iso: string | null }) {
   return (
     <time dateTime={iso!.slice(0, 10)} aria-hidden className="flex flex-col items-center leading-none">
       <span className="cifra text-lg">{DIA.format(fecha)}</span>
-      <span className="text-[0.625rem] text-muted-foreground">{MES.format(fecha).replace('.', '')} {ANIO.format(fecha)}</span>
+      <span className="text-[12px] text-muted-foreground">{MES.format(fecha).replace('.', '')} {ANIO.format(fecha)}</span>
     </time>
   );
 }
@@ -59,7 +60,13 @@ function Fila({ href, etiqueta, className, children }: { href: string | null; et
   return (
     <li>
       {href ? (
-        <Link href={href} prefetch={false} aria-label={etiqueta} className={cn(className, 'transition-colors hover:bg-secondary/60', ENLACE)}>
+        <Link
+          href={href}
+          prefetch={false}
+          transitionTypes={[TIPO_TRANSICION.avanzar]}
+          aria-label={etiqueta}
+          className={cn(className, 'transition-colors hover:bg-secondary', ENLACE)}
+        >
           {children}
         </Link>
       ) : (
@@ -78,7 +85,7 @@ function Lista<T>({ items, clave, fila }: { items: readonly T[]; clave: (x: T) =
         <details className="group min-w-0">
           <summary
             className={cn(
-              'flex min-h-11 cursor-pointer list-none items-center justify-center gap-1.5 border-t border-filete text-sm font-medium text-primary-text hover:bg-secondary/60 [&::-webkit-details-marker]:hidden',
+              'flex min-h-[44px] cursor-pointer list-none items-center justify-center gap-1.5 border-t border-filete text-sm font-medium text-primary-text hover:bg-secondary [&::-webkit-details-marker]:hidden',
               ENLACE,
             )}
           >
@@ -116,7 +123,7 @@ function FilaRelevo({ r, yo, nYo, nRival }: { r: RelevoCaraACara; yo: string; nY
       <span aria-hidden className="flex min-w-0 flex-col gap-1">
         <span className="truncate text-sm leading-tight font-medium" title={corto === nombre ? undefined : nombre}>{corto}</span>
         <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="inline-flex h-5 shrink-0 items-center rounded-full border border-filete-alto px-2 text-[0.6875rem] text-foreground/85">
+          <span className="inline-flex h-[20px] shrink-0 items-center rounded-full border border-filete-alto px-2 text-[12px] text-foreground">
             {ronda}
           </span>
           <span className="shrink-0">R{r.numero}</span>
@@ -203,7 +210,7 @@ function FilaPrueba({ p, personaId, armaHabitual }: { p: PruebaRelevosPerfil; pe
         <span className="cifra text-lg">
           {p.dados}<span className="text-sm text-muted-foreground">–</span>{p.recibidos}
         </span>
-        <span className="text-[0.6875rem] text-muted-foreground">{p.relevos} rel.</span>
+        <span className="text-[12px] text-muted-foreground">{p.relevos} rel.</span>
       </span>
     </Fila>
   );

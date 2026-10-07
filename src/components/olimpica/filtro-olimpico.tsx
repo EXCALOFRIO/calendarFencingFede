@@ -2,7 +2,7 @@
 
 import { Toggle } from '@/components/ui/toggle';
 import { cn } from '@/lib/utils';
-import { IconoLaurel } from './icono-laurel';
+import { IconoAros } from './icono-aros';
 
 /** Pastilla «Solo JJOO» para los filtros del ranking internacional. */
 export function FiltroOlimpico({
@@ -27,7 +27,7 @@ export function FiltroOlimpico({
       data-filtro-olimpico=""
       className={cn('rounded-full px-3', className)}
     >
-      <IconoLaurel />
+      <IconoAros className="w-[1.375rem]" />
       <span>Solo JJOO</span>
       {cuantos !== undefined ? (
         <span className="text-xs text-muted-foreground tabular-nums">{cuantos}</span>

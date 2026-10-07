@@ -21,7 +21,7 @@ import { CLASE_VER_MAS, datoCorto } from './buscador-social-fila';
  */
 
 const ENLACE =
-  'inline-flex min-h-11 items-center gap-1.5 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
+  'inline-flex min-h-[44px] items-center gap-1.5 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none';
 
 /** Entrada a la lista desde Explorar o el perfil, sin ocupar sitio en la barra. */
 export function EnlaceFavoritos({ className }: { className?: string }) {
@@ -80,12 +80,12 @@ export function ListaFavoritos({
   const volver = construirUrlFavoritos(cursorActual);
   return (
     <section aria-labelledby={ID_ENCABEZADO_FAVORITOS} className="flex min-w-0 flex-col gap-2 lg:max-w-2xl">
-      <div className="flex min-h-11 items-center justify-between gap-3">
+      <div className="flex min-h-[44px] items-center justify-between gap-3">
         <h2 id={ID_ENCABEZADO_FAVORITOS} tabIndex={-1} className="text-base font-semibold tracking-normal focus:outline-none">
           Guardados
         </h2>
         <p role="status" className="text-xs text-muted-foreground">
-          {items.length === 1 ? '1 deportista' : `${items.length} deportistas`}
+          {items.length === 1 ? '1 tirador' : `${items.length} tiradores`}
           {siguiente ? ', hay más' : ''}
         </p>
       </div>

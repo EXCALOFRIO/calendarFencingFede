@@ -25,6 +25,8 @@ export const MENSAJE_QUITADO = 'Quitado de tus favoritos.';
 const MENSAJE_ERROR =
   'No se ha podido guardar el cambio y todo sigue como estaba. Comprueba la conexión, o vuelve a entrar si tu sesión ha caducado, e inténtalo de nuevo.';
 const MENSAJE_NO_DISPONIBLE = 'Favoritos aún no está activo en esta instalación, así que no se ha cambiado nada.';
+const MENSAJE_LIMITE =
+  'Ya tienes 500 favoritos, que es el máximo. Quita alguno para guardar a esta persona.';
 const MENSAJE_NO_ENCONTRADA = 'Esta persona ya no está en el índice deportivo, así que no se ha cambiado nada.';
 
 export async function alternarFavorito(
@@ -42,6 +44,7 @@ export async function alternarFavorito(
     }
     if (r.estado === 'no_disponible') return fallo(MENSAJE_NO_DISPONIBLE);
     if (r.estado === 'no_encontrada') return fallo(MENSAJE_NO_ENCONTRADA);
+    if (r.estado === 'limite_alcanzado') return fallo(MENSAJE_LIMITE);
     return fallo(MENSAJE_ERROR);
   } catch {
     return fallo(MENSAJE_ERROR);

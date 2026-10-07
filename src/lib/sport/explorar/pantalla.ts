@@ -1,5 +1,6 @@
-import { buscarDeportistas } from './busqueda';
+import { buscarDeportistas, conMarcas } from './busqueda';
 import { ERROR_NO_AUTENTICADO, type ContextoExplorador } from './contexto';
+import { leerOlimpicaPersonas } from './olimpica-perfil';
 import { seguidasEntre } from './seguidos';
 import { aEntrada, type CriteriosExplorar } from './url';
 import type { DeportistaBuscado } from './tipos-busqueda';
@@ -50,11 +51,14 @@ async function marcarSeguidas(ctx: ContextoExplorador, items: DeportistaBuscado[
  */
 export async function cargarPaginaExplorar(ctx: ContextoExplorador, entrada: unknown): Promise<VistaExplorar> {
   try {
-    const r = await buscarDeportistas(ctx, entrada);
+    const r = await buscarDeportistas(ctx, entrada, { olimpica: false });
     if (r.estado === 'ok') {
+      // Las marcas olímpicas y «Seguir» son independientes: van a la vez.
+      const ids = r.items.map((d) => d.id);
+      const [items, marcas] = await Promise.all([marcarSeguidas(ctx, r.items), leerOlimpicaPersonas(ctx.db, ids)]);
       return {
         tipo: 'ok',
-        items: await marcarSeguidas(ctx, r.items),
+        items: conMarcas(items, marcas),
         siguiente: r.siguiente,
         sinResultados: r.sinResultados,
       };

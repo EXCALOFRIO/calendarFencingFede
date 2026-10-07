@@ -11,7 +11,8 @@ vi.mock('@/lib/auth/session', () => ({
 vi.mock('@/lib/sport/explorar/real', () => ({ contextoReal: lecturas.contexto }));
 
 const { default: Pagina } = await import('@/app/(app)/explorar/page');
-const { visibles } = await import('@/components/nav');
+const { DESTINOS_APP } = await import('@/components/navegacion-app');
+const { seccionesDeTu } = await import('@/components/tu/filas');
 
 beforeEach(() => {
   sesion.perfil = null;
@@ -49,26 +50,18 @@ describe('guarda directa de /explorar', () => {
 });
 
 describe('navegación por rol', () => {
-  const destinos = (role: 'admin' | 'coach' | 'athlete') => visibles(role).map((d) => d.href);
+  const hrefs = (role: 'admin' | 'coach' | 'athlete') =>
+    seccionesDeTu({ role, fichaPropia: null, convocatorias: 0 }).flatMap((s) => s.filas.map((f) => f.href));
 
-  it('Explorar y el calendario están en la navegación de todos los roles', () => {
-    for (const role of ['admin', 'coach', 'athlete'] as const) {
-      expect(destinos(role)).toContain('/explorar');
-      expect(destinos(role)[0]).toBe('/');
-    }
+  it('la barra es la misma para todos: Calendario, Explorar, Buscar, Ranking y Tú', () => {
+    expect(DESTINOS_APP.map((d) => d.href)).toEqual(['/', '/explorar', '/explorar/buscar', '/ranking', '/explorar/yo']);
   });
 
-  it('no mezcla la administración ni Mi estado con roles que no les corresponden', () => {
-    expect(destinos('coach')).toEqual(['/', '/explorar', '/ranking']);
-    expect(destinos('athlete')).toEqual(['/', '/estado', '/explorar', '/ranking']);
-    expect(destinos('athlete')).not.toContain('/admin');
-    expect(destinos('coach')).not.toContain('/admin');
-    expect(destinos('admin')).toContain('/admin');
-  });
-
-  it('la barra del móvil no pasa de cuatro destinos con Explorar', () => {
-    for (const role of ['admin', 'coach', 'athlete'] as const) {
-      expect(destinos(role).length).toBeLessThanOrEqual(4);
-    }
+  it('lo que depende del papel va en Tú: ni la administración ni Mi estado a quien no le toca', () => {
+    expect(hrefs('athlete')).toContain('/estado');
+    expect(hrefs('athlete')).not.toContain('/admin');
+    expect(hrefs('coach')).not.toContain('/admin');
+    expect(hrefs('coach')).not.toContain('/estado');
+    expect(hrefs('admin')).toContain('/admin');
   });
 });

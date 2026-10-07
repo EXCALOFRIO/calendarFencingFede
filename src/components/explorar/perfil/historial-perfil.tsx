@@ -11,6 +11,7 @@ import { WEAPON_LABEL, cn } from '@/lib/utils';
 import { EtiquetaCategoria, EtiquetaTipoCompeticion } from '../etiqueta-competicion';
 import { FilaResultado } from './fila-resultado';
 import { DiscoPuesto, Medallero } from './medallas';
+import { TACTIL } from './tactil';
 
 /**
  * Pestaña Resultados del perfil: ámbito, mejores competiciones y el historial
@@ -71,7 +72,7 @@ function Selector({
         value={valor}
         onChange={(e) => onChange(e.target.value)}
         className={cn(
-          'h-11 w-full min-w-0 cursor-pointer appearance-none truncate rounded-full border bg-card pr-5.5 pl-2.5 text-[0.8125rem] outline-none max-[359px]:pr-5 max-[359px]:pl-2 max-[359px]:text-xs sm:pr-8 sm:pl-3.5 sm:text-sm',
+          'h-[40px] w-full min-w-0 cursor-pointer appearance-none truncate rounded-full border bg-card pr-5.5 pl-2.5 text-[0.8125rem] outline-none max-[359px]:pr-5 max-[359px]:pl-2 max-[359px]:text-xs sm:pr-8 sm:pl-3.5 sm:text-sm',
           'focus-visible:ring-[3px] focus-visible:ring-ring/50',
           activo ? 'border-primary-text bg-marcado font-semibold text-primary-text' : 'text-foreground',
         )}
@@ -94,7 +95,7 @@ function TarjetaMejor({ r, className }: { r: FilaListaPerfil; className?: string
       <Link
         href={r.href}
         prefetch={false}
-        className="flex h-full min-w-0 flex-col gap-2.5 rounded-xl border bg-card p-3 hover:bg-secondary/60 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:p-4"
+        className="flex h-full min-w-0 flex-col gap-2.5 rounded-xl border bg-card p-3 hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:p-4"
       >
         <span className="flex min-w-0 items-center justify-between gap-2">
           <DiscoPuesto puesto={r.puesto} puestoPublicado={r.puestoPublicado} tamano="lg" />
@@ -106,9 +107,9 @@ function TarjetaMejor({ r, className }: { r: FilaListaPerfil; className?: string
         <span className="line-clamp-2 text-sm leading-snug font-medium">{r.nombre}</span>
         <span className="mt-auto flex min-w-0 flex-wrap items-center gap-1">
           {r.tipoEnNombre ? null : (
-            <EtiquetaTipoCompeticion clasificacion={r.clasificacion} className="h-5 px-2 text-[0.6875rem]" />
+            <EtiquetaTipoCompeticion clasificacion={r.clasificacion} className="h-[20px] px-2 text-[12px]" />
           )}
-          <EtiquetaCategoria codigo={r.categoria} className="h-5 px-2 text-[0.6875rem]" />
+          <EtiquetaCategoria codigo={r.categoria} className="h-[20px] px-2 text-[12px]" />
         </span>
       </Link>
     </li>
@@ -245,7 +246,8 @@ export function HistorialPerfil({
                     aria-current={activo ? 'page' : undefined}
                     data-ambito={a}
                     className={cn(
-                      'flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-full px-2 text-[0.8125rem] font-medium whitespace-nowrap max-[359px]:px-1 max-[359px]:text-xs sm:px-4 sm:text-sm',
+                      TACTIL,
+                      'flex min-h-[32px] min-w-0 items-center justify-center gap-1 rounded-full px-2 text-[0.8125rem] font-medium whitespace-nowrap max-[359px]:px-1 max-[359px]:text-xs sm:px-4 sm:text-sm',
                       'focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
                       activo ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
                     )}
@@ -292,7 +294,7 @@ export function HistorialPerfil({
               value={texto}
               onChange={(e) => cambiar(setTexto)(e.target.value)}
               placeholder="Competición o ciudad"
-              className="h-11 w-full min-w-0 rounded-full border bg-card pr-4 pl-10 text-base outline-none placeholder:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-sm"
+              className="h-[40px] w-full min-w-0 rounded-full border bg-card pr-4 pl-10 text-[16px] outline-none placeholder:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-sm"
             />
           </label>
           <div className={cn('grid min-w-0 gap-2 max-[359px]:gap-1.5', conArma ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-[5fr_3fr_5fr] sm:grid-cols-3')}>
@@ -305,7 +307,7 @@ export function HistorialPerfil({
             <button
               type="button"
               onClick={limpiar}
-              className="inline-flex min-h-11 w-fit items-center gap-1 rounded-full px-3 text-sm text-primary-text hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+              className={cn(TACTIL, 'inline-flex min-h-[32px] w-fit items-center gap-1 rounded-full px-3 text-sm text-primary-text hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none')}
             >
               <X className="size-4" aria-hidden />
               Quitar filtros
@@ -337,13 +339,13 @@ export function HistorialPerfil({
               <button
                 type="button"
                 onClick={() => setVisibles((v) => v + PASO)}
-                className="inline-flex min-h-11 w-full items-center justify-center rounded-full border bg-card text-sm font-medium hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto sm:self-center sm:px-6"
+                className="inline-flex min-h-[40px] w-full items-center justify-center rounded-full border bg-card text-sm font-medium hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto sm:self-center sm:px-6"
               >
                 Ver más · quedan {filtradas.length - mostradas.length}
               </button>
             ) : null}
             {lista.truncado && !filtrando ? (
-              <p className="text-xs text-muted-foreground">Se muestran las pruebas más recientes leídas.</p>
+              <p className="text-xs text-muted-foreground">Solo las pruebas más recientes.</p>
             ) : null}
           </div>
         )}

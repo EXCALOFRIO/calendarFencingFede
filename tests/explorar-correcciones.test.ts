@@ -97,8 +97,8 @@ describe('selector de temporada con las claves de ambas fuentes', () => {
         ['2025-2026', '2025-2026'],
       ],
     ]);
-    expect(grupos[0].etiqueta).toMatch(/^FIE/);
-    expect(grupos[1].etiqueta).toMatch(/^RFEE/);
+    expect(grupos[0].etiqueta).toMatch(/^Internacional/);
+    expect(grupos[1].etiqueta).toMatch(/^Nacional/);
   });
 
   it('una temporada de la URL fuera de la lista se conserva en el selector con su etiqueta', () => {

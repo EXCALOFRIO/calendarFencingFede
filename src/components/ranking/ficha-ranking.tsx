@@ -93,7 +93,7 @@ export type VarianteRanking = {
 
 export type LadoRanking = {
   federacion: Federacion;
-  /** Rótulo corto del conmutador: «Nacional», «Mundial». */
+  /** Rótulo corto del conmutador: «Nacional», «Internacional». */
   etiqueta: string;
   /** Vacío = este lado no tiene nada, y entonces `motivoVacio` es obligatorio. */
   variantes: VarianteRanking[];

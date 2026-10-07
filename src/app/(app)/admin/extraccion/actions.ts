@@ -14,6 +14,7 @@ import {
   procesarDocumentoOficial,
 } from '@/lib/ai/extract';
 import { requireWritableRole } from '@/lib/auth/session';
+import { invalidarCacheSinFallar } from '@/lib/cache';
 
 /**
  * Acciones de la revisión de extracciones.
@@ -50,6 +51,8 @@ async function marcar(
 
   revalidatePath('/admin/extraccion');
   revalidatePath('/admin');
+  // La ficha del torneo enseña los campos según estén aprobados o no.
+  if (filas.length > 0) await invalidarCacheSinFallar(['calendario'], 'extraccion');
   return filas.length;
 }
 
@@ -165,6 +168,7 @@ export async function confirmarEventoDeExtraccion(
   revalidatePath('/admin/extraccion');
   // La ficha del torneo ya puede enseñar estos datos.
   revalidatePath('/');
+  await invalidarCacheSinFallar(['calendario'], 'extraccion');
 
   return {
     ok: true,
@@ -207,6 +211,7 @@ export async function descartarEventoDeExtraccion(
 
   revalidatePath('/admin/extraccion');
   revalidatePath('/');
+  await invalidarCacheSinFallar(['calendario'], 'extraccion');
   return { ok: true, message: 'Descartado: estos datos no van a ninguna ficha.' };
 }
 
@@ -275,6 +280,8 @@ export async function procesarSiguientes(): Promise<ResultadoAccion> {
   }
 
   revalidatePath('/admin/extraccion');
+  // Los dossieres de un torneo llegan ya ligados a él y se ven en su ficha.
+  if (encoladas > 0) await invalidarCacheSinFallar(['calendario'], 'extraccion');
 
   return {
     ok: true,

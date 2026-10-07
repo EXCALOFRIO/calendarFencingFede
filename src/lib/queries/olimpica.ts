@@ -227,15 +227,45 @@ export const getClasificacionOlimpica = cache(
 );
 
 /**
+ * Cuánto se reutiliza la anotación de una prueba entre peticiones del mismo
+ * isolate. Cada lectura son ~700–1.300 filas de `fie_clasificacion` y el
+ * ranking FIE cambia como mucho una vez al día; sin esto, Buscar (una
+ * petición por tecla) leería hasta seis pruebas cada vez. Una ingestión nueva
+ * se ve, como tarde, a los diez minutos.
+ */
+const MEMORIA_MS = 10 * 60_000;
+const memoria = new Map<string, { hasta: number; valor: Promise<AnotacionesPrueba | null> }>();
+
+/** Vacía la memoria entre peticiones (pruebas, arneses con otra base). */
+export function olvidarAnotacionesOlimpicas() {
+  memoria.clear();
+}
+
+async function anotarPrueba(arma: ArmaOlimpica, genero: GeneroOlimpico): Promise<AnotacionesPrueba | null> {
+  const { entradas } = await getEntradasOlimpicas({ arma, genero });
+  const entrada = entradas[0];
+  return entrada ? anotarRankingOlimpico(entrada) : null;
+}
+
+/**
  * Las marcas olímpicas de las filas de UNA prueba (arma y género, sénior),
- * para la tabla del ranking internacional. `null` si no hay datos o la
- * combinación no es olímpica (mixto, categorías que no son sénior).
+ * para la tabla del ranking internacional, el perfil y Buscar. `null` si no
+ * hay datos o la combinación no es olímpica (mixto, categorías que no son
+ * sénior).
  */
 export const getAnotacionesOlimpicas = cache(
   async (arma: ArmaOlimpica, genero: GeneroOlimpico): Promise<AnotacionesPrueba | null> => {
     if (!ARMAS.includes(arma) || !GENEROS.includes(genero)) return null;
-    const { entradas } = await getEntradasOlimpicas({ arma, genero });
-    const entrada = entradas[0];
-    return entrada ? anotarRankingOlimpico(entrada) : null;
+    const clave = clavePrueba(arma, genero);
+    const ahora = Date.now();
+    const guardada = memoria.get(clave);
+    if (guardada && guardada.hasta > ahora) return guardada.valor;
+    const valor = anotarPrueba(arma, genero);
+    memoria.set(clave, { hasta: ahora + MEMORIA_MS, valor });
+    // Un fallo no se guarda: la siguiente petición lo vuelve a intentar.
+    valor.catch(() => {
+      if (memoria.get(clave)?.valor === valor) memoria.delete(clave);
+    });
+    return valor;
   },
 );

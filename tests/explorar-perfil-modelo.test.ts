@@ -193,12 +193,12 @@ const perfilCompleto = () =>
   );
 
 describe('vistas del perfil', () => {
-  it('la cabecera de un adulto enseña club, armas, edad y enlace FIE; la de un menor no', () => {
+  it('la cabecera de un adulto enseña armas, edad y enlace FIE, nunca el club; la de un menor no', () => {
     const adulto: FichaConPerfil = { ...fichaBase(), perfil: perfilCompleto() };
     const html = renderToStaticMarkup(React.createElement(CabeceraFicha, { ficha: adulto }));
     expect(html).toContain('Ana Perez');
     expect(html).toContain('Florete');
-    expect(html).toMatch(/Cercle d(&#x27;|')Escrime de Paris/i);
+    expect(html).not.toMatch(/Cercle d(&#x27;|')Escrime de Paris/i);
     expect(html).toMatch(new RegExp(`>${new Date().getFullYear() - 1990}(<!-- -->)? años<`));
     expect(html).toContain('https://fie.org/athletes/4242');
     expect(html).toContain('Cara a cara');
