@@ -4,8 +4,9 @@ import { PANTALLAS_ADMIN } from '@/components/admin/admin-screens';
 import { SinAcceso, exigirRol } from '@/components/admin/guardia';
 import { Cabecera, Cifra, TiraCifras } from '@/components/admin/piezas';
 import { Badge } from '@/components/ui/badge';
-import { formatDateTimeEs } from '@/lib/utils';
+
 import { resumenGestion } from './consultas';
+import { fechaHora } from '@/lib/fechas';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Gestión' };
@@ -52,7 +53,7 @@ export default async function Pagina() {
         titulo="Gestión"
         contexto={
           resumen.ultimaEjecucion
-            ? `Última lectura de las fuentes: ${formatDateTimeEs(resumen.ultimaEjecucion)}.`
+            ? `Última lectura de las fuentes: ${fechaHora(resumen.ultimaEjecucion)}.`
             : 'Todavía no se ha ejecutado ninguna lectura de las fuentes.'
         }
       />
@@ -99,7 +100,7 @@ export default async function Pagina() {
       <section className="flex flex-col gap-3">
         <h2 className="text-lg">Secciones</h2>
 
-        <ul className="divide-y overflow-hidden rounded-lg border bg-card">
+        <ul className="divide-y overflow-hidden rounded-xl border bg-card">
           {PANTALLAS_ADMIN.map((pantalla) => {
             const Icono = pantalla.icono;
             const contador = pantalla.contador
@@ -111,13 +112,13 @@ export default async function Pagina() {
               <li key={pantalla.href}>
                 <Link
                   href={pantalla.href}
-                  className="flex items-start gap-3 px-4 py-3.5 transition-colors hover:bg-accent"
+                  className="flex items-start gap-3 px-4 py-4 transition-colors hover:bg-accent"
                 >
                   <Icono
-                    className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                    className="h-5 w-4 shrink-0 text-muted-foreground"
                     aria-hidden
                   />
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="flex min-w-0 flex-1 flex-col gap-1">
                     <span className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{pantalla.titulo}</span>
                       {/* Pastilla apagada a propósito: el color de alarma ya
@@ -135,7 +136,7 @@ export default async function Pagina() {
                     </span>
                   </span>
                   <ChevronRight
-                    className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                    className="h-5 w-4 shrink-0 text-muted-foreground"
                     aria-hidden
                   />
                 </Link>

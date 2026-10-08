@@ -92,6 +92,25 @@ export function hayQueMarcarVisto(
 }
 
 /**
+ * ¿Hay que reescribir `last_seen_at` de una lista de inscritos que no ha
+ * cambiado? La ficha enseña «leída el …» con esa fecha, así que en las pruebas
+ * que se tiran ya (del día −1 al +14) se renueva a diario; en las demás, cuya
+ * lista ya no se mueve o falta mucho, basta una vez por semana. Las bajas no
+ * dependen de esta fecha: salen de comparar con lo leído en la pasada.
+ */
+export function hayQueMarcarListaVista(
+  fechaPrueba: string | null | undefined,
+  lastSeenAt: Date | null,
+  ahora: Date,
+): boolean {
+  if (!lastSeenAt) return true;
+  if (!fechaPrueba) return true;
+  const faltan = dias(ahora.toISOString().slice(0, 10), fechaPrueba);
+  if (faltan >= -1 && faltan <= LIMITES.diasDelanteDiario) return true;
+  return tocaPorPeriodo(ahora, lastSeenAt, 7);
+}
+
+/**
  * La clasificación mundial de la FIE se recalcula tras cada competición, y no
  * siempre al día siguiente: en los `margenDias` posteriores a algo de la FIE
  * se lee cada dos días (el lunes y el miércoles tras un fin de semana); el

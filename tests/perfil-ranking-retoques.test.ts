@@ -152,7 +152,7 @@ describe('relevos en la pestaña Rivales', () => {
     const deSeccion = seccion.slice(seccion.indexOf('export function SeccionRivales'), seccion.indexOf('export function SeccionCuriosidades'));
     expect(deSeccion.indexOf('<RelevosPerfilVista')).toBeGreaterThan(deSeccion.indexOf('<SugeridosPerfil'));
     const ficha = readFileSync(path.join(process.cwd(), 'src', 'components', 'explorar', 'ficha-deportiva.tsx'), 'utf8');
-    const rivales = ficha.slice(ficha.indexOf('<TabsContent value="rivales"'), ficha.indexOf('</Tabs>'));
+    const rivales = ficha.slice(ficha.indexOf('    rivales: ('), ficha.indexOf('if (conRanking)'));
     expect(rivales).toContain('<RelevosPerfilDiferido');
   });
 });

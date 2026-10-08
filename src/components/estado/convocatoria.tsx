@@ -4,9 +4,11 @@ import { Check, CircleCheck, ExternalLink, Medal, X } from 'lucide-react';
 import Link from 'next/link';
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
+import { ListaDatos, ParDato } from '@/components/sistema/lista-datos';
+import { fechaCorta } from '@/lib/fechas';
 import type { MyCallUp } from '@/lib/queries/my-status';
-import { cn, formatDateEs, titular } from '@/lib/utils';
-import { Rotulos, Seccion } from './piezas';
+import { cn, titularTorneo } from '@/lib/utils';
+import { Seccion } from './piezas';
 
 export type Respuesta = (
   id: string,
@@ -73,12 +75,8 @@ export function Convocatorias({
 /**
  * Una convocatoria.
  *
- * La superficie es **sólida** con la textura teñida de oro encima
- * (`fondo-cabecera tinte-oro` sobre `bg-card`), no una tarjeta translúcida: el
- * acrílico se reserva para lo que de verdad flota sobre una imagen y el tinte
- * con alfa baja es lo que el usuario ha rechazado tres veces. Lo que la marca es
- * el **filete de oro de arriba**, que es el canto de chapa del tema aplicado a
- * lo único que lo merece.
+ * Superficie sólida (`bg-card`), sin tintes ni texturas: lo que la marca es el
+ * filete de oro de arriba, el único oro de la pantalla.
  *
  * Desde aquí solo se puede decir que sí. Decir que no exige explicar por qué
  * —el seleccionador tiene que decidir a quién llama en tu lugar— y eso se hace
@@ -99,39 +97,24 @@ function Fila({
   const pendiente = c.status === 'pendiente';
 
   return (
-    <li className="fondo-cabecera tinte-oro flex flex-col gap-3 rounded-lg border-t-2 border-gold bg-card p-4">
+    <li className="flex flex-col gap-3 rounded-xl border border-border border-t-2 border-t-gold bg-card p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <p className="flex items-center gap-1.5 text-xs font-medium text-gold">
-          <Medal className="size-3.5 shrink-0" aria-hidden />
+        <p className="flex items-center gap-2 text-xs font-medium text-gold">
+          <Medal className="size-4 shrink-0" aria-hidden />
           Convocatoria de selección
         </p>
         <Estado estado={c.status} />
       </div>
 
-      <h3 className="text-lg sm:text-xl">{titular(c.eventName)}</h3>
+      <h3 className="text-sm leading-snug font-semibold">{titularTorneo(c.eventName)}</h3>
 
-      {/* En línea, no apilado: apilados, los cinco rótulos hacían la banda de
-          450 px en un iPhone y el botón de confirmar caía fuera de pantalla. */}
-      <Rotulos
-        disposicion="linea"
-        datos={[
-          ['Convocatoria', c.title],
-          ['Se compite el', formatDateEs(c.startDate)],
-          [
-            'Plaza',
-            c.placeType === 'ranking'
-              ? 'Por ranking'
-              : 'Técnica, a criterio del seleccionador',
-          ],
-          [
-            'Responder antes del',
-            c.respondBy ? formatDateEs(c.respondBy) : 'sin fecha límite',
-          ],
-          ...(conNombre
-            ? ([['Tirador', c.athleteName]] as [string, React.ReactNode][])
-            : []),
-        ]}
-      />
+      <ListaDatos disposicion="rejilla">
+        <ParDato etiqueta="Convocatoria">{c.title}</ParDato>
+        <ParDato etiqueta="Se compite el">{fechaCorta(c.startDate)}</ParDato>
+        <ParDato etiqueta="Plaza">{c.placeType === 'ranking' ? 'Por ranking' : 'Técnica'}</ParDato>
+        <ParDato etiqueta="Responder antes del">{c.respondBy ? fechaCorta(c.respondBy) : 'Sin fecha límite'}</ParDato>
+        {conNombre ? <ParDato etiqueta="Tirador">{c.athleteName}</ParDato> : null}
+      </ListaDatos>
 
       {aviso ? (
         <p className="text-sm" role="status">
@@ -197,7 +180,7 @@ function Estado({ estado }: { estado: MyCallUp['status'] }) {
   return (
     <span
       className={cn(
-        'flex items-center gap-1.5 text-sm',
+        'flex items-center gap-2 text-sm',
         confirmado ? 'text-ok' : 'text-muted-foreground',
       )}
     >

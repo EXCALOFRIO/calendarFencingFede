@@ -9,6 +9,8 @@ import { ERROR_VISTA_CADUCADA } from '@/lib/auth/read-only';
 
 const dependencias = vi.hoisted(() => ({ contexto: vi.fn() }));
 vi.mock('@/lib/sport/explorar/real', () => ({ contextoReal: dependencias.contexto }));
+// Sin caché compartida: la parte pública se lee con el contexto simulado.
+vi.mock('@/lib/sport/explorar/sugerencias-cache-real', () => ({ sugerenciasPublicasCompartidas: async () => null }));
 import { GET } from '@/app/api/explorar/sugerencias/route';
 
 const candidato = (id = A, nombre = 'Carlos Llavador Fernández'): CandidatoSugerencia => ({

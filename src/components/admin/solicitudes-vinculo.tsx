@@ -58,7 +58,7 @@ function SolicitudParaRevisar({ solicitud }: { solicitud: Solicitud }) {
       {resuelta ? null : (
         <form action={accion} className="flex min-w-0 flex-col gap-3">
           <input type="hidden" name="solicitudId" value={solicitud.id} />
-          <div className="flex min-w-0 flex-col gap-1.5">
+          <div className="flex min-w-0 flex-col gap-2">
             <Label htmlFor={evidenciaId}>Cómo se verificó la identidad, o motivo del rechazo</Label>
             <textarea id={evidenciaId} name="evidencia" required minLength={20} maxLength={1000}
               rows={3} disabled={pendiente}

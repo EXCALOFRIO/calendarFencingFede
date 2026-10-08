@@ -13,7 +13,7 @@ export function Frases({ frases, className }: { frases: readonly (string | null 
   const visibles = frases.filter((f): f is string => Boolean(f));
   if (visibles.length === 0) return null;
   return (
-    <p className={cn('text-[13px] leading-snug text-pretty text-muted-foreground', className)}>
+    <p className={cn('text-sm leading-snug text-pretty text-muted-foreground', className)}>
       {visibles.join(' ')}
     </p>
   );
@@ -47,7 +47,7 @@ export function Celda({
         <span className="min-w-fit grow basis-0 text-xs leading-tight text-muted-foreground">{rotulo}</span>
         {cifra !== undefined && cifra !== null ? (
           <span className="ml-auto flex shrink-0 items-baseline gap-1">
-            {contexto ? <span className="text-[12px] leading-none text-muted-foreground">{contexto}</span> : null}
+            {contexto ? <span className="text-xs leading-none text-muted-foreground">{contexto}</span> : null}
             <span className="cifra text-3xl leading-none">
               {cifra}
               {unidad ? <span className="text-base">{unidad}</span> : null}
@@ -83,18 +83,18 @@ export function BarraDuelo({
   const total = izquierda + derecha;
   const p = total > 0 ? (izquierda / total) * 100 : 50;
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 items-end justify-between gap-2">
-        <span className="flex min-w-0 items-baseline gap-1.5">
+        <span className="flex min-w-0 items-baseline gap-2">
           <span className={cn('cifra leading-none', tamano)}>{formato(izquierda)}</span>
-          {rotuloIzquierda ? <span className="truncate text-[12px] text-muted-foreground">{rotuloIzquierda}</span> : null}
+          {rotuloIzquierda ? <span className="truncate text-xs text-muted-foreground">{rotuloIzquierda}</span> : null}
         </span>
-        <span className="flex min-w-0 items-baseline gap-1.5">
-          {rotuloDerecha ? <span className="truncate text-[12px] text-muted-foreground">{rotuloDerecha}</span> : null}
+        <span className="flex min-w-0 items-baseline gap-2">
+          {rotuloDerecha ? <span className="truncate text-xs text-muted-foreground">{rotuloDerecha}</span> : null}
           <span className={cn('cifra leading-none text-muted-foreground', tamano)}>{formato(derecha)}</span>
         </span>
       </div>
-      <div aria-hidden className="flex h-1.5 gap-0.5">
+      <div aria-hidden className="flex h-1.5 gap-1">
         {total === 0 ? <span className="flex-1 rounded-full bg-muted" /> : null}
         {izquierda > 0 ? <span className="rounded-full" style={{ width: `${p}%`, background: colorIzquierda }} /> : null}
         {derecha > 0 ? <span className="flex-1 rounded-full" style={{ background: colorDerecha }} /> : null}

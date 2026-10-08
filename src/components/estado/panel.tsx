@@ -226,23 +226,12 @@ export function PanelEstado({
           }
         />
         <CeldaMarcador
-          valor={
-            mejorPuesto?.position ? (
-              <>
-                {mejorPuesto.position}
-                <span className="text-xl">.º</span>
-              </>
-            ) : (
-              '—'
-            )
-          }
-          /* Corto a propósito: el `.º` ya dice que es un puesto y la banda de
-             abajo dice de qué clasificación. «en el ranking oficial de florete
-             absoluto» partía la celda en tres renglones y hacía la chapa el
-             doble de alta que las otras dos. Medido en la captura. */
+          valor={mejorPuesto?.position ?? '—'}
+          /* Corto a propósito: «en el ranking oficial de florete absoluto»
+             partía la celda en tres renglones. */
           palabra={
             mejorPuesto?.position
-              ? `en ${etiquetaRanking(mejorPuesto)}`
+              ? `puesto en ${etiquetaRanking(mejorPuesto)}`
               : 'sin puesto oficial'
           }
           tono={mejorPuesto?.position ? 'normal' : 'apagado'}

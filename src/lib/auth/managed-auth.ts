@@ -1,25 +1,45 @@
 import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { userProfile } from '@/db/schema';
+import { club, profileWeapon, userProfile } from '@/db/schema';
 import { AHORA_SQL } from '@/lib/sqlite';
 import { correoVerificado, esRolAplicacion } from './access-policy';
 import { authOtpChallenge } from './cloudflare-schema';
+import { ErrorAcceso } from './errores';
 import { COOKIE_ACCESO_QA } from './qa-token';
 import { COOKIE_VISTA_PREVIA } from './preview-token';
 import { allowOtpRequest, privateAuthKey, type AuthDatabase } from './rate-limit';
+import type { SessionCache } from './session-cache';
 
 const SEND = 'email-otp/send-verification-otp';
 const VERIFY = 'sign-in/email-otp';
 const PRIVATE = { 'Cache-Control': 'private, no-store' };
-const SECURE_NEON_COOKIES = new Set([
-  '__Secure-neon-auth.session_token', '__Secure-neon-auth.local.session_data',
-]);
+const SECURE_SESSION_COOKIE = '__Secure-neon-auth.session_token';
+const LOCAL_SESSION_COOKIE = 'neon-auth.session_token';
+const SECURE_NEON_COOKIES = new Set([SECURE_SESSION_COOKIE, '__Secure-neon-auth.local.session_data']);
 // Plain names only exist on http://localhost, where browsers refuse `__Secure-`.
-const LOCAL_NEON_COOKIES = new Set(['neon-auth.session_token', 'neon-auth.local.session_data']);
+const LOCAL_NEON_COOKIES = new Set([LOCAL_SESSION_COOKIE, 'neon-auth.local.session_data']);
 const DENIED = { code: 'ACCESO_NO_PERMITIDO', message: 'No se ha podido entrar. Pide un código nuevo.' };
+const LIMITED = { code: 'DEMASIADOS_CODIGOS', message: 'Has pedido demasiados códigos. Prueba en unos minutos.' };
+const WEAPONS = new Set(['FLORETE', 'ESPADA', 'SABLE'] as const);
 
 type Identity = { id: string; email: string; emailVerified: true };
-type Session = { user: Identity; session: { id: string; expiresAt: string } };
+export type ProviderSession = { user: Identity; session: { id: string; expiresAt: string } };
+type Weapon = 'FLORETE' | 'ESPADA' | 'SABLE';
+/** The D1 profile that authorized the session. Server-side only: never serialized by `handler`. */
+export type ManagedProfile = {
+  id: string;
+  authUserId: string;
+  email: string;
+  fullName: string;
+  role: 'admin' | 'coach' | 'athlete';
+  inviteStatus: typeof userProfile.$inferSelect.inviteStatus;
+  clubId: string | null;
+  clubName: string | null;
+  icalToken: string;
+  /** Only read for coaches; empty for everyone else. */
+  weapons: Weapon[];
+};
+type Session = ProviderSession & { profile: ManagedProfile };
 type ApiInput = { headers: Headers; body?: { email?: string; otp?: string; type?: string } };
 export type ManagedAuthConfig = {
   secret: string;
@@ -30,10 +50,23 @@ export type ManagedAuthConfig = {
   secureCookiesOnly?: boolean;
   /** Daily ceiling of codes sent to invited addresses. See `otpDailyLimit`. */
   otpDailyLimit?: number;
+  /** Short-lived memory of validated provider sessions, shared across requests. See `session-cache.ts`. */
+  sessionCache?: SessionCache<ProviderSession>;
 };
 
 function deny(status = 403) {
   return Response.json(DENIED, { status, headers: PRIVATE });
+}
+
+/** Every session cookie the provider would read, exactly as sent; null when there is none. */
+function sessionCookies(headers: Headers, secureOnly: boolean): string | null {
+  const found = (headers.get('cookie') ?? '').split(';').map((c) => c.trim()).filter((c) => {
+    const name = c.split('=', 1)[0].trim();
+    const value = c.slice(c.indexOf('=') + 1).trim();
+    return c.includes('=') && value !== '' &&
+      (name === SECURE_SESSION_COOKIE || (!secureOnly && name === LOCAL_SESSION_COOKIE));
+  });
+  return found.length > 0 ? found.join('; ') : null;
 }
 
 function identity(value: unknown): Identity | null {
@@ -117,7 +150,32 @@ export function createManagedAuth(db: AuthDatabase, config: ManagedAuthConfig) {
     return row;
   }
 
-  async function session(headers: Headers): Promise<Session | null> {
+  /**
+   * Same rules as `invitation` (one normalized match, live, application role,
+   * same managed identity) plus everything the app needs about the person, in
+   * ONE indexed read: club name by join and, only for coaches, their weapons.
+   */
+  async function sessionProfile(user: Identity): Promise<ManagedProfile | null> {
+    const rows = await db.select({
+      id: userProfile.id, authUserId: userProfile.authUserId, email: userProfile.email,
+      fullName: userProfile.fullName, role: userProfile.role, inviteStatus: userProfile.inviteStatus,
+      clubId: userProfile.clubId, clubName: club.name, icalToken: userProfile.icalToken,
+      weapons: sql<string | null>`CASE WHEN ${userProfile.role} = 'coach' THEN
+        (SELECT group_concat(${profileWeapon.weapon}) FROM ${profileWeapon}
+          WHERE ${profileWeapon.profileId} = ${userProfile.id}) END`,
+    }).from(userProfile).leftJoin(club, eq(userProfile.clubId, club.id))
+      .where(sql`lower(trim(${userProfile.email})) = ${user.email}`).limit(2);
+    const row = rows.length === 1 ? rows[0] : null;
+    if (!row || row.inviteStatus === 'revocada' || !esRolAplicacion(row.role) ||
+        row.authUserId !== user.id || row.email.trim().toLowerCase() !== user.email) return null;
+    const weapons = (row.weapons ?? '').split(',').filter((w): w is Weapon => WEAPONS.has(w as Weapon));
+    return {
+      id: row.id, authUserId: row.authUserId, email: row.email, fullName: row.fullName, role: row.role,
+      inviteStatus: row.inviteStatus, clubId: row.clubId, clubName: row.clubName, icalToken: row.icalToken, weapons,
+    };
+  }
+
+  async function providerSession(headers: Headers): Promise<{ value: ProviderSession; expiresAt: number } | null> {
     const url = new URL('/api/auth/get-session', origin);
     // Bypass both the SDK's local cookie cache and the upstream cookie cache.
     url.searchParams.set('disableCookieCache', 'true');
@@ -127,10 +185,29 @@ export function createManagedAuth(db: AuthDatabase, config: ManagedAuthConfig) {
     const user = identity(body?.user);
     if (!user) return null;
     const expiresAt = typeof body?.session?.expiresAt === 'string' ? body.session.expiresAt : '';
-    if (typeof body?.session?.id !== 'string' || !Number.isFinite(Date.parse(expiresAt)) ||
-        Date.parse(expiresAt) <= Date.now()) return null;
-    const profile = await invitation(user.email, user.id);
-    return profile?.authUserId === user.id ? { user, session: { id: body.session.id, expiresAt } } : null;
+    const expires = Date.parse(expiresAt);
+    if (typeof body?.session?.id !== 'string' || !Number.isFinite(expires) || expires <= Date.now()) return null;
+    return { value: { user, session: { id: body.session.id, expiresAt } }, expiresAt: expires };
+  }
+
+  const cacheKey = (cookies: string) => privateAuthKey(config.secret, 'session-cache', cookies);
+
+  async function session(headers: Headers): Promise<Session | null> {
+    // No session cookie: nothing the provider could validate, so no round trip.
+    const cookies = sessionCookies(headers, secureOnly);
+    if (!cookies) return null;
+    const provider = config.sessionCache
+      ? await config.sessionCache.read(cacheKey(cookies), () => providerSession(headers))
+      : (await providerSession(headers))?.value ?? null;
+    if (!provider || Date.parse(provider.session.expiresAt) <= Date.now()) return null;
+    // Never cached: invitation, revocation and role apply on the very next request.
+    const profile = await sessionProfile(provider.user);
+    return profile ? { ...provider, profile } : null;
+  }
+
+  function evictSession(headers: Headers) {
+    const cookies = sessionCookies(headers, secureOnly);
+    if (cookies) config.sessionCache?.evict(cacheKey(cookies));
   }
 
   async function handler(request: Request): Promise<Response> {
@@ -141,8 +218,10 @@ export function createManagedAuth(db: AuthDatabase, config: ManagedAuthConfig) {
     const forwarded = providerHeaders(request.headers, secureOnly);
     if (request.method === 'GET') {
       if (path !== 'get-session') return deny(404);
-      try { return Response.json(await session(forwarded), { headers: PRIVATE }); }
-      catch { return deny(503); }
+      try {
+        const current = await session(forwarded);
+        return Response.json(current ? { user: current.user, session: current.session } : null, { headers: PRIVATE });
+      } catch { return deny(503); }
     }
     if (request.method !== 'POST' || ![SEND, VERIFY, 'sign-out'].includes(path)) return deny();
     if (names.has(COOKIE_VISTA_PREVIA) && path !== 'sign-out') return deny();
@@ -153,6 +232,8 @@ export function createManagedAuth(db: AuthDatabase, config: ManagedAuthConfig) {
       const body = await readBody(request);
       if (!body) return deny(400);
       if (path === 'sign-out') {
+        // Before anything else: even a failed sign-out must not leave this session remembered.
+        evictSession(forwarded);
         const response = await config.request(new Request(url, {
           method: 'POST', headers: forwarded, body: '{}',
         }), path);
@@ -163,6 +244,8 @@ export function createManagedAuth(db: AuthDatabase, config: ManagedAuthConfig) {
         if (!check.ok) return deny(503);
         const remaining = await check.json() as { session?: unknown; user?: unknown } | null;
         if (remaining?.session || remaining?.user) return deny(503);
+        // A read that started before the provider revoked the session may have stored it meanwhile.
+        evictSession(forwarded);
         return withCookies({ success: true }, response, secureOnly);
       }
 
@@ -174,11 +257,13 @@ export function createManagedAuth(db: AuthDatabase, config: ManagedAuthConfig) {
       // The invitation is read first so that invented addresses never touch the
       // per-address counters or the global daily quota.
       const profile = await invitation(email);
-      const allowed = await allowOtpRequest(db, config.secret, email, request.headers, send, {
+      const decision = await allowOtpRequest(db, config.secret, email, request.headers, send, {
         invited: profile !== null,
         ...(config.otpDailyLimit ? { dailyLimit: config.otpDailyLimit } : {}),
       });
-      if (!allowed || !profile) return send ? Response.json({ success: true }, { headers: PRIVATE }) : deny(400);
+      // `limitado` never depends on whether the address is invited (see `OtpDecision`).
+      if (send && decision === 'limitado') return Response.json(LIMITED, { status: 429, headers: PRIVATE });
+      if (decision !== 'permitido' || !profile) return send ? Response.json({ success: true }, { headers: PRIVATE }) : deny(400);
       const key = challengeKey(email);
 
       if (send) {
@@ -246,20 +331,27 @@ export function createManagedAuth(db: AuthDatabase, config: ManagedAuthConfig) {
 
   async function invoke(path: string, input: ApiInput) {
     const headers = new Headers(input.headers);
-    const get = path === 'get-session';
-    if (!get) headers.set('content-type', 'application/json');
+    headers.set('content-type', 'application/json');
     const response = await handler(new Request(new URL(`/api/auth/${path}`, origin), {
-      method: get ? 'GET' : 'POST', headers, ...(get ? {} : { body: JSON.stringify(input.body ?? {}) }),
+      method: 'POST', headers, body: JSON.stringify(input.body ?? {}),
     }));
-    if (!response.ok) throw new Error('ACCESO_NO_PERMITIDO');
-    if (!get && path !== SEND) await config.writeCookies?.(response);
+    if (!response.ok) throw new ErrorAcceso(response.status);
+    if (path !== SEND) await config.writeCookies?.(response);
     return response.json();
+  }
+
+  /** In process, so the D1 profile travels with the session instead of being read twice. */
+  async function getSession(input: ApiInput): Promise<Session | null> {
+    const names = new Set((input.headers.get('cookie') ?? '').split(';').map((c) => c.trim().split('=')[0]));
+    if (names.has(COOKIE_ACCESO_QA)) throw new ErrorAcceso(403);
+    try { return await session(providerHeaders(input.headers, secureOnly)); }
+    catch { throw new ErrorAcceso(503); }
   }
 
   return {
     handler,
     api: {
-      getSession: async (input: ApiInput): Promise<Session | null> => invoke('get-session', input),
+      getSession,
       sendVerificationOTP: (input: ApiInput): Promise<{ success: true }> => invoke(SEND, input),
       signInEmailOTP: (input: ApiInput): Promise<{ user: Identity }> => invoke(VERIFY, input),
       signOut: (input: ApiInput): Promise<{ success: true }> => invoke('sign-out', input),

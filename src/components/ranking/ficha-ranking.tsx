@@ -16,7 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
+import { SelectorSegmentado } from '@/components/sistema/selector-segmentado';
 import { cn } from '@/lib/utils';
 import { TiraTemporadas, type TemporadaRanking } from './tira-temporadas';
 
@@ -168,7 +169,7 @@ export function FichaRanking({
     <article
       className={cn(
         // Una banda con filete de luz arriba, como el canto de una chapa.
-        'flex min-w-0 flex-col gap-5 rounded-lg border-t border-filete bg-card px-4 py-5 sm:px-5',
+        'flex min-w-0 flex-col gap-5 rounded-xl border-t border-filete bg-card px-4 py-5 sm:px-5',
         className,
       )}
     >
@@ -237,10 +238,10 @@ export function FichaRanking({
           Un lado vacío dice qué pasaría ahí y por qué no hay nada, en la voz
           de la aplicación. Nunca «No hay datos».
         */
-        <Aviso>
-          {lado.motivoVacio ??
-            `No hay ningún puesto de ${nombreFederacion(lado.federacion)} para este tirador.`}
-        </Aviso>
+        <EstadoVacio
+          titulo={`Sin puesto en el ranking de ${nombreFederacion(lado.federacion)}`}
+          descripcion={lado.motivoVacio}
+        />
       ) : variante.temporadas.length > 1 ? (
         <div className="border-t border-filete pt-5">
           <TiraTemporadas
@@ -269,7 +270,7 @@ export function FichaRanking({
 function Aviso({ children }: { children: React.ReactNode }) {
   return (
     <p className="flex items-start gap-2 text-sm text-muted-foreground">
-      <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <Info className="mt-1 size-4 shrink-0" aria-hidden />
       <span className="medida">{children}</span>
     </p>
   );
@@ -277,19 +278,9 @@ function Aviso({ children }: { children: React.ReactNode }) {
 
 /**
  * El conmutador: el escudo de la RFEE y el de la FIE como los dos lados de un
- * mismo control.
- *
- * `ToggleGroup` con `variant="outline"`, que marca lo puesto con **contorno
- * rojo, superficie teñida y rótulo en rojo y negrita** — la convención de
- * `globals.css` («EL CONTROL MARCADO»). El **relleno sólido** de acento sigue
- * reservado a la acción principal de la pantalla, y un conmutador de ranking
- * no lo es: aquí el rojo es contorno, no relleno.
- *
- * El escudo va **decorativo** porque al lado está el rótulo: si no, un lector
- * de pantalla leería «Real Federación Española de Esgrima, Nacional».
- *
- * Y el color no es la única señal: contorno, peso de la letra, opacidad del
- * escudo y el `aria-checked` de Radix. Cuatro, y tres de ellas no son color.
+ * mismo control, con el segmentado del sistema (el mismo «Qué ranking se
+ * enseña» que el de la tabla). El escudo va decorativo porque al lado está el
+ * rótulo.
  */
 export function ConmutadorRanking({
   lados,
@@ -301,50 +292,23 @@ export function ConmutadorRanking({
   onElegir: (f: Federacion) => void;
 }) {
   if (lados.length < 2) return null;
-
   return (
-    <ToggleGroup
-      type="single"
-      variant="outline"
-      value={elegida}
-      onValueChange={(v) => v && onElegir(v as Federacion)}
-      aria-label="Qué ranking se enseña"
-      spacing={1}
-      className="w-full sm:w-auto"
-    >
-      {lados.map((lado) => {
-        const vacio = lado.variantes.length === 0;
-        return (
-          <ToggleGroupItem
-            key={lado.federacion}
-            value={lado.federacion}
-            disabled={vacio}
-            title={vacio ? lado.motivoVacio : undefined}
-            className="h-11 flex-1 gap-2 px-3 sm:flex-none"
-          >
-            {/*
-              El escudo del lado apagado va al 55 % de opacidad. Se añadió
-              después de mirar la captura: con los dos escudos a plena luz, la
-              superficie gris del activo no bastaba para decir cuál estaba
-              puesto. Se queda aunque el marcado ya lleve contorno rojo,
-              porque es luminosidad y no color: sigue funcionando en escala de
-              grises y para quien no distinga el rojo.
-            */}
-            <Escudo
-              federacion={lado.federacion}
-              tamano="control"
-              decorativo
-              className={cn(
-                'transition-opacity',
-                elegida === lado.federacion ? 'opacity-100' : 'opacity-55',
-              )}
-            />
-            {/* El rótulo hereda el rojo y la negrita del item marcado; sin
-                marcar lo pone el propio `ToggleGroupItem` en apagado. */}
-            <span className="text-sm">{lado.etiqueta}</span>
-          </ToggleGroupItem>
-        );
-      })}
-    </ToggleGroup>
+    <SelectorSegmentado
+      etiqueta="Qué ranking se enseña"
+      valor={elegida}
+      onCambio={(v) => onElegir(v as Federacion)}
+      anchoMinimo={8}
+      className="w-full sm:w-72"
+      opciones={lados.map((lado) => ({
+        valor: lado.federacion,
+        deshabilitada: lado.variantes.length === 0,
+        etiqueta: (
+          <span className="inline-flex min-w-0 items-center gap-2">
+            <Escudo federacion={lado.federacion} tamano="nota" decorativo />
+            {lado.etiqueta}
+          </span>
+        ),
+      }))}
+    />
   );
 }

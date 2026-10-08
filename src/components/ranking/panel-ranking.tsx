@@ -1,6 +1,8 @@
 'use client';
 
 import * as React from 'react';
+import { Boton } from '@/components/sistema/boton';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import type {
   FormatoClasificacion,
   GrupoClasificacion,
@@ -240,16 +242,13 @@ function TablaNacional({
 
   if (!datos) {
     return fallo ? (
-      <p role="alert" className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
-        No se ha podido cargar la clasificación nacional.
-        <button
-          type="button"
-          onClick={() => void pedir(ranking?.memoria.current.grupo)?.catch(() => {})}
-          className="relative min-h-0! min-w-0! text-primary-text underline underline-offset-4 after:absolute after:-inset-3 after:content-['']"
-        >
-          Reintentar
-        </button>
-      </p>
+      <EstadoVacio
+        tipo="error"
+        titulo="No se ha podido cargar la clasificación nacional"
+        accion={
+          <Boton onClick={() => void pedir(ranking?.memoria.current.grupo)?.catch(() => {})}>Reintentar</Boton>
+        }
+      />
     ) : null;
   }
 

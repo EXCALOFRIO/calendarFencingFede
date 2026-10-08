@@ -76,7 +76,7 @@ describe('resultados publicados: agrupación y deduplicación', () => {
     expect(deMadre).toHaveLength(1);
     expect(deMadre[0].tipo).toBe('perfil');
     expect(deMadre[0].clave).toBe(`resultados:${prueba.id}`);
-    expect(deMadre[0].titulo).toBe('Resultados de Espada femenino M17');
+    expect(deMadre[0].titulo).toBe('Resultados de Espada femenina M17');
     const datos = JSON.parse(String(deMadre[0].datos));
     expect(datos.lineas.map((l: { nombre: string; puesto: number }) => [l.nombre, l.puesto])).toEqual([['Lucía García', 3], ['Marta García', 12]]);
     expect(String(deMadre[0].url)).toBe(`/explorar/ediciones/${prueba.edicion}?prueba=${prueba.id}`);
@@ -103,7 +103,7 @@ describe('resultados publicados: agrupación y deduplicación', () => {
     for (const [i, p] of [adulta, sinAnio, limite, mezclada].entries()) b.resultado(prueba.id, p, i + 1);
     await procesarDespues(b, [{ tipo: 'resultados_publicados', competitionId: prueba.id }]);
     const [aviso] = b.avisos(yo);
-    expect(aviso.titulo).toBe('Ana Adulta: 1.º en Espada femenino M17');
+    expect(aviso.titulo).toBe('Ana Adulta: 1.º en Espada femenina M17');
     expect(JSON.parse(String(aviso.datos)).lineas.map((l: { nombre: string }) => l.nombre)).toEqual(['Ana Adulta']);
   });
 
@@ -136,7 +136,7 @@ describe('resultados publicados: agrupación y deduplicación', () => {
     b.resultado(prueba.id, a, 5);
     await notificarEventosDeportivos(b.db, [{ tipo: 'resultado_nuevo', competitionId: prueba.id, personIds: [a] }], { vapid: null, ahora: AHORA });
     const [primero] = b.avisos(yo);
-    expect(primero.titulo).toBe('Ana Uno: 5.º en Espada femenino M17');
+    expect(primero.titulo).toBe('Ana Uno: 5.º en Espada femenina M17');
     await abrirAviso(b.db, yo, String(primero.id), AHORA);
     expect(await contarNoLeidas(b.db, yo)).toBe(0);
     b.resultado(prueba.id, c, 2);
@@ -146,7 +146,7 @@ describe('resultados publicados: agrupación y deduplicación', () => {
     const filas = b.avisos(yo);
     expect(filas).toHaveLength(1);
     expect(filas[0].id).toBe(primero.id);
-    expect(filas[0].titulo).toBe('Resultados de Espada femenino M17');
+    expect(filas[0].titulo).toBe('Resultados de Espada femenina M17');
     expect(await contarNoLeidas(b.db, yo)).toBe(1);
   });
 
@@ -182,7 +182,7 @@ describe('resultados publicados: agrupación y deduplicación', () => {
     await procesarDespues(b, [{ tipo: 'resultados_publicados', competitionId: prueba.id }]);
     const [aviso] = b.avisos(entrenador);
     expect(aviso.tipo).toBe('inscripciones');
-    expect(aviso.titulo).toBe('Eva Sol: sin puesto publicado en Espada femenino M17');
+    expect(aviso.titulo).toBe('Eva Sol: sin puesto publicado en Espada femenina M17');
   });
 
   it('una clasificación sin ninguna persona identificada sigue avisando de la inscripción', async () => {
@@ -292,7 +292,7 @@ describe('preferencias', () => {
     const prueba = { competitionId: C, editionId: 'e', nombreEdicion: 'Torneo', arma: 'SABLE', genero: 'M', categoria: 'ABS' };
     const avisos = construirAvisosResultados(prueba, lineas, prefs, PREFERENCIAS_POR_DEFECTO);
     expect(avisos).toHaveLength(1);
-    expect(avisos[0].titulo).toBe('B: 7.º en Sable masculino absoluto');
+    expect(avisos[0].titulo).toBe('B: 7.º en Sable masculino');
     expect(avisos[0].url).toBe(`/explorar/ediciones/e?prueba=${C}&persona=${B}`);
   });
 });
@@ -411,7 +411,7 @@ describe('suscripciones caducadas', () => {
 });
 
 describe('cambios de perfil: ranking y estado olímpico', () => {
-  const lectura = (clave: string, valor: string, etiqueta = 'Ranking nacional · Espada femenino M17') => ({ clave, valor, etiqueta });
+  const lectura = (clave: string, valor: string, etiqueta = 'Ranking nacional · Espada femenina M17') => ({ clave, valor, etiqueta });
 
   it('la primera lectura no avisa; un cambio sí; la misma lectura otra vez, no; una clave que desaparece, tampoco', async () => {
     const { b, madre, pMarta } = escenario();
@@ -421,7 +421,7 @@ describe('cambios de perfil: ranking y estado olímpico', () => {
       personId: pMarta,
       lecturas: [
         lectura('nacional:ESPADA-F-M17', valor),
-        ...(olimpico ? [lectura('olimpico:ESPADA-F', olimpico, 'Estado olímpico · Espada femenino absoluto')] : []),
+        ...(olimpico ? [lectura('olimpico:ESPADA-F', olimpico, 'Estado olímpico · Espada femenina')] : []),
       ],
     }];
     expect((await registrarLecturasPerfil(b.db, personas, leer('2025-2026|8', 'cerca'), AHORA)).guardados).toHaveLength(0);
@@ -430,7 +430,7 @@ describe('cambios de perfil: ranking y estado olímpico', () => {
     const [aviso] = b.avisos(madre);
     expect(aviso.tipo).toBe('perfil');
     expect(aviso.titulo).toBe('Cambios en el perfil de Marta García');
-    expect(aviso.cuerpo).toBe('Ranking nacional · Espada femenino M17: 5.º (antes 8.º); Estado olímpico · Espada femenino absoluto: en plaza olímpica (antes cerca de la plaza olímpica)');
+    expect(aviso.cuerpo).toBe('Ranking nacional · Espada femenina M17: 5.º (antes 8.º); Estado olímpico · Espada femenina: en plaza olímpica (antes cerca de la plaza olímpica)');
     // Ranking y plaza olímpica: se abre la sección Ranking del perfil.
     expect(aviso.url).toBe(`/explorar/${pMarta}/ranking`);
     expect((await registrarLecturasPerfil(b.db, personas, leer('2025-2026|5', 'clasificado'), AHORA)).guardados).toHaveLength(0);
@@ -453,10 +453,10 @@ describe('cambios de perfil: ranking y estado olímpico', () => {
 
   it('compararLecturas: temporada nueva y entrada en una lista nueva se describen así', () => {
     const antes = new Map([['nacional:a', '2024-2025|4']]);
-    const c = compararLecturas(antes, [lectura('nacional:a', '2025-2026|2'), lectura('nacional:b', '2025-2026|30', 'Ranking nacional · Espada femenino M20')]);
+    const c = compararLecturas(antes, [lectura('nacional:a', '2025-2026|2'), lectura('nacional:b', '2025-2026|30', 'Ranking nacional · Espada femenina M20')]);
     expect(c.map((x) => x.texto)).toEqual([
-      'Ranking nacional · Espada femenino M17: 2.º en 2025-2026 (antes 4.º en 2024-2025)',
-      'Ranking nacional · Espada femenino M20: entras en el 30.º',
+      'Ranking nacional · Espada femenina M17: 2.º en 2025-2026 (antes 4.º en 2024-2025)',
+      'Ranking nacional · Espada femenina M20: entras en el 30.º',
     ]);
   });
 });

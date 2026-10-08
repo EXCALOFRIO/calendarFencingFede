@@ -102,7 +102,7 @@ export function PuestosComparados({
   return (
     <Lectura inicial={inicial} datos={pruebas.map((p) => lecturaPrueba(p, yo, rival))} className={className}>
       {resumen ? (
-        <Badge variant="secondary" className="min-h-6 max-w-full gap-1.5 px-2.5 text-left text-xs whitespace-normal">
+        <Badge variant="secondary" className="min-h-6 max-w-full gap-2 px-3 text-left text-xs whitespace-normal">
           <span
             aria-hidden
             className="size-2 shrink-0 rounded-full"

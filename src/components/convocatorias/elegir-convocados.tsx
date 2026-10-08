@@ -3,7 +3,7 @@
 import { ArrowLeftRight, Plus, TriangleAlert, Users, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
-import { Badge } from '@/components/ui/badge';
+import { Pastilla } from '@/components/sistema/pastilla';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -31,7 +31,8 @@ import type {
   CallUpAthleteRow,
   RankingPrueba,
 } from '@/lib/callups/tipos';
-import { cn, formatDateEs, titular } from '@/lib/utils';
+import { frescura } from '@/lib/fechas';
+import { cn, titular } from '@/lib/utils';
 import { cargarRankingDelEvento, cargarTiradores } from '@/app/(app)/convocatorias/actions';
 
 type Elegido = SeleccionConvocado & { nombre: string; prueba: string };
@@ -202,18 +203,12 @@ export function ElegirConvocados({
                       </span>
                     </span>
                     <span className="flex shrink-0 items-center gap-1">
-                      <Badge
-                        variant="outline"
-                        className={
-                          e.placeType === 'ranking'
-                            ? 'border-gold/50 text-gold'
-                            : undefined
-                        }
-                      >
+                      <Pastilla tono={e.placeType === 'ranking' ? 'oro' : 'neutro'}>
+
                         {e.placeType === 'ranking'
                           ? `Ranking${e.rankingPositionAtCutoff ? ` · ${e.rankingPositionAtCutoff}.º` : ''}`
                           : 'Técnica'}
-                      </Badge>
+                      </Pastilla>
                       <Button
                         variant="ghost"
                         size="icon-sm"
@@ -254,7 +249,7 @@ export function ElegirConvocados({
               ocho veces es ruido y acaba no leyéndose. */}
           {sinNingunRanking ? (
             <p className="medida flex items-start gap-2 rounded-md border border-warn/40 px-3 py-2 text-sm text-warn">
-              <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+              <TriangleAlert className="mt-1 size-4 shrink-0" aria-hidden />
               No hay ranking calculado para ninguna prueba de esta competición, así
               que no se puede proponer un orden. Elige a mano a quién convocas: las
               plazas quedarán marcadas como de criterio técnico.
@@ -322,14 +317,14 @@ function Prueba({
         <p className="text-xs text-muted-foreground">
           {plazas > 0 ? `${plazas} plazas por ranking` : 'sin plazas configuradas'}
           {prueba.technicalPlaces ? ` · ${prueba.technicalPlaces} técnicas` : ''}
-          {prueba.computedAt ? ` · ranking del ${formatDateEs(prueba.computedAt)}` : ''}
+          {prueba.computedAt ? ` · ${frescura(prueba.computedAt)}` : ''}
         </p>
       </div>
 
       {prueba.candidatos === null ? (
         avisoAparte ? null : (
           <p className="medida flex items-start gap-2 rounded-md border border-warn/40 px-3 py-2 text-sm text-warn">
-            <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <TriangleAlert className="mt-1 size-4 shrink-0" aria-hidden />
             No hay ranking calculado para esta prueba, así que no se puede proponer
             un orden. Elige a mano a quién convocas; las plazas quedarán marcadas
             como de criterio técnico.

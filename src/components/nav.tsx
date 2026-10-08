@@ -5,7 +5,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo } from 'react';
 import { EnlacePrecarga } from '@/components/sistema/enlace-precarga';
 import { leerFichaPropia, useFichaPropia } from '@/components/explorar/perfil/ficha-propia';
-import { DESTINOS_APP, esRutaNeutra, hayBusqueda, pestanaDeRuta } from '@/components/navegacion-app';
+import { DESTINOS_APP, esRutaNeutra, pestanaDeRuta } from '@/components/navegacion-app';
 import { useRetratoPropio } from '@/components/retrato-propio';
 import { BarraInferior } from '@/components/sistema/barra-inferior';
 import { confirmarPestana, pestanaAnotada, pestanaHeredada, useHerenciaLista } from '@/components/sistema/herencia-pestanas';
@@ -18,8 +18,9 @@ import { cn } from '@/lib/utils';
 /**
  * Navegación de la aplicación: una sola barra, la misma para todos los
  * papeles y en todas las pantallas (`docs/diseno-sistema.md` § 1.1). En el
- * móvil es `BarraInferior`; desde 1024 px, los mismos cinco destinos en la
- * cabecera (§ 1.6). Lo que depende del papel (Mi estado, Tiradores,
+ * móvil es `BarraInferior`; desde 1024 px, los mismos destinos en la
+ * cabecera (§ 1.6). Son cuatro: Calendario, Explorar (que también busca),
+ * Ranking y Tú. Lo que depende del papel (Mi estado, Tiradores,
  * Gestión) son filas de «Tú».
  *
  * Calendario y Explorar son dos pestañas de la misma barra: no hay un «modo
@@ -41,11 +42,11 @@ export const INACTIVO = 'text-muted-foreground hover:bg-accent hover:text-foregr
  * al volver a la raíz.
  */
 export function deLaPestanaApp(clave: string, url: string): boolean {
-  const [ruta, consulta = ''] = url.split('#')[0].split('?');
+  const [ruta] = url.split('#')[0].split('?');
   const neutra = esRutaNeutra(ruta);
   const actual = typeof window !== 'undefined' && window.location.pathname === ruta;
   const heredada = actual ? pestanaHeredada(ruta, neutra) : pestanaAnotada(ruta);
-  return pestanaDeRuta(ruta, hayBusqueda(new URLSearchParams(consulta)), leerFichaPropia(), heredada) === clave;
+  return pestanaDeRuta(ruta, false, leerFichaPropia(), heredada) === clave;
 }
 
 /**
@@ -54,22 +55,22 @@ export function deLaPestanaApp(clave: string, url: string): boolean {
  * pintarse se confirma (sólo una vez hidratada: antes lo heredado no cuenta y
  * confirmar el prefijo borraría lo anotado).
  */
-function usePestanaMarcada(pathname: string, conBusqueda: boolean, confirmar: boolean): string | null {
+function usePestanaMarcada(pathname: string, confirmar: boolean): string | null {
   const propia = useFichaPropia();
   const lista = useHerenciaLista();
   const neutra = esRutaNeutra(pathname);
-  const activa = pestanaDeRuta(pathname, conBusqueda, propia, lista ? pestanaHeredada(pathname, neutra) : null);
+  const activa = pestanaDeRuta(pathname, false, propia, lista ? pestanaHeredada(pathname, neutra) : null);
   useEffect(() => {
     if (confirmar && lista) confirmarPestana(pathname, activa, neutra);
   }, [confirmar, lista, pathname, activa, neutra]);
   return activa;
 }
 
-/** Mientras no se conoce la consulta (`useSearchParams` sin resolver), sólo cuenta la ruta. */
+/** La consulta sólo sirve para que la memoria de la pestaña guarde los filtros que cambian sin cambiar de ruta. */
 function useUbicacion(confirmar: boolean): { pathname: string; busqueda: string; activa: string | null } {
   const pathname = usePathname() ?? '/';
   const params = useSearchParams();
-  const activa = usePestanaMarcada(pathname, hayBusqueda(params), confirmar);
+  const activa = usePestanaMarcada(pathname, confirmar);
   return { pathname, busqueda: params?.toString() ?? '', activa };
 }
 
@@ -90,7 +91,7 @@ function BarraViva({ destinos }: { destinos: readonly DestinoBarra[] }) {
 
 function BarraSinConsulta({ destinos }: { destinos: readonly DestinoBarra[] }) {
   const pathname = usePathname() ?? '/';
-  const activa = usePestanaMarcada(pathname, false, false);
+  const activa = usePestanaMarcada(pathname, false);
   return <BarraInferior destinos={destinos} activa={activa} deLaPestana={deLaPestanaApp} />;
 }
 
@@ -109,8 +110,8 @@ export function NavMovil({ cuenta }: { role?: Role; cuenta?: string }) {
 }
 
 /**
- * Los cinco destinos en la cabecera del escritorio: pastillas de 34 px con
- * icono de 18 y rótulo de 13. Mismas reglas que la barra del móvil (memoria
+ * Los destinos de la barra en la cabecera del escritorio: pastillas de 34 px con
+ * icono de 18 y rótulo de 14. Mismas reglas que la barra del móvil (memoria
  * por pestaña, tocar la activa vuelve a su raíz o sube, precarga por
  * intención) y el mismo marcado: texto en `--foreground` semibold sobre
  * `--secondary`, sin contorno rojo.
@@ -130,7 +131,7 @@ function PastillasVivas() {
 
 function PastillasEscritorio({ pathname, busqueda, activa }: { pathname: string | null; busqueda: string; activa: string | null }) {
   const ruta = usePathname() ?? '/';
-  const sinConsulta = usePestanaMarcada(ruta, false, false);
+  const sinConsulta = usePestanaMarcada(ruta, false);
   const marcada = pathname === null ? sinConsulta : activa;
   const [recordadas] = useRecordadas();
 
@@ -139,7 +140,7 @@ function PastillasEscritorio({ pathname, busqueda, activa }: { pathname: string 
   }, [ruta, busqueda, marcada]);
 
   return (
-    <nav aria-label="Secciones" data-barra="escritorio" className="hidden items-center gap-[2px] lg:flex">
+    <nav aria-label="Secciones" data-barra="escritorio" className="hidden items-center gap-1 lg:flex">
       {DESTINOS_APP.map((d) => (
         <PastillaEscritorio
           key={d.clave}
@@ -197,7 +198,7 @@ function ContenidoPastilla({ destino, es }: { destino: DestinoBarra; es: boolean
     <span
       data-pendiente={pending || undefined}
       className={cn(
-        'inline-flex h-[34px] items-center gap-[6px] rounded-full px-[12px] text-[13px] transition-[color,background-color,scale] duration-150 ease-out group-active:scale-[0.96] group-focus-visible:ring-2 group-focus-visible:ring-ring',
+        'inline-flex h-[34px] items-center gap-2 rounded-full px-3 text-sm transition-[color,background-color,scale] duration-150 ease-out group-active:scale-[0.96] group-focus-visible:ring-2 group-focus-visible:ring-ring',
         marcada ? 'bg-secondary font-semibold text-foreground' : 'font-medium text-muted-foreground group-hover:bg-accent group-hover:text-foreground',
       )}
     >

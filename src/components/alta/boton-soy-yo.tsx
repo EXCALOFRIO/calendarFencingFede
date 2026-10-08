@@ -41,7 +41,7 @@ export function FalloAlVincular({ mensaje }: { mensaje: string }) {
       role="alert"
       className="medida flex items-start gap-2 text-sm text-danger"
     >
-      <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <TriangleAlert className="h-5 w-4 shrink-0" aria-hidden />
       <span>{mensaje}</span>
     </p>
   );

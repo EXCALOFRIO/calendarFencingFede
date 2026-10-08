@@ -11,6 +11,7 @@ vi.mock('@/lib/auth/session', () => ({
 vi.mock('@/lib/sport/explorar/real', () => ({ contextoReal: lecturas.contexto }));
 
 const { default: Pagina } = await import('@/app/(app)/explorar/page');
+const { default: PaginaBuscar } = await import('@/app/(app)/explorar/buscar/page');
 const { DESTINOS_APP } = await import('@/components/navegacion-app');
 const { seccionesDeTu } = await import('@/components/tu/filas');
 
@@ -43,9 +44,17 @@ describe('guarda directa de /explorar', () => {
       hoy: () => '2026-10-02',
       propietario: {},
     });
-    await expect(Pagina({ searchParams: Promise.resolve({ q: 'garcia' }) })).rejects.toMatchObject({
+    await expect(PaginaBuscar({ searchParams: Promise.resolve({ q: 'garcia' }) })).rejects.toMatchObject({
       digest: expect.stringContaining('/entrar'),
     });
+  });
+
+  it('con sesión, una búsqueda en `/explorar` (enlace antiguo) redirige a Tiradores sin leer nada', async () => {
+    sesion.perfil = perfil({ role: 'athlete' });
+    await expect(Pagina({ searchParams: Promise.resolve({ q: 'garcia', arma: 'espada', cursor: 'c1' }) })).rejects.toMatchObject({
+      digest: expect.stringContaining('/explorar/buscar?q=garcia&arma=ESPADA&cursor=c1'),
+    });
+    expect(lecturas.contexto).not.toHaveBeenCalled();
   });
 });
 
@@ -53,8 +62,8 @@ describe('navegación por rol', () => {
   const hrefs = (role: 'admin' | 'coach' | 'athlete') =>
     seccionesDeTu({ role, fichaPropia: null, convocatorias: 0 }).flatMap((s) => s.filas.map((f) => f.href));
 
-  it('la barra es la misma para todos: Calendario, Explorar, Buscar, Ranking y Tú', () => {
-    expect(DESTINOS_APP.map((d) => d.href)).toEqual(['/', '/explorar', '/explorar/buscar', '/ranking', '/explorar/yo']);
+  it('la barra es la misma para todos: Calendario, Explorar, Ranking y Tú', () => {
+    expect(DESTINOS_APP.map((d) => d.href)).toEqual(['/', '/explorar', '/ranking', '/explorar/yo']);
   });
 
   it('lo que depende del papel va en Tú: ni la administración ni Mi estado a quien no le toca', () => {

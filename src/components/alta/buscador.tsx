@@ -4,12 +4,13 @@ import { ArrowLeft, IdCard, Loader2, Search, TriangleAlert } from 'lucide-react'
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import type { ResultadoBusqueda, ResultadoVinculo } from '@/app/(app)/alta/acciones';
-import { Rotulos } from '@/components/estado/piezas';
 import { etiquetaGrupo, puntos } from '@/components/ranking/formato';
+import { FilaPersona } from '@/components/sistema/fila-persona';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { Candidato } from '@/lib/altas/desde-ranking';
+import { Datos } from './datos';
 
 type Buscar = (texto: string) => Promise<ResultadoBusqueda>;
 type Vincular = (clave: string, licencia: string) => Promise<ResultadoVinculo>;
@@ -79,7 +80,7 @@ export function Buscador({
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h1 className="text-2xl sm:text-3xl">Vincula tu ficha</h1>
+        <h1 className="text-2xl">Vincula tu ficha</h1>
         <p className="text-sm text-muted-foreground">
           Desde el ranking oficial de la RFEE
         </p>
@@ -132,7 +133,7 @@ export function Buscador({
               Un dato corto pide un campo corto: así se lee que lo que se espera
               es un apellido, no un párrafo.
             */}
-            <div className="flex min-w-0 flex-1 basis-64 flex-col gap-1.5 sm:max-w-88">
+            <div className="flex min-w-0 flex-1 basis-64 flex-col gap-2 sm:max-w-88">
               <Label htmlFor="buscar-tirador">Tu nombre o tu licencia</Label>
               <Input
                 id="buscar-tirador"
@@ -165,7 +166,7 @@ export function Buscador({
               role="alert"
               className="medida flex items-start gap-2 text-sm text-danger"
             >
-              <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+              <TriangleAlert className="h-5 w-4 shrink-0" aria-hidden />
               <span>{error}</span>
             </p>
           ) : null}
@@ -226,15 +227,15 @@ function Resultados({
 
       <ul className="flex flex-col divide-y">
         {candidatos.map((c) => (
-          <li key={c.clave} className="flex min-w-0 flex-col gap-2.5 py-4">
-            <p className="text-base font-medium">{c.nombre}</p>
+          <li key={c.clave} className="flex min-w-0 flex-col gap-3 py-4">
+            <FilaPersona persona={{ nombre: c.nombre }} className="py-0" />
 
             {/*
               Los datos que distinguen a dos homónimos, cada uno con su rótulo.
               Sin rótulo, «2008» y «CEEC-M» son dos cadenas sueltas y no ayudan
               a decidir nada.
             */}
-            <Rotulos
+            <Datos
               disposicion="linea"
               datos={[
                 ['Nació en', c.anioNacimiento ?? 'no publicado'],
@@ -271,7 +272,7 @@ function Resultados({
 
             {c.yaVinculado ? (
               <p className="medida flex items-start gap-2 text-sm text-warn">
-                <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                <TriangleAlert className="h-5 w-4 shrink-0" aria-hidden />
                 <span>
                   Esta ficha ya está vinculada a una cuenta. Si es la tuya, entra
                   con ella; si no lo es, escribe a la dirección técnica para que
@@ -280,7 +281,7 @@ function Resultados({
               </p>
             ) : c.sinLicencia ? (
               <p className="medida flex items-start gap-2 text-sm text-muted-foreground">
-                <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                <TriangleAlert className="h-5 w-4 shrink-0" aria-hidden />
                 <span>
                   De esta fila todavía no tenemos el número de licencia, así que
                   no hay nada con lo que comprobar que eres tú. Pídele la
@@ -350,7 +351,7 @@ function Confirmacion({
   }
 
   return (
-    <section className="flex min-w-0 flex-col gap-4 rounded-lg border-t border-filete bg-card px-4 py-5">
+    <section className="flex min-w-0 flex-col gap-4 rounded-xl border-t border-filete bg-card px-4 py-5">
       <div className="flex flex-col gap-1">
         <h2 className="text-xl">Confirma que eres tú</h2>
         <p className="medida text-sm text-muted-foreground">
@@ -360,7 +361,7 @@ function Confirmacion({
         </p>
       </div>
 
-      <Rotulos
+      <Datos
         datos={[
           ['Vas a vincular', candidato.nombre],
           ['Nació en', candidato.anioNacimiento ?? 'no publicado'],
@@ -383,7 +384,7 @@ function Confirmacion({
       />
 
       <form onSubmit={enviar} className="flex flex-col gap-3">
-        <div className="flex max-w-64 flex-col gap-1.5">
+        <div className="flex max-w-64 flex-col gap-2">
           <Label htmlFor="licencia">Tu número de licencia RFEE</Label>
           <Input
             id="licencia"
@@ -412,7 +413,7 @@ function Confirmacion({
             role="alert"
             className="medida flex items-start gap-2 text-sm text-danger"
           >
-            <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <TriangleAlert className="h-5 w-4 shrink-0" aria-hidden />
             <span>{error}</span>
           </p>
         ) : null}

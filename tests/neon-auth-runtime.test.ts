@@ -83,7 +83,9 @@ describe('real installed Neon SDK, entirely offline, with native D1', () => {
   it('authoritative reads bypass the SDK cookie cache and do not return the provider token', async () => {
     active = true;
     local.sqlite.prepare('UPDATE user_profile SET auth_user_id=?').run(USER.id);
-    const result = await getAuth().api.getSession({ headers: headers() });
+    const conSesion = headers();
+    conSesion.set('cookie', '__Secure-neon-auth.session_token=synthetic-token-read');
+    const result = await getAuth().api.getSession({ headers: conSesion });
     expect(result?.user.id).toBe(USER.id);
     expect(result).not.toHaveProperty('session.token');
     expect(new URL(String(fetchMock.mock.calls[0][0])).searchParams.get('disableCookieCache')).toBe('true');
@@ -93,7 +95,10 @@ describe('real installed Neon SDK, entirely offline, with native D1', () => {
     fetchMock.mockResolvedValue(Response.json({ message: 'synthetic-private-provider-message' }, {
       status: 500, headers: { 'set-cookie': '__Secure-neon-auth.session_token=must-not-copy' },
     }));
-    await expect(getAuth().api.getSession({ headers: headers() })).rejects.toThrow('ACCESO_NO_PERMITIDO');
+    // A token never validated in this isolate: the shared session cache cannot answer for it.
+    const conSesion = headers();
+    conSesion.set('cookie', '__Secure-neon-auth.session_token=synthetic-token-error');
+    await expect(getAuth().api.getSession({ headers: conSesion })).rejects.toThrow('ACCESO_NO_PERMITIDO');
     expect(h.set).not.toHaveBeenCalled();
   });
   it('logout confirms revocation through the installed SDK before applying deletion cookies', async () => {

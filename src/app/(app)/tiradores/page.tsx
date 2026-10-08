@@ -5,7 +5,7 @@ import type { TiradorVista } from '@/components/tiradores/tipos';
 import { getCurrentSeason } from '@/lib/queries/calendar';
 import { getAthleteOverview } from '@/lib/queries/coach';
 import { armasInternas } from '@/lib/ranking/acceso-interno';
-import { WEAPON_LABEL } from '@/lib/utils';
+import { rotuloArma } from '@/lib/sport/rotulos';
 import { puestosDeRanking, solicitudesEnClub } from './consultas';
 
 export const dynamic = 'force-dynamic';
@@ -93,7 +93,7 @@ export default async function Pagina() {
           esAdmin
             ? 'Todos los tiradores de la federación: a qué van y cómo van.'
             : armasPropias.length > 0
-              ? `Los de ${armasPropias.map((a) => WEAPON_LABEL[a].toLowerCase()).join(' y ')} primero; el resto, a un clic.`
+              ? `Los de ${armasPropias.map((a) => rotuloArma(a).toLowerCase()).join(' y ')} primero; el resto, a un clic.`
               : 'Tu cuenta no tiene ningún arma asignada, así que se enseñan todas. Pídele a la dirección técnica que te asigne la tuya.'
         }
       />

@@ -8,9 +8,10 @@ import { EnlacePais } from '@/components/explorar/piezas';
 import { AREA_TACTIL } from '@/components/sistema/tactil';
 import type { EventView } from '@/lib/queries/calendar';
 import type { PruebaPasada } from '@/lib/queries/calendario-pasado-modelo';
-import { categoriaVisible, COLOR_MEDALLA } from '@/lib/sport/explorar/presentacion';
+import { COLOR_MEDALLA } from '@/lib/sport/explorar/presentacion';
 import { construirUrlEdicion } from '@/lib/sport/explorar/edicion-url';
-import { cn, formatDateEs, GENDER_LABEL, WEAPON_LABEL } from '@/lib/utils';
+import { rotuloFormato, rotuloPrueba } from '@/lib/sport/rotulos';
+import { cn, formatDateEs } from '@/lib/utils';
 import type { EnlaceDirecto, EstadoDirecto } from '@/lib/calendario/enlaces-directo';
 import { PastillaDirecto } from '../enlace-directo';
 
@@ -34,7 +35,7 @@ export function Terminada({ clase }: { clase?: string }) {
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center gap-1 rounded-[3px] bg-muted px-1.5 py-px text-[12px] font-medium leading-[1.4] text-muted-foreground',
+        'inline-flex h-5 shrink-0 items-center gap-1 rounded-full bg-muted px-2 text-xs font-medium leading-none text-muted-foreground',
         clase,
       )}
     >
@@ -84,20 +85,12 @@ export function tramoDeEdad(p: PruebaPasada): string | null {
   return p.categoria === 'VET' ? (p.categoriaRaw?.trim().match(/^\+\d{2}$/)?.[0] ?? null) : null;
 }
 
-/** «Espada femenina · M17 · equipos». */
+/** «Espada femenina M17 · Equipos», «Espada femenina · Veteranos +50»: el rótulo de toda la aplicación. */
 export function nombreDePruebaPasada(p: PruebaPasada, { conTramo = true } = {}): string {
-  // «Espada» es la única de las tres que pide el adjetivo en femenino.
-  const genero =
-    p.genero === 'MIXTO'
-      ? 'mixto'
-      : p.arma === 'ESPADA'
-        ? GENDER_LABEL[p.genero].toLowerCase().replace(/o$/, 'a')
-        : GENDER_LABEL[p.genero].toLowerCase();
   const tramo = conTramo ? tramoDeEdad(p) : null;
-  const categoria = categoriaVisible(p.categoria) + (tramo ? ` ${tramo}` : '');
-  const partes = [`${WEAPON_LABEL[p.arma]} ${genero}`, categoria];
-  if (p.formato === 'EQUIPOS') partes.push('equipos');
-  return partes.join(' · ');
+  const base = rotuloPrueba({ arma: p.arma, genero: p.genero, categoria: p.categoria }, { categoria: 'siempre', formato: 'nunca' });
+  const conTramoTexto = tramo ? `${base} ${tramo}` : base;
+  return p.formato === 'EQUIPOS' ? `${conTramoTexto} · ${rotuloFormato('EQUIPOS')}` : conTramoTexto;
 }
 
 /**
@@ -108,7 +101,7 @@ export function nombreDePruebaPasada(p: PruebaPasada, { conTramo = true } = {}):
 const AREA_PASTILLA =
   'group inline-flex min-h-[44px] shrink-0 items-center rounded-full focus-visible:outline-none';
 const PASTILLA =
-  'inline-flex h-[28px] items-center gap-1 rounded-full border border-filete px-[10px] text-[12px] font-semibold text-primary-text transition-colors group-hover:bg-muted group-focus-visible:ring-2 group-focus-visible:ring-ring';
+  'inline-flex h-[28px] items-center gap-1 rounded-full border border-filete px-3 text-xs font-semibold text-primary-text transition-colors group-hover:bg-muted group-focus-visible:ring-2 group-focus-visible:ring-ring';
 
 /** Solo icono: se ve de 32 px y se toca en 44 (AREA_TACTIL). */
 const ICONO_EXTERNO = cn(
@@ -132,7 +125,7 @@ function Ganador({
   sinBandera?: boolean;
 }) {
   return (
-    <span className={cn('flex min-w-0 items-center gap-1.5', recortar && 'flex-1')}>
+    <span className={cn('flex min-w-0 items-center gap-2', recortar && 'flex-1')}>
       <span
         aria-hidden
         className="size-2 shrink-0 rounded-full"
@@ -149,7 +142,7 @@ function Ganador({
         {ganador.nombre}
       </span>
       {ganador.pais && !sinBandera ? (
-        <BanderaPais pais={ganador.pais} soloBandera={recortar} className="shrink-0 text-[12px] normal-case tracking-tight" />
+        <BanderaPais pais={ganador.pais} soloBandera={recortar} className="shrink-0 text-xs normal-case tracking-tight" />
       ) : null}
     </span>
   );
@@ -310,15 +303,15 @@ export function ResultadosPasados({
       </div>
 
       {visibles.length > 0 ? (
-        <ul className="flex flex-col gap-1.5">
+        <ul className="flex flex-col gap-2">
           {visibles.map((p) => {
             const nombre = nombreDePruebaPasada(p);
             // El tramo de edad va aparte para que el recorte del nombre no se lo coma.
             const tramo = tramoDeEdad(p);
             const cuerpo = (
               <>
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="flex min-w-0 items-baseline gap-1.5">
+                <span className="flex min-w-0 flex-1 flex-col gap-1">
+                  <span className="flex min-w-0 items-baseline gap-2">
                     <span className="min-w-0 truncate text-sm font-semibold text-foreground" title={nombre}>
                       {nombreDePruebaPasada(p, { conTramo: false })}
                     </span>

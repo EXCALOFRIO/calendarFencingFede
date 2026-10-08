@@ -53,8 +53,8 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: '/',
     display: 'standalone',
     /* Los mismos del tema oscuro: `--background` y la barra de estado. */
-    background_color: '#0e0f13',
-    theme_color: '#0e0f13',
+    background_color: '#090A0F',
+    theme_color: '#090A0F',
     categories: ['sports', 'productivity'],
     icons: [
       {

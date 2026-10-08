@@ -1,22 +1,21 @@
-import { ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
-import { FotoDeportista } from '@/components/explorar/foto-deportista';
+import { Avatar } from '@/components/sistema/avatar';
+import { MarcaPropia, Puesto } from '@/components/sistema/pastilla';
 import { rutaPaisDe } from '@/lib/sport/explorar/enlace-pais';
 import { RUTA_EXPLORAR } from '@/lib/sport/explorar/url';
-import { inicialesVisibles } from '@/lib/sport/nombre-visible';
 import { cn } from '@/lib/utils';
 import { puntos as formatoPuntos } from './formato';
 
 /**
  * Una fila de ranking en UNA línea, igual en la tabla nacional y en la
- * internacional: puesto, retrato pequeño, bandera o código de club, nombre
- * (recortado con puntos suspensivos, nunca en dos renglones), lo que haga
- * falta detrás del nombre (la marca olímpica, «Tú») y los puntos. A 320 px no
- * se desplaza nada en horizontal: lo único que encoge es el nombre, y por debajo
- * de 360 px el código de club y los decimales salen de la vista (no del lector
- * de pantalla) y la marca olímpica pasa junto a los puntos para dejarle sitio. El retrato se queda siempre: es lo que hace
- * reconocible la fila de un vistazo.
+ * internacional, con el orden de `FilaPersona`: puesto, avatar, bandera,
+ * nombre (recortado con puntos suspensivos, nunca en dos renglones), lo que
+ * haga falta detrás del nombre (la marca olímpica, «Tú») y los puntos. A
+ * 320 px no se desplaza nada en horizontal: lo único que encoge es el nombre,
+ * y por debajo de 360 px el club sale de la vista (no del lector de pantalla)
+ * y la marca olímpica pasa junto a los puntos para dejarle sitio. El avatar se
+ * queda siempre: es lo que hace reconocible la fila de un vistazo.
  *
  * El nombre lleva a la ficha de la persona en Explorar cuando se sabe quién
  * es; si no, a su ficha externa (FIE) si la hay, o a nada.
@@ -46,7 +45,7 @@ export function FilaLinea({
   enlaceExterno?: string | null;
   /** ISO-3 de la FIE; sin él no hay bandera. */
   pais?: string | null;
-  /** Código de club de Skermo, tal cual. */
+  /** Código de club de Skermo, tal cual (sólo el ranking nacional). */
   club?: string | null;
   puntos: number | null;
   mio?: boolean;
@@ -57,7 +56,7 @@ export function FilaLinea({
   /** Botón al final de la fila (abrir el detalle). */
   accion?: React.ReactNode;
 }) {
-  const claseNombre = cn('min-w-0 truncate text-[14px] leading-tight', mio ? 'font-semibold' : 'font-medium');
+  const claseNombre = cn('min-w-0 truncate text-sm leading-5', mio ? 'font-semibold' : 'font-medium');
   /*
     El enlace ocupa el alto de la fila (40 px, en px y no en rem para que no
     crezca con la raíz del móvil) y un pseudoelemento le añade 2 px arriba y
@@ -84,36 +83,18 @@ export function FilaLinea({
         (mio || resaltada) && 'bg-marcado',
       )}
     >
-      <span className={cn('cifra text-right text-[15px] leading-none tabular-nums', mio ? 'text-primary-text' : puesto !== null && puesto <= 3 ? 'text-foreground' : 'text-muted-foreground')}>
-        {puesto === null ? (
-          <>
-            <span aria-hidden>—</span>
-            <span className="sr-only">Sin puesto</span>
-          </>
-        ) : (
-          <>
-            <span className="sr-only">Puesto </span>
-            {puesto}
-          </>
-        )}
-      </span>
+      {/* Las cifras de cuatro dígitos no caben en el disco de 24 px: el ancho crece con ellas. */}
+      <Puesto puesto={puesto} className="w-auto min-w-6 justify-self-center" />
       <span className="flex min-w-0 items-center gap-2">
-        {sinRetrato ? null : personaId ? (
-          <FotoDeportista personaId={personaId} nombre={nombre} tamano="fila" apagado />
-        ) : (
-          <span aria-hidden className="flex size-[28px] shrink-0 items-center justify-center rounded-full border border-filete-alto font-display text-[12px] text-muted-foreground">
-            {inicialesVisibles(nombre) || '—'}
-          </span>
-        )}
+        {sinRetrato ? null : <Avatar personaId={personaId} nombre={nombre} tamano={28} apagado />}
         {pais ? <BanderaPais pais={pais} soloBandera className="shrink-0" /> : null}
         {personaId ? (
           <Link href={`${RUTA_EXPLORAR}/${personaId}`} prefetch={false} title={nombre} data-nombre className={cn(claseNombre, claseEnlace)}>
             <span className="truncate">{nombre}</span>
           </Link>
         ) : enlaceExterno ? (
-          <a href={enlaceExterno} target="_blank" rel="noreferrer" title={nombre} data-nombre className={cn(claseNombre, claseEnlace, 'gap-1')}>
+          <a href={enlaceExterno} target="_blank" rel="noreferrer" title={nombre} data-nombre className={cn(claseNombre, claseEnlace)}>
             <span className="truncate">{nombre}</span>
-            <ExternalLink className="size-3 shrink-0 text-muted-foreground" aria-hidden />
             <span className="sr-only"> (se abre en otra pestaña)</span>
           </a>
         ) : paisDestino ? (
@@ -123,15 +104,10 @@ export function FilaLinea({
         ) : (
           <span className={claseNombre} title={nombre} data-nombre>{nombre}</span>
         )}
-        {mio ? (
-          <span className="shrink-0 rounded-full border border-primary-text px-1.5 text-[12px] leading-4 text-primary-text">Tú</span>
-        ) : null}
+        {mio ? <MarcaPropia /> : null}
         {club ? (
           // Por debajo de 360 px se aparta de la vista pero no del lector de pantalla.
-          <span
-            className="max-w-[5.5rem] shrink-0 truncate font-mono text-[12px] tracking-tight text-muted-foreground uppercase max-[359px]:sr-only"
-            title={`Club ${club}`}
-          >
+          <span className="max-w-24 shrink-0 truncate text-xs text-muted-foreground max-[359px]:sr-only" title={`Club ${club}`}>
             <span className="sr-only">club </span>
             {club}
           </span>
@@ -147,22 +123,15 @@ export function FilaLinea({
         )}
       >
         {puntos === null ? (
-          <span className="cifra text-[13px] tabular-nums text-muted-foreground">
+          <span className="cifra text-sm tabular-nums text-muted-foreground">
             <span aria-hidden>—</span>
             <span className="sr-only">sin puntos</span>
           </span>
         ) : (
-          <>
-            {/*
-              Por debajo de 360 px, sin decimales: el ancho que se ahorra es para
-              el nombre. La cifra exacta sigue en el árbol accesible (`sr-only`).
-            */}
-            <span className="cifra text-[13px] tabular-nums max-[359px]:sr-only">
-              {formatoPuntos(puntos)}
-              <span className="sr-only"> puntos</span>
-            </span>
-            <span aria-hidden className="cifra text-[13px] tabular-nums min-[360px]:hidden" title={formatoPuntos(puntos)}>{formatoPuntos(Math.round(puntos))}</span>
-          </>
+          <span className="cifra text-sm tabular-nums">
+            {formatoPuntos(puntos)}
+            <span className="sr-only"> puntos</span>
+          </span>
         )}
         {accion}
       </span>

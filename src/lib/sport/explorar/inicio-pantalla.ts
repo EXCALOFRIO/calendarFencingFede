@@ -10,7 +10,7 @@ import {
 import { leerListaSiguiendo, type PersonaSeguida } from './siguiendo-lista';
 
 /**
- * Cargadores de las tres pestañas de Explorar (Inicio, Buscar sin texto y
+ * Cargadores de «Para ti», de Tiradores sin texto y de Tú ›
  * Siguiendo). Cada uno hace lo mínimo para su primera pintura: una consulta
  * para la lista y, sólo si sale vacía, lo que hace falta para explicar por qué.
  */
@@ -29,7 +29,7 @@ export type VistaInicio = {
   siguiendo: number | null;
 };
 
-/** Inicio: el feed. El conteo sólo se pide si la primera página sale vacía. */
+/** «Para ti»: los resultados de las seguidas. El conteo sólo se pide si la primera página sale vacía. */
 export async function cargarInicio(
   ctx: ContextoExplorador,
   criterios: { cursor?: string; soloMedallas?: boolean },
@@ -86,7 +86,7 @@ export async function cargarListaSiguiendo(
   }
 }
 
-/** Buscar sin texto: sólo las propuestas para seguir (`null` si fallan; la búsqueda sigue funcionando). */
+/** Tiradores sin texto: sólo las propuestas para seguir (`null` si fallan; la búsqueda sigue funcionando). */
 export async function cargarBuscarVacio(
   ctx: ContextoExplorador,
   fuentes?: FuentesPropuestas,

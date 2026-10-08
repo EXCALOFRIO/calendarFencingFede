@@ -1,3 +1,4 @@
+import { Pastilla } from '@/components/sistema/pastilla';
 import { colorOlimpico, type AnotacionOlimpica, type ColorOlimpico } from '@/lib/ranking/olimpica';
 import { cn } from '@/lib/utils';
 import { IconoAros } from './icono-aros';
@@ -44,24 +45,24 @@ export function PastillaOlimpica({
   if (!anotacion || !color) return null;
   const faltan = anotacion.estado === 'cerca' ? anotacion.faltan : null;
   return (
-    <span
+    <Pastilla
       {...(decorativa ? { 'aria-hidden': true } : { role: 'img', 'aria-label': etiquetaAccesible(anotacion) })}
       data-olimpica={anotacion.estado}
       data-color-olimpico={color}
       className={cn(
-        // En px: con la raíz de 18 px del móvil una medida en rem la agrandaría.
-        'inline-flex h-[20px] shrink-0 items-center gap-[4px] rounded-full px-[6px] text-[12px] font-semibold leading-none tabular-nums',
+        // Los aros son el doble de anchos que de altos: no caben en el cuadrado de icono de la pastilla.
+        'font-semibold tabular-nums [&_svg]:h-auto [&_svg]:w-5',
         CLASES_COLOR_OLIMPICO[color],
         // Por debajo de 360 px la fila de /ranking le deja 16 px junto a los puntos.
-        compacta && 'max-[359px]:h-4 max-[359px]:w-4 max-[359px]:justify-center max-[359px]:rounded-[3px] max-[359px]:px-0',
+        compacta && 'max-[359px]:h-4 max-[359px]:w-4 max-[359px]:justify-center max-[359px]:rounded-md max-[359px]:px-0 max-[359px]:[&_svg]:w-3.5',
         compacta && RELLENO_COMPACTO[color],
         className,
       )}
     >
-      <IconoAros apagados={color === 'gris'} className={compacta ? 'max-[359px]:w-[0.875rem]' : undefined} />
+      <IconoAros apagados={color === 'gris'} />
       {faltan !== null ? (
         <span aria-hidden className={compacta ? 'max-[359px]:hidden' : undefined}>{`−${puntos(faltan)}`}</span>
       ) : null}
-    </span>
+    </Pastilla>
   );
 }

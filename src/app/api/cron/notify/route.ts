@@ -25,14 +25,9 @@ import { limpiarAutenticacionCaducada } from '@/lib/auth/mantenimiento';
 import { limpiarRegistrosIngesta } from '@/lib/ingest/retencion';
 import { autorizarCron } from '@/lib/cron/secreto';
 import { getDeadlineRules } from '@/lib/queries/calendar';
-import {
-  CATEGORY_LABEL,
-  GENDER_LABEL,
-  WEAPON_LABEL,
-  formatDateRangeEs,
-  formatDateTimeEs,
-  formatEur,
-} from '@/lib/utils';
+import { fechaHora, rangoFechas } from '@/lib/fechas';
+import { rotuloPrueba } from '@/lib/sport/rotulos';
+import { formatEur } from '@/lib/utils';
 
 /**
  * Cron diario de avisos (ver `vercel.json`: 07:00 UTC).
@@ -292,9 +287,7 @@ function cuerpoDelAviso(
   nombreDestinatario: string,
 ): string {
   const tirador = `${fila.athleteFirstName} ${fila.athleteLastName}`.trim();
-  const prueba =
-    `${WEAPON_LABEL[fila.weapon]} ${GENDER_LABEL[fila.gender]} ` +
-    `${CATEGORY_LABEL[fila.category as CategoryCode] ?? fila.category}`;
+  const prueba = rotuloPrueba({ arma: fila.weapon, genero: fila.gender, categoria: fila.category, formato: fila.format });
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, '') ?? '';
   const ficha = appUrl ? `${appUrl}/calendario?evento=${fila.eventId}` : null;
@@ -317,13 +310,13 @@ function cuerpoDelAviso(
     `Tirador: ${tirador}`,
     `Prueba: ${prueba}`,
     `Competición: ${fila.eventName}`,
-    `Fechas: ${formatDateRangeEs(fila.startDate, fila.endDate)}${
+    `Fechas: ${rangoFechas(fila.startDate, fila.endDate, 'linea', { anio: 'auto' })}${
       fila.city ? ` · ${fila.city}` : ''
     }`,
     `Cuota: ${formatEur(fila.feeEur)}`,
     `Estado de la inscripción: ${ESTADO_LEGIBLE[fila.status] ?? fila.status}`,
     '',
-    `Plazo: ${formatDateTimeEs(plazo.deadlineAt)} (hora peninsular).`,
+    `Plazo: ${fechaHora(plazo.deadlineAt, { anio: 'auto' })} (hora peninsular).`,
     consecuencia,
   ];
 

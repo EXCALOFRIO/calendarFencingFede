@@ -66,8 +66,8 @@ export function BalanceAcumulado({
       <div role="img" aria-label={titulo} className="flex min-w-0 flex-col gap-1">
         <div className={cn('relative', ALTO[alto])}>
           <Guias marcas={[{ y: cero, fuerte: true }]} />
-          <span aria-hidden className="absolute top-0 left-0 text-[12px] leading-[14px] font-semibold text-primary-text">{yo}</span>
-          <span aria-hidden className="absolute bottom-0 left-0 text-[12px] leading-[14px] font-semibold text-muted-foreground">{rival}</span>
+          <span aria-hidden className="absolute top-0 left-0 text-xs leading-[14px] font-semibold text-primary-text">{yo}</span>
+          <span aria-hidden className="absolute bottom-0 left-0 text-xs leading-[14px] font-semibold text-muted-foreground">{rival}</span>
           <Lienzo>
             {asaltos.map((a, i) =>
               a.balance === 0 ? null : (

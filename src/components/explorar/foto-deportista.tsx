@@ -276,14 +276,14 @@ function Retrato({
   if (enLista) {
     return (
       <div ref={caja} className={cn('shrink-0', apagado ? ANILLO_APAGADO : ANILLO, className)}>
-        <div className={cn('rounded-full bg-background', tamano === 'fila' ? 'p-px' : 'p-[2px]')}>
+        <div className={cn('rounded-full border-background bg-background', tamano === 'fila' ? 'border' : 'border-2')}>
           <Avatar
             style={{ width: medida, height: medida }}
             aria-hidden={decorativa || undefined}
             role={decorativa ? undefined : 'img'}
             aria-label={rotulo}
           >
-            <AvatarFallback aria-hidden="true" className={tamano === 'fila' ? 'font-display text-[12px]' : 'font-display text-base'}>{iniciales}</AvatarFallback>
+            <AvatarFallback aria-hidden="true" className={tamano === 'fila' ? 'font-display text-xs' : 'font-display text-base'}>{iniciales}</AvatarFallback>
             {imagen}
           </Avatar>
         </div>
@@ -294,8 +294,8 @@ function Retrato({
   if (tamano === 'heroe') {
     return (
       <div className={cn('relative shrink-0', className)}>
-        <div className={cn(ANILLO, 'p-[3px]')}>
-          <div className="rounded-full bg-background p-[3px]">
+        <div className={cn(ANILLO, 'border-[3px]')}>
+          <div className="rounded-full border-[3px] border-background bg-background">
             <Avatar
               className="size-20 max-[359px]:size-16 sm:size-36"
               aria-hidden={decorativa || undefined}

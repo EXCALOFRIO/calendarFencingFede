@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { CAJA_TACTIL, clasesCirculo } from './control';
-import { crearContadorAvisos, INTERVALO_AVISOS_MS } from './contador-cliente';
+import { consultarAlVolver, crearContadorAvisos, INTERVALO_AVISOS_MS } from './contador-cliente';
 
 const RUTA = '/notificaciones';
 
@@ -32,6 +32,7 @@ const contador = crearContadorAvisos({
 
 function arrancar(): () => void {
   let temporizador: ReturnType<typeof setInterval> | null = null;
+  let ocultaDesde: number | null = document.visibilityState === 'visible' ? null : Date.now();
   const refrescar = (forzar = false) => {
     if (document.visibilityState === 'visible' && navigator.onLine !== false) void contador.refrescar(forzar);
   };
@@ -40,7 +41,12 @@ function arrancar(): () => void {
     temporizador = document.visibilityState === 'visible' ? setInterval(() => refrescar(), INTERVALO_AVISOS_MS) : null;
   };
   const alCambiar = () => {
-    refrescar();
+    if (document.visibilityState === 'visible') {
+      refrescar(consultarAlVolver(ocultaDesde, Date.now()));
+      ocultaDesde = null;
+    } else {
+      ocultaDesde ??= Date.now();
+    }
     programar();
   };
   const alMensaje = (e: MessageEvent) => {
@@ -61,8 +67,8 @@ function arrancar(): () => void {
 
 /**
  * El botón de la campana con su punto. Arranca con el número que pinta el
- * servidor y se mantiene al día al volver a la pestaña, cada minuto mientras
- * se ve y cuando llega un push. Cambiar de ruta no repite la consulta.
+ * servidor y se mantiene al día al volver a la pestaña tras un minuto oculta,
+ * cada cinco minutos mientras se ve y cuando llega un push. Cambiar de ruta no repite la consulta.
  */
 export function CampanaCliente({ inicial, cuenta, lectura = 0, className }: {
   inicial: number;

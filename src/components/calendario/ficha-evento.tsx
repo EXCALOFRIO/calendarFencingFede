@@ -1,16 +1,7 @@
 'use client';
 
-import {
-  ChevronDown,
-  CircleCheck,
-  ExternalLink,
-  FileText,
-  Navigation,
-  Radio,
-} from 'lucide-react';
+import { CircleCheck, ExternalLink, FileText, Navigation, Radio } from 'lucide-react';
 import * as React from 'react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
   Item,
   ItemActions,
@@ -19,56 +10,49 @@ import {
   ItemMedia,
   ItemTitle,
 } from '@/components/ui/item';
-import { BanderaPais } from '@/components/bandera';
-import { ChipFiltro, FilaChips } from '@/components/sistema/chip-filtro';
+import { Boton } from '@/components/sistema/boton';
+import { VerMas } from '@/components/sistema/cabecera-seccion';
+import { Pastilla } from '@/components/sistema/pastilla';
+import { SelectorNiveles } from '@/components/sistema/selector-niveles';
 import type {
   CompetitionView,
   DatoExtraidoView,
   EventView,
 } from '@/lib/queries/calendar';
 import { mapsLinks } from '@/lib/travel';
-import { hoyMadrid } from '@/lib/callups/fechas';
+import { fechaCorta, hoyMadrid } from '@/lib/fechas';
+import { resumenPlazo } from '@/lib/deadlines';
 import { esEnlaceDeResultados } from '@/lib/calendario/enlaces-directo';
+import { rotuloCategoria, rotuloPrueba } from '@/lib/sport/rotulos';
+import { filasSelectorPruebas } from '@/lib/sport/selector-pruebas';
 
 import { BarraPlazos } from './barra-plazos';
 import { FilaInscrito } from './fila-inscrito';
 import { PastillaDirectoDePrueba } from './enlace-directo';
-import { AccesoAlPabellon, HorariosTorneo, horariosDelTorneo } from './horarios-torneo';
+import { HorariosTorneo, accesoVisible, horariosDelTorneo, tituloDeDia } from './horarios-torneo';
 import {
-  CitaConvocatoria,
-  MarcaConvocatoria,
   enlacesDeConvocatoria,
   nombreDeEnlace,
   plazosDeConvocatoria,
 } from './datos-convocatoria';
 import {
+  FilasDatos,
   LineaDireccion,
   OtrosDatos,
-  ParDato,
   Tarjeta,
-  TarjetaInscripcion,
   TarjetaOrganiza,
+  inscripcionDe,
   organizaDe,
   otrosDatosDe,
   sedeDe,
+  type LineaDato,
 } from './ficha/datos-ficha';
+import { SegunConvocatoria, citasDe } from './ficha/segun-convocatoria';
 import { RelojSede } from './ficha/horas';
 import { sinDuplicadosEnPantalla } from '@/lib/entries/duplicados-pantalla';
 import { ResultadosTorneo } from './ficha/resultados-torneo';
 import { torneoTerminado } from './ficha/terminado';
-import {
-  CATEGORY_LABEL,
-  CATEGORY_SHORT,
-  GENDER_LABEL,
-  GENDER_SHORT,
-  SOURCE_LABEL,
-  WEAPON_LABEL,
-  WEAPON_SHORT,
-  cn,
-  formatDateEs,
-  titular,
-  titularDocumento,
-} from '@/lib/utils';
+import { SOURCE_LABEL, titular, titularDocumento } from '@/lib/utils';
 import type { QuienVa as QuienVaDatos } from '@/app/(app)/inscritos';
 import { fichaRecibida, leerFicha } from './ficha/precarga';
 import type { TiradorOpcion } from './vista';
@@ -78,76 +62,41 @@ import type { TiradorOpcion } from './vista';
  * LA FICHA DE UN TORNEO
  * ===========================================================================
  *
- * DE NUEVE APARTADOS A CUATRO BANDAS
- * ----------------------------------
- * Esta ficha tenía nueve secciones con rótulo —cómo llegar, pruebas, plazo,
- * horario, la prueba, quién va, documentos, en directo, de dónde sale—, todas
- * con el mismo rótulo de 13 px a la izquierda y el mismo filete encima. Era
- * ordenado y era **plano**: nada pesaba más que nada, así que la mirada no
- * tenía a dónde ir y en un móvil había que recorrer tres pantallas para
- * encontrar la hora de llamada. Petición literal: *«menos secciones y más
- * minimalista, moderno y simple»* y *«que no se vea muy plano»*.
+ * Arriba, el selector de la prueba (arma, género, modalidad y, si varía,
+ * categoría) y una línea con su nombre. Debajo, cuatro bandas, cada una la
+ * respuesta a una pregunta entera:
  *
- * Quedan **cuatro bandas**, y cada fusión responde a una pregunta entera en
- * vez de a un campo:
- *
- *   1. **Inscripción** — la barra de tramos y, debajo, las condiciones: cuotas,
- *      cupos, edad mínima, forma de pago y requisitos. Antes: «Plazo» + la
- *      cuota perdida dentro de «La prueba». Cuánto queda y cuánto cuesta son
- *      la misma decisión.
+ *   1. **Inscripción** — cuánto queda (pastilla en la cabecera), la barra de
+ *      tramos con su lista y las condiciones: cuota, cupos, edad mínima,
+ *      forma de pago y requisitos.
  *   2. **Dónde y cuándo** — la sede con su mapa, la hora de allí y la tuya, y
- *      el horario día a día. Antes: «Cómo llegar» + «Horario». Las dos son lo
- *      mismo: dónde tengo que estar y a qué hora.
- *   3. **¿Estás dentro?** — la lista oficial de inscritos. Antes «Quién va»,
- *      con un rótulo que no era la pregunta que se viene a hacer.
- *   4. **Convocatoria y fuentes** — documentos, retransmisión, quién organiza,
- *      enlaces del PDF y procedencia. Antes: «Documentos» + «En directo» +
- *      «De dónde sale», tres bandas de una línea cada una.
+ *      el horario día a día.
+ *   3. **¿Estás dentro?** — la lista oficial de inscritos.
+ *   4. **Convocatoria** — documentos, retransmisión, quién organiza, enlaces
+ *      del PDF y procedencia.
  *
- * Cuando el torneo ya se ha tirado, la inscripción no le importa a nadie y
- * arriba van los **Resultados**, con el podio de cada prueba.
+ * Cuando el torneo ya se ha tirado la inscripción no le importa a nadie y
+ * arriba van los **Resultados**.
  *
- * Y desaparecieron dos apartados sin perder información: «Pruebas» es ahora el
- * selector de arriba, que es un control y no una sección; y «La prueba»
- * (género, categoría, formato) ya se lee en la pastilla que se toca.
+ * Todos los datos van en pares rótulo–valor, sin nada pegado detrás del valor.
+ * Lo leído de un PDF se comprueba desde UN botón por banda, «Según la
+ * convocatoria», que abre las frases literales (`ficha/segun-convocatoria.tsx`).
  *
- * DE DÓNDE SALE LA JERARQUÍA
- * -------------------------
- * Del marcador de una pista, que es lo que manda `UI.md`: cada banda tiene un
- * **titular en condensada** y, a su derecha, **una cifra grande con un rótulo
- * diminuto** —días que faltan, inscritos en la lista—. El contraste entre las
- * dos ES la jerarquía. No hay sombras, ni degradados, ni una tarjeta por dato:
- * bandas horizontales separadas por un filete de un píxel.
- *
- * ESTO NO ES UNA PANTALLA DE TRÁMITE
- * ----------------------------------
- * Ya no se inscribe nadie desde aquí (*«solo ver calendario, si estoy o no»*),
- * así que se fueron el botón de solicitar, su estado de envío y la lista de
- * solicitudes sin validar. Lo que queda es de consulta, y el color de acento
- * —que antes se llevaba el botón de inscribirse— es ahora de **«cómo
- * llegar»**, que es lo único que de verdad se pulsa.
+ * Ya no se inscribe nadie desde aquí (*«solo ver calendario, si estoy o no»*):
+ * lo que queda es de consulta, y el color de acento es de «cómo llegar».
  */
 
 /**
  * El mismo torneo, con lo que dicen sus PDFs.
  *
- * El objeto que llega por `props` es el de la pantalla del calendario, y ese
- * viene de `listEvents`, que **no pide lo extraído** a propósito: son 250
- * eventos por carga. Así que aquí se pide el detalle al abrir la ficha —igual
- * que ya se pedía quién va— y se le pegan los dos campos al evento que ya
- * tenemos.
+ * El evento de `props` viene de `listEvents`, que no pide lo extraído ni los
+ * plazos (son 250 eventos por carga). Aquí se pide el detalle al abrir la
+ * ficha y se le pegan esos campos al evento que ya tenemos, sin sustituirlo:
+ * `getEvent` devuelve TODAS las pruebas y el calendario puede estar filtrado.
  *
- * Se pegan los campos en vez de sustituir el objeto entero, y no es lo mismo:
- * `getEvent` devuelve TODAS las pruebas del torneo y el calendario puede estar
- * filtrado por arma o por categoría. Cambiar el objeto haría aparecer pruebas
- * que el filtro había quitado, que es un cambio de comportamiento que aquí no
- * toca decidir.
- *
- * Mientras llega no hay ni esqueleto ni espera: la ficha se pinta entera con
- * lo que ya se sabe y los datos del papel entran cuando entran. Bloquear la
- * ficha entera por el pabellón sería cambiar lo que funciona por lo que
- * mejora. Casi nunca hay que esperar: el detalle se pide al mostrar intención
- * de abrir la tarjeta (`ficha/precarga.ts`) y aquí se usa lo ya recibido.
+ * Mientras llega no hay ni esqueleto ni espera: la ficha se pinta con lo que
+ * ya se sabe. Casi nunca hay que esperar: el detalle se pide al mostrar
+ * intención de abrir la tarjeta (`ficha/precarga.ts`).
  */
 function useConDatosDeLosPdfs(base: EventView): EventView {
   const [leidos, setLeidos] = React.useState<EventView | null>(
@@ -161,8 +110,7 @@ function useConDatosDeLosPdfs(base: EventView): EventView {
       .then((r) => {
         if (vigente) setLeidos(r.detalle);
       })
-      // Que no se puedan leer los PDFs no puede tumbar la ficha: se queda sin
-      // esa parte y todo lo demás sigue estando.
+      // Que no se puedan leer los PDFs no puede tumbar la ficha.
       .catch(() => {});
     return () => {
       vigente = false;
@@ -171,18 +119,7 @@ function useConDatosDeLosPdfs(base: EventView): EventView {
 
   return React.useMemo(() => {
     if (!leidos) return base;
-    const porPrueba = new Map(
-      leidos.competitions.map((c) => [c.id, c.datosExtraidos]),
-    );
-    /**
-     * Y de aquí salen también LOS PLAZOS.
-     *
-     * El calendario ya no los manda: son 433 kB de los 1.200 que pesaba la
-     * pantalla principal, para una barra que solo se ve al abrir una ficha
-     * (ver `conPlazos` en `src/lib/queries/calendar.ts`). Así que llegan con
-     * el detalle, que es esta misma petición, y hasta entonces la barra se
-     * pinta con lo que hay. No se bloquea la ficha por ellos.
-     */
+    const porPrueba = new Map(leidos.competitions.map((c) => [c.id, c.datosExtraidos]));
     const detalle = new Map(
       leidos.competitions.map((c) => [c.id, { plazos: c.deadlines, estado: c.status }]),
     );
@@ -203,70 +140,45 @@ function useConDatosDeLosPdfs(base: EventView): EventView {
 }
 
 /**
- * Una banda de la ficha.
- *
- * El titular va en condensada y grande (lo aplica `globals.css` a `h3`) y el
- * marcador a la derecha, alineado por la línea base para que la cifra y el
- * rótulo se lean como una sola cosa. En el móvil todo sube un paso de tamaño:
- * esto se mira de pie en la puerta de un pabellón.
+ * Una banda de la ficha: titular a la izquierda y, a la derecha, una cifra
+ * con su rótulo (inscritos) o una pastilla de estado (plazo).
  */
 function Banda({
   titulo,
   cifra,
   rotulo,
-  tono,
+  accion,
   children,
 }: {
   titulo: string;
-  /** La cifra del marcador. Se omite cuando no hay un número que importe. */
-  cifra?: string | number | null;
-  /** Lo que acompaña a la cifra, o el texto suelto si no hay cifra. */
+  cifra?: number | null;
   rotulo?: string;
-  tono?: string;
+  accion?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-3 border-t border-t-filete pt-4 pb-1 first:border-t-0 first:pt-0">
-      <header className="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
-        <h3 className="text-[20px] leading-[24px]">{titulo}</h3>
-        {cifra !== undefined || rotulo ? (
-          <p className={cn('flex shrink-0 items-baseline gap-1.5', tono)}>
-            {cifra !== undefined && cifra !== null ? (
-              <span className="cifra text-[28px] leading-none">{cifra}</span>
-            ) : null}
-            {rotulo ? (
-              <span
-                className={cn(
-                  'text-[13px]',
-                  tono ? '' : 'text-muted-foreground',
-                )}
-              >
-                {rotulo}
-              </span>
-            ) : null}
+    <section className="flex flex-col gap-3 border-t border-filete pt-4">
+      <header className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <h3 className="text-xl leading-tight">{titulo}</h3>
+        {cifra !== undefined && cifra !== null ? (
+          <p className="flex shrink-0 items-baseline gap-2">
+            <span className="cifra text-2xl leading-none">{cifra}</span>
+            {rotulo ? <span className="text-sm text-muted-foreground">{rotulo}</span> : null}
           </p>
         ) : null}
+        {accion}
       </header>
       {children}
     </section>
   );
 }
 
-const TONO = {
-  verde: { texto: 'text-ok', palabra: 'a tiempo' },
-  ambar: { texto: 'text-warn', palabra: 'atención' },
-  rojo: { texto: 'text-danger', palabra: 'urgente' },
-  cerrado: { texto: 'text-muted-foreground', palabra: 'cerrado' },
-  sin_datos: { texto: 'text-muted-foreground', palabra: 'sin plazo' },
-} as const;
-
 /**
  * Contenido de la ficha de un torneo.
  *
- * Se elige una prueba con las pastillas de arriba y debajo se ve solo esa: un
- * torneo tiene hasta ocho pruebas y enseñarlas todas desplegadas obliga a
- * desplazarse por cosas que no te tocan. La que te corresponde viene ya
- * elegida.
+ * Se elige una prueba y debajo se ve solo esa: un torneo tiene hasta ocho
+ * pruebas y enseñarlas todas obliga a desplazarse por cosas que no te tocan.
+ * La que te corresponde viene ya elegida.
  */
 export function FichaEvento({
   evento: delCalendario,
@@ -281,8 +193,8 @@ export function FichaEvento({
   retornoCalendario?: string;
   /**
    * `inscripciones` y `onSolicitar` siguen en el tipo porque los pasa
-   * `vista.tsx`, que es de otro agente: la ficha ya no tramita inscripciones
-   * y no los usa. Se quitan de los dos sitios a la vez, no antes.
+   * `vista.tsx`: la ficha ya no tramita inscripciones y no los usa. Se quitan
+   * de los dos sitios a la vez, no antes.
    */
   inscripciones?: Record<string, string>;
   onSolicitar?: (competitionId: string) => Promise<void>;
@@ -293,10 +205,7 @@ export function FichaEvento({
 }) {
   const evento = useConDatosDeLosPdfs(delCalendario);
 
-  /**
-   * Con qué prueba se abre: la del tirador que está mirando. Ya no decide si
-   * puede inscribirse —eso se fue de aquí—, solo a qué mira primero.
-   */
+  // Con qué prueba se abre: la del tirador que está mirando.
   const suya = React.useMemo(
     () =>
       evento.competitions.find(
@@ -318,112 +227,35 @@ export function FichaEvento({
   }, [suya, evento.competitions]);
 
   const prueba = evento.competitions.find((c) => c.id === elegida) ?? null;
-  // La categoría común ya la dice el torneo; repetida en cada pastilla no cabía en dos columnas a 320 px.
-  const variasCategorias = new Set(evento.competitions.map((c) => c.category)).size > 1;
+  const filas = React.useMemo(
+    () =>
+      filasSelectorPruebas(
+        evento.competitions.map((c) => ({
+          id: c.id,
+          arma: c.weapon,
+          genero: c.gender,
+          categoria: c.category,
+          formato: c.format,
+        })),
+        elegida,
+      ),
+    [evento.competitions, elegida],
+  );
   const terminado = torneoTerminado(evento);
   const hoy = hoyMadrid();
 
   return (
     <div className="flex flex-col gap-4 px-4 pt-2 pb-10">
       {/*
-        Las pruebas del torneo, que antes eran una sección con rótulo, y antes
-        de eso la banda «La prueba» con el género, la categoría y el formato en
-        una rejilla de pares. Las dos cosas son esto.
-
-        Es un control, no información: va arriba, sin filete ni titular, y se
-        marca con fondo secundario y borde. El relleno del color de acento se
-        reserva para la acción principal de la pantalla (ver `REFERENCIAS.md`
-        9.1): una pastilla de selección que compite con un botón que hace algo
-        es justo lo que hace que una interfaz parezca descuidada.
-
-        Con UNA sola prueba no hay nada que elegir, así que son pastillas de
-        etiqueta —arma, género, categoría, formato—, que es lo que hace la
-        ficha de torneo de la FIE debajo del título. Sin esto, un torneo de una
-        prueba perdía el género y la categoría al desaparecer «La prueba»: se
-        quedaba sin decir si es masculino o femenino.
-
-        Y va la abreviatura del arma, no el icono: por debajo de 22 px el
-        dibujo de un florete y el de un sable son la misma línea con un bulto.
+        Un control, no una sección: una fila por dimensión que varía entre las
+        pruebas del torneo, y nunca una combinación que no existe. Antes eran
+        chips hechos a mano («FLO F, equipos») con otra forma de rotular que la
+        cabecera de un torneo de una sola prueba.
       */}
-      {evento.competitions.length === 1 && prueba ? (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="secondary" className="gap-1.5 px-2.5 py-1">
-            <span className="cifra text-sm leading-none">
-              {WEAPON_SHORT[prueba.weapon]}
-            </span>
-            <span className="leading-none">{WEAPON_LABEL[prueba.weapon]}</span>
-          </Badge>
-          <Badge variant="outline" className="px-2.5 py-1">
-            {GENDER_LABEL[prueba.gender]}
-          </Badge>
-          <Badge variant="outline" className="px-2.5 py-1">
-            {CATEGORY_LABEL[prueba.category as keyof typeof CATEGORY_LABEL] ??
-              prueba.category}
-          </Badge>
-          <Badge variant="outline" className="px-2.5 py-1">
-            {prueba.format === 'EQUIPOS' ? 'Equipos' : 'Individual'}
-          </Badge>
-          <PastillaDirectoDePrueba
-            enlace={prueba.enlaceDirecto ?? evento.enlaceDirecto}
-            fecha={prueba.competitionDate}
-            evento={evento}
-            hoy={hoy}
-            clase="-my-2.5 ml-auto"
-          />
-        </div>
-      ) : null}
+      <SelectorNiveles filas={filas} onSeleccion={setElegida} />
 
-      {evento.competitions.length > 1 ? (
-        /*
-          Chips de 32 px que se parten en líneas: un carril que se desplaza
-          de lado dejaba la última prueba cortada y sin aviso de que había
-          más. Se elige una y sólo una, así que cada chip es un botón con
-          `aria-pressed` y el marcado es el del sistema (invertido).
+      {prueba ? <CabeceraPrueba evento={evento} prueba={prueba} hoy={hoy} /> : null}
 
-          En el móvil van dos por fila, fijas: con `flex-wrap` el reparto
-          cambiaba al llegar la condensada y la ficha entera saltaba (CLS
-          0,18 a 393 y 412 px).
-        */
-        <FilaChips etiqueta="Prueba del torneo" envolver className="grid grid-cols-2 sm:flex">
-          {evento.competitions.map((c) => (
-            <ChipFiltro
-              key={c.id}
-              marcado={c.id === elegida}
-              onClick={() => setElegida(c.id)}
-              className="w-full justify-center sm:w-auto"
-            >
-              <span className="cifra text-[14px] leading-none">{WEAPON_SHORT[c.weapon]}</span>{' '}
-              <span>
-                {GENDER_SHORT[c.gender]}
-                {variasCategorias
-                  ? ` ${CATEGORY_SHORT[c.category] ??
-                    CATEGORY_LABEL[c.category as keyof typeof CATEGORY_LABEL] ??
-                    c.category}`
-                  : ''}
-                {c.format === 'EQUIPOS' ? ', equipos' : ''}
-              </span>
-            </ChipFiltro>
-          ))}
-        </FilaChips>
-      ) : null}
-
-      {evento.competitions.length > 1 && prueba && (prueba.enlaceDirecto ?? evento.enlaceDirecto) ? (
-        <div className="-mt-3 -mb-2 flex justify-end">
-          <PastillaDirectoDePrueba
-            enlace={prueba.enlaceDirecto ?? evento.enlaceDirecto}
-            fecha={prueba.competitionDate}
-            evento={evento}
-            hoy={hoy}
-          />
-        </div>
-      ) : null}
-
-      {/*
-        Solo en un torneo ya tirado, y la banda se pinta sola o no se pinta:
-        sin podio ni enlace oficial no existe (ver `ficha/resultados-torneo.tsx`).
-        Antes iba al final para todos los torneos con «sin edición vinculada»,
-        que era una frase en cada ficha y nunca un resultado.
-      */}
       {terminado ? (
         <ResultadosTorneo
           eventoId={evento.id}
@@ -451,19 +283,40 @@ export function FichaEvento({
   );
 }
 
+/**
+ * La prueba que se está mirando, en una línea: «Espada femenina · Equipos»
+ * con la categoría en pastilla y, si lo hay, el directo a la derecha.
+ */
+function CabeceraPrueba({ evento, prueba, hoy }: { evento: EventView; prueba: CompetitionView; hoy: string }) {
+  const nombre = rotuloPrueba(
+    { arma: prueba.weapon, genero: prueba.gender, formato: prueba.format },
+    { categoria: 'nunca', formato: 'siempre' },
+  );
+  const categoria = rotuloCategoria(prueba.category);
+  return (
+    <div data-slot="cabecera-prueba" className="flex min-h-11 min-w-0 items-center justify-between gap-3">
+      <p className="flex min-w-0 flex-wrap items-center gap-2">
+        <span className="text-base font-semibold text-foreground">{nombre}</span>
+        {categoria ? <Pastilla tamano="md">{categoria}</Pastilla> : null}
+      </p>
+      <PastillaDirectoDePrueba
+        enlace={prueba.enlaceDirecto ?? evento.enlaceDirecto}
+        fecha={prueba.competitionDate}
+        evento={evento}
+        hoy={hoy}
+      />
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
-// 1 · El plazo, que es lo que se viene a mirar
+// 1 · Inscripción
 // ---------------------------------------------------------------------------
 
 /**
- * Cuánto queda, cuánto cuesta y qué piden, juntos.
- *
- * La cuota vivía en «La prueba», cuatro bandas más abajo, con la misma letra
- * que el formato y el género. Y es la otra mitad de la pregunta del plazo: si
- * me paso de hoy, ¿cuánto me cuesta? Con `+15 €` dibujado en la barra y la
- * cuota base fuera de la pantalla no se podía sumar. Por eso la banda se llama
- * «Inscripción» y no «Plazo»: lleva el plazo y las condiciones.
+ * Cuánto queda, cuánto cuesta y qué piden, juntos: si me paso de hoy, ¿cuánto
+ * me cuesta? Con «+15 €» en la barra y la cuota fuera de la pantalla no se
+ * podía sumar.
  */
 function BandaPlazo({
   evento,
@@ -472,81 +325,55 @@ function BandaPlazo({
   evento: EventView;
   prueba: CompetitionView;
 }) {
-  const tono = TONO[prueba.status.state];
-  const dias = prueba.status.daysLeft;
-
-  const plazosDelPapel = [
+  const { cuotas, condiciones, requisitos } = inscripcionDe(evento, prueba);
+  /*
+    Un plazo que sólo dice la convocatoria no entra en la barra —la barra son
+    los plazos oficiales de inscripción— pero es información: en las
+    concentraciones el límite para pedir alojamiento va antes que todo.
+  */
+  const papel: LineaDato[] = [
     ...plazosDeConvocatoria(prueba.datosExtraidos),
     ...plazosDeConvocatoria(evento.datosExtraidos),
-  ];
+  ].map((d) => ({
+    clave: d.id,
+    rotulo: conceptoDe(d) ? `Plazo · ${conceptoDe(d)}` : 'Otro plazo',
+    valor: fechaSuelta(d.valor),
+    dato: d,
+  }));
+  const lineas = [...cuotas, ...condiciones, ...requisitos, ...papel];
+  if (prueba.deadlines.length === 0 && lineas.length === 0) return null;
 
-  /**
-   * El marcador solo aparece cuando hay una cuenta atrás.
-   *
-   * Con el plazo cerrado decía «cerrado» arriba a la derecha y la cola de la
-   * barra decía «cerrado» justo debajo: la misma palabra dos veces en dos
-   * centímetros. Cuando no hay cuenta atrás, el estado lo escribe la barra,
-   * que es donde se ve por qué (toda gris, con la cola encendida).
-   */
-  const hayCuenta = dias !== null && !prueba.status.closed;
+  const resumen = prueba.deadlines.length > 0 ? resumenPlazo(prueba.status) : null;
 
   return (
     <Banda
       titulo="Inscripción"
-      cifra={hayCuenta ? dias : undefined}
-      rotulo={
-        hayCuenta ? `${dias === 1 ? 'día' : 'días'}, ${tono.palabra}` : undefined
+      accion={
+        resumen ? (
+          <Pastilla tamano="md" tono={resumen.tono} data-slot="estado-plazo">
+            {resumen.texto}
+          </Pastilla>
+        ) : null
       }
-      tono={tono.texto}
     >
-      {/*
-        La barra de tramos. No es un eje de tiempo y no debe serlo: lee su
-        cabecera antes de tocarla.
-        El estado escrito se apaga aquí porque ya está en el marcador de la
-        banda, con su palabra y su color; dejarlo en los dos sitios era la
-        misma frase dos veces en cuatro centímetros.
-      */}
-      <BarraPlazos
-        plazos={prueba.deadlines}
-        estado={prueba.status}
-        conEstado={!hayCuenta}
-      />
+      {/* El estado completo ya lo dice la pastilla de la cabecera. */}
+      <BarraPlazos plazos={prueba.deadlines} estado={prueba.status} conEstado={false} />
 
-      {/*
-        Cuotas, cupos, edad mínima, forma de pago y requisitos, juntos: es lo
-        que hay que saber antes de apuntarse, y venía repartido entre esta
-        banda y una lista de frases del PDF al final de la ficha.
-      */}
-      <TarjetaInscripcion evento={evento} prueba={prueba} />
+      {lineas.length > 0 ? (
+        <Tarjeta titulo="Condiciones">
+          <FilasDatos lineas={lineas} />
+        </Tarjeta>
+      ) : null}
 
-      {/*
-        Un plazo que aparece en la convocatoria y no en el calendario. No entra
-        en la barra —la barra son los plazos oficiales de inscripción— pero
-        decirlo es información: en las concentraciones el límite para pedir
-        alojamiento va antes que todo lo demás.
-      */}
-      {plazosDelPapel.map((d) => (
-        <ParDato
-          key={d.id}
-          linea={{
-            clave: d.id,
-            rotulo: conceptoDe(d) ? `Plazo · ${conceptoDe(d)}` : 'Otro plazo',
-            valor: fechaSuelta(d.valor),
-            dato: d,
-          }}
-        />
-      ))}
+      <SegunConvocatoria citas={citasDe(lineas)} />
     </Banda>
   );
 }
 
 /**
- * El trozo de después del punto en `fee_eur.alojamiento`, legible.
- *
- * Devuelve cadena vacía cuando el sufijo es un código interno (`deadline.L1`,
- * `deadline.FIE_D7`): «(L1)» en pantalla no significa nada para nadie y
- * además delata la columna de la base de datos. La cita explica de qué plazo
- * habla el documento, que es lo que hace falta.
+ * El trozo de después del punto en `deadline.alojamiento`, legible. Vacío
+ * cuando el sufijo es un código interno (`deadline.L1`): «(L1)» no significa
+ * nada para nadie y delata la columna de la base de datos.
  */
 function conceptoDe(d: DatoExtraidoView): string {
   const resto = d.campo.split('.').slice(1).join(' ').replace(/[-_]+/g, ' ').trim();
@@ -556,7 +383,7 @@ function conceptoDe(d: DatoExtraidoView): string {
 
 /** Una fecha que llega como texto del PDF: se formatea si se puede. */
 function fechaSuelta(valor: string): string {
-  return /^\d{4}-\d{2}-\d{2}/.test(valor) ? formatDateEs(valor) : valor;
+  return /^\d{4}-\d{2}-\d{2}/.test(valor) ? fechaCorta(valor.slice(0, 10)) : valor;
 }
 
 // ---------------------------------------------------------------------------
@@ -564,13 +391,10 @@ function fechaSuelta(valor: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * El pabellón y la línea del día, en la misma banda.
- *
- * QUÉ ARREGLA ESTO, con los números de la base: de 274 eventos, 246 no traen
- * pabellón y de 484 pruebas solo 23 traen hora de inicio. Las dos cosas están
- * en el PDF de la convocatoria y ya se han extraído. Así que esta banda es
- * casi siempre la que gana algo, y por eso el pabellón leído del papel va
- * donde iría el publicado, y no en una lista aparte de «campos extraídos».
+ * El pabellón y el horario, en la misma banda: dónde tengo que estar y a qué
+ * hora. De 274 eventos, 246 no traen pabellón y de 484 pruebas solo 23 traen
+ * hora; las dos cosas están en el PDF, así que el pabellón leído va donde iría
+ * el publicado.
  */
 function BandaDondeYCuando({
   evento,
@@ -579,16 +403,13 @@ function BandaDondeYCuando({
 }: {
   evento: EventView;
   prueba: CompetitionView;
-  /** ¿«Cómo llegar» es la acción principal de la ficha? Solo si está por venir. */
+  /** ¿«Mapa» es la acción principal de la ficha? Solo si está por venir. */
   principal: boolean;
 }) {
   const { sede, sedeLeida, direccion, direccionLeida, otraSede, extras } = sedeDe(evento);
+  const horario = horariosDelTorneo(evento);
 
-  /**
-   * Los mapas se calculan con la sede QUE SE ESTÁ ENSEÑANDO, incluida la que
-   * salió del PDF: si la ficha dice «Polideportivo Benimaclet» y el botón
-   * abre el centro de Valencia, el botón está roto.
-   */
+  // Los mapas se calculan con la sede QUE SE ENSEÑA, incluida la leída del PDF.
   const mapas = mapsLinks({
     venue: sede,
     venueAddress: direccion,
@@ -598,118 +419,85 @@ function BandaDondeYCuando({
     geoLon: evento.geoLon,
   });
 
+  const acceso = accesoVisible(evento, direccion);
+  const lineas: LineaDato[] = [
+    ...(acceso ? [{ clave: acceso.id, rotulo: 'Acceso', valor: acceso.valor, dato: acceso }] : []),
+    ...(otraSede ? [{ clave: otraSede.id, rotulo: 'Otra sede', valor: titular(otraSede.valor), dato: otraSede }] : []),
+    ...extras,
+  ];
+
   const haySede = Boolean(sede || direccion || mapas || evento.officialSite);
-  // Sin sede, sin horario y sin huso no queda nada que enseñar: ni el titular.
-  if (!haySede && !evento.timezone && horariosDelTorneo(evento).dias.length === 0) return null;
+  if (!haySede && !evento.timezone && horario.dias.length === 0) return null;
+
+  const citas = citasDe([
+    sedeLeida ? { dato: sedeLeida, rotulo: 'Sede', valor: titular(sedeLeida.valor) } : null,
+    direccionLeida ? { dato: direccionLeida, rotulo: 'Dirección', valor: titular(direccionLeida.valor) } : null,
+    ...lineas,
+    ...horario.dias.flatMap((d) =>
+      [d.apertura, ...d.hitos].flatMap((h) =>
+        h?.dato ? [{ dato: h.dato, rotulo: `${h.rotulo} · ${tituloDeDia(d.fecha)}`, valor: h.hora }] : [],
+      ),
+    ),
+  ]);
 
   return (
     <Banda titulo="Dónde y cuándo">
       {haySede ? (
-      <Tarjeta titulo="Sede">
-        {sede ? (
-          <CitaConvocatoria dato={sedeLeida}>
-            <span className="text-[16px] leading-[20px] font-medium">
-              {titular(sede)}
-              {sedeLeida ? (
-                <MarcaConvocatoria className="ml-1.5 size-3.5 text-muted-foreground" />
+        <Tarjeta titulo="Sede" className="pb-3">
+          {sede ? <p className="text-base font-medium text-foreground">{titular(sede)}</p> : null}
+
+          {/*
+            La dirección en una línea, con la bandera delante, y es el enlace al
+            mapa. Sin pabellón ni dirección sería repetir la ciudad de la cabecera.
+          */}
+          {sede || direccion ? (
+            <LineaDireccion
+              pais={evento.country}
+              texto={direccion ? titular(direccion) : evento.city ? titular(evento.city) : ''}
+              mapa={mapas?.google ?? null}
+            />
+          ) : null}
+
+          <FilasDatos lineas={lineas} />
+
+          {/*
+            Sin pabellón ni dirección queda «Mapa», que lleva a la ciudad:
+            prometer «Cómo llegar» al centro de una ciudad extranjera es peor
+            que no tener botón.
+          */}
+          {(mapas && !sede && !direccion) || evento.officialSite ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {mapas && !sede && !direccion ? (
+                <Boton asChild variante={principal ? 'primario' : 'contorno'}>
+                  <a href={mapas.google} target="_blank" rel="noreferrer">
+                    <Navigation aria-hidden />
+                    Mapa
+                  </a>
+                </Boton>
               ) : null}
-            </span>
-          </CitaConvocatoria>
-        ) : null}
-
-        {/*
-          La dirección en una línea, con la bandera delante, y es el enlace al
-          mapa: en el móvil la dirección entera ocupaba tres renglones y debajo
-          iba otro botón para lo mismo. Completa, en el `title` y en el mapa.
-          Solo aparece cuando hay pabellón o dirección; sin eso sería repetir
-          la ciudad que la cabecera ya escribe.
-        */}
-        {sede || direccion ? (
-          <LineaDireccion
-            pais={evento.country}
-            texto={direccion ? titular(direccion) : evento.city ? titular(evento.city) : ''}
-            mapa={mapas?.google ?? null}
-            leida={direccionLeida}
-          />
-        ) : null}
-
-        {/*
-          Si el PDF nombra otra sede, manda la publicada; la otra queda como
-          un dato más, sin frase que explique de dónde sale.
-        */}
-        {otraSede ? (
-          <ParDato
-            linea={{ clave: otraSede.id, rotulo: 'Otra sede', valor: titular(otraSede.valor), dato: otraSede }}
-          />
-        ) : null}
-
-        {/*
-          POR DÓNDE SE ENTRA, que no es la dirección del recinto. Petición
-          literal: *«si sabemos ya por dónde es el acceso, ponlo directo»*. En
-          Lima el pabellón es «VELODROMO - CAR VIDENA (GATE 7)» y la entrada
-          está en otra calle.
-        */}
-        <AccesoAlPabellon evento={evento} direccion={direccion} />
-
-        {extras.length > 0 ? (
-          <div className="grid grid-cols-2 items-start gap-x-4 gap-y-2">
-            {extras.map((l) => (
-              <ParDato key={l.clave} linea={l} />
-            ))}
-          </div>
-        ) : null}
-
-        {/*
-          Con dirección, el mapa se abre desde ella. Sin pabellón ni dirección
-          queda el botón «Mapa», que lleva a la ciudad: prometer «Cómo llegar»
-          al centro de una ciudad extranjera es peor que no tener botón.
-        */}
-        {(mapas && !sede && !direccion) || evento.officialSite ? (
-          <div className="flex flex-wrap items-center gap-2">
-            {mapas && !sede && !direccion ? (
-              <Button
-                size={principal ? 'default' : 'sm'}
-                variant={principal ? 'default' : 'outline'}
-                className={cn(principal ? 'w-full sm:w-fit' : 'rounded-full')}
-                asChild
-              >
-                <a href={mapas.google} target="_blank" rel="noreferrer">
-                  <Navigation />
-                  Mapa
-                </a>
-              </Button>
-            ) : null}
-            {evento.officialSite ? (
-              <Button variant="outline" size="sm" className="rounded-full" asChild>
-                <a href={evento.officialSite} target="_blank" rel="noreferrer">
-                  <ExternalLink />
-                  Web
-                </a>
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-      </Tarjeta>
+              {evento.officialSite ? (
+                <Boton asChild variante="contorno">
+                  <a href={evento.officialSite} target="_blank" rel="noreferrer">
+                    <ExternalLink aria-hidden />
+                    Web
+                  </a>
+                </Boton>
+              ) : null}
+            </div>
+          ) : null}
+        </Tarjeta>
       ) : null}
 
-      {/*
-        Qué hora es allí y qué hora es donde estás, ya convertida. Sustituye a
-        «7 horas más que en España (allí van adelantados)», que obligaba a
-        hacer la cuenta y daba por hecho que quien mira está en España. Ver
-        `ficha/horas.tsx`.
-      */}
+      {/* Qué hora es allí y qué hora es donde estás, ya convertida (`ficha/horas.tsx`). */}
       <RelojSede evento={evento} />
 
-      {/*
-        LOS HORARIOS, DÍA A DÍA. El torneo entero, con todos los hitos que se
-        sepan de cada prueba y de cada día, en hora de la sede y en la tuya; la
-        prueba que se está mirando va destacada. Ver `horarios-torneo.tsx`.
-      */}
+      {/* El torneo entero, día a día, con la prueba elegida destacada. */}
       <HorariosTorneo evento={evento} prueba={prueba} />
+
+      <SegunConvocatoria citas={citas} />
     </Banda>
   );
 }
-
 
 // ---------------------------------------------------------------------------
 // 3 · ¿Estás dentro?
@@ -717,16 +505,8 @@ function BandaDondeYCuando({
 
 /**
  * La lista oficial de inscritos, que es la pregunta del usuario con sus
- * palabras: *«si estoy o no»*, *«porque igual le ha inscrito otra persona»*.
- *
- * Es la lista que **publica la organización**, y es la única que se enseña.
- * Las solicitudes tramitadas desde aquí se fueron con el flujo de inscripción:
- * una solicitud sin validar no es estar dentro, y enseñarla al lado de la
- * oficial hacía que alguien cogiese un vuelo creyendo que sí.
- *
- * El recuento va de marcador, grande, y es nuestro equivalente del «52
- * nations, 477 athletes» de la ficha de torneo de la FIE: un número real que
- * le da peso a la pantalla sin inventar nada.
+ * palabras: *«si estoy o no»*. Es la lista que **publica la organización** y
+ * es la única que se enseña: una solicitud sin validar no es estar dentro.
  */
 export function BandaEstasDentro({
   evento,
@@ -739,10 +519,7 @@ export function BandaEstasDentro({
   inscritos: QuienVaDatos | null;
   fallo?: boolean;
 }) {
-  /**
-   * La lista completa va plegada. Un TNR absoluto tiene 107 inscritos, y
-   * ciento siete nombres seguidos entierran el resto de la ficha.
-   */
+  // Plegada: un TNR absoluto tiene 107 inscritos y enterraría el resto de la ficha.
   const [todos, setTodos] = React.useState(false);
   React.useEffect(() => setTodos(false), [prueba.id]);
 
@@ -754,96 +531,71 @@ export function BandaEstasDentro({
 
   const ASOMAN = 6;
   // Los tuyos primero: es lo que se viene a mirar.
-  const ordenados = [...oficiales].sort(
-    (a, b) => Number(b.esMio) - Number(a.esMio),
-  );
+  const ordenados = [...oficiales].sort((a, b) => Number(b.esMio) - Number(a.esMio));
   const visibles = todos ? ordenados : ordenados.slice(0, ASOMAN);
   const ocultos = ordenados.length - visibles.length;
 
-  /**
-   * El marcador, y solo cuando hay a quien contar.
-   *
-   * Un «0» gigante al lado de «Todavía no hay lista» es la misma cosa dicha
-   * dos veces, y además el cero de la organización no significa «no va nadie»
-   * sino «todavía no han abierto». Cuando no hay nadie, lo cuenta el estado
-   * vacío con palabras.
-   */
+  /*
+    La cifra sólo cuando hay a quien contar: un «0» al lado de «Todavía no
+    hay lista» es lo mismo dicho dos veces, y el cero de la organización
+    significa «todavía no han abierto», no «no va nadie».
+  */
   const conteo =
     inscritos === null
       ? null
       : oficiales.length > 0
-        ? { n: oficiales.length, rotulo: 'inscritos' }
+        ? oficiales.length
         : prueba.registrationCount && prueba.registrationCount > 0
-          ? { n: prueba.registrationCount, rotulo: 'inscritos' }
+          ? prueba.registrationCount
           : null;
 
-  /**
-   * Depende de «hay lectura retenida y la última falló», no de las filas de
-   * esta prueba: una lista válida pero vacía que no se pudo refrescar tampoco
-   * debe pasar por «vacía» sin matiz.
-   */
+  // Depende de «hay lectura retenida y la última falló», no de las filas de esta prueba.
   const avisoDeFallo =
     inscritos !== null && fallo ? (
-      <p role="alert" className="text-[13px] text-warn">
+      <p role="alert" className="text-sm text-warn">
         La última lectura falló.
       </p>
     ) : null;
 
-  // Sin lista publicada la banda entera sobra: no hay nada que mirar todavía.
+  // Sin lista publicada la banda entera sobra.
   const sinLista =
     inscritos !== null && !fallo && oficiales.length === 0 && inscritos.estados[prueba.id] !== 'vacia';
   if (sinLista) return null;
-  // Mientras llega tampoco se reserva su hueco ni se pinta un esqueleto: la
-  // lista se pide al mostrar intención de abrir la ficha y casi siempre ya está.
+  // Mientras llega tampoco se reserva su hueco ni se pinta un esqueleto.
   if (inscritos === null && !fallo) return null;
 
   return (
-    <Banda
-      titulo="¿Estás dentro?"
-      cifra={conteo?.n}
-      rotulo={conteo?.rotulo}
-    >
+    <Banda titulo="¿Estás dentro?" cifra={conteo} rotulo={conteo !== null ? 'inscritos' : undefined}>
       {inscritos === null ? (
-        <p role="alert" className="text-[14px] text-warn">
+        <p role="alert" className="text-sm text-warn">
           No se ha podido leer la lista de inscritos.
         </p>
       ) : oficiales.length === 0 ? (
         <>
-          {/*
-            Vacío en una línea y sin explicar por qué: `UI.md`, 2 bis. Lo que
-            importa es la respuesta —no hay lista, o está vacía—, no quién la
-            publica ni cuándo.
-          */}
-          <p className="text-[14px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {inscritos?.estados[prueba.id] === 'vacia' ? 'Lista vacía' : 'Todavía no hay lista'}
           </p>
-        {avisoDeFallo}
+          {avisoDeFallo}
         </>
       ) : (
         <>
           {estasDentro ? (
-            <p className="flex items-center gap-2 text-[14px] font-medium text-ok">
-              <CircleCheck className="size-[16px] shrink-0" aria-hidden />
+            <p className="flex items-center gap-2 text-sm font-medium text-ok">
+              <CircleCheck className="size-4 shrink-0" aria-hidden />
               Estás en la lista oficial.
             </p>
           ) : null}
 
-          <ItemGroup className="divide-y overflow-hidden rounded-md border">
+          <ul data-slot="inscritos" className="flex flex-col divide-y divide-border">
             {visibles.map((i, n) => (
-              <FilaInscrito key={`${i.competitionId}-${i.equipo ?? ''}-${i.nombre}-${n}`} inscrito={i} />
+              <li key={`${i.competitionId}-${i.equipo ?? ''}-${i.nombre}-${n}`}>
+                <FilaInscrito inscrito={i} />
+              </li>
             ))}
-          </ItemGroup>
+          </ul>
 
           {ocultos > 0 ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="self-start rounded-full"
-              onClick={() => setTodos(true)}
-            >
-              <ChevronDown />
-              Ver todos ({oficiales.length})
-            </Button>
+            <VerMas onClick={() => setTodos(true)} cuenta={oficiales.length} detalle="de inscritos" className="self-start" />
           ) : null}
 
           {avisoDeFallo}
@@ -854,21 +606,15 @@ export function BandaEstasDentro({
 }
 
 // ---------------------------------------------------------------------------
-// 4 · Convocatoria y fuentes
+// 4 · Convocatoria
 // ---------------------------------------------------------------------------
 
 /**
- * Los papeles del torneo y de dónde sale todo esto.
- *
- * Tres bandas de una línea cada una —«Documentos», «En directo», «De dónde
- * sale»— eran tres filetes y tres rótulos para enseñar dos enlaces. Aquí van
- * juntos, en filas iguales con su icono, que es lo que son: cosas que se
- * abren. Quién organiza y los enlaces que trae el PDF van debajo, los
- * enlaces **como botones con su dominio**, no como URLs pegadas.
- *
- * Al final, plegado, lo que se leyó de la convocatoria y no tiene sitio en
- * ningún otro grupo de la ficha. Es la red de seguridad: ningún dato extraído
- * desaparece, y ninguno sale dos veces (ver `ficha/datos-ficha.tsx`).
+ * Los papeles del torneo y de dónde sale todo esto: documentos y
+ * retransmisiones en filas iguales con su icono, quién organiza, los enlaces
+ * del PDF como botones con su dominio y, plegado, lo que se leyó y no tiene
+ * sitio en ningún otro grupo. Ningún dato extraído desaparece y ninguno sale
+ * dos veces (ver `ficha/datos-ficha.tsx`).
  */
 function BandaConvocatoria({
   evento,
@@ -893,6 +639,13 @@ function BandaConvocatoria({
     organiza.direccion !== null;
   if (!hayAlgo) return null;
 
+  const citas = citasDe([
+    organiza.quien ? { dato: organiza.quien, rotulo: 'Organiza', valor: titular(organiza.quien.valor) } : null,
+    organiza.direccion ? { dato: organiza.direccion, rotulo: 'Dirección de quien organiza', valor: titular(organiza.direccion.valor) } : null,
+    ...enlaces.map((d) => ({ dato: d, rotulo: nombreDeEnlace(d), valor: d.valor })),
+    ...otros,
+  ]);
+
   return (
     <Banda titulo="Convocatoria">
       {evento.documents.length > 0 || retransmisiones.length > 0 ? (
@@ -902,13 +655,11 @@ function BandaConvocatoria({
             <div key={d.id} role="listitem">
               <Item asChild size="sm" variant="outline" className={FILA_ENLACE}>
                 <a href={d.url} target="_blank" rel="noreferrer">
-                  <ItemMedia variant="icon" className="size-[32px]">
+                  <ItemMedia variant="icon" className="size-8">
                     <FileText />
                   </ItemMedia>
                   <ItemContent>
-                    <ItemTitle className="text-[14px] leading-[20px]">
-                      {titularDocumento(d.title)}
-                    </ItemTitle>
+                    <ItemTitle className="text-sm">{titularDocumento(d.title)}</ItemTitle>
                   </ItemContent>
                   <ItemActions>
                     <ExternalLink className="size-4 text-muted-foreground" aria-hidden />
@@ -919,19 +670,15 @@ function BandaConvocatoria({
             </div>
           ))}
 
-          {/*
-            Retransmisiones (vídeo). Los resultados en directo de Engarde o
-            Fencing Time Live van como pastilla junto a la prueba elegida.
-          */}
           {retransmisiones.map((l) => (
             <div key={l.id} role="listitem">
               <Item asChild size="sm" variant="outline" className={FILA_ENLACE}>
                 <a href={l.url} target="_blank" rel="noreferrer">
-                  <ItemMedia variant="icon" className="size-[32px] text-ok">
+                  <ItemMedia variant="icon" className="size-8 text-ok">
                     <Radio />
                   </ItemMedia>
                   <ItemContent>
-                    <ItemTitle className="text-[14px] leading-[20px]">
+                    <ItemTitle className="text-sm">
                       {l.label ? titular(l.label) : titular(l.platform)}
                     </ItemTitle>
                   </ItemContent>
@@ -943,7 +690,6 @@ function BandaConvocatoria({
               </Item>
             </div>
           ))}
-
         </ItemGroup>
       ) : null}
 
@@ -951,34 +697,20 @@ function BandaConvocatoria({
 
       {/*
         Los enlaces que trae el PDF, en botones con el nombre del destino y no
-        en URLs pegadas: «kotoden.co.jp», no
-        «https://www.kotoden.co.jp/publichtm/bus/limousine/index-en.html». Van
-        en pastilla pequeña y no en fila completa: son de la convocatoria y sin
-        verificar, así que no pueden pesar lo mismo que el documento oficial
-        que está justo encima. Al tocar la marca sale la frase del PDF.
+        en URLs pegadas. En pastilla pequeña: son de la convocatoria y sin
+        verificar, no pueden pesar lo mismo que el documento oficial.
       */}
       {enlaces.length > 0 ? (
-        <Tarjeta titulo="Enlaces">
-          <ul className="flex flex-wrap items-center gap-1.5">
+        <Tarjeta titulo="Enlaces" className="pb-3">
+          <ul className="flex flex-wrap items-center gap-2">
             {enlaces.map((d) => (
-              // El enlace cede y la marca de la cita no: juntos nunca pasan del ancho de la tarjeta.
-              <li key={d.id} className="flex min-w-0 max-w-full items-center">
-                <Button variant="outline" size="sm" className="min-w-0 shrink rounded-full" asChild>
-                  <a
-                    href={urlAbsoluta(d.valor)}
-                    target="_blank"
-                    rel="noreferrer"
-                    title={d.valor}
-                  >
-                    <ExternalLink />
+              <li key={d.id} className="flex min-w-0 max-w-full">
+                <Boton asChild variante="contorno" tamano="sm" className="min-w-0 max-w-full shrink">
+                  <a href={urlAbsoluta(d.valor)} target="_blank" rel="noreferrer" title={d.valor}>
+                    <ExternalLink aria-hidden />
                     <span className="truncate">{nombreDeEnlace(d)}</span>
                   </a>
-                </Button>
-                <CitaConvocatoria dato={d} className="mx-0 shrink-0 px-[4px]">
-                  <span className="flex size-[32px] items-center justify-center text-muted-foreground">
-                    <MarcaConvocatoria />
-                  </span>
-                </CitaConvocatoria>
+                </Boton>
               </li>
             ))}
           </ul>
@@ -988,42 +720,31 @@ function BandaConvocatoria({
       <OtrosDatos datos={otros} />
 
       {/*
-        Procedencia, en pastillas calladas con el nombre de la fuente y nada
-        más (`UI.md`, 2 bis: sin «Ver en…» ni «Publicado como…»; el nombre
-        tal y como lo publica va en el `title`). Las DOS fuentes cuando el
-        torneo llega por dos caminos:
-        una Copa del Mundo aparece en el calendario de la RFEE y en el de la
-        FIE y aquí se enseña como una sola tarjeta. Los dos enlaces tienen que
-        estar: el de Skermo porque es donde se inscribe un español, y el de la
-        FIE porque sus condiciones exigen enlazar al original de lo que se
-        muestra.
-        Cuando exista `src/components/escudo.tsx` (es de otro agente), el
-        nombre de la fuente lleva delante su escudo y esto no cambia más.
+        Procedencia, en pastillas calladas con el nombre de la fuente. Las DOS
+        cuando el torneo llega por dos caminos: Skermo porque es donde se
+        inscribe un español, y la FIE porque sus condiciones exigen enlazar al
+        original.
       */}
       {fuentes.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
           {fuentes.map((f) => (
-            <Button
-              key={f.source}
-              variant="ghost"
-              size="sm"
-              className="rounded-full text-muted-foreground"
-              asChild
-            >
+            <Boton key={f.source} asChild variante="fantasma" tamano="sm" className="text-muted-foreground">
               <a href={f.url} target="_blank" rel="noreferrer" title={evento.name}>
-                <ExternalLink />
+                <ExternalLink aria-hidden />
                 {SOURCE_LABEL[f.source] ?? f.source}
               </a>
-            </Button>
+            </Boton>
           ))}
         </div>
       ) : null}
+
+      <SegunConvocatoria citas={citas} />
     </Banda>
   );
 }
 
-/** Documentos y retransmisiones en filas de 44 px: con `size="sm"` en rem y la raíz de 18 px medían 65. */
-const FILA_ENLACE = 'min-h-[44px] gap-[12px] px-[12px] py-[5px]';
+/** Documentos y retransmisiones en filas de 44 px. */
+const FILA_ENLACE = 'min-h-11 gap-3 px-3 py-1';
 
 /** Los enlaces del PDF llegan a veces sin esquema («www.uvehoteles.com»). */
 function urlAbsoluta(valor: string): string {
@@ -1031,12 +752,8 @@ function urlAbsoluta(valor: string): string {
 }
 
 /**
- * Un enlace por fuente, no uno por fila.
- *
- * La FIE publica una página por prueba, así que un torneo con cuatro armas
- * traía cuatro enlaces «Ver en FIE» seguidos, todos con el mismo aspecto. Se
- * queda el primero de cada fuente: lo que se le ofrece a la persona es «mira
- * esto en el original», no un índice de la base de datos.
+ * Un enlace por fuente, no uno por fila: la FIE publica una página por prueba
+ * y un torneo con cuatro armas traía cuatro enlaces «Ver en FIE» seguidos.
  */
 function enlacesDeFuente(evento: EventView): { source: string; url: string }[] {
   const brutos =

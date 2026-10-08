@@ -46,8 +46,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { fechaCorta } from '@/lib/fechas';
 import type { Weapon } from '@/lib/auth/session';
-import { WEAPON_LABEL, cn, formatDateEs } from '@/lib/utils';
+import { WEAPON_LABEL, cn } from '@/lib/utils';
 
 /**
  * Equipo: quién entra al panel y con qué alcance.
@@ -232,7 +233,7 @@ export function AjustesPanel({ equipo }: { equipo: MiembroEquipo[] }) {
               <li
                 key={arma}
                 className={cn(
-                  'flex flex-col gap-1 rounded-lg border px-3 py-2.5',
+                  'flex flex-col gap-1 rounded-lg border px-3 py-3',
                   suyos.length === 0 ? 'border-warn/40 bg-warn/5' : 'bg-card',
                 )}
               >
@@ -366,7 +367,7 @@ export function AjustesPanel({ equipo }: { equipo: MiembroEquipo[] }) {
 
           {borrador ? (
             <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-2">
                 <Label htmlFor="equipo-nombre">Nombre y apellidos</Label>
                 <Input
                   id="equipo-nombre"
@@ -378,7 +379,7 @@ export function AjustesPanel({ equipo }: { equipo: MiembroEquipo[] }) {
                 />
               </div>
 
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-2">
                 <Label htmlFor="equipo-correo">Correo</Label>
                 <Input
                   id="equipo-correo"
@@ -391,7 +392,7 @@ export function AjustesPanel({ equipo }: { equipo: MiembroEquipo[] }) {
                 />
               </div>
 
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-2">
                 <Label htmlFor="equipo-rol">Papel</Label>
                 <Select
                   value={borrador.role}
@@ -415,9 +416,9 @@ export function AjustesPanel({ equipo }: { equipo: MiembroEquipo[] }) {
 
               {borrador.role === 'coach' ? (
                 <fieldset className="flex flex-col gap-2">
-                  <legend className="mb-1.5 text-sm font-medium">Armas que lleva</legend>
+                  <legend className="mb-2 text-sm font-medium">Armas que lleva</legend>
                   {ARMAS.map((arma) => (
-                    <div key={arma} className="flex items-center gap-2.5">
+                    <div key={arma} className="flex items-center gap-3">
                       <Checkbox
                         id={`arma-${arma}`}
                         checked={borrador.weapons.includes(arma)}
@@ -531,7 +532,7 @@ function BloqueEquipo({
                     </Badge>
                   ) : null}
                 </span>
-                <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
                   <Mail className="size-3 shrink-0" aria-hidden />
                   <span className="truncate">{m.email}</span>
                 </span>
@@ -539,7 +540,7 @@ function BloqueEquipo({
                   {m.haEntrado
                     ? 'Ha entrado alguna vez'
                     : 'Todavía no ha entrado ninguna vez'}
-                  {` · de alta desde el ${formatDateEs(m.createdAt)}`}
+                  {` · de alta desde el ${fechaCorta(m.createdAt)}`}
                 </span>
               </div>
 
@@ -548,7 +549,7 @@ function BloqueEquipo({
                 al menú. Tres botones por fila, dos de ellos irreversibles a
                 un clic, es una fila que se pulsa por error.
               */}
-              <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <Button
                   size="sm"
                   variant="outline"

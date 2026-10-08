@@ -3,16 +3,17 @@
 import * as React from 'react';
 import { BotonFiltros, CampoBuscar, HojaFiltros, OpcionesFiltro } from '@/components/filtros/chips';
 import { ChipFiltro, FilaChips } from '@/components/sistema/chip-filtro';
+import { SelectorSegmentado } from '@/components/sistema/selector-segmentado';
 import type { RankingGroupKey } from '@/lib/queries/ranking';
-import { CATEGORY_LABEL, GENDER_LABEL, WEAPON_LABEL, cn } from '@/lib/utils';
+import { rotuloArma, rotuloCategoria, rotuloGenero, rotuloPrueba } from '@/lib/sport/rotulos';
 import { type Ambito, useRanking } from './estado-ranking';
 
 export type Quitable = { clave: string; texto: React.ReactNode; etiqueta: string; onQuitar: () => void };
 
-const categoriaLegible = (c: string) => CATEGORY_LABEL[c as keyof typeof CATEGORY_LABEL] ?? c;
+const categoriaLegible = (c: string) => rotuloCategoria(c) || c;
 /** «Florete masculino»: dos palabras, lo que cabe en un chip (`docs/diseno-sistema.md` § 6). */
 export const armaYGenero = (g: Pick<RankingGroupKey, 'weapon' | 'gender'>) =>
-  `${WEAPON_LABEL[g.weapon]} ${GENDER_LABEL[g.gender].toLowerCase()}`;
+  rotuloPrueba({ arma: g.weapon, genero: g.gender });
 
 const ROTULO_AMBITO: Record<Ambito, string> = { RFEE: 'Nacional', FIE: 'Internacional', EFC: 'Europeo' };
 
@@ -79,10 +80,10 @@ export function BarraFiltrosRanking({
   const categoria = categoriaLegible(grupo.category);
 
   return (
-    <div className="flex min-w-0 flex-col gap-[10px]" data-barra-filtros="">
+    <div className="flex min-w-0 flex-col gap-3" data-barra-filtros="">
       {ranking && ranking.ambitos.length > 1 ? <ChipsAmbito /> : null}
 
-      <div className="flex min-w-0 items-center gap-[8px] sm:max-w-md">
+      <div className="flex min-w-0 items-center gap-2 sm:max-w-md">
         {onBuscar ? (
           <CampoBuscar valor={busqueda ?? ''} onCambio={onBuscar} etiqueta={etiquetaBusqueda} placeholder="Buscar" className="flex-1" />
         ) : null}
@@ -119,27 +120,31 @@ export function BarraFiltrosRanking({
   );
 }
 
-/** Qué ranking se enseña. El chip tocado se marca al momento, aunque su tabla tarde en llegar. */
+/**
+ * Qué ranking se enseña. La opción tocada se marca al momento, aunque su
+ * tabla tarde en llegar. El dedo o el foco sobre una opción adelanta su tabla:
+ * el segmentado no admite eventos por opción, así que se leen al subir hasta
+ * aquí y la opción se reconoce por `data-ambito`.
+ */
 function ChipsAmbito() {
   const ranking = useRanking();
   if (!ranking) return null;
   const marcado = ranking.pendiente ?? ranking.ambito;
+  const intencion = (e: React.SyntheticEvent) => {
+    const a = (e.target as Element).closest('button')?.querySelector<HTMLElement>('[data-ambito]')?.dataset.ambito;
+    if (a && (ranking.ambitos as readonly string[]).includes(a)) ranking.intencion(a as Ambito);
+  };
   return (
-    <FilaChips etiqueta="Qué ranking se enseña">
-      {ranking.ambitos.map((a) => (
-        <ChipFiltro
-          key={a}
-          marcado={a === marcado}
-          aria-busy={ranking.pendiente === a || undefined}
-          onClick={() => ranking.cambiarAmbito(a)}
-          onPointerEnter={() => ranking.intencion(a)}
-          onPointerDown={() => ranking.intencion(a)}
-          onFocus={() => ranking.intencion(a)}
-        >
-          {ROTULO_AMBITO[a]}
-        </ChipFiltro>
-      ))}
-    </FilaChips>
+    <div aria-busy={ranking.pendiente ? true : undefined} onPointerOver={intencion} onPointerDown={intencion} onFocus={intencion}>
+      <SelectorSegmentado
+        etiqueta="Qué ranking se enseña"
+        tamano="sm"
+        anchoMinimo={6}
+        valor={marcado}
+        onCambio={(v) => ranking.cambiarAmbito(v as Ambito)}
+        opciones={ranking.ambitos.map((a) => ({ valor: a, etiqueta: <span data-ambito={a}>{ROTULO_AMBITO[a]}</span> }))}
+      />
+    </div>
   );
 }
 
@@ -167,13 +172,13 @@ export function ContenidoHoja({
       <OpcionesFiltro
         titulo="Arma"
         valor={grupo.weapon}
-        opciones={armas.map((a) => ({ valor: a, etiqueta: WEAPON_LABEL[a] }))}
+        opciones={armas.map((a) => ({ valor: a, etiqueta: rotuloArma(a) }))}
         onCambio={(v) => onElegir({ weapon: v as RankingGroupKey['weapon'] })}
       />
       <OpcionesFiltro
         titulo="Género"
         valor={grupo.gender}
-        opciones={generos.map((g) => ({ valor: g, etiqueta: GENDER_LABEL[g] }))}
+        opciones={generos.map((g) => ({ valor: g, etiqueta: rotuloGenero(g) }))}
         onCambio={(v) => onElegir({ gender: v as RankingGroupKey['gender'] })}
       />
       <OpcionesFiltro
@@ -184,8 +189,8 @@ export function ContenidoHoja({
       />
       {chips ? (
         <fieldset className="flex min-w-0 flex-col">
-          <legend className="mb-[8px] text-[12px] font-medium text-muted-foreground">Mostrar</legend>
-          <div className={cn('flex min-w-0 flex-wrap gap-[8px]')}>{chips}</div>
+          <legend className="mb-2 text-xs font-medium text-muted-foreground">Mostrar</legend>
+          <div className="flex min-w-0 flex-wrap gap-2">{chips}</div>
         </fieldset>
       ) : null}
     </>

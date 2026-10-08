@@ -31,7 +31,7 @@ export function Donut({
   const cifra = pct(valor);
   return (
     <figure
-      className={cn('flex min-w-0 flex-col items-center gap-1.5 text-center', className)}
+      className={cn('flex min-w-0 flex-col items-center gap-2 text-center', className)}
       aria-label={cifra === null ? rotulo : `${rotulo}: ${cifra}%`}
     >
       <div className="relative" style={{ width: tamano, height: tamano }}>
@@ -51,15 +51,15 @@ export function Donut({
           ) : null}
         </svg>
         <span aria-hidden className="absolute inset-0 flex items-center justify-center">
-          <span className="cifra text-[1.75rem] leading-none">
+          <span className="cifra text-3xl leading-none">
             {cifra === null ? '–' : cifra}
             {cifra === null ? null : <span className="text-base">%</span>}
           </span>
         </span>
       </div>
       <figcaption className="flex flex-col leading-tight">
-        <span className="text-[12px] font-medium text-foreground">{rotulo}</span>
-        {detalle ? <span className="text-[12px] text-muted-foreground tabular-nums">{detalle}</span> : null}
+        <span className="text-xs font-medium text-foreground">{rotulo}</span>
+        {detalle ? <span className="text-xs text-muted-foreground tabular-nums">{detalle}</span> : null}
       </figcaption>
     </figure>
   );

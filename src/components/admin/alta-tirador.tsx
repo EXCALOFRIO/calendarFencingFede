@@ -114,7 +114,7 @@ export function AltaTiradorDesdeRanking({ aMano }: { aMano: () => void }) {
 
   return (
     <div className="flex min-w-0 flex-col gap-4 rounded-lg border bg-card p-4">
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-2">
         <Label htmlFor="alta-buscar">Nombre o apellidos</Label>
         <div className="flex gap-2">
           <div className="relative min-w-0 flex-1">
@@ -155,7 +155,7 @@ export function AltaTiradorDesdeRanking({ aMano }: { aMano: () => void }) {
 
       {error ? (
         <p className="medida flex items-start gap-2 text-sm text-destructive">
-          <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <TriangleAlert className="h-5 w-4 shrink-0" aria-hidden />
           <span>{error}</span>
         </p>
       ) : null}
@@ -182,12 +182,12 @@ export function AltaTiradorDesdeRanking({ aMano }: { aMano: () => void }) {
 
               {c.yaVinculado ? (
                 <p className="flex items-start gap-2 text-sm text-warn">
-                  <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  <TriangleAlert className="h-5 w-4 shrink-0" aria-hidden />
                   <span>Esta ficha ya está vinculada a una cuenta.</span>
                 </p>
               ) : c.sinLicencia ? (
                 <p className="flex items-start gap-2 text-sm text-muted-foreground">
-                  <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  <TriangleAlert className="h-5 w-4 shrink-0" aria-hidden />
                   <span>
                     La fuente no publica su licencia, y sin ella sus resultados no se
                     pueden emparejar. Hay que darlo de alta a mano.
@@ -221,7 +221,7 @@ export function AltaTiradorDesdeRanking({ aMano }: { aMano: () => void }) {
 
           <Datos candidato={elegido} />
 
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-2">
             <Label htmlFor="alta-correo-tirador">Correo</Label>
             <Input
               id="alta-correo-tirador"
@@ -298,7 +298,7 @@ function Datos({ candidato }: { candidato: Candidato }) {
   return (
     <dl className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
       {datos.map(([rotulo, valor]) => (
-        <div key={rotulo} className="flex min-w-0 items-baseline gap-1.5">
+        <div key={rotulo} className="flex min-w-0 items-baseline gap-2">
           <dt className="text-xs text-muted-foreground">{rotulo}</dt>
           <dd className="min-w-0">{valor}</dd>
         </div>

@@ -5,7 +5,7 @@ import { useSyncExternalStore } from 'react';
 /**
  * Pestaña de las rutas neutras (una persona, una edición, un país), que se
  * quedan en la pestaña desde la que se abrieron, como en Instagram: un perfil
- * abierto desde Buscar sigue en Buscar y la brújula no se lo queda.
+ * abierto desde el Ranking sigue en el Ranking y la brújula no se lo queda.
  *
  * - Al llegar a una ruta neutra con un enlace, hereda la pestaña de la
  *   pantalla anterior (`ultima`, la última confirmada).

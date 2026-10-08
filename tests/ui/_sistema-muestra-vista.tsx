@@ -203,7 +203,7 @@ export function Muestra({ hojaInicial }: { hojaInicial: boolean }) {
 
           <Seccion titulo="Barra inferior: sólida, material y con rótulos">
             <div className="flex flex-col gap-[12px]">
-              {(['solido', 'material'] as const).map((fondo) => (
+              {(['solido', 'cristal'] as const).map((fondo) => (
                 <div key={fondo} className="relative overflow-hidden rounded-[12px] border border-filete">
                   <div aria-hidden className="flex flex-col gap-[6px] p-[12px] text-[14px]">
                     <span className="h-[18px] w-3/4 rounded-[4px] bg-org-fie-relleno" />

@@ -1,5 +1,5 @@
-import { and, isNotNull, isNull, lt, sql } from 'drizzle-orm';
-import { enLista as inArray, fueraDeLista as notInArray, lotesDeInsercion } from '@/lib/sqlite';
+import { and, sql } from 'drizzle-orm';
+import { enLista as inArray, lotesDeInsercion } from '@/lib/sqlite';
 import { db } from '@/db';
 import { event, eventCompetition, eventLink } from '@/db/schema';
 import { claveCiudad } from './ciudades';
@@ -87,6 +87,8 @@ export type ResumenEnlaces = {
   /** Decisiones que ha tomado una persona y el automatismo respeta. */
   confirmadosAMano: number;
   rechazadosAMano: number;
+  /** Filas escritas o borradas en esta pasada (enlaces y `canonical_event_id`). 0 = nada cambió. */
+  escrituras: number;
 };
 
 type FilaEvento = {
@@ -175,9 +177,10 @@ function solapan(a: FilaEvento, b: FilaEvento): boolean {
 export async function recalcularEnlaces(): Promise<ResumenEnlaces> {
   const ahora = new Date();
 
-  const [eventos, pruebas, enlacesPrevios] = await Promise.all([
+  const [todosLosEventos, pruebas, enlacesPrevios] = await Promise.all([
     db
       .select({
+        disappearedAt: event.disappearedAt,
         id: event.id,
         source: event.source,
         name: event.name,
@@ -187,9 +190,9 @@ export async function recalcularEnlaces(): Promise<ResumenEnlaces> {
         endDate: event.endDate,
         imageUrl: event.imageUrl,
         cancelled: event.cancelled,
+        canonicalEventId: event.canonicalEventId,
       })
-      .from(event)
-      .where(isNull(event.disappearedAt)),
+      .from(event),
     db
       .select({
         eventId: eventCompetition.eventId,
@@ -201,12 +204,17 @@ export async function recalcularEnlaces(): Promise<ResumenEnlaces> {
       .from(eventCompetition),
     db
       .select({
+        id: eventLink.id,
         canonicalEventId: eventLink.canonicalEventId,
         linkedEventId: eventLink.linkedEventId,
         status: eventLink.status,
+        cityKey: eventLink.cityKey,
+        rule: eventLink.rule,
+        note: eventLink.note,
       })
       .from(eventLink),
   ]);
+  const eventos = todosLosEventos.filter((e) => e.disappearedAt === null);
 
   const pruebasPorEvento = new Map<string, Set<string>>();
   /** El mismo índice sin el formato. Ver `clavePruebaSinFormato`. */
@@ -384,7 +392,7 @@ export async function recalcularEnlaces(): Promise<ResumenEnlaces> {
     });
   }
 
-  await guardarEnlaces(pares, dudas, ahora);
+  const escrituras = await guardarEnlaces(pares, dudas, ahora, enlacesPrevios, todosLosEventos);
 
   const principalesConCartelHeredado = new Set(
     pares.filter((p) => p.aportaCartel).map((p) => p.canonicalEventId),
@@ -399,6 +407,7 @@ export async function recalcularEnlaces(): Promise<ResumenEnlaces> {
     dudas,
     confirmadosAMano,
     rechazadosAMano,
+    escrituras,
   };
 }
 
@@ -409,11 +418,31 @@ function trocear<T>(items: T[], tam: number): T[][] {
   return out;
 }
 
+type EnlaceGuardado = {
+  id: string;
+  canonicalEventId: string;
+  linkedEventId: string;
+  status: string;
+  cityKey: string | null;
+  rule: string | null;
+  note: string | null;
+};
+
+/**
+ * Escribe solo la diferencia con lo guardado y devuelve cuántas filas ha
+ * escrito o borrado. Antes cada pasada reescribía todos los enlaces
+ * automáticos con `updated_at = ahora` y luego borraba los que no se habían
+ * tocado; ahora un par que no cambia no se escribe, y lo que el emparejador
+ * ya no propone se borra por id. Lo decidido a mano (CONFIRMADO, RECHAZADO)
+ * no se toca nunca.
+ */
 async function guardarEnlaces(
   pares: ParEnlazado[],
   dudas: ParDudoso[],
   ahora: Date,
-): Promise<void> {
+  previos: readonly EnlaceGuardado[],
+  eventos: readonly { id: string; canonicalEventId: string | null }[],
+): Promise<number> {
   const filas = [
     ...pares.map((p) => ({
       canonicalEventId: p.canonicalEventId,
@@ -434,8 +463,10 @@ async function guardarEnlaces(
       updatedAt: ahora,
     })),
   ];
+  const { escribir, borrar, canonicos } = planificarEnlaces(filas, previos, pares, eventos);
+  let escrituras = 0;
 
-  for (const lote of lotesDeInsercion(filas, eventLink)) {
+  for (const lote of lotesDeInsercion(escribir, eventLink)) {
     await db
       .insert(eventLink)
       .values(lote)
@@ -454,6 +485,7 @@ async function guardarEnlaces(
           updatedAt: sql`excluded."updated_at"`,
         },
       });
+    escrituras += lote.length;
   }
 
   /**
@@ -461,27 +493,22 @@ async function guardarEnlaces(
    * torneo que cambia de sede en la fuente deja de estar unido solo, sin que
    * nadie tenga que acordarse de limpiarlo.
    */
-  await db
-    .delete(eventLink)
-    .where(
-      and(
-        inArray(eventLink.status, ['AUTOMATICO', 'DUDOSO']),
-        lt(eventLink.updatedAt, ahora),
-      ),
-    );
+  for (const lote of trocear(borrar, 200)) {
+    await db
+      .delete(eventLink)
+      .where(and(inArray(eventLink.id, lote), inArray(eventLink.status, ['AUTOMATICO', 'DUDOSO'])));
+    escrituras += lote.length;
+  }
 
   // --- Y ahora la columna denormalizada que consulta el calendario ---------
 
-  const idsEnlazados = pares.map((p) => p.linkedEventId);
-
   /**
-   * Un solo UPDATE con la lista de pares como tabla de valores. La
-   * alternativa (un UPDATE por evento) serían decenas de viajes de red a Neon
-   * dentro de una función que muere a los 300 s.
+   * Un solo UPDATE con la lista de cambios como tabla de valores, y solo de
+   * los eventos cuyo `canonical_event_id` cambia de verdad.
    */
-  for (const lote of trocear(pares, 45)) {
+  for (const lote of trocear(canonicos, 45)) {
     const valores = sql.join(
-      lote.map((p) => sql`(${p.linkedEventId}, ${p.canonicalEventId})`),
+      lote.map((c) => sql`(${c.id}, ${c.canon})`),
       sql`, `,
     );
     await db.execute(sql`
@@ -492,19 +519,43 @@ async function guardarEnlaces(
       where e.id = v.linked
         and e.canonical_event_id is distinct from v.canon
     `);
+    escrituras += lote.length;
   }
+  return escrituras;
+}
 
-  await db
-    .update(event)
-    .set({ canonicalEventId: null })
-    .where(
-      idsEnlazados.length > 0
-        ? and(
-            isNotNull(event.canonicalEventId),
-            notInArray(event.id, idsEnlazados),
-          )
-        : isNotNull(event.canonicalEventId),
+/**
+ * La diferencia entre lo calculado y lo guardado, pura. `canonicos` lleva
+ * `canon: null` para los eventos que dejan de estar absorbidos.
+ */
+export function planificarEnlaces<F extends Omit<EnlaceGuardado, 'id'>>(
+  filas: readonly F[],
+  previos: readonly EnlaceGuardado[],
+  pares: readonly Pick<ParEnlazado, 'canonicalEventId' | 'linkedEventId'>[],
+  eventos: readonly { id: string; canonicalEventId: string | null }[],
+): { escribir: F[]; borrar: string[]; canonicos: { id: string; canon: string | null }[] } {
+  const clave = (f: { canonicalEventId: string; linkedEventId: string }) => `${f.canonicalEventId}|${f.linkedEventId}`;
+  const guardados = new Map(previos.map((p) => [clave(p), p]));
+  const calculadas = new Set(filas.map(clave));
+  const escribir = filas.filter((f) => {
+    const previo = guardados.get(clave(f));
+    if (!previo) return true;
+    if (previo.status !== 'AUTOMATICO' && previo.status !== 'DUDOSO') return false;
+    return (
+      previo.status !== f.status ||
+      (previo.cityKey ?? null) !== (f.cityKey ?? null) ||
+      (previo.rule ?? null) !== (f.rule ?? null) ||
+      (previo.note ?? null) !== (f.note ?? null)
     );
+  });
+  const borrar = previos
+    .filter((p) => (p.status === 'AUTOMATICO' || p.status === 'DUDOSO') && !calculadas.has(clave(p)))
+    .map((p) => p.id);
+  const canonDe = new Map(pares.map((p) => [p.linkedEventId, p.canonicalEventId]));
+  const canonicos = eventos
+    .filter((e) => (canonDe.get(e.id) ?? null) !== (e.canonicalEventId ?? null))
+    .map((e) => ({ id: e.id, canon: canonDe.get(e.id) ?? null }));
+  return { escribir, borrar, canonicos };
 }
 
 /**

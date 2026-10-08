@@ -3,7 +3,9 @@ import type { HistorialVista } from '@/lib/sport/explorar/ficha-pantalla';
 import type { CriteriosFicha } from '@/lib/sport/explorar/ficha-url';
 import type { RivalesSeccion } from '@/lib/sport/explorar/perfil-diferido';
 import type { DatosPersonales, ExtrasPerfil } from '@/lib/sport/explorar/perfil-extra';
-import type { SeccionPerfil } from '@/lib/sport/explorar/perfil-secciones';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
+import { ANCLA_CURIOSIDADES, type SeccionPerfil } from '@/lib/sport/explorar/perfil-secciones';
+import { cn } from '@/lib/utils';
 import { bloquesRankingPerfil } from '@/lib/sport/explorar/ranking-ambitos';
 import type { BloqueRankingInternacional } from '@/lib/sport/explorar/ranking-internacional';
 import type { RelevosPerfil } from '@/lib/sport/explorar/relevos';
@@ -11,9 +13,9 @@ import type { Rendimiento } from '@/lib/sport/explorar/rendimiento';
 import type { FichaConPerfil } from '@/lib/sport/explorar/tipos-perfil';
 import type { EstadisticasRivales } from '@/lib/sport/explorar/tipos-social';
 import { CabeceraFicha, CifrasCarrera, HistorialFicha, PanelRendimiento, PestanaRanking, RankingCompacto } from '../ficha-deportiva';
+import { FUERA_DE_PANTALLA } from '../graficos/comun';
 import { SeccionRendimiento } from '../graficos/seccion-rendimiento';
 import { RelevosPerfilVista } from '../relevos';
-import { CompararPerfil } from './comparar-perfil';
 import { BalanceFasesRivales, CuriosidadesPerfil } from './curiosidades-perfil';
 import { PestanasPerfil, SoloEnSeccion } from './pestanas-perfil';
 import { RankingAmbitoPerfil } from './ranking-ambito';
@@ -30,17 +32,9 @@ import { SugeridosPerfil } from './sugeridos-perfil';
 
 const NIVEL = 'pagina' as const;
 
-/** Qué pestañas salen: Curiosidades sólo con asaltos importados, Ranking sólo con algún puesto. */
-export function seccionesDisponibles(ficha: FichaConPerfil, extras: ExtrasPerfil): SeccionPerfil[] {
-  const perfil = ficha.perfil;
-  const conAsaltos = Boolean(perfil?.asaltos && perfil.asaltos.total.asaltos > 0);
-  return [
-    'resultados',
-    'estadisticas',
-    'rivales',
-    ...(conAsaltos ? (['curiosidades'] as const) : []),
-    ...(bloquesRankingPerfil(extras).hay ? (['ranking'] as const) : []),
-  ];
+/** Qué pestañas salen: Ranking sólo con algún puesto. Las curiosidades van al final de Estadísticas. */
+export function seccionesDisponibles(_ficha: FichaConPerfil, extras: ExtrasPerfil): SeccionPerfil[] {
+  return ['resultados', 'estadisticas', 'rivales', ...(bloquesRankingPerfil(extras).hay ? (['ranking'] as const) : [])];
 }
 
 export function CabeceraPerfil({
@@ -75,9 +69,6 @@ export function CabeceraPerfil({
   );
 }
 
-function SinDatos({ children }: { children: React.ReactNode }) {
-  return <p role="status" className="py-4 text-sm text-muted-foreground">{children}</p>;
-}
 
 export function SeccionResultados({
   ficha,
@@ -101,21 +92,43 @@ export function SeccionResultados({
 
 /**
  * Sección Estadísticas: el rendimiento (la tarjeta de cifras la pone la
- * cabecera). Sólo si el rendimiento no se pudo leer hace falta la ficha, para
- * el desglose de siempre.
+ * cabecera) y, al final, las curiosidades de sus asaltos (`#curiosidades`).
+ * Sólo si el rendimiento no se pudo leer hace falta la ficha, para el
+ * desglose de siempre.
  */
 export function SeccionEstadisticas({
   rendimiento,
   ficha = null,
+  personaId,
+  curiosidades,
 }: {
   rendimiento: Rendimiento | null;
   ficha?: FichaConPerfil | null;
+  personaId?: string;
+  /** `undefined`: no se leyeron; `null`: la lectura falló. */
+  curiosidades?: EstadisticasRivales | null;
 }) {
-  if (rendimiento && rendimiento.vistas.todo.total.competiciones > 0) {
-    return <SeccionRendimiento datos={rendimiento} nivel={NIVEL} tituloOculto />;
-  }
-  if (ficha) return <PanelRendimiento ficha={ficha} rendimiento={null} rankingEnRendimiento={null} nivel={NIVEL} />;
-  return <SinDatos>Sin competiciones individuales.</SinDatos>;
+  const principal =
+    rendimiento && rendimiento.vistas.todo.total.competiciones > 0 ? (
+      <SeccionRendimiento datos={rendimiento} nivel={NIVEL} tituloOculto />
+    ) : ficha ? (
+      <PanelRendimiento ficha={ficha} rendimiento={null} rankingEnRendimiento={null} nivel={NIVEL} />
+    ) : (
+      <EstadoVacio titulo="Sin competiciones individuales" />
+    );
+  // Sin asaltos importados no hay curiosidades: el bloque no sale, sin estado vacío.
+  const bloque =
+    personaId && curiosidades !== undefined && (curiosidades === null || curiosidades.total.asaltos > 0) ? (
+      <section id={ANCLA_CURIOSIDADES} aria-label="Curiosidades" className={cn('flex min-w-0 scroll-mt-16 flex-col gap-8', FUERA_DE_PANTALLA)}>
+        <SeccionCuriosidades personaId={personaId} stats={curiosidades} />
+      </section>
+    ) : null;
+  return (
+    <>
+      {principal}
+      {bloque}
+    </>
+  );
 }
 
 /** Hay rendimiento que pintar; si no, la sección necesita la ficha. */
@@ -132,19 +145,21 @@ export function SeccionRivales({
   datos: RivalesSeccion;
   relevos: RelevosPerfil | null;
 }) {
+  // Buscar a cualquier rival ya está en «Cara a cara» de la cabecera: aquí sólo las listas, que van directas al duelo.
   return (
     <>
-      {datos.nombre ? <CompararPerfil personaId={personaId} nombre={datos.nombre} rapidos={[]} encabezado="h2" /> : null}
       <RivalesPorAmbitoVista personaId={personaId} datos={datos.enfrentados} nivel={NIVEL} />
       <SugeridosPerfil personaId={personaId} sugeridos={datos.sugeridos} nivel={NIVEL} />
-      <RelevosPerfilVista datos={relevos} personaId={personaId} nivel={NIVEL} />
+      <div className={cn('min-w-0', FUERA_DE_PANTALLA)}>
+        <RelevosPerfilVista datos={relevos} personaId={personaId} nivel={NIVEL} />
+      </div>
     </>
   );
 }
 
 export function SeccionCuriosidades({ personaId, stats }: { personaId: string; stats: EstadisticasRivales | null }) {
-  if (!stats) return <SinDatos>No se pudieron cargar. Inténtalo de nuevo.</SinDatos>;
-  if (stats.total.asaltos === 0) return <SinDatos>Sin asaltos importados.</SinDatos>;
+  if (!stats) return <EstadoVacio tipo="error" titulo="No se han podido cargar" descripcion="Inténtalo de nuevo en un momento." />;
+  if (stats.total.asaltos === 0) return <EstadoVacio titulo="Sin asaltos importados" />;
   return (
     <>
       <BalanceFasesRivales stats={stats} nivel={NIVEL} />

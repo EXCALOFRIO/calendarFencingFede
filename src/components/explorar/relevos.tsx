@@ -1,7 +1,10 @@
 import { ChevronDown } from 'lucide-react';
 import Link from 'next/link';
 import { Fragment } from 'react';
+import { textoVerMas } from '@/components/sistema/cabecera-seccion';
 import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
+import { Pastilla } from '@/components/sistema/pastilla';
+import { diaMadrid, fechaCorta } from '@/lib/fechas';
 import { rutaEdicion } from '@/lib/sport/explorar/edicion-url';
 import { categoriaVisible, nombrePrueba, nombrePruebaCorto } from '@/lib/sport/explorar/presentacion';
 import type { PruebaRelevosPerfil, RelevoCaraACara, RelevosCaraACara, RelevosPerfil } from '@/lib/sport/explorar/relevos';
@@ -16,16 +19,17 @@ import type { Nivel } from './piezas';
  */
 
 const ENLACE = 'focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset';
-const DIA = new Intl.DateTimeFormat('es-ES', { day: '2-digit', timeZone: 'UTC' });
-const MES = new Intl.DateTimeFormat('es-ES', { month: 'short', timeZone: 'UTC' });
-const ANIO = new Intl.DateTimeFormat('es-ES', { year: '2-digit', timeZone: 'UTC' });
-const FECHA_LARGA = new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 const VISIBLES = 8;
 
-function fechaDe(iso: string | null): Date | null {
-  if (!iso) return null;
-  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
-  return Number.isNaN(d.getTime()) ? null : d;
+/** El día civil de la fecha guardada, o vacío si no se lee. */
+function diaDe(iso: string | null): string {
+  return iso ? diaMadrid(iso.slice(0, 10)) : '';
+}
+
+/** Para el rótulo accesible de la fila: siempre con año. */
+function fechaEtiqueta(iso: string | null): string | null {
+  const dia = diaDe(iso);
+  return dia ? fechaCorta(dia, { anio: 'siempre' }) : null;
 }
 
 const visible = (nombre: string) => nombreVisible(nombre) || titular(nombre);
@@ -45,13 +49,13 @@ function urlPrueba(p: { edicionId: string; pruebaId: string }, personaId: string
   return `${rutaEdicion(p.edicionId)}?${new URLSearchParams({ prueba: p.pruebaId, persona: personaId }).toString()}`;
 }
 
+/** «18 jun»; de otro año, «18 jun 2017» (el año salta a la segunda línea). */
 function Fecha({ iso }: { iso: string | null }) {
-  const fecha = fechaDe(iso);
-  if (!fecha) return <span aria-hidden className="text-center text-xs text-muted-foreground">–</span>;
+  const dia = diaDe(iso);
+  if (!dia) return <span aria-hidden className="text-center text-xs text-muted-foreground">–</span>;
   return (
-    <time dateTime={iso!.slice(0, 10)} aria-hidden className="flex flex-col items-center leading-none">
-      <span className="cifra text-lg">{DIA.format(fecha)}</span>
-      <span className="text-[12px] text-muted-foreground">{MES.format(fecha).replace('.', '')} {ANIO.format(fecha)}</span>
+    <time dateTime={dia} aria-hidden className="text-center text-xs leading-tight text-muted-foreground">
+      {fechaCorta(dia)}
     </time>
   );
 }
@@ -85,11 +89,11 @@ function Lista<T>({ items, clave, fila }: { items: readonly T[]; clave: (x: T) =
         <details className="group min-w-0">
           <summary
             className={cn(
-              'flex min-h-[44px] cursor-pointer list-none items-center justify-center gap-1.5 border-t border-filete text-sm font-medium text-primary-text hover:bg-secondary [&::-webkit-details-marker]:hidden',
+              'flex min-h-[44px] cursor-pointer list-none items-center justify-center gap-2 border-t border-filete text-sm font-medium text-primary-text hover:bg-secondary [&::-webkit-details-marker]:hidden',
               ENLACE,
             )}
           >
-            <span className="group-open:hidden">Ver {items.length - VISIBLES} más</span>
+            <span className="group-open:hidden">{textoVerMas(items.length - VISIBLES)}</span>
             <span className="hidden group-open:inline">Ver menos</span>
             <ChevronDown className="size-4 transition-transform group-open:rotate-180" aria-hidden />
           </summary>
@@ -100,7 +104,7 @@ function Lista<T>({ items, clave, fila }: { items: readonly T[]; clave: (x: T) =
   );
 }
 
-const FILA = 'grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-2.5 sm:px-4';
+const FILA = 'grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-3 sm:px-4';
 
 /* --------------------------------------------------------------- cara a cara */
 
@@ -108,11 +112,10 @@ function FilaRelevo({ r, yo, nYo, nRival }: { r: RelevoCaraACara; yo: string; nY
   const datosNombre = { nombre: r.torneo, formato: 'EQUIPOS' as const, fuente: r.fuente };
   const nombre = nombrePrueba(datosNombre);
   const corto = nombrePruebaCorto(datosNombre);
-  const fecha = fechaDe(r.fecha);
   const ronda = rotuloRondaRelevo(r);
   const gana = r.mios > r.rival ? 'yo' : r.mios < r.rival ? 'rival' : null;
   const etiqueta = [
-    fecha ? FECHA_LARGA.format(fecha) : null,
+    fechaEtiqueta(r.fecha),
     nombre,
     `${ronda}, relevo ${r.numero}`,
     `${nYo} ${r.mios} tocados, ${nRival} ${r.rival}`,
@@ -122,10 +125,8 @@ function FilaRelevo({ r, yo, nYo, nRival }: { r: RelevoCaraACara; yo: string; nY
       <Fecha iso={r.fecha} />
       <span aria-hidden className="flex min-w-0 flex-col gap-1">
         <span className="truncate text-sm leading-tight font-medium" title={corto === nombre ? undefined : nombre}>{corto}</span>
-        <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="inline-flex h-[20px] shrink-0 items-center rounded-full border border-filete-alto px-2 text-[12px] text-foreground">
-            {ronda}
-          </span>
+        <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          <Pastilla tono="neutro">{ronda}</Pastilla>
           <span className="shrink-0">R{r.numero}</span>
           <span className="truncate">{categoriaVisible(r.categoria)}</span>
         </span>
@@ -158,7 +159,7 @@ export function RelevosCaraACaraVista({
   const { relevos, tocadosFavor, tocadosContra } = datos.resumen;
   return (
     <section aria-labelledby="h2h-relevos" className="flex min-w-0 flex-col gap-3">
-      <div className="flex flex-col gap-0.5">
+      <div className="flex flex-col gap-1">
         <h2 id="h2h-relevos" className="flex items-baseline gap-2 text-xl">
           Relevos
           <span className="cifra text-lg text-muted-foreground">{relevos}</span>
@@ -186,11 +187,10 @@ function FilaPrueba({ p, personaId, armaHabitual }: { p: PruebaRelevosPerfil; pe
   const datosNombre = { nombre: p.torneo, formato: 'EQUIPOS' as const, fuente: p.fuente };
   const nombre = nombrePrueba(datosNombre);
   const corto = nombrePruebaCorto(datosNombre);
-  const fecha = fechaDe(p.fecha);
   const detalle = [p.arma !== armaHabitual ? WEAPON_LABEL[p.arma] : null, categoriaVisible(p.categoria), p.equipo]
     .filter((x): x is string => Boolean(x));
   const etiqueta = [
-    fecha ? FECHA_LARGA.format(fecha) : null,
+    fechaEtiqueta(p.fecha),
     nombre,
     `${p.relevos} ${p.relevos === 1 ? 'relevo' : 'relevos'}`,
     `${p.dados} tocados dados, ${p.recibidos} recibidos`,
@@ -200,17 +200,17 @@ function FilaPrueba({ p, personaId, armaHabitual }: { p: PruebaRelevosPerfil; pe
       <Fecha iso={p.fecha} />
       <span aria-hidden className="flex min-w-0 flex-col gap-1">
         <span className="truncate text-sm leading-tight font-medium" title={corto === nombre ? undefined : nombre}>{corto}</span>
-        <span className="flex min-w-0 items-center gap-1.5 overflow-hidden text-xs whitespace-nowrap text-muted-foreground">
+        <span className="flex min-w-0 items-center gap-2 overflow-hidden text-xs whitespace-nowrap text-muted-foreground">
           {detalle.map((d, i) => (
             <span key={`${d}-${i}`} className={cn(i === detalle.length - 1 ? 'min-w-0 truncate' : 'shrink-0')}>{d}</span>
           ))}
         </span>
       </span>
-      <span aria-hidden className="flex flex-col items-end gap-0.5 leading-none">
+      <span aria-hidden className="flex flex-col items-end gap-1 leading-none">
         <span className="cifra text-lg">
           {p.dados}<span className="text-sm text-muted-foreground">–</span>{p.recibidos}
         </span>
-        <span className="text-[12px] text-muted-foreground">{p.relevos} rel.</span>
+        <span className="text-xs text-muted-foreground">{p.relevos} rel.</span>
       </span>
     </Fila>
   );
@@ -218,7 +218,7 @@ function FilaPrueba({ p, personaId, armaHabitual }: { p: PruebaRelevosPerfil; pe
 
 function Cifra({ etiqueta, valor, tono }: { etiqueta: string; valor: string; tono?: 'ok' | 'danger' }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5 bg-card px-3 py-2.5">
+    <div className="flex min-w-0 flex-col gap-1 bg-card px-3 py-3">
       <dt className="text-xs text-muted-foreground">{etiqueta}</dt>
       <dd className={cn('cifra text-2xl leading-none', tono === 'ok' && 'text-ok', tono === 'danger' && 'text-danger')}>{valor}</dd>
     </div>
@@ -249,7 +249,7 @@ export function RelevosPerfilVista({
   const Titulo = nivel === 'pagina' ? 'h2' : 'h3';
   return (
     <section aria-labelledby="perfil-relevos" className="flex min-w-0 flex-col gap-3">
-      <div className="flex flex-col gap-0.5">
+      <div className="flex flex-col gap-1">
         <Titulo id="perfil-relevos" className="text-xl">Relevos</Titulo>
         <p className="text-xs text-muted-foreground">
           {datos.pruebas.length === 1 ? '1 prueba' : `${datos.pruebas.length} pruebas`} por equipos

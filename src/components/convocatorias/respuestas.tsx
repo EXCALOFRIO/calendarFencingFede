@@ -31,7 +31,7 @@ export function Respuestas({
   const total = confirmados + pendientes + rechazados;
 
   return (
-    <div className={cn('flex min-w-0 flex-col gap-1.5', className)}>
+    <div className={cn('flex min-w-0 flex-col gap-2', className)}>
       {/*
         Tres columnas iguales, no tres cajas que se ajustan a su rótulo.
         Con `flex` normal, «sin contestar» es tres veces más ancho que «sí» y
@@ -56,7 +56,7 @@ export function Respuestas({
           aria-label={`${confirmados} confirmados, ${pendientes} sin contestar y ${rechazados} rechazados de ${total} convocados`}
         >
           <Tramo n={confirmados} total={total} clase="bg-ok" />
-          <Tramo n={pendientes} total={total} clase="bg-muted-foreground/45" />
+          <Tramo n={pendientes} total={total} clase="bg-off" />
           <Tramo n={rechazados} total={total} clase="bg-danger" />
         </div>
       )}

@@ -1,6 +1,7 @@
 import type { EventView } from '@/lib/queries/calendar';
 import { jerarquiaDeCircuito } from '@/lib/colores';
-import { capitalizar, organismoDe } from '@/lib/utils';
+import { nombreMes, rangoFechas } from '@/lib/fechas';
+import { organismoDe } from '@/lib/utils';
 
 /**
  * ===========================================================================
@@ -62,17 +63,6 @@ export function largoEnDias(r: RangoISO): number {
 export function indiceDeDiaSemana(isoDia: string): number {
   return (new Date(ms(isoDia)).getUTCDay() + 6) % 7;
 }
-
-export const LETRAS_SEMANA = ['L', 'M', 'X', 'J', 'V', 'S', 'D'] as const;
-export const NOMBRES_SEMANA = [
-  'LUN',
-  'MAR',
-  'MIÉ',
-  'JUE',
-  'VIE',
-  'SÁB',
-  'DOM',
-] as const;
 
 /**
  * EL RANGO HONESTO DE UN TORNEO: EL DE SUS PRUEBAS, NO EL DEL EVENTO.
@@ -314,7 +304,14 @@ export function huecoEntre(
   const dias = Math.round((ms(hasta) - ms(desde)) / DIA) + 1;
   if (dias < MINIMO_HUECO) return null;
 
-  return { dias, desde, hasta, texto: `${textoDeDuracion(dias)} libres` };
+  return { dias, desde, hasta, texto: textoDeHueco(dias) };
+}
+
+/** «1 semana libre», «2 semanas libres», «9 días libres»: el adjetivo concuerda. */
+export function textoDeHueco(dias: number): string {
+  const duracion = textoDeDuracion(dias);
+  const singular = duracion === '1 semana' || duracion === '1 día';
+  return `${duracion} ${singular ? 'libre' : 'libres'}`;
 }
 
 /** «2 semanas» / «9 días». Sin el «libres», que lo pone quien lo usa. */
@@ -324,7 +321,7 @@ export function textoDeDuracion(dias: number): string {
   if (semanas >= 1 && Math.abs(dias - semanas * 7) <= 1) {
     return semanas === 1 ? '1 semana' : `${semanas} semanas`;
   }
-  return `${dias} días`;
+  return dias === 1 ? '1 día' : `${dias} días`;
 }
 
 /**
@@ -355,71 +352,20 @@ export function itemsDelMes(bloques: Bloque[], anio: number, mes: number): ItemM
   return items;
 }
 
-/**
- * LA CÁPSULA DE FECHA, YA REDACTADA.
- *
- * Tres trozos y ninguno redundante: los días en grande («03 - 04»), el mes en
- * pequeño («OCT») y los días de la semana («SÁB - DOM»). Cuando el bloque
- * cruza de mes, el mes pasa a «OCT-NOV», porque «03 - 01 OCT» sería falso.
- */
-export function capsulaDeFecha(r: RangoISO): {
-  dias: string;
-  mes: string;
-  semana: string;
-} {
-  const d1 = r.desde.slice(8, 10);
-  const d2 = r.hasta.slice(8, 10);
-  const m1 = mesCorto(r.desde);
-  const m2 = mesCorto(r.hasta);
-  const s1 = NOMBRES_SEMANA[indiceDeDiaSemana(r.desde)];
-  const s2 = NOMBRES_SEMANA[indiceDeDiaSemana(r.hasta)];
-
-  if (r.desde === r.hasta) return { dias: d1, mes: m1, semana: s1 };
-  return {
-    dias: `${d1} - ${d2}`,
-    mes: m1 === m2 ? m1 : `${m1}-${m2}`,
-    semana: `${s1} - ${s2}`,
-  };
-}
-
-const MES_CORTO = new Intl.DateTimeFormat('es-ES', { month: 'short', timeZone: 'UTC' });
-
-/** «OCT». Sin el punto que Intl pone en algunos meses. */
-export function mesCorto(isoDia: string): string {
-  return MES_CORTO.format(new Date(ms(isoDia)))
-    .replace('.', '')
-    .toUpperCase();
-}
-
-/** «15 – 27 oct» para el texto de un divisor de hueco. */
-const DIA_MES = new Intl.DateTimeFormat('es-ES', {
-  day: 'numeric',
-  month: 'short',
-  timeZone: 'UTC',
-});
-
+/** «15–27 oct», «28 oct–3 nov»: el formato de rango de toda la aplicación. */
 export function rangoCorto(r: RangoISO): string {
-  const a = DIA_MES.format(new Date(ms(r.desde))).replace('.', '');
-  const b = DIA_MES.format(new Date(ms(r.hasta))).replace('.', '');
-  if (a === b) return a;
-  // Mismo mes: «15 – 27 oct» en vez de «15 oct – 27 oct».
-  const mesA = a.split(' ')[1];
-  const mesB = b.split(' ')[1];
-  return mesA === mesB ? `${a.split(' ')[0]} – ${b}` : `${a} – ${b}`;
+  return rangoFechas(r.desde, r.hasta, 'linea');
 }
 
-/** «Octubre 2026», capitalizado y sin el «de» que mete Intl. */
+/** `AAAA-MM-01` de un mes (0–11), sin pasar por la hora local. */
+export function primerDiaDeMes(anio: number, mes: number): string {
+  const d = new Date(Date.UTC(anio, mes, 1, 12));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
+}
+
+/** «Octubre 2026»; sin año, «Octubre». */
 export function nombreDeMes(anio: number, mes: number, conAnio = true): string {
-  const d = new Date(Date.UTC(anio, mes, 15, 12));
-  return capitalizar(
-    new Intl.DateTimeFormat('es-ES', {
-      month: 'long',
-      ...(conAnio ? { year: 'numeric' } : {}),
-      timeZone: 'UTC',
-    })
-      .format(d)
-      .replace(' de ', ' '),
-  );
+  return nombreMes(primerDiaDeMes(anio, mes), { anio: conAnio });
 }
 
 /*

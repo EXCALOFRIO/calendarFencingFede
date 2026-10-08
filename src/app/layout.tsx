@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Barlow_Condensed, Inter } from 'next/font/google';
 import { Instalable } from '@/components/instalable';
-import { Toaster } from '@/components/ui/sonner';
 import './globals.css';
 
 /**
@@ -17,10 +16,15 @@ import './globals.css';
  * Usar una sola familia dejaba la pantalla plana; usar la condensada para
  * todo la haría ilegible. El contraste entre las dos ES la jerarquía.
  */
+/*
+ * Solo 500 y 600: titulares y `.cifra` son 600; lo que hereda 400 o pide
+ * `font-medium` cae en 500. Nada pide 700 (y lo resolvería con 600 sin
+ * negrita sintética), así que era un fichero más precargado en cada página.
+ */
 const display = Barlow_Condensed({
   variable: '--font-display',
   subsets: ['latin'],
-  weight: ['500', '600', '700'],
+  weight: ['500', '600'],
   display: 'swap',
 });
 
@@ -50,7 +54,7 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   // `--background` (oklch(0.17 0.008 265)) en sRGB: la barra de estado del móvil, del mismo color que la cabecera.
-  themeColor: '#0e0f13',
+  themeColor: '#090A0F',
   width: 'device-width',
   initialScale: 1,
   // Se permite ampliar: bloquear el zoom es un problema de accesibilidad real.
@@ -65,20 +69,11 @@ export default function RootLayout({
     <html lang="es" className="dark">
       <body className={`${display.variable} ${cuerpo.variable} antialiased`}>
         {children}
-        {/*
-          Avisos. Van aquí, en la raíz, porque cualquier pantalla puede
-          necesitar confirmar una acción («Inscripción solicitada»,
-          «Convocatoria publicada») y sin este montaje `sonner` no pinta
-          nada: las pantallas tenían que resolverlo cada una a su manera y
-          el mismo hecho se comunicaba de tres formas distintas.
-
-          `richColors` está apagado a propósito: los colores los pone el
-          tema de la aplicación, y el rojo y el verde de la librería no son
-          los del semáforo de plazos.
-        */}
-        <Toaster position="bottom-center" closeButton />
-        {/* No pinta nada: registra el trabajador de servicio para que la
-            aplicación se pueda instalar en el móvil. */}
+        {/* Registra el trabajador de servicio e invita a instalar. Se queda
+            en la raíz para que valga también en /entrar: en iPhone la app
+            instalada no comparte cookies con Safari, así que instalar ANTES
+            de entrar ahorra repetir el acceso. Los avisos (`Toaster`) van en
+            el diseño de la aplicación, que es donde se usan. */}
         <Instalable />
       </body>
     </html>

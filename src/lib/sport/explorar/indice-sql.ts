@@ -110,7 +110,8 @@ export const SENTENCIAS_INDICE: readonly string[] = [
 
 /**
  * Lo que `scripts/indice-explorar.ts` reconstruye tras cada lote: el índice de
- * palabras y los agregados por país (0018, `pais-indice-sql.ts`). Las pruebas y
+ * palabras y los agregados por país (0018, con las victorias por fase y el
+ * cara a cara de selecciones de la 0021; `pais-indice-sql.ts`). Las pruebas y
  * ayudas que sólo tienen la 0004 siguen usando `SENTENCIAS_INDICE`.
  */
 export const SENTENCIAS_RECONSTRUCCION: readonly string[] = [...SENTENCIAS_INDICE, ...SENTENCIAS_PAISES];

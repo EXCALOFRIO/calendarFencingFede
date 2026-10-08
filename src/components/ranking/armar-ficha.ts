@@ -1,6 +1,7 @@
 import type { DatoFicha } from '@/components/tirador/cabecera';
 import type { FichaFie, PuestoMundialFie, PuestoOficial } from '@/lib/queries/ranking';
-import { CATEGORY_LABEL, WEAPON_LABEL, formatDateEs } from '@/lib/utils';
+import { frescura } from '@/lib/fechas';
+import { rotuloArma, rotuloCategoria } from '@/lib/sport/rotulos';
 import type { LadoRanking, VarianteRanking } from './ficha-ranking';
 import type { TemporadaRanking } from './tira-temporadas';
 import { puntos } from './formato';
@@ -29,9 +30,10 @@ import type { MejorMundial } from '@/lib/sport/explorar/ranking-nacional';
 
 /** «Florete absoluto». Sin el género: un tirador solo tiene uno. */
 function etiquetaVariante(weapon: string, category: string): string {
-  const arma = WEAPON_LABEL[weapon as keyof typeof WEAPON_LABEL] ?? weapon;
-  const cat = CATEGORY_LABEL[category as keyof typeof CATEGORY_LABEL] ?? category;
-  return `${arma} ${cat.toLowerCase()}`;
+  const arma = rotuloArma(weapon) || weapon;
+  const cat = nombreCategoria(category);
+  // «Florete absoluto», pero «Florete M17»: un código no se pasa a minúsculas.
+  return `${arma} ${/^\p{Lu}\p{Ll}/u.test(cat) ? cat.toLowerCase() : cat}`;
 }
 
 function clave(weapon: string, category: string): string {
@@ -39,7 +41,7 @@ function clave(weapon: string, category: string): string {
 }
 
 function nombreCategoria(category: string): string {
-  return CATEGORY_LABEL[category as keyof typeof CATEGORY_LABEL] ?? category;
+  return rotuloCategoria(category) || category;
 }
 
 /**
@@ -90,7 +92,7 @@ export function ladoNacional(
         valor: vigente.totalPoints === null ? null : puntos(vigente.totalPoints),
         destacado: true,
       },
-      { etiqueta: 'Arma', valor: WEAPON_LABEL[vigente.weapon] },
+      { etiqueta: 'Arma', valor: rotuloArma(vigente.weapon) },
       {
         etiqueta: 'Categoría',
         valor: nombreCategoria(vigente.category),
@@ -127,7 +129,7 @@ export function ladoNacional(
         temporadas.length > 1
           ? 'Una tarjeta por temporada de la clasificación oficial. La flecha compara con la anterior.'
           : `De la clasificación oficial solo está leída la temporada ${vigente.seasonLabel}, así que todavía no hay evolución que comparar. En cuanto entre otra, aparecerá aquí al lado.`,
-      procedencia: `Clasificación oficial de la RFEE, temporada ${vigente.seasonLabel}, leída el ${formatDateEs(vigente.actualizadoEl)}. No la calcula esta aplicación.`,
+      procedencia: `Clasificación oficial de la RFEE, temporada ${vigente.seasonLabel}. ${frescura(vigente.actualizadoEl)}. No la calcula esta aplicación.`,
       urlFuente: vigente.sourceUrl,
     });
   }
@@ -260,7 +262,7 @@ export function ladoMundial(ficha: FichaFie | null): LadoRanking {
           pie: mejor === null ? undefined : `en la temporada ${mejor.season}`,
           destacado: true,
         },
-        { etiqueta: 'Arma', valor: WEAPON_LABEL[vigente.weapon] },
+        { etiqueta: 'Arma', valor: rotuloArma(vigente.weapon) },
         {
           etiqueta: 'Categoría',
           valor: nombreCategoria(vigente.category),
@@ -291,7 +293,7 @@ export function ladoMundial(ficha: FichaFie | null): LadoRanking {
           temporadas.length > 1
             ? `${temporadas.length} temporadas publicadas por la FIE. La flecha compara con la anterior.`
             : 'La FIE solo publica una temporada de este tirador, así que todavía no hay evolución que comparar.',
-        procedencia: `Ranking internacional de la FIE, leído el ${formatDateEs(ficha.actualizadoEl)}. La foto y el puesto son suyos y se enlazan a su ficha; no se copian.`,
+        procedencia: `Ranking internacional de la FIE. ${frescura(ficha.actualizadoEl)}. La foto y el puesto son suyos y se enlazan a su ficha; no se copian.`,
         urlFuente: ficha.fichaUrl,
       });
     }

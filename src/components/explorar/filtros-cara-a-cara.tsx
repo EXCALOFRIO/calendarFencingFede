@@ -73,7 +73,7 @@ function PastillaFiltro({
         >
           <span
             className={cn(
-              'inline-flex h-[36px] w-full min-w-0 items-center justify-between gap-1.5 rounded-full border pr-2.5 pl-3.5 text-[13px] transition-colors',
+              'inline-flex h-[36px] w-full min-w-0 items-center justify-between gap-2 rounded-full border pr-3 pl-4 text-sm transition-colors',
               elegida ? 'border-transparent bg-foreground font-semibold text-background' : 'border-filete-alto bg-card font-medium text-foreground group-hover:bg-secondary',
             )}
           >
@@ -196,7 +196,7 @@ function BuscarRival({ personaId, criterios }: Props) {
           autoComplete="off"
           enterKeyHint="search"
           placeholder="Rival"
-          className="h-[40px] rounded-full pl-9 text-[16px] md:text-[16px]"
+          className="h-[40px] rounded-full pl-9 text-base md:text-base"
           aria-invalid={corta}
           aria-describedby={corta ? 'h2h-q-ayuda' : undefined}
           onChange={(e) => setQ(e.target.value)}

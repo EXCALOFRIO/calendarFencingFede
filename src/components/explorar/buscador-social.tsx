@@ -17,11 +17,13 @@ import {
 import { consultaSugerencias, MAX_SUGERENCIAS_SOCIAL } from '@/lib/sport/explorar/sugerencias-modelo';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { cn } from '@/lib/utils';
+import { CabeceraSeccion } from '@/components/sistema/cabecera-seccion';
 import {
   BotonQuitarReciente,
   CLASE_LISTA_PERFILES,
-  EncabezadoSeccion,
   FilaPerfil,
+  SELECTOR_FILA_PERFIL,
+  enlaceDeFila,
 } from './buscador-social-fila';
 import { BotonSeguirCompacto } from './buscador-social-seguir';
 import { FilaPais } from './buscador-paises';
@@ -83,9 +85,9 @@ export function useRecientes(profileId: string | undefined) {
 /** Recorre con flechas los enlaces de perfil de `lista`; arriba del primero vuelve al campo. */
 function moverFoco(lista: HTMLElement | null, entrada: HTMLInputElement | null, tecla: string, desde: Element | null) {
   if (!lista) return false;
-  const enlaces = [...lista.querySelectorAll<HTMLElement>('[data-fila-perfil]')];
+  const enlaces = [...lista.querySelectorAll(SELECTOR_FILA_PERFIL)].map(enlaceDeFila).filter((a): a is HTMLAnchorElement => a !== null);
   if (enlaces.length === 0) return false;
-  const i = desde ? enlaces.indexOf(desde as HTMLElement) : -1;
+  const i = desde ? enlaces.indexOf(desde as HTMLAnchorElement) : -1;
   if (tecla === 'ArrowDown') {
     enlaces[Math.min(i + 1, enlaces.length - 1)]?.focus();
     return true;
@@ -136,6 +138,7 @@ export function BuscadorSocial({
   herramientas,
   avisoFiltros = false,
   pendiente = false,
+  conRecientes = true,
   children,
 }: {
   valor: string;
@@ -145,11 +148,13 @@ export function BuscadorSocial({
   /** Dirección de la búsqueda completa a la que vuelve la ficha abierta desde aquí. */
   volverDe: (q: string) => string;
   profileId?: string;
-  /** Botones bajo la barra (filtros). */
+  /** Lo que va bajo la barra: el selector de ámbitos y los filtros. */
   herramientas?: React.ReactNode;
   /** Hay filtros que la lista en vivo no aplica. */
   avisoFiltros?: boolean;
   pendiente?: boolean;
+  /** `false` en «Para ti»: sin texto, el contenido es el de la página, sin Recientes encima. */
+  conRecientes?: boolean;
   children?: React.ReactNode;
 }) {
   const entrada = React.useRef<HTMLInputElement>(null);
@@ -186,26 +191,31 @@ export function BuscadorSocial({
     : items.length ? `${items.length} ${items.length === 1 ? 'perfil' : 'perfiles'}. Flecha abajo para recorrerlos.`
     : '';
 
+  // Sólo el enlace de la ficha: tocar «Seguir» o la burbuja olímpica de la fila no la apunta en Recientes.
+  const enlaceTocado = (objetivo: EventTarget) => {
+    const enlace = (objetivo as HTMLElement).closest?.('a[href]');
+    const fila = enlace?.closest<HTMLElement>(SELECTOR_FILA_PERFIL);
+    return fila && enlaceDeFila(fila) === enlace ? { enlace, fila } : null;
+  };
   // Delegado en el contenedor: también cuenta las filas que pinta el servidor (sugerencias para seguir).
   const clicLista = (e: React.MouseEvent<HTMLDivElement>) => {
-    const fila = (e.target as HTMLElement).closest?.<HTMLElement>('[data-fila-perfil]');
+    const fila = enlaceTocado(e.target)?.fila;
     const id = fila?.dataset.persona;
     if (!fila || !id) return;
     anadir({ id, nombre: fila.dataset.nombre ?? '', pais: fila.dataset.pais || null });
   };
   // En el contenedor y no en cada fila: también recorre las filas que pinta el servidor.
   const teclaLista = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    const fila = (e.target as HTMLElement).closest?.('[data-fila-perfil]');
-    if (!fila) return;
+    const tocado = enlaceTocado(e.target);
+    if (!tocado) return;
     if (e.key === 'Escape') { e.preventDefault(); entrada.current?.focus(); return; }
-    if (moverFoco(lista.current, entrada.current, e.key, fila)) e.preventDefault();
+    if (moverFoco(lista.current, entrada.current, e.key, tocado.enlace)) e.preventDefault();
   };
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="relative w-full lg:max-w-2xl">
         <label htmlFor="explorar-q" className="sr-only">Buscar tiradores</label>
-        {/* Medidas en px: con la raíz de 18 px del móvil, `h-12` dibujaba una barra de 54. */}
         {cargando || pendiente ? (
           <LoaderCircle className="pointer-events-none absolute top-1/2 left-3 size-[18px] -translate-y-1/2 animate-spin text-muted-foreground motion-reduce:animate-none" aria-hidden />
         ) : (
@@ -225,7 +235,7 @@ export function BuscadorSocial({
           placeholder="Buscar tiradores"
           aria-controls="explorar-perfiles"
           aria-describedby="explorar-q-estado"
-          className="h-[40px] min-h-[40px] w-full rounded-xl border border-transparent bg-secondary pr-[40px] pl-[38px] text-[16px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring [&::-webkit-search-cancel-button]:appearance-none"
+          className="h-[40px] min-h-[40px] w-full rounded-xl border border-transparent bg-secondary pr-10 pl-10 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring [&::-webkit-search-cancel-button]:appearance-none"
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.nativeEvent.isComposing) return;
@@ -253,16 +263,16 @@ export function BuscadorSocial({
 
       <div ref={lista} id="explorar-perfiles" className="min-w-0" onKeyDown={teclaLista} onClick={clicLista}>
         {vivo && paises.length > 0 ? (
-          <section aria-labelledby="explorar-paises-vivo" className="mb-2 flex min-w-0 flex-col gap-1 lg:max-w-2xl">
-            <EncabezadoSeccion id="explorar-paises-vivo" titulo="Países" />
+          <section aria-labelledby="explorar-paises-vivo" className="mb-2 flex min-w-0 flex-col lg:max-w-2xl">
+            <CabeceraSeccion id="explorar-paises-vivo" titulo="Países" />
             <ul className="flex min-w-0 flex-col">
-              {paises.map((p) => <FilaPais key={p.codigo} pais={p} className="px-0.5 sm:px-3" />)}
+              {paises.map((p) => <FilaPais key={p.codigo} pais={p} />)}
             </ul>
           </section>
         ) : null}
         {vivo ? (
-          <section aria-label={`Perfiles para «${vivo}»`} className="flex min-w-0 flex-col gap-1 lg:max-w-2xl">
-            {paises.length > 0 ? <EncabezadoSeccion id="explorar-tiradores-vivo" titulo="Tiradores" /> : null}
+          <section aria-label={`Perfiles para «${vivo}»`} className="flex min-w-0 flex-col lg:max-w-2xl">
+            {paises.length > 0 ? <CabeceraSeccion id="explorar-tiradores-vivo" titulo="Tiradores" /> : null}
             {items.length > 0 ? (
               <ul className={cn(CLASE_LISTA_PERFILES, cargando && 'opacity-80')}>
                 {items.map((p) => (
@@ -282,34 +292,38 @@ export function BuscadorSocial({
                 ))}
               </ul>
             ) : resultado.estado === 'ok' || resultado.estado === 'error' ? (
-              <p className="px-0.5 py-3 text-sm text-muted-foreground sm:px-3">{mensaje}</p>
+              <p className="py-3 text-sm text-muted-foreground">{mensaje}</p>
             ) : null}
             <button
               type="submit"
-              className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl px-0.5 text-left text-[14px] font-medium text-primary-text outline-none hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring sm:px-3"
+              className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl text-left text-sm font-medium text-primary-text outline-none hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring"
             >
               <span>Ver todos los resultados de «{vivo}»</span>
               <ArrowRight className="size-[16px] shrink-0" aria-hidden />
             </button>
             {avisoFiltros ? (
-              <p className="px-3 text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Estos perfiles son sólo por nombre: los filtros se aplican al ver todos los resultados.
               </p>
             ) : null}
           </section>
         ) : (
           <div className="flex min-w-0 flex-col gap-3">
-            {valor.trim() === '' && recientes.length > 0 ? (
-              <section aria-labelledby="explorar-recientes" className="flex min-w-0 flex-col gap-1 lg:max-w-2xl">
-                <EncabezadoSeccion id="explorar-recientes" titulo="Recientes">
-                  <button
-                    type="button"
-                    className="flex h-[44px] items-center px-1 text-[13px] font-semibold text-primary-text outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring"
-                    onClick={borrar}
-                  >
-                    Borrar todo
-                  </button>
-                </EncabezadoSeccion>
+            {conRecientes && valor.trim() === '' && recientes.length > 0 ? (
+              <section aria-labelledby="explorar-recientes" className="flex min-w-0 flex-col lg:max-w-2xl">
+                <CabeceraSeccion
+                  id="explorar-recientes"
+                  titulo="Recientes"
+                  accion={(
+                    <button
+                      type="button"
+                      className="flex h-11 items-center px-1 text-sm font-semibold text-primary-text outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring"
+                      onClick={borrar}
+                    >
+                      Borrar todo
+                    </button>
+                  )}
+                />
                 <ul className={CLASE_LISTA_PERFILES} aria-labelledby="explorar-recientes">
                   {recientes.map((p) => (
                     <FilaPerfil

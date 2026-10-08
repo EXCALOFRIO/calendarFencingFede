@@ -85,11 +85,21 @@ export const MAX_ENVIOS_POR_PASADA = 500;
 
 type Envio = { suscripcion: Suscripcion; mensaje: MensajePush };
 
+/** Ids por sentencia al apuntar el resultado de los envíos (un solo parámetro JSON). */
+export const IDS_POR_SENTENCIA = 200;
+
 /**
- * Envía un mensaje a cada suscripción y limpia: 404/410 se borra en el acto,
- * un rechazo suma un fallo y a los `MAX_FALLOS` también se borra. Un error de
- * red o un 5xx no toca nada. Los mensajes de una misma suscripción van en
- * serie; suscripciones distintas, hasta `CONCURRENCIA_PUSH` a la vez.
+ * Envía un mensaje a cada suscripción y limpia: 404/410 se borra, un rechazo
+ * suma un fallo y a los `MAX_FALLOS` también se borra. Un error de red o un
+ * 5xx no toca nada. Los mensajes de una misma suscripción van en serie;
+ * suscripciones distintas, hasta `CONCURRENCIA_PUSH` a la vez.
+ *
+ * El resultado se apunta en la base AL FINAL y en lote: un UPDATE y un DELETE
+ * por cada `IDS_POR_SENTENCIA` suscripciones, no una sentencia por envío. Con
+ * 500 envíos eran ≥500 consultas de las 1.000 que admite una invocación del
+ * Worker; ahora son 2–6. Los fallos se cuentan en memoria partiendo de
+ * `Suscripcion.fallos`, así que una cola sigue parándose en el envío que
+ * alcanza `MAX_FALLOS`, igual que antes.
  */
 export async function enviarASuscripciones(
   db: DbAvisos,
@@ -107,23 +117,30 @@ export async function enviarASuscripciones(
   for (const e of aceptados) porSuscripcion.set(e.suscripcion.id, [...(porSuscripcion.get(e.suscripcion.id) ?? []), e]);
   const colas = [...porSuscripcion.values()];
 
+  /** Lo que hay que apuntar de cada suscripción tocada. */
+  type Apunte = { enviada: boolean; rechazosTrasEnvio: number; borrar: boolean };
+  const apuntes = new Map<string, Apunte>();
+
   async function enviarCola(cola: Envio[]): Promise<void> {
+    let fallos = cola[0]?.suscripcion.fallos ?? 0;
     for (const { suscripcion, mensaje } of cola) {
+      const apunte = apuntes.get(suscripcion.id) ?? { enviada: false, rechazosTrasEnvio: 0, borrar: false };
+      apuntes.set(suscripcion.id, apunte);
       const r: ResultadoEnvio = await enviarPush(suscripcion, mensaje, vapid, { fetch: opciones.fetch, ahora });
       if (r.estado === 'enviada') {
         resumen.enviadas++;
-        await db.execute(sql`UPDATE notificacion_suscripcion SET ultimo_envio_en = ${ahora.getTime()}, fallos = 0 WHERE id = ${suscripcion.id}`);
+        apunte.enviada = true;
+        apunte.rechazosTrasEnvio = 0;
+        fallos = 0;
       } else if (r.estado === 'caducada') {
-        await db.execute(sql`DELETE FROM notificacion_suscripcion WHERE id = ${suscripcion.id}`);
-        resumen.caducadasBorradas++;
+        apunte.borrar = true;
         return;
       } else if (r.estado === 'rechazada') {
         resumen.rechazadas++;
-        const [fila] = await filasDe<{ fallos: number }>(db, sql`
-          UPDATE notificacion_suscripcion SET fallos = fallos + 1 WHERE id = ${suscripcion.id} RETURNING fallos`);
-        if (fila && Number(fila.fallos) >= MAX_FALLOS) {
-          await db.execute(sql`DELETE FROM notificacion_suscripcion WHERE id = ${suscripcion.id}`);
-          resumen.caducadasBorradas++;
+        apunte.rechazosTrasEnvio++;
+        fallos++;
+        if (fallos >= MAX_FALLOS) {
+          apunte.borrar = true;
           return;
         }
       } else {
@@ -137,5 +154,29 @@ export async function enviarASuscripciones(
     while (siguiente < colas.length) await enviarCola(colas[siguiente++]);
   });
   await Promise.all(trabajadores);
+
+  const aBorrar = [...apuntes].filter(([, a]) => a.borrar).map(([id]) => id);
+  const aActualizar = [...apuntes]
+    .filter(([, a]) => !a.borrar && (a.enviada || a.rechazosTrasEnvio > 0))
+    .map(([id, a]) => ({ id, enviada: a.enviada ? 1 : 0, n: a.rechazosTrasEnvio }));
+  for (let i = 0; i < aActualizar.length; i += IDS_POR_SENTENCIA) {
+    // Tras un envío correcto los fallos son los rechazos posteriores; sin envío, se suman a los guardados.
+    await db.execute(sql`
+      WITH v AS (
+        SELECT json_extract(value, '$.id') AS id, json_extract(value, '$.enviada') AS enviada, json_extract(value, '$.n') AS n
+          FROM json_each(${JSON.stringify(aActualizar.slice(i, i + IDS_POR_SENTENCIA))})
+      )
+      UPDATE notificacion_suscripcion
+         SET fallos = CASE WHEN v.enviada = 1 THEN v.n ELSE notificacion_suscripcion.fallos + v.n END,
+             ultimo_envio_en = CASE WHEN v.enviada = 1 THEN ${ahora.getTime()} ELSE notificacion_suscripcion.ultimo_envio_en END
+        FROM v
+       WHERE notificacion_suscripcion.id = v.id`);
+  }
+  for (let i = 0; i < aBorrar.length; i += IDS_POR_SENTENCIA) {
+    await db.execute(sql`
+      DELETE FROM notificacion_suscripcion
+       WHERE id IN (SELECT value FROM json_each(${jsonLista(aBorrar.slice(i, i + IDS_POR_SENTENCIA))}))`);
+  }
+  resumen.caducadasBorradas = aBorrar.length;
   return resumen;
 }

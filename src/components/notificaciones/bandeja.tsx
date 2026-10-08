@@ -4,6 +4,7 @@ import type * as React from 'react';
 import type { FilaBandeja, GrupoBandeja, SeccionBandeja } from '@/lib/notificaciones/bandeja';
 import { puestoTexto, tiempoRelativo } from '@/lib/notificaciones/textos';
 import { ETIQUETA_TIPO, type TipoNotificacion } from '@/lib/notificaciones/tipos';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import { cn } from '@/lib/utils';
 import { CAJA_TACTIL, clasesCirculo, clasesPastilla } from './control';
 
@@ -24,7 +25,7 @@ const MAX_PERSONAS = 3;
 function Icono({ tipo }: { tipo: TipoNotificacion }) {
   const Componente = ICONO[tipo] ?? Bell;
   return (
-    <span className="flex size-[36px] shrink-0 items-center justify-center rounded-full bg-secondary text-foreground">
+    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary text-foreground">
       <Componente aria-hidden className="size-[18px]" />
       <span className="sr-only">{ETIQUETA_TIPO[tipo]}: </span>
     </span>
@@ -42,7 +43,7 @@ function Personas({ fila }: { fila: FilaBandeja }) {
   const vistas = lineas.slice(0, MAX_PERSONAS);
   const resto = lineas.length - vistas.length;
   return (
-    <span className="flex flex-wrap gap-x-[8px] text-[13px] leading-[16px] text-muted-foreground">
+    <span className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
       {vistas.map((l, i) => (
         // Nombre y puesto como piezas separadas: un nombre que envuelve no monta sobre su puesto.
         <span key={`${l.nombre}-${i}`} className="flex min-w-0 flex-wrap items-baseline gap-x-1 break-words">
@@ -85,24 +86,30 @@ function Grupo({ grupo, ahora, abrir }: { grupo: GrupoBandeja; ahora: number; ab
         <button
           type="submit"
           data-leida={nueva ? 'no' : 'si'}
-          className="flex min-h-[56px] w-full min-w-0 items-start gap-[12px] rounded-[12px] px-[8px] py-[10px] text-left transition-colors duration-150 outline-none [-webkit-tap-highlight-color:transparent] hover:bg-card focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+          className="flex min-h-[56px] w-full min-w-0 items-start gap-3 rounded-xl px-2 py-3 text-left transition-colors duration-150 outline-none [-webkit-tap-highlight-color:transparent] hover:bg-card focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
         >
           {/* Lo primero que se oye; el punto rojo, al final, es sólo para la vista. */}
           {nueva ? <span className="sr-only">Sin leer. </span> : null}
           <Icono tipo={fila.tipo} />
-          <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
-            <span className={cn('text-[14px] leading-[20px] break-words text-foreground', nueva ? 'font-semibold' : 'font-normal')}>
+          <span className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className={cn('text-sm break-words text-foreground', nueva ? 'font-semibold' : 'font-normal')}>
               {fila.titulo}
             </span>
-            {cuerpo ? <span className="line-clamp-2 text-[13px] leading-[16px] break-words text-muted-foreground">{cuerpo}</span> : null}
+            {cuerpo ? <span className="line-clamp-2 text-xs break-words text-muted-foreground">{cuerpo}</span> : null}
             <Personas fila={fila} />
-            <span className="text-[12px] leading-[16px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               <time dateTime={new Date(fila.actualizadaEn).toISOString()}>{tiempoRelativo(fila.actualizadaEn, ahora)}</time>
-              {total > 1 ? ` · ${total} avisos` : null}
+              {total > 1 ? (
+                <>
+                  <span aria-hidden> · </span>
+                  <span className="sr-only">, </span>
+                  {total} avisos
+                </>
+              ) : null}
             </span>
           </span>
           {nueva ? (
-            <span aria-hidden className="mt-[6px] size-[8px] shrink-0 rounded-full bg-primary" />
+            <span aria-hidden className="mt-2 size-2 shrink-0 rounded-full bg-primary" />
           ) : null}
         </button>
       </form>
@@ -116,7 +123,7 @@ function Grupo({ grupo, ahora, abrir }: { grupo: GrupoBandeja; ahora: number; ab
  */
 export function AccionesNotificaciones({ hayNoLeidas, marcarTodas }: { hayNoLeidas: boolean; marcarTodas: AccionFormulario }) {
   return (
-    <div className="flex items-center justify-end gap-[4px]">
+    <div className="flex items-center justify-end gap-1">
       {hayNoLeidas ? (
         <form action={marcarTodas}>
           <button type="submit" className={CAJA_TACTIL}>
@@ -154,27 +161,24 @@ export function BandejaNotificaciones({
 }) {
   if (secciones.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-[12px] py-[48px] text-center">
-        <span className="flex size-[48px] items-center justify-center rounded-full bg-secondary">
-          <BellOff aria-hidden className="size-[20px] text-muted-foreground" />
-        </span>
-        <div className="flex flex-col gap-[4px]">
-          <p className="text-[16px] leading-[20px] font-semibold">{sinMigracion ? 'Avisos sin activar' : 'Sin avisos'}</p>
-          <p className="text-[14px] leading-[20px] text-muted-foreground">
-            {sinMigracion ? 'El servidor aún no tiene las notificaciones.' : 'Aquí verás resultados, ranking y plazos.'}
-          </p>
-        </div>
-        <Link href="/ajustes/notificaciones" className={CAJA_TACTIL}>
-          <span className={clasesPastilla('secundario')}>Elegir avisos</span>
-        </Link>
-      </div>
+      <EstadoVacio
+        icono={BellOff}
+        className="py-12"
+        titulo={sinMigracion ? 'Avisos sin activar' : 'Sin avisos'}
+        descripcion={sinMigracion ? 'El servidor aún no tiene las notificaciones.' : 'Aquí verás resultados, ranking y plazos.'}
+        accion={
+          <Link href="/ajustes/notificaciones" className={CAJA_TACTIL}>
+            <span className={clasesPastilla('secundario')}>Elegir avisos</span>
+          </Link>
+        }
+      />
     );
   }
   return (
-    <div className="flex flex-col gap-[16px]">
+    <div className="flex flex-col gap-4">
       {secciones.map((s) => (
         <section key={s.titulo} aria-labelledby={idSeccion(s.titulo)} className="min-w-0">
-          <h2 id={idSeccion(s.titulo)} className="px-[8px] pb-[4px] font-sans text-[13px] leading-[16px] font-semibold tracking-normal text-muted-foreground">
+          <h2 id={idSeccion(s.titulo)} className="px-2 pb-1 font-sans text-sm font-semibold tracking-normal text-muted-foreground">
             {s.titulo}
           </h2>
           <ul className="flex flex-col">

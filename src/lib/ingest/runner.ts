@@ -11,7 +11,7 @@ import {
   officialDocument,
 } from '@/db/schema';
 import { recalcularVigencia } from '../documentos/recalcular';
-import { tocaClasificacionFie, tocaPorPeriodo, tocaRefrescar } from '../cron/niveles';
+import { hayQueMarcarListaVista, tocaClasificacionFie, tocaPorPeriodo, tocaRefrescar } from '../cron/niveles';
 import { anotarLecturas, ultimasLecturas } from '../cron/refresco';
 import { tocaLeerRanking } from './cadencia-ranking';
 import { consultaUltimaLecturaRanking } from './cadencia-ranking-db';
@@ -45,9 +45,22 @@ import { ingestRankingRfee } from './sources/ranking-rfee';
 import { documentosQueCambian, fetchOfficialDocuments } from './sources/rfee-wp';
 import { parseSkermoCalendar, skermoCalendarUrl } from './sources/skermo';
 import { ingestSkermoResults } from './sources/skermo-results';
-import { markMissingEvents, upsertEvents, upsertListasDeInscritos } from './upsert';
+import {
+  cambiosVisibles,
+  markMissingEvents,
+  renovarVistosSinCambios,
+  upsertEvents,
+  upsertListasDeInscritos,
+} from './upsert';
+import {
+  guardarHuellas,
+  huellaEntera,
+  leerHuellas,
+  puedeSaltarPagina,
+  type HuellaGuardada,
+} from '../cron/huellas';
 import { validateEvents } from './types';
-import { storeIngestSnapshot } from '../storage';
+import { storeIngestSnapshot, type StoredFile } from '../storage';
 
 export const INGEST_SOURCES = [
   'skermo_rfee',
@@ -60,6 +73,23 @@ export const INGEST_SOURCES = [
 ] as const;
 
 export type IngestSource = (typeof INGEST_SOURCES)[number];
+
+/**
+ * Fuentes cuyo calendario entra en el emparejado FIE↔Skermo, y la última de la
+ * cadena nocturna (`TAREAS_CRON`: skermo_rfee 03:00, fie 03:30, efc 04:00,
+ * skermo_regional 04:30). Por cron se recalcula una sola vez, tras la última;
+ * a mano, tras cada fuente.
+ */
+const FUENTES_DE_CALENDARIO: readonly IngestSource[] = ['skermo_rfee', 'fie', 'efc', 'skermo_regional'];
+export const CIERRE_CALENDARIO_NOCTURNO: IngestSource = 'skermo_regional';
+
+export function tocaEmparejar(source: IngestSource, triggeredBy: string): boolean {
+  if (!FUENTES_DE_CALENDARIO.includes(source)) return false;
+  return triggeredBy !== 'cron' || source === CIERRE_CALENDARIO_NOCTURNO;
+}
+
+/** Sube cuando cambia lo que se deriva de una página de Skermo (parseo, mapeos, guardado): invalida las huellas. */
+export const VERSION_LECTURA_SKERMO = 1;
 
 export function isIngestSource(value: string): value is IngestSource {
   return (INGEST_SOURCES as readonly string[]).includes(value);
@@ -165,54 +195,59 @@ export async function runIngest(
     sinCambios: false,
   };
 
+  const triggeredBy = options.triggeredBy ?? 'cron';
+  const snapshot: { actual: SnapshotAnotado | null } = { actual: null };
   try {
-    const result = await dispatch(source, run.id, options.forzar ?? false);
+    const result = await dispatch(source, run.id, options.forzar ?? false, (s) => {
+      snapshot.actual = s;
+    });
     Object.assign(base, result);
-
-    /**
-     * DUPLICADOS ENTRE FUENTES. El mismo torneo internacional entra dos veces,
-     * una por Skermo y otra por la FIE, con nombres distintos. Después de
-     * tocar el calendario se recalcula qué pares son el mismo torneo, para que
-     * se pinte una sola tarjeta y el evento de Skermo herede el cartel de la
-     * FIE.
-     *
-     * Se recalcula ENTERO en cada pasada, no incrementalmente: así una sede
-     * corregida en la fuente deshace el enlace sola, y volver a lanzar la
-     * ingestión no cambia nada. Cuesta tres lecturas en lote.
-     *
-     * Si falla, la ingestión NO falla: el calendario con duplicados sigue
-     * siendo un calendario correcto; se anota y ya está.
-     */
-    if (
-      source !== 'rfee_wp' &&
-      source !== 'skermo_ranking' &&
-      source !== 'fie_tiradores'
-    ) {
-      try {
-        const enlaces = await recalcularEnlaces();
-        const partes = [
-          `${enlaces.enlazados} registros de la FIE unidos a su torneo de Skermo`,
-          `${enlaces.cartelesHeredados} eventos heredan cartel`,
-        ];
-        if (enlaces.dudosos > 0) {
-          partes.push(`${enlaces.dudosos} emparejamientos dudosos sin unir, a revisar`);
-        }
-        base.note = [base.note, partes.join(', ')].filter(Boolean).join(' | ');
-      } catch (error) {
-        base.note = [
-          base.note,
-          `el emparejado con la FIE no se pudo recalcular: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        ]
-          .filter(Boolean)
-          .join(' | ');
-      }
-    }
   } catch (error) {
     base.status = 'error';
     base.error = error instanceof Error ? error.message : String(error);
     base.sinCambios = false;
+  }
+
+  /**
+   * DUPLICADOS ENTRE FUENTES. El mismo torneo internacional entra dos veces,
+   * una por Skermo y otra por la FIE, con nombres distintos. Después de
+   * tocar el calendario se recalcula qué pares son el mismo torneo, para que
+   * se pinte una sola tarjeta y el evento de Skermo herede el cartel de la
+   * FIE.
+   *
+   * Se recalcula ENTERO, no incrementalmente: así una sede corregida en la
+   * fuente deshace el enlace sola, y volver a lanzar la ingestión no cambia
+   * nada. Cuesta tres lecturas en lote y solo escribe lo que cambia. Por
+   * cron, una vez por noche tras la última fuente de calendario
+   * (`tocaEmparejar`), aunque esa fuente haya fallado: las anteriores sí
+   * pueden haber cambiado el calendario.
+   *
+   * Si falla, la ingestión NO falla: el calendario con duplicados sigue
+   * siendo un calendario correcto; se anota y ya está.
+   */
+  if (tocaEmparejar(source, triggeredBy)) {
+    try {
+      const enlaces = await recalcularEnlaces();
+      if (enlaces.escrituras > 0) base.sinCambios = false;
+      const partes = [
+        `${enlaces.enlazados} registros de la FIE unidos a su torneo de Skermo`,
+        `${enlaces.cartelesHeredados} eventos heredan cartel`,
+      ];
+      if (enlaces.dudosos > 0) {
+        partes.push(`${enlaces.dudosos} emparejamientos dudosos sin unir, a revisar`);
+      }
+      base.note = [base.note, partes.join(', ')].filter(Boolean).join(' | ');
+    } catch (error) {
+      base.sinCambios = false;
+      base.note = [
+        base.note,
+        `el emparejado con la FIE no se pudo recalcular: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      ]
+        .filter(Boolean)
+        .join(' | ');
+    }
   }
 
   base.durationMs = Date.now() - startedAt.getTime();
@@ -229,6 +264,7 @@ export async function runIngest(
       itemsQuarantined: base.itemsQuarantined,
       notificationsQueued: base.notificationsQueued,
       error: base.error ?? base.note,
+      ...(snapshot.actual ? { snapshotUrl: snapshot.actual.url, snapshotHash: snapshot.actual.hash } : {}),
     })
     .where(eq(ingestRun.id, run.id));
 
@@ -239,22 +275,35 @@ export async function runIngest(
 
 type Dispatched = Partial<IngestResult> & { note?: string | null };
 
-async function dispatch(source: IngestSource, runId: string, forzar: boolean): Promise<Dispatched> {
+type SnapshotAnotado = Pick<StoredFile, 'url'> & { hash: string };
+type AnotarSnapshot = (s: SnapshotAnotado) => void;
+
+async function dispatch(
+  source: IngestSource,
+  runId: string,
+  forzar: boolean,
+  anotarSnapshot: AnotarSnapshot = () => {},
+): Promise<Dispatched> {
   switch (source) {
     case 'skermo_rfee': {
       // Los resultados van DESPUÉS del calendario a propósito: necesitan que
       // las pruebas ya existan para poder emparejarse con ellas.
-      const calendario = await ingestSkermo(runId, source, [
-        { code: 'RFEE', name: 'Real Federación Española de Esgrima' },
-      ]);
+      const calendario = await ingestSkermo(
+        runId,
+        source,
+        [{ code: 'RFEE', name: 'Real Federación Española de Esgrima' }],
+        { forzar, anotarSnapshot },
+      );
       const resultados = await ingestSkermoResults(runId);
       /*
         Los enlaces de Engarde, al final y sin poder tumbar la pasada: un
         calendario sin enlace de directo sigue siendo un calendario.
       */
       let notaDirectos: string;
+      let directosEscritos: number | null = null;
       try {
         const d = await ingestDirectosEngarde();
+        directosEscritos = d.escritos;
         notaDirectos =
           `directos Engarde: ${d.torneosMirados} torneos de ${d.torneosListados}, ` +
           `${d.peticiones} peticiones, ${d.enlaces} enlaces, ${d.escritos} nuevos` +
@@ -272,10 +321,15 @@ async function dispatch(source: IngestSource, runId: string, forzar: boolean): P
         itemsQuarantined:
           (calendario.itemsQuarantined ?? 0) + resultados.itemsQuarantined,
         note: [calendario.note, resultados.note, notaDirectos].filter(Boolean).join(' | ') || null,
+        sinCambios:
+          calendario.sinCambios === true &&
+          resultados.itemsCreated + resultados.itemsUpdated === 0 &&
+          resultados.documentosEnlazados + resultados.directosEnlazados === 0 &&
+          directosEscritos === 0,
       };
     }
     case 'skermo_regional':
-      return ingestSkermo(runId, source, REGIONAL_FEDERATIONS);
+      return ingestSkermo(runId, source, REGIONAL_FEDERATIONS, { forzar });
     case 'fie':
       return ingestFie(runId, forzar);
     case 'efc':
@@ -325,6 +379,7 @@ async function ingestSkermo(
   runId: string,
   source: 'skermo_rfee' | 'skermo_regional',
   federations: { code: string; name: string }[],
+  opciones: { forzar?: boolean; anotarSnapshot?: AnotarSnapshot } = {},
 ): Promise<Dispatched> {
   let itemsSeen = 0;
   let created = 0;
@@ -332,21 +387,37 @@ async function ingestSkermo(
   let unchanged = 0;
   let quarantined = 0;
   let notifications = 0;
+  let cambios = 0;
   const failures: string[] = [];
-  /** Se acumulan de todas las federaciones: marcar desaparecidos mirando solo
-   *  una federación borraría del mapa las de las otras diez. */
-  const seenSourceIds: string[] = [];
+  const avisosPlazos: string[] = [];
+  /** Federaciones con la página idéntica a su última lectura completa: no se procesan. */
+  const saltadas: string[] = [];
+  /** Federaciones leídas enteras: sus ids vistos y la huella que se guarda al terminar. */
+  const leidas: { code: string; huella: number | null; seen: string[] }[] = [];
+  const ahora = new Date();
+  const claveHuella = (code: string) => `${source}:${code}`;
+  const huellas = opciones.forzar
+    ? new Map<string, HuellaGuardada>()
+    : await leerHuellas(federations.map((f) => claveHuella(f.code)));
 
   for (const federation of federations) {
     const url = skermoCalendarUrl(federation.code);
 
     try {
       const { body } = await fetchText(url, { timeoutMs: 120_000 });
+      const hashPagina = await sha256(body);
+      const huella = huellaEntera(await sha256(`${VERSION_LECTURA_SKERMO}:${hashPagina}`));
 
       // Snapshot del HTML crudo: depurar un parseo roto sin volver a pedir la
       // página vale mucho más de lo que cuesta guardarlo comprimido.
       if (source === 'skermo_rfee') {
-        await storeIngestSnapshot(source, runId, body).catch(() => null);
+        await guardarSnapshot(source, runId, body, hashPagina, opciones.anotarSnapshot).catch(() => null);
+      }
+
+      if (puedeSaltarPagina(huellas.get(claveHuella(federation.code)), huella, ahora)) {
+        saltadas.push(federation.code);
+        await renovarVistosSinCambios(source, `skermo-${federation.code}-`, ahora);
+        continue;
       }
 
       const { candidates, rowsSeen } = parseSkermoCalendar(body, {
@@ -361,13 +432,19 @@ async function ingestSkermo(
       quarantined += await saveQuarantine(runId, source, validated.quarantined);
       await resolverCuarentena(source, validated.events);
 
-      for (const e of validated.events) seenSourceIds.push(e.sourceId);
-
       const stats = await upsertEvents(validated.events);
       created += stats.created;
       updated += stats.updated;
       unchanged += stats.unchanged;
       notifications += stats.notificationsQueued;
+      cambios += cambiosVisibles(stats);
+      if (stats.deadlinesError) avisosPlazos.push(`${federation.code}: ${stats.deadlinesError}`);
+      // Con plazos sin guardar no se recuerda la huella: la noche siguiente se reintenta entera.
+      leidas.push({
+        code: federation.code,
+        huella: stats.deadlinesError ? null : huella,
+        seen: validated.events.map((e) => e.sourceId),
+      });
     } catch (error) {
       // Una federación caída no debe tumbar las otras diez.
       failures.push(
@@ -384,30 +461,69 @@ async function ingestSkermo(
 
   /**
    * Los eventos que ya no aparecen se marcan como desaparecidos (normalmente
-   * significa "anulado"). Solo se hace si NO hubo fallos: si media fuente no
-   * respondió, marcaríamos como desaparecido lo que simplemente no pudimos
-   * leer, y eso sí que sería un dato falso.
+   * significa "anulado"), federación a federación: solo en las que se han
+   * leído enteras en esta pasada (`source_id` lleva el código delante). Una
+   * federación que no respondió no marca nada, porque eso sería dar por
+   * anulado lo que simplemente no pudimos leer. Una página idéntica a la de
+   * su última lectura completa tampoco: no puede haber desaparecido nada.
    */
   let disappeared = 0;
-  if (failures.length === 0 && seenSourceIds.length > 0) {
-    disappeared = await markMissingEvents(source, seenSourceIds, new Date());
+  for (const l of leidas) {
+    if (l.seen.length === 0) continue;
+    disappeared += await markMissingEvents(source, l.seen, ahora, `skermo-${l.code}-`);
   }
+  // Solo tras guardar: si algo lanzó antes, la próxima pasada vuelve a procesar la página.
+  await guardarHuellas(
+    leidas.flatMap((l) => (l.huella === null ? [] : [{ clave: claveHuella(l.code), huella: l.huella }])),
+    ahora,
+  );
+
+  const notas = [
+    failures.length > 0 ? `No respondieron ${failures.length} federaciones: ${failures.join(' | ')}` : null,
+    disappeared > 0 ? `${disappeared} eventos han desaparecido del calendario oficial` : null,
+    saltadas.length > 0
+      ? `${saltadas.length} páginas iguales a su última lectura completa, sin procesar (${saltadas.join(', ')})`
+      : null,
+    avisosPlazos.length > 0 ? `plazos sin guardar: ${avisosPlazos.join(' | ')}` : null,
+  ].filter(Boolean);
 
   return {
-    status: failures.length > 0 ? 'parcial' : 'ok',
+    status: failures.length > 0 || avisosPlazos.length > 0 ? 'parcial' : 'ok',
     itemsSeen,
     itemsCreated: created,
     itemsUpdated: updated,
     itemsUnchanged: unchanged,
     itemsQuarantined: quarantined,
     notificationsQueued: notifications,
-    note:
-      failures.length > 0
-        ? `No respondieron ${failures.length} federaciones: ${failures.join(' | ')}`
-        : disappeared > 0
-          ? `${disappeared} eventos han desaparecido del calendario oficial`
-          : null,
+    sinCambios: cambios + disappeared === 0,
+    note: notas.length > 0 ? notas.join(' | ') : null,
   };
+}
+
+/**
+ * El HTML crudo, una vez por contenido distinto: si la página es igual a la
+ * del último snapshot guardado, la ejecución apunta a ese mismo objeto de R2
+ * en vez de subir otra copia. La URL y la huella quedan en `ingest_run`.
+ */
+async function guardarSnapshot(
+  source: IngestSource,
+  runId: string,
+  body: string,
+  hash: string,
+  anotar: AnotarSnapshot | undefined,
+): Promise<void> {
+  const [previo] = await db
+    .select({ url: ingestRun.snapshotUrl, hash: ingestRun.snapshotHash })
+    .from(ingestRun)
+    .where(and(eq(ingestRun.source, source), sql`${ingestRun.snapshotHash} is not null`))
+    .orderBy(desc(ingestRun.startedAt))
+    .limit(1);
+  if (previo?.hash === hash && previo.url) {
+    anotar?.({ url: previo.url, hash });
+    return;
+  }
+  const guardado = await storeIngestSnapshot(source, runId, body);
+  if (guardado) anotar?.({ url: guardado.url, hash });
 }
 
 async function ingestFie(runId: string, forzar: boolean): Promise<Dispatched> {
@@ -450,13 +566,15 @@ async function ingestFie(runId: string, forzar: boolean): Promise<Dispatched> {
    * que `recalcularEnlaces()`.
    */
   let notaInscritos = '';
+  let cambiosInscritos: number | null = null;
   try {
     const listas = await ingestInscritosFie();
+    cambiosInscritos = listas.cambios;
     notaInscritos =
       ` | inscritos: ${listas.peticiones} peticiones (de ${listas.enVentana} pruebas ` +
       `en ventana, ${listas.saltadas} sin tocar por cadencia), ${listas.listasLeidas} listas, ` +
       `${listas.espanoles} inscritos españoles de ${listas.publicados} publicados, ` +
-      `${listas.escritas} filas escritas, ${listas.sinCambios} listas sin cambios, ` +
+      `${listas.escritas} filas leídas de listas cambiadas, ${listas.sinCambios} listas sin cambios, ` +
       `${listas.emparejadas} emparejadas, ${listas.bajas} bajas` +
       (listas.colisiones > 0
         ? `, ${listas.colisiones} listas se quedan en la fila de la FIE porque la prueba ya ` +
@@ -474,7 +592,8 @@ async function ingestFie(runId: string, forzar: boolean): Promise<Dispatched> {
       (listas.reescrituraDiferida > 0
         ? `, ${listas.reescrituraDiferida} reescrituras por 0018 diferidas a otra lectura`
         : '') +
-      (listas.fallos > 0 ? `, ${listas.fallos} listas no respondieron` : '');
+      (listas.fallos > 0 ? `, ${listas.fallos} listas no respondieron` : '') +
+      (stats.deadlinesError ? `, plazos sin guardar: ${stats.deadlinesError}` : '');
   } catch (error) {
     notaInscritos = ` | inscritos: no se pudieron leer (${
       error instanceof Error ? error.message : 'error'
@@ -489,6 +608,7 @@ async function ingestFie(runId: string, forzar: boolean): Promise<Dispatched> {
     itemsUnchanged: stats.unchanged,
     itemsQuarantined: quarantined,
     notificationsQueued: stats.notificationsQueued,
+    sinCambios: cambiosVisibles(stats) === 0 && cambiosInscritos === 0,
     /**
      * Se dice lo que ha costado el calendario futuro, porque es la parte cara
      * y la que puede degradarse sin avisar: si un día `torneos` baja a 0, el
@@ -529,6 +649,8 @@ export type ResumenInscritosFie = {
   reescrituraCapacidad: string | null;
   /** Listas cuyo contenido cambió de verdad (no cuenta la reescritura forzada por 0018). */
   contenidoCambiado: number;
+  /** Filas que cambian algo visible: listas reescritas, filas movidas por colisión, URLs reparadas. */
+  cambios: number;
 };
 
 /**
@@ -606,6 +728,7 @@ export async function ingestInscritosFie(
     reescrituraDiferida: 0,
     reescrituraCapacidad: null,
     contenidoCambiado: 0,
+    cambios: 0,
   };
 
   const hoy = ahora.toISOString().slice(0, 10);
@@ -852,14 +975,16 @@ export async function ingestInscritosFie(
   ];
   for (const lote of chunk(aRetirar, 300)) {
     if (lote.length === 0) continue;
-    await db
+    const retiradas = await db
       .delete(competitionRegistration)
       .where(
         and(
           inArray(competitionRegistration.eventCompetitionId, lote),
           eq(competitionRegistration.source, 'fie'),
         ),
-      );
+      )
+      .returning({ id: competitionRegistration.id });
+    resumen.cambios += retiradas.length;
   }
 
   if (cambiadas.length > 0) {
@@ -884,23 +1009,35 @@ export async function ingestInscritosFie(
     resumen.escritas = stats.seen;
     resumen.emparejadas = stats.matched;
     resumen.bajas = stats.withdrawn;
+    resumen.cambios += stats.changed + stats.withdrawn;
   }
 
-  /** Las que no han cambiado: un solo UPDATE por lote, no uno por fila. */
-  for (const lote of chunk(
-    iguales.map((l) => l.destino.destinoId),
-    300,
-  )) {
-    if (lote.length === 0) continue;
-    await db
-      .update(competitionRegistration)
-      .set({ lastSeenAt: ahora })
-      .where(
-        and(
-          inArray(competitionRegistration.eventCompetitionId, lote),
-          eq(competitionRegistration.source, 'fie'),
-        ),
-      );
+  /**
+   * Las que no han cambiado: un solo UPDATE por lote, no uno por fila. Las de
+   * pruebas inminentes renuevan la fecha de lectura cada vez; las demás, como
+   * mucho una vez por semana (`hayQueMarcarListaVista`).
+   */
+  const haceUnaSemana = ahora.getTime() - (7 * 86_400_000 - 43_200_000);
+  for (const [inminentes, listas] of [
+    [true, iguales.filter((l) => hayQueMarcarListaVista(l.destino.dia, ahora, ahora))],
+    [false, iguales.filter((l) => !hayQueMarcarListaVista(l.destino.dia, ahora, ahora))],
+  ] as const) {
+    for (const lote of chunk(
+      listas.map((l) => l.destino.destinoId),
+      300,
+    )) {
+      if (lote.length === 0) continue;
+      await db
+        .update(competitionRegistration)
+        .set({ lastSeenAt: ahora })
+        .where(
+          and(
+            inArray(competitionRegistration.eventCompetitionId, lote),
+            eq(competitionRegistration.source, 'fie'),
+            inminentes ? undefined : sql`${competitionRegistration.lastSeenAt} < ${haceUnaSemana}`,
+          ),
+        );
+    }
   }
 
   /**
@@ -933,7 +1070,7 @@ export async function ingestInscritosFie(
    * emparejarte. `is distinct from` la hace idempotente: la segunda pasada no
    * toca ni una fila.
    */
-  await db.execute(sql`
+  const { rows: reparadas } = await db.execute(sql`
     update event_competition as ec
     set source_url = 'https://fie.org/competition/'
       || substr(e.source_id, 5, 4) || '/'
@@ -948,7 +1085,9 @@ export async function ingestInscritosFie(
         || substr(e.source_id, 5, 4) || '/'
         || substr(e.source_id, 10) || '/entries'
       )
+    returning ec.id
   `);
+  resumen.cambios += reparadas.length;
 
   return resumen;
 }
@@ -971,6 +1110,7 @@ async function ingestEfc(forzar: boolean): Promise<Dispatched> {
     return {
       status: 'ok',
       itemsSeen: 0,
+      sinCambios: true,
       note: `No toca mirar la EFC: la última comprobación (${ultimoFallo!.toISOString().slice(0, 10)}) falló, se reintenta cada 7 días.`,
     };
   }
@@ -988,6 +1128,8 @@ async function ingestEfc(forzar: boolean): Promise<Dispatched> {
     // todos los días y acabaríamos ignorando las alertas de verdad.
     status: 'parcial',
     itemsSeen: outcome.rowsSeen,
+    // La EFC solo se comprueba: sus filas no se guardan, así que nunca cambia nada visible.
+    sinCambios: true,
     note: outcome.unavailableReason,
   };
 }
@@ -1071,6 +1213,8 @@ async function ingestFichasFie(runId: string, forzar: boolean): Promise<Dispatch
     itemsUpdated: stats.itemsUpdated,
     itemsUnchanged: stats.itemsUnchanged,
     itemsQuarantined: stats.itemsQuarantined,
+    sinCambios:
+      stats.itemsCreated === 0 && stats.itemsUpdated === 0 && stats.clasificacionCambios === 0,
     note: stats.note,
   };
 }

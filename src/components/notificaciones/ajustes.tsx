@@ -8,6 +8,7 @@ import {
   type ClavePreferencia, type Preferencias,
 } from '@/lib/notificaciones/tipos';
 import { cn } from '@/lib/utils';
+import { Switch } from '@/components/ui/switch';
 import { CAJA_TACTIL, clasesPastilla } from './control';
 
 type Resultado = { ok: true; mensaje: string } | { ok: false; error: string };
@@ -61,65 +62,33 @@ async function registro(): Promise<ServiceWorkerRegistration> {
   return navigator.serviceWorker.ready;
 }
 
-/**
- * Interruptor con la caja de toque real de 44 × 52 px y el dibujo de
- * 34 × 20 dentro. El de `ui/switch` mide 18 px de alto y solo se podía
- * agrandar con un `::after`, que la sonda no ve.
- */
-function Interruptor({
-  id, activa, deshabilitada, alCambiar, describe,
-}: { id: string; activa: boolean; deshabilitada: boolean; alCambiar: (v: boolean) => void; describe: string }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      id={id}
-      aria-checked={activa}
-      aria-describedby={describe}
-      disabled={deshabilitada}
-      onClick={() => alCambiar(!activa)}
-      className={cn(CAJA_TACTIL, 'w-[52px] justify-end disabled:cursor-not-allowed')}
-    >
-      <span
-        aria-hidden
-        className={cn(
-          'flex h-[20px] w-[34px] items-center rounded-full border transition-colors duration-150 motion-reduce:transition-none',
-          'group-focus-visible:ring-2 group-focus-visible:ring-ring group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-background',
-          activa ? 'border-transparent bg-primary group-disabled:bg-muted' : 'border-filete-alto bg-secondary',
-        )}
-      >
-        <span
-          className={cn(
-            'size-[16px] rounded-full transition-transform duration-150 motion-reduce:transition-none',
-            activa ? 'translate-x-[15px] bg-primary-foreground' : 'translate-x-[1px] bg-muted-foreground',
-            'group-disabled:bg-off',
-          )}
-        />
-      </span>
-    </button>
-  );
-}
-
 function Fila({
   id, nombre, explicacion, activa, deshabilitada, alCambiar,
 }: {
   id: string; nombre: string; explicacion: string; activa: boolean; deshabilitada: boolean; alCambiar: (v: boolean) => void;
 }) {
   return (
-    <li className="flex min-h-[56px] items-center justify-between gap-[12px] py-[6px]">
-      <div className="flex min-w-0 flex-col gap-[2px]">
-        <label htmlFor={id} className="text-[14px] leading-[20px] font-medium">{nombre}</label>
-        <p id={`${id}-explicacion`} className="text-[13px] leading-[16px] text-muted-foreground">{explicacion}</p>
+    <li className="flex min-h-[56px] items-center justify-between gap-3 py-2">
+      <div className="flex min-w-0 flex-col gap-1">
+        <label htmlFor={id} className="text-sm font-medium">{nombre}</label>
+        <p id={`${id}-explicacion`} className="text-xs text-muted-foreground">{explicacion}</p>
       </div>
-      <Interruptor id={id} activa={activa} deshabilitada={deshabilitada} alCambiar={alCambiar} describe={`${id}-explicacion`} />
+      <Switch
+        id={id}
+        checked={activa}
+        disabled={deshabilitada}
+        onCheckedChange={alCambiar}
+        aria-describedby={`${id}-explicacion`}
+        className="w-[52px] justify-end"
+      />
     </li>
   );
 }
 
 function Seccion({ id, titulo, children }: { id: string; titulo: string; children: React.ReactNode }) {
   return (
-    <section aria-labelledby={id} className="flex flex-col gap-[4px]">
-      <h2 id={id} className="font-sans text-[13px] leading-[16px] font-semibold tracking-normal text-muted-foreground">{titulo}</h2>
+    <section aria-labelledby={id} className="flex flex-col gap-1">
+      <h2 id={id} className="font-sans text-sm font-semibold tracking-normal text-muted-foreground">{titulo}</h2>
       {children}
     </section>
   );
@@ -130,20 +99,20 @@ function PasosIphone({ abiertos, alternar }: { abiertos: boolean; alternar: () =
   return (
     <div className="flex flex-col">
       <button type="button" aria-expanded={abiertos} aria-controls="pasos-iphone" onClick={alternar} className={cn(CAJA_TACTIL, 'justify-start')}>
-        <span className={clasesPastilla('fantasma', '-ml-[14px]')}>
+        <span className={clasesPastilla('fantasma', '-ml-4')}>
           Cómo activarlas en iPhone
           <ChevronDown aria-hidden className={cn('transition-transform duration-150 motion-reduce:transition-none', abiertos && 'rotate-180')} />
         </span>
       </button>
       {abiertos ? (
-        <div id="pasos-iphone" className="flex flex-col gap-[8px] rounded-[12px] bg-card px-[16px] py-[12px]">
-          <ol className="flex list-decimal flex-col gap-[6px] pl-[18px] text-[14px] leading-[20px]">
+        <div id="pasos-iphone" className="flex flex-col gap-2 rounded-xl bg-card px-4 py-3">
+          <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm">
             <li>Abre la aplicación en Safari.</li>
-            <li>Toca Compartir <Share aria-hidden className="inline size-[16px] align-[-3px]" />.</li>
+            <li>Toca Compartir <Share aria-hidden className="inline size-4 align-[-3px]" />.</li>
             <li>Elige «Añadir a pantalla de inicio».</li>
             <li>Ábrela desde el icono y toca «Activar».</li>
           </ol>
-          <p className="text-[12px] leading-[16px] text-muted-foreground">Necesitas iOS 16.4 o posterior.</p>
+          <p className="text-xs text-muted-foreground">Necesitas iOS 16.4 o posterior.</p>
         </div>
       ) : null}
     </div>
@@ -288,15 +257,15 @@ export function AjustesNotificaciones({
   const deshabilitada = soloLectura || ocupado;
   const textoEstado = TEXTO_ESTADO[estado];
   return (
-    <div className="flex flex-col gap-[24px]">
+    <div className="flex flex-col gap-6">
       {soloLectura ? (
-        <p className={cn('rounded-[12px] px-[16px] py-[10px] text-[14px] leading-[20px]', TINTE_AVISO)}>{avisoSoloLectura}</p>
+        <p className={cn('rounded-xl px-4 py-3 text-sm', TINTE_AVISO)}>{avisoSoloLectura}</p>
       ) : null}
 
       <p
         role="status"
         aria-live="polite"
-        className={mensaje ? cn('rounded-[12px] bg-card px-[16px] py-[10px] text-[14px] leading-[20px]', !mensaje.ok && 'text-primary-text') : 'sr-only'}
+        className={mensaje ? cn('rounded-xl bg-card px-4 py-3 text-sm', !mensaje.ok && 'text-primary-text') : 'sr-only'}
       >
         {mensaje?.texto ?? ''}
       </p>
@@ -315,7 +284,7 @@ export function AjustesNotificaciones({
             />
           ))}
         </ul>
-        <p className="text-[12px] leading-[16px] text-muted-foreground">Solo nombre, prueba y puesto. Un aviso por competición.</p>
+        <p className="text-xs text-muted-foreground">Solo nombre, prueba y puesto. Un aviso por competición.</p>
       </Seccion>
 
       <Seccion id="ajustes-canales" titulo="Por dónde">
@@ -335,19 +304,19 @@ export function AjustesNotificaciones({
       </Seccion>
 
       <Seccion id="ajustes-dispositivo" titulo="Este dispositivo">
-        <div className="flex min-h-[44px] items-center gap-[12px]">
-          <span className="flex size-[36px] shrink-0 items-center justify-center rounded-full bg-secondary">
+        <div className="flex min-h-[44px] items-center gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-secondary">
             <BellRing aria-hidden className={cn('size-[18px]', estado === 'activo' ? 'text-primary-text' : 'text-muted-foreground')} />
           </span>
-          <div className="flex min-w-0 flex-col gap-[2px]">
-            <p className="text-[14px] leading-[20px] font-medium" data-estado-push={estado}>{textoEstado ?? dispositivo ?? 'Este dispositivo'}</p>
-            {textoEstado && dispositivo ? <p className="text-[12px] leading-[16px] text-muted-foreground">{dispositivo}</p> : null}
+          <div className="flex min-w-0 flex-col gap-1">
+            <p className="text-sm font-medium" data-estado-push={estado}>{textoEstado ?? dispositivo ?? 'Este dispositivo'}</p>
+            {textoEstado && dispositivo ? <p className="text-xs text-muted-foreground">{dispositivo}</p> : null}
             {estado === 'activo' && !preferencias['canal:push'] ? (
-              <p className="text-[12px] leading-[16px] text-muted-foreground">Enciende «Móvil» para recibirlas.</p>
+              <p className="text-xs text-muted-foreground">Enciende «Móvil» para recibirlas.</p>
             ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap gap-x-[8px]">
+        <div className="flex flex-wrap gap-x-2">
           {estado === 'apagado' ? (
             <button type="button" onClick={activar} disabled={deshabilitada} className={CAJA_TACTIL}>
               <span className={clasesPastilla('primario')}>Activar</span>

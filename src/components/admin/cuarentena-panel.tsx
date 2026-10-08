@@ -20,7 +20,8 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { SOURCE_LABEL, cn, formatDateTimeEs } from '@/lib/utils';
+import { fechaHora } from '@/lib/fechas';
+import { SOURCE_LABEL, cn } from '@/lib/utils';
 
 /**
  * Cuarentena.
@@ -201,13 +202,13 @@ export function CuarentenaPanel({ filas }: { filas: FilaCuarentena[] }) {
           spacing={1}
           className="max-w-full flex-wrap"
         >
-          <ToggleGroupItem value="pendientes" className="gap-1.5">
+          <ToggleGroupItem value="pendientes" className="gap-2">
             Pendientes
             <span className="cifra text-xs text-muted-foreground">
               {pendientes.length}
             </span>
           </ToggleGroupItem>
-          <ToggleGroupItem value="revisadas" className="gap-1.5">
+          <ToggleGroupItem value="revisadas" className="gap-2">
             Revisadas
             <span className="cifra text-xs text-muted-foreground">
               {revisadas.length}
@@ -276,11 +277,11 @@ export function CuarentenaPanel({ filas }: { filas: FilaCuarentena[] }) {
                         })
                       }
                       aria-label="Seleccionar esta fila"
-                      className="mt-1.5"
+                      className="mt-2"
                     />
                   ) : null}
 
-                  <div className="flex min-w-48 flex-1 flex-col gap-1.5">
+                  <div className="flex min-w-48 flex-1 flex-col gap-2">
                     {/*
                       EL NOMBRE PRIMERO Y ENTERO, LA FUENTE DEBAJO.
 
@@ -290,7 +291,7 @@ export function CuarentenaPanel({ filas }: { filas: FilaCuarentena[] }) {
                       competición —que es lo que identifica la fila— la mitad.
                       Se ha invertido la jerarquía: manda el nombre.
                     */}
-                    <span className="min-w-0 break-words text-[0.95rem] font-medium leading-tight">
+                    <span className="min-w-0 break-words text-sm font-medium leading-5">
                       {resumen.nombre ?? fila.sourceId ?? 'Fila sin identificar'}
                     </span>
                     <div className="flex flex-wrap items-center gap-2">
@@ -351,7 +352,7 @@ export function CuarentenaPanel({ filas }: { filas: FilaCuarentena[] }) {
                               </span>
                             ) : null}
                             {e.campo ? (
-                              <span className="min-w-0 break-words font-mono text-[12px] text-muted-foreground">
+                              <span className="min-w-0 break-words font-mono text-xs text-muted-foreground">
                                 {e.campo}
                               </span>
                             ) : null}
@@ -374,11 +375,11 @@ export function CuarentenaPanel({ filas }: { filas: FilaCuarentena[] }) {
                       medios: `UI.md` § 3 bis lo cuenta entre los cinco rasgos
                       de «generado por IA» que el usuario rechazó.
                     */}
-                    <span className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+                    <span className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                       <span>
                         Leída el{' '}
                         <span className="tabular-nums">
-                          {formatDateTimeEs(fila.createdAt)}
+                          {fechaHora(fila.createdAt)}
                         </span>
                       </span>
                       {resumen.fechas ? (
@@ -391,7 +392,7 @@ export function CuarentenaPanel({ filas }: { filas: FilaCuarentena[] }) {
                         <span className="text-ok">
                           Revisada el{' '}
                           <span className="tabular-nums">
-                            {formatDateTimeEs(fila.resolvedAt)}
+                            {fechaHora(fila.resolvedAt)}
                           </span>
                         </span>
                       ) : null}
@@ -403,7 +404,7 @@ export function CuarentenaPanel({ filas }: { filas: FilaCuarentena[] }) {
                     colgando a la izquierda debajo del texto: así el pulgar las
                     encuentra donde las espera y no compiten con el nombre.
                   */}
-                  <div className="ms-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                  <div className="ms-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
                     {resumen.url ? (
                       <Button variant="ghost" size="icon-sm" asChild>
                         <a
@@ -464,7 +465,7 @@ export function CuarentenaPanel({ filas }: { filas: FilaCuarentena[] }) {
                         {lista.map((e, i) => (
                           <li
                             key={`${fila.id}-crudo-${i}`}
-                            className="min-w-0 break-words font-mono text-[12px] leading-relaxed text-danger"
+                            className="min-w-0 break-words font-mono text-xs leading-5 text-danger"
                           >
                             {e.path ? `${e.path}: ` : ''}
                             {e.message ?? 'error sin mensaje'}

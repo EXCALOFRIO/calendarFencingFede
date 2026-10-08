@@ -45,9 +45,12 @@ export async function GET(
   });
   /*
     Con o sin error: una carga a medias también cambia datos. Solo se salta la
-    invalidación si la fuente dice que no escribió nada. Nunca lanza.
+    invalidación si la fuente dice que no escribió nada. Por la franja del
+    cron, cada familia se invalida una vez, tras la última fuente de la cadena
+    nocturna que la toca (`CIERRE_NOCTURNO`); con `?forzar=1`, en el acto.
+    Nunca lanza.
   */
-  const tras = await trasIngesta(source, { resultado });
+  const tras = await trasIngesta(source, { resultado, cadena: !forzar });
 
   /**
    * Siempre 200, incluso si la ingestión falló: `runIngest` no lanza y deja

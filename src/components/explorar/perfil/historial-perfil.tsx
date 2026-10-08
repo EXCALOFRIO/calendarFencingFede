@@ -4,6 +4,10 @@ import { Search, X } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { BanderaPais } from '@/components/bandera';
+import { Boton } from '@/components/sistema/boton';
+import { VerMas } from '@/components/sistema/cabecera-seccion';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
+import { SelectorSegmentado } from '@/components/sistema/selector-segmentado';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { categoriaVisible, ordenCategoriaVisible } from '@/lib/sport/explorar/presentacion';
 import type { AmbitoResultados, FilaListaPerfil, ListaPerfil } from '@/lib/sport/explorar/resultados-perfil';
@@ -73,7 +77,7 @@ function Selector({
         aria-label={etiqueta}
         className={cn(
           // En px: `h-11` es rem y con el texto al 130 % la pastilla pasaba de 44 px.
-          'data-[size=default]:h-[44px] w-full min-w-0 gap-1 rounded-full border bg-card py-0 pr-2.5 pl-2.5 text-[0.8125rem] max-[359px]:pr-1.5 max-[359px]:pl-2 max-[359px]:text-xs sm:pr-3 sm:pl-3.5 sm:text-sm',
+          'data-[size=default]:h-11 w-full min-w-0 gap-1 rounded-full border bg-card px-3 py-0 text-sm max-[359px]:px-2 max-[359px]:text-xs',
           '*:data-[slot=select-value]:block *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:truncate',
           activo ? 'border-primary-text bg-marcado font-semibold text-primary-text' : 'text-foreground',
         )}
@@ -100,21 +104,19 @@ function TarjetaMejor({ r, className }: { r: FilaListaPerfil; className?: string
       <Link
         href={r.href}
         prefetch={false}
-        className="flex h-full min-w-0 flex-col gap-2.5 rounded-xl border bg-card p-3 hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:p-4"
+        className="flex h-full min-w-0 flex-col gap-3 rounded-xl border bg-card p-3 hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:p-4"
       >
         <span className="flex min-w-0 items-center justify-between gap-2">
-          <DiscoPuesto puesto={r.puesto} puestoPublicado={r.puestoPublicado} tamano="lg" />
-          <span className="flex min-w-0 flex-col items-end gap-1 text-xs text-muted-foreground">
+          <DiscoPuesto puesto={r.puesto} puestoPublicado={r.puestoPublicado} />
+          <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+            {r.pais ? <BanderaPais pais={r.pais} soloBandera /> : null}
             <time dateTime={r.fecha ?? undefined} className="whitespace-nowrap">{r.fecha ? r.fecha.slice(0, 4) : ''}</time>
-            {r.pais ? <BanderaPais pais={r.pais} /> : null}
           </span>
         </span>
         <span className="line-clamp-2 text-sm leading-snug font-medium">{r.nombre}</span>
         <span className="mt-auto flex min-w-0 flex-wrap items-center gap-1">
-          {r.tipoEnNombre ? null : (
-            <EtiquetaTipoCompeticion clasificacion={r.clasificacion} className="h-[20px] px-2 text-[12px]" />
-          )}
-          <EtiquetaCategoria codigo={r.categoria} className="h-[20px] px-2 text-[12px]" />
+          {r.tipoEnNombre ? null : <EtiquetaTipoCompeticion clasificacion={r.clasificacion} tamano="sm" />}
+          <EtiquetaCategoria codigo={r.categoria} tamano="sm" />
         </span>
       </Link>
     </li>
@@ -224,47 +226,30 @@ export function HistorialPerfil({
     f(v);
     setVisibles(PASO);
   };
-  const elegirAmbito = (a: AmbitoResultados, e: React.MouseEvent<HTMLAnchorElement>) => {
-    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-    e.preventDefault();
+  // El ámbito se cambia en el cliente (todo el historial ya está aquí) y la URL lo recuerda sin una entrada nueva.
+  // Se pasa el estado del historial que hay: ahí guarda Next el árbol del router.
+  const elegirAmbito = (valor: string) => {
+    const a = valor as AmbitoResultados;
     setAmbito(a);
     setVisibles(PASO);
     const url = new URL(window.location.href);
     if (a === 'todo') url.searchParams.delete('ambito');
     else url.searchParams.set('ambito', a);
     url.searchParams.delete('ver');
-    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
   };
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
       {enlacesAmbito ? (
-        <nav aria-label="Ámbito de los resultados" className="min-w-0">
-          <ul className="grid w-full grid-cols-3 gap-1 rounded-full border bg-card p-1 max-[359px]:grid-cols-[4fr_6fr_5fr] max-[359px]:gap-0.5 sm:inline-grid sm:w-auto">
-            {(['todo', 'internacional', 'nacional'] as const).map((a) => {
-              const activo = a === ambito;
-              return (
-                <li key={a} className="min-w-0">
-                  <a
-                    href={enlacesAmbito[a]}
-                    onClick={(e) => elegirAmbito(a, e)}
-                    aria-current={activo ? 'page' : undefined}
-                    data-ambito={a}
-                    className={cn(
-                      TACTIL,
-                      'flex min-h-[32px] min-w-0 items-center justify-center gap-1 rounded-full px-2 text-[0.8125rem] font-medium whitespace-nowrap max-[359px]:px-1 max-[359px]:text-xs sm:px-4 sm:text-sm',
-                      'focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
-                      activo ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
-                    )}
-                  >
-                    <span className="truncate">{ROTULO_AMBITO[a]}</span>
-                    <span className={cn('cifra hidden text-sm leading-none sm:inline', activo ? 'text-background/70' : 'text-muted-foreground')}>{cuenta[a]}</span>
-                  </a>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
+        <SelectorSegmentado
+          etiqueta="Ámbito de los resultados"
+          tamano="sm"
+          anchoMinimo={6}
+          valor={ambito}
+          onCambio={elegirAmbito}
+          opciones={(['todo', 'internacional', 'nacional'] as const).map((a) => ({ valor: a, etiqueta: ROTULO_AMBITO[a], cuenta: cuenta[a] }))}
+        />
       ) : null}
 
       {mejores.length > 0 ? (
@@ -293,16 +278,16 @@ export function HistorialPerfil({
         <div role="search" className="flex min-w-0 flex-col gap-2">
           <label className="relative min-w-0">
             <span className="sr-only">Buscar en el historial</span>
-            <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <Search className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <input
               type="search"
               value={texto}
               onChange={(e) => cambiar(setTexto)(e.target.value)}
               placeholder="Competición o ciudad"
-              className="h-[40px] w-full min-w-0 rounded-full border bg-card pr-4 pl-10 text-[16px] outline-none placeholder:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring sm:text-sm"
+              className="h-10 w-full min-w-0 rounded-full border bg-card pr-4 pl-10 text-base outline-none placeholder:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring sm:text-sm"
             />
           </label>
-          <div className={cn('grid min-w-0 gap-2 max-[359px]:gap-1.5', conArma ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-[5fr_3fr_5fr] sm:grid-cols-3')}>
+          <div className={cn('grid min-w-0 gap-2 max-[359px]:gap-1', conArma ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-[5fr_3fr_5fr] sm:grid-cols-3')}>
             <Selector etiqueta="Temporada" todas="Temporada" valor={fTemporada} lista={opcionesTemporada} onChange={cambiar(setTemporada)} />
             <Selector etiqueta="Tipo de torneo" todas="Tipo" valor={fTipo} lista={opcionesTipo} onChange={cambiar(setTipo)} />
             <Selector etiqueta="Categoría" todas="Categoría" valor={fCategoria} lista={opcionesCategoria} onChange={cambiar(setCategoria)} />
@@ -321,9 +306,10 @@ export function HistorialPerfil({
         </div>
 
         {filtradas.length === 0 ? (
-          <p role="status" className="rounded-xl border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
-            Ninguna prueba con estos filtros.
-          </p>
+          <EstadoVacio
+            titulo="Sin pruebas con estos filtros"
+            accion={filtrando ? <Boton variante="contorno" tamano="md" onClick={limpiar}>Quitar filtros</Boton> : undefined}
+          />
         ) : (
           <div className="flex min-w-0 flex-col gap-4">
             {porTemporada(mostradas).map(([etiqueta, grupo]) => {
@@ -341,13 +327,12 @@ export function HistorialPerfil({
               );
             })}
             {filtradas.length > mostradas.length ? (
-              <button
-                type="button"
+              <VerMas
                 onClick={() => setVisibles((v) => v + PASO)}
-                className="inline-flex min-h-[40px] w-full items-center justify-center rounded-full border bg-card text-sm font-medium hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:w-auto sm:self-center sm:px-6"
-              >
-                Ver más · quedan {filtradas.length - mostradas.length}
-              </button>
+                cuenta={filtradas.length - mostradas.length}
+                detalle="pruebas del historial"
+                className="self-center"
+              />
             ) : null}
             {lista.truncado && !filtrando ? (
               <p className="text-xs text-muted-foreground">Solo las pruebas más recientes.</p>

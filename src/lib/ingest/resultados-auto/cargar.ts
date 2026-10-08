@@ -295,7 +295,7 @@ export async function planificarCarga(base: BaseResultados, h: HechosPrueba, o: 
             v.source_club, v.position, v.position_raw, v.official_points, v.occurred_on, v.source_url, hash, 1, t, t]);
           if (persona) personaDePuesto.set(r.factKey, persona);
           puestos.push({ factKey: r.factKey, personId: persona, position: r.position, nuevo: true });
-          quedanRes.set(r.factKey, { ...previaVacia(r.factKey), person_id: persona, source_name: r.name });
+          quedanRes.set(r.factKey, previaVacia(r.factKey, { person_id: persona, source_name: r.name }));
           continue;
         }
         const enlazada = previa.person_id === null ? resueltas.get(r.factKey) ?? null : null;
@@ -387,9 +387,9 @@ export async function planificarCarga(base: BaseResultados, h: HechosPrueba, o: 
   }
 }
 
-function previaVacia(k: string): FilaResultado {
-  return { id: '', source_fact_key: k, person_id: null, source_name: '', source_country_code: null, source_club: null,
-    position: null, position_raw: null, official_points: null, occurred_on: null, source_url: null, content_hash: '' };
+function previaVacia(k: string, d: Partial<Pick<FilaResultado, 'person_id' | 'source_name'>> = {}): FilaResultado {
+  return { id: '', source_fact_key: k, person_id: d.person_id ?? null, source_name: d.source_name ?? '', source_country_code: null,
+    source_club: null, position: null, position_raw: null, official_points: null, occurred_on: null, source_url: null, content_hash: '' };
 }
 
 function borrarPorId(tabla: string, ids: readonly string[]): Sentencia[] {

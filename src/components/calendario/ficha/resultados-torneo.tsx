@@ -13,9 +13,10 @@ import {
 } from '@/lib/sport/explorar/edicion-modelo';
 import { construirUrlEdicion } from '@/lib/sport/explorar/edicion-url';
 import type { CompeticionCalendario } from '@/lib/sport/explorar/enlaces-calendario';
-import { CLASES_MEDALLA, categoriaVisible, medallaDe } from '@/lib/sport/explorar/presentacion';
+import { CLASES_MEDALLA, medallaDe } from '@/lib/sport/explorar/presentacion';
+import { rotuloPrueba } from '@/lib/sport/rotulos';
 import { rutaFicha } from '@/lib/sport/explorar/url';
-import { GENDER_LABEL, WEAPON_LABEL, cn, titular } from '@/lib/utils';
+import { cn, titular } from '@/lib/utils';
 import { fichaRecibidaDe, pedirFicha } from './precarga';
 import { podiosDelEvento } from './resultados-accion';
 
@@ -143,10 +144,10 @@ export function CuerpoPodios({
   return (
     <section
       aria-labelledby="resultados-torneo"
-      className="flex flex-col gap-3 border-t border-t-filete pt-4 pb-1 first:border-t-0 first:pt-0"
+      className="flex flex-col gap-3 border-t border-filete pt-4"
     >
-      <div className="flex items-center justify-between gap-3">
-        <h3 id="resultados-torneo" className="text-[20px] leading-[24px]">
+      <div className="flex min-h-11 items-center justify-between gap-3">
+        <h3 id="resultados-torneo" className="text-xl leading-tight">
           Resultados
         </h3>
         {/* La prueba elegida arriba, con su clasificación, poules y directas. */}
@@ -195,10 +196,9 @@ export function CuerpoPodios({
   );
 }
 
+/** «Florete femenino», «Espada femenina M17 · Equipos». */
 function nombreDePruebaCorto(p: PruebaDeEdicion, conCategoria: boolean): string {
-  return `${WEAPON_LABEL[p.arma]} ${GENDER_LABEL[p.genero].toLowerCase()}${
-    conCategoria ? ` ${categoriaVisible(p.categoria.codigo)}` : ''
-  }${p.formato === 'EQUIPOS' ? ' · equipos' : ''}`;
+  return rotuloPrueba(p, { categoria: conCategoria ? 'siempre' : 'nunca' });
 }
 
 function TarjetaPodio({
@@ -220,20 +220,20 @@ function TarjetaPodio({
   return (
     <li
       className={cn(
-        'flex min-w-0 flex-col gap-2 rounded-lg border border-filete bg-card p-3',
+        'flex min-w-0 flex-col gap-2 rounded-xl border border-filete bg-card p-3',
         elegida && 'border-primary-text',
       )}
     >
       <EnlaceIntencion
         href={construirUrlEdicion(edicionId, { prueba: prueba.id, origen: retorno })}
-        className={cn(ENLACE, 'justify-between text-[14px] font-medium text-foreground')}
+        className={cn(ENLACE, 'justify-between font-medium text-foreground')}
       >
         {nombreDePruebaCorto(prueba, conCategoria)}
         <ChevronRight className="size-4 text-muted-foreground" aria-hidden />
       </EnlaceIntencion>
 
       {podio.length > 0 ? (
-        <ol aria-label="Podio" className="flex flex-col gap-1.5">
+        <ol aria-label="Podio" className="flex flex-col gap-1">
           {podio.map((p, i) => (
             <FilaPodio key={`${p.puesto}-${i}`} puesto={p} />
           ))}
@@ -246,7 +246,7 @@ function TarjetaPodio({
         enlace a la fuente sirve de verdad (`UI.md`, 2 bis, regla 2).
       */}
       {oficiales.length > 0 ? (
-        <div className="mt-auto flex flex-wrap gap-1.5 pt-1">
+        <div className="mt-auto flex flex-wrap gap-2 pt-1">
           {oficiales.map((e) => (
             <Button key={e.proveedor} variant="outline" size="sm" className="rounded-full" asChild>
               <a href={e.url} target="_blank" rel="noopener noreferrer">
@@ -297,7 +297,7 @@ function FilaPodio({ puesto }: { puesto: PuestoPodio }) {
 function DatosPodio({ puesto, nombre }: { puesto: PuestoPodio; nombre: string }) {
   return (
     <>
-      <span className="flex min-w-0 items-center gap-1.5">
+      <span className="flex min-w-0 items-center gap-2">
         <span className="min-w-0 truncate text-sm font-medium underline-offset-4 group-hover:underline">{nombre}</span>
       </span>
       {puesto.club ? (

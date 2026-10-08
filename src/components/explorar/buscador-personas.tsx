@@ -34,7 +34,7 @@ export function ContenidoSugerencia({ p }: { p: Sugerida }) {
           <span className="flex flex-wrap gap-1">
             <span className="sr-only">Armas: </span>
             {p.armas.map((a) => (
-              <span key={a} className="rounded-full border border-filete-alto px-2 text-[12px] leading-5 text-foreground">
+              <span key={a} className="rounded-full border border-filete-alto px-2 text-xs leading-5 text-foreground">
                 {WEAPON_LABEL[a]}
               </span>
             ))}
@@ -45,7 +45,7 @@ export function ContenidoSugerencia({ p }: { p: Sugerida }) {
       {typeof p.resultados === 'number' ? (
         <span className="flex shrink-0 flex-col items-end text-right">
           <span className="cifra text-2xl leading-none">{p.resultados}</span>
-          <span className="text-[12px] text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             {p.resultados === 1 ? 'resultado' : 'resultados'}
           </span>
         </span>
@@ -94,7 +94,7 @@ export function BuscadorPersonas({ valor, onChange }: { valor: string; onChange:
     : '';
 
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-2">
       <Label htmlFor="explorar-q">Nombre o alias</Label>
       <div className="relative" onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget)) { setFoco(false); solicitante.cancelar(); }

@@ -38,7 +38,7 @@
 }
 .acciones .principal {
   background: var(--foreground, #f6f6f7);
-  color: var(--background, #0e0f13);
+  color: var(--background, #090A0F);
 }
 .acciones button:active { opacity: .75; }
 .acciones button:focus-visible { outline: 2px solid var(--foreground, #f6f6f7); outline-offset: 4px; }

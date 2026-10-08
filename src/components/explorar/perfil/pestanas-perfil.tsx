@@ -1,31 +1,30 @@
 'use client';
 
-import { ChartColumn, ListOrdered, Medal, Sparkles, Users, type LucideIcon } from 'lucide-react';
 import { useSelectedLayoutSegment } from 'next/navigation';
-import { useState } from 'react';
-import { EnlacePrecarga } from '@/components/sistema/enlace-precarga';
+import { useLayoutEffect, useRef, useState } from 'react';
+import { SelectorSegmentado } from '@/components/sistema/selector-segmentado';
 import { rutaSeccionPerfil, seccionDeSegmento, SECCIONES_PERFIL, type SeccionPerfil } from '@/lib/sport/explorar/perfil-secciones';
-import { cn } from '@/lib/utils';
-
-const ICONO: Record<SeccionPerfil, LucideIcon> = {
-  resultados: ListOrdered,
-  estadisticas: ChartColumn,
-  rivales: Users,
-  curiosidades: Sparkles,
-  ranking: Medal,
-};
 
 /**
- * Pestañas de sección del perfil, como las de un perfil de Instagram: un
- * icono de 20 px y, desde `sm`, el rótulo al lado. Cada una es un enlace a su
- * ruta, así que se ve una sección cada vez y la URL la recuerda.
+ * Desplazamiento de cada sección ya vista, por persona. Vive en el módulo y
+ * no en el estado: el layout del perfil no se desmonta entre secciones, pero
+ * volver a la misma ficha desde otra pantalla también debe recordarlo.
+ */
+const DESPLAZAMIENTO = new Map<string, number>();
+
+/**
+ * Pestañas de sección del perfil, con rótulo. Cada una es un enlace a su
+ * ruta que sustituye la entrada del historial (`replace`): cambiar de
+ * sección no apila entradas y un solo Atrás sale del perfil. Con
+ * `scroll={false}` Next no salta arriba; al volver a una sección ya vista se
+ * recupera su desplazamiento y, en una nueva, la página sube como mucho
+ * hasta las pestañas.
  *
  * Sin `loading.tsx` ni esqueletos: la sección anterior se queda a la vista
  * hasta que llega la nueva, pero la pestaña pulsada se marca al instante.
- * Cada sección se precarga sólo con intención (puntero encima, dedo o foco):
- * precargarlas todas al ver el perfil serían cuatro renderizados de servidor
- * por visita. La activa sale del segmento bajo el layout del perfil
- * (`activa` sólo la fuerza para pintar sin router).
+ * Cada sección se precarga sólo con intención (`EnlacePrecarga`). La activa
+ * sale del segmento bajo el layout (`activa` sólo la fuerza para pintar sin
+ * router).
  */
 export function PestanasPerfil({
   personaId,
@@ -42,39 +41,51 @@ export function PestanasPerfil({
   const [pulsada, setPulsada] = useState<{ desde: SeccionPerfil; a: SeccionPerfil } | null>(null);
   const marcada = pulsada && pulsada.desde === actual ? pulsada.a : actual;
   const lista = SECCIONES_PERFIL.filter((s) => secciones.includes(s.clave) || s.clave === actual);
+  const caja = useRef<HTMLDivElement>(null);
+  const anterior = useRef(actual);
+
+  useLayoutEffect(() => {
+    if (anterior.current === actual) return;
+    anterior.current = actual;
+    const guardado = DESPLAZAMIENTO.get(`${personaId}:${actual}`);
+    if (guardado !== undefined) {
+      window.scrollTo({ top: guardado, behavior: 'instant' });
+      return;
+    }
+    // Sección nueva: si las pestañas quedaban por encima de la pantalla, se vuelve a ellas.
+    if (caja.current && caja.current.getBoundingClientRect().top < 0) {
+      caja.current.scrollIntoView({ block: 'start', behavior: 'instant' });
+    }
+  }, [actual, personaId]);
+
   return (
-    <nav aria-label="Secciones del perfil" className="min-w-0 border-b">
-      <ul className="flex min-w-0">
-        {lista.map(({ clave, rotulo }) => {
-          const Icono = ICONO[clave];
-          const activo = clave === marcada;
-          return (
-            <li key={clave} className="flex min-w-0 flex-1 sm:flex-none">
-              <EnlacePrecarga
-                href={rutaSeccionPerfil(personaId, clave)}
-                onClick={(e) => {
-                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
-                  setPulsada(clave === actual ? null : { desde: actual, a: clave });
-                }}
-                aria-current={clave === actual ? 'page' : undefined}
-                title={rotulo}
-                data-seccion={clave}
-                data-marcada={activo || undefined}
-                className={cn(
-                  // 44 px de alto táctil con el icono de 20 px, en px para que la raíz de 18 px no los agrande; el subrayado de la activa va pegado al filete.
-                  'relative -mb-px flex h-[44px] min-w-0 flex-1 items-center justify-center gap-[6px] border-b-2 px-[8px] text-[13px] font-medium sm:px-[16px]',
-                  'focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
-                  activo ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
-                )}
-              >
-                <Icono className="size-[20px] shrink-0" strokeWidth={activo ? 2.25 : 1.75} aria-hidden />
-                <span className="sr-only sm:not-sr-only sm:truncate">{rotulo}</span>
-              </EnlacePrecarga>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
+    <div
+      ref={caja}
+      // El margen de arriba deja sitio a la cabecera fija; a lo ancho, las pestañas llegan al borde en el móvil.
+      className="-mx-4 min-w-0 scroll-mt-16 sm:mx-0"
+      onClickCapture={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+        const enlace = (e.target as HTMLElement).closest('a');
+        const destino = lista.find((s) => enlace?.getAttribute('href') === rutaSeccionPerfil(personaId, s.clave));
+        if (!destino) return;
+        DESPLAZAMIENTO.set(`${personaId}:${actual}`, window.scrollY);
+        setPulsada(destino.clave === actual ? null : { desde: actual, a: destino.clave });
+      }}
+    >
+      <SelectorSegmentado
+        etiqueta="Secciones del perfil"
+        variante="subrayado"
+        anchoMinimo={4}
+        replace
+        scroll={false}
+        valor={marcada}
+        opciones={lista.map(({ clave, rotulo }) => ({
+          valor: clave,
+          etiqueta: rotulo,
+          href: rutaSeccionPerfil(personaId, clave),
+        }))}
+      />
+    </div>
   );
 }
 

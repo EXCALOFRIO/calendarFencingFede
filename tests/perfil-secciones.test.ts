@@ -6,7 +6,7 @@ import { FilasRanking } from '@/components/explorar/ficha-deportiva';
 import { BarrasTipo, type FilaDesglose } from '@/components/explorar/graficos/barras-tipo';
 import { PestanasPerfil } from '@/components/explorar/perfil/pestanas-perfil';
 import { pastillaMotivo, textoMotivo } from '@/components/explorar/perfil/sugeridos-perfil';
-import { rutaSeccionPerfil, seccionDeSegmento } from '@/lib/sport/explorar/perfil-secciones';
+import { rutaCuriosidades, rutaSeccionPerfil, SECCIONES_PERFIL, seccionDeSegmento } from '@/lib/sport/explorar/perfil-secciones';
 import { aRendimiento, type FilaPruebaRendimiento } from '@/lib/sport/explorar/rendimiento';
 import type { TiradorSugerido } from '@/lib/sport/explorar/tipos-perfil';
 
@@ -14,52 +14,64 @@ const P = '00000000-0000-4000-8000-000000000001';
 const html = (e: React.ReactElement) => renderToStaticMarkup(e);
 
 describe('secciones del perfil en la URL', () => {
-  it('Resultados es la raíz y cada sección su propio segmento', () => {
+  it('Resultados es la raíz, cada sección su propio segmento y Curiosidades vive en Estadísticas', () => {
+    expect(SECCIONES_PERFIL.map((s) => s.rotulo)).toEqual(['Resultados', 'Estadísticas', 'Rivales', 'Ranking']);
     expect(rutaSeccionPerfil(P, 'resultados')).toBe(`/explorar/${P}`);
     expect(rutaSeccionPerfil(P, 'estadisticas')).toBe(`/explorar/${P}/estadisticas`);
-    expect(rutaSeccionPerfil(P, 'curiosidades')).toBe(`/explorar/${P}/curiosidades`);
+    expect(rutaCuriosidades(P)).toBe(`/explorar/${P}/estadisticas#curiosidades`);
     expect(seccionDeSegmento(null)).toBe('resultados');
     expect(seccionDeSegmento('rivales')).toBe('rivales');
+    expect(seccionDeSegmento('curiosidades')).toBe('estadisticas');
     expect(seccionDeSegmento('cara-a-cara')).toBe('resultados');
   });
 
-  it('las pestañas son enlaces con icono, la activa marcada y sin prefetch', () => {
-    const salida = html(React.createElement(PestanasPerfil, { personaId: P, secciones: ['resultados', 'estadisticas', 'rivales'], activa: 'estadisticas' }));
-    expect(salida.match(/<a /g)).toHaveLength(3);
-    expect(salida).toContain(`href="/explorar/${P}/estadisticas"`);
-    expect(salida).toMatch(/aria-current="page"[^>]*data-seccion="estadisticas"/);
-    // Icono de 20 px y pestaña de 44 en px: la raíz de 18 px del móvil no los agranda.
-    expect(salida).toContain('size-[20px]');
-    expect(salida).toContain('h-[44px]');
-    expect(salida).not.toContain('Ranking');
-    // Rótulo visible desde `sm`; en móvil queda para lectores de pantalla.
-    expect(salida).toContain('sr-only sm:not-sr-only');
+  it('las pestañas llevan rótulo, sustituyen la entrada del historial y no saltan arriba', () => {
+    const salida = html(React.createElement(PestanasPerfil, { personaId: P, secciones: ['resultados', 'estadisticas', 'rivales', 'ranking'], activa: 'estadisticas' }));
+    expect(salida.match(/<a /g)).toHaveLength(4);
+    expect(salida).toContain('data-variante="subrayado"');
+    for (const r of ['Resultados', 'Estadísticas', 'Rivales', 'Ranking']) expect(salida).toContain(`>${r}</span>`);
+    expect(salida).not.toContain('sr-only sm:not-sr-only');
+    expect(salida).not.toContain('Curiosidades');
+    expect(salida).toMatch(new RegExp(`<a(?=[^>]*href="/explorar/${P}/estadisticas")(?=[^>]*aria-current="page")`));
+    expect(salida.match(/aria-current="page"/g)).toHaveLength(1);
+    const codigo = readFileSync('src/components/explorar/perfil/pestanas-perfil.tsx', 'utf8');
+    // `replace`: cuatro pestañas tocadas no son cuatro Atrás; `scroll={false}`: Next no salta al principio.
+    expect(codigo).toMatch(/<SelectorSegmentado[\s\S]*\breplace\b[\s\S]*scroll=\{false\}/);
+    expect(codigo).toContain('DESPLAZAMIENTO');
   });
 
   it('cada sección es una ruta propia que lee sólo lo suyo; la ficha entera ya no pinta todas', () => {
     const base = 'src/app/(app)/explorar/[personaId]/(perfil)';
     expect(readFileSync(`${base}/rivales/page.tsx`, 'utf8')).not.toMatch(/fichaPerfil|cargarRendimiento/);
-    expect(readFileSync(`${base}/curiosidades/page.tsx`, 'utf8')).not.toMatch(/fichaPerfil|cargarRivales/);
     expect(readFileSync(`${base}/page.tsx`, 'utf8')).not.toMatch(/cargarDiferidosPerfil|cargarRendimiento/);
     expect(readFileSync(`${base}/layout.tsx`, 'utf8')).not.toMatch(/cargarDiferidosPerfil|Rendimiento/);
+    // Estadísticas lee rendimiento y curiosidades a la vez.
+    expect(readFileSync(`${base}/estadisticas/page.tsx`, 'utf8')).toMatch(/Promise\.all\(\[\s*cargarRendimientoCompartido[\s\S]*cargarCuriosidadesCompartidas/);
+  });
+
+  it('la ruta antigua de Curiosidades redirige al bloque de Estadísticas, tras la guarda de sesión', () => {
+    const fuente = readFileSync('src/app/(app)/explorar/[personaId]/(perfil)/curiosidades/page.tsx', 'utf8');
+    expect(fuente).toContain('redirect(rutaCuriosidades(personaId))');
+    expect(fuente.indexOf('await exigirSesion()')).toBeLessThan(fuente.indexOf('redirect('));
+    expect(fuente).not.toMatch(/cargar\w+Compartid/);
   });
 });
 
-describe('ranking de la cabecera en una línea, fuera de la caja', () => {
-  it('«Internacional 25º · Nacional 3º» sin borde ni rejilla', () => {
+describe('ranking de la cabecera con PastillaRanking', () => {
+  it('«FIE #25» y «RFEE #3», sin «Intl.»/«Nac.» ni rótulos repetidos', () => {
     const salida = html(React.createElement(FilasRanking, {
       chips: [
         { ambito: 'internacional', organismo: 'FIE', puesto: 25, arma: 'FLORETE', categoria: 'ABS', temporada: '2026', actual: true },
-        { ambito: 'nacional', organismo: 'RFEE', puesto: 3, arma: 'FLORETE', categoria: 'ABS', temporada: '2025-2026', actual: true },
+        { ambito: 'nacional', organismo: 'RFEE', puesto: 3, arma: 'FLORETE', categoria: 'M20', temporada: '2025-2026', actual: true },
       ],
     }));
     expect(salida).toMatch(/^<ul aria-label="Ranking"/);
-    expect(salida).not.toMatch(/border|rounded|grid/);
-    expect(salida).toContain('Internacional');
-    expect(salida).toContain('25º');
-    expect(salida).toContain('3º');
-    expect(salida).toContain('·');
-    // «Florete» solo no añade nada.
+    expect(salida.match(/data-slot="sistema-pastilla-ranking"/g)).toHaveLength(2);
+    expect(salida).toContain('>FIE #25<');
+    expect(salida).toContain('>RFEE #3<');
+    expect(salida).not.toMatch(/Intl\.|Nac\.|>Internacional<|>Nacional</);
+    // Sólo se escribe lo que añade: la categoría que no es Absoluto; «Florete» solo, no.
+    expect(salida).toContain('>M20<');
     expect(salida).not.toContain('>Florete<');
   });
 });

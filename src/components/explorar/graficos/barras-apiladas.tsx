@@ -56,7 +56,7 @@ export function BarrasApiladas({
                 className="group/col flex min-w-0 flex-1 flex-col items-center justify-end"
               >
                 {conTotales && total > 0 ? (
-                  <span className="cifra mb-0.5 text-[12px] leading-none text-muted-foreground group-hover/col:text-foreground">
+                  <span className="cifra mb-1 text-xs leading-none text-muted-foreground group-hover/col:text-foreground">
                     {total}
                   </span>
                 ) : null}

@@ -171,7 +171,7 @@ describe('deduplicación por competición', () => {
     b.resultado(prueba.id, buena, 9);
     await procesar(b, [{ tipo: 'resultado_nuevo', competitionId: prueba.id, personIds: [vieja] }]);
     const [aviso] = b.avisos(yo);
-    expect(aviso.titulo).toBe('Marta García: 7.º en Espada femenino M17');
+    expect(aviso.titulo).toBe('Marta García: 7.º en Espada femenina M17');
   });
 
   it('un evento de una persona sin resultado en esa prueba no genera nada', async () => {
@@ -295,7 +295,7 @@ describe('privacidad de menores en el texto', () => {
     for (const prohibido of ['2015', '06-30', '30/06', 'años', 'TRES CANTOS', 'Tres Cantos', '@example.test', nina, madre, 'Tutora', 'menor']) {
       expect(textos, prohibido).not.toContain(prohibido);
     }
-    expect(b.avisos(madre)[0].titulo).toBe('Lucía Perez Sanz: 2.º en Espada femenino M17');
+    expect(b.avisos(madre)[0].titulo).toBe('Lucía Perez Sanz: 2.º en Espada femenina M17');
   });
 
   it('a quien solo sigue a una menor no le llega nada; a la tutora, sí, sin decir quién es la tutora', async () => {
@@ -321,7 +321,7 @@ describe('privacidad de menores en el texto', () => {
     await procesar(b, [{ tipo: 'resultados_publicados', competitionId: prueba.id }]);
     const [aviso, ...resto] = b.avisos(yo);
     expect(resto).toEqual([]);
-    expect(aviso.titulo).toBe('Adulta Uno: 2.º en Espada femenino M17');
+    expect(aviso.titulo).toBe('Adulta Uno: 2.º en Espada femenina M17');
     expect(JSON.stringify(aviso)).not.toContain('Sin Año');
   });
 
@@ -458,7 +458,7 @@ describe('textos', () => {
   it('lista de personas y nombre de prueba de equipos', () => {
     const l = [1, 2, 3, 4, 5, 6].map((i) => ({ nombre: `P${i}`, puesto: i }));
     expect(listaPersonas(l)).toBe('P1, 1.º; P2, 2.º; P3, 3.º; P4, 4.º y 2 más');
-    expect(nombrePrueba({ arma: 'SABLE', genero: 'MIXTO', categoria: 'VET', formato: 'EQUIPOS' })).toBe('Sable mixto veteranos · equipos');
+    expect(nombrePrueba({ arma: 'SABLE', genero: 'MIXTO', categoria: 'VET', formato: 'EQUIPOS' })).toBe('Sable mixto · Veteranos · Equipos');
   });
 
   it('tiempo relativo en hora de Madrid, con el año sólo si no es el actual', () => {

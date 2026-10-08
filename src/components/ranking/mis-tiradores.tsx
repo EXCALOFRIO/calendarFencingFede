@@ -1,9 +1,10 @@
 'use client';
 
+import type * as React from 'react';
 import { Escudo } from '@/components/escudo';
-import { ANILLO } from '@/components/explorar/avatar-anillo';
-import { FotoDeportista } from '@/components/explorar/foto-deportista';
-import { inicialesVisibles } from '@/lib/sport/nombre-visible';
+import { Avatar } from '@/components/sistema/avatar';
+import { CabeceraSeccion } from '@/components/sistema/cabecera-seccion';
+import { SelectorSegmentado } from '@/components/sistema/selector-segmentado';
 import { cn } from '@/lib/utils';
 import type { Federacion } from '@/components/escudo';
 
@@ -23,11 +24,13 @@ export type LadoCompacto = {
   mejor: { etiqueta: string; puesto: number | null } | null;
 };
 
+type Lado = 'RFEE' | 'FIE';
+
 /**
- * Tus tiradores, arriba y en poco sitio: retrato, nombre y su mejor puesto
- * nacional e internacional de la temporada, cada uno en una pastilla. Tocar
- * una pastilla cambia la tabla de abajo a ese ranking. El detalle largo (pares,
- * tira de temporadas) vive en la ficha de cada uno en Explorar.
+ * Tus tiradores, arriba y en poco sitio: avatar, nombre y su mejor puesto
+ * nacional e internacional de la temporada, en un segmentado. Elegir un lado
+ * cambia la tabla de abajo a ese ranking. El detalle largo (pares, tira de
+ * temporadas) vive en la ficha de cada uno en Explorar.
  */
 export function MisTiradores({
   tiradores,
@@ -36,77 +39,74 @@ export function MisTiradores({
   onIntencion,
 }: {
   tiradores: readonly TiradorPropio[];
-  /** El ranking que se ve; con el europeo no se marca ninguna pastilla. */
+  /** El ranking que se ve; con el europeo no se marca ningún lado. */
   elegida: 'RFEE' | 'FIE' | 'EFC';
-  onElegir: (f: 'RFEE' | 'FIE') => void;
-  /** El dedo llega a una pastilla: se puede adelantar la tabla de ese ranking. */
-  onIntencion?: (f: 'RFEE' | 'FIE') => void;
+  onElegir: (f: Lado) => void;
+  /** El dedo llega a un lado: se puede adelantar la tabla de ese ranking. */
+  onIntencion?: (f: Lado) => void;
 }) {
   if (tiradores.length === 0) return null;
+  /*
+    El segmentado no admite eventos por opción: el dedo o el foco se leen al
+    subir hasta la tarjeta y el lado se reconoce por `data-lado`.
+  */
+  const intencion = (e: React.SyntheticEvent) => {
+    const lado = (e.target as Element).closest('button')?.querySelector<HTMLElement>('[data-lado]')?.dataset.lado;
+    if (lado === 'RFEE' || lado === 'FIE') onIntencion?.(lado);
+  };
   return (
-    <section aria-label="Tus tiradores" className="flex min-w-0 flex-col gap-1.5">
-      <h2 className="text-[12px] font-medium text-muted-foreground">
-        {tiradores.length === 1 ? 'Tu tirador' : 'Tus tiradores'}
-      </h2>
+    <section aria-label="Tus tiradores" className="flex min-w-0 flex-col gap-2">
+      <CabeceraSeccion nivel="grupo" titulo={tiradores.length === 1 ? 'Tu tirador' : 'Tus tiradores'} />
       <div className={cn('grid min-w-0 max-w-3xl gap-px overflow-hidden rounded-xl border bg-border', tiradores.length > 1 && 'sm:grid-cols-2')}>
-      {tiradores.map((t) => {
-        const nombre = `${t.nombre} ${t.apellidos}`.trim();
-        return (
-          <article
-            key={t.athleteId}
-            data-tirador-propio={t.athleteId}
-            className="flex min-w-0 items-center gap-2.5 bg-card px-2.5 py-2"
-          >
-            {t.personaId ? (
-              <FotoDeportista personaId={t.personaId} nombre={nombre} tamano="lista" />
-            ) : (
-              <span aria-hidden className={cn(ANILLO, 'inline-flex shrink-0')}>
-                <span className="grid size-10 place-items-center rounded-full bg-card font-display text-[14px] text-foreground">
-                  {inicialesVisibles(nombre) || '—'}
-                </span>
-              </span>
-            )}
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <p className="truncate text-[14px] leading-tight font-semibold">{nombre}</p>
-              <div className="flex min-w-0 gap-1">
-                {t.lados.map((lado) => {
-                  const fed = lado.federacion === 'FIE' ? 'FIE' : 'RFEE';
-                  const mejor = lado.mejor;
-                  const puesto = mejor?.puesto ?? null;
-                  return (
-                    <button
-                      key={lado.federacion}
-                      type="button"
-                      aria-pressed={elegida === fed}
-                      disabled={!mejor}
-                      title={mejor ? `${lado.etiqueta}: ${mejor.etiqueta}` : lado.motivoVacio}
-                      onClick={() => onElegir(fed)}
-                      onPointerEnter={() => onIntencion?.(fed)}
-                      onPointerDown={() => onIntencion?.(fed)}
-                      onFocus={() => onIntencion?.(fed)}
-                      className={cn(
-                        // Se ve de 26 px; el pseudoelemento lleva el área táctil a 44.
-                        "relative min-h-0! min-w-0! after:absolute after:inset-x-0 after:-inset-y-[9px] after:content-['']",
-                        'inline-flex h-[26px] min-w-0 max-w-full items-center gap-1.5 rounded-full border border-filete-alto px-2 text-[12px] leading-none',
-                        'hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
-                        // Sin puesto se atenúa con el color de texto secundario, no con opacidad: el contraste sigue en 4,5:1.
-                        'disabled:cursor-default disabled:text-muted-foreground disabled:hover:bg-transparent',
-                        'aria-pressed:border-primary/50 aria-pressed:bg-marcado aria-pressed:text-primary-text',
-                      )}
-                    >
-                      <Escudo federacion={lado.federacion} tamano="nota" decorativo />
-                      {/* En el móvil el escudo ya dice cuál es; el nombre queda para el lector de pantalla. */}
-                      <span className="shrink-0 max-sm:sr-only">{lado.etiqueta}</span>
-                      <span className="cifra shrink-0 text-[14px] leading-none">{puesto !== null ? `${puesto}º` : '—'}</span>
-                      {mejor ? <span className="min-w-0 truncate text-muted-foreground">{mejor.etiqueta}</span> : null}
-                    </button>
-                  );
-                })}
+        {tiradores.map((t) => {
+          const nombre = `${t.nombre} ${t.apellidos}`.trim();
+          return (
+            <article
+              key={t.athleteId}
+              data-tirador-propio={t.athleteId}
+              className="flex min-w-0 items-center gap-3 bg-card px-3 py-2"
+            >
+              <Avatar personaId={t.personaId} nombre={nombre} tamano={40} />
+              <div
+                className="flex min-w-0 flex-1 flex-col gap-1"
+                onPointerOver={intencion}
+                onPointerDown={intencion}
+                onFocus={intencion}
+              >
+                <p className="truncate text-sm font-semibold" title={nombre}>{nombre}</p>
+                <SelectorSegmentado
+                  etiqueta={`Ranking de ${nombre}`}
+                  tamano="sm"
+                  anchoMinimo={6}
+                  valor={elegida === 'EFC' ? null : elegida}
+                  onCambio={(v) => onElegir(v as Lado)}
+                  opciones={t.lados.map((lado) => {
+                    const fed: Lado = lado.federacion === 'FIE' ? 'FIE' : 'RFEE';
+                    const mejor = lado.mejor;
+                    const puesto = mejor?.puesto ?? null;
+                    return {
+                      valor: fed,
+                      deshabilitada: !mejor,
+                      etiqueta: (
+                        <span data-lado={fed} className="inline-flex min-w-0 items-center gap-1">
+                          <Escudo federacion={lado.federacion} tamano="nota" decorativo />
+                          {/* En el móvil el escudo ya dice cuál es; el nombre queda para el lector de pantalla. */}
+                          <span className="shrink-0 max-sm:sr-only">{lado.etiqueta}</span>
+                          <span className="cifra shrink-0">{puesto !== null ? `${puesto}º` : '—'}</span>
+                          {mejor ? (
+                            <span className="min-w-0 truncate font-normal">{mejor.etiqueta}</span>
+                          ) : lado.motivoVacio ? (
+                            <span className="sr-only">{lado.motivoVacio}</span>
+                          ) : null}
+                        </span>
+                      ),
+                    };
+                  })}
+                />
               </div>
-            </div>
-          </article>
-        );
-      })}
+            </article>
+          );
+        })}
       </div>
     </section>
   );

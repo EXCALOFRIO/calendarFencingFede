@@ -4,19 +4,25 @@ import { clasificarSerie, SERIES_COMPLEMENTARIAS, type SerieComplementaria } fro
 import { exigirPerfil, filas, type ContextoExplorador } from './contexto';
 import { codificarCursor, decodificarCursor, UUID_RE } from './cursor';
 import {
+  agruparEdiciones,
   agruparPruebas,
+  DIAS_MAXIMOS_EVENTO,
+  diaDeIso,
   enlacesDePrueba,
+  FUENTES_NACIONALES,
   estadoResultados,
   FUENTE_FIE,
   lecturasDePuestos,
   pruebaDeId,
   pruebaPorDefecto,
+  riquezaDe,
   type Clasificacion,
   type EdicionDetalle,
   type EdicionResumen,
   type FilaClasificacion,
   type FilaEnlace,
   type PruebaDeEdicion,
+  type PruebaHermana,
 } from './edicion-modelo';
 import { leerAsaltosDeGrupo } from './ediciones-asaltos';
 import type { AsaltosDePrueba } from './tipos-busqueda';
@@ -31,7 +37,15 @@ import type { Arma, Formato, Genero } from './tipos';
 
 const LIMITE_EDICIONES_SERIE = 200;
 const LIMITE_PRUEBAS = 200;
-const LIMITE_EDICIONES_EVENTO = 6;
+/**
+ * Un Mundial con las pruebas sueltas son doce o más ediciones (veinticuatro
+ * con júnior y cadete); el tope sólo evita una lista sin fin.
+ */
+const LIMITE_EDICIONES_EVENTO = 60;
+/** Días a cada lado del inicio de una edición en los que se buscan las de su evento. */
+const VENTANA_EVENTO_DIAS = DIAS_MAXIMOS_EVENTO;
+const LIMITE_VENTANA_EVENTO = 400;
+const LIMITE_PRUEBAS_HERMANAS = 400;
 const CLASE_CLASIFICACION = 'clasificacion-edicion';
 /**
  * La clasificación se lee entera de una vez (una prueba FIE ronda los 400
@@ -238,6 +252,133 @@ async function leerPruebas(
   return porEdicion;
 }
 
+type FilaEdicionAgrupable = {
+  id: string;
+  nombre: string;
+  temporada: string;
+  fuente: string;
+  ciudad: string | null;
+  pais: string | null;
+  inicio: string | null;
+  fin: string | null;
+  evento: string | null;
+  categorias?: string | null;
+};
+
+const desplazarDia = (iso: string, dias: number) =>
+  new Date(Date.parse(`${iso.slice(0, 10)}T00:00:00Z`) + dias * 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * Las otras ediciones del evento de `cabecera`, con la misma regla que el
+ * buscador (`agruparEdiciones`): las de su fuente (o, si es nacional, de las
+ * tres nacionales) y temporada que empiezan a `VENTANA_EVENTO_DIAS` días o
+ * menos y, si está en el calendario, las de su mismo torneo. Recorre el
+ * índice de fechas de esa ventana, no la tabla; las categorías, que unen
+ * fuentes nacionales, sólo se leen para ellas.
+ */
+async function leerEdicionesHermanas(ctx: ContextoExplorador, cabecera: FilaEdicionAgrupable): Promise<string[]> {
+  const inicio = cabecera.inicio && diaDeIso(cabecera.inicio) >= 0 ? cabecera.inicio.slice(0, 10) : null;
+  if (!inicio && !cabecera.evento) return [];
+  const nacional = FUENTES_NACIONALES.has(cabecera.fuente);
+  const fuentes = nacional ? sql`e.source IN (${sql.join([...FUENTES_NACIONALES].map((x) => sql`${x}`), sql`, `)})` : sql`e.source = ${cabecera.fuente}`;
+  const columnas = sql`
+    e.id AS id, e.name AS nombre, e.season AS temporada, e.source AS fuente, e.city AS ciudad,
+    e.country_code AS pais, e.start_date AS inicio, e.end_date AS fin,
+    coalesce(ev.canonical_event_id, e.event_id) AS evento${nacional
+    ? sql`, (SELECT group_concat(DISTINCT c.category) FROM sport_competition c WHERE c.edition_id = e.id) AS categorias`
+    : sql``}`;
+  const porFecha = inicio
+    ? sql`
+      SELECT ${columnas}
+      FROM sport_edition e LEFT JOIN event ev ON ev.id = e.event_id
+      WHERE ${fuentes} AND e.season = ${cabecera.temporada}
+        AND e.start_date BETWEEN ${desplazarDia(inicio, -VENTANA_EVENTO_DIAS)} AND ${desplazarDia(inicio, VENTANA_EVENTO_DIAS)}`
+    : null;
+  const porEvento = cabecera.evento
+    ? sql`
+      SELECT ${columnas}
+      FROM sport_edition e LEFT JOIN event ev ON ev.id = e.event_id
+      WHERE ${fuentes}
+        AND e.event_id IN (SELECT x.id FROM event x WHERE x.id = ${cabecera.evento} OR x.canonical_event_id = ${cabecera.evento})`
+    : null;
+  const consulta = porFecha && porEvento ? sql`${porFecha} UNION ${porEvento}` : (porFecha ?? porEvento)!;
+  const filasVentana = filas<FilaEdicionAgrupable>(await ctx.db.execute(sql`${consulta} LIMIT ${LIMITE_VENTANA_EVENTO}`));
+  const todas = filasVentana.some((f) => f.id === cabecera.id) ? filasVentana : [cabecera, ...filasVentana];
+  const grupos = agruparEdiciones(todas.map((f) => ({
+    fuente: f.fuente, temporada: f.temporada, nombre: f.nombre, ciudad: f.ciudad, pais: f.pais,
+    inicio: diaDeIso(f.inicio), fin: diaDeIso(f.fin), evento: f.evento,
+    ...(nacional ? { categorias: (f.categorias ?? '').split(',').filter(Boolean) } : {}),
+  })));
+  const propio = grupos[todas.findIndex((f) => f.id === cabecera.id)];
+  return todas
+    .filter((f, i) => grupos[i] === propio && f.id !== cabecera.id && UUID_RE.test(f.id))
+    .slice(0, LIMITE_EDICIONES_EVENTO)
+    .map((f) => f.id);
+}
+
+type FilaPruebaHermana = {
+  id: string;
+  edicionId: string;
+  arma: Arma;
+  genero: Genero;
+  categoria: string;
+  categoriaRaw: string | null;
+  formato: Formato;
+  fecha: string | null;
+  fuente: string;
+  conAsaltos: number;
+  conPuestos: number;
+};
+
+/**
+ * Las pruebas de las otras ediciones del evento, sólo con lo que pide el
+ * selector: ni recuentos de puestos ni de asaltos, que son lo caro de
+ * `leerPruebas`; para elegir la fuente más rica basta saber si hay alguno
+ * (`EXISTS` para en la primera fila del índice). Las partes de una misma prueba (mismo arma, género,
+ * categoría, modalidad y día) salen una vez: la página de destino abre la
+ * prueba entera desde cualquiera de ellas (`pruebaDeId`).
+ */
+async function leerPruebasHermanas(ctx: ContextoExplorador, edicionIds: readonly string[]): Promise<PruebaHermana[]> {
+  if (edicionIds.length === 0) return [];
+  const rows = filas<FilaPruebaHermana>(
+    await ctx.db.execute(sql`
+      SELECT c.id AS id, c.edition_id AS "edicionId", c.weapon AS arma, c.gender AS genero,
+             c.category AS categoria, c.category_raw AS "categoriaRaw", c.format AS formato,
+             c.competition_date AS fecha, c.source AS fuente,
+             EXISTS (SELECT 1 FROM sport_bout b WHERE b.competition_id = c.id) AS "conAsaltos",
+             EXISTS (SELECT 1 FROM sport_result r WHERE r.competition_id = c.id) AS "conPuestos"
+      FROM sport_competition c
+      WHERE c.edition_id IN (${listaUuid(edicionIds)})
+      ORDER BY c.edition_id, c.competition_date NULLS LAST, c.format, c.weapon, c.gender, c.category, c.id
+      LIMIT ${LIMITE_PRUEBAS_HERMANAS}`),
+  );
+  const porClave = new Map<string, PruebaHermana>();
+  for (const f of rows) {
+    const clave = [f.edicionId, f.arma, f.genero, f.categoria, f.categoriaRaw ?? '', f.formato, f.fecha ?? ''].join('|');
+    const riqueza = Number(f.conAsaltos) ? 2 : Number(f.conPuestos) ? 1 : 0;
+    const previa = porClave.get(clave);
+    // Las partes suman lo que traen; el enlace va a cualquiera de ellas.
+    if (previa) { previa.riqueza = Math.max(previa.riqueza, riqueza); continue; }
+    porClave.set(clave, {
+      id: f.id, edicionId: f.edicionId, arma: f.arma, genero: f.genero,
+      categoria: { codigo: f.categoria, raw: f.categoriaRaw }, formato: f.formato, fecha: f.fecha, fuente: f.fuente, riqueza,
+    });
+  }
+  return [...porClave.values()];
+}
+
+/** Las pruebas de las otras ediciones del evento, o `undefined` si la edición va sola o no se pudieron leer. */
+async function leerHermanas(ctx: ContextoExplorador, cabecera: FilaEdicionAgrupable): Promise<PruebaHermana[] | undefined> {
+  try {
+    const otras = await leerPruebasHermanas(ctx, await leerEdicionesHermanas(ctx, cabecera));
+    return otras.length ? otras : undefined;
+  } catch (error) {
+    // El selector entre ediciones es un extra: sin él la edición se sigue viendo.
+    console.error('[explorar] las ediciones del evento no se pudieron leer:', error instanceof Error ? error.name : 'desconocido');
+    return undefined;
+  }
+}
+
 export type ResultadoEdicionesEvento =
   | { estado: 'ok'; ediciones: (EdicionResumen & { pruebasDetalle: PruebaDeEdicion[] })[] }
   | { estado: 'entrada_invalida' }
@@ -333,15 +474,30 @@ export async function leerEdicion(
 
   if (!(await ctx.esquema()).identidad) return { estado: 'no_disponible' };
 
-  const [cabecera] = filas<FilaEdicion>(
+  const [cabecera] = filas<FilaEdicion & { evento: string | null }>(
     await ctx.db.execute(sql`
-      SELECT ${COLUMNAS_EDICION}
+      SELECT ${COLUMNAS_EDICION},
+        (SELECT coalesce(ev.canonical_event_id, ev.id) FROM event ev WHERE ev.id = e.event_id) AS evento
       FROM sport_edition e
       WHERE e.id = ${edicionId}`),
   );
   if (!cabecera) return { estado: 'no_encontrada' };
 
-  const pruebasDetalle = (await leerPruebas(ctx, [edicionId])).get(edicionId) ?? [];
+  const [pruebasPorEdicion, hermanasLeidas] = await Promise.all([
+    leerPruebas(ctx, [edicionId]),
+    // Las pruebas propias no hacen falta para saber las ediciones del evento: van a la vez.
+    opciones.soloPruebas ? Promise.resolve(undefined) : leerHermanas(ctx, { ...cabecera, evento: cabecera.evento ?? null }),
+  ]);
+  const pruebasDetalle = pruebasPorEdicion.get(edicionId) ?? [];
+  const hermanas = hermanasLeidas
+    ? [
+        ...pruebasDetalle.map<PruebaHermana>((p) => ({
+          id: p.id, edicionId, arma: p.arma, genero: p.genero, categoria: p.categoria, formato: p.formato, fecha: p.fecha,
+          fuente: p.fuente, riqueza: riquezaDe(p),
+        })),
+        ...hermanasLeidas,
+      ]
+    : undefined;
   // Una parte de una prueba agrupada abre la prueba entera; sin pedir ninguna
   // se abre la primera con puestos. Una prueba ajena no abre otra en su lugar.
   const elegida = prueba ? pruebaDeId(pruebasDetalle, prueba) : pruebaPorDefecto(pruebasDetalle);
@@ -369,6 +525,7 @@ export async function leerEdicion(
       clasificacion,
       asaltos,
       pruebaElegida: elegida?.id ?? null,
+      ...(hermanas ? { hermanas } : {}),
     },
   };
 }

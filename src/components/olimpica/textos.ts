@@ -5,6 +5,7 @@ import type {
   MotivoPendiente,
   ZonaFie,
 } from '@/lib/ranking/olimpica';
+import { fechaCorta as fechaCortaComun } from '@/lib/fechas';
 
 export const ZONA_CORTA: Record<ZonaFie, string> = {
   EUROPA: 'Europa',
@@ -35,7 +36,7 @@ export const MOTIVO_TEXTO: Record<MotivoPendiente, string> = {
 export function textoCamino(camino: CaminoOlimpico, zona: ZonaFie | null): string {
   switch (camino) {
     case 'EQUIPO_TOP':
-      return 'Top 4 equipos';
+      return '4 primeros equipos';
     case 'EQUIPO_ZONA':
       return zona ? `Equipo de ${ZONA_CORTA[zona]}` : 'Equipo por zona';
     case 'EQUIPO_SIGUIENTE':
@@ -43,7 +44,7 @@ export function textoCamino(camino: CaminoOlimpico, zona: ZonaFie | null): strin
     case 'POR_EQUIPO':
       return 'Con su equipo';
     case 'AOR':
-      return 'Top 2 individual';
+      return '2 primeros individuales';
     case 'AOR_ZONA':
       return zona ? `Mejor de ${ZONA_CORTA[zona]}` : 'Mejor de su zona';
     case 'ANFITRION':
@@ -53,16 +54,10 @@ export function textoCamino(camino: CaminoOlimpico, zona: ZonaFie | null): strin
   }
 }
 
+/** «28 sept», con el año sólo si no es el de hoy. */
 export function fechaCorta(iso: string | null): string | null {
   if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat('es-ES', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'Europe/Madrid',
-  }).format(d);
+  return fechaCortaComun(iso) || null;
 }
 
 const numero = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 1 });

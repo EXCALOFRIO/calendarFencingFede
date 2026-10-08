@@ -27,6 +27,9 @@ const sinteticas = `
     globalThis.__reenvios = (globalThis.__reenvios || 0) + 1;
     await new Promise(r => setTimeout(r, 450));
     return { aviso: 'Si el correo está invitado, recibirás otro código.' };
+  }
+  export async function cambioSintetico() {
+    globalThis.__cambios = (globalThis.__cambios || 0) + 1;
   }`;
 const stubs: Record<string, string> = {
   'next/headers': `export const cookies = async () => ({get: () => ({value:'persona@example.test'}),has:()=>false}); export const headers = async () => new Headers();`,
@@ -44,10 +47,11 @@ const plugin: Plugin = {
       ({ path: p }) => ({ path: p, namespace: 'stub' }));
     b.onLoad({ filter: /.*/, namespace: 'stub' }, ({ path: p }) => ({ contents: stubs[p], loader: 'js' }));
     b.onLoad({ filter: /[\\/]app[\\/]entrar[\\/]page\.tsx$/ }, ({ path: p }) => ({
-      contents: `import {accionSintetica,reenvioSintetico} from 'acciones-sinteticas';\n` +
+      contents: `import {accionSintetica,reenvioSintetico,cambioSintetico} from 'acciones-sinteticas';\n` +
         readFileSync(p, 'utf8')
           .replace('accion={esPasoCodigo ? verificarCodigo : enviarCodigo}', 'accion={accionSintetica}')
-          .replace('reenviar={reenviarCodigo}', 'reenviar={reenvioSintetico}'),
+          .replace('reenviar={reenviarCodigo}', 'reenviar={reenvioSintetico}')
+          .replace('cambiarCorreo={cambiarCorreo}', 'cambiarCorreo={cambioSintetico}'),
       loader: 'tsx', resolveDir: path.dirname(p),
     }));
   },
@@ -138,7 +142,8 @@ try {
 
       await abrir(true);
       assert.equal(await page.locator('input').count(), 1);
-      assert.equal(await page.locator('input:focus').count(), 0);
+      // El paso del código enfoca su campo: un toque menos.
+      assert.equal(await page.locator('#otp:focus').count(), 1);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       await capturar('codigo');
       const otp = page.getByLabel('Código de verificación');
@@ -155,6 +160,41 @@ try {
       await otp.press('Control+V');
       assert.equal(await otp.inputValue() === codigo, true);
       assert.equal(await otp.evaluate(el => el.scrollLeft), 0);
+
+      // Un pegado más largo que el código se queda con las seis primeras cifras.
+      await page.evaluate(value => navigator.clipboard.writeText(value), `${codigo}9876`);
+      await otp.selectText();
+      await otp.press('Control+V');
+      assert.equal(await otp.inputValue() === codigo, true);
+
+      // Teclear una séptima cifra no la añade ni desplaza el código.
+      await otp.fill('');
+      await otp.pressSequentially(`${codigo}9`);
+      assert.equal(await otp.inputValue() === codigo, true);
+      assert.equal(await otp.evaluate(el => el.scrollLeft), 0);
+
+      // Con el código completo y el cursor al principio, la cifra sobrescribe (acordado).
+      await otp.evaluate(el => (el as HTMLInputElement).setSelectionRange(0, 0));
+      await otp.press('9');
+      assert.equal(await otp.inputValue() === `9${codigo.slice(1)}`, true);
+      assert.equal(await otp.evaluate(el => (el as HTMLInputElement).selectionStart), 1);
+
+      // IME en modo composición (Samsung, Gboard con sugerencias): nunca más de seis.
+      const cdp = await context.newCDPSession(page);
+      await otp.fill('');
+      await otp.focus();
+      const largo = `${codigo}98`;
+      for (let i = 1; i <= largo.length; i++) {
+        await cdp.send('Input.imeSetComposition', { text: largo.slice(0, i), selectionStart: i, selectionEnd: i });
+        assert.ok(await page.locator('[data-rellena="true"]').count() <= 6);
+      }
+      await cdp.send('Input.insertText', { text: largo });
+      assert.ok((await otp.inputValue()).length <= 6);
+      assert.equal(/^\d*$/.test(await otp.inputValue()), true);
+      assert.equal(await otp.evaluate(el => el.scrollLeft), 0);
+      await cdp.detach();
+      await otp.fill(codigo);
+
       await otp.press('End');
       await otp.press('Backspace');
       assert.equal((await otp.inputValue()).length, 5);
@@ -173,6 +213,15 @@ try {
       assert.equal(await page.evaluate(() => (window as unknown as { __envios: number }).__envios), 1);
       assert.equal((await otp.inputValue()).length, 6);
       assert.equal(await otp.getAttribute('aria-invalid'), 'true');
+      // El error se ve en las seis casillas, no solo en el texto.
+      assert.equal(await page.locator('[data-rellena]').first().evaluate(el => {
+        const muestra = document.createElement('i');
+        muestra.style.color = 'var(--destructive)';
+        document.body.append(muestra);
+        const color = getComputedStyle(muestra).color;
+        muestra.remove();
+        return getComputedStyle(el).borderTopColor === color;
+      }), true);
       assert.equal((await boton.boundingBox())!.y, antes!.y);
       await capturar('error');
       await page.getByRole('button', { name: 'Reenviar código', exact: true }).click();
@@ -180,7 +229,7 @@ try {
       assert.equal((await otp.inputValue()).length, 6);
       if (reduce) assert.equal(await page.locator('[data-rellena="true"]').first().evaluate(el => getComputedStyle(el).animationName), 'none');
       assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0);
-      for (const el of await page.locator('button,a[href="/entrar"],input').all()) {
+      for (const el of await page.locator('button,input').all()) {
         const box = await el.boundingBox();
         assert.ok(box && box.height >= 44 && box.width >= 44);
       }
@@ -197,7 +246,7 @@ try {
       await page.close();
     }
   }
-  console.log(`Acceso hidratado: ${capturas} capturas; paste/autofill/ceros/edición/error/pending/reenvío/reduced-motion correctos.`);
+  console.log(`Acceso hidratado: ${capturas} capturas; paste/autofill/ceros/edición/7.ª cifra/IME/error/pending/reenvío/reduced-motion correctos.`);
   console.log(salida);
 } finally {
   await browser.close();

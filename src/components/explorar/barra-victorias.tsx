@@ -28,7 +28,7 @@ export function BarraVictorias({
       className={cn('flex w-full min-w-0 items-center gap-2', className)}
     >
       <span aria-hidden className="cifra min-w-4 text-right text-base leading-none text-ok">{victorias}</span>
-      <span aria-hidden className="flex h-2 min-w-8 flex-1 gap-0.5">
+      <span aria-hidden className="flex h-2 min-w-8 flex-1 gap-px">
         {total === 0 ? <span className="flex-1 rounded-full bg-muted" /> : null}
         {victorias > 0 ? <span className="rounded-full bg-ok" style={{ width: `${pct}%` }} /> : null}
         {derrotas > 0 ? <span className="flex-1 rounded-full bg-danger" /> : null}

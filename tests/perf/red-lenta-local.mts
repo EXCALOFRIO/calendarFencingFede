@@ -252,11 +252,13 @@ try {
       await medir('perfil-carga', () => page.goto(`${origen}${LLAVADOR}`, { waitUntil: 'domcontentloaded' }));
       await medir('perfil-estadisticas', () => page.locator(`a[href="${LLAVADOR}/estadisticas"]`).first().tap(), async () => {
         await page.waitForURL('**/estadisticas');
-        await page.locator('a[data-seccion="estadisticas"][aria-current="page"]').waitFor({ state: 'visible' });
+        await page.locator(`a[href="${LLAVADOR}/estadisticas"][aria-current="page"]`).first().waitFor({ state: 'visible' });
       });
       await medir('perfil-recarga', () => page.reload({ waitUntil: 'domcontentloaded' }));
+      // Las pestañas del perfil sustituyen la entrada del historial: un Atrás
+      // sale del perfil (antes volvía de Estadísticas a Resultados).
       await medir('perfil-atras', () => page.goBack({ waitUntil: 'domcontentloaded' }), async () => {
-        await page.waitForURL((u) => u.pathname === LLAVADOR);
+        await page.waitForURL((u) => u.pathname !== LLAVADOR && !u.pathname.startsWith(`${LLAVADOR}/`));
       });
       const sinDesborde = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
       const barra = page.locator('nav[data-barra="app"]');

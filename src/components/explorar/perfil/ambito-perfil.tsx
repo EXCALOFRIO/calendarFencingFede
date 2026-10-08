@@ -5,6 +5,7 @@ import type {
   TipoCompeticion,
   TonoTipo,
 } from '@/lib/sport/explorar/tipos-social';
+import { ListaDatos, ParDato } from '@/components/sistema/lista-datos';
 import { EtiquetaTipoCompeticion } from '../etiqueta-competicion';
 import { Bloque, Nota, type Nivel } from '../piezas';
 import { Medallero } from './medallas';
@@ -17,7 +18,7 @@ function TarjetaAmbito({ clave, rotulo, r }: { clave: 'internacional' | 'naciona
   return (
     <div data-ambito={clave} className="flex min-w-0 flex-col gap-3 rounded-xl border bg-card p-3 sm:p-4">
       <div className="flex min-w-0 items-center justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
+        <span className="flex min-w-0 items-center gap-2 text-sm font-semibold">
           <Icono className="hidden size-4 shrink-0 text-muted-foreground sm:block" aria-hidden />
           <span className="truncate">{rotulo}</span>
         </span>
@@ -29,16 +30,14 @@ function TarjetaAmbito({ clave, rotulo, r }: { clave: 'internacional' | 'naciona
         <p className="text-xs text-muted-foreground">Sin pruebas</p>
       ) : (
         <>
-          <dl className="grid grid-cols-2 gap-2">
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <dt className="text-[12px] leading-none text-muted-foreground">Mejor</dt>
-              <dd className="cifra text-3xl leading-none">{r.mejorPuesto !== null ? `${r.mejorPuesto}º` : '—'}</dd>
-            </div>
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <dt className="text-[12px] leading-none text-muted-foreground">Ganados</dt>
-              <dd className="cifra text-3xl leading-none">{p !== null ? `${p}%` : '—'}</dd>
-            </div>
-          </dl>
+          <ListaDatos disposicion="rejilla" className="gap-x-2">
+            <ParDato etiqueta="Mejor">
+              <span className="cifra text-3xl leading-none">{r.mejorPuesto !== null ? `${r.mejorPuesto}º` : '—'}</span>
+            </ParDato>
+            <ParDato etiqueta="Ganados">
+              <span className="cifra text-3xl leading-none">{p !== null ? `${p}%` : '—'}</span>
+            </ParDato>
+          </ListaDatos>
           <Medallero oros={r.oros} platas={r.platas} bronces={r.bronces} />
         </>
       )}
@@ -48,7 +47,7 @@ function TarjetaAmbito({ clave, rotulo, r }: { clave: 'internacional' | 'naciona
 
 function FilaTipo({ t }: { t: ResumenCompeticiones & { tono: TonoTipo } }) {
   return (
-    <li className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_2.75rem] items-center gap-x-3 bg-card px-3 py-2.5 sm:px-4">
+    <li className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_2.75rem] items-center gap-x-3 bg-card px-3 py-3 sm:px-4">
       <span className="flex min-w-0">
         <EtiquetaTipoCompeticion
           larga
@@ -60,7 +59,7 @@ function FilaTipo({ t }: { t: ResumenCompeticiones & { tono: TonoTipo } }) {
       </span>
       <span className="flex flex-col items-end leading-none">
         <span className="cifra text-xl">{t.competiciones}</span>
-        <span className="text-[12px] text-muted-foreground">{t.mejorPuesto !== null ? `mejor ${t.mejorPuesto}º` : 'pruebas'}</span>
+        <span className="text-xs text-muted-foreground">{t.mejorPuesto !== null ? `mejor ${t.mejorPuesto}º` : 'pruebas'}</span>
       </span>
     </li>
   );

@@ -5,7 +5,15 @@ import { codificarCursor, decodificarCursor, FECHA_RE, UUID_RE } from './cursor'
 import { aResumen, COLUMNAS_EDICION } from './ediciones';
 import type { EdicionResumen } from './edicion-modelo';
 import { plegarSql, y } from './filtros-sql';
-import { ARMAS_INDICE, buscarEnIndice, CATEGORIAS_INDICE, resumenDeIndice, type IndiceEdiciones } from './indice-ediciones';
+import {
+  ARMAS_INDICE,
+  buscarEnIndice,
+  CATEGORIAS_INDICE,
+  FORMATOS_INDICE,
+  GENEROS_INDICE,
+  resumenDeIndice,
+  type IndiceEdiciones,
+} from './indice-ediciones';
 
 export const LIMITE_CATALOGO = 25;
 const CLASE = 'catalogo-ediciones';
@@ -17,6 +25,8 @@ const esquema = z.object({
   temporada: z.string().regex(/^\d{4}(?:-\d{4})?$/).optional(),
   arma: z.enum(ARMAS_INDICE).optional(),
   categoria: z.enum(CATEGORIAS_INDICE as [string, ...string[]]).optional(),
+  genero: z.enum(GENEROS_INDICE).optional(),
+  formato: z.enum(FORMATOS_INDICE).optional(),
   desde: ANIO.optional(),
   hasta: ANIO.optional(),
   cursor: z.string().min(1).max(600).optional(),
@@ -35,8 +45,13 @@ export type OpcionesCatalogo = {
    * Índice en memoria de las ediciones (`indice-ediciones.ts`). Con él la
    * búsqueda tolera erratas y sinónimos y no lee D1; si falta o devuelve
    * `null`, se busca en D1 por subcadena del nombre o la ciudad.
+   *
+   * Con el índice cada evento sale una vez (sus ediciones juntas, ver
+   * `agruparEdiciones`) y `total` cuenta eventos; en D1, ediciones sueltas.
    */
   indice?: () => Promise<IndiceEdiciones | null>;
+  /** Armas de quien busca: la fila de un evento abre una edición de ellas si la hay. Sólo con el índice. */
+  armasPreferidas?: readonly string[];
 };
 
 /** Normalización de `q` común a la clave de caché, al cursor y a la consulta. */
@@ -57,6 +72,7 @@ export async function leerCatalogoEdiciones(
   const q = normalizarQCatalogo(p.q ?? '');
   const extra = {
     ...(p.arma ? { arma: p.arma } : {}), ...(p.categoria ? { categoria: p.categoria } : {}),
+    ...(p.genero ? { genero: p.genero } : {}), ...(p.formato ? { formato: p.formato } : {}),
     ...(p.desde ? { desde: p.desde } : {}), ...(p.hasta ? { hasta: p.hasta } : {}),
   };
   const filtros = { q, fuente: p.fuente ?? '', temporada: p.temporada ?? '', ...extra };
@@ -68,7 +84,9 @@ export async function leerCatalogoEdiciones(
       return { estado: 'cursor_invalido' };
     }
     const desde = (clave?.[0] as number | undefined) ?? 0;
-    const { posiciones, pruebas } = buscarEnIndice(indice, { ...filtros, q: p.q ?? '' });
+    const { posiciones, pruebas } = buscarEnIndice(indice, {
+      ...filtros, q: p.q ?? '', ...(opciones.armasPreferidas?.length ? { armasPreferidas: opciones.armasPreferidas } : {}),
+    });
     const pagina = posiciones.slice(desde, desde + LIMITE_CATALOGO);
     const siguiente = desde + LIMITE_CATALOGO;
     return {
@@ -91,6 +109,8 @@ export async function leerCatalogoEdiciones(
   if (filtros.temporada) condiciones.push(sql`e.season = ${filtros.temporada}`);
   if (p.arma) condiciones.push(sql`EXISTS (SELECT 1 FROM sport_competition c WHERE c.edition_id = e.id AND c.weapon = ${p.arma})`);
   if (p.categoria) condiciones.push(sql`EXISTS (SELECT 1 FROM sport_competition c WHERE c.edition_id = e.id AND c.category = ${p.categoria})`);
+  if (p.genero) condiciones.push(sql`EXISTS (SELECT 1 FROM sport_competition c WHERE c.edition_id = e.id AND c.gender = ${p.genero})`);
+  if (p.formato) condiciones.push(sql`EXISTS (SELECT 1 FROM sport_competition c WHERE c.edition_id = e.id AND c.format = ${p.formato})`);
   if (p.desde) condiciones.push(sql`coalesce(e.end_date, e.start_date) >= ${`${p.desde}-01-01`}`);
   if (p.hasta) condiciones.push(sql`e.start_date <= ${`${p.hasta}-12-31`}`);
   const pagina = [...condiciones];

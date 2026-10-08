@@ -1,7 +1,7 @@
 import { sanitizarRetornoCalendario } from '@/lib/calendario/contexto-url';
 import { RUTA_EDICIONES, sanitizarRetornoCatalogo } from './catalogo-url';
-import { UUID_RE } from './cursor';
-import { CRITERIOS_VACIOS, construirUrl, type CriteriosExplorar } from './url';
+import { UUID_RE } from './patrones';
+import { CRITERIOS_VACIOS, construirUrlBuscar, type CriteriosExplorar } from './url';
 
 /**
  * Direcciones de las páginas de edición. Sin imports de servidor: las usan la
@@ -144,5 +144,5 @@ export function urlExplorarDePrueba(edicionId: string, p: PruebaParaExplorar): s
     categoriaRaw: rawUsable ? (raw ?? '') : '',
     categoria: rawUsable ? '' : p.categoria.codigo,
   };
-  return construirUrl(criterios);
+  return construirUrlBuscar(criterios);
 }

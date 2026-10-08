@@ -12,70 +12,26 @@
  * TEMA
  * ===========================================================================
  *
- * Nombres de variable estándar de shadcn/ui, no inventados: así los
- * componentes que se instalan con su CLI se ven bien sin tocarlos.
+ * Nombres de variable estándar de shadcn/ui, para que los componentes de su
+ * CLI se vean bien sin tocarlos. La especificación completa (tokens, cristal,
+ * movimiento, escala tipográfica, espaciado y radios) está en
+ * `docs/diseno-sistema.md` § 3; aquí solo los valores y lo que no se deduce
+ * de ellos.
  *
- * -------------------------------------------------------------------------
- * DE DÓNDE SALE ESTE ASPECTO
- * -------------------------------------------------------------------------
+ * UN SOLO SISTEMA DE COLOR: hexadecimal para lo opaco y `rgba()` para lo que
+ * es luz o sombra sobre un canto. `tests/contraste-tokens.test.ts` lee este
+ * fichero y comprueba AA (4,5:1) para cada token de texto sobre cada
+ * superficie y 3:1 para los cantos que son la única señal de un control.
+ * Si se cambia un valor y deja de pasar, la prueba falla.
  *
- * De la esgrima, no de una plantilla. Tres referencias concretas:
+ * LA REGLA DEL MODO OSCURO: a más elevación, gris más claro. Las superficies
+ * de contenido (tarjeta, fila, tabla, campo) son opacas; el alfa solo se
+ * admite en cantos (`--border`, `--input`, `--filete*`), en el velo y en el
+ * cristal de las barras y paneles flotantes (`.cristal`, más abajo).
  *
- * - **La pista**: 14 metros de aluminio, marcada con líneas blancas finas.
- *   De ahí que la estructura de la aplicación sean bandas horizontales
- *   separadas por filetes de un píxel, y no tarjetas flotando.
- * - **El marcador**: cifras enormes en condensada y rótulos diminutos al
- *   lado. El contraste brutal entre los dos ES la jerarquía. Una pantalla
- *   entera a 13 px se lee plana por mucho color que le pongas.
- * - **El equipo**: blanco sobre metal. El blanco es un color estructural
- *   aquí, no solo el del texto: los filetes, los bordes y los realces son
- *   blanco a muy baja opacidad.
- *
- * Y dos cosas que se evitan a propósito porque son el aspecto por defecto de
- * cualquier interfaz generada:
- *
- * - **Negro teñido + un único acento de color.** El fondo de aquí es un
- *   grafito frío de verdad (croma 0,008 en el azul), no un #0B0B0B con
- *   pretensiones. Se nota sobre todo en las superficies.
- * - **Todo con el mismo radio y una sombra gris blanda debajo.** El radio
- *   estructural es pequeño (6 px) y las superficies se separan con un
- *   **filete de luz** arriba —un píxel de blanco al 5 %, como el canto de
- *   una chapa— en vez de con sombra.
- *
- * Los tres colores con significado, y no hay más:
- *
- * 1. **El rojo de la bandera de España.** Dos tonos: `--primary` para
- *    rellenos y `--primary-text` para cuando el rojo es texto, porque el
- *    saturado no llega a AA sobre fondo oscuro.
- * 2. **Oro**, y SOLO las convocatorias de selección. Si se usa para otra
- *    cosa deja de significar «te han convocado», que es el aviso más
- *    importante que da esta aplicacion.
- * 3. **Semáforo** verde/ámbar/rojo para los plazos. Los tres pasan AA.
- *
- * -------------------------------------------------------------------------
- * EL ROJO: DE ROSA A BANDERA (medido, no estimado)
- * -------------------------------------------------------------------------
- *
- * `--primary` era `oklch(0.586 0.222 17.6)`, o sea `#e11d48`: el `rose-600`
- * de Tailwind. Tira a fucsia y no es de España. Ahora es el rojo de la
- * bandera, Pantone 186C, `#c60c1e`, que en OKLCh es
- * `oklch(0.523 0.208 25.8)`.
- *
- * Lo que dice la báscula (`npm run contraste`), porque aquí se mide:
- *
- * | Uso                              | Rosa   | Bandera |
- * |----------------------------------|--------|---------|
- * | blanco sobre el relleno          | 4,58:1 | 5,72:1  |
- * | el relleno frente al fondo       | 4,08:1 | 3,16:1  |
- * | `--primary-text` sobre `card`    | 7,53:1 | 5,60:1  |
- *
- * Contra lo que parecía, un rojo más oscuro **mejora** el botón principal:
- * el texto blanco encima gana más de un punto de contraste. Lo que pierde es
- * el rojo *como texto*, y para eso está `--primary-text`, más claro, que se
- * queda en 5,60:1 sobre tarjeta y 4,82:1 sobre `secondary`. Todo AA.
- *
- * Y el oro no se toca: rojo y oro ya eran los colores de esta aplicación.
- * Corregido el rojo, la pareja se lee como lo que es, sin pintar banderas.
+ * Y el lienzo es plano: sin retícula, grano, cuñas ni bandas. La profundidad
+ * la dan los escalones de superficie y el filete de luz, no una textura
+ * detrás del texto.
  */
 
 :root {
@@ -83,532 +39,153 @@
      nativos y el color del lienzo antes de que cargue la hoja de estilos. */
   color-scheme: dark;
 
-  /* Radio estructural pequeño. Las pastillas usan `rounded-full`, que es una
-     decisión distinta: redondo del todo o casi recto, nunca el término medio
-     de 12 px en absolutamente todo. */
+  /* 6 px. La escala de radios es 6 / 12 / redondo (ver `@theme`). */
   --radius: 0.375rem;
 
-  /* Ancho máximo del contenido. Lo aplica `.ancho-app`, que además centra;
-     el por qué de los 1320 está con la clase, más abajo. */
+  /* Ancho máximo del contenido. Lo aplica `.ancho-app`, que además centra. */
   --ancho-app: 1320px;
 
   /**
-   * =======================================================================
-   * LA ESCALA DE SUPERFICIES: CUATRO NIVELES, NINGUNO CON ALFA
-   * =======================================================================
+   * LA ESCALA DE SUPERFICIES
    *
-   * La queja de fondo de la auditoría tiene nombre: **la «sopa negra»**. No
-   * había sensación de profundidad porque todo flotaba sobre el mismo fondo,
-   * las superficies eran semitransparentes y la textura del lienzo se colaba
-   * a través del contenido.
+   * | Nivel | Token                     | Valor     | Para qué |
+   * |-------|---------------------------|-----------|----------|
+   * | 0     | `--background`            | `#090A0F` | el lienzo |
+   * | 1     | `--card`                  | `#12141C` | tarjeta, fila, tabla, bloque |
+   * | 3     | `--popover`               | `#1A1D27` | hoja, diálogo, menú, `select` (base del cristal de panel) |
+   * | 2     | `--secondary` / `--muted` | `#232733` | control: campo, pastilla neutra, cabecera de tabla |
+   * | 2+    | `--accent`                | `#2A2E3B` | `hover` de un control |
+   * | 2r    | `--marcado`               | `#3A1714` | control marcado (con borde y texto `--primary-text`) |
    *
-   * La causa no era la falta de tokens: ya estaban los cuatro. Era que las
-   * pantallas subían de nivel **con alfa** (`bg-input/30`, `bg-muted/50`,
-   * `bg-black/20`) en vez de cambiar de token. Y el alfa hace tres cosas
-   * malas a la vez: deja pasar el grano y las cuñas del lienzo, hace que el
-   * mismo control se vea de un color distinto según lo que tenga detrás, y
-   * no sube de nivel de verdad — solo aclara un poco lo que ya había.
-   *
-   * REGLA DEL MODO OSCURO, y es la única:
-   *
-   *   **A más elevación, gris MÁS CLARO. Nunca más transparente.**
-   *
-   * -----------------------------------------------------------------------
-   * LOS CUATRO NIVELES
-   * -----------------------------------------------------------------------
-   *
-   * | Nivel | Token                    |   L   | Para qué                  |
-   * |-------|--------------------------|-------|---------------------------|
-   * | **0** lienzo    `--background`   | 0,170 | `html`. El ÚNICO sitio donde se ve la textura. |
-   * | **1** superficie `--card`        | 0,215 | Contenido denso apoyado en el lienzo: la rejilla del mes, una tarjeta, una tabla, una fila. |
-   * | **2** control   `--secondary` / `--muted` | 0,270 | Lo que se toca o se lee como objeto suelto: campo, pastilla neutra, botón secundario, cabecera de tabla, el disco del avatar. Va encima del nivel 1 o de un panel flotante. |
-   * | **2+** realce   `--accent`       | 0,300 | El `hover` de un control. Es medio paso, no un nivel. |
-   * | **2r** marcado  `--marcado`      | 0,285 | La superficie de un control **marcado**: arma elegida, género, pestaña activa, destino activo, opción elegida de un `Select`. Mismo nivel que el control, teñida de rojo. Ver «EL CONTROL MARCADO» más abajo. |
-   * | **3** flotante  `--popover`      | 0,255 | Lo que sale del plano: `popover`, menú, `select`, diálogo y **la hoja lateral**. |
-   *
-   * POR QUÉ EL 3 NO ES EL MÁS CLARO. Porque no se apoya en el nivel 1: se
-   * apoya en el **lienzo oscurecido por el velo**, y encima lleva controles
-   * de nivel 2 que tienen que seguir leyéndose por encima de él. Un panel
-   * flotante que fuese más claro que sus propios controles invertiría la
-   * escala. La elevación que le falta a la luminosidad la ponen **el velo,
-   * la sombra dura y el canto de luz**, que es justo lo que el gris solo no
-   * puede decir sin llegar al gris medio.
-   *
-   * POR QUÉ 0,255. Es un paso de +0,042 en L sobre la tarjeta, o sea el
-   * mismo tamaño que el salto del lienzo a la tarjeta (+0,044). La escala
-   * sube a pasos iguales y eso es lo que la hace legible.
-   *
-   * -----------------------------------------------------------------------
-   * POR QUÉ SE MIDE EN ΔL DE OKLAB Y NO EN RAZÓN DE CONTRASTE
-   * -----------------------------------------------------------------------
-   *
-   * Porque a estas luminancias la fórmula de WCAG no dice nada: el `+0,05`
-   * del denominador manda y **cualquier par de grises oscuros sale entre
-   * 1,2:1 y 1,3:1**, se vea o no se vea. Medido: el panel de la ficha sobre
-   * el calendario daba **1,03:1 antes y 1,27:1 después**, y la diferencia
-   * mirando la captura es abismal. Lo que sí correlaciona con lo que se ve
-   * es la distancia en L de OKLab, que es la misma vara que ya usa la
-   * paleta de organismos más abajo:
-   *
-   *   antes (panel `--background` sobre el velo)  ΔL = 0,015  → invisible
-   *   después (panel `--popover` sobre el velo)   ΔL = 0,116  → se lee
-   *
-   * Para una superficie grande, **ΔL ≥ 0,04 ya se ve** y por debajo de
-   * 0,02 no. Los cuatro niveles están a 0,042–0,055 unos de otros.
-   *
-   * -----------------------------------------------------------------------
-   * DÓNDE ESTÁ PROHIBIDO EL ALFA
-   * -----------------------------------------------------------------------
-   *
-   * En el **fondo de cualquier superficie**. Sin excepciones:
-   *
-   * - tarjeta, fila, tabla, cabecera de tabla, panel, acordeón;
-   * - hoja lateral, diálogo, menú, `popover`, `select`, `command`;
-   * - campo de formulario, casilla, interruptor, pastilla neutra, `kbd`;
-   * - el estado marcado o el `hover` de cualquiera de los anteriores.
-   *
-   * Si hace falta separar algo del fondo, **se sube de nivel**, no se baja
-   * la opacidad. Y si el nivel que hace falta no existe, se añade a esta
-   * tabla con su medida; no se escribe `/70` en una pantalla.
-   *
-   * Y el **marcado de un control** tampoco: tiene su propio token opaco,
-   * `--marcado`. El por qué está arriba, con sus medidas.
-   *
-   * DÓNDE SÍ SE PUEDE, que son cuatro casos y están cerrados:
-   *
-   * 1. **Bordes, filetes y anillos de foco** (`--border`, `--input`,
-   *    `--filete`, `--filete-alto`). Son luz sobre un canto, no superficie;
-   *    tienen que funcionar sobre cualquier nivel y por eso van en alfa.
-   * 2. **El velo de un diálogo o de una hoja** (`--velo`). Oscurecer lo que
-   *    hay detrás ES su función; no es una superficie.
-   * 3. **Tintes semánticos de aviso** (`bg-warn/10`, `bg-destructive/10`,
-   *    `bg-gold/20`): ahí el color es el mensaje y la superficie de debajo
-   *    sigue siendo la de su nivel. Van al 5–20 %, nunca más.
-   * 4. **El acrílico** (`.acrilico`), y solo sobre una foto. Ver más abajo.
-   *
-   * -----------------------------------------------------------------------
-   * Y LA TEXTURA: SOLO EN EL LIENZO
-   * -----------------------------------------------------------------------
-   *
-   * `REFERENCIAS.md` § 1 ya lo decía —*«si tapa una letra, sobra»*— pero no
-   * estaba escrito como regla de la escala. Lo está ahora:
-   *
-   * **Toda superficie de contenido denso es opaca y la textura se queda
-   * fuera.** El relieve del lienzo se ve alrededor —en los márgenes, detrás
-   * de la cabecera, detrás del marcador—, nunca a través de una rejilla de
-   * datos ni de un campo de formulario.
-   *
-   * Las clases `.fondo-cabecera` y `.fondo-panel` no son una excepción:
-   * pintan la textura **encima de una superficie ya opaca** (`bg-card`) y
-   * son para bloques de cabecera con tinte de organismo, no para contenido
-   * denso. Lo que está prohibido es que la textura sea **la manera en que
-   * una superficie enseña su nivel**.
+   * El nivel 3 queda por debajo del 2 a propósito: un panel flotante lleva
+   * controles de nivel 2 encima y tiene que seguir siendo más oscuro que
+   * ellos. Lo que lo separa de lo de detrás es el velo, la sombra y el canto.
    */
-  --background: oklch(0.17 0.008 265);
-  --foreground: oklch(0.98 0.002 265);
+  --background: #090a0f;
+  --foreground: #e8eaf0;
 
-  --card: oklch(0.215 0.009 265);
-  --card-foreground: oklch(0.98 0.002 265);
+  --card: #12141c;
+  --card-foreground: #e8eaf0;
 
-  /* Nivel 3, el flotante. Era 0,245 y subió a 0,255 para que el paso sobre
-     la tarjeta (+0,042) sea el mismo que el del lienzo a la tarjeta. */
-  --popover: oklch(0.255 0.009 265);
-  --popover-foreground: oklch(0.98 0.002 265);
+  --popover: #1a1d27;
+  --popover-foreground: #e8eaf0;
 
-  /* Rojo de la bandera (Pantone 186C, #c60c1e). Relleno: blanco encima a
-     5,72:1. */
-  --primary: oklch(0.523 0.208 25.8);
-  --primary-foreground: oklch(0.99 0 0);
-  /* El mismo rojo, aclarado para cuando es texto: el de relleno se queda en
-     2,90:1 sobre tarjeta y no llega ni a AA grande. Este da 5,60:1. */
-  --primary-text: oklch(0.68 0.19 25.8);
+  /* Rojo de la bandera (Pantone 186C). Relleno; como texto va `--primary-text`. */
+  --primary: #c60c1e;
+  --primary-foreground: #fcfcfd;
+  --primary-text: #ff6b63;
 
-  --secondary: oklch(0.27 0.009 265);
-  --secondary-foreground: oklch(0.98 0.002 265);
+  --secondary: #232733;
+  --secondary-foreground: #e8eaf0;
 
-  --muted: oklch(0.27 0.009 265);
-  --muted-foreground: oklch(0.75 0.01 265);
+  --muted: #232733;
+  --muted-foreground: #a1a6b4;
 
-  --accent: oklch(0.3 0.01 265);
-  --accent-foreground: oklch(0.98 0.002 265);
+  --accent: #2a2e3b;
+  --accent-foreground: #e8eaf0;
 
   /**
-   * =======================================================================
-   * EL CONTROL MARCADO: RELLENO FRENTE A CONTORNO
-   * =======================================================================
+   * EL CONTROL MARCADO: relleno frente a contorno.
    *
-   * Historia corta, porque esto se ha rehecho dos veces y conviene que no
-   * haya una tercera.
-   *
-   * 1. Al principio un filtro activo iba **relleno de acento**. El usuario
-   *    cazó el fallo de un vistazo: en la fila del calendario `Florete` salía
-   *    rojo por estar activo y `M` y `F` salían **los dos** rojos porque los
-   *    dos estaban activos. La misma señal para dos cosas distintas en la
-   *    misma línea. De ahí salió `REFERENCIAS.md` § 9.1.
-   * 2. El arreglo fue quitar el acento y marcar con **fondo secundario**. Eso
-   *    resolvió la incoherencia y creó otra: *«en lo de los filtros es tan
-   *    gris que ni se nota»*. Medido, tenía razón: `--accent` frente al
-   *    lienzo son 0,131 de distancia OKLab **de pura luminosidad**, sin nada
-   *    de matiz. Un escalón de gris de ese tamaño, sin borde ni peso que lo
-   *    acompañen, es el aspecto de un control desactivado, no de uno
-   *    elegido. Un estado que no se ve no es un estado.
-   *
-   * La distinción que vale no es «acento sí / acento no». Es **relleno
-   * frente a contorno**, y así quedan tres cosas que no se pueden confundir:
-   *
-   * | Qué                  | Cómo                                          |
-   * |----------------------|-----------------------------------------------|
-   * | Acción principal     | `bg-primary` **sólido** + texto blanco. Una por pantalla. |
-   * | Control marcado      | borde `--primary-text`, superficie `--marcado`, texto `--primary-text` **y en negrita**. |
-   * | Control sin marcar   | borde `--input`, superficie de su nivel, texto apagado. |
-   *
-   * `Florete` marcado y `M` marcado se ven **iguales entre sí**, que es lo
-   * correcto, y distintos del botón que de verdad hace algo, que es lo que
-   * faltaba. Distancia OKLab de `--marcado` a `--primary`: **0,280**. No hay
-   * forma de leer uno como el otro.
-   *
-   * Y EL COLOR NO VA SOLO, que lo exige `UI.md` § 2.6: el marcado lleva
-   * **borde** (forma) y **negrita** (peso) además del rojo. Quien no
-   * distinga el rojo ve un contorno y una letra más gruesa.
-   *
-   * -----------------------------------------------------------------------
-   * POR QUÉ UN TOKEN OPACO Y NO `bg-primary/12`
-   * -----------------------------------------------------------------------
-   *
-   * Porque la excepción 3 de la lista de abajo —«tintes semánticos de aviso
-   * al 5–20 %»— **no cubre esto**, y colarlo ahí habría sido hacer trampa:
-   *
-   * - Un aviso se pinta una vez sobre una superficie conocida. Un control
-   *   marcado aparece sobre el lienzo (filtros del ranking), sobre `--card`
-   *   (pestañas de gestión), sobre `--popover` (opción de un `Select`) y
-   *   sobre la cabecera (destino activo). Con alfa, **el mismo estado sale
-   *   de cuatro colores distintos**, que es exactamente lo que la regla del
-   *   modo oscuro prohíbe.
-   * - Los filtros del calendario y del ranking viven dentro de los primeros
-   *   46 rem, donde están `--capa-bandas` y `--capa-cuna`. Un rojo al 12 %
-   *   ahí **deja pasar la cuña y la retícula**: el mismo fallo que ya se
-   *   arregló en el aviso de «Vincula tu ficha», que iba con `bg-primary/10`
-   *   y salía «un rojo sucio con dibujos dentro».
-   *
-   * Así que se añade una fila a la tabla de superficies con su medida, que
-   * es lo que esa tabla pide cuando falta un nivel.
-   *
-   * LOS NÚMEROS (medidos con la báscula de `npm run contraste`):
-   *
-   * | Par                                   | Razón    |
-   * |---------------------------------------|----------|
-   * | blanco sobre `--marcado`              | 13,88:1  |
-   * | `--primary-text` sobre `--marcado`    | 4,67:1   |
-   * | `--muted-foreground` sobre `--marcado`| 6,62:1   |
-   * | borde `--primary-text` vs lienzo      | 6,07:1   |
-   * | borde `--primary-text` vs `--card`    | 5,58:1   |
-   * | borde `--input` (el de sin marcar)    | 1,67:1   |
-   *
-   * El borde es lo que hace el trabajo: de 1,67:1 a 6,07:1 son casi cuatro
-   * veces más contraste en la línea, y WCAG 1.4.11 pide 3:1 para el canto de
-   * un control. La superficie acompaña; sola no bastaba.
-   *
-   * POR QUÉ 0,285 Y NO MÁS CLARA. Porque el techo lo pone el texto: a 0,285
-   * el rojo de texto se queda en 4,67:1 y a 0,30 baja de 4,5:1. O sea que
-   * una superficie más viva **cuesta la legibilidad del rótulo**, y el rótulo
-   * es el contenido. El croma (0,062) es menos de un tercio del de
-   * `--primary` (0,208) a propósito: tiñe, no rellena.
+   * La acción principal va en `bg-primary` sólido. Un control marcado (arma
+   * elegida, pestaña activa, opción de un `Select`) va con borde
+   * `--primary-text`, superficie `--marcado` y texto `--primary-text` en
+   * negrita: forma, peso y color, nunca solo color. Es un token opaco y no
+   * `bg-primary/12` porque el mismo estado aparece sobre el lienzo, la
+   * tarjeta y el panel, y con alfa saldría de tres colores distintos.
    */
-  --marcado: oklch(0.285 0.062 25.8);
+  --marcado: #3a1714;
 
-  --destructive: oklch(0.65 0.21 22);
-  --destructive-foreground: oklch(0.99 0 0);
+  --destructive: #ff6168;
+  --destructive-foreground: #fcfcfd;
 
-  --border: oklch(1 0 0 / 9%);
-  --input: oklch(1 0 0 / 14%);
-  /* El canto de un campo de texto, opaco: ≥ 3,18:1 de `--background` a `--accent` (WCAG 1.4.11). `--input` se queda en 1,67:1 para tarjetas y chips. */
-  --borde-campo: oklch(0.58 0.01 265);
-  /* Opaco: al 50 % el anillo de foco bajaba a 2,32:1. */
-  --ring: oklch(0.68 0.19 25.8);
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.14);
+  /* El canto de un campo de texto, opaco: es la única señal del campo y
+     pasa 3:1 sobre todas las superficies, incluida `--accent`. */
+  --borde-campo: #7a7f8c;
+  --ring: #ff6b63;
 
-  /* Filete de luz del canto superior de una superficie. */
-  --filete: oklch(1 0 0 / 6%);
+  /* Filete de luz del canto de una superficie; el alto, para las flotantes. */
+  --filete: rgba(255, 255, 255, 0.06);
+  --filete-alto: rgba(255, 255, 255, 0.12);
+
+  /* Velo de hojas y diálogos. Sin desenfoque: a pantalla completa es la capa
+     más cara de componer y bajo un 65 % de negro no se notaría. */
+  --velo: rgba(0, 0, 0, 0.65);
+  /* Sombras negras y dirigidas hacia lo que tapan; nunca de color. */
+  --sombra-hoja-der: -12px 0 30px rgba(0, 0, 0, 0.7);
+  --sombra-hoja-izq: 12px 0 30px rgba(0, 0, 0, 0.7);
+  --sombra-hoja-arr: 0 12px 30px rgba(0, 0, 0, 0.7);
+  --sombra-hoja-aba: 0 -12px 30px rgba(0, 0, 0, 0.7);
+  --sombra-flotante: 0 14px 34px rgba(0, 0, 0, 0.6);
+  /* Canto de luz de una tarjeta sólida, opcional (`shadow-[var(--canto-luz)]`). */
+  --canto-luz: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
   /**
-   * LO QUE HACE QUE UN PANEL FLOTE, y no es la luminosidad.
+   * CRISTAL: solo en lo que flota sobre contenido que se desplaza.
    *
-   * Los tres van juntos: si falta uno, el panel se lee como un trozo de
-   * pantalla que cambia de color, no como algo que se ha puesto delante.
+   * Cabecera, barra inferior, hojas, diálogos, menús y `popover`. El
+   * desenfoque solo se ve si detrás hay algo distinto que desenfocar; sobre
+   * un fondo plano no aporta nada y en un Android modesto cuesta una capa
+   * compuesta por elemento. Por eso tarjetas y filas son sólidas.
    *
-   * - `--filete-alto`: el canto de luz de una superficie **flotante**, al
-   *   12 %, el doble que el `--filete` estructural. Es el número que pedía
-   *   la auditoría. Sobre `--popover` da 1,25:1, que a un píxel de ancho es
-   *   una línea que se ve; el `--border` del 9 % que había antes se perdía.
-   * - `--velo`: el negro que se pone sobre el contenido de detrás cuando se
-   *   abre una hoja o un diálogo. Era del 50 %. Al 65 % el calendario sigue
-   *   reconociéndose como contexto —no es un apagón, que parecería un
-   *   fallo— pero queda claramente relegado.
-   *
-   *   **Y NO LLEVA DESENFOQUE, a propósito.** `backdrop-filter` en un velo
-   *   a pantalla completa es una capa compuesta de todo el viewport —a
-   *   2560 × 1400 son 3,6 megapíxeles— y el presupuesto de
-   *   `REFERENCIAS.md` § 10 es de seis superficies con desenfoque por
-   *   pantalla, de las que el calendario ya gasta tres (cabecera, barra
-   *   inferior y el aspa de la hoja). Se probó y se descartó mirándolo: con
-   *   el fondo al 65 % de negro el desenfoque no se nota, así que se paga
-   *   sin recibir nada. El acrílico es para paneles **sobre una foto**, y
-   *   aquí detrás hay una rejilla de trescientas barras.
-   * - Las sombras: negro duro y **dirigido hacia el contenido que tapa**.
-   *   La `shadow-lg` de Tailwind es `rgb(0 0 0 / 10%)` hacia abajo, o sea
-   *   invisible sobre un fondo casi negro; medido, no separaba nada.
+   * `--cristal-solido` es el color que da `--cristal` sobre el lienzo, para
+   * que el paso a sólido (sin soporte, transparencia reducida, durante una
+   * transición de página) no cambie el tono de la barra.
    */
-  --filete-alto: oklch(1 0 0 / 12%);
-  --velo: oklch(0 0 0 / 65%);
-  --sombra-hoja-der: -12px 0 30px oklch(0 0 0 / 70%);
-  --sombra-hoja-izq: 12px 0 30px oklch(0 0 0 / 70%);
-  --sombra-hoja-arr: 0 12px 30px oklch(0 0 0 / 70%);
-  --sombra-hoja-aba: 0 -12px 30px oklch(0 0 0 / 70%);
-  --sombra-flotante: 0 14px 34px oklch(0 0 0 / 60%);
+  --cristal: rgba(18, 20, 28, 0.72);
+  --cristal-panel: rgba(26, 29, 39, 0.86);
+  --cristal-borde: rgba(255, 255, 255, 0.08);
+  --cristal-solido: #0f1118;
+  --cristal-filtro: blur(16px) saturate(1.2);
 
   /* Convocatorias de selección, y nada más. */
-  --gold: oklch(0.82 0.13 82);
-  --gold-foreground: oklch(0.2 0.03 84);
+  --gold: #eebb58;
+  --gold-foreground: #1c1506;
 
-  /* Semáforo de plazos. Los tres pasan AA sobre el fondo. */
-  --ok: oklch(0.79 0.15 158);
-  --warn: oklch(0.83 0.14 82);
-  --danger: oklch(0.71 0.19 20);
-  --off: oklch(0.62 0.01 265);
-
-  /**
-   * QUIÉN ORGANIZA: la lectura rápida del calendario.
-   *
-   * Cada organismo tiene DOS tokens y hay que usar los dos:
-   *
-   * - `--org-x`          identidad: el punto, el filete, el texto sobre el
-   *                      fondo de la página (leyenda, pastillas).
-   * - `--org-x-relleno`  la superficie **sólida** de la barra. Con texto
-   *                      blanco encima (`text-foreground`), no con el color
-   *                      de identidad: en la FIE, identidad sobre su propio
-   *                      relleno da 3,99:1 y no llega a AA. Blanco da entre
-   *                      5,2:1 (RFEE) y 12,0:1 (autonómica).
-   *
-   * Por qué dos. Antes había uno solo y las barras se pintaban con él al
-   * 20 % (`bg-org-fie/20 text-org-fie`). Un color medio al 20 % sobre un
-   * grafito casi negro da un pardo sin croma: la Copa del Mundo salía oliva
-   * apagado, las ligas nacionales granate oscuro y la Eurofence League verde
-   * azulado. El usuario lo dijo exacto: **«los colores parecen estados
-   * desactivados, no categorías»**. Un relleno sólido y explícito convierte
-   * la barra en un objeto con color, no en un color descolorido.
-   *
-   * Y por qué ESTOS cuatro. La primera versión de esta paleta puso los
-   * cuatro rellenos a la misma luminosidad (0,33) y solo cambió el matiz.
-   * Renderizado en barras pequeñas **la FIE y la EFC no se distinguían**:
-   * medido en distancia perceptual OKLab, los pares quedaban entre 0,040 y
-   * 0,069, y por debajo de 0,10 el ojo no los separa a ese tamaño. Estos
-   * cuatro varían luminosidad Y matiz y el par peor está en **0,111**, casi
-   * el doble. Se eligieron buscando el juego que maximiza la distancia
-   * mínima entre los cuatro con el blanco encima en AA, y se comprobó
-   * mirando la captura, no la tabla.
-   *
-   * La paleta está estrecha a propósito:
-   *
-   * - Verde, ámbar y rojo están cogidos por el semáforo de plazos. Si la
-   *   Liga de Oro fuese ámbar se leería como «el plazo está por cerrar».
-   * - El rojo de acento es el de España y se reserva para la acción
-   *   principal. Tampoco puede ser el color de un organismo.
-   * - Antes la FIE era ámbar, **el mismo matiz 82 que `--warn`**: una Copa
-   *   del Mundo y un plazo a punto de cerrar se pintaban igual. Ese era el
-   *   fallo de fondo, no el tono.
-   *
-   * Así que: RFEE **ladrillo**, FIE su azul, EFC petróleo, y las autonómicas
-   * el grafito de la pista. El azul de la FIE es la decisión más discutible,
-   * porque el usuario dijo «no la quiero azul» del aspecto general; es su
-   * color y aquí solo marca procedencia, y cambiarlo es una línea.
-   *
-   * POR QUÉ LA RFEE ES LADRILLO Y NO GRIS, que fue el segundo intento.
-   *
-   * Primero fue un gris neutro oscuro, luego un acero claro. Los dos estaban
-   * del revés: para un tirador de la selección española **un TNR y una Liga
-   * Nacional son las competiciones que de verdad va a disputar**, y la Copa
-   * del Mundo de Takamatsu es la excepción. Pintando lo nacional de gris y
-   * lo internacional de azul vivo, la pantalla decía lo contrario. Visto en
-   * `capturas/cal/ENTREGA-seleccionador-florete-iphone-m1.png`: cuatro
-   * barras nacionales en gris y debajo una Copa del Mundo en azul.
-   *
-   * El ladrillo es el rojo de la bandera bajado de luminosidad y de croma
-   * hasta la mitad: `oklch(0.42 0.09 25.8)` frente al `oklch(0.523 0.208
-   * 25.8)` del acento. No es el acento y no se confunde con él —0,157 de
-   * distancia OKLab, y uno es una superficie apagada y el otro un relleno
-   * vivo—; tampoco con la pastilla de plazo en peligro, que es el par más
-   * cercano y está a 0,143. Con el blanco encima da 8,35:1.
-   *
-   * Y significa algo: es el color de la federación española, no el hueco que
-   * quedaba libre.
-   *
-   * El circuito concreto se distingue con **texto y forma**, nunca con más
-   * tonos: son veinticuatro circuitos y no hay veinticuatro colores
-   * distinguibles. El mapa vive en `src/lib/colores.ts`.
-   */
-  /* La identidad va en la misma familia que su relleno, pero con el croma
-     muy bajo (0,05) para que no se lea como «el rosa ese» que se acaba de
-     quitar: es un blanco cálido, no un rosa. A 0,244 de `--primary-text`. */
-  --org-rfee: oklch(0.88 0.05 25.8);
-  --org-rfee-relleno: oklch(0.42 0.09 25.8);
-  --org-fie: oklch(0.72 0.16 258);
-  --org-fie-relleno: oklch(0.38 0.11 258);
-  --org-efc: oklch(0.86 0.11 198);
-  --org-efc-relleno: oklch(0.42 0.09 195);
-  --org-aut: oklch(0.7 0.014 265);
-  --org-aut-relleno: oklch(0.32 0.008 265);
+  /* Semáforo de plazos. */
+  --ok: #54d795;
+  --warn: #f4be4f;
+  --danger: #ff666f;
+  /* El texto más apagado permitido: AA también sobre `--accent`. */
+  --off: #9197a6;
 
   /**
-   * ---------------------------------------------------------------------
-   * LA PASTILLA DE CIRCUITO TEÑIDA, Y POR QUÉ NO ES UN ALFA
-   * ---------------------------------------------------------------------
+   * QUIÉN ORGANIZA. Dos tokens por organismo:
    *
-   * El usuario, mirando el calendario: *«está todo demasiado gris sobre
-   * negro»*. Las pastillas de circuito («RFEE · Nacional», «FIE · Copa del
-   * Mundo») eran texto plano sobre la tarjeta, así que los tres organismos
-   * se leían igual y el color solo existía en un filete de 3 px.
+   * - `--org-x`: identidad (punto, filete, texto sobre el lienzo o la tarjeta);
+   * - `--org-x-relleno`: la barra sólida del calendario, con `text-foreground`
+   *   encima (la identidad sobre su propio relleno no llega a AA en la FIE).
    *
-   * La forma obvia sería `bg-org-fie/12`. **No se puede**, y ya se pagó dos
-   * veces en este proyecto: la tarjeta del calendario va sobre el lienzo
-   * texturado (cuña + retícula de cruces + grano), y un alfa del 12 % deja
-   * pasar la retícula POR DENTRO de la pastilla. El resultado es una
-   * pastilla con dibujos, que es exactamente el «efecto muy transparente
-   * raro» que el usuario rechazó por escrito —dos veces— y lo que
-   * `REFERENCIAS.md` §10 llama transparencia frente a material.
-   *
-   * Así que el tinte se calcula y sale **opaco**: el color de identidad
-   * mezclado al 14 % dentro de `--card`, que es la superficie sobre la que
-   * va. Mismo aspecto, sin velo y sin `backdrop-filter`, que en una
-   * pantalla con cientos de pastillas en un móvil no se paga.
-   *
-   * El 14 % está medido: por debajo del 10 % la pastilla no se distingue de
-   * la tarjeta y volvemos al gris; por encima del 20 % compite con el
-   * relleno sólido (`--org-*-relleno`), que significa otra cosa.
-   *
-   * Y lo que dice la báscula (`npm run contraste`, sección «Pastilla de
-   * circuito teñida»), con el color de identidad encima:
-   *
-   *   RFEE  #322f32   9,08:1   AA      la pastilla frente a la tarjeta: 1,33
-   *   FIE   #212b39   5,62:1   AA                                       1,23
-   *   EFC   #243236   9,00:1   AA                                       1,33
-   *   AUT   #272a2f   5,36:1   AA                                       1,22
-   *
-   * Las cuatro pasan AA de sobra. La segunda columna es informativa: una
-   * pastilla no es un control ni un límite, así que no le aplica el 3:1 de
-   * 1.4.11; con 1,2:1 ya se lee como una caja y el circuito además va
-   * **escrito** dentro, que es la regla del proyecto (el color nunca es la
-   * única señal).
+   * Verde, ámbar y rojo están cogidos por el semáforo y el rojo vivo por la
+   * acción principal; por eso RFEE es ladrillo, FIE azul, EFC petróleo y las
+   * autonómicas grafito. El circuito concreto se escribe; no hay un color
+   * por circuito. El mapa está en `src/lib/colores.ts`.
    */
-  --org-rfee-tinte: color-mix(in oklab, var(--org-rfee) 14%, var(--card));
-  --org-fie-tinte: color-mix(in oklab, var(--org-fie) 14%, var(--card));
-  --org-efc-tinte: color-mix(in oklab, var(--org-efc) 14%, var(--card));
-  --org-aut-tinte: color-mix(in oklab, var(--org-aut) 14%, var(--card));
-  /* Avisos: tinte opaco, no `bg-warn/10` (que deja ver la retícula detrás). */
-  --warn-tinte: color-mix(in oklab, var(--warn) 12%, var(--card));
+  --org-rfee: #f7ccc7;
+  --org-rfee-relleno: #773733;
+  --org-fie: #61a4ff;
+  --org-fie-relleno: #18417c;
+  --org-efc: #6ce7eb;
+  --org-efc-relleno: #005b5c;
+  --org-aut: #9a9ea7;
+  --org-aut-relleno: #313337;
 
   /**
-   * ---------------------------------------------------------------------
-   * LA TEXTURA DEL FONDO: TRES CAPAS, NINGUNA PESA
-   * ---------------------------------------------------------------------
-   *
-   * El arreglo de «se ve muy plano». El diagnóstico lo dio el usuario
-   * mirando fie.org: *«¿no ves cómo juegan en el fondo, al lado de la foto,
-   * como una textura en el fondo? Eso da profundidad y queda profesional»*.
-   *
-   * Fui a mirarlo con Playwright y son tres capas, ninguna decorativa:
-   *
-   * 1. Un color base plano.
-   * 2. **Formas enormes del mismo tono, un poco más claras**, con el canto
-   *    duro: dos cuñas diagonales detrás de la foto del tirador y una cuña
-   *    gigante cruzando la sección de abajo. Aquí son
-   *    `--capa-bandas` (dos diagonales a 56°, como una estocada) y
-   *    `--capa-cuna` (la esquina superior derecha).
-   * 3. **Una retícula de cruces muy fina** encima. Esa la copiamos con
-   *    nombre y apellidos: la suya es `plus-decor.svg`, un mosaico de 37 px
-   *    con dos cruces escalonadas al 10 % de opacidad. `--capa-reticula` es
-   *    lo mismo en 40 px y en nuestro blanco estructural.
-   *
-   * Y `--capa-grano`, un ruido de 64 px con `stitchTiles` para que no se
-   * vean las costuras. Es lo que en la FIE hace el «Head to head».
-   *
-   * Cuánto pesa: **cero peticiones y ~1,2 kB de CSS**. Las formas son
-   * degradados con parada dura —son polígonos, no imágenes—, la retícula y
-   * el grano son SVG en `data:` de 40 y 64 px en mosaico. Ni una textura
-   * grande, que es lo que no puede permitirse un Worker ni un móvil.
-   *
-   * Reglas al usarlo:
-   * - Todo va **debajo** del contenido: son `background-image`, que se
-   *   pintan siempre bajo el texto del propio elemento. **No puede tapar
-   *   una letra.**
-   * - El tinte tiene tope: la opacidad de cada `.tinte-*` está elegida para
-   *   que `--muted-foreground` encima siga por encima de 4,5:1. Medido.
-   * - Sin movimiento. Un fondo que se mueve es un fondo que molesta.
+   * Tintes opacos: el color al 14 % (organismos) o al 12 % (avisos) mezclado
+   * en OKLab dentro de `--card`, ya calculado. Opacos para que el mismo aviso
+   * se vea igual sobre cualquier nivel; si cambia `--card`, se recalculan
+   * (la prueba de contraste avisa).
    */
-  /**
-   * La luz de las formas.
-   *
-   * Empezó en el 5 % y bajó al 4 % después de mirar una captura del
-   * calendario: con barras translúcidas encima, **la cuña se leía a través
-   * de las barras**. Las barras ya van sólidas, pero una textura que se
-   * transparenta es una textura demasiado contrastada, así que se baja. La
-   * profundidad sigue estando y ya no compite con nada.
-   */
-  --fondo-luz: oklch(1 0 0 / 4%);
-  --fondo-luz-suave: oklch(1 0 0 / 2.2%);
-
-  /* El tinte lo pone `.tinte-*`; por defecto no hay tinte. */
-  --fondo-tinte: transparent;
-  --fondo-tinte-banda: 0%;
-  --fondo-tinte-velo: 0%;
-
-  /* Dos diagonales a 56°, una estrecha y clara y otra ancha y apenas. */
-  --capa-bandas: linear-gradient(
-    124deg,
-    transparent 0 27%,
-    var(--fondo-luz) 27% 31.5%,
-    transparent 31.5% 58%,
-    var(--fondo-luz-suave) 58% 77%,
-    transparent 77%
-  );
-
-  /**
-   * El desvanecido que evita el corte.
-   *
-   * Las formas ocupan los primeros 46rem y ahí se acaban. Visto en la
-   * captura de escritorio, ese final era **una línea horizontal a 736 px**:
-   * un canto recto donde las diagonales desaparecían de golpe. Esta capa se
-   * pinta por encima de las formas —en `background-image` la primera capa va
-   * arriba— y las disuelve en el color del fondo antes de llegar al borde.
-   * La retícula y el grano van por encima de ella, así que siguen enteros.
-   */
-  --capa-desvanecido: linear-gradient(to bottom, transparent 0 58%, var(--background) 100%);
-
-  /* Cuña que entra por la esquina de arriba a la derecha y se sale. */
-  --capa-cuna: conic-gradient(
-    from 0deg at 100% 0%,
-    transparent 0 191deg,
-    var(--fondo-luz-suave) 191deg 213deg,
-    transparent 213deg
-  );
-
-  /* Las dos capas del tinte: una banda diagonal y un velo lateral. */
-  --capa-banda-tinte: linear-gradient(
-    124deg,
-    color-mix(in oklch, var(--fondo-tinte) var(--fondo-tinte-banda), transparent) 0 17%,
-    transparent 17%
-  );
-  --capa-velo-tinte: linear-gradient(
-    to right,
-    color-mix(in oklch, var(--fondo-tinte) var(--fondo-tinte-velo), transparent),
-    transparent 62%
-  );
-
-  /* Retícula de cruces, 40 px. La suave es la de toda la aplicación; la
-     fuerte, para un bloque suelto donde hay que notarla. */
-  --capa-reticula: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' fill='none' stroke='%23ffffff' stroke-opacity='.042'%3E%3Cpath d='M10 7.5v5M7.5 10h5M30 27.5v5M27.5 30h5'/%3E%3C/svg%3E");
-  --capa-reticula-fuerte: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' fill='none' stroke='%23ffffff' stroke-opacity='.075'%3E%3Cpath d='M10 7.5v5M7.5 10h5M30 27.5v5M27.5 30h5'/%3E%3C/svg%3E");
-
-  /* Grano de 64 px, cosido para que el mosaico no se vea. */
-  --capa-grano: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.15' numOctaves='1' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='64' height='64' filter='url(%23g)' opacity='.035'/%3E%3C/svg%3E");
+  --org-rfee-tinte: #2c2a31;
+  --org-fie-tinte: #1d2537;
+  --org-efc-tinte: #1f2c34;
+  --org-aut-tinte: #22252d;
+  --warn-tinte: #282625;
+  --ok-tinte: #1b2829;
+  --danger-tinte: #2b1e26;
+  --gold-tinte: #282525;
 }
 
 @theme inline {
@@ -638,6 +215,7 @@
   --color-filete: var(--filete);
   --color-filete-alto: var(--filete-alto);
   --color-velo: var(--velo);
+  --color-cristal-borde: var(--cristal-borde);
   --color-gold: var(--gold);
   --color-gold-foreground: var(--gold-foreground);
   --color-ok: var(--ok);
@@ -657,11 +235,15 @@
   --color-org-efc-tinte: var(--org-efc-tinte);
   --color-org-aut-tinte: var(--org-aut-tinte);
   --color-warn-tinte: var(--warn-tinte);
+  --color-ok-tinte: var(--ok-tinte);
+  --color-danger-tinte: var(--danger-tinte);
+  --color-gold-tinte: var(--gold-tinte);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  /* 6 / 12 / redondo. `sm` (4 px) queda para piezas de menos de 24 px. */
+  --radius-sm: 4px;
+  --radius-md: var(--radius);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) * 2);
 
   --font-sans: var(--font-sans-ui), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-display), 'Barlow Condensed', sans-serif;
@@ -672,57 +254,21 @@
     @apply border-border outline-ring;
   }
 
-  /**
-   * El lienzo, con la textura puesta.
-   *
-   * Va en `html` y no en un componente a propósito: el fondo de la
-   * aplicación no es de ninguna pantalla, es del lienzo. Al ser
-   * `background-image` se pinta por debajo de absolutamente todo lo demás,
-   * sin `z-index`, sin un `div` extra y sin poder tapar una letra jamás.
-   *
-   * Las formas ocupan solo los primeros `46rem` (46 rem = 736 px en el
-   * escritorio y 828 px en el móvil, donde la raíz está a 18 px, que es
-   * justo lo que crece la pantalla). Ahí está la cabecera, que es donde la
-   * FIE pone las suyas; más abajo queda la retícula y el grano, que sí
-   * siguen todo el documento porque son el material, no el dibujo.
-   */
+  /* El lienzo: un color plano. */
   html {
     -webkit-text-size-adjust: 100%;
     background-color: var(--background);
-    /* Orden de arriba abajo: la primera capa es la que se pinta encima. La
-       retícula y el grano van arriba —son el material y llegan a todo el
-       documento— y debajo el desvanecido borra las formas antes del corte. */
-    background-image: var(--capa-reticula), var(--capa-grano), var(--capa-desvanecido),
-      var(--capa-cuna), var(--capa-bandas);
-    background-size: 40px 40px, 64px 64px, 100% 46rem, 100% 46rem, 100% 46rem;
-    background-position:
-      0 0,
-      0 0,
-      top center,
-      top right,
-      top center;
-    background-repeat: repeat, repeat, no-repeat, no-repeat, no-repeat;
   }
 
   /*
-   * La raíz es la del navegador (16 px) también en el móvil. Hasta la pasada
-   * final subía a 18 px por debajo de 640 px, y todo lo medido en rem crecía
-   * un 12,5 %: era la otra mitad de los «botones enormes». La escala de
+   * La raíz es la del navegador (16 px) también en el móvil. La escala de
    * `docs/diseno-sistema.md` § 2 va en px y no baja de 12 px; los campos de
    * texto siguen a 16 px como mínimo (`font-size: max(16px, 1em)`, más abajo).
    */
 
-  /**
-   * El cuerpo va transparente y deja ver el lienzo.
-   *
-   * Tenía `bg-background`, y el fondo del `body` se pinta por encima del de
-   * `html`: con eso puesto, la textura no se veía en ninguna pantalla. El
-   * color lo pone ahora `html`, que es el mismo, así que no cambia nada
-   * salvo que la textura llega.
-   */
   body {
     @apply text-foreground;
-    background-color: transparent;
+    background-color: var(--background);
     font-family: var(--font-sans);
     /* Las cifras no bailan al cambiar de mes ni al actualizarse. */
     font-variant-numeric: tabular-nums;
@@ -730,12 +276,8 @@
   }
 
   /**
-   * Titulares en condensada.
-   *
-   * Dos familias con papeles claros: Barlow Condensed golpea en titulares y
-   * cifras (es una condensada de marcador: entra grande en poco sitio) e
-   * Inter se lee bien a 12 y 14 px, que es donde vive casi toda la interfaz.
-   * El contraste entre las dos ES la jerarquía.
+   * Titulares en condensada: Barlow Condensed para titulares y cifras, Inter
+   * para todo lo que se lee a 12-14 px.
    */
   h1,
   h2,
@@ -824,13 +366,8 @@
   }
 
   /**
-   * Autorrelleno del navegador.
-   *
-   * Chrome pinta los campos autorrellenados con un fondo azul claro fijo y
-   * el texto en negro, y no hay forma de cambiarlo con `background`: hay que
-   * taparlo con una sombra interior del tamaño del campo. Sin esto, en un
-   * tema oscuro aparece de golpe un recuadro blanco en mitad de la pantalla
-   * en cuanto el navegador rellena el correo.
+   * Autorrelleno del navegador: Chrome pinta un fondo claro fijo que solo se
+   * tapa con una sombra interior del tamaño del campo.
    */
   input:-webkit-autofill,
   input:-webkit-autofill:hover,
@@ -845,45 +382,24 @@
   }
 
   /**
-   * DENTRO DE UNA SUPERFICIE FLOTANTE, «EL FONDO» ES EL PANEL.
-   *
-   * `bg-background` quiere decir «el color de lo que hay debajo de mí», y
-   * debajo de un bloque que va dentro de una hoja o de un diálogo no está el
-   * lienzo: está el panel. Sin esta regla, cualquier degradado o velo que
-   * acabe en `--background` deja un escalón en el sitio donde se apaga.
-   *
-   * No es teórico: al subir la hoja al nivel 3 apareció un canto duro en el
-   * móvil, **medido en 0,087 de L a 198 px**, justo debajo del título de la
-   * ficha. Lo dejaba el velo de la cabecera del torneo, que se desvanece en
-   * `--background` (`cabecera-ficha.tsx`) porque se escribió cuando el panel
-   * era del color del lienzo. Con esta línea el velo se desvanece en el panel
-   * y el canto desaparece, sin tocar el componente de otro.
-   *
-   * Es la misma técnica que ya usan `.tinte-*` y `.acrilico` con
-   * `--muted-foreground`: en vez de pedir a siete agentes que se acuerden de
-   * cambiar un color según dónde esté su bloque, lo cambia el contenedor.
-   *
-   * Lo que NO se remapea es `--card`: una tarjeta dentro de un panel sigue
-   * siendo una tarjeta y tiene derecho a verse como un bloque aparte.
+   * Dentro de una hoja o un diálogo, «el fondo» es el panel: un degradado o
+   * un velo que acaba en `--background` dentro de un panel dejaría un
+   * escalón donde se apaga. `--card` no se remapea: una tarjeta dentro de un
+   * panel sigue siendo una tarjeta.
    */
   [data-slot='sheet-content'],
   [data-slot='dialog-content'] {
     --background: var(--popover);
   }
 
-  /* La selección de texto también tenía el azul del sistema. */
   ::selection {
-    background-color: color-mix(in oklch, var(--primary) 40%, transparent);
+    background-color: color-mix(in oklab, var(--primary) 40%, transparent);
     color: var(--foreground);
   }
 
   /**
    * Movimiento reducido: sin animaciones en bucle ni desplazamiento suave.
-   *
-   * Sólo acortar la duración dejaba los giros (`animate-spin`) y el pulso de
-   * los esqueletos repitiéndose cada 0,01 ms, o sea parpadeando. Con una sola
-   * iteración el estado de carga sigue diciéndose con su texto y no con
-   * movimiento.
+   * Con una sola iteración, un giro o un pulso no se queda parpadeando.
    */
   @media (prefers-reduced-motion: reduce) {
     html {
@@ -900,11 +416,9 @@
   }
 
   /**
-   * El foco no queda debajo de la cabecera fija ni de la barra inferior.
-   *
-   * La cabecera mide 48 px más el área segura y la barra del móvil 50 px más
-   * el área segura. Sin este margen, al tabular hacia un control cercano al
-   * borde el navegador lo deja tapado (WCAG 2.4.11).
+   * El foco no queda debajo de la cabecera fija ni de la barra inferior
+   * (WCAG 2.4.11): la cabecera mide 48 px más el área segura y la barra
+   * 50 px más el área segura.
    */
   html {
     scroll-padding-top: calc(48px + env(safe-area-inset-top) + 8px);
@@ -912,14 +426,9 @@
   }
 
   /**
-   * Sin rebote elástico en el documento.
-   *
-   * En iOS, al llegar arriba o abajo, la página se estiraba y volvía como un
-   * muelle; en la aplicación instalada la barra inferior y la cabecera se
-   * veían botar con ella. Como en una aplicación nativa, el documento se
-   * para en seco. Las listas y hojas que hacen scroll por dentro siguen con
-   * `overscroll-contain`, que deja su propio rebote y no lo pasa a la página.
-   * En la aplicación instalada no hay «tirar para recargar» que perder.
+   * Sin rebote elástico en el documento: en la aplicación instalada la barra
+   * y la cabecera botaban con la página. Lo que hace scroll por dentro lleva
+   * `overscroll-contain`.
    */
   html,
   body {
@@ -959,196 +468,83 @@
   }
 }
 
-@layer utilities {
-  /**
-   * ---------------------------------------------------------------------
-   * EL FONDO CON TEXTURA, EN TRES VARIANTES
-   * ---------------------------------------------------------------------
-   *
-   * Se ponen en el propio elemento: son `background-image`, así que van
-   * por debajo del contenido de ese elemento y no hacen falta ni `z-index`
-   * ni un `div` de más. Si el elemento ya lleva `bg-card`, se respeta: el
-   * color se pinta debajo de las capas.
-   *
-   * - `.fondo-pantalla`  una sección a sangre o el bloque de cabecera de
-   *                      una pantalla. Lleva las cuñas grandes.
-   * - `.fondo-cabecera`  la cabecera de una tarjeta o de una ficha: las
-   *                      mismas cuñas a la escala del bloque, más el
-   *                      tinte. Es la que sustituye a la foto cuando no
-   *                      hay foto (246 de 274 eventos no tienen).
-   * - `.fondo-panel`     un panel o una tarjeta normal: solo retícula y
-   *                      velo. Sin cuñas, que a tamaño pequeño se leen
-   *                      como una raya.
-   *
-   * El tinte se añade con una clase aparte (`.tinte-fie`, `.tinte-marca`…)
-   * para no tener que escribir variables CSS en línea desde TypeScript.
-   * Cuando no se pone ninguna, el tinte es transparente y no hay capa.
-   *
-   * Si hay que poner la textura ENCIMA de una foto o de un fondo que ya
-   * ocupa el elemento, está `<Fondo>` en `src/components/fondo/fondo.tsx`,
-   * que es lo mismo en un `div` absoluto.
-   */
-  /* El orden es el mismo que en el lienzo: la retícula y el grano arriba
-     —son el material— y las formas y el tinte debajo. La primera capa de
-     `background-image` es la que se pinta encima. */
-  .fondo-pantalla {
-    background-image: var(--capa-reticula), var(--capa-grano), var(--capa-cuna),
-      var(--capa-bandas), var(--capa-banda-tinte), var(--capa-velo-tinte);
-    background-size: 40px 40px, 64px 64px, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
-    background-repeat: repeat, repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+/**
+ * CRISTAL
+ *
+ * `.cristal` para las barras (cabecera y barra inferior) y `.cristal-panel`
+ * para lo que flota encima de un velo o de la página (hoja, diálogo, menú,
+ * `popover`, `select`). Fijan fondo, desenfoque y color de canto; el ancho y
+ * los lados del canto los pone el componente (`border-b`, `border-t`,
+ * `border`).
+ *
+ * En `@layer components`: cualquier utilidad `bg-*` o `border-*` del propio
+ * elemento gana, así que una pantalla puede volver a sólido sin `!important`.
+ *
+ * Presupuesto: como mucho tres capas con desenfoque a la vez. Con una hoja o
+ * un menú modal abiertos, Radix marca `body[data-scroll-locked]` y las
+ * barras, que quedan bajo el velo, pasan a sólido: el panel es entonces la
+ * única capa desenfocada (dos si dentro se abre un `select`).
+ */
+@layer components {
+  .cristal,
+  .cristal-panel {
+    border-color: var(--cristal-borde);
+    -webkit-backdrop-filter: var(--cristal-filtro);
+    backdrop-filter: var(--cristal-filtro);
+  }
+  .cristal {
+    background-color: var(--cristal);
+  }
+  .cristal-panel {
+    background-color: var(--cristal-panel);
   }
 
-  .fondo-cabecera {
-    background-image: var(--capa-reticula-fuerte), var(--capa-grano), var(--capa-bandas),
-      var(--capa-banda-tinte), var(--capa-velo-tinte);
-    background-size: 40px 40px, 64px 64px, 100% 100%, 100% 100%, 100% 100%;
-    background-repeat: repeat, repeat, no-repeat, no-repeat, no-repeat;
+  body[data-scroll-locked] .cristal {
+    background-color: var(--cristal-solido);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 
-  .fondo-panel {
-    background-image: var(--capa-velo-tinte), var(--capa-reticula-fuerte);
-    background-size: 100% 100%, 40px 40px;
-    background-repeat: no-repeat, repeat;
-  }
-
-  /**
-   * Tintes.
-   *
-   * `marca` es la aplicación hablando de sí misma (acceso, portada). Los
-   * cuatro de organismo son procedencia: de quién es el dato. `oro`, solo
-   * convocatorias de selección, como manda el token.
-   *
-   * El rojo puede subir al 34 % y el blanco de la RFEE se queda en el 15 %
-   * por una razón física: el rojo es **más oscuro** que la tarjeta, así que
-   * tiñe sin aclarar, y el blanco aclara la superficie y se come el
-   * contraste del texto secundario. Las seis opacidades están medidas, no
-   * elegidas a ojo.
-   *
-   * Y cada tinte sube su propio `--muted-foreground`. Esto es lo que hace
-   * que el sistema sea seguro para los demás: al medirlo salió que el
-   * apagado normal (`oklch(0.75 …)`, 7,9:1 sobre tarjeta) se queda en
-   * 3,5:1 sobre una cabecera teñida con la textura apilada encima, o sea
-   * por debajo de AA. En vez de pedirle a cinco agentes que se acuerden de
-   * cambiar el color del texto secundario dentro de una cabecera, lo cambia
-   * la propia clase: `text-muted-foreground` sigue escribiéndose igual y
-   * aquí dentro vale 0,86 de luminosidad, que da 5,1:1 en el peor píxel.
-   */
-  .tinte-marca,
-  .tinte-rfee,
-  .tinte-fie,
-  .tinte-efc,
-  .tinte-aut,
-  .tinte-oro {
-    --muted-foreground: oklch(0.86 0.01 265);
-  }
-  .tinte-marca {
-    --fondo-tinte: var(--primary);
-    --fondo-tinte-banda: 26%;
-    --fondo-tinte-velo: 11%;
-  }
-  .tinte-rfee {
-    --fondo-tinte: var(--org-rfee);
-    --fondo-tinte-banda: 10%;
-    --fondo-tinte-velo: 5%;
-  }
-  .tinte-fie {
-    --fondo-tinte: var(--org-fie);
-    --fondo-tinte-banda: 16%;
-    --fondo-tinte-velo: 8%;
-  }
-  .tinte-efc {
-    --fondo-tinte: var(--org-efc);
-    --fondo-tinte-banda: 13%;
-    --fondo-tinte-velo: 6%;
-  }
-  .tinte-aut {
-    --fondo-tinte: var(--org-aut);
-    --fondo-tinte-banda: 16%;
-    --fondo-tinte-velo: 8%;
-  }
-  .tinte-oro {
-    --fondo-tinte: var(--gold);
-    --fondo-tinte-banda: 13%;
-    --fondo-tinte-velo: 6%;
-  }
-
-  /**
-   * ---------------------------------------------------------------------
-   * ACRÍLICO: TRANSPARENCIA NO, MATERIAL SÍ
-   * ---------------------------------------------------------------------
-   *
-   * El usuario, viendo la pantalla de acceso: *«cuidado, no te pases de
-   * transparencia, que queda medio raro… mete como más acrílico difuminado
-   * para evitar ese efecto muy transparente raro»*. El diagnóstico es
-   * correcto y el arreglo es un número: **el tinte iba demasiado bajo**.
-   *
-   * Transparencia a secas (`bg-black/40`) deja ver el fondo nítido y el
-   * texto compite con lo que hay detrás. Acrílico son cuatro capas y
-   * ninguna es opcional:
-   *
-   * 1. `backdrop-filter: blur(20px) saturate(1.2)` — por debajo de 12 px no
-   *    se lee como material.
-   * 2. Tinte del 80 %. La receta admite del 65 al 80 y se coge el tope
-   *    porque el de abajo no aguanta el texto: medido sobre una foto clara,
-   *    el apagado da 2,86:1 al 72 % y 3,8:1 al 80 %; con el `--muted-
-   *    foreground` propio de esta clase, 5,9:1.
-   * 3. El canto de luz arriba (`--filete`), que es lo que le da grosor.
-   * 4. El grano fino encima. Sin él el desenfoque parece un desenfoque; con
-   *    él parece vidrio. Es la misma capa que el resto del sistema.
-   *
-   * DÓNDE SÍ: paneles que flotan **sobre una imagen** —la tarjeta de acceso
-   * sobre las fotos, la cabecera del torneo sobre la foto de la sede— y
-   * barras fijas que se superponen al contenido al desplazarse.
-   *
-   * DÓNDE NO, y esto importa igual: **las barras del calendario**, que son
-   * cientos y detrás no tienen imagen que desenfocar (van sólidas, con
-   * `bg-org-*-suave`), y las tarjetas sobre fondo plano, donde el acrílico
-   * solo cuesta pintarlo. Repartir esto por toda la interfaz es el tic de
-   * «generado por IA» que `UI.md` prohíbe en la sección 3 bis.
-   *
-   * COSTE, MEDIDO Y SIN ADORNAR (Playwright, iPhone 14 Pro a escala 3,
-   * CPU a 1/4, desplazando sobre un fondo en movimiento): con 1, 3, 6, 12,
-   * 24 y 48 paneles de 420 px **el intervalo entre fotogramas no pasó de
-   * 16,8 ms en ningún caso**: 60 fps enteros. A 1/20 de CPU se degrada, pero
-   * igual con paneles sólidos, así que el cuello no es el desenfoque. O sea:
-   * **no encontré el techo por número de paneles**, y decir «aguanta seis»
-   * habría sido inventarlo.
-   *
-   * El límite de seis por pantalla que se recomienda en el informe es un
-   * presupuesto de diseño, no un acantilado de rendimiento. Los dos motivos
-   * reales para no repartirlo son otros: cada región con `backdrop-filter`
-   * es una capa compuesta con su memoria, y el mes del calendario llega a
-   * tener trescientas barras; y donde no hay imagen detrás el material no
-   * se nota y solo cuesta pintarlo.
-   *
-   * Sobre el acrílico, el rojo NO vale como texto (2,5:1 sobre foto clara):
-   * va de relleno (`bg-primary` con texto blanco, 5,9:1).
-   */
-  .acrilico {
-    background-color: color-mix(in oklab, var(--card) 80%, transparent);
-    background-image: var(--capa-grano);
-    background-size: 64px 64px;
-    background-repeat: repeat;
-    backdrop-filter: blur(20px) saturate(1.2);
-    -webkit-backdrop-filter: blur(20px) saturate(1.2);
-    border-top: 1px solid var(--filete);
-    --muted-foreground: oklch(0.86 0.01 265);
-  }
-
-  /**
-   * Sin `backdrop-filter` no hay material: hay un agujero.
-   *
-   * Firefox lo trae desde la 103 y iOS desde la 9, así que esto es para
-   * navegadores con el efecto desactivado o para un WebView viejo. En ese
-   * caso el panel se vuelve casi opaco, que es exactamente lo que el
-   * usuario pidió: «si dudas, sube la opacidad».
-   */
-  @supports not (backdrop-filter: blur(1px)) {
-    .acrilico {
-      background-color: color-mix(in oklab, var(--card) 96%, transparent);
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .cristal {
+      background-color: var(--cristal-solido);
+    }
+    .cristal-panel {
+      background-color: var(--popover);
     }
   }
 
+  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+    .cristal,
+    .cristal-panel {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .cristal {
+      background-color: var(--cristal-solido);
+    }
+    .cristal-panel {
+      background-color: var(--popover);
+    }
+  }
+}
+
+/*
+ * Durante una transición de página la cabecera y la barra se pintan como
+ * captura aislada y su `backdrop-filter` no ve la página de debajo: se
+ * quedarían con un 28 % de transparencia sin desenfocar. En ese rato van en
+ * sólido del mismo tono. Regla aparte: un selector que el navegador no
+ * conoce invalida la regla entera.
+ */
+@layer components {
+  :root:active-view-transition .cristal {
+    background-color: var(--cristal-solido);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@layer utilities {
   /** Cifra de marcador: condensada, tabular y apretada. */
   .cifra {
     font-family: var(--font-display);
@@ -1171,28 +567,8 @@
   }
 
   /**
-   * EL ANCHO DE LA APLICACIÓN, EN UN SOLO SITIO.
-   *
-   * Estaba escrito dos veces a mano en `(app)/layout.tsx` —una en la cabecera
-   * y otra en el `main`—, y con ocho agentes tocando pantallas eso es un
-   * número que se desincroniza. Ahora es un token y la clase lo aplica con
-   * centrado, que es lo que pedía la auditoría.
-   *
-   * POR QUÉ SIGUE EN 1320 Y NO SE HA ESTRECHADO. Se probó a 1200 y a 1120 y
-   * se miró renderizado:
-   *
-   * | ancho | recorrido en /tiradores | el calendario |
-   * |-------|-------------------------|---------------|
-   * | 1320  | 1288 px | ninguna barra cortada |
-   * | 1200  | 1168 px | «Circuito Europeo M-14» → «Circuito Europeo M…» |
-   * | 1120  | 1088 px | el mismo corte, 21 px |
-   *
-   * O sea: estrechar la página cuesta legibilidad en la pantalla principal y
-   * solo devuelve 120 px de los 1288 que hay que recorrer. El «efecto cañón»
-   * no lo produce el ancho de la página: lo produce que **una fila ponga su
-   * rótulo en un extremo y su valor en el otro**. Eso se arregla topando las
-   * columnas DENTRO de la fila, y esas filas son de otros dueños; las líneas
-   * exactas están en el informe.
+   * El ancho de la aplicación, en un solo sitio. 1320 y no menos: a 1200 el
+   * calendario ya corta rótulos de barra («Circuito Europeo M…»).
    */
   .ancho-app {
     margin-inline: auto;

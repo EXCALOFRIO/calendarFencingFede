@@ -1,5 +1,6 @@
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { estadoErrorAcceso } from '@/lib/auth/errores';
 import { getAuth } from '@/lib/auth/server';
 import { getSessionProfile } from '@/lib/auth/session';
 import { COOKIE_VISTA_PREVIA } from '@/lib/auth/preview-token';
@@ -40,12 +41,19 @@ async function enviarCodigo(_estado: EstadoAcceso, formData: FormData): Promise<
 
   // Same invitation, origin and persistent limits as direct HTTP. Always
   // advance to the same screen: no invitation-existence oracle in the UI.
-  await getAuth().api.sendVerificationOTP({
-    body: { email, type: 'sign-in' },
-    headers: await headers(),
-  }).catch(() => {});
+  // The only exception, 429, is reached identically by invented addresses.
+  if (await pedirCodigo(email) === 'limitado') return { error: ERRORES.limite };
   await recordarCorreoEnCurso(email);
   redirect('/entrar?paso=codigo');
+}
+
+async function pedirCodigo(email: string): Promise<'enviado' | 'limitado'> {
+  try {
+    await getAuth().api.sendVerificationOTP({ body: { email, type: 'sign-in' }, headers: await headers() });
+  } catch (error) {
+    if (estadoErrorAcceso(error) === 429) return 'limitado';
+  }
+  return 'enviado';
 }
 
 /**
@@ -83,17 +91,18 @@ async function verificarCodigo(_estado: EstadoAcceso, formData: FormData): Promi
   // El correo sale de la cookie, no de un campo oculto que el navegador pueda
   // cambiar: así el código verificado es el del correo al que se envió.
   const email = (await leerCorreoEnCurso()).trim().toLowerCase();
-  const otp = String(formData.get('otp') ?? '').replace(/\s/g, '');
+  // NFKC: un teclado o un pegado con cifras de ancho completo sigue valiendo.
+  const otp = String(formData.get('otp') ?? '').normalize('NFKC').replace(/\s/g, '');
 
   if (!email) redirect('/entrar?error=caducado');
 
-  const entrada = await getAuth().api.signInEmailOTP({
-    body: { email, otp },
-    headers: await headers(),
-  }).catch(() => null);
-  if (!entrada) {
-    // Devuelve solo el error genérico: conserva el campo en memoria, no en URL/cookie.
-    return { error: ERRORES.codigo };
+  try {
+    await getAuth().api.signInEmailOTP({ body: { email, otp }, headers: await headers() });
+  } catch (error) {
+    // Solo errores genéricos: conserva el campo en memoria, no en URL/cookie.
+    // Un 4xx es el código; lo demás (proveedor o D1 caídos) no es culpa suya.
+    const estado = estadoErrorAcceso(error) ?? 500;
+    return { error: estado >= 400 && estado < 500 ? ERRORES.codigo : ERRORES.comprobar };
   }
 
   (await cookies()).delete({ name: COOKIE_CORREO, path: '/entrar' });
@@ -107,18 +116,25 @@ async function reenviarCodigo(): Promise<EstadoAcceso> {
   const email = (await leerCorreoEnCurso()).trim().toLowerCase();
   if (!email) redirect('/entrar?error=caducado');
   // Mismo proveedor, origen y límites persistentes. Ni el resultado ni el
-  // mensaje distinguen invitación, límite alcanzado o fallo del proveedor.
-  await getAuth().api.sendVerificationOTP({
-    body: { email, type: 'sign-in' },
-    headers: await headers(),
-  }).catch(() => {});
+  // mensaje distinguen invitación o fallo del proveedor; el límite por IP y
+  // correo lo alcanza igual una dirección inventada.
+  if (await pedirCodigo(email) === 'limitado') return { error: ERRORES.limite };
   return { aviso: 'Si el correo está invitado, recibirás otro código.' };
+}
+
+async function cambiarCorreo() {
+  'use server';
+
+  (await cookies()).delete({ name: COOKIE_CORREO, path: '/entrar' });
+  redirect('/entrar');
 }
 
 const ERRORES: Record<string, string> = {
   'falta-email': 'Escribe tu correo.',
   envio: 'No se ha podido enviar el código. Inténtalo dentro de un minuto.',
   codigo: 'El código no es válido o ha caducado. Pide uno nuevo.',
+  comprobar: 'No se pudo comprobar el código. Inténtalo de nuevo.',
+  limite: 'Has pedido demasiados códigos. Prueba en unos minutos.',
   caducado: 'Ha pasado demasiado tiempo. Vuelve a pedir un código.',
 };
 
@@ -148,7 +164,7 @@ export default async function EntrarPage({
         formulario fuera de la pantalla.
       */}
       <section className="flex flex-col justify-between gap-4 border-b px-6 py-6 lg:gap-8 lg:border-b-0 lg:border-r lg:px-12 lg:py-12">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           <Marca className="size-7" />
           {/*
             El rótulo a dos tonos: «Calendar» en el color del texto y
@@ -215,6 +231,7 @@ export default async function EntrarPage({
                 pasoCodigo={esPasoCodigo}
                 accion={esPasoCodigo ? verificarCodigo : enviarCodigo}
                 reenviar={reenviarCodigo}
+                cambiarCorreo={cambiarCorreo}
                 errorInicial={error}
               />
             </CardContent>

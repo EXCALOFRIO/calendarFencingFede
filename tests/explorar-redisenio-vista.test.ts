@@ -188,12 +188,11 @@ describe('clasificación, poules y cuadro de una edición', () => {
   it('las poules y el cuadro se pueden leer por separado y enlazan sólo a fichas vinculadas', async () => {
     const { PoulesDePrueba, CuadroDePrueba } = await import('@/components/explorar/asaltos-prueba');
     const enlace = (id: string) => `/explorar/${id}?volver=%2Fexplorar%2Fediciones`;
-    const poules = html(React.createElement(PoulesDePrueba, { poules: asaltos.poules, enlace }));
-    expect(poules).toContain('<caption');
-    expect(poules).toContain('>V5<');
+    const poules = html(React.createElement(PoulesDePrueba, { poules: asaltos.poules, enlace, caraInicial: 'asaltos' }));
+    expect(poules).toMatch(/<span aria-hidden="true">V<\/span>5/);
     expect(poules).toContain(`href="/explorar/${UUID_A}?volver=%2Fexplorar%2Fediciones"`);
-    // La misma ficha en la lista de móvil y en la matriz de escritorio.
-    expect(poules.match(/<a /g)).toHaveLength(2);
+    // Una sola estructura: cada ficha se enlaza una vez.
+    expect(poules.match(/<a /g)).toHaveLength(1);
     const cuadro = html(React.createElement(CuadroDePrueba, { cuadro: asaltos.cuadro, enlace }));
     expect(cuadro).toContain('Final');
     expect(cuadro).toContain('ganó con');
@@ -206,23 +205,34 @@ describe('clasificación, poules y cuadro de una edición', () => {
 });
 
 describe('catálogo de ediciones', () => {
-  it('la fila es una línea: fecha corta, nombre, bandera sola y pastilla de tipo, sin fuente ni recuentos', () => {
+  it('la fila de un evento: fecha en bloque, nombre, bandera sola, año, armas y pastilla de tipo, sin fuente ni recuentos', () => {
     const fie = html(React.createElement(FilaEdicion, { e: { ...resumenEdicion(), clasificados: 312 } }));
-    expect(fie).toContain('>10/01/26<');
+    expect(fie).toContain('data-slot="sistema-bloque-fecha"');
+    expect(fie).toContain('dateTime="2026-01-10"');
     expect(fie).toContain('Copa del Mundo de Paris');
     expect(fie).toContain('/banderas/fr.png');
+    expect(fie).toContain('>2026 · Espada<');
     expect(fie).not.toMatch(/>FRA<\/abbr>/);
     expect(fie).toContain('data-tipo=');
     expect(fie).not.toMatch(/312|clasificados|>FIE</);
+    const evento = html(React.createElement(FilaEdicion, {
+      e: { ...resumenEdicion(), armas: ['ESPADA', 'FLORETE', 'SABLE'], formatos: ['EQUIPOS', 'INDIVIDUAL'], ediciones: 12 },
+    }));
+    expect(evento).toContain('>2026 · 3 armas · Equipos<');
+    expect(evento.match(/<li>/g)).toHaveLength(1);
   });
 
-  it('los filtros son chips del sistema (sin <select>) y siguen viajando por GET', () => {
+  it('los filtros viven en una hoja «Filtros (N)»; los puestos son chips que se quitan, y siguen viajando por GET', () => {
     const marcado = html(React.createElement(CatalogoEdiciones, {
-      criterios: { ...CRITERIOS_CATALOGO_VACIOS, fuente: 'rfee_pdf' },
+      criterios: { ...CRITERIOS_CATALOGO_VACIOS, fuente: 'rfee_pdf', genero: 'F' },
       vista: { estado: 'ok', total: 0, pruebas: 0, siguiente: null, ediciones: [] },
     }));
     expect(marcado).toContain('type="hidden" name="fuente" value="rfee_pdf"');
-    expect(marcado).toMatch(/data-slot="sistema-chip"[^>]*data-tipo="menu"[^>]*data-marcado="true"[^>]*>(?:<[^>]+>)*Nacional \(PDF\)/);
+    expect(marcado).toContain('type="hidden" name="genero" value="F"');
+    expect(marcado).toMatch(/data-slot="sistema-chip"[^>]*data-tipo="menu"[^>]*data-marcado="true"[^>]*>(?:<[^>]+>)*Filtros/);
+    expect(marcado).toMatch(/<span class="cifra[^"]*">2<\/span>/);
+    expect(marcado).toContain('aria-label="Quitar Nacional (PDF)"');
+    expect(marcado).toContain('aria-label="Quitar Femenino"');
     expect(marcado).not.toContain('<select');
     expect(marcado).not.toContain('<option');
     expect(marcado).not.toContain('uppercase');
@@ -231,7 +241,8 @@ describe('catálogo de ediciones', () => {
       vista: { estado: 'ok', total: 0, pruebas: 0, siguiente: null, ediciones: [] },
     }));
     expect(todas).not.toContain('name="fuente"');
-    for (const chip of ['Organizador', 'Arma', 'Categoría', 'Fechas']) expect(todas).toContain(`>${chip}</span>`);
+    expect(todas).not.toContain('data-tipo="quitar"');
+    expect(todas).toMatch(/data-tipo="menu"[^>]*>(?:<[^>]+>)*Filtros/);
   });
 });
 

@@ -45,9 +45,9 @@ export function PastillaDirecto({
     >
       <span
         className={cn(
-          'inline-flex h-[24px] items-center gap-1 rounded-full border px-2 text-[12px] font-semibold leading-none transition-colors group-hover:bg-muted group-focus-visible:ring-2 group-focus-visible:ring-ring',
+          'inline-flex h-[24px] items-center gap-1 rounded-full border px-2 text-xs font-semibold leading-none transition-colors group-hover:bg-muted group-focus-visible:ring-2 group-focus-visible:ring-ring',
           directo ? 'border-danger text-danger' : 'border-filete text-primary-text',
-          soloIcono && !directo && 'px-1.5',
+          soloIcono && !directo && 'px-1',
         )}
       >
         {directo ? <span aria-hidden className="size-2 shrink-0 rounded-full bg-danger" /> : null}

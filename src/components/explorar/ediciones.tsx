@@ -10,13 +10,16 @@ import {
   type SerieComplementaria,
 } from '@/lib/ingest/series-complementarias';
 import {
+  ETIQUETA_FUENTE,
   ETIQUETA_PROVEEDOR,
+  eleccionDelEvento,
   pruebaDeId,
-  selectorDePruebas,
+  riquezaDe,
   type Clasificacion,
   type EdicionDetalle,
   type EdicionResumen,
   type PruebaDeEdicion,
+  type PruebaHermana,
 } from '@/lib/sport/explorar/edicion-modelo';
 import {
   RUTA_EDICIONES,
@@ -27,23 +30,26 @@ import {
 } from '@/lib/sport/explorar/edicion-url';
 import type { EdicionConAsaltos } from '@/lib/sport/explorar/ediciones';
 import type { VistaEdicion, VistaSeries } from '@/lib/sport/explorar/ediciones-pantalla';
-import { categoriaVisible, nombrePrueba, ordenCategoriaVisible } from '@/lib/sport/explorar/presentacion';
+import { nombrePrueba } from '@/lib/sport/explorar/presentacion';
 import { clasificarCompeticion } from '@/lib/sport/explorar/tipo-competicion';
 import { organizadorDe } from '@/lib/sport/explorar/organizador';
 import { InsigniaOrganismo } from '@/components/insignia-organismo';
+import { BloqueFecha } from '@/components/sistema/bloque-fecha';
+import { ORDEN_ARMA, SEPARADOR, rotuloArma, rotuloCategoria, rotuloFormato, rotuloPrueba } from '@/lib/sport/rotulos';
+import { filasSelectorPruebas } from '@/lib/sport/selector-pruebas';
 import { cn, titular } from '@/lib/utils';
 import { EtiquetaTipoCompeticion } from './etiqueta-competicion';
 import { EnlacePais, Nota, fechaLegible } from './piezas';
 import { ListaClasificacion } from './prueba/clasificacion';
 import { enlaceFichaDePrueba } from './prueba/enlaces';
-import { SelectorPrueba, type GrupoDePruebas, type OpcionFormato } from './prueba/selector-prueba';
+import { SelectorPruebaPorNiveles } from './prueba/selector-prueba';
 import { VistaPrueba as VistaDePrueba } from './prueba/vista-prueba';
-import { armaYGenero, nombreDePrueba } from './prueba-resultados';
+import { nombreDePrueba } from './prueba-resultados';
 
 const AVANZAR = [TIPO_TRANSICION.avanzar];
 
 const ENLACE =
-  'inline-flex min-h-[44px] items-center gap-1.5 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none';
+  'inline-flex min-h-[44px] items-center gap-2 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none';
 
 /** Entrada a las ediciones desde Explorar, sin ocupar sitio en la barra. */
 export function EnlaceEdiciones({ className }: { className?: string }) {
@@ -95,15 +101,25 @@ function Aviso({
 
 /* --------------------------------------------------------------------- series */
 
-/** Una edición en una línea: fecha, nombre y sede, bandera y tipo de competición. */
-/** «2026-09-25» → «25/09/26»: cabe en una columna estrecha y se ordena a la vista. */
-function fechaCorta(iso: string | null): string | null {
-  const m = iso ? /^(\d{4})-(\d{2})-(\d{2})/.exec(iso) : null;
-  return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : null;
-}
-
 const plegar = (texto: string) => texto.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('es').trim();
 
+/**
+ * Lo que tiene un evento, en pocas palabras: «Espada», «Florete · Sable» o
+ * «3 armas», y «Equipos» si hay pruebas por equipos.
+ */
+export function marcasDeEdicion(e: Pick<EdicionResumen, 'armas' | 'formatos'>): string[] {
+  const armas = ORDEN_ARMA.filter((a) => e.armas.includes(a));
+  const marcas = armas.length === ORDEN_ARMA.length ? [`${armas.length} armas`] : armas.map((a) => rotuloArma(a));
+  if (e.formatos.includes('EQUIPOS')) marcas.push(rotuloFormato('EQUIPOS'));
+  return marcas;
+}
+
+/**
+ * Un evento en una fila: fecha en bloque, nombre (o la sede, si el nombre es
+ * el tipo de competición), bandera, año y lo que tiene; a la derecha, el tipo.
+ * Un evento con varias ediciones (un Mundial publicado prueba a prueba) sale
+ * una vez, con las fechas y armas de todas (`resumenDeIndice`).
+ */
 export function FilaEdicion({ e, catalogo }: { e: EdicionResumen & { clasificados?: number }; catalogo?: string }) {
   const nombre = nombrePrueba({ nombre: e.nombre, fuente: e.fuente });
   const tipo = clasificarCompeticion({ nombre: e.nombre, fuente: e.fuente, pais: e.pais ? codigoPais(e.pais) : null });
@@ -111,22 +127,28 @@ export function FilaEdicion({ e, catalogo }: { e: EdicionResumen & { clasificado
   const generico = [tipo.etiqueta, tipo.corta].some((t) => plegar(nombre).startsWith(plegar(t)));
   const ciudad = e.ciudad && !plegar(nombre).includes(plegar(e.ciudad)) ? titular(e.ciudad) : null;
   const principal = generico && ciudad ? ciudad : nombre;
-  const secundario = generico && ciudad ? null : ciudad;
+  const sede = generico && ciudad ? null : ciudad;
+  const detalle = [e.inicio?.slice(0, 4) || e.temporada, ...marcasDeEdicion(e)].filter(Boolean).join(SEPARADOR);
   return (
     <li>
       <EnlaceIntencion
         href={construirUrlEdicion(e.id, { catalogo })}
         transitionTypes={AVANZAR}
         title={generico && ciudad ? `${nombre} ${ciudad}` : undefined}
-        className="grid min-h-12 grid-cols-[3.75rem_minmax(0,1fr)_minmax(0,max-content)] items-center gap-x-3 px-1 py-2 transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset motion-reduce:transition-none"
+        className="flex min-h-16 items-center gap-3 px-1 py-2 transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset motion-reduce:transition-none"
       >
-        <span className="text-xs tabular-nums text-muted-foreground">{fechaCorta(e.inicio)}</span>
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 truncate">
-            <span className="font-medium">{principal}</span>
-            {secundario ? <span className="text-sm text-muted-foreground"> {secundario}</span> : null}
+        {e.inicio ? (
+          <BloqueFecha desde={e.inicio} hasta={e.fin} />
+        ) : (
+          <span className="w-12 shrink-0 text-center text-xs text-muted-foreground">—</span>
+        )}
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="truncate font-medium">{principal}</span>
+          <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+            {sede ? <span className="min-w-0 shrink truncate">{sede}</span> : null}
+            {e.pais ? <BanderaPais pais={e.pais} soloBandera /> : null}
+            <span className="min-w-0 truncate tabular-nums">{detalle}</span>
           </span>
-          {e.pais ? <BanderaPais pais={e.pais} soloBandera /> : null}
         </span>
         {/* Con el texto al 200 % la pastilla se recorta (lleva `title`) en vez de sacar la fila de la pantalla. */}
         <EtiquetaTipoCompeticion clasificacion={tipo} className="max-w-[30vw]" />
@@ -177,7 +199,7 @@ export function EstadoSeries({ vista }: { vista: Exclude<VistaSeries, { tipo: 'o
  * literal de la fuente si es corto y las distingue («+40», «+50»), el día si
  * son de días distintos y, si no, un número.
  */
-function etiquetasVariante(pruebas: readonly PruebaDeEdicion[]): string[] {
+function etiquetasVariante(pruebas: readonly Pick<PruebaDeEdicion, 'categoria' | 'fecha'>[]): string[] {
   const raws = pruebas.map((p) => p.categoria.raw?.trim() ?? '');
   if (new Set(raws).size === pruebas.length && raws.every((r) => r && r.length <= 12)) return raws;
   const fechas = pruebas.map((p) => p.fecha ?? '');
@@ -185,27 +207,13 @@ function etiquetasVariante(pruebas: readonly PruebaDeEdicion[]): string[] {
   return pruebas.map((_, i) => `Grupo ${i + 1}`);
 }
 
-const clave = (p: PruebaDeEdicion) => `${p.formato}|${p.arma}|${p.genero}|${p.categoria.codigo}`;
-
-/** Variante de cada prueba que comparte formato, arma, género y categoría con otra. */
-function variantes(pruebas: readonly PruebaDeEdicion[]): Map<string, string> {
-  const porClave = new Map<string, PruebaDeEdicion[]>();
-  for (const p of pruebas) porClave.set(clave(p), [...(porClave.get(clave(p)) ?? []), p]);
-  const salida = new Map<string, string>();
-  for (const grupo of porClave.values()) {
-    if (grupo.length < 2) continue;
-    etiquetasVariante(grupo).forEach((e, i) => salida.set(grupo[i].id, e));
-  }
-  return salida;
-}
-
-const ORDEN_ARMA = ['ESPADA', 'FLORETE', 'SABLE'];
-const ORDEN_GENERO = ['M', 'F', 'MIXTO'];
-
 /**
- * Selector de prueba: individual o equipos, y una pastilla con la prueba
- * elegida que abre las demás del mismo formato agrupadas por arma y género.
- * Con una sola prueba la pastilla sólo dice cuál es.
+ * Selector de prueba, el mismo para todo evento: una fila por arma, género,
+ * modalidad y, si cambian, categoría, grupo y fuente, con las pruebas de la
+ * edición y, si el evento se publicó en varias ediciones (un Mundial prueba a
+ * prueba, un campeonato de España leído de Skermo y de un PDF), de todas
+ * ellas. Lo que no cambia se dice en una línea encima. Cada opción es un
+ * enlace a `?prueba=` en su edición que sustituye la entrada del historial.
  */
 export function PruebasDeEdicion({
   edicion,
@@ -225,51 +233,43 @@ export function PruebasDeEdicion({
     return <p className="text-sm text-muted-foreground">Sin pruebas.</p>;
   }
   const elegida = pruebaDeId(edicion.pruebasDetalle, seleccionada) ?? edicion.pruebasDetalle[0];
-  const href = (id: string) => construirUrlEdicion(edicion.id, { prueba: id, origen, catalogo, persona });
-  const filaFormato = selectorDePruebas(edicion.pruebasDetalle, elegida, ordenCategoriaVisible).find(
-    (f) => f.dimension === 'formato',
+  const hermanas: PruebaHermana[] = edicion.hermanas?.length
+    ? edicion.hermanas
+    : edicion.pruebasDetalle.map((p) => ({
+        id: p.id, edicionId: edicion.id, arma: p.arma, genero: p.genero, categoria: p.categoria,
+        formato: p.formato, fecha: p.fecha, fuente: p.fuente, riqueza: riquezaDe(p),
+      }));
+  const actualId = hermanas.some((h) => h.id === elegida.id)
+    ? elegida.id
+    : (hermanas.find((h) => elegida.miembros?.includes(h.id))?.id ?? elegida.id);
+  const eleccion = eleccionDelEvento(hermanas, actualId);
+  if (!eleccion) return null;
+  const href = (h: PruebaHermana) => construirUrlEdicion(h.edicionId, { prueba: h.id, origen, catalogo, persona });
+  const filas = filasSelectorPruebas(
+    eleccion.principales.map((h) => ({ id: h.id, href: href(h), arma: h.arma, genero: h.genero, categoria: h.categoria, formato: h.formato })),
+    eleccion.actual.id,
   );
-  const formatos: OpcionFormato[] = (filaFormato?.opciones ?? []).map((o) => ({
-    valor: o.valor,
-    etiqueta: o.valor === 'EQUIPOS' ? 'Equipos' : 'Individual',
-    href: href(o.pruebaId),
-    activa: o.activa,
-  }));
-
-  const delFormato = edicion.pruebasDetalle.filter((p) => p.formato === elegida.formato);
-  const variante = variantes(delFormato);
-  const ordenadas = [...delFormato].sort(
-    (x, y) =>
-      ORDEN_ARMA.indexOf(x.arma) - ORDEN_ARMA.indexOf(y.arma) ||
-      ORDEN_GENERO.indexOf(x.genero) - ORDEN_GENERO.indexOf(y.genero) ||
-      ordenCategoriaVisible(x.categoria.codigo) - ordenCategoriaVisible(y.categoria.codigo) ||
-      (x.fecha ?? '').localeCompare(y.fecha ?? ''),
-  );
-  const grupos: GrupoDePruebas[] = [];
-  for (const p of ordenadas) {
-    const k = `${p.arma}|${p.genero}`;
-    let grupo = grupos.find((g) => g.clave === k);
-    if (!grupo) {
-      grupo = { clave: k, titulo: armaYGenero(p), opciones: [] };
-      grupos.push(grupo);
-    }
-    grupo.opciones.push({
-      id: p.id,
-      href: href(p.id),
-      activa: p.id === elegida.id,
-      etiqueta: categoriaVisible(p.categoria.codigo),
-      variante: variante.get(p.id),
-    });
-  }
+  const etiquetasGrupo = eleccion.grupos.length ? etiquetasVariante(eleccion.grupos) : [];
+  const fijas = new Set(filas.map((f) => f.dimension));
+  const { actual } = eleccion;
+  const resumen = [
+    rotuloPrueba(
+      { arma: fijas.has('arma') ? null : actual.arma, genero: fijas.has('genero') ? null : actual.genero },
+      { categoria: 'nunca', formato: 'nunca' },
+    ),
+    fijas.has('categoria') ? '' : rotuloCategoria(actual.categoria.codigo),
+    fijas.has('formato') || actual.formato !== 'EQUIPOS' ? '' : rotuloFormato(actual.formato),
+  ].filter(Boolean);
   return (
-    <SelectorPrueba
-      formatos={formatos}
-      actual={{
-        titulo: armaYGenero(elegida),
-        categoria: categoriaVisible(elegida.categoria.codigo),
-        variante: variante.get(elegida.id),
-      }}
-      grupos={grupos}
+    <SelectorPruebaPorNiveles
+      resumen={resumen}
+      filas={filas}
+      grupos={eleccion.grupos.length
+        ? { activa: actual.id, opciones: eleccion.grupos.map((h, i) => ({ valor: h.id, etiqueta: etiquetasGrupo[i] ?? '', href: href(h) })) }
+        : undefined}
+      fuentes={eleccion.fuentes.length
+        ? { activa: actual.id, opciones: eleccion.fuentes.map((h) => ({ valor: h.id, etiqueta: ETIQUETA_FUENTE[h.fuente] ?? h.fuente, href: href(h) })) }
+        : undefined}
     />
   );
 }
@@ -419,7 +419,7 @@ export function EdicionCompleta({
     <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-4">
       <header className="flex min-w-0 flex-col gap-1">
         <div className="flex items-start justify-between gap-3">
-          <h1 className="min-w-0 text-[28px] leading-[32px] break-words sm:text-[36px] sm:leading-[40px]">{titulo}</h1>
+          <h1 className="min-w-0 text-3xl leading-8 break-words sm:text-4xl sm:leading-10">{titulo}</h1>
           {oficial ? (
             <a
               href={oficial.url}
@@ -437,7 +437,7 @@ export function EdicionCompleta({
         </div>
         <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
           {organizador !== 'OTRO' ? (
-            <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-2">
               <InsigniaOrganismo organismo={organizador} />
               <EtiquetaTipoCompeticion clasificacion={tipo} />
             </span>
@@ -447,19 +447,19 @@ export function EdicionCompleta({
               href={calendario}
               data-enlace="calendario"
               aria-label={`${fechas}. Ver el torneo en el calendario`}
-              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
             >
               <CalendarDays aria-hidden className="size-4" />
               {fechas}
             </EnlaceIntencion>
           ) : fechas ? (
-            <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-2">
               <CalendarDays aria-hidden className="size-4" />
               {fechas}
             </span>
           ) : null}
           {edicion.ciudad || edicion.pais ? (
-            <span className="inline-flex min-w-0 items-center gap-1.5">
+            <span className="inline-flex min-w-0 items-center gap-2">
               <MapPin aria-hidden className="size-4 shrink-0" />
               {edicion.ciudad ? <span className="break-words">{titular(edicion.ciudad)}</span> : null}
               {edicion.pais ? <EnlacePais pais={edicion.pais} /> : null}
@@ -468,7 +468,7 @@ export function EdicionCompleta({
           {edicion.serie ? <span>{ETIQUETA_SERIE[edicion.serie]}</span> : null}
           {fechas ? null : <span>{edicion.temporada}</span>}
           {conjunta?.esConjunta && conjunta.partes.length > 0 ? (
-            <span data-conjunta="titulo" className="inline-flex items-center gap-1.5">
+            <span data-conjunta="titulo" className="inline-flex items-center gap-2">
               <Swords aria-hidden className="size-4" />
               Prueba conjunta
             </span>

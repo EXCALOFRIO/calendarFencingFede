@@ -26,16 +26,22 @@ export const CLASES_TONO: Record<TonoTipo, string> = {
 };
 
 const PASTILLA =
-  'inline-flex h-6 max-w-full min-w-0 shrink-0 items-center rounded-full border px-2.5 text-xs leading-none font-semibold whitespace-nowrap';
+  'inline-flex max-w-full min-w-0 shrink-0 items-center rounded-full border text-xs leading-none font-semibold whitespace-nowrap';
+
+/** Las dos alturas de pastilla del sistema (`sistema/pastilla`): 20 px dentro de filas, 24 en cabeceras. */
+const TAMANO = { sm: 'h-5 px-2', md: 'h-6 px-3' } as const;
+export type TamanoEtiqueta = keyof typeof TAMANO;
 
 /** Tipo de competición coloreado por organismo; el nombre largo queda en el `title`. */
 export function EtiquetaTipoCompeticion({
   clasificacion,
   larga = false,
+  tamano = 'md',
   className,
 }: {
   clasificacion: Pick<ClasificacionCompeticion, 'tipo' | 'etiqueta' | 'corta' | 'tono'>;
   larga?: boolean;
+  tamano?: TamanoEtiqueta;
   className?: string;
 }) {
   return (
@@ -43,16 +49,16 @@ export function EtiquetaTipoCompeticion({
       data-tipo={clasificacion.tipo}
       data-tono={clasificacion.tono}
       title={larga ? undefined : clasificacion.etiqueta}
-      className={cn(PASTILLA, CLASES_TONO[clasificacion.tono], className)}
+      className={cn(PASTILLA, TAMANO[tamano], CLASES_TONO[clasificacion.tono], className)}
     >
       <span className="truncate">{larga ? clasificacion.etiqueta : clasificacion.corta}</span>
     </span>
   );
 }
 
-export function EtiquetaCategoria({ codigo, className }: { codigo: string; className?: string }) {
+export function EtiquetaCategoria({ codigo, tamano = 'md', className }: { codigo: string; tamano?: TamanoEtiqueta; className?: string }) {
   return (
-    <span className={cn(PASTILLA, 'border-filete-alto bg-card font-medium text-foreground', className)}>
+    <span className={cn(PASTILLA, TAMANO[tamano], 'border-filete-alto bg-card font-medium text-foreground', className)}>
       <span className="truncate">{categoriaVisible(codigo)}</span>
     </span>
   );
@@ -69,7 +75,7 @@ export function EtiquetasCompeticion({
   className?: string;
 }) {
   return (
-    <span className={cn('flex min-w-0 flex-wrap items-center gap-1.5', className)}>
+    <span className={cn('flex min-w-0 flex-wrap items-center gap-2', className)}>
       <EtiquetaTipoCompeticion clasificacion={clasificacion} />
       {categoria ? <EtiquetaCategoria codigo={categoria} /> : null}
     </span>

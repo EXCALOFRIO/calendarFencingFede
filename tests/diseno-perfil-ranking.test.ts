@@ -64,7 +64,10 @@ describe('pestaña Ranking del perfil: misma fuente que la cabecera', () => {
       rankingMundial: [],
     });
     expect(b).toMatchObject({ hay: false, internacional: null, nacional: null, nacionalFuera: null, mundial: null });
-    expect(html(React.createElement(PestanaRanking, { bloques: b, nivel: 'pagina' }))).toBe('<p role="status" class="text-sm text-muted-foreground">Sin puestos en ningún ranking.</p>');
+    const vacia = html(React.createElement(PestanaRanking, { bloques: b, nivel: 'pagina' }));
+    expect(vacia).toContain('data-slot="sistema-estado-vacio"');
+    expect(vacia).toContain('role="status"');
+    expect(vacia).toContain('Sin puestos en ningún ranking');
     expect(tieneRanking(construirBloque('mundial', [puesto({ puesto: null })], 2027))).toBe(false);
   });
 
@@ -87,11 +90,25 @@ describe('/ranking: la tarjeta del tirador', () => {
     expect(conClasificacionFie(vacio, [])).toBe(vacio);
   });
 
-  it('los puntos van sin decimales por debajo de 360 px y con ellos por encima', () => {
+  it('los puntos se pintan una sola vez, con sus decimales', () => {
     const fila = html(React.createElement('ol', null, React.createElement(FilaLinea, { puesto: 3, nombre: 'Carlos Llavador', puntos: 1387.77 })));
-    // La cifra exacta sale de la vista por debajo de 360 px, pero no del lector.
-    expect(fila).toContain('max-[359px]:sr-only">1387,77<span class="sr-only"> puntos</span></span>');
-    expect(fila).toContain('min-[360px]:hidden" title="1387,77">1388</span>');
-    expect(fila).toMatch(/<span aria-hidden="true" class="[^"]*min-\[360px\]:hidden"/);
+    expect(fila).toContain('>1387,77<span class="sr-only"> puntos</span></span>');
+    expect(fila.match(/1387,77|1388/g)).toHaveLength(1);
+    expect(fila).not.toContain('min-[360px]:hidden');
+  });
+
+  it('usa las piezas del sistema: puesto, avatar, «Tú» y club sin letra de código', () => {
+    const fila = html(React.createElement('ol', null, React.createElement(FilaLinea, {
+      puesto: 3, nombre: 'Carlos Llavador', puntos: 1387.77, club: 'CEM', mio: true, enlaceExterno: 'https://fie.org/athletes/1',
+    })));
+    expect(fila).toContain('data-slot="sistema-puesto"');
+    expect(fila).toContain('data-slot="sistema-avatar"');
+    expect(fila).toContain('data-slot="sistema-marca-propia"');
+    // La ficha externa se anuncia al lector; no lleva icono de enlace externo.
+    expect(fila).toContain('(se abre en otra pestaña)');
+    expect(fila).not.toMatch(/lucide-external-link|<svg/);
+    expect(fila).toMatch(/<span class="[^"]*text-xs text-muted-foreground[^"]*" title="Club CEM">/);
+    expect(fila).not.toContain('font-mono');
+    expect(fila.match(/1387,77/g)).toHaveLength(1);
   });
 });

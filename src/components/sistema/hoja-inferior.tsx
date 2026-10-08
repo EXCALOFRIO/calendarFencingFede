@@ -13,8 +13,9 @@ import { conResistencia, decidirCierre } from './gesto-hoja';
  * velo o con Escape; desde 640 px es un panel centrado de 440 px.
  *
  * Es un `Dialog` de Radix: foco atrapado, bloqueo del scroll de detrás y
- * `aria-modal` vienen de ahí. Superficie de nivel 3 (`--popover`), opaca; el
- * velo es `--velo`, sin desenfoque (ver `globals.css`).
+ * `aria-modal` vienen de ahí. Superficie de cristal de panel
+ * (`.cristal-panel`, sobre `--popover`); el velo es `--velo`, sin desenfoque
+ * (ver `globals.css`).
  */
 export type PropsHojaInferior = {
   abierta: boolean;
@@ -89,7 +90,7 @@ export function HojaInferior({
       <Dialog.Portal>
         <Dialog.Overlay
           data-slot="sistema-hoja-velo"
-          className="fixed inset-0 z-50 bg-velo duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
+          className="fixed inset-0 z-50 bg-velo data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
         />
         <Dialog.Content
           ref={panel}
@@ -101,8 +102,8 @@ export function HojaInferior({
           }}
           className={cn(
             'fixed inset-x-0 bottom-0 z-50 flex max-h-[min(88dvh,calc(100dvh-48px))] flex-col',
-            'rounded-t-[16px] border-t border-filete-alto bg-popover pb-[env(safe-area-inset-bottom)] text-popover-foreground shadow-[var(--sombra-hoja-aba)] outline-none',
-            'duration-[240ms] ease-[cubic-bezier(0.32,0.72,0,1)] data-[state=closed]:duration-[180ms]',
+            'cristal-panel rounded-t-[16px] border-t pb-[env(safe-area-inset-bottom)] text-popover-foreground shadow-[var(--sombra-hoja-aba)] outline-none',
+            // Duraciones y curvas: `sistema.css` (240 / 180 ms, las mismas que las hojas de `ui/`).
             'data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom',
             'sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:max-h-[min(640px,calc(100dvh-64px))] sm:w-[440px] sm:-translate-x-1/2 sm:-translate-y-1/2',
             'sm:rounded-[16px] sm:border sm:pb-0 sm:shadow-[var(--sombra-flotante)]',
@@ -122,7 +123,7 @@ export function HojaInferior({
             <div aria-hidden className="mx-auto mt-[8px] h-[4px] w-[36px] rounded-full bg-[color-mix(in_oklab,var(--muted-foreground)_45%,var(--popover))] sm:hidden" />
             <div className="grid h-[44px] grid-cols-[36px_minmax(0,1fr)_36px] items-center gap-[8px] px-[8px] sm:h-[52px]">
               <span aria-hidden />
-              <Dialog.Title className="line-clamp-2 break-words text-center font-sans text-[16px] leading-[20px] font-semibold tracking-normal">
+              <Dialog.Title className="line-clamp-2 break-words text-center font-sans text-base leading-5 font-semibold tracking-normal">
                 {titulo}
               </Dialog.Title>
               <Dialog.Close asChild>
@@ -132,7 +133,7 @@ export function HojaInferior({
               </Dialog.Close>
             </div>
             {descripcion ? (
-              <Dialog.Description className="-mt-[6px] px-[16px] pb-[8px] text-center text-[13px] text-muted-foreground">
+              <Dialog.Description className="-mt-1 px-[16px] pb-[8px] text-center text-sm text-muted-foreground">
                 {descripcion}
               </Dialog.Description>
             ) : null}

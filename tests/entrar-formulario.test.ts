@@ -1,7 +1,9 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { FormularioAcceso, limpiarCodigo, type AccionAcceso } from '@/components/acceso/formulario-acceso';
+import { FormularioAcceso, type AccionAcceso } from '@/components/acceso/formulario-acceso';
+import { limpiarCodigo } from '@/components/acceso/codigo';
+import { ErrorAcceso } from '@/lib/auth/errores';
 import EntrarPage from '@/app/entrar/page';
 
 // La prueba DOM/CSS real vive en acceso-hidratado.mts, sin la configuración
@@ -52,7 +54,7 @@ beforeEach(() => {
   h.cookies.clear();
   h.cookies.set('entrar_correo', 'persona@example.test');
   h.send.mockResolvedValue({ success: true });
-  h.verify.mockRejectedValue(new Error('fallo sintético'));
+  h.verify.mockRejectedValue(new ErrorAcceso(400));
 });
 
 describe('entrada accesible', () => {
@@ -61,10 +63,15 @@ describe('entrada accesible', () => {
     expect(limpiarCodigo(` ${codigo.slice(0, 3)}\u00a0${codigo.slice(3)}\n`) === codigo).toBe(true);
     expect(limpiarCodigo(`x${codigo}extra`).length).toBe(6);
   });
+  it('convierte cifras de ancho completo en vez de borrarlas', () => {
+    const ancho = codigoSintetico().replace(/\d/g, (d) => String.fromCharCode(0xff10 + Number(d)));
+    expect(limpiarCodigo(ancho) === codigoSintetico()).toBe(true);
+    expect(limpiarCodigo(`${ancho}９`).length).toBe(6);
+  });
   it('renderiza un único input real con etiqueta, ayuda y error asociados', () => {
     const accion: AccionAcceso = async () => ({});
     const html = renderToStaticMarkup(React.createElement(FormularioAcceso, {
-      pasoCodigo: true, accion, reenviar: accion, errorInicial: 'Revisa el código.',
+      pasoCodigo: true, accion, reenviar: accion, cambiarCorreo: async () => {}, errorInicial: 'Revisa el código.',
     }));
     expect((html.match(/<input /g) ?? []).length).toBe(1);
     expect(html).toContain('type="text"');
@@ -72,8 +79,13 @@ describe('entrada accesible', () => {
     expect(html).toContain('autoComplete="one-time-code"');
     expect(html).toContain('aria-invalid="true"');
     expect(html).toContain('aria-describedby="acceso-ayuda acceso-mensaje"');
+    // El foco lo pone el cliente al montar el paso del código, no un atributo SSR.
     expect(html).not.toContain('autofocus');
-    expect(html).not.toContain('maxLength=');
+    // Pegar/soltar se limpian antes de este tope: no trunca «123 456».
+    expect(html).toContain('maxLength="6"');
+    expect(html).toContain('minLength="6"');
+    expect(html).not.toContain('href="/entrar"');
+    expect(html).toContain('Cambiar correo');
   });
 });
 
@@ -125,6 +137,39 @@ describe('acciones de acceso, totalmente aisladas del proveedor', () => {
     }
     expect(h.send).not.toHaveBeenCalled();
     expect(h.verify).not.toHaveBeenCalled();
+  });
+  it.each([new ErrorAcceso(503), new ErrorAcceso(500), new Error('red caída')])(
+    'una caída del proveedor no se presenta como código erróneo (%s)', async (fallo) => {
+      h.verify.mockRejectedValue(fallo);
+      const { accion } = await acciones();
+      expect(await accion({}, datos('otp', codigoSintetico()))).toEqual({
+        error: 'No se pudo comprobar el código. Inténtalo de nuevo.',
+      });
+      expect(h.remove).not.toHaveBeenCalled();
+    },
+  );
+  it('normaliza cifras de ancho completo antes de verificar', async () => {
+    const { accion } = await acciones();
+    const ancho = codigoSintetico().replace(/\d/g, (d) => String.fromCharCode(0xff10 + Number(d)));
+    await accion({}, datos('otp', ancho));
+    expect(h.verify.mock.calls[0][0].body.otp === codigoSintetico()).toBe(true);
+  });
+  it('demasiados códigos: aviso claro, sin avanzar ni recordar el correo', async () => {
+    h.send.mockRejectedValue(new ErrorAcceso(429));
+    const correo = await acciones(false);
+    expect(await correo.accion({}, datos('email', 'persona@example.test'))).toEqual({
+      error: 'Has pedido demasiados códigos. Prueba en unos minutos.',
+    });
+    expect(h.set).not.toHaveBeenCalled();
+    const { reenviar } = await acciones();
+    expect(await reenviar({}, new FormData())).toEqual({
+      error: 'Has pedido demasiados códigos. Prueba en unos minutos.',
+    });
+  });
+  it('cambiar de correo borra la cookie del correo en curso', async () => {
+    const { cambiarCorreo } = await acciones();
+    await expect(cambiarCorreo()).rejects.toThrow('REDIRECT:/entrar');
+    expect(h.remove).toHaveBeenCalledWith({ name: 'entrar_correo', path: '/entrar' });
   });
   it('solo un resultado verificado borra la cookie y permite entrar', async () => {
     h.verify.mockResolvedValue({ user: { id: 'sintetico' } });

@@ -197,7 +197,7 @@ export function Escudo({
     return (
       <span
         className={cn(
-          'inline-flex shrink-0 items-center rounded-md border border-border px-1.5',
+          'inline-flex shrink-0 items-center rounded-md border border-border px-2',
           'font-medium text-muted-foreground',
           tamano === 'grande' ? 'text-sm' : 'text-xs',
           className,
@@ -220,7 +220,7 @@ export function Escudo({
           Plato solo para el de la RFEE, y ajustado.
 
           Blanco al 90 % y **sin borde ni relleno extra**: la primera versión
-          usaba blanco puro con `px-1.5 py-1` en los dos escudos, y en la
+          usaba blanco puro con relleno en los dos escudos, y en la
           captura de móvil los dos platos eran lo más brillante de la pantalla
           y se llevaban la mirada antes que el `#25`. El PNG de la RFEE ya
           trae su propio margen blanco dentro, así que añadirle relleno solo

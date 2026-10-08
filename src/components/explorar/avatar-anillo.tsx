@@ -8,9 +8,10 @@ import { cn } from '@/lib/utils';
  * una constante importada desde él en un componente de servidor llega como
  * referencia de cliente, no como texto.
  */
-export const ANILLO = 'rounded-full bg-linear-to-tr from-primary via-primary-text to-primary p-[2px]';
+// El grosor del anillo es un borde transparente sobre el degradado (`bg-origin-border`), no un relleno: es un trazo, no espaciado.
+export const ANILLO = 'rounded-full border-2 border-transparent bg-linear-to-tr from-primary via-primary-text to-primary bg-origin-border';
 /** El mismo anillo apagado: un filete para quien no es protagonista o no tiene resultados. */
-export const ANILLO_APAGADO = 'rounded-full bg-filete-alto p-[2px]';
+export const ANILLO_APAGADO = 'rounded-full border-2 border-filete-alto';
 
 const TAMANOS = {
   sm: { caja: 'size-10', letra: 'text-sm' },
@@ -40,7 +41,7 @@ export function AvatarAnillo({
   const t = TAMANOS[tamano];
   return (
     <span aria-hidden="true" className={cn('inline-flex shrink-0', apagado ? ANILLO_APAGADO : ANILLO, className)}>
-      <span className="inline-flex rounded-full bg-background p-[2px]">
+      <span className="inline-flex rounded-full border-2 border-background bg-background">
         <Avatar className={t.caja}>
           <AvatarFallback className={cn('font-display', t.letra)}>{inicialesVisibles(nombre) || '—'}</AvatarFallback>
         </Avatar>

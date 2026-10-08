@@ -1,4 +1,4 @@
-import { CATEGORY_LABEL, GENDER_LABEL, WEAPON_LABEL } from '../utils';
+import { rotuloPrueba } from '../sport/rotulos';
 
 /**
  * Tipos y etiquetas de convocatorias.
@@ -23,18 +23,17 @@ export const CALL_UP_STATUS_LABEL: Record<CallUpStatus, string> = {
   rechazado: 'Rechazada',
 };
 
-/** Etiqueta legible de una prueba: "Espada masculino · M17". */
+/** Etiqueta legible de una prueba: «Espada femenina · Absoluto», «Florete masculino M17 · Equipos». */
 export function competitionLabel(c: {
   weapon: string;
   gender: string;
   category: string;
   format?: string | null;
 }): string {
-  const arma = WEAPON_LABEL[c.weapon as keyof typeof WEAPON_LABEL] ?? c.weapon;
-  const genero = GENDER_LABEL[c.gender as keyof typeof GENDER_LABEL] ?? c.gender;
-  const cat = CATEGORY_LABEL[c.category as keyof typeof CATEGORY_LABEL] ?? c.category;
-  const formato = c.format === 'EQUIPOS' ? ' · equipos' : '';
-  return `${arma} ${genero.toLowerCase()} · ${cat}${formato}`;
+  return rotuloPrueba(
+    { arma: c.weapon, genero: c.gender, categoria: c.category, formato: c.format },
+    { categoria: 'siempre' },
+  );
 }
 
 export type CallUpForAthlete = {

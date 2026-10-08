@@ -8,7 +8,7 @@ import { codigoPaisDeRuta, nombrePaisFie } from '@/lib/sport/explorar/pais-codig
 import { frasesPais } from '@/lib/sport/explorar/pais-frases';
 import { leerFiltrosPais, urlPais } from '@/lib/sport/explorar/pais-url';
 import { contextoReal } from '@/lib/sport/explorar/real';
-import { RUTA_BUSCAR } from '@/lib/sport/explorar/url';
+import { RUTA_BUSCAR_PAISES } from '@/lib/sport/explorar/url';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,7 +58,7 @@ export default async function Pagina({
   return (
     <div className="mx-auto w-full max-w-3xl">
       {vista.tipo === 'sin_datos' ? (
-        <EstadoPais titulo="Aún sin datos" linea="Las cifras por país se están preparando." volver={{ href: RUTA_BUSCAR, texto: 'Buscar' }} />
+        <EstadoPais titulo="Aún sin datos" linea="Las cifras por país se están preparando." volver={{ href: RUTA_BUSCAR_PAISES, texto: 'Países' }} />
       ) : (
         <EstadoPais titulo="No se pudo cargar" linea="Vuelve a intentarlo en un momento." volver={{ href: urlPais(codigo, filtros), texto: 'Reintentar' }} />
       )}

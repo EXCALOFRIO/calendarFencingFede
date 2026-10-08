@@ -1,6 +1,6 @@
 import { Check } from 'lucide-react';
 import { BanderaPais } from '@/components/bandera';
-import { Badge } from '@/components/ui/badge';
+import { Pastilla } from '@/components/sistema/pastilla';
 import type {
   EquipoClasificado,
   EstadoNoc,
@@ -10,24 +10,14 @@ import type {
   ZonaFie,
 } from '@/lib/ranking/olimpica';
 import { ZONAS_FIE } from '@/lib/ranking/olimpica';
+import { rotuloPrueba } from '@/lib/sport/rotulos';
 import { cn } from '@/lib/utils';
 import { ZONA_CORTA, fechaCorta } from './textos';
-
-const ARMA: Record<ResultadoPrueba['arma'], string> = {
-  FLORETE: 'Florete',
-  ESPADA: 'Espada',
-  SABLE: 'Sable',
-};
-
-const GENERO: Record<ResultadoPrueba['genero'], string> = {
-  F: 'femenino',
-  M: 'masculino',
-};
 
 const numero = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 1 });
 
 function viaEquipo(e: EquipoClasificado): string {
-  if (e.via === 'TOP') return 'Top 4';
+  if (e.via === 'TOP') return '4 primeros';
   if (e.via === 'ZONA' && e.plazaDeZona) return ZONA_CORTA[e.plazaDeZona];
   return 'Siguiente';
 }
@@ -71,7 +61,7 @@ function Fila({
     <li
       data-propio={propio ? '' : undefined}
       className={cn(
-        'min-w-0 rounded-sm px-2 py-1.5',
+        'min-w-0 rounded-md px-2 py-2',
         propio && 'bg-marcado font-semibold',
       )}
     >
@@ -82,7 +72,7 @@ function Fila({
         <span className="cifra text-sm tabular-nums">{numero.format(puntos)}</span>
       </div>
       {segunda ? (
-        <div className="mt-0.5 min-w-0 truncate pl-[5.25rem] text-xs text-muted-foreground">
+        <div className="mt-1 min-w-0 truncate pl-[5.25rem] text-xs text-muted-foreground">
           {segunda}
         </div>
       ) : null}
@@ -95,7 +85,7 @@ function Siguiente({ fuera, propio }: { fuera: PrimerFuera; propio: string }) {
     <span
       data-propio={fuera.noc === propio ? '' : undefined}
       className={cn(
-        'inline-flex min-w-0 max-w-full items-center gap-1.5',
+        'inline-flex min-w-0 max-w-full items-center gap-1',
         fuera.noc === propio && 'font-semibold text-foreground',
       )}
     >
@@ -114,20 +104,20 @@ function EstadoPropio({ estado }: { estado: EstadoNoc | undefined }) {
   const dentro = estado.tiradores > 0;
   if (dentro) {
     return (
-      <Badge variant="secondary" data-estado-propio="dentro" className="gap-1">
+      <Pastilla tono="ok" tamano="md" data-estado-propio="dentro">
         <BanderaPais pais={estado.noc} soloBandera />
         <Check aria-hidden />
         {estado.equipo ? 'Equipo' : `${estado.tiradores} plaza`}
-      </Badge>
+      </Pastilla>
     );
   }
   const distancia = estado.distanciaEquipo ?? estado.distanciaIndividual;
   if (!distancia) return null;
   return (
-    <Badge variant="outline" data-estado-propio="fuera" className="gap-1">
+    <Pastilla tamano="md" data-estado-propio="fuera">
       <BanderaPais pais={estado.noc} soloBandera />
       {`a ${numero.format(distancia.diferencia)} pts`}
-    </Badge>
+    </Pastilla>
   );
 }
 
@@ -157,13 +147,13 @@ export function PruebaOlimpica({
     >
       <header className="flex min-w-0 flex-wrap items-center gap-2">
         <h3 className="mr-auto text-lg leading-tight">
-          {ARMA[resultado.arma]} {GENERO[resultado.genero]}
+          {rotuloPrueba({ arma: resultado.arma, genero: resultado.genero })}
         </h3>
         <EstadoPropio estado={resultado.seguidos[nocPropio]} />
-        <Badge variant="outline" data-provisional="">
+        <Pastilla tamano="md" data-provisional="">
           Provisional
           {fecha ? <time dateTime={resultado.fechaRanking ?? undefined}>{fecha}</time> : null}
-        </Badge>
+        </Pastilla>
       </header>
 
       {resultado.equipos.length > 0 ? (
@@ -183,7 +173,7 @@ export function PruebaOlimpica({
               data-primer-fuera=""
               data-propio={fueraEquipos.noc === nocPropio ? '' : undefined}
               className={cn(
-                'grid min-w-0 grid-cols-[4.75rem_auto_minmax(0,1fr)_auto] items-center gap-2 px-2 py-1.5 text-muted-foreground',
+                'grid min-w-0 grid-cols-[4.75rem_auto_minmax(0,1fr)_auto] items-center gap-2 px-2 py-2 text-muted-foreground',
                 fueraEquipos.noc === nocPropio && 'bg-marcado font-semibold text-foreground',
               )}
             >
@@ -198,7 +188,7 @@ export function PruebaOlimpica({
           {!resultado.anfitrion.conEquipo ? (
             <li
               data-anfitrion=""
-              className="grid min-w-0 grid-cols-[4.75rem_auto_minmax(0,1fr)] items-center gap-2 px-2 py-1.5 text-muted-foreground"
+              className="grid min-w-0 grid-cols-[4.75rem_auto_minmax(0,1fr)] items-center gap-2 px-2 py-2 text-muted-foreground"
             >
               <span className="text-xs">Anfitrión</span>
               <BanderaPais pais={resultado.anfitrion.noc} />
@@ -213,7 +203,7 @@ export function PruebaOlimpica({
           {resultado.aorMundial.map((t, i) => (
             <Fila
               key={t.fieId}
-              rotulo="Top 2"
+              rotulo="2 primeros"
               noc={t.noc}
               nombre={t.nombre}
               puntos={t.puntos}
@@ -241,7 +231,7 @@ export function PruebaOlimpica({
           })}
           <li
             data-zonales=""
-            className="grid min-w-0 grid-cols-[4.75rem_minmax(0,1fr)_auto] items-center gap-2 px-2 py-1.5 text-muted-foreground"
+            className="grid min-w-0 grid-cols-[4.75rem_minmax(0,1fr)_auto] items-center gap-2 px-2 py-2 text-muted-foreground"
           >
             <span className="text-xs">Zonal</span>
             <span className="min-w-0 truncate text-xs">abr 2028</span>

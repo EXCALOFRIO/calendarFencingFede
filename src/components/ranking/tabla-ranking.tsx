@@ -2,7 +2,7 @@
 
 import { ChevronRight, Scissors, TrendingDown, TrendingUp } from 'lucide-react';
 import * as React from 'react';
-import { Badge } from '@/components/ui/badge';
+import { MarcaPropia } from '@/components/sistema/pastilla';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -26,7 +26,8 @@ import type {
   RankingTableView,
 } from '@/lib/queries/ranking';
 import type { CutoffStatus } from '@/lib/ranking/compute';
-import { cn, formatDateEs } from '@/lib/utils';
+import { frescura } from '@/lib/fechas';
+import { cn } from '@/lib/utils';
 import { Desglose } from './desglose';
 import { BarraFiltrosRanking } from './selectores-grupo';
 import { clave, etiquetaGrupo, puntos } from './formato';
@@ -116,7 +117,7 @@ export function TablaRanking({
           className="flex h-auto min-w-0 cursor-pointer items-start justify-start gap-4 rounded-none border-y border-filete-alto bg-card px-4 py-4 text-left whitespace-normal transition-colors hover:bg-accent"
         >
           <span className="flex w-16 shrink-0 flex-col">
-            <span className="cifra text-5xl text-primary-text sm:text-6xl">
+            <span className="cifra text-3xl text-primary-text">
               {fila.position}
             </span>
             <span className="mt-1 text-xs leading-tight text-muted-foreground">
@@ -142,7 +143,7 @@ export function TablaRanking({
       {/* Cuándo se calculó y con qué normativa. */}
       <p className="text-xs text-muted-foreground">
         {tabla.computedAt
-          ? `Calculado el ${formatDateEs(tabla.computedAt)}`
+          ? frescura(tabla.computedAt)
           : 'Sin fecha de cálculo'}
         {tabla.rule
           ? `. Cuentan las ${tabla.rule.countingEvents} mejores pruebas` +
@@ -178,7 +179,7 @@ export function TablaRanking({
               {hayCorte && fila.position === plazas ? (
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={6} className="px-0 py-0">
-                    <div className="flex items-center gap-2 border-y border-gold bg-[color-mix(in_oklab,var(--color-gold)_7%,var(--card))] px-2 py-1.5 text-xs text-gold">
+                    <div className="flex items-center gap-2 border-y border-gold bg-[color-mix(in_oklab,var(--color-gold)_7%,var(--card))] px-2 py-2 text-xs text-gold">
                       <Scissors className="size-3.5 shrink-0" aria-hidden />
                       <span className="whitespace-normal">
                         Corte de convocatoria: las {plazas} primeras plazas salen por
@@ -212,7 +213,7 @@ export function TablaRanking({
                 </SheetTitle>
                 <SheetDescription className="pr-10">
                   {etiquetaGrupo(grupo)}
-                  {filaAbierta.clubName ? `. ${filaAbierta.clubName}` : ''}
+                  {filaAbierta.clubName ? ` · ${filaAbierta.clubName}` : ''}
                 </SheetDescription>
               </SheetHeader>
               <div className="px-4 pb-10">
@@ -322,9 +323,7 @@ function Fila({
         <span className="flex flex-wrap items-center gap-2">
           <span className="min-w-0 break-words font-medium text-foreground">{fila.athleteName}</span>
           {esMia ? (
-            <Badge variant="outline" className="border-primary/50 text-primary-text">
-              Tú
-            </Badge>
+            <MarcaPropia />
           ) : null}
         </span>
         {/*
@@ -333,7 +332,7 @@ function Fila({
           rótulo delante, no encadenados con puntos medios: «3 · +2» no dice
           si son pruebas, puestos o puntos.
         */}
-        <span className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground md:hidden">
+        <span className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground md:hidden">
           <span className="min-w-0 basis-full break-words">
             {fila.clubName ?? 'Sin club'}
           </span>

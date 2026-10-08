@@ -1,24 +1,14 @@
 import { ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { BanderaPais, type TamañoBandera } from '@/components/bandera';
+import { CabeceraSeccion } from '@/components/sistema/cabecera-seccion';
+import { fechaCorta } from '@/lib/fechas';
 import { rutaPaisDe } from '@/lib/sport/explorar/enlace-pais';
-import { cn, esFechaIsoReal, formatDateEs } from '@/lib/utils';
+import { cn, esFechaIsoReal } from '@/lib/utils';
 
 /** Piezas de lectura que comparten la ficha deportiva y el cara a cara. */
 
 export type Nivel = 'pagina' | 'seccion';
-
-function Titulo({ nivel, id, children }: { nivel: Nivel; id: string; children: React.ReactNode }) {
-  return nivel === 'pagina' ? (
-    <h2 id={id} className="text-2xl leading-tight break-words sm:text-3xl">
-      {children}
-    </h2>
-  ) : (
-    <h3 id={id} className="text-xl leading-tight break-words sm:text-2xl">
-      {children}
-    </h3>
-  );
-}
 
 export function Bloque({
   id,
@@ -36,11 +26,13 @@ export function Bloque({
 }) {
   return (
     <section aria-labelledby={id} className="flex min-w-0 flex-col gap-3">
-      <div className={tituloOculto ? 'sr-only' : 'border-b pb-3'}>
-        <Titulo nivel={nivel} id={id}>
-          {titulo}
-        </Titulo>
-      </div>
+      <CabeceraSeccion
+        id={id}
+        titulo={titulo}
+        nivel={nivel === 'pagina' ? 'pagina' : 'seccion'}
+        como={nivel === 'pagina' ? 'h2' : 'h3'}
+        className={tituloOculto ? 'sr-only' : 'border-b pb-3'}
+      />
       {children}
     </section>
   );
@@ -87,7 +79,7 @@ export function Celda({
 
 /** Una fecha que no existe se muestra en bruto: formatearla lanzaría o la disfrazaría. */
 export function fechaLegible(iso: string): string {
-  return esFechaIsoReal(iso) ? formatDateEs(iso) : iso;
+  return esFechaIsoReal(iso) ? fechaCorta(iso, { anio: 'siempre' }) : iso;
 }
 
 /** Sólo enlaces web: una URL con otro esquema de una fuente no se vuelve clicable. */
@@ -103,7 +95,7 @@ export function EnlaceFuente({ url, etiqueta }: { url: string | null; etiqueta: 
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex min-h-[44px] w-fit max-w-full items-center gap-1.5 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
+      className="inline-flex min-h-[44px] w-fit max-w-full items-center gap-2 text-sm text-primary-text underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
     >
       {etiqueta}
       <ExternalLink className="size-3.5 shrink-0" aria-hidden />

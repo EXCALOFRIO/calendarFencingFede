@@ -34,11 +34,10 @@ export default function ErrorGlobal({
       <body className="antialiased">
         <title>Algo se ha roto · CalendarFencing</title>
         <main className="mx-auto flex min-h-dvh w-full max-w-[1320px] flex-col items-start justify-center gap-3 px-4 py-16">
-          <h1 className="text-2xl sm:text-3xl">La aplicación no ha arrancado</h1>
+          <h1 className="text-2xl">La aplicación no ha arrancado</h1>
           <p className="medida text-sm text-muted-foreground">
-            Ha fallado algo por nuestro lado. No se ha perdido nada de lo que
-            tuvieras guardado: el calendario, tus inscripciones y tus datos
-            siguen en su sitio. Prueba a cargarla otra vez.
+            Ha fallado algo por nuestro lado. No se ha perdido nada: prueba a
+            cargarla otra vez.
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button
@@ -52,11 +51,11 @@ export default function ErrorGlobal({
               href="/"
               className="inline-flex h-10 items-center justify-center rounded-md border border-input px-5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
             >
-              Ir al calendario
+              Volver al calendario
             </a>
           </div>
           {error.digest ? (
-            <p className="text-xs text-muted-foreground/70">
+            <p className="text-xs text-off">
               Referencia del fallo: <span className="cifra">{error.digest}</span>
             </p>
           ) : null}

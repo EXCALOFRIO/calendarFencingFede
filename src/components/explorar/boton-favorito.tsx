@@ -89,7 +89,10 @@ export function BotonFavorito({
       });
       setEstado((e) => resolverOperacion(e, r));
       if (variante === 'lista' && r.resultado === 'quitado') {
-        document.getElementById(ID_ENCABEZADO_FAVORITOS)?.focus();
+        // El encabezado de la lista no es enfocable por sí mismo: se le da `tabindex` sólo para recibir el foco.
+        const encabezado = document.getElementById(ID_ENCABEZADO_FAVORITOS);
+        encabezado?.setAttribute('tabindex', '-1');
+        encabezado?.focus();
       }
     });
   }
@@ -97,7 +100,7 @@ export function BotonFavorito({
   const accion = optimista ? 'Quitar de favoritos' : 'Guardar en favoritos';
   const mensaje = variante === 'perfil' ? mensajeSeguir(cambio, nombre) : cambio?.mensaje;
   return (
-    <div className="flex min-w-0 flex-col items-start gap-1.5">
+    <div className="flex min-w-0 flex-col items-start gap-2">
       {variante === 'perfil' ? (
         // «Seguir» es el mismo favorito privado. El rótulo cambia como en
         // cualquier red social, así que no lleva `aria-pressed` (anunciaría el

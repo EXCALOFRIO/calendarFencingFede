@@ -28,13 +28,8 @@ import {
 import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
-import {
-  CATEGORY_LABEL,
-  WEAPON_LABEL,
-  formatDateEs,
-  titular,
-  yearFromIsoDate,
-} from '@/lib/utils';
+import { fechaCorta } from '@/lib/fechas';
+import { CATEGORY_LABEL, WEAPON_LABEL, titular, yearFromIsoDate } from '@/lib/utils';
 
 /**
  * Cola de resultados sin dueño.
@@ -235,7 +230,7 @@ export function EmparejarPanel({
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h2 className="min-w-0 text-base">{titular(grupo.evento)}</h2>
             <span className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
-              {grupo.fecha ? <span>{formatDateEs(grupo.fecha)}</span> : null}
+              {grupo.fecha ? <span>{fechaCorta(grupo.fecha)}</span> : null}
               <span>
                 <span className="cifra text-foreground">{grupo.filas.length}</span> sin
                 emparejar
@@ -277,7 +272,7 @@ export function EmparejarPanel({
                   </span>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-1.5">
+                <div className="flex shrink-0 items-center gap-2">
                   {fila.sourceUrl ? (
                     <Button variant="ghost" size="icon-sm" asChild>
                       <a
@@ -362,7 +357,7 @@ function SelectorTirador({
       </PopoverTrigger>
 
       <PopoverContent align="end" className="w-[min(22rem,calc(100vw-2rem))] p-0">
-        <div className="flex flex-col gap-2 border-b px-3 py-2.5">
+        <div className="flex flex-col gap-2 border-b px-3 py-3">
           <p className="text-xs text-muted-foreground">
             Asignando el puesto {fila.position} de{' '}
             <span className="text-foreground">{titular(fila.sourceAthleteName)}</span>.
@@ -372,7 +367,7 @@ function SelectorTirador({
             <div className="flex items-center justify-between gap-3">
               <Label
                 htmlFor={`licencia-${fila.id}`}
-                className="text-xs leading-tight font-normal text-muted-foreground"
+                className="text-xs leading-4 font-normal text-muted-foreground"
               >
                 Guardar la licencia {fila.sourceLicense} en su ficha
               </Label>
@@ -388,7 +383,7 @@ function SelectorTirador({
             <div className="flex items-center justify-between gap-3">
               <Label
                 htmlFor={`todas-${fila.id}`}
-                className="text-xs leading-tight font-normal text-muted-foreground"
+                className="text-xs leading-4 font-normal text-muted-foreground"
               >
                 Asignar los {repeticiones} resultados con este mismo nombre
               </Label>
@@ -413,7 +408,7 @@ function SelectorTirador({
                     setAbierto(false);
                     await onElegir(fila, t, guardarLicencia, todas);
                   }}
-                  className="flex-col items-start gap-0.5"
+                  className="flex-col items-start gap-1"
                 >
                   <span className="flex w-full items-center gap-2">
                     <span className="flex-1 truncate">{t.nombre}</span>

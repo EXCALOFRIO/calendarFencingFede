@@ -3,7 +3,8 @@
 import * as React from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { esFechaIsoReal, formatDateEs } from '@/lib/utils';
+import { fechaCorta } from '@/lib/fechas';
+import { esFechaIsoReal } from '@/lib/utils';
 
 /**
  * Campo de fecha.
@@ -54,7 +55,7 @@ export function CampoFecha({
   const idAyuda = `${id}-ayuda`;
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       <Label htmlFor={id}>{etiqueta}</Label>
       <Input
         id={id}
@@ -80,7 +81,7 @@ export function CampoFecha({
         {vacio
           ? (ayuda ?? 'Déjalo en blanco si no aplica.')
           : iso
-            ? formatDateEs(iso)
+            ? fechaCorta(iso)
             : 'No se entiende esa fecha. Escríbela como 03/10/2026.'}
       </p>
     </div>

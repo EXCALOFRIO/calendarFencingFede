@@ -3,6 +3,7 @@
 import { ExternalLink } from 'lucide-react';
 import type * as React from 'react';
 import { BanderaPais } from '@/components/bandera';
+import { ListaDatos, ParDato } from '@/components/sistema/lista-datos';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 
@@ -158,7 +159,7 @@ export function CabeceraTirador({
           */}
           <h2 className="min-w-0 text-2xl leading-tight sm:text-3xl">
             <span className="font-bold">{apellidos}</span>{' '}
-            <span className="font-medium text-foreground/70">{nombre}</span>
+            <span className="font-medium text-muted-foreground">{nombre}</span>
           </h2>
 
           {/*
@@ -178,11 +179,11 @@ export function CabeceraTirador({
             etiqueta y el valor quepan sin partirse; en escritorio se coloca a
             la derecha de la foto, como en la referencia.
           */
-          <dl className="grid w-full grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:w-auto lg:flex-1 lg:grid-cols-3">
+          <ListaDatos disposicion="rejilla" className="w-full gap-x-6 sm:grid-cols-3 lg:w-auto lg:flex-1">
             {datos.map((dato) => (
               <Par key={dato.etiqueta} dato={dato} />
             ))}
-          </dl>
+          </ListaDatos>
         ) : null}
       </div>
 
@@ -211,12 +212,12 @@ function Foto({
     (se vio en `capturas/iphone-ranking.png`). Con 80 y `min-w-40` caben las
     dos, que es el orden de la referencia.
   */
-  const marco = 'h-auto w-20 shrink-0 rounded-lg sm:w-32';
+  const marco = 'h-auto w-20 shrink-0 rounded-xl sm:w-32';
 
   if (!foto?.url) {
     return (
       <Avatar className={cn(marco, 'aspect-[4/5]')} aria-hidden>
-        <AvatarFallback className="cifra rounded-lg bg-muted text-3xl text-muted-foreground">
+        <AvatarFallback className="cifra rounded-xl bg-muted text-3xl text-muted-foreground">
           {iniciales}
         </AvatarFallback>
       </Avatar>
@@ -230,7 +231,7 @@ function Foto({
         alt={`Foto de ${foto.nombrePublicado ?? nombreCompleto} publicada por la FIE`}
         className="aspect-[4/5] object-cover object-top"
       />
-      <AvatarFallback className="cifra rounded-lg bg-muted text-3xl text-muted-foreground">
+      <AvatarFallback className="cifra rounded-xl bg-muted text-3xl text-muted-foreground">
         {iniciales}
       </AvatarFallback>
     </Avatar>
@@ -243,14 +244,14 @@ function Foto({
       href={foto.fichaUrl}
       target="_blank"
       rel="noreferrer"
-      className="group/foto relative shrink-0 rounded-lg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      className="group/foto relative shrink-0 rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
       aria-label={`Ver la ficha de ${nombreCompleto} en fie.org`}
     >
       {imagen}
-      <ExternalLink
-        aria-hidden
-        className="absolute end-1 bottom-1 size-3.5 text-white/70 transition-colors group-hover/foto:text-white"
-      />
+      {/* Sobre una foto: fondo opaco detrás del icono en vez de blanco con alfa. */}
+      <span aria-hidden className="absolute end-1 bottom-1 inline-flex size-6 items-center justify-center rounded-full bg-background text-foreground">
+        <ExternalLink className="size-3.5" />
+      </span>
     </a>
   );
 }
@@ -269,11 +270,11 @@ function InsigniaPuesto({ insignia }: { insignia: Insignia }) {
   return (
     <p
       className={cn(
-        'flex w-fit items-center gap-2 rounded-full border py-1.5 pe-4 ps-3',
-        acento ? 'border-primary/50 bg-primary/10' : 'border-border bg-secondary/60',
+        'flex w-fit items-center gap-2 rounded-full border py-2 pe-4 ps-3',
+        acento ? 'border-filete-alto bg-marcado' : 'border-border bg-secondary',
       )}
     >
-      <span className="flex items-baseline gap-0.5">
+      <span className="flex items-baseline gap-1">
         <span className="text-sm text-muted-foreground" aria-hidden>
           #
         </span>
@@ -293,23 +294,22 @@ function InsigniaPuesto({ insignia }: { insignia: Insignia }) {
   );
 }
 
-/** Etiqueta apagada arriba, valor en blanco y negrita debajo. Nunca al revés. */
+/** Etiqueta apagada arriba, valor en blanco y negrita debajo (`ParDato`). Nunca al revés. */
 function Par({ dato }: { dato: DatoFicha }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <dt className="text-xs text-muted-foreground">{dato.etiqueta}</dt>
-      <dd
-        className={cn(
-          'min-w-0 font-semibold',
-          dato.destacado ? 'text-base' : 'text-sm',
-          dato.valor === null && 'font-normal text-muted-foreground',
-        )}
-      >
-        {dato.valor ?? 'No publicado'}
-      </dd>
-      {dato.pie ? (
-        <dd className="text-xs font-normal text-muted-foreground">{dato.pie}</dd>
-      ) : null}
-    </div>
+    <ParDato etiqueta={dato.etiqueta}>
+      <span className="flex min-w-0 flex-col gap-1">
+        <span
+          className={cn(
+            'font-semibold',
+            dato.destacado ? 'text-base' : 'text-sm',
+            dato.valor === null && 'font-normal text-muted-foreground',
+          )}
+        >
+          {dato.valor ?? 'No publicado'}
+        </span>
+        {dato.pie ? <span className="text-xs font-normal text-muted-foreground">{dato.pie}</span> : null}
+      </span>
+    </ParDato>
   );
 }

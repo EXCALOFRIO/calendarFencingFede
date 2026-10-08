@@ -11,7 +11,7 @@ import { AREA_TACTIL, FOCO, PULSACION, SIN_MINIMO } from './tactil';
  */
 const variantesBoton = cva(
   cn(
-    'inline-flex shrink-0 items-center justify-center gap-[6px] rounded-full font-semibold whitespace-nowrap select-none',
+    'inline-flex shrink-0 items-center justify-center gap-2 rounded-full font-semibold whitespace-nowrap select-none',
     'disabled:pointer-events-none aria-disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0',
     SIN_MINIMO,
     AREA_TACTIL,
@@ -28,9 +28,9 @@ const variantesBoton = cva(
         fantasma: 'bg-transparent text-foreground hover:bg-accent disabled:text-off',
       },
       tamano: {
-        sm: 'h-[28px] px-[10px] text-[12px] [&_svg]:size-[14px]',
-        md: 'h-[32px] px-[14px] text-[13px] [&_svg]:size-[16px]',
-        lg: 'h-[36px] px-[16px] text-[14px] [&_svg]:size-[18px]',
+        sm: 'h-[28px] gap-1 px-3 text-xs [&_svg]:size-[14px]',
+        md: 'h-[32px] px-3 text-sm [&_svg]:size-[16px]',
+        lg: 'h-[36px] px-4 text-sm [&_svg]:size-[18px]',
       },
       ancho: {
         natural: '',

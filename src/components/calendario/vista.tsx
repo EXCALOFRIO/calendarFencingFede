@@ -2,23 +2,28 @@
 
 import {
   CalendarSearch,
+  Check,
   ChevronLeft,
   ChevronRight,
-  CircleCheck,
   Flag,
   Search,
-  SlidersHorizontal,
   X,
 } from 'lucide-react';
 import Link from 'next/link';
 import * as React from 'react';
 import { toast } from 'sonner';
+import {
+  BarraFiltros,
+  OpcionesFiltro,
+  SeccionFiltro,
+  type FiltroActivo,
+} from '@/components/filtros/barra-filtros';
 import { Boton, BotonIcono } from '@/components/sistema/boton';
 import { ChipFiltro, FilaChips } from '@/components/sistema/chip-filtro';
-import { HojaInferior } from '@/components/sistema/hoja-inferior';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
+import { SelectorSegmentado } from '@/components/sistema/selector-segmentado';
 import { TransicionContenido } from '@/components/sistema/transicion';
 import { ahorrarDatos } from '@/components/sistema/red-cliente';
-import { Button } from '@/components/ui/button';
 import {
   Command,
   CommandEmpty,
@@ -27,38 +32,20 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from '@/components/ui/empty';
-import { Item, ItemContent, ItemMedia } from '@/components/ui/item';
 import { COLOR_ORGANISMO } from '@/lib/colores';
 import type { EventView, Weapon } from '@/lib/queries/calendar';
 import {
   ARMAS,
   GENEROS as CODIGOS_GENERO,
-  esArma,
   arranqueDelCalendario,
   ordenarCategorias,
   type PerfilAmbito,
 } from '@/lib/ambito';
-import {
-  CATEGORY_LABEL,
-  CIRCUIT_LABEL,
-  CIRCUIT_SHORT,
-  GENDER_LABEL,
-  WEAPON_LABEL,
-  WEAPON_SHORT,
-  capitalizar,
-  cn,
-  formatDateRangeEs,
-  organismoDe,
-  titular,
-  titularTorneo,
-} from '@/lib/utils';
+import { rotuloArma, rotuloCategoria, rotuloGenero } from '@/lib/sport/rotulos';
+import { hoyMadrid, rangoFechas } from '@/lib/fechas';
+import { cn, organismoDe, titularTorneo } from '@/lib/utils';
+import { pastillaDeCircuito, plazoDe } from '@/lib/calendario/rotulos';
+import { Sede } from './fila-competicion';
 import type { QuienVa } from '@/app/(app)/inscritos';
 import {
   SIN_EVENTO,
@@ -78,11 +65,11 @@ import { CabeceraFicha } from './cabecera-ficha';
 import { FichaEvento } from './ficha-evento';
 import { PantallaFicha, useEntradaDeHistorial } from './pantalla-ficha';
 import { fichaRecibida, leerFicha, precargarFicha } from './ficha/precarga';
-import { LoQueViene, diasHasta, plazoDelEvento } from './lo-que-viene';
+import { LoQueViene, diasHasta } from './lo-que-viene';
 import { ResultadosPasados } from './pasado/resultados-pasados';
 import { ColumnaMes, FeedMovil, type EstadoDelMes } from './timeline';
-import type { PasadoDeTarjeta } from './tarjeta-bloque';
-import { agruparEnBloques, rangoRealDeEvento } from '@/lib/calendario/bloques';
+import { PastillaPlazo, type PasadoDeTarjeta } from './tarjeta-bloque';
+import { agruparEnBloques, nombreDeMes, rangoRealDeEvento } from '@/lib/calendario/bloques';
 import {
   construirUrlCalendario,
   quitarEventoDeUrl,
@@ -90,7 +77,6 @@ import {
   type ContextoCalendarioLeido,
   type Vista,
 } from '@/lib/calendario/contexto-url';
-import { hoyMadrid } from '@/lib/callups/fechas';
 
 export type TiradorOpcion = {
   id: string;
@@ -120,9 +106,15 @@ export type TiradorOpcion = {
 const CUANTO_DESPUES = 6;
 
 const GENEROS: { v: 'M' | 'F'; largo: string }[] = [
-  { v: 'M', largo: GENDER_LABEL.M },
-  { v: 'F', largo: GENDER_LABEL.F },
+  { v: 'M', largo: rotuloGenero('M') },
+  { v: 'F', largo: rotuloGenero('F') },
 ];
+
+/** El día 1 de un mes `AAAA-MM(-DD)`, en hora local: es lo que maneja la vista como «ancla». */
+function anclaDeMes(iso: string): Date {
+  const [anio, mes] = iso.split('-').map(Number);
+  return new Date(anio, mes - 1, 1);
+}
 
 /**
  * ===========================================================================
@@ -165,44 +157,17 @@ function encajaEnElAmbito(evento: EventView, ambito: Ambito): boolean {
  * El calendario, que es la aplicación.
  *
  * -------------------------------------------------------------------------
- * LA PANTALLA ES UNA BANDA Y UNA REJILLA. NADA MÁS.
+ * UNA CABECERA Y LA LISTA. NADA MÁS.
  * -------------------------------------------------------------------------
- * Antes eran cuatro bloques: título, tres renglones de controles, rejilla y
- * dos renglones de leyenda. Medido en un iPhone: 260 px de los 500
- * disponibles se los llevaba lo que NO es el calendario, así que a la rejilla
- * le quedaban 240 px, una semana con cuatro torneos no cabía y la última
- * semana salía rebanada por el `overflow`.
+ * Arriba, el periodo con sus flechas y la lupa; debajo, la barra de filtros
+ * del sistema (un botón «Filtros (N)», una sola hoja y los filtros puestos
+ * como chips que se quitan y saltan de línea) y, en pantallas anchas, lo
+ * próximo con los días que faltan. El resto es la lista de bloques.
  *
- * Ahora hay **una banda** con dos renglones —el mes con su navegación arriba,
- * y debajo lo único que de verdad se quiere saber: **cuánto queda para la
- * próxima competición**— y la rejilla se lleva el resto. Los filtros, que se
- * tocan una vez y se dejan puestos, viven detrás de un botón que dice en su
- * etiqueta qué está filtrando; el buscador es un icono que abre una paleta en
- * vez de un campo siempre vacío que se comía media anchura.
+ * El buscador es un icono que abre una paleta: buscar lleva al mes del
+ * torneo, no esconde el resto del calendario.
  *
- * -------------------------------------------------------------------------
- * UNA SOLA CONVENCIÓN DE ESTADO MARCADO
- * -------------------------------------------------------------------------
- * El usuario cazó el primer fallo de un vistazo: `Florete` salía relleno de
- * rojo por estar activo y `M` y `F` salían **los dos** rellenos, así que la
- * misma señal significaba dos cosas en la misma línea. Se quitó el acento y
- * se marcó con fondo secundario, y entonces vino la segunda queja, que es la
- * de ahora: *«es tan gris que ni se nota»*.
- *
- * La distinción no es «acento sí / acento no»: es **relleno frente a
- * contorno**. En toda la pantalla, y en toda la aplicación:
- *
- *   acción principal    relleno sólido de acento + texto blanco. Una.
- *   control marcado      contorno rojo + superficie `--marcado` + rótulo
- *                        rojo y en negrita. Igual para arma, género,
- *                        categoría, vista y tirador.
- *   control sin marcar   borde `--input`, superficie de su nivel, apagado.
- *
- * Las medidas y el por qué del token están en `globals.css` («EL CONTROL
- * MARCADO»). La selección múltiple sigue en `ToggleGroup`, elegir-uno en
- * `Select` y la navegación en un `ButtonGroup` de botones fantasma.
- *
- * Todas las herramientas tienen al menos 44 × 44 px, también en escritorio.
+ * Todas las herramientas tienen al menos 44 × 44 px de toque.
  */
 export function VistaCalendario({
   eventos,
@@ -218,7 +183,14 @@ export function VistaCalendario({
   eventoInicial = null,
   pasadoInicial = null,
   cargarPasado,
+  hoy: hoyDelServidor,
 }: {
+  /**
+   * Hoy en Madrid, decidido en el servidor. El primer pintado del cliente
+   * tiene que salir igual que el del servidor: el día 1 entre las 00:00 y las
+   * 02:00 de Madrid, el Worker (UTC) y el navegador no están ni en el mismo mes.
+   */
+  hoy?: string;
   /** Torneo cuya ficha se abre al llegar (`evento=` de la dirección). */
   eventoInicial?: string | null;
   /**
@@ -313,11 +285,18 @@ export function VistaCalendario({
     llegado no se pinta a medias con un aviso de carga; se sigue viendo el
     anterior hasta que llega entero, como una navegación sin esqueleto.
   */
+  const [hoy, setHoy] = React.useState(() => hoyDelServidor ?? hoyMadrid());
+  // Tras hidratar: una pestaña abierta desde ayer no sigue diciendo que hoy es ayer.
+  React.useEffect(() => {
+    const ahora = hoyMadrid();
+    if (ahora !== hoy) setHoy(ahora);
+  }, [hoy]);
+
   const [vistaPedida, setVista] = React.useState<Vista>(
     inicial?.vista ?? 'trimestre',
   );
   const [anclaPedida, setAncla] = React.useState(() => {
-    if (!inicial?.mes) return new Date();
+    if (!inicial?.mes) return anclaDeMes(hoy);
     const [anio, mes] = inicial.mes.split('-').map(Number);
     return new Date(anio, mes - 1, 1);
   });
@@ -394,7 +373,6 @@ export function VistaCalendario({
    * intención (el puntero sobre una flecha, un toque, el foco), y mientras el
    * pedido no ha llegado se sigue pintando el que había.
    */
-  const hoy = isoDeHoy();
   const [tramos, setTramos] = React.useState<
     Record<string, { estado: EstadoDelMes; datos: TramoPasado | null }>
   >(() =>
@@ -599,12 +577,8 @@ export function VistaCalendario({
     [],
   );
 
-  const todoPuesto =
-    armas.length === ARMAS.length &&
-    generos.length === GENEROS.length &&
-    categorias.length === categoriasDisponibles.length;
-
   const verTodo = () => {
+    setAmbito('TODO');
     setArmas([...ARMAS]);
     setGeneros([...CODIGOS_GENERO]);
     setCategorias(categoriasDisponibles);
@@ -779,14 +753,13 @@ export function VistaCalendario({
    * así que para una tiradora es su próxima competición y para la dirección
    * técnica el próximo torneo del calendario que esté mirando.
    */
-  const proximo = React.useMemo(() => {
-    const hoy = isoDeHoy();
-    return (
+  const proximo = React.useMemo(
+    () =>
       [...filtrados]
         .filter((e) => e.endDate >= hoy)
-        .sort((a, b) => a.startDate.localeCompare(b.startDate))[0] ?? null
-    );
-  }, [filtrados]);
+        .sort((a, b) => a.startDate.localeCompare(b.startDate))[0] ?? null,
+    [filtrados, hoy],
+  );
 
   const meses = React.useMemo(
     () =>
@@ -831,7 +804,6 @@ export function VistaCalendario({
    * el 2 de diciembre, su bloque está en diciembre y aquí tiene que salir.
    */
   const fuera = React.useMemo(() => {
-    const hoy = isoDeHoy();
     return filtrados
       .filter((e) => {
         const r = rangoRealDeEvento(e);
@@ -861,7 +833,7 @@ export function VistaCalendario({
       arriba en una línea y abajo con su fecha y su sede no es decir dos veces
       lo mismo; es el titular y la ficha.
     */
-  }, [filtrados, finDelTramo]);
+  }, [filtrados, finDelTramo, hoy]);
 
   /** Torneos que caen en el tramo que pinta la vista. El denominador. */
   const enElTramo = React.useMemo(() => {
@@ -887,7 +859,7 @@ export function VistaCalendario({
     pedirTramo(
       tramoDe(
         paso === 0
-          ? new Date()
+          ? anclaDeMes(hoy)
           : new Date(
               anclaPedida.getFullYear(),
               anclaPedida.getMonth() + paso * (vistaPedida === 'mes' ? 1 : 3),
@@ -912,9 +884,7 @@ export function VistaCalendario({
     },
   });
 
-  // El mes de hoy en hora española: el día 1 a la una de la mañana, el huso
-  // del servidor y el del navegador no coinciden ni en el mes.
-  const [anioHoy, mesHoy] = hoyMadrid().split('-').map(Number);
+  const [anioHoy, mesHoy] = hoy.split('-').map(Number);
   const enElMesActual =
     ancla.getFullYear() === anioHoy && ancla.getMonth() === mesHoy - 1;
 
@@ -965,23 +935,23 @@ export function VistaCalendario({
 
         La cabecera de la aplicación pinta la marca en la raíz del Calendario
         (`cabeceraDeRuta`); aquí queda el periodo que se mira, como `<h2>`, con
-        las flechas y la lupa en la misma fila, y debajo los filtros en una
-        fila de chips (`docs/diseno-sistema.md` § 1.2 y § 7).
+        las flechas y la lupa en la misma fila, y debajo la barra de filtros
+        (`docs/diseno-sistema.md` § 1.2 y § 7).
       */}
       <h1 className="sr-only">Calendario</h1>
-      <div className="flex shrink-0 flex-col gap-[8px]">
-        <div className="flex min-h-[36px] items-center gap-[4px]">
+      <div className="flex shrink-0 flex-col gap-2">
+        <div className="flex min-h-11 items-center gap-1">
           {/*
             El año se calla en el móvil cuando es el de hoy; si se mira otro
             año, sale, que es cuando hace falta saberlo.
           */}
-          <h2 className="min-w-0 flex-1 truncate text-[20px] leading-[24px]">
+          <h2 className="min-w-0 flex-1 truncate text-xl font-semibold">
             {vista === 'mes' ? (
               <>
-                {nombreMes(ancla, false)}{' '}
+                {nombreDeMes(ancla.getFullYear(), ancla.getMonth(), false)}{' '}
                 <span
                   className={cn(
-                    'cifra font-normal text-muted-foreground',
+                    'font-normal text-muted-foreground tabular-nums',
                     ancla.getFullYear() === anioHoy && 'hidden sm:inline',
                   )}
                 >
@@ -991,13 +961,14 @@ export function VistaCalendario({
             ) : (
               <>
                 <span className="sm:hidden">
-                  {nombreMes(meses[0], false).slice(0, 3)} –{' '}
-                  {nombreMes(meses[2], false).slice(0, 3)}{' '}
+                  {nombreDeMes(meses[0].getFullYear(), meses[0].getMonth(), false).slice(0, 3)}–
+                  {nombreDeMes(meses[2].getFullYear(), meses[2].getMonth(), false).slice(0, 3)}{' '}
                 </span>
                 <span className="hidden sm:inline">
-                  {nombreMes(meses[0], false)} – {nombreMes(meses[2], false)}{' '}
+                  {nombreDeMes(meses[0].getFullYear(), meses[0].getMonth(), false)}–
+                  {nombreDeMes(meses[2].getFullYear(), meses[2].getMonth(), false)}{' '}
                 </span>
-                <span className="cifra font-normal text-muted-foreground">
+                <span className="font-normal text-muted-foreground tabular-nums">
                   {meses[2].getFullYear()}
                 </span>
               </>
@@ -1006,7 +977,7 @@ export function VistaCalendario({
 
           {/* Con un tramo pedido en camino se sigue viendo el anterior; sólo cambia el cursor. */}
           <div
-            className={cn('flex shrink-0 items-center gap-[4px]', esperando && 'cursor-progress')}
+            className={cn('flex shrink-0 items-center gap-1', esperando && 'cursor-progress')}
             aria-busy={esperando || undefined}
           >
             <BotonIcono
@@ -1025,7 +996,7 @@ export function VistaCalendario({
                 {...intencionDePaso(0)}
                 onClick={() => {
                   setDireccion(0);
-                  enTransicion(() => setAncla(new Date()));
+                  enTransicion(() => setAncla(anclaDeMes(hoy)));
                 }}
               >
                 Hoy
@@ -1066,7 +1037,6 @@ export function VistaCalendario({
           tiradorId={tirador?.id ?? null}
           cambiarTirador={cambiarTirador}
           propio={propio}
-          todoPuesto={todoPuesto}
           verTodo={verTodo}
           verLoMio={verLoMio}
           numPruebas={numPruebas}
@@ -1087,6 +1057,7 @@ export function VistaCalendario({
           cual={cual}
           total={coincidencias.length}
           hayTiradores={tiradores.length > 0}
+          hoy={hoy}
           onAnterior={() =>
             setCual((p) => (p - 1 + coincidencias.length) % coincidencias.length)
           }
@@ -1113,28 +1084,27 @@ export function VistaCalendario({
             dan el borde y el título en `text-primary-text`, que es el rojo
             medido para texto (5,60:1). Mismo aviso, sin velo.
           */
-          className="flex min-h-[44px] shrink-0 items-center gap-[12px] rounded-[12px] border border-primary-text bg-card px-[12px] py-[8px] text-[14px] leading-[20px] transition-colors hover:bg-accent"
+          className="pulsable flex min-h-11 shrink-0 items-center gap-3 rounded-xl border border-primary-text bg-card px-3 py-2 text-sm hover:bg-accent"
         >
           <span className="min-w-0 flex-1">
             <span className="font-medium text-primary-text">Vincula tu ficha</span>{' '}
             <span className="text-muted-foreground">para ver tu arma y categoría</span>
           </span>
-          <ChevronRight className="size-[18px] shrink-0" aria-hidden />
+          <ChevronRight className="size-5 shrink-0" aria-hidden />
         </Link>
       ) : null}
 
       {filtrados.length === 0 ? (
-        <Empty className="flex-1 border border-dashed">
-          <EmptyHeader>
-            <EmptyTitle>Sin pruebas</EmptyTitle>
-            <EmptyDescription>Ninguna encaja con estos filtros.</EmptyDescription>
-          </EmptyHeader>
-          <EmptyContent>
+        <EstadoVacio
+          className="flex-1 justify-center rounded-xl border border-dashed border-border"
+          titulo="Sin pruebas"
+          descripcion="Ninguna encaja con estos filtros."
+          accion={
             <Boton tamano="lg" variante="claro" onClick={verTodo}>
-              Ver todo
+              Quitar filtros
             </Boton>
-          </EmptyContent>
-        </Empty>
+          }
+        />
       ) : (
         <TransicionContenido
           // El periodo pintado: al cambiar de mes o de trimestre, fundido (§ 4).
@@ -1189,7 +1159,6 @@ export function VistaCalendario({
                 vista === 'mes' ? (
                   <LoQueViene
                     eventos={fuera}
-                    variante="apilada"
                     inscripciones={inscripciones}
                     onAbrir={abrir}
                   />
@@ -1277,7 +1246,6 @@ export function VistaCalendario({
               {vista === 'mes' ? (
                 <LoQueViene
                   eventos={fuera}
-                  variante="zonas"
                   inscripciones={inscripciones}
                   onAbrir={abrir}
                 />
@@ -1327,52 +1295,48 @@ export function VistaCalendario({
                     setBusqueda('');
                     setBuscando(false);
                   }}
-                  className="min-h-[44px] gap-2 py-3 text-[14px] font-medium"
+                  className="min-h-11 gap-2 py-3 text-sm font-medium"
                 >
-                  <CalendarSearch className="size-[16px]" aria-hidden />
-                  Ir a {nombreMes(new Date(saltoDeMes.anio, saltoDeMes.mes, 1)).toLowerCase()}
+                  <CalendarSearch className="size-4" aria-hidden />
+                  Ir a {nombreDeMes(saltoDeMes.anio, saltoDeMes.mes).toLocaleLowerCase('es-ES')}
                 </CommandItem>
               ) : null}
               {busqueda.trim() === '' ? (
-                <p className="px-[16px] py-[24px] text-center text-[14px] text-muted-foreground">
+                <p className="px-4 py-6 text-center text-sm text-muted-foreground">
                   Torneo, ciudad o mes («marzo 2019»)
                 </p>
               ) : saltoDeMes && coincidencias.length === 0 ? null : coincidencias.length === 0 ? (
                 <CommandEmpty>Sin coincidencias</CommandEmpty>
               ) : (
-                coincidencias.slice(0, 40).map((e, i) => (
-                  <CommandItem
-                    key={e.id}
-                    value={e.id}
-                    onSelect={() => {
-                      setCual(i);
-                      irA(e.startDate);
-                      setBuscando(false);
-                    }}
-                    className="min-h-[44px] flex-col items-start gap-1 py-3"
-                  >
-                    <span className="flex w-full flex-wrap items-baseline gap-x-2 gap-y-1">
-                      <span className="min-w-0 flex-1 break-words text-[14px] leading-[20px] font-medium">
-                        {titularTorneo(e.name)}
-                      </span>
-                      <span className="cifra shrink-0 text-[13px] text-muted-foreground">
-                        {formatDateRangeEs(e.startDate, e.endDate)}
-                      </span>
-                    </span>
-                    {/* Dos datos y no tres: el circuito ya dice de quién es. */}
-                    <span className="flex w-full flex-wrap items-baseline gap-x-2 gap-y-1 text-[12px] leading-[16px] text-muted-foreground">
-                      <span className="min-w-0 break-words">
-                        {CIRCUIT_SHORT[e.circuit] ?? CIRCUIT_LABEL[e.circuit] ?? e.circuit}
-                      </span>
-                      {e.city ? (
-                        <span className="min-w-0 break-words">
-                          {titular(e.city)}
-                          {e.country ? `, ${e.country}` : ''}
+                coincidencias.slice(0, 40).map((e, i) => {
+                  const circuito = pastillaDeCircuito(e);
+                  return (
+                    <CommandItem
+                      key={e.id}
+                      value={e.id}
+                      onSelect={() => {
+                        setCual(i);
+                        irA(e.startDate);
+                        setBuscando(false);
+                      }}
+                      className="min-h-11 flex-col items-start gap-1 py-3"
+                    >
+                      <span className="flex w-full flex-wrap items-baseline gap-x-2 gap-y-1">
+                        <span className="min-w-0 flex-1 text-sm font-medium break-words">
+                          {titularTorneo(e.name)}
                         </span>
-                      ) : null}
-                    </span>
-                  </CommandItem>
-                ))
+                        <span className="shrink-0 text-sm text-muted-foreground tabular-nums">
+                          {rangoFechas(e.startDate, e.endDate, 'linea', { anio: 'auto', referencia: hoy })}
+                        </span>
+                      </span>
+                      {/* Dos datos y no tres: el circuito ya dice de quién es. */}
+                      <span className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                        {circuito ? <span className="min-w-0 break-words">{circuito}</span> : null}
+                        {e.city ? <Sede ciudad={e.city} pais={e.country} /> : null}
+                      </span>
+                    </CommandItem>
+                  );
+                })
               )}
             </CommandList>
           </Command>
@@ -1438,31 +1402,10 @@ export function VistaCalendario({
 }
 
 /**
- * EL MARCADOR: la cifra grande con lo que queda, en UN renglón.
+ * EL MARCADOR: lo próximo, en un renglón, con los días que faltan en grande.
  *
- * Es lo que arregla «se ve plano». Plano quiere decir que todo pesa igual; la
- * cura no es una sombra, es que **una cosa pese mucho más que las demás**. La
- * cifra de los días va en condensada a 32 px y su rótulo a 12: la jerarquía
- * se lee sola, y viene del marcador de un asalto.
- *
- * Toda la franja es el botón que abre la ficha, así que hay **una** acción
- * principal en la pantalla y está donde se mira primero.
- *
- * -------------------------------------------------------------------------
- * DOS COSAS CAMBIADAS, Y LAS DOS LAS MARCÓ EL USUARIO
- * -------------------------------------------------------------------------
- * 1. **De banda a renglón.** Era una banda propia de dos líneas —nombre
- *    arriba, fecha y sede abajo— debajo de la fila de controles: 52 px más
- *    los 6 del filete y el aire. Ahora es la parte elástica de la fila de
- *    controles y todo va en una línea.
- *
- * 2. **El plazo pegado al nombre.** «Inscripción cerrada» iba en la línea del
- *    título pero con el nombre en `flex-1`, así que el plazo se iba al canto
- *    derecho de la fila: en un escritorio de 1440, **a 900 px del torneo del
- *    que hablaba**. Eso es lo que el usuario rodeó con un círculo. Ahora va
- *    justo detrás del nombre y se lee como una frase: «Copa del Mundo Cadete
- *    — Inscripción cerrada». Lo que ahora se estira es la cola —fecha y
- *    sede—, que sí puede irse al canto sin que nadie la eche de menos.
+ * Toda la franja es el botón que abre la ficha. El plazo va pegado al nombre
+ * del torneo del que habla, nunca al canto opuesto de la pantalla.
  */
 function FranjaDestacada({
   clase,
@@ -1471,6 +1414,7 @@ function FranjaDestacada({
   cual,
   total,
   hayTiradores,
+  hoy,
   onAnterior,
   onSiguiente,
   onLimpiar,
@@ -1482,6 +1426,7 @@ function FranjaDestacada({
   cual: number;
   total: number;
   hayTiradores: boolean;
+  hoy: string;
   onAnterior: () => void;
   onSiguiente: () => void;
   onLimpiar: () => void;
@@ -1489,12 +1434,7 @@ function FranjaDestacada({
 }) {
   if (buscando && total === 0) {
     return (
-      <div
-        className={cn(
-          'flex min-h-[44px] min-w-0 items-center gap-[8px] text-[14px] text-muted-foreground',
-          clase,
-        )}
-      >
+      <div className={cn('flex min-h-11 min-w-0 items-center gap-2 text-sm text-muted-foreground', clase)}>
         <span className="min-w-0 flex-1">Sin coincidencias</span>
         <Boton tamano="sm" onClick={onLimpiar}>
           Quitar búsqueda
@@ -1505,13 +1445,8 @@ function FranjaDestacada({
 
   if (!evento) {
     return (
-      // El mismo alto que el marcador: quedarse sin competiciones por delante no mueve la rejilla.
-      <p
-        className={cn(
-          'flex min-h-[44px] min-w-0 items-center text-[14px] text-muted-foreground',
-          clase,
-        )}
-      >
+      // El mismo alto que el marcador: quedarse sin competiciones por delante no mueve la lista.
+      <p className={cn('flex min-h-11 min-w-0 items-center text-sm text-muted-foreground', clase)}>
         {hayTiradores ? 'Sin próximas competiciones' : 'Sin próximos torneos'}
       </p>
     );
@@ -1521,73 +1456,55 @@ function FranjaDestacada({
   // Buscando, la coincidencia puede ser de hace años: no está «en marcha» por haber empezado antes de hoy.
   const terminado = diasHasta(evento.endDate) < 0;
   const enMarcha = dias <= 0 && !terminado;
-  const plazo = terminado ? null : plazoDelEvento(evento);
+  const plazo = terminado ? null : plazoDe(evento);
 
   return (
-    // Alto fijo: la cifra es Barlow con `font-display: swap` y su métrica no debe mover la rejilla al llegar.
-    <div className={cn('flex min-h-[44px] items-center gap-[8px]', clase)}>
-      <Item
-        asChild
-        size="sm"
-        className="min-h-[44px] min-w-0 flex-1 cursor-pointer gap-[12px] rounded-[12px] px-[8px] py-[6px] hover:bg-accent"
+    <div className={cn('flex min-h-11 items-center gap-2', clase)}>
+      <button
+        type="button"
+        data-evento={evento.id}
+        onClick={() => onAbrir(evento)}
+        className="pulsable flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-xl px-2 py-1 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <button
-          type="button"
-          // Un `<button>` centra su texto por defecto y arrastra a todos sus hijos.
-          className="text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          data-evento={evento.id}
-          onClick={() => onAbrir(evento)}
-        >
-          <ItemMedia className="min-w-[40px] flex-col items-start gap-0 self-center">
-            {terminado ? (
-              <>
-                <Flag className="size-[18px] text-muted-foreground" aria-hidden />
-                <span className="text-[12px] leading-[16px] text-muted-foreground">terminada</span>
-              </>
-            ) : enMarcha ? (
-              // «Ahora» y no «Hoy»: a dos dedos está el botón «Hoy», que lleva al mes en curso.
-              <>
-                <span className="cifra text-[24px] leading-none text-primary-text">Ahora</span>
-                <span className="text-[12px] leading-[16px] text-muted-foreground">en marcha</span>
-              </>
-            ) : (
-              <>
-                <span className="cifra text-[32px] leading-none text-foreground">{dias}</span>
-                <span className="text-[12px] leading-[16px] text-muted-foreground">
-                  {dias === 1 ? 'día' : 'días'}
-                </span>
-              </>
-            )}
-          </ItemMedia>
+        {/* Ancho fijo: la cifra llega con `font-display: swap` y su métrica no debe mover el renglón. */}
+        <span className="flex w-12 shrink-0 flex-col items-start leading-none">
+          {terminado ? (
+            <>
+              <Flag className="size-5 text-muted-foreground" aria-hidden />
+              <span className="pt-1 text-xs text-muted-foreground">Terminada</span>
+            </>
+          ) : enMarcha ? (
+            // «Ahora» y no «Hoy»: a dos dedos está el botón «Hoy», que lleva al mes en curso.
+            <>
+              <span className="cifra text-2xl text-primary-text">Ahora</span>
+              <span className="pt-1 text-xs text-muted-foreground">en marcha</span>
+            </>
+          ) : (
+            <>
+              <span className="cifra text-3xl text-foreground tabular-nums">{dias}</span>
+              <span className="pt-1 text-xs text-muted-foreground">{dias === 1 ? 'día' : 'días'}</span>
+            </>
+          )}
+        </span>
 
-          {/*
-            El nombre y su plazo van juntos; detrás, dos datos como mucho
-            (fecha y sede), que se apagan por anchura.
-          */}
-          <ItemContent className="min-w-0 flex-row flex-wrap items-baseline gap-x-[8px] gap-y-[2px]">
-            <span className="min-w-0 basis-full break-words text-[14px] leading-[20px] font-semibold">
-              {titularTorneo(evento.name)}
-            </span>
-            {plazo ? (
-              <span className={cn('shrink-0 text-[13px] font-medium', plazo.tono)}>{plazo.texto}</span>
-            ) : null}
-            <span className="cifra hidden shrink-0 rounded-full bg-secondary px-[6px] text-[13px] text-foreground sm:inline">
-              {formatDateRangeEs(evento.startDate, evento.endDate)}
-            </span>
-            {evento.city ? (
-              <span className="hidden min-w-0 break-words text-[13px] text-muted-foreground sm:inline">
-                {titular(evento.city)}
-                {evento.country ? `, ${evento.country}` : ''}
-              </span>
-            ) : null}
-          </ItemContent>
-        </button>
-      </Item>
+        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="min-w-0 basis-full text-sm font-semibold break-words">
+            {titularTorneo(evento.name)}
+          </span>
+          {plazo ? (
+            <PastillaPlazo plazo={plazo} />
+          ) : null}
+          <span className="hidden text-sm text-muted-foreground tabular-nums sm:inline">
+            {rangoFechas(evento.startDate, evento.endDate, 'linea', { anio: 'auto', referencia: hoy })}
+          </span>
+          {evento.city ? <Sede ciudad={evento.city} pais={evento.country} className="hidden sm:flex" /> : null}
+        </span>
+      </button>
 
       {/* Buscando: contador y flechas, como el buscar de un navegador; el aspa vuelve a lo normal. */}
       {buscando ? (
-        <div className="flex shrink-0 items-center gap-[4px]">
-          <span className="cifra px-[4px] text-[13px] text-muted-foreground">
+        <div className="flex shrink-0 items-center gap-1">
+          <span className="px-1 text-sm text-muted-foreground tabular-nums">
             {cual + 1}/{total}
           </span>
           <BotonIcono etiqueta="Coincidencia anterior" tamano="md" onClick={onAnterior}>
@@ -1605,16 +1522,29 @@ function FranjaDestacada({
   );
 }
 
+/** Quita `valor` de lo puesto; si no queda nada, vuelve a todo: un calendario en blanco no responde nada. */
+function quitar<T extends string>(todos: readonly T[], puestos: T[], valor: T): T[] {
+  const quedan = puestos.filter((x) => x !== valor);
+  return quedan.length > 0 ? quedan : [...todos];
+}
+
 /**
- * Los filtros, en una fila de chips (`docs/diseno-sistema.md` § 1.4 y § 7).
- *
- * Lo que se cambia a menudo va a la vista: el ámbito, el arma y el género.
- * Lo demás (vista de uno o tres meses, categorías, tirador) va en la hoja de
- * «Filtros», que es la misma en el móvil y en el escritorio.
- *
- * Un grupo con todo puesto no marca ningún chip: sin marcar quiere decir «sin
- * filtro». Tocar un chip estando todo puesto deja sólo ese; quitar el último
- * vuelve a ponerlo todo, porque un calendario en blanco no responde nada.
+ * Tocar un valor estando todo puesto deja sólo ese; tocar uno puesto lo quita
+ * (y si era el último, vuelve todo); tocar uno sin poner lo añade.
+ */
+function alternar<T extends string>(todos: readonly T[], puestos: T[], valor: T): T[] {
+  if (puestos.length === todos.length) return [valor];
+  if (puestos.includes(valor)) return quitar(todos, puestos, valor);
+  return todos.filter((x) => x === valor || puestos.includes(x));
+}
+
+/** Más de tres categorías puestas se resumen en un solo chip. */
+const MAXIMO_CHIPS_CATEGORIA = 3;
+
+/**
+ * Los filtros: un botón «Filtros (N)» que abre una sola hoja, y lo puesto como
+ * chips que se quitan con un toque y saltan de línea. Un grupo con todo puesto
+ * no es un filtro y no sale como chip.
  */
 function FiltrosCalendario({
   ambito,
@@ -1632,7 +1562,6 @@ function FiltrosCalendario({
   tiradorId,
   cambiarTirador,
   propio,
-  todoPuesto,
   verTodo,
   verLoMio,
   numPruebas,
@@ -1655,7 +1584,6 @@ function FiltrosCalendario({
   tiradorId: string | null;
   cambiarTirador: (id: string) => void;
   propio: { propio: boolean; armas: Weapon[]; generos: ('M' | 'F')[]; categorias: string[] };
-  todoPuesto: boolean;
   verTodo: () => void;
   verLoMio: () => void;
   numPruebas: number;
@@ -1663,226 +1591,178 @@ function FiltrosCalendario({
   temporada: string | null;
   actualizado: string | null;
 }) {
-  const [abierta, setAbierta] = React.useState(false);
   const todasLasArmas = armas.length === ARMAS.length;
   const ambosGeneros = generos.length === GENEROS.length;
-  const todasLasCategorias = categorias.length === categoriasDisponibles.length;
-  const enLaHoja = todasLasCategorias ? 0 : 1;
+  const todasLasCategorias = categorias.length >= categoriasDisponibles.length;
+  const codigosGenero = GENEROS.map((g) => g.v);
+  const mismo = (a: readonly string[], b: readonly string[]) =>
+    a.length === b.length && a.every((x) => b.includes(x));
+  const esLoMio =
+    mismo(armas, propio.armas) && mismo(generos, propio.generos) && mismo(categorias, propio.categorias);
 
-  const alternar = <T extends string>(todos: readonly T[], puestos: T[], valor: T): T[] => {
-    if (puestos.length === todos.length) return [valor];
-    if (puestos.includes(valor)) {
-      return puestos.length === 1 ? [...todos] : puestos.filter((x) => x !== valor);
+  const activos: FiltroActivo[] = [];
+  if (ambito !== 'TODO') {
+    activos.push({
+      clave: 'ambito',
+      etiqueta: AMBITOS.find((a) => a.v === ambito)?.largo ?? ambito,
+      onQuitar: () => setAmbito('TODO'),
+    });
+  }
+  if (!todasLasArmas) {
+    for (const a of armas) {
+      activos.push({ clave: `arma-${a}`, etiqueta: rotuloArma(a), onQuitar: () => setArmas(quitar(ARMAS, armas, a)) });
     }
-    return todos.filter((x) => x === valor || puestos.includes(x));
-  };
+  }
+  if (!ambosGeneros) {
+    for (const g of generos) {
+      activos.push({
+        clave: `genero-${g}`,
+        etiqueta: rotuloGenero(g),
+        onQuitar: () => setGeneros(quitar(codigosGenero, generos, g)),
+      });
+    }
+  }
+  if (!todasLasCategorias) {
+    if (categorias.length <= MAXIMO_CHIPS_CATEGORIA) {
+      for (const c of categorias) {
+        activos.push({
+          clave: `categoria-${c}`,
+          etiqueta: rotuloCategoria(c),
+          onQuitar: () => setCategorias((previas) => quitar(categoriasDisponibles, previas, c)),
+        });
+      }
+    } else {
+      activos.push({
+        clave: 'categorias',
+        etiqueta: `${categorias.length} categorías`,
+        onQuitar: () => setCategorias(categoriasDisponibles),
+      });
+    }
+  }
 
   return (
     <>
-      <FilaChips etiqueta="Filtros del calendario">
-        <ChipFiltro
-          tipo="menu"
-          icono={SlidersHorizontal}
-          marcado={enLaHoja > 0}
-          contador={enLaHoja}
-          detalle={enLaHoja > 0 ? `del calendario: ${categorias.length} categorías` : 'del calendario'}
-          onClick={() => setAbierta(true)}
-        >
-          Filtros
-        </ChipFiltro>
-        {AMBITOS.filter((a) => a.v !== 'TODO').map((a) => (
-          <ChipFiltro
-            key={a.v}
-            marcado={ambito === a.v}
-            onClick={() => setAmbito(ambito === a.v ? 'TODO' : a.v)}
-          >
-            {a.largo}
-          </ChipFiltro>
-        ))}
-        {ARMAS.map((a) => (
-          <ChipFiltro
-            key={a}
-            marcado={!todasLasArmas && armas.includes(a)}
-            onClick={() => setArmas(alternar(ARMAS, armas, a))}
-          >
-            {WEAPON_LABEL[a]}
-          </ChipFiltro>
-        ))}
-        {GENEROS.map((g) => (
-          <ChipFiltro
-            key={g.v}
-            marcado={!ambosGeneros && generos.includes(g.v)}
-            onClick={() =>
-              setGeneros(
-                alternar(
-                  GENEROS.map((x) => x.v),
-                  generos,
-                  g.v,
-                ),
-              )
-            }
-          >
-            {g.largo}
-          </ChipFiltro>
-        ))}
-      </FilaChips>
+      <BarraFiltros
+        etiqueta="Filtros del calendario"
+        activos={activos}
+        onLimpiar={verTodo}
+        resultados={`Ver ${numTorneos} ${numTorneos === 1 ? 'torneo' : 'torneos'}`}
+      >
+        {propio.propio && !esLoMio ? (
+          <Boton tamano="md" className="self-start" onClick={verLoMio}>
+            Ver lo mío
+          </Boton>
+        ) : null}
+
+        <SeccionFiltro titulo="Vista">
+          <SelectorSegmentado
+            etiqueta="Vista"
+            tamano="sm"
+            opciones={[
+              { valor: 'mes', etiqueta: '1 mes' },
+              { valor: 'trimestre', etiqueta: '3 meses' },
+            ]}
+            valor={vista}
+            onCambio={(v) => setVista(v as Vista)}
+          />
+        </SeccionFiltro>
+
+        <OpcionesFiltro
+          titulo="Ámbito"
+          variante="segmentado"
+          valor={ambito}
+          opciones={AMBITOS.map((a) => ({ valor: a.v, etiqueta: a.largo }))}
+          onCambio={(v) => setAmbito(v as Ambito)}
+        />
+
+        <SeccionFiltro titulo="Arma">
+          <FilaChips etiqueta="Arma">
+            {ARMAS.map((a) => (
+              <ChipFiltro
+                key={a}
+                marcado={!todasLasArmas && armas.includes(a)}
+                onClick={() => setArmas(alternar(ARMAS, armas, a))}
+              >
+                {rotuloArma(a)}
+              </ChipFiltro>
+            ))}
+          </FilaChips>
+        </SeccionFiltro>
+
+        <SeccionFiltro titulo="Género">
+          <FilaChips etiqueta="Género">
+            {GENEROS.map((g) => (
+              <ChipFiltro
+                key={g.v}
+                marcado={!ambosGeneros && generos.includes(g.v)}
+                onClick={() => setGeneros(alternar(codigosGenero, generos, g.v))}
+              >
+                {g.largo}
+              </ChipFiltro>
+            ))}
+          </FilaChips>
+        </SeccionFiltro>
+
+        <SeccionFiltro titulo="Categoría">
+          <FilaChips etiqueta="Categoría">
+            {categoriasDisponibles.map((c) => (
+              <ChipFiltro
+                key={c}
+                marcado={!todasLasCategorias && categorias.includes(c)}
+                onClick={() =>
+                  setCategorias((previas) => ordenarCategorias(alternar(categoriasDisponibles, previas, c)))
+                }
+              >
+                {rotuloCategoria(c)}
+              </ChipFiltro>
+            ))}
+          </FilaChips>
+        </SeccionFiltro>
+
+        {/* Solo cuando la cuenta lleva a más de un tirador. */}
+        {tiradores.length > 1 ? (
+          <OpcionesFiltro
+            titulo="Tirador"
+            valor={tiradorId ?? ''}
+            opciones={tiradores.map((t) => ({ valor: t.id, etiqueta: t.fullName }))}
+            onCambio={cambiarTirador}
+          />
+        ) : null}
+
+        <p className="text-xs text-muted-foreground">
+          <span className="text-foreground tabular-nums">{numPruebas}</span>{' '}
+          {numPruebas === 1 ? 'prueba' : 'pruebas'}
+          {temporada ? ` · Temporada ${temporada}` : null}
+          {actualizado ? ` · ${actualizado}` : null}
+        </p>
+      </BarraFiltros>
       <p role="status" className="sr-only">
         {numTorneos} {numTorneos === 1 ? 'torneo' : 'torneos'}
       </p>
-
-      <HojaInferior
-        abierta={abierta}
-        alCambiar={setAbierta}
-        titulo="Filtros"
-        pie={
-          <Boton variante="claro" tamano="lg" ancho="completo" onClick={() => setAbierta(false)}>
-            Ver {numTorneos} {numTorneos === 1 ? 'torneo' : 'torneos'}
-          </Boton>
-        }
-      >
-        <div className="flex flex-col gap-[24px] pt-[4px]">
-          <div className="flex flex-wrap items-center justify-between gap-[8px]">
-            <p className="text-[13px] text-muted-foreground">
-              <span className="cifra text-[28px] leading-none text-foreground">{numPruebas}</span>{' '}
-              {numPruebas === 1 ? 'prueba' : 'pruebas'}
-            </p>
-            {propio.propio ? (
-              <Boton tamano="md" onClick={todoPuesto ? verLoMio : verTodo}>
-                {todoPuesto ? 'Solo lo mío' : 'Ver todo'}
-              </Boton>
-            ) : (
-              <Boton tamano="md" onClick={verTodo} disabled={todoPuesto}>
-                Ver todo
-              </Boton>
-            )}
-          </div>
-
-          <GrupoHoja titulo="Vista">
-            <ChipFiltro marcado={vista === 'mes'} onClick={() => setVista('mes')}>
-              1 mes
-            </ChipFiltro>
-            <ChipFiltro marcado={vista === 'trimestre'} onClick={() => setVista('trimestre')}>
-              3 meses
-            </ChipFiltro>
-          </GrupoHoja>
-
-          <GrupoHoja
-            titulo="Categoría"
-            cola={todasLasCategorias ? 'todas' : `${categorias.length} de ${categoriasDisponibles.length}`}
-          >
-            {categoriasDisponibles.map((c) => {
-              const puesta = !todasLasCategorias && categorias.includes(c);
-              return (
-                <ChipFiltro
-                  key={c}
-                  marcado={puesta}
-                  onClick={() =>
-                    setCategorias((previas) =>
-                      ordenarCategorias(alternar(categoriasDisponibles, previas, c)),
-                    )
-                  }
-                >
-                  {CATEGORY_LABEL[c as keyof typeof CATEGORY_LABEL] ?? c}
-                </ChipFiltro>
-              );
-            })}
-          </GrupoHoja>
-
-          {/* Solo cuando la cuenta lleva a más de un tirador. */}
-          {tiradores.length > 1 ? (
-            <GrupoHoja titulo="Tirador">
-              {tiradores.map((t) => (
-                <ChipFiltro key={t.id} marcado={t.id === tiradorId} onClick={() => cambiarTirador(t.id)}>
-                  {t.fullName}
-                </ChipFiltro>
-              ))}
-            </GrupoHoja>
-          ) : null}
-
-          {temporada || actualizado ? (
-            <p className="text-[12px] leading-[16px] text-muted-foreground">
-              {temporada ? `Temporada ${temporada}` : null}
-              {temporada && actualizado ? ' · ' : null}
-              {actualizado ? `Actualizado ${actualizado}` : null}
-            </p>
-          ) : null}
-        </div>
-      </HojaInferior>
     </>
   );
 }
 
-function GrupoHoja({
-  titulo,
-  cola,
-  children,
-}: {
-  titulo: string;
-  cola?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <fieldset className="flex min-w-0 flex-col gap-[8px]">
-      <legend className="mb-[8px] text-[13px] leading-[16px] font-semibold">
-        {titulo}
-        {cola ? <span className="ml-[6px] font-normal text-muted-foreground">{cola}</span> : null}
-      </legend>
-      <FilaChips etiqueta={titulo} envolver>
-        {children}
-      </FilaChips>
-    </fieldset>
-  );
-}
-
 /**
- * Leyenda, en un solo renglón.
- *
- * Antes eran dos renglones y ocho entradas: los tres organismos, las tres
- * armas, los dos géneros y el «ya estás inscrito». Dos renglones de leyenda
- * son dos renglones menos de calendario, y seis de esas ocho entradas
- * explicaban letras que ahora van **escritas en la propia barra** —F/E/S para
- * el arma, M/F para el género—, así que explicarlas aparte era gastar sitio
- * en repetir.
- *
- * Queda lo único que el color no puede decir por sí mismo. En las tarjetas
- * grandes el organismo va además escrito en su pastilla; esta línea es para
- * las barras de una línea de un mes cargado, donde solo cabe el color.
+ * La leyenda: lo único que el color no dice por sí mismo, el organismo de
+ * cada filete, y la marca de inscrito.
  */
 function Leyenda() {
   return (
-    <ul className="flex shrink-0 flex-wrap items-center gap-x-[12px] gap-y-[4px] text-[12px] leading-[16px] text-muted-foreground sm:gap-x-[16px]">
+    <ul className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
       {(['RFEE', 'FIE', 'EFC'] as const).map((o) => {
         const c = COLOR_ORGANISMO[o];
         return (
-          <li key={o} className="flex items-center gap-1.5">
-            <span className={cn('h-2.5 w-[3px] shrink-0 rounded-full', c.punto)} aria-hidden />
+          <li key={o} className="flex items-center gap-2">
+            <span className={cn('h-3 w-1 shrink-0 rounded-full', c.punto)} aria-hidden />
             <span className="sm:hidden">{c.corto}</span>
             <span className="hidden sm:inline">{c.largo}</span>
           </li>
         );
       })}
-      <li className="flex items-center gap-1.5 text-ok">
-        <CircleCheck className="size-3.5 shrink-0" aria-hidden />
-        <span className="sm:hidden">inscrito</span>
-        <span className="hidden sm:inline">Ya estás inscrito</span>
-      </li>
-      {/*
-        Las dos señales nuevas de la tarjeta de bloque. Van aquí y no en un
-        globo porque las píldoras de día de la semana son siete cuadrados de 14
-        px y el «Entre semana» es un color: las dos se entienden de golpe, pero
-        solo si alguien ha dicho una vez qué significan.
-      */}
-      <li className="hidden items-center gap-1.5 sm:flex">
-        <span className="flex items-center gap-[2px]" aria-hidden>
-          <span className="size-2.5 rounded-[2px] bg-secondary" />
-          <span className="size-2.5 rounded-[2px] bg-org-rfee-relleno" />
-          <span className="size-2.5 rounded-[2px] bg-org-rfee-relleno" />
-        </span>
-        <span>Los días que se tira</span>
-      </li>
-      <li className="flex items-center gap-1.5 text-warn">
-        <span className="h-2.5 w-[3px] shrink-0 rounded-full bg-warn" aria-hidden />
-        <span>Entre semana</span>
+      <li className="flex items-center gap-1 text-ok">
+        <Check className="size-4 shrink-0" aria-hidden />
+        Inscrito
       </li>
     </ul>
   );
@@ -1891,20 +1771,4 @@ function Leyenda() {
 /** `<ViewTransition>` sólo anima lo que llega en una Transition; un `setState` suelto cambia sin fundido. */
 function enTransicion(cambio: () => void) {
   React.startTransition(cambio);
-}
-
-function nombreMes(d: Date, conAnio = true): string {
-  return capitalizar(
-    new Intl.DateTimeFormat('es-ES', {
-      month: 'long',
-      ...(conAnio ? { year: 'numeric' } : {}),
-    })
-      .format(d)
-      .replace(' de ', ' '),
-  );
-}
-
-function isoDeHoy(): string {
-  // En hora española, no en la del que ejecuta: ver `hoyMadrid`.
-  return hoyMadrid();
 }

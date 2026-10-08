@@ -40,7 +40,7 @@ export function EjeX({ rotulos, className }: { rotulos: Rotulo[]; className?: st
   // Sale de los ya elegidos: en estrecho sólo se ocultan rótulos, nunca aparece otro.
   const estrechos = new Set(espaciar(visibles, HUECO_ESTRECHO));
   return (
-    <div aria-hidden className={cn('relative h-4 text-[12px] leading-4 text-muted-foreground tabular-nums', className)}>
+    <div aria-hidden className={cn('relative h-4 text-xs leading-4 text-muted-foreground tabular-nums', className)}>
       {visibles.map((r, i) => {
         const borde = r.x < 8 ? 'translate-x-0' : r.x > 92 ? '-translate-x-full' : '-translate-x-1/2';
         return (
@@ -64,7 +64,7 @@ export function Guias({ marcas }: { marcas: { y: number; rotulo?: string; fuerte
           style={{ top: `${m.y}%` }}
         >
           {m.rotulo ? (
-            <span className="absolute -top-3.5 left-0 text-[12px] leading-3 whitespace-nowrap text-muted-foreground tabular-nums">
+            <span className="absolute -top-3.5 left-0 text-xs leading-3 whitespace-nowrap text-muted-foreground tabular-nums">
               {m.rotulo}
             </span>
           ) : null}
@@ -130,9 +130,9 @@ export function Punto({
 export function Leyenda({ items, className }: { items: { color: string; texto: string; forma?: 'punto' | 'aro' | 'linea' | 'barra' }[]; className?: string }) {
   if (items.length === 0) return null;
   return (
-    <ul className={cn('flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] leading-4 text-muted-foreground', className)}>
+    <ul className={cn('flex flex-wrap items-center gap-x-3 gap-y-1 text-xs leading-4 text-muted-foreground', className)}>
       {items.map((it) => (
-        <li key={it.texto} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+        <li key={it.texto} className="inline-flex items-center gap-2 whitespace-nowrap">
           <span
             aria-hidden
             className={cn(

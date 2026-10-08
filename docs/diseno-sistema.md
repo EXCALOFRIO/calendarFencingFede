@@ -8,7 +8,7 @@ Cinco reglas:
 
 1. **Una sola barra**, igual en toda la aplicación.
 2. **Controles pequeños, área grande:** se ven de 28-36 px y se tocan en 44.
-3. **Superficies opacas.** Una transparencia sólo se admite si es material de verdad (desenfoque real) o un velo sobre una foto.
+3. **Superficies opacas; cristal solo en lo que flota.** Tarjetas, filas y campos son sólidos. La cabecera, la barra inferior y los paneles flotantes (hoja, diálogo, menú, `popover`, `select`) son cristal (§ 3.2). Ni brillos, ni manchas, ni texturas detrás del texto.
 4. **Nada de esqueletos.** La pantalla anterior se queda hasta que la nueva está lista.
 5. **Una palabra mejor que tres.** Una frase solo si el dato no se explica solo.
 
@@ -30,7 +30,8 @@ Cinco reglas:
 
 - **Medidas:** 50 px de alto más `env(safe-area-inset-bottom)`. Iconos de 22 px; trazo de 1,7, y de 2,4 en la pestaña activa. Sin rótulos: el nombre va en `aria-label`. Con `rotulos="visibles"` se añade un rótulo de 10 px, solo si las pruebas con usuarios muestran que hace falta.
 - **Pestaña activa:** el icono en `--foreground` con trazo grueso; las demás en `--muted-foreground`. No lleva pastilla, punto ni contorno rojo.
-- **Fondo:** sólido (`bg-background`) con un filete de 1 px (`--filete-alto`) arriba. Existe la variante `fondo="material"`, que pone el fondo al 82 %, `backdrop-filter: blur(20px) saturate(1.6)` y vuelve a sólido si el navegador no soporta `backdrop-filter`. Solo se usa en pantallas con fotos a sangre detrás. Nunca se usa un alfa sin desenfoque.
+- **Fondo:** cristal (`fondo="cristal"`, por defecto: `.cristal`, § 3.2) con su canto de 1 px arriba. `fondo="solido"` deja `bg-background`. La variante antigua `fondo="material"` (82 %, `blur(20px) saturate(1.6)`) no la usa ninguna pantalla y se puede retirar.
+- **Precarga:** al poner el dedo en una pestaña (`EnlacePrecarga alPulsar`), además de ratón detenido y foco de teclado; y una vez por sesión, con el navegador ocioso (`requestIdleCallback`, 4 s de tope; 2 s con `setTimeout` donde no existe), las raíces de las demás pestañas, solo en 4G y sin ahorro de datos (`redHolgada()` en `red-cliente.ts`). Nada con ahorro de datos, 2G o sin red (`ahorrarDatos()`). Las pestañas salen de `destinos` (`DESTINOS_APP`), no de una lista en la barra.
 - **Insignia:** un punto rojo de 7 px con anillo del color del fondo. Indica novedades y nada más; nunca lleva un número.
 - **Foto en «Tú»:** como en Instagram, la pestaña lleva la foto de la ficha deportiva vinculada (24 px, redonda) y, marcada, un aro fino de 1,5 px en `--foreground` con 1,5 px de aire. Sin ficha vinculada, sin foto publicada o si la foto falla, el icono. La foto no va en el HTML ni en el layout: `useRetratoPropio` (`retrato-propio.ts`) pide después de pintar `/api/explorar/yo/retrato?cuenta=<profileId>` (respuesta `private`, una hora, `Vary: Cookie`) y luego la foto por la ruta de siempre. Ninguna pantalla hace una consulta más a D1 y la caché compartida no ve datos de la cuenta.
 - **Quieta al desplazar:** `position: fixed` en su propia capa (`translateZ(0)`), sin transiciones de `transform`, y el documento sin rebote elástico (`overscroll-behavior-y: none` en `html` y `body`, ver § 4). El armazón usa `min-h-svh` y no `min-h-dvh`, que en Safari cambia de alto mientras se esconde su barra y recoloca la página.
@@ -50,7 +51,7 @@ Cinco reglas:
 
 `CabeceraCompacta` (`cabecera-compacta.tsx`). Va **dentro de cada `page`**, no en `(app)/layout.tsx`, porque cada pantalla tiene su título y sus acciones.
 
-- **Medidas:** 48 px de alto más `env(safe-area-inset-top)` (el layout raíz usa `viewportFit: 'cover'`). El fondo es sólido. El filete inferior solo aparece cuando el contenido ya pasa por debajo (`data-desplazada`).
+- **Medidas:** 48 px de alto más `env(safe-area-inset-top)` (el layout raíz usa `viewportFit: 'cover'`). En reposo tiene el color del lienzo; cuando el contenido ya pasa por debajo (`data-desplazada`) pasa a cristal (`.cristal`) con el canto inferior.
 - `variante="raiz"` (cada pestaña): título a la izquierda en Barlow Condensed de 20 px y hasta dos `BotonIcono` a la derecha (buscar, notificaciones o compartir).
 - `variante="subpantalla"`: flecha de volver a la izquierda, título centrado de 16 px en Inter semibold y una acción como máximo (normalmente «Más», que abre una hoja).
 - **Lo que no lleva:**
@@ -74,7 +75,7 @@ Son dos pestañas de la misma barra; no hay un «modo Explorar» con barra propi
 
 - **Aspecto:**
   - sube desde abajo, con un radio de 16 px arriba;
-  - superficie `--popover` opaca y velo `--velo`, sin desenfoque;
+  - superficie `.cristal-panel` (`--popover` al 86 % con desenfoque) y velo `--velo`, sin desenfoque;
   - asa de 36 × 4 px, título centrado de 16 px y aspa de 32 px;
   - pie opcional y fijo para la acción principal («Ver 128 torneos»).
 - **Se cierra:**
@@ -126,40 +127,79 @@ Todo en **px**, no en rem. La raíz es de 16 px en todos los tamaños: la de 18 
   - 18 px en `BotonIcono` sm y en filas;
   - 14-16 px solo cuando acompañan a un texto dentro de un botón o un chip.
   - El trazo es 2, y 1,7/2,4 en la barra.
-- **Tipografía:** cinco tamaños y no hay más.
+- **Tipografía:** los tamaños de Tailwind, y no hay más. Nada de `text-[13px]` ni `text-[0.6875rem]`.
 
-  | px | Interlineado | Uso |
+  | Clase | px / interlineado | Uso |
   |---|---|---|
-  | 20 | 24 | título de pestaña (Barlow Condensed 600) |
-  | 16 | 20 | título de subpantalla y de hoja, nombre en una ficha (Inter 600) |
-  | 14 | 20 | texto de lista y párrafos (Inter 400/500) |
-  | 13 | 16 | segunda línea, botones, chips (Inter 500/600) |
-  | 12 | 16 | fecha, contador, metadato (Inter 400, `--muted-foreground`) |
+  | `text-2xl` | 24 / 32 | titular de una ficha (Barlow Condensed 600) |
+  | `text-xl` | 20 / 28 (`leading-6` en la cabecera) | título de pestaña (Barlow Condensed 600) |
+  | `text-lg` | 18 / 28 | nombre destacado, cifra secundaria |
+  | `text-base` | 16 / 24 (`leading-5` en una fila) | título de subpantalla y de hoja, campos de texto |
+  | `text-sm` | 14 / 20 | texto de lista, párrafos, botones y chips |
+  | `text-xs` | 12 / 16 | fecha, contador, metadato (`--muted-foreground` u `--off`) |
 
-  Fuera de la escala: `.cifra` (Barlow Condensed) para la **cifra que importa** de una pantalla (puesto, días que faltan), a 28-48 px, una o dos por pantalla. Y 10 px solo para los rótulos opcionales de la barra.
-- **Espaciado:** múltiplos de 4. Lo habitual es 4 / 8 / 12 / 16 / 24.
+  Por encima de 24 px solo las cifras (`.cifra`, Barlow Condensed): la **cifra que importa** de una pantalla (puesto, días que faltan), a 28-48 px, una o dos por pantalla. Y 10 px solo para los rótulos opcionales de la barra. La jerarquía se hace con tamaño y peso (400/500/600), nunca con alfa sobre el color del texto (`text-muted-foreground/70` está prohibido: para un texto más apagado está `--off`).
+- **Espaciado:** múltiplos de 4 px; la escala de Tailwind (`1` = 4 px) sin medios pasos (`py-1.5`, `gap-0.5`) ni valores arbitrarios que no sean múltiplo de 4 (`py-[6px]`). Lo habitual es 4 / 8 / 12 / 16 / 24.
   - 16 px de margen lateral en el móvil y 24 desde 640 px;
   - 8 px entre controles de una fila;
   - 12 px entre filas de un bloque;
   - 24 px entre bloques.
-- **Radios:**
+- **Radios:** 6 / 12 / redondo.
   - `rounded-full` en botones, chips, avatares e insignias;
-  - 12 px en tarjetas y bloques sueltos;
-  - 16 px arriba en la hoja inferior;
-  - 6 px (`--radius`) en tablas y celdas.
-  - No hay más radios.
+  - `rounded-xl` (12 px) en tarjetas, bloques sueltos y diálogos;
+  - `rounded-md` / `rounded-lg` (6 px, `--radius`) en tablas, celdas, menús y campos;
+  - 16 px arriba en la hoja inferior, que es la excepción;
+  - `rounded-sm` (4 px) solo en piezas de menos de 24 px.
+- **Sin desplazamiento horizontal.** Ningún carril de chips, pestañas o tarjetas que se desplace de lado: lo que no cabe se envuelve en varias líneas, se resume («+3») o va a una hoja. Solo las tablas y visores de datos que lo necesitan por formato (`ui/table.tsx`, la matriz de poule, el registro de `admin/cuarentena-panel.tsx`) pueden desplazarse en horizontal, dentro de su contenedor y nunca la página.
+- **El trinquete:** `tests/ui/estilo-sistema.test.ts` cuenta por fichero los desplazamientos horizontales, los tamaños de letra arbitrarios, el espaciado fuera de escala, el alfa sobre tokens de texto y los brillos (degradados radiales o cónicos, grano SVG, sombras de color sin desplazamiento, manchas `blur-3xl`). Ningún fichero puede subir respecto a `tests/ui/estilo-sistema.base.json`; al bajar, se fija la base nueva con `ACTUALIZAR_BASE=1 npx vitest run tests/ui/estilo-sistema.test.ts`.
 - **Sombras:** solo en lo que flota: la hoja (`--sombra-hoja-aba`) y los paneles de escritorio (`--sombra-flotante`). Ni las tarjetas ni los botones llevan sombra; las superficies se separan con el filete de 1 px.
 
 ## 3. Color, contraste y modo oscuro
 
 - **La aplicación es oscura** (`<html class="dark">`, `color-scheme: dark`). No hay tema claro y no se añade en esta pasada. Si llega, se hará con los mismos tokens y sin tocar las piezas.
-- **Superficies opacas por nivel**, como ya dice `globals.css`:
-  - `--background` (0,17) para el lienzo, la cabecera y la barra;
-  - `--card` (0,215) para un bloque;
-  - `--secondary` (0,27) para un control;
-  - `--accent` (0,30) para el `hover`;
-  - `--popover` (0,255) para la hoja.
-  - Dentro de una hoja, los controles suben a `--accent`; `ChipFiltro` ya lo hace.
+### 3.1 Tokens
+
+Un solo sistema: hexadecimal para lo opaco, `rgba()` para cantos, velo y cristal. `tests/contraste-tokens.test.ts` lee `globals.css` y comprueba cada par; `npm run contraste` lo mide en Chrome con la cascada real.
+
+| Token | Valor | Uso | Contraste |
+|---|---|---|---|
+| `--background` | `#090A0F` | lienzo, plano | — |
+| `--card` | `#12141C` | tarjeta, fila, tabla, bloque | — |
+| `--popover` | `#1A1D27` | base de hoja, diálogo y menú | — |
+| `--secondary` / `--muted` | `#232733` | control: campo, pastilla neutra, cabecera de tabla | — |
+| `--accent` | `#2A2E3B` | `hover` de un control | — |
+| `--marcado` | `#3A1714` | control marcado (con borde y texto `--primary-text`) | rótulo rojo 5,74 |
+| `--foreground` | `#E8EAF0` | texto | 16,4 (lienzo) – 11,3 (`accent`) |
+| `--muted-foreground` | `#A1A6B4` | texto secundario | 8,1 – 5,6 |
+| `--off` | `#9197A6` | el texto más apagado permitido | 6,8 – 4,6 |
+| `--primary` | `#C60C1E` | relleno de la acción principal | blanco encima 6,0; relleno/lienzo 3,3 |
+| `--primary-text` / `--ring` | `#FF6B63` | rojo como texto, foco, contorno del marcado | 7,1 – 4,9 |
+| `--destructive` | `#FF6168` | texto destructivo | 6,7 – 4,6 |
+| `--gold` · `--ok` · `--warn` · `--danger` | `#EEBB58` · `#54D795` · `#F4BE4F` · `#FF666F` | convocatoria y semáforo | ≥ 4,8 en todas |
+| `--org-rfee/fie/efc/aut` | `#F7CCC7` · `#61A4FF` · `#6CE7EB` · `#9A9EA7` | identidad de organismo | ≥ 5,0 en todas |
+| `--org-*-relleno` | `#773733` · `#18417C` · `#005B5C` · `#313337` | barra sólida, texto blanco | 6,6 – 10,5 |
+| `--*-tinte` | `card` + 14 % (organismos) o 12 % (avisos) en OKLab | pastilla o aviso teñido, opaco | su color encima ≥ 5,6 |
+| `--borde-campo` | `#7A7F8C` | canto de un campo de texto | ≥ 3,4 (1.4.11) |
+| `--border` · `--input` | `rgba(255,255,255,.08)` · `.14` | separadores; borde de tarjeta y chip | decorativo |
+| `--filete` · `--filete-alto` | `rgba(255,255,255,.06)` · `.12` | canto de luz de una superficie | decorativo |
+| `--velo` | `rgba(0,0,0,.65)` | detrás de hojas y diálogos | — |
+| `--canto-luz` | `inset 0 1px 0 rgba(255,255,255,.04)` | realce opcional de una tarjeta sólida | — |
+
+- **Superficies opacas por nivel:** a más elevación, gris más claro; nunca más transparente. El lienzo es plano: sin retícula, grano, cuñas, bandas ni degradados de color. Las antiguas `.fondo-pantalla`, `.fondo-cabecera`, `.fondo-panel`, `.tinte-*`, `.acrilico` y `<Fondo>`/`<Acrilico>` se retiraron; si algo necesita color de procedencia, un filete de 2 px (`border-t-2 border-gold`) o un punto basta.
+- Dentro de una hoja, los controles suben a `--accent`; `ChipFiltro` ya lo hace.
+
+### 3.2 Cristal
+
+| Clase | Fondo | Filtro | Canto | Dónde |
+|---|---|---|---|---|
+| `.cristal` | `rgba(18,20,28,.72)` (`--card` al 72 %) | `blur(16px) saturate(1.2)` | `rgba(255,255,255,.08)` | cabecera (al desplazar) y barra inferior |
+| `.cristal-panel` | `rgba(26,29,39,.86)` (`--popover` al 86 %) | ídem | ídem | hoja inferior, `ui/sheet`, `ui/dialog`, `ui/popover`, `ui/dropdown-menu`, `ui/select` |
+
+- **Por qué las tarjetas no llevan cristal.** El desenfoque solo se ve si detrás hay algo distinto que desenfocar. Una tarjeta está sobre el lienzo plano: desenfocar un color liso da el mismo color, y cada elemento con `backdrop-filter` es una capa compuesta más que un Android modesto paga en cada fotograma de scroll. Tarjetas, filas y celdas fijas (`sticky`) dentro de un contenedor con scroll van **sólidas** (`--card` + borde de 1 px + `--canto-luz` si hace falta).
+- **Presupuesto: tres capas desenfocadas como mucho.** Cabecera + barra + un panel. Con una hoja o un menú modal abiertos, Radix marca `body[data-scroll-locked]` y las barras (bajo el velo) pasan a sólido.
+- **Alternativas sólidas:** sin soporte de `backdrop-filter`, con `prefers-reduced-transparency: reduce` o `prefers-contrast: more`, la barra pasa a `--cristal-solido` (`#0F1118`, el mismo tono que el cristal sobre el lienzo) y el panel a `--popover`. Lo mismo durante una transición de página (`:root:active-view-transition`), porque la captura de la cabecera no ve lo de debajo.
+- **Contraste:** el texto pasa AA sobre la barra con el lienzo detrás y sobre el panel con el velo encima de una foto blanca (peor caso). El rojo como texto también.
+- Las clases van en `@layer components`: un `bg-*` del propio elemento las anula, que es la forma de volver a sólido.
 - **El rojo** (`--primary`) es solo para:
   - la acción principal de la pantalla;
   - la insignia de novedades;
@@ -172,29 +212,28 @@ Todo en **px**, no en rem. La raíz es de 16 px en todos los tamaños: la de 18 
 
   El contorno rojo con `--marcado` de `nav.tsx` (`ACTIVO`) se retira en la pasada final.
 - **Contraste:**
-  - texto AA, 4,5:1;
-  - `--muted-foreground` sobre `--card` da 7,9:1, y no hay que bajarlo;
-  - los iconos sin texto, 3:1 contra su fondo;
-  - el texto apagado no se pone nunca sobre `--secondary` y además por debajo de 13 px.
+  - texto AA, 4,5:1, para todos los tokens de texto sobre todas las superficies (`--off` incluido, también sobre `--accent`);
+  - los iconos sin texto y los cantos que son la única señal de un control, 3:1 contra su fondo.
 - **Transparencias:** solo valen tres.
   1. Un velo (`--velo`) detrás de una hoja o un diálogo.
-  2. Un degradado de legibilidad sobre una **foto** (la cabecera de un torneo con foto, el acceso).
-  3. `fondo="material"` / `.acrilico`, que es desenfoque real.
+  2. Un degradado lineal de legibilidad sobre una **foto** (la cabecera de un torneo con foto, el acceso).
+  3. El cristal de § 3.2.
 
-  El resto es un token opaco. Para un tinte se usa `color-mix(in oklab, <color> N%, var(--card))`, como ya hacen `--org-*-tinte`. Lista de casos en § 9.
+  El resto es un token opaco. Para un tinte se usa un `--*-tinte` (ya están `--org-*`, `--warn`, `--ok`, `--danger` y `--gold`). Lista de casos en § 9.
 - **Filetes:** se pueden escribir como blanco con alfa (`--filete`, `--filete-alto`), porque son líneas de 1 px y no superficies.
 
 ## 4. Movimiento
 
 | Qué | Duración | Curva |
 |---|---|---|
-| Pulsar un control (`active:scale-[0.96]`) | 150 ms | ease-out |
+| Pulsar un control (`.pulsable`: `scale` a 0,98; `--sis-pulsar`) | 120 ms | `--sis-curva` |
 | Cambio de color o estado | 150 ms | ease-out |
+| Indicador de un segmentado o de pestañas (`.sis-indicador`, `--sis-indicador`) | 180 ms, solo `translate`/`scale`/`opacity` | `--sis-curva` |
 | Cambiar de pestaña (fundido) | 90 ms salida + 150 entrada | `--sis-curva` |
 | Avanzar o volver (28 px + fundido) | 120 salida, 200 entrada (60 ms de retardo), 260 desplazamiento | `cubic-bezier(.2,0,0,1)` |
-| Mismo sitio, otro contenido (`TransicionContenido`) | 100 + 160 ms | ídem |
-| Hoja inferior | 240 ms al abrir, 180 al cerrar | `cubic-bezier(.32,.72,0,1)` (la de iOS) |
-| Hoja lateral y diálogo de `ui/` | 240 / 180 ms (hoja), 200 / 150 ms (diálogo) | la de iOS / `--sis-curva` |
+| Mismo sitio, otro contenido (`TransicionContenido`: arma, temporada, ámbito) | 90 + 150 ms | ídem |
+| Hoja inferior, hoja lateral y diálogo (`--sis-hoja-entrada/salida`) | 240 ms al abrir, 180 al cerrar; desplazamiento + fundido (el diálogo sube 8 px) | `--sis-curva-hoja` (la de iOS) al abrir |
+| Menú, `popover`, `select` (`--sis-panel-entrada/salida`) | 160 / 120 ms; 8 px + fundido, sin `zoom` | `--sis-curva` |
 | Pulsar una pestaña de la barra | icono a 0,86 mientras se pulsa, 150 ms | ease-out |
 | Pestaña que pasa a marcada (`.sis-marcar`) | de 0,9 a 1 en 180 ms, sin pasarse | `--sis-curva` |
 | Aparición de lista o tarjeta (`.sis-aparecer`, `.sis-aparecer-lista`) | 180 ms de opacidad; 20 ms de escalonado en las 8 primeras filas | `--sis-curva` |
@@ -221,8 +260,9 @@ Todo en **px**, no en rem. La raíz es de 16 px en todos los tamaños: la de 18 
 - **Sólo `opacity` y `scale`/`translate`.** Nunca alto, ancho, márgenes ni `top`: lo que aparece no empuja a nada (CLS 0). Las listas aparecen con un fundido, no deslizándose.
 - **Las listas se animan al entrar en el DOM**, no al hacer scroll: la primera pantalla y cada página nueva del feed. Una fila que ya estaba no vuelve a animar.
 - **Lo fijo no se mueve.** La cabecera y la barra no tienen transiciones de `transform` y el documento no rebota (`overscroll-behavior-y: none`). Lo que hace scroll por dentro (hojas, matrices, carriles de chips) lleva `overscroll-contain`.
-- **Hojas y diálogos de `ui/`** se ajustan desde `sistema.css` con `--tw-animation-duration` y `--tw-ease`, sin tocar los componentes.
-- **`prefers-reduced-motion`** quita además `.sis-marcar` y las apariciones (`animation: none`), porque la regla global acorta la duración pero no el retardo del escalonado.
+- **Hojas, diálogos, menús y `popover`** se ajustan desde `sistema.css` por `data-slot` con `--tw-animation-duration` y `--tw-ease`; los componentes solo dicen el sentido (`slide-in-from-*`, `fade-in-0`).
+- **Un menú es más rápido que una hoja.** Se abre y se cierra muchas veces seguidas; a 240 ms se nota lento.
+- **`prefers-reduced-motion`** quita además `.sis-marcar`, las apariciones (`animation: none`) y el hundido de `.pulsable`, porque la regla global acorta la duración pero no el retardo del escalonado.
 
 ## 5. Carga sin esqueletos
 
@@ -240,7 +280,7 @@ Objetivo: tocar algo produce respuesta en menos de 100 ms y la pantalla nueva ap
    - la pestaña tocada se marca al instante (`useLinkStatus` en `BarraInferior`);
    - el control tocado se queda en su estado de pulsado;
    - si la espera pasa de 300 ms, aparece una línea de progreso de 2 px bajo la cabecera, con retardo de 300 ms, para que en una navegación normal no salga nunca.
-4. **Precarga por intención.** Al pasar el puntero, al poner el dedo o al enfocar se hace `prefetch` completo (`prefetch={true}` tras la intención, como `BarraInferior`). No se precarga al entrar en la ventana: son rutas dinámicas y con miles de usuarios serían cuatro renderizados de servidor por visita. Las filas de lista que abren fichas usan el mismo patrón, con un componente `EnlacePrecarga` en la pasada final.
+4. **Precarga por intención.** `EnlacePrecarga` hace `prefetch` completo (`prefetch={true}` tras la intención) al detener el ratón 120 ms o al enfocar con teclado, y con `alPulsar` también al poner el dedo (solo la barra de pestañas: en una lista, poner el dedo no distingue pulsar de desplazar). No se precarga al entrar en la ventana: son rutas dinámicas y con miles de usuarios serían cuatro renderizados de servidor por visita. La única precarga sin intención es la de las raíces de las pestañas, una vez por sesión, ocioso, en 4G y sin ahorro de datos (§ 1.1). Con ahorro de datos, 2G o sin red no se precarga nada.
 5. **Caché:**
    - `experimental.staleTimes.dynamic: 30` en `next.config.ts`, para que volver a una pestaña ya vista sea instantáneo durante 30 s;
    - en el servidor siguen las cachés de datos que ya hay (catálogo, ranking);
@@ -315,7 +355,9 @@ Objetivo: tocar algo produce respuesta en menos de 100 ms y la pantalla nueva ap
 | `transicion.tsx` | `TransicionPagina`, `TransicionContenido`, `CLASES_PAGINA` | `<ViewTransition>` de React |
 | `navegacion.ts` | `TIPO_TRANSICION`, `pestanaActiva`, `toquePestana`, `hrefDePestana`, `tiposEntre`, `rutaMadre`, `anteriorEsDeLaApp` | lógica pura, con pruebas |
 | `gesto-hoja.ts` | `decidirCierre`, `conResistencia` | lógica pura, con pruebas |
-| `sistema.css` | las transiciones de página y `prefers-reduced-motion` | se importa desde `globals.css` (§ 8.1) |
+| `enlace-precarga.tsx` | `EnlacePrecarga` (`alPulsar`) | precarga por intención (§ 5.4) |
+| `red-cliente.ts` | `ahorrarDatos`, `redHolgada` | cuándo no se precarga y cuándo se puede precargar sin intención |
+| `sistema.css` | tokens de movimiento, `.pulsable`, `.sis-indicador`, las transiciones de página, las de hojas, diálogos y menús, y `prefers-reduced-motion` | se importa desde `globals.css` (§ 8.1) |
 
 Pruebas: `tests/sistema-piezas.test.ts`. Muestra: `tests/ui/sistema-muestra.mts` (servidor `node:http` e hidratación con esbuild, sin `next dev`). Mide que cada control se ve de ≤ 36 px y se toca en ≥ 44, que no hay desplazamiento horizontal y que no hay errores de consola. Hace capturas a 320, 393 y 1440 en `capturas/sistema/`.
 
@@ -454,7 +496,7 @@ Y `scroll-padding-top: 5rem` pasa a `calc(48px + env(safe-area-inset-top) + 8px)
 
 ### 8.5 `themeColor`
 
-En `src/app/layout.tsx`, `themeColor: '#09090b'` no es el color de `--background` (`oklch(0.17 0.008 265)`, un grafito azulado). La barra de estado del iPhone y la de Android quedan de otro negro que la cabecera. Hay que poner el hexadecimal de `--background`, medido con `npm run contraste`.
+`themeColor` en `src/app/layout.tsx` y `background_color` / `theme_color` en `src/app/manifest.ts` tienen que ser el hexadecimal de `--background`, hoy `#090A0F`. Si no, la barra de estado del iPhone y la de Android quedan de otro negro que la cabecera.
 
 ## 9. Transparencias mal hechas
 
@@ -491,7 +533,7 @@ Las líneas son las de este momento: varias de estas pantallas las están cambia
 
 - `sheet.tsx`, `dialog.tsx` (`bg-velo`), que son velos;
 - `calendario/cabecera-ficha.tsx:101` y `acceso/fondo-competicion.tsx:221-223, 299-300`, que son degradados de legibilidad sobre una foto;
-- `.acrilico` / `fondo/acrilico.tsx`, que tiene desenfoque real sobre una foto.
+- el cristal de § 3.2 (`.cristal`, `.cristal-panel`), que tiene desenfoque real. `.acrilico` y `fondo/acrilico.tsx` se retiraron: no los usaba nadie.
 
 ## 10. Plan de aplicación (pasada final)
 

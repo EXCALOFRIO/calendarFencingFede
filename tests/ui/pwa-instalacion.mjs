@@ -34,7 +34,7 @@ const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Prueba sintética PWA</title><link rel="stylesheet" href="/fixture.css">
 <style>
-*{box-sizing:border-box}body{margin:0;background:#0e0f13;color:#f6f6f7;font-family:Arial,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:#090A0F;color:#f6f6f7;font-family:Arial,sans-serif}
 main{padding:24px;max-width:768px;margin:auto}h1{font-size:24px}p{line-height:1.5}
 label{display:block;margin:24px 0 8px}input{font:16px Arial;padding:12px;width:100%;max-width:320px}
 nav{position:fixed;bottom:0;left:0;right:0;padding:20px;background:#191b22;text-align:center;border-top:1px solid #454751}

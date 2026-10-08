@@ -166,13 +166,13 @@ describe('chips', () => {
     expect(pintar(h(ChipFiltro, { tipo: 'menu', contador: 0, children: 'Arma' }))).not.toContain('cifra');
   });
 
-  it('la fila desplazable deja sitio vertical para el área táctil', () => {
+  it('la fila de chips salta de línea, sin desplazamiento horizontal', () => {
     const html = pintar(h(FilaChips, { etiqueta: 'Filtros', children: h(ChipFiltro, { children: 'A' }) }));
     expect(html).toContain('role="group"');
     expect(html).toContain('aria-label="Filtros"');
-    expect(html).toContain('overflow-x-auto');
-    expect(html).toContain('py-[6px]');
-    expect(html).toContain('-my-[6px]');
+    expect(html).toContain('flex-wrap');
+    expect(html).toContain('gap-y-3');
+    expect(html).not.toMatch(/overflow-x|snap-x/);
   });
 });
 
@@ -191,11 +191,12 @@ describe('barra inferior', () => {
     expect(html).toContain('size-[22px]');
   });
 
-  it('la material lleva desenfoque real y, sin soporte, queda sólida', () => {
+  it('cristal por defecto; la sólida (muestras) no lleva cristal', () => {
     ruta('/');
-    const html = pintar(h(BarraInferior, { destinos: DESTINOS, fondo: 'material' }));
+    expect(pintar(h(BarraInferior, { destinos: DESTINOS }))).toMatch(/class="[^"]*\bcristal\b/);
+    const html = pintar(h(BarraInferior, { destinos: DESTINOS, fondo: 'solido' }));
     expect(html).toMatch(/class="[^"]*\bbg-background\b/);
-    expect(html).toContain('supports-[backdrop-filter:blur(1px)]:backdrop-blur-[20px]');
+    expect(html).not.toMatch(/class="[^"]*\bcristal\b/);
   });
 
   it('con rótulos visibles el texto sustituye al aria-label', () => {
@@ -212,7 +213,7 @@ describe('cabecera compacta', () => {
     ruta('/explorar/abc');
     const html = pintar(h(CabeceraCompacta, { titulo: 'Carlos Llavador' }));
     expect(html).toContain('<h1');
-    expect(html).toContain('text-[16px]');
+    expect(html).toMatch(/<h1 class="[^"]*\btext-base\b/);
     expect(html).toContain('aria-label="Volver"');
     expect(html).toContain('h-[48px]');
     expect(html).toContain('view-transition-name:cabecera');
@@ -222,7 +223,7 @@ describe('cabecera compacta', () => {
   it('raíz: título a la izquierda de 20 px, sin flecha', () => {
     ruta('/ranking');
     const html = pintar(h(CabeceraCompacta, { titulo: 'Ranking', variante: 'raiz' }));
-    expect(html).toContain('text-[20px]');
+    expect(html).toMatch(/<h1 class="[^"]*\btext-xl\b/);
     expect(html).not.toContain('aria-label="Volver"');
   });
 });

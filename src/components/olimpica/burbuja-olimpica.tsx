@@ -1,7 +1,7 @@
 'use client';
 
 import { BanderaPais } from '@/components/bandera';
-import { Badge } from '@/components/ui/badge';
+import { Pastilla } from '@/components/sistema/pastilla';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   colorOlimpico,
@@ -9,7 +9,8 @@ import {
   type AnotacionOlimpica,
   type Referencia,
 } from '@/lib/ranking/olimpica';
-import { WEAPON_LABEL, cn } from '@/lib/utils';
+import { rotuloPrueba } from '@/lib/sport/rotulos';
+import { cn } from '@/lib/utils';
 import { PastillaOlimpica } from './pastilla-olimpica';
 import {
   ESTADO_TEXTO,
@@ -26,7 +27,7 @@ function Dato({ rotulo, children }: { rotulo: string; children: React.ReactNode 
   return (
     <div className="grid min-w-0 grid-cols-[4.75rem_minmax(0,1fr)] items-center gap-2 py-1">
       <dt className="text-xs text-muted-foreground">{rotulo}</dt>
-      <dd className="flex min-w-0 items-center gap-1.5 text-sm">{children}</dd>
+      <dd className="flex min-w-0 items-center gap-1 text-sm">{children}</dd>
     </div>
   );
 }
@@ -70,7 +71,7 @@ export function ContenidoBurbujaOlimpica({
   const camino = estado === 'pendiente' ? (anotacion.sinVeto?.camino ?? null) : anotacion.camino;
   const puesto = anotacion.puesto ?? null;
   const prueba = anotacion.prueba
-    ? `${WEAPON_LABEL[anotacion.prueba.arma]} ${anotacion.prueba.genero === 'F' ? 'fem.' : 'masc.'}`
+    ? rotuloPrueba({ arma: anotacion.prueba.arma, genero: anotacion.prueba.genero }, { variante: 'corto' })
     : null;
   return (
     <div className="min-w-0" data-burbuja-olimpica={estado} data-color-olimpico={color}>
@@ -131,7 +132,7 @@ export function ContenidoBurbujaOlimpica({
           </>
         ) : null}
         <Dato rotulo="Ranking">
-          <Badge variant="outline">Provisional</Badge>
+          <Pastilla>Provisional</Pastilla>
           {fecha && isoFecha ? (
             <time dateTime={isoFecha} className="text-xs text-muted-foreground">
               {fecha}
@@ -170,7 +171,7 @@ export function BurbujaOlimpica({
         aria-label={etiquetaAccesible(anotacion)}
         className={cn(
           // El botón mide 44 px de alto y los márgenes negativos le devuelven a la fila los 20 de la pastilla.
-          'group relative -my-[12px] inline-flex h-[44px] shrink-0 items-center rounded-full outline-none',
+          'group relative -my-3 inline-flex h-[44px] shrink-0 items-center rounded-full outline-none',
           // A lo ancho, la baldosa compacta de 16 px necesita el área extra por fuera.
           'after:absolute after:inset-y-0 after:-inset-x-[14px] after:content-[""]',
           className,

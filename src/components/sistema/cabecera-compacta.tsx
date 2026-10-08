@@ -8,8 +8,9 @@ import { BotonIcono } from './boton';
 import { anteriorEsDeLaApp, ATRIBUTO_VUELTA, rutaMadre, TIPO_TRANSICION } from './navegacion';
 
 /**
- * Cabecera de pantalla (`docs/diseno-sistema.md` § 1.2): 48 px, sólida, y un
- * filete abajo que sólo aparece cuando el contenido ya pasa por debajo.
+ * Cabecera de pantalla (`docs/diseno-sistema.md` § 1.2): 48 px. En reposo
+ * tiene el color del lienzo; cuando el contenido ya pasa por debajo, pasa a
+ * cristal (`.cristal`) con su filete abajo.
  *
  * - `raiz`: la de una pestaña. Título a la izquierda en condensada de 20 px.
  * - `subpantalla`: flecha de volver, título centrado de 16 px.
@@ -60,9 +61,10 @@ export function CabeceraCompacta({
       data-variante={variante}
       data-desplazada={desplazada || undefined}
       className={cn(
-        'z-30 border-b bg-background pt-[env(safe-area-inset-top)] transition-[border-color] duration-200',
+        'cristal z-30 border-b pt-[env(safe-area-inset-top)] transition-[border-color,background-color] duration-200',
         pegajosa && 'sticky top-0',
-        desplazada ? 'border-filete-alto' : 'border-transparent',
+        // En reposo se funde con el lienzo; el cristal y su canto aparecen cuando el contenido pasa por debajo.
+        !desplazada && 'border-transparent bg-background',
         className,
       )}
       style={anclada ? { viewTransitionName: 'cabecera' } : undefined}
@@ -83,8 +85,8 @@ export function CabeceraCompacta({
               // Dos renglones como mucho (WCAG 1.4.4/1.4.10): 2 × 20 px o 2 × 24 px caben en los 48 px de la fila.
               'min-w-0 line-clamp-2 break-words',
               sub
-                ? 'max-w-[60vw] justify-self-center text-center font-sans text-[16px] leading-[20px] font-semibold tracking-normal'
-                : 'pl-[8px] text-[20px] leading-[24px] font-semibold',
+                ? 'max-w-[60vw] justify-self-center text-center font-sans text-base leading-5 font-semibold tracking-normal'
+                : 'pl-[8px] text-xl leading-6 font-semibold',
               !encabezado && !sub && 'font-display',
             )}
           >

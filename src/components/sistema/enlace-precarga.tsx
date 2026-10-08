@@ -4,15 +4,25 @@ import Link from 'next/link';
 import { forwardRef, useEffect, useRef, useState, type ComponentProps } from 'react';
 import { ahorrarDatos } from './red-cliente';
 
+export type PropsEnlacePrecarga = Omit<ComponentProps<typeof Link>, 'prefetch'> & {
+  /**
+   * Precarga también al poner el dedo o pulsar. Solo donde pulsar casi
+   * siempre es navegar (la barra de pestañas): en una lista, el inicio de un
+   * gesto táctil no distingue pulsar de desplazar.
+   */
+  alPulsar?: boolean;
+};
+
 /**
  * `Link` que precarga por intención (`docs/diseno-sistema.md` § 5.4): al
- * detener el ratón o enfocar con teclado. El inicio de un gesto táctil no
- * distingue pulsar de desplazar: el toque navega, pero nunca especula.
- * Con ahorro de datos, 2G o sin red tampoco se precarga.
+ * detener el ratón, al enfocar con teclado y, con `alPulsar`, al pulsar.
+ * Con ahorro de datos, 2G o sin red no se precarga nunca.
  */
-export const EnlacePrecarga = forwardRef<HTMLAnchorElement, Omit<ComponentProps<typeof Link>, 'prefetch'>>(function EnlacePrecarga({
+export const EnlacePrecarga = forwardRef<HTMLAnchorElement, PropsEnlacePrecarga>(function EnlacePrecarga({
+  alPulsar = false,
   onPointerEnter,
   onPointerLeave,
+  onPointerDown,
   onFocus,
   onBlur,
   ...props
@@ -33,9 +43,18 @@ export const EnlacePrecarga = forwardRef<HTMLAnchorElement, Omit<ComponentProps<
         if (e.pointerType === 'mouse' && !ahorrarDatos()) espera.current = setTimeout(avisar, 120);
         onPointerEnter?.(e);
       }}
+      onPointerDown={(e) => {
+        // Entre pulsar y soltar pasan 80-150 ms: la petición sale antes que el clic.
+        if (alPulsar && e.button === 0) {
+          cancelar();
+          avisar();
+        }
+        onPointerDown?.(e);
+      }}
       onPointerLeave={(e) => {
         cancelar();
-        setIntencion(null);
+        // Al levantar el dedo llega `pointerleave` antes que el clic: no se retira la precarga que va en camino.
+        if (e.pointerType === 'mouse') setIntencion(null);
         onPointerLeave?.(e);
       }}
       onFocus={(e) => {

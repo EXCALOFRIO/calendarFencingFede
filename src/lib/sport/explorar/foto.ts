@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { exigirPerfil, filas, type ContextoExplorador } from './contexto';
 import { UUID_RE } from './cursor';
 import { listaUuid } from './filtros-sql';
+import { sqlIdFieConfirmado } from './perfil-sql';
 import { SALTOS } from './personas';
 import { fotoFieConCache, type AlmacenMarcas } from './fotos/cache';
 import type { ResultadoFoto } from './foto-contrato';
@@ -82,12 +83,9 @@ export async function leerFotoDeportista(
   const grupo = await grupoAcotado(ctx, personaId);
   if (!grupo || vetoMenores(grupo, ctx.hoy())) return SIN_FOTO;
 
-  const ids = filas<{ valor: string }>(await ctx.db.execute(sql`
-    SELECT DISTINCT value AS valor FROM sport_external_id
-    WHERE person_id IN (${listaUuid(grupo.map((p) => p.id))})
-      AND scheme = 'fie_addr_id' AND scope_source = 'fie'
-      AND link_status = 'CONFIRMADO'
-    ORDER BY value LIMIT 2`));
+  // `sqlIdFieConfirmado` entra por la persona (`+scheme`); con `scheme =` SQLite
+  // elegía sport_external_id_lookup_idx y leía los ~43.000 IDs FIE.
+  const ids = filas<{ valor: string }>(await ctx.db.execute(sqlIdFieConfirmado(grupo.map((p) => p.id))));
   // Conflictos entre temporadas/ámbitos tampoco eligen la primera fila.
   if (ids.length !== 1 || !/^[1-9]\d{0,9}$/.test(ids[0].valor)) return SIN_FOTO;
   const conflicto = filas<{ conflicto: number }>(await ctx.db.execute(sql`

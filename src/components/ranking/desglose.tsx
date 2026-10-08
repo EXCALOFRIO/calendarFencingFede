@@ -1,11 +1,11 @@
 'use client';
 
 import { Check, ExternalLink, Minus } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import type { BreakdownEntry, RankingTableView } from '@/lib/queries/ranking';
 import type { CutoffStatus } from '@/lib/ranking/compute';
-import { CIRCUIT_LABEL, cn, formatDateEs } from '@/lib/utils';
+import { fechaCorta } from '@/lib/fechas';
+import { CIRCUIT_LABEL, cn } from '@/lib/utils';
 import { coeficiente, puntos } from './formato';
 
 /**
@@ -53,7 +53,7 @@ export function Desglose({
       {corte ? (
         <p
           className={cn(
-            'medida rounded-lg border px-3 py-2.5 text-sm',
+            'medida rounded-xl border px-3 py-3 text-sm',
             corte.inside ? 'border-ok/40 text-ok' : 'text-muted-foreground',
           )}
         >
@@ -132,7 +132,7 @@ function Cifra({
 }) {
   return (
     <div className="flex items-baseline gap-2">
-      <span className={cn('cifra', grande ? 'text-4xl' : 'text-2xl')}>{valor}</span>
+      <span className={cn('cifra', grande ? 'text-3xl' : 'text-2xl')}>{valor}</span>
       <span className="max-w-24 text-xs leading-tight text-muted-foreground">
         {palabra}
       </span>
@@ -154,7 +154,7 @@ function Prueba({ prueba }: { prueba: BreakdownEntry }) {
     <li
       className={cn(
         'flex flex-col gap-1 border-b py-3 last:border-b-0',
-        !prueba.counted && 'opacity-60',
+        !prueba.counted && 'text-muted-foreground',
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -162,7 +162,7 @@ function Prueba({ prueba }: { prueba: BreakdownEntry }) {
           <p className="text-sm font-medium">{prueba.eventName}</p>
           <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
             <span>
-              {prueba.eventDate ? formatDateEs(prueba.eventDate) : 'sin fecha'}
+              {prueba.eventDate ? fechaCorta(prueba.eventDate) : 'sin fecha'}
             </span>
             <span>{circuito}</span>
           </p>
@@ -186,9 +186,9 @@ function Prueba({ prueba }: { prueba: BreakdownEntry }) {
       </p>
 
       {!prueba.counted ? (
-        <Badge variant="outline" className="mt-0.5 whitespace-normal text-left">
+        <p className="text-xs text-muted-foreground">
           {prueba.explanation ?? 'No entra en las mejores de la temporada'}
-        </Badge>
+        </p>
       ) : null}
     </li>
   );

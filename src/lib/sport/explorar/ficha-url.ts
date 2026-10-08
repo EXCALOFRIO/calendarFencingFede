@@ -1,8 +1,17 @@
-import { UUID_RE } from './cursor';
+import { UUID_RE } from './patrones';
 import { RUTA_EDICIONES, sanitizarRetornoEdicion } from './edicion-url';
 import { LONGITUD_MAXIMA_CURSOR, RUTA_FAVORITOS, construirUrlFavoritos } from './favoritos-url';
 import type { AmbitoCompeticion } from './tipos-social';
-import { CLAVES_CRITERIO, RUTA_EXPLORAR, construirUrl, hayCriterios, leerCriterios, rutaFicha } from './url';
+import { urlPaises } from './ambitos-url';
+import {
+  CLAVES_CRITERIO,
+  RUTA_BUSCAR,
+  RUTA_EXPLORAR,
+  construirUrlBuscar,
+  hayCriterios,
+  leerCriterios,
+  rutaFicha,
+} from './url';
 
 /**
  * Criterios de la ficha deportiva en la URL: temporada del ranking oficial,
@@ -38,7 +47,8 @@ const LONGITUD_MAXIMA_RETORNO = 2400;
 /**
  * Búsqueda de Explorar, página de favoritos o página de edición a la que
  * volver desde una ficha. El valor viaja en la URL, así que no se fía: sólo
- * vale `/explorar` con su consulta, `/explorar/favoritos` con su cursor o
+ * vale `/explorar` o `/explorar/buscar` con su consulta (se devuelve siempre
+ * como `/explorar/buscar?…`), `/explorar/favoritos` con su cursor o
  * `/explorar/ediciones[/id]` con su prueba y cursor, y se
  * reconstruye con las claves que cada pantalla conoce. Un esquema, un host,
  * otra ruta, un fragmento o una barra invertida dan vacío, y vacío significa
@@ -55,17 +65,21 @@ export function sanitizarRetorno(valor: string | undefined): string {
   if (crudo === RUTA_EDICIONES || crudo.startsWith(`${RUTA_EDICIONES}/`) || crudo.startsWith(`${RUTA_EDICIONES}?`)) {
     return sanitizarRetornoEdicion(crudo);
   }
-  if (crudo !== RUTA_EXPLORAR && !crudo.startsWith(`${RUTA_EXPLORAR}?`)) return '';
+  const enBuscar = crudo === RUTA_BUSCAR || crudo.startsWith(`${RUTA_BUSCAR}?`);
+  if (!enBuscar && crudo !== RUTA_EXPLORAR && !crudo.startsWith(`${RUTA_EXPLORAR}?`)) return '';
 
-  const consulta = new URLSearchParams(crudo.slice(RUTA_EXPLORAR.length + 1));
+  const consulta = new URLSearchParams(crudo.slice((enBuscar ? RUTA_BUSCAR : RUTA_EXPLORAR).length + 1));
+  if (enBuscar && consulta.get('ver') === 'paises') return urlPaises(consulta.get('q'));
   const params: Record<string, string> = {};
   for (const clave of [...CLAVES_CRITERIO, 'cursor']) {
     const v = consulta.get(clave);
     if (v !== null) params[clave] = v;
   }
   const { criterios, cursor } = leerCriterios(params);
-  // Sin nada que buscar, `construirUrl` daría la pestaña Buscar; el retorno sigue siendo `/explorar`.
-  return !cursor && !hayCriterios(criterios) ? RUTA_EXPLORAR : construirUrl(criterios, cursor);
+  // `/explorar` sin búsqueda es «Para ti», no la pestaña Tiradores.
+  if (!enBuscar && !cursor && !hayCriterios(criterios)) return RUTA_EXPLORAR;
+  // También la forma antigua `/explorar?…`: así la vuelta no pasa por su redirección.
+  return construirUrlBuscar(criterios, cursor);
 }
 
 export function leerCriteriosFicha(params: Parametros): CriteriosFicha {

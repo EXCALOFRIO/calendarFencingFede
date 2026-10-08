@@ -21,7 +21,7 @@ vi.mock('radix-ui', async () => {
 });
 
 const { VistaPrueba } = await import('@/components/explorar/prueba/vista-prueba');
-const { SelectorPrueba } = await import('@/components/explorar/prueba/selector-prueba');
+const { SelectorPruebaPorNiveles } = await import('@/components/explorar/prueba/selector-prueba');
 const { CabeceraExplorar } = await import('@/components/explorar/cabecera-explorar');
 const { BandaEstasDentro } = await import('@/components/calendario/ficha-evento');
 const { CabeceraFicha } = await import('@/components/calendario/cabecera-ficha');
@@ -79,25 +79,30 @@ describe('pantalla de prueba', () => {
     expect(marcado).not.toMatch(/\bh-10\b|\bsize-10\b/);
   });
 
-  it('Individual y Equipos se ven de 32 px y se tocan en 44', () => {
-    const marcado = html(React.createElement(SelectorPrueba, {
-      formatos: [
-        { valor: 'INDIVIDUAL', etiqueta: 'Individual', href: '/a', activa: true },
-        { valor: 'EQUIPOS', etiqueta: 'Equipos', href: '/b', activa: false },
-      ],
-      actual: { titulo: 'Espada femenina', categoria: 'Absoluto' },
-      grupos: [],
+  it('Individual y Equipos son una fila del selector por niveles, de 36 px con toque de 44', () => {
+    const marcado = html(React.createElement(SelectorPruebaPorNiveles, {
+      resumen: ['Espada femenina', 'Absoluto'],
+      filas: [{
+        dimension: 'formato', etiqueta: 'Modalidad', opciones: [
+          { valor: 'INDIVIDUAL', etiqueta: 'Individual', destinoId: 'a', destinoHref: '/a', activa: true },
+          { valor: 'EQUIPOS', etiqueta: 'Equipos', destinoId: 'b', destinoHref: '/b', activa: false },
+        ],
+      }],
     }));
-    expect(marcado.match(/<a [^>]*class="inline-flex h-\[32px\][^"]*after:h-\[max\(100%,44px\)\]/g)).toHaveLength(2);
-    expect(marcado).not.toMatch(/\bh-8\b|\bh-9\b/);
+    expect(marcado.match(/<a [^>]*class="[^"]*\bh-9\b[^"]*after:h-\[max\(100%,44px\)\]/g)).toHaveLength(2);
+    expect(marcado).toContain('aria-label="Modalidad"');
+    expect(marcado).toContain('>Espada femenina<');
+    expect(marcado).not.toContain('aria-haspopup');
   });
 
-  it('Buscar tiene tres pestañas de 44 px de toque, sin pastillas de colecciones', () => {
+  it('Explorar tiene cuatro ámbitos de 44 px de toque en un selector del sistema, sin pastillas de colecciones', () => {
     const marcado = html(React.createElement(CabeceraExplorar, { activa: 'competiciones' }));
-    expect(marcado.match(/class="flex h-\[36px\] [^"]*after:h-\[max\(100%,44px\)\]/g)).toHaveLength(3);
+    expect(marcado).toContain('data-slot="sistema-segmentado"');
+    expect(marcado.match(/<a [^>]*class="[^"]*\bh-9\b[^"]*after:h-\[max\(100%,44px\)\]/g)).toHaveLength(4);
+    expect(marcado).toContain('href="/explorar"');
     expect(marcado).toContain('href="/explorar/buscar"');
     expect(marcado).toContain('href="/explorar/buscar?ver=paises"');
-    expect(marcado).toMatch(/<a[^>]*aria-current="page"[^>]*>Competiciones</);
+    expect(marcado).toMatch(/<a[^>]*aria-current="page"[^>]*>(?:<[^>]+>)*Torneos</);
     expect(marcado).not.toContain('/explorar/favoritos');
   });
 });
@@ -122,7 +127,7 @@ describe('ficha de evento', () => {
 
   it('la dirección va en una línea y abre el mapa', () => {
     const marcado = html(React.createElement(LineaDireccion, {
-      pais: 'JP', texto: '6-11 Sunport, Takamatsu City', mapa: 'https://www.google.com/maps/search/?api=1&query=x', leida: null,
+      pais: 'JP', texto: '6-11 Sunport, Takamatsu City', mapa: 'https://www.google.com/maps/search/?api=1&query=x',
     }));
     expect(marcado).toContain('href="https://www.google.com/maps/search/?api=1&amp;query=x"');
     expect(marcado).toContain('truncate');
@@ -145,39 +150,36 @@ describe('ficha de evento', () => {
 });
 
 describe('calendario', () => {
-  const tarjeta = (variante: 'apilada' | 'zonas') => html(React.createElement(TarjetaBloque, {
-    bloque: agruparEnBloques([evento])[0], variante, inscripciones: {}, resaltados: new Set<string>(),
+  const tarjeta = () => html(React.createElement(TarjetaBloque, {
+    bloque: agruparEnBloques([evento])[0], inscripciones: {}, resaltados: new Set<string>(),
     proximo: null, mostrarArma: true, mostrarGenero: true, mostrarCategoria: true, onAbrir: vi.fn(),
     pasado: { hoy: '2026-10-01', resultados: { ev1: [pasada] }, onVer: vi.fn() },
   }));
 
   it('«Terminada» y el ganador van en la misma línea, que es el enlace a los resultados', () => {
-    for (const variante of ['apilada', 'zonas'] as const) {
-      const marcado = tarjeta(variante);
-      expect(marcado.match(/Terminada</g)).toHaveLength(1);
-      const pie = marcado.slice(marcado.indexOf('data-resultados'));
-      expect(pie.indexOf('Terminada')).toBeLessThan(pie.indexOf('BROUSSARD'));
-      expect(pie).toMatch(/<a [^>]*href="\/explorar\/ediciones\//);
-    }
+    const marcado = tarjeta();
+    expect(marcado.match(/Terminada</g)).toHaveLength(1);
+    const pie = marcado.slice(marcado.indexOf('data-resultados'));
+    expect(pie.indexOf('Terminada')).toBeLessThan(pie.indexOf('BROUSSARD'));
+    expect(pie).toMatch(/<a [^>]*href="\/explorar\/ediciones\//);
   });
 
   it('en el pie va el apellido del ganador, que es lo que cabe a 320 px', () => {
     expect(apellidoDe('BROU Isaora')).toBe('BROU');
     expect(apellidoDe('DE LOS MOZOS DELGADO Javier')).toBe('DE LOS MOZOS DELGADO');
     expect(apellidoDe('Koki Kano')).toBe('Koki Kano');
-    expect(tarjeta('apilada')).not.toContain('Amelie');
+    expect(tarjeta()).not.toContain('Amelie');
   });
 
-  it('en el móvil no hay tira de días; en escritorio, letras de 12 px', () => {
-    expect(tarjeta('apilada')).not.toContain('size-[14px]');
-    const zonas = tarjeta('zonas');
-    expect(zonas).toContain('size-[14px]');
-    expect(zonas).toMatch(/size-\[14px\][^"]*text-xs/);
-    expect(zonas).not.toContain('text-off');
+  it('una sola estructura: bloque de fecha a la izquierda, sin tira de días de la semana', () => {
+    const marcado = tarjeta();
+    expect(marcado).toContain('data-slot="sistema-bloque-fecha"');
+    expect(marcado).not.toContain('size-[14px]');
+    expect(marcado).not.toContain('text-off');
   });
 
   it('la tarjeta usa la misma insignia de organismo que la ficha', () => {
-    expect(tarjeta('apilada')).toContain('data-organismo="FIE"');
+    expect(tarjeta()).toContain('data-organismo="FIE"');
   });
 
   it('«Resultados oficiales» en la hoja se ve de 32 px y se toca en 44', () => {

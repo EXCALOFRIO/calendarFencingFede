@@ -372,7 +372,357 @@ export type EdicionResumen = {
   armas: Arma[];
   formatos: Formato[];
   serie: SerieComplementaria | null;
+  /** Géneros de sus pruebas (sólo lo rellena el índice del buscador). */
+  generos?: Genero[];
+  /**
+   * Ediciones del mismo evento que resume esta fila (ver `agruparEdiciones`);
+   * ausente o 1 = la edición sola. Fechas, armas, formatos, géneros y pruebas
+   * son entonces los del evento entero.
+   */
+  ediciones?: number;
 };
+
+/* ------------------------------------------------- ediciones de un evento */
+
+/**
+ * Una edición vista para agruparla con las de su evento. La FIE publica sin
+ * torneo muchas pruebas sueltas y Skermo una edición por prueba: un Mundial
+ * llega como doce ediciones con el mismo nombre, sede y fechas seguidas.
+ */
+export type EdicionAgrupable = {
+  fuente: string;
+  temporada: string;
+  nombre: string;
+  ciudad: string | null;
+  pais: string | null;
+  /** Días desde 1970 (-1 sin fecha). */
+  inicio: number;
+  /** Días desde 1970 (-1 sin fin). */
+  fin: number;
+  /** Torneo canónico del calendario (`event.canonical_event_id` o `event_id`). */
+  evento: string | null;
+  /** Categorías de sus pruebas; sin ellas, una edición nacional no se une con las de otra fuente por nombre. */
+  categorias?: readonly string[];
+};
+
+/**
+ * Fuentes que publican los campeonatos de la RFEE: el mismo campeonato puede
+ * llegar de Skermo, de un PDF y de Engarde, cada una con sus pruebas.
+ */
+export const FUENTES_NACIONALES: ReadonlySet<string> = new Set(['skermo_rfee', 'rfee_pdf', 'engarde']);
+const familiaDe = (fuente: string) => (FUENTES_NACIONALES.has(fuente) ? 'nacional' : fuente);
+
+/** Dos pruebas de un mismo evento empiezan, como mucho, este número de días después de la anterior. */
+export const DIAS_ENTRE_PRUEBAS = 4;
+/** Ni encadenando fechas un evento dura más que esto desde su primera prueba. */
+export const DIAS_MAXIMOS_EVENTO = 16;
+
+const PALABRAS_DE_PRUEBA = new Set([
+  // armas
+  'epee', 'epees', 'espada', 'espadas', 'foil', 'foils', 'fleuret', 'fleurets', 'florete', 'floretes',
+  'sabre', 'sabres', 'saber', 'sabers', 'sable', 'sables',
+  // géneros
+  'men', 'mens', 'women', 'womens', 'hommes', 'homme', 'dames', 'dame', 'masculino', 'masculina', 'masculinos',
+  'masculinas', 'femenino', 'femenina', 'femeninos', 'femeninas', 'masc', 'fem', 'mixed', 'mixto', 'mixta', 'mixtos',
+  // modalidad
+  'individual', 'individuales', 'individuel', 'individuels', 'individuelle', 'team', 'teams', 'equipe', 'equipes',
+  'equipo', 'equipos',
+  // enlaces
+  'par', 'por', 'y', 'e', 'et', 'and', 'de', 'del', 'la', 'las', 'los', 'el', 'du', 'des', 'd', 'of', 'the', 's',
+]);
+
+/**
+ * Lo que comparten los nombres de las ediciones de un evento: sin tildes, sin
+ * año y sin las palabras de arma, género o modalidad («TNR Espada Masculina
+ * Sabadell» y «TNR Espada Femenina Sabadell» dan «tnr sabadell»). La
+ * categoría se queda: los PDF de la RFEE no traen sede y, sin ella, el
+ * Campeonato de España M13 y el M15 se encadenarían por fechas. Sólo se
+ * igualan sus formas («M-15», «U15», «Sub 15» → «m15») y «Grand Veterans»
+ * con «Veterans», que la FIE publica como un mismo campeonato. Los Mundiales
+ * de veteranos llegan como una edición por franja («Vétérans 60-69», «70+»):
+ * la franja se quita para que salgan juntos, y el selector la ofrece como
+ * «Grupo». Singular y plural («Championnat(s) du monde») son el mismo nombre.
+ */
+export function nombreBaseEdicion(nombre: string): string {
+  const plegado = nombre.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase();
+  const sinFranja = /\bveterans?\b|\bveteranos?\b/.test(plegado)
+    ? plegado.replace(/\b\d{2}\s*(?:-|–|a)\s*\d{2}\b/g, ' ').replace(/\b\d{2}\s*\+|\+\s*\d{2}\b/g, ' ')
+    : plegado;
+  return sinFranja
+    .replace(/\bgrands?[\s-]+(?=veterans?\b)/g, '')
+    .replace(/\b(championnat|championship|championat|campeonato|campionato|campionat)s\b/g, '$1')
+    .replace(/\b(?:m|u|sub)[\s-]?(\d{1,2})\b/g, 'm$1')
+    .replace(/\b(?:19|20)\d{2}\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(' ')
+    .filter((p) => p && !PALABRAS_DE_PRUEBA.has(p))
+    .join(' ');
+}
+
+const sedeBase = (texto: string | null) =>
+  (texto ?? '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+/** Días desde 1970 de una fecha ISO (-1 si no es una fecha). */
+export function diaDeIso(iso: string | null | undefined): number {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return -1;
+  const t = Date.parse(`${iso.slice(0, 10)}T00:00:00Z`);
+  return Number.isFinite(t) ? Math.round(t / 86_400_000) : -1;
+}
+
+/**
+ * El evento de cada edición, como un número de grupo (0, 1, 2… por orden de
+ * primera aparición). Van juntas:
+ *  - las de un mismo torneo del calendario y la misma fuente (o las tres
+ *    nacionales, `FUENTES_NACIONALES`, entre sí),
+ *  - las de la misma fuente, temporada, `nombreBaseEdicion`, ciudad y país
+ *    cuyas fechas se encadenan (cada una empieza a no más de
+ *    `DIAS_ENTRE_PRUEBAS` días del final de las anteriores y a no más de
+ *    `DIAS_MAXIMOS_EVENTO` del inicio de la primera), y
+ *  - los grupos así formados de fuentes nacionales DISTINTAS con la misma
+ *    temporada y `nombreBaseEdicion` y fechas encadenadas, si las categorías
+ *    de uno están todas en el otro. La sede no cuenta aquí: los PDF no la
+ *    traen y Skermo y Engarde la escriben distinto. Dos grupos de la misma
+ *    fuente nunca se unen por este paso (los separó su sede).
+ * La FIE y la EFC nunca se juntan con otra fuente, ni una edición sin fecha
+ * con otra salvo por el calendario. No cambia la ingesta: es sólo cómo se
+ * presentan.
+ */
+export function agruparEdiciones(ediciones: readonly EdicionAgrupable[]): Int32Array {
+  const n = ediciones.length;
+  const padre = Int32Array.from({ length: n }, (_, i) => i);
+  const raiz = (i: number): number => {
+    while (padre[i] !== i) {
+      padre[i] = padre[padre[i]!]!;
+      i = padre[i]!;
+    }
+    return i;
+  };
+  const unir = (a: number, b: number) => {
+    const x = raiz(a);
+    const y = raiz(b);
+    if (x !== y) padre[Math.max(x, y)] = Math.min(x, y);
+  };
+
+  const porClave = new Map<string, number[]>();
+  const porEvento = new Map<string, number>();
+  for (let i = 0; i < n; i++) {
+    const e = ediciones[i]!;
+    if (e.evento) {
+      const k = `${familiaDe(e.fuente)}\u0000${e.evento}`;
+      const otra = porEvento.get(k);
+      if (otra === undefined) porEvento.set(k, i);
+      else unir(otra, i);
+    }
+    if (e.inicio < 0) continue;
+    const k = [e.fuente, e.temporada, nombreBaseEdicion(e.nombre), sedeBase(e.ciudad), sedeBase(e.pais)].join('\u0000');
+    const lista = porClave.get(k);
+    if (lista) lista.push(i);
+    else porClave.set(k, [i]);
+  }
+  for (const lista of porClave.values()) {
+    if (lista.length < 2) continue;
+    lista.sort((a, b) => ediciones[a]!.inicio - ediciones[b]!.inicio || a - b);
+    let hasta = -Infinity;
+    let desde = 0;
+    let anterior = -1;
+    for (const i of lista) {
+      const e = ediciones[i]!;
+      if (anterior >= 0 && e.inicio <= hasta + DIAS_ENTRE_PRUEBAS && e.inicio - desde <= DIAS_MAXIMOS_EVENTO) {
+        unir(anterior, i);
+      } else {
+        hasta = -Infinity;
+        desde = e.inicio;
+      }
+      hasta = Math.max(hasta, e.inicio, e.fin);
+      anterior = i;
+    }
+  }
+  unirNacionales(ediciones, raiz, unir);
+
+  const numero = new Map<number, number>();
+  const grupos = new Int32Array(n);
+  for (let i = 0; i < n; i++) {
+    const r = raiz(i);
+    let g = numero.get(r);
+    if (g === undefined) {
+      g = numero.size;
+      numero.set(r, g);
+    }
+    grupos[i] = g;
+  }
+  return grupos;
+}
+
+type GrupoNacional = {
+  raiz: number;
+  temporada: string;
+  nombre: string;
+  inicio: number;
+  fin: number;
+  fuentes: Set<string>;
+  categorias: Set<string>;
+};
+
+const contenidas = (a: ReadonlySet<string>, b: ReadonlySet<string>) => [...a].every((c) => b.has(c));
+
+/** El tercer paso de `agruparEdiciones`: el mismo campeonato de la RFEE leído de varias fuentes. */
+function unirNacionales(
+  ediciones: readonly EdicionAgrupable[],
+  raiz: (i: number) => number,
+  unir: (a: number, b: number) => void,
+) {
+  const porRaiz = new Map<number, GrupoNacional>();
+  for (let i = 0; i < ediciones.length; i++) {
+    const e = ediciones[i]!;
+    if (!FUENTES_NACIONALES.has(e.fuente) || e.inicio < 0) continue;
+    const r = raiz(i);
+    let g = porRaiz.get(r);
+    if (!g) {
+      g = { raiz: r, temporada: e.temporada, nombre: nombreBaseEdicion(e.nombre), inicio: e.inicio, fin: e.inicio,
+        fuentes: new Set(), categorias: new Set() };
+      porRaiz.set(r, g);
+    }
+    g.inicio = Math.min(g.inicio, e.inicio);
+    g.fin = Math.max(g.fin, e.inicio, e.fin);
+    g.fuentes.add(e.fuente);
+    for (const c of e.categorias ?? []) g.categorias.add(c);
+  }
+  const porClave = new Map<string, GrupoNacional[]>();
+  for (const g of porRaiz.values()) {
+    if (g.categorias.size === 0) continue;
+    const k = `${g.temporada}\u0000${g.nombre}`;
+    const lista = porClave.get(k);
+    if (lista) lista.push(g);
+    else porClave.set(k, [g]);
+  }
+  for (const lista of porClave.values()) {
+    if (lista.length < 2) continue;
+    lista.sort((a, b) => a.inicio - b.inicio || a.raiz - b.raiz);
+    const cadenas: GrupoNacional[] = [];
+    for (const g of lista) {
+      const cadena = cadenas.find((c) =>
+        g.inicio <= c.fin + DIAS_ENTRE_PRUEBAS && g.inicio - c.inicio <= DIAS_MAXIMOS_EVENTO
+        && ![...g.fuentes].some((f) => c.fuentes.has(f))
+        && (contenidas(g.categorias, c.categorias) || contenidas(c.categorias, g.categorias)));
+      if (!cadena) {
+        cadenas.push({ ...g, fuentes: new Set(g.fuentes), categorias: new Set(g.categorias) });
+        continue;
+      }
+      unir(cadena.raiz, g.raiz);
+      cadena.fin = Math.max(cadena.fin, g.fin);
+      g.fuentes.forEach((f) => cadena.fuentes.add(f));
+      g.categorias.forEach((c) => cadena.categorias.add(c));
+    }
+  }
+}
+
+/**
+ * Una prueba de una edición del mismo evento, con lo justo para el selector:
+ * su edición (para el enlace), su arma, género, categoría y modalidad, su
+ * fuente y cuánto trae (`riquezaDe`).
+ */
+export type PruebaHermana = Pick<PruebaDeEdicion, 'id' | 'arma' | 'genero' | 'categoria' | 'formato' | 'fecha' | 'fuente'> & {
+  edicionId: string;
+  /** 2 con asaltos (poules o cuadro), 1 con clasificación, 0 sin nada importado. */
+  riqueza: number;
+};
+
+export function riquezaDe(p: Pick<PruebaDeEdicion, 'asaltos' | 'resultados'>): number {
+  return (p.asaltos ?? 0) > 0 ? 2 : p.resultados.importados > 0 ? 1 : 0;
+}
+
+/** Nombre corto de una fuente para la fila «Fuente» del selector. */
+export const ETIQUETA_FUENTE: Record<string, string> = {
+  fie: 'FIE', efc: 'EFC', skermo_rfee: 'Skermo', rfee_pdf: 'PDF', engarde: 'Engarde',
+};
+
+const dimensionesDe = (p: Pick<PruebaHermana, 'arma' | 'genero' | 'formato' | 'categoria'>) =>
+  `${p.arma}|${p.genero}|${p.formato}|${p.categoria.codigo}`;
+
+export type EleccionEvento = {
+  actual: PruebaHermana;
+  /** Una prueba por combinación de arma, género, modalidad y categoría: la de la fuente más rica (o la actual). */
+  principales: PruebaHermana[];
+  /** Las de la misma combinación y fuente que la actual (grupos de edad, días), si hay más de una. */
+  grupos: PruebaHermana[];
+  /** Una por fuente con la misma combinación que la actual, si hay más de una fuente. */
+  fuentes: PruebaHermana[];
+};
+
+/**
+ * Lo que enseña el selector de un evento. La misma prueba publicada por dos
+ * fuentes (Skermo y el PDF de un mismo campeonato) es UNA opción en las filas
+ * de arma, género, modalidad y categoría: la de la fuente con más datos
+ * (asaltos > clasificación > nada). La otra sólo se alcanza desde la fila
+ * «Fuente», que sale únicamente cuando la prueba actual está repetida.
+ */
+export function eleccionDelEvento(hermanas: readonly PruebaHermana[], actualId: string): EleccionEvento | null {
+  const actual = hermanas.find((h) => h.id === actualId) ?? hermanas[0];
+  if (!actual) return null;
+  const propia = dimensionesDe(actual);
+  const porDimensiones = new Map<string, PruebaHermana[]>();
+  for (const h of hermanas) {
+    const k = dimensionesDe(h);
+    const lista = porDimensiones.get(k);
+    if (lista) lista.push(h);
+    else porDimensiones.set(k, [h]);
+  }
+  const principales: PruebaHermana[] = [];
+  for (const [k, lista] of porDimensiones) {
+    // Estable: entre iguales, la primera en el orden de lectura.
+    principales.push(k === propia ? actual : lista.reduce((m, h) => (h.riqueza > m.riqueza ? h : m)));
+  }
+  const gemelas = porDimensiones.get(propia) ?? [actual];
+  const grupos = gemelas.filter((h) => h.fuente === actual.fuente);
+  const otrasFuentes = [...new Set(gemelas.map((h) => h.fuente))].filter((f) => f !== actual.fuente);
+  const raw = (h: PruebaHermana) => (h.categoria.raw ?? '').trim().toLowerCase();
+  const fuentes = otrasFuentes.length === 0 ? [] : [
+    actual,
+    ...otrasFuentes.map((f) => {
+      const de = gemelas.filter((h) => h.fuente === f);
+      return de.find((h) => raw(h) && raw(h) === raw(actual))
+        ?? de.find((h) => h.fecha && h.fecha === actual.fecha)
+        ?? de.reduce((m, h) => (h.riqueza > m.riqueza ? h : m));
+    }),
+  ];
+  return { actual, principales, grupos: grupos.length > 1 ? grupos : [], fuentes };
+}
+
+const ORDEN_ARMA_CANONICO: readonly string[] = ['FLORETE', 'ESPADA', 'SABLE'];
+const ORDEN_GENERO_CANONICO: readonly string[] = ['M', 'F', 'MIXTO'];
+
+/**
+ * La prueba con la que se abre una edición para quien tira o selecciona unas
+ * armas (y, si se sabe, un género): entre las que tienen algo importado (o
+ * todas, si ninguna), la de su arma y su género y, a igualdad, individual,
+ * en el orden de los rótulos y con más datos. `undefined` sin preferencias o
+ * si ninguna prueba es de sus armas: entonces manda `pruebaPorDefecto`.
+ */
+export function pruebaPreferida<P extends Pick<PruebaDeEdicion, 'arma' | 'genero' | 'formato' | 'categoria' | 'asaltos' | 'resultados'>>(
+  pruebas: readonly P[],
+  preferencias: { armas?: readonly string[]; generos?: readonly string[] },
+): P | undefined {
+  const armas = preferencias.armas ?? [];
+  if (armas.length === 0) return undefined;
+  const conDatos = pruebas.filter((p) => riquezaDe(p) > 0);
+  const candidatas = (conDatos.length ? conDatos : pruebas).filter((p) => armas.includes(p.arma));
+  if (candidatas.length === 0) return undefined;
+  const generos = preferencias.generos ?? [];
+  const puesto = (p: P) => [
+    generos.length && !generos.includes(p.genero) ? 1 : 0,
+    p.formato === 'INDIVIDUAL' ? 0 : 1,
+    ORDEN_ARMA_CANONICO.indexOf(p.arma),
+    ORDEN_GENERO_CANONICO.indexOf(p.genero),
+    p.categoria.codigo === 'ABS' ? 0 : 1,
+    -riquezaDe(p),
+  ];
+  return [...candidatas].sort((x, y) => {
+    const a = puesto(x);
+    const b = puesto(y);
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i]! - b[i]!;
+    return 0;
+  })[0];
+}
 
 export type FilaClasificacion = {
   id: string;
@@ -404,4 +754,10 @@ export type EdicionDetalle = EdicionResumen & {
    * primera con puestos. `null` o ausente = ninguna.
    */
   pruebaElegida?: string | null;
+  /**
+   * Todas las pruebas del evento (esta edición y las demás de su grupo, ver
+   * `agruparEdiciones`), para elegir arma, género, modalidad y categoría entre
+   * ediciones. Ausente o sin pruebas de otra edición = sólo las de ésta.
+   */
+  hermanas?: PruebaHermana[];
 };

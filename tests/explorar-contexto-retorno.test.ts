@@ -12,6 +12,7 @@ import {
 import {
   CRITERIOS_VACIOS,
   construirUrl,
+  construirUrlBuscar,
   leerCriterios,
   type CriteriosExplorar,
 } from '@/lib/sport/explorar/url';
@@ -78,34 +79,49 @@ describe('fila de Explorar → URL de ficha → enlace de retorno', () => {
   it('la fila lleva la búsqueda exacta (filtros y página) como retorno local', () => {
     const c = criterios({ q: 'garcia', arma: 'SABLE', nacionalidad: 'ESP' });
     const salida = lista(c, 'tok-1');
-    const href = /href="(\/explorar\/[^"]+)"/.exec(salida)?.[1]?.replaceAll('&amp;', '&');
+    const href = new RegExp(`href="(/explorar/${UUID_A}[^"]*)"`).exec(salida)?.[1]?.replaceAll('&amp;', '&');
     expect(href).toBeTruthy();
     expect(href?.startsWith(`/explorar/${UUID_A}?volver=`)).toBe(true);
-    expect(decodificar(href as string)).toBe(construirUrl(c, 'tok-1'));
+    // La forma de la lista (`/explorar?…`) se guarda ya como Tiradores: volver no pasa por la redirección.
+    expect(decodificar(href as string)).toBe(construirUrlBuscar(c, 'tok-1'));
   });
 
   it('la ficha abierta desde esa fila vuelve a los mismos filtros, cursor y página', () => {
     const c = criterios({ q: 'garcia', torneo: 'Madrid', desde: '2025-01-01' });
     const salida = lista(c, 'tok-1');
-    const href = /href="(\/explorar\/[^"]+)"/.exec(salida)?.[1]?.replaceAll('&amp;', '&') as string;
+    const href = new RegExp(`href="(/explorar/${UUID_A}[^"]*)"`).exec(salida)?.[1]?.replaceAll('&amp;', '&') as string;
     const leidos = leerCriteriosFicha(Object.fromEntries(new URL(href, 'http://x.test').searchParams));
-    expect(leidos.volver).toBe(construirUrl(c, 'tok-1'));
+    expect(leidos.volver).toBe(construirUrlBuscar(c, 'tok-1'));
     const volver = html(React.createElement(VolverAExplorar, { volver: leidos.volver }));
-    expect(volver).toContain(`href="${construirUrl(c, 'tok-1').replaceAll('&', '&amp;')}"`);
+    expect(volver).toContain(`href="${construirUrlBuscar(c, 'tok-1').replaceAll('&', '&amp;')}"`);
     expect(volver).not.toContain('href="/explorar"');
   });
 
   it('en la primera página el retorno no lleva cursor', () => {
     const salida = lista(criterios({ q: 'garcia' }));
-    const href = /href="(\/explorar\/[^"]+)"/.exec(salida)?.[1]?.replaceAll('&amp;', '&') as string;
-    expect(decodificar(href)).toBe('/explorar?q=garcia');
+    const href = new RegExp(`href="(/explorar/${UUID_A}[^"]*)"`).exec(salida)?.[1]?.replaceAll('&amp;', '&') as string;
+    expect(decodificar(href)).toBe('/explorar/buscar?q=garcia');
   });
 });
 
 describe('sanitización del retorno local', () => {
-  it('acepta sólo búsquedas de Explorar y las reconstruye con claves conocidas', () => {
-    expect(sanitizarRetorno('/explorar?q=garcia&cursor=abc')).toBe('/explorar?q=garcia&cursor=abc');
-    expect(sanitizarRetorno('/explorar?q=a&desconocido=1&arma=sable')).toBe('/explorar?q=a&arma=SABLE');
+  it('acepta sólo búsquedas de Explorar y las reconstruye con claves conocidas en /explorar/buscar', () => {
+    expect(sanitizarRetorno('/explorar?q=garcia&cursor=abc')).toBe('/explorar/buscar?q=garcia&cursor=abc');
+    expect(sanitizarRetorno('/explorar?q=a&desconocido=1&arma=sable')).toBe('/explorar/buscar?q=a&arma=SABLE');
+    expect(sanitizarRetorno('/explorar/buscar?q=garcia&cursor=abc')).toBe('/explorar/buscar?q=garcia&cursor=abc');
+    expect(sanitizarRetorno('/explorar/buscar?q=a&desconocido=1&arma=sable')).toBe('/explorar/buscar?q=a&arma=SABLE');
+    expect(sanitizarRetorno('/explorar/buscar')).toBe('/explorar/buscar');
+    expect(sanitizarRetorno('/explorar/buscar?ver=paises&q=ita&x=1')).toBe('/explorar/buscar?ver=paises&q=ita');
+    // `/explorar` a secas es «Para ti», no Tiradores.
+    expect(sanitizarRetorno('/explorar')).toBe('/explorar');
+  });
+
+  it('VolverAExplorar lleva a Tiradores sin pasar por la redirección de /explorar?q=', () => {
+    const salida = html(React.createElement(VolverAExplorar, { volver: '/explorar?q=ana' }));
+    expect(salida).toContain('href="/explorar/buscar?q=ana"');
+    expect(html(React.createElement(VolverAExplorar, { volver: '/explorar/buscar?q=ana' }))).toContain(
+      'href="/explorar/buscar?q=ana"',
+    );
   });
 
   it.each([
@@ -118,7 +134,10 @@ describe('sanitización del retorno local', () => {
     ['data', 'data:text/html,x'],
     ['otra ruta local', '/perfil'],
     ['subruta', '/explorar/otra'],
+    ['subruta de Tiradores', '/explorar/buscar/x'],
     ['prefijo parecido', '/explorarx?q=a'],
+    ['prefijo parecido de Tiradores', '/explorar/buscarx?q=a'],
+    ['Tiradores con esquema relativo', '//explorar/buscar?q=a'],
     ['fragmento', '/explorar#x'],
     ['salto de línea', '/explorar?q=a\nSet-Cookie: x'],
     ['longitud excesiva', `/explorar?q=${'a'.repeat(5000)}`],
@@ -128,7 +147,7 @@ describe('sanitización del retorno local', () => {
 
   it('un valor repetido no puede colar un destino externo', () => {
     expect(leerCriteriosFicha({ volver: ['/explorar?q=a', 'https://malicioso.example'] }).volver).toBe(
-      '/explorar?q=a',
+      '/explorar/buscar?q=a',
     );
     expect(leerCriteriosFicha({ volver: ['https://malicioso.example', '/explorar?q=a'] }).volver).toBe('');
   });
@@ -151,7 +170,8 @@ describe('sanitización del retorno local', () => {
     const c = criterios({ q: 'garcía ñ', ambito: 'NACIONAL' });
     const url = construirUrl(c, 'tok');
     const { criterios: leidos, cursor } = leerCriterios(Object.fromEntries(new URL(url, 'http://x.test').searchParams));
-    expect(construirUrl(leidos, cursor)).toBe(sanitizarRetorno(url));
+    expect(construirUrlBuscar(leidos, cursor)).toBe(sanitizarRetorno(url));
+    expect(sanitizarRetorno(construirUrlBuscar(c, 'tok'))).toBe(sanitizarRetorno(url));
   });
 });
 

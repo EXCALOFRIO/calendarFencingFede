@@ -24,9 +24,9 @@ const VARIANTE = {
 
 export type VarianteControl = keyof typeof VARIANTE;
 
-/** La pastilla de 32 px de `Boton` md: texto de 13 px semibold e icono de 16. */
+/** La pastilla de 32 px de `Boton` md: texto de 14 px semibold e icono de 16. */
 export function clasesPastilla(variante: VarianteControl = 'secundario', className?: string): string {
-  return cn(DIBUJO, VARIANTE[variante], 'h-[32px] gap-[6px] px-[14px] text-[13px] leading-[16px] font-semibold whitespace-nowrap [&_svg]:size-[16px]', className);
+  return cn(DIBUJO, VARIANTE[variante], 'h-[32px] gap-2 px-4 text-sm font-semibold whitespace-nowrap [&_svg]:size-4', className);
 }
 
 /** El círculo de 36 px de `BotonIcono` lg, con icono de 20. */

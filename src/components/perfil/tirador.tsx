@@ -18,7 +18,7 @@ export function Dato({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
+    <div className="flex min-w-0 flex-col gap-1">
       <dt className="text-xs text-muted-foreground">{etiqueta}</dt>
       <dd className="text-sm">{children}</dd>
     </div>

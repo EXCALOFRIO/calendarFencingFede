@@ -12,8 +12,9 @@
  * conversión la hace el propio Chrome, que es la que ve el usuario.
  *
  * Por qué se leen los tokens y no números escritos aquí: si mañana alguien
- * sube `--fondo-luz` del 5 % al 20 %, esto tiene que enterarse. Las únicas
- * constantes de este fichero son las de la norma.
+ * baja la opacidad de `--cristal`, esto tiene que enterarse. Las únicas
+ * constantes de este fichero son las de la norma. La misma comprobación,
+ * sin navegador y leyendo `globals.css`, está en `tests/contraste-tokens.test.ts`.
  *
  * WCAG 2.1 AA: 4,5:1 para texto normal y 3:1 para texto grande
  * (>= 24 px, o >= 18,66 px en negrita) y para elementos gráficos.
@@ -57,14 +58,12 @@ const GUION = `(() => {
   const encima = (capa, base) => mezclar(capa, base, capa.a);
   const hex = (c) => '#' + [c.r, c.g, c.b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
   const tok = (n) => aRgb(cs.getPropertyValue(n).trim());
-  /** El porcentaje de un token tipo \`--fondo-tinte-banda: 26%\`. */
-  const pct = (n) => (parseFloat(cs.getPropertyValue(n)) || 0) / 100;
-
   const fondos = {
     background: tok('--background'),
     card: tok('--card'),
     secondary: tok('--secondary'),
     popover: tok('--popover'),
+    accent: tok('--accent'),
   };
   const blanco = tok('--foreground');
   const apagado = tok('--muted-foreground');
@@ -166,107 +165,36 @@ const GUION = `(() => {
   for (const o of organismos) delete o.sup;
 
   /**
-   * La textura del fondo.
+   * El cristal (\`.cristal\` y \`.cristal-panel\`).
    *
-   * El punto más claro posible del lienzo: la banda diagonal (\`--fondo-luz\`)
-   * más la retícula más el grano, todas apiladas en el mismo píxel. Es el
-   * peor caso para el texto que va encima, y es el número que hay que mirar
-   * antes de decir que una textura no tapa nada.
-   *
-   * La retícula y el grano son SVG en \`data:\`, así que su alfa no está en un
-   * token: se lee del propio \`background-image\` con una expresión regular.
-   * Si el patrón cambia, el número cambia.
+   * Se aplica la clase de verdad a una probeta y se lee el color y el filtro
+   * que resuelve Chrome. El fondo efectivo depende de lo que hay detrás, así
+   * que se acota: el lienzo (las barras en reposo), una foto blanca (el peor
+   * caso) y, para el panel, una foto blanca bajo el velo, que es lo que tiene
+   * detrás una hoja abierta.
    */
-  const capas = cs.getPropertyValue('background-image');
-  // El \`(?<!stroke-)\` no es adorno: sin él, buscar \`opacity='…'\` encontraba
-  // primero el \`stroke-opacity\` de la retícula y el grano salía con el alfa
-  // de las cruces.
-  const alfaSvg = (marca) => {
-    const m = capas.match(new RegExp('(?<!stroke-)' + marca + "='?\\\\.([0-9]+)'?"));
-    return m ? Number('0.' + m[1]) : 0;
-  };
-  const luz = tok('--fondo-luz');
-  const luzSuave = tok('--fondo-luz-suave');
-  const aReticula = alfaSvg('stroke-opacity');
-  const aGrano = alfaSvg('opacity');
-  const blancoPuro = { r: 255, g: 255, b: 255, a: 1 };
-
-  const pilaSobre = (base) => {
-    let c = encima(luz, base);
-    c = mezclar(blancoPuro, c, aReticula);
-    c = mezclar(blancoPuro, c, aGrano);
-    return c;
-  };
-  const texturas = [];
-  for (const [nf, f] of [['background', fondos.background], ['card', fondos.card]]) {
-    const claro = pilaSobre(f);
-    texturas.push({
-      sobre: nf, hex: hex(claro),
-      capaVsBase: ratio(claro, f),
-      blancoEncima: ratio(blanco, claro),
-      apagadoEncima: ratio(apagado, claro),
-    });
-  }
-
-  /**
-   * Los tintes de \`.fondo-cabecera\`.
-   *
-   * Se aplica la clase de verdad a un elemento suelto y se leen sus
-   * variables, en vez de fiarse de lo que dice el comentario del CSS. El
-   * peor caso es la banda y el velo apilados en el mismo sitio, y el texto
-   * que peor lo pasa encima es el apagado, no el blanco.
-   */
-  const tintes = [];
-  // La probeta se pinta fuera de pantalla, no con \`display: none\`: Chrome
-  // devuelve \`backdrop-filter: none\` en un elemento que no se renderiza, y
-  // entonces el guion decía que el acrílico no tiene desenfoque.
+  // Fuera de pantalla y no con \`display: none\`: sin renderizar, Chrome
+  // devuelve \`backdrop-filter: none\`.
   const probeta = document.createElement('div');
   probeta.style.cssText = 'position:fixed;top:-9999px;left:0;width:10px;height:10px';
   document.body.appendChild(probeta);
-  for (const n of ['marca', 'rfee', 'fie', 'efc', 'aut', 'oro']) {
-    probeta.className = 'fondo-cabecera tinte-' + n;
-    const cs2 = getComputedStyle(probeta);
-    const color = aRgb(cs2.getPropertyValue('--fondo-tinte').trim());
-    const aBanda = (parseFloat(cs2.getPropertyValue('--fondo-tinte-banda')) || 0) / 100;
-    const aVelo = (parseFloat(cs2.getPropertyValue('--fondo-tinte-velo')) || 0) / 100;
-    const total = 1 - (1 - aBanda) * (1 - aVelo);
-    // El apagado se lee de la clase, no de \`:root\`: cada tinte sube el suyo
-    // justamente porque el de la raíz no aguanta encima de una cabecera.
-    const apagadoAqui = aRgb(cs2.getPropertyValue('--muted-foreground').trim());
-    for (const [nf, f] of [['card', fondos.card], ['background', fondos.background]]) {
-      let s = mezclar(color, f, total);
-      s = pilaSobre(s);
-      tintes.push({ tinte: n, sobre: nf, alfa: Math.round(total * 100), hex: hex(s),
-        blancoEncima: ratio(blanco, s), apagadoEncima: ratio(apagadoAqui, s),
-        apagadoRaizEncima: ratio(apagado, s) });
-    }
-  }
-
-  /**
-   * El acrílico.
-   *
-   * El fondo efectivo de un panel acrílico depende de la foto que hay
-   * detrás, que no se sabe. Así que se acota por los dos extremos: una foto
-   * blanca (el peor caso, aclara la lámina) y una negra. Lo que tiene que
-   * aguantar AA es el caso claro.
-   */
-  probeta.className = 'acrilico';
-  const csA = getComputedStyle(probeta);
-  const tinteAcrilico = aRgb(csA.backgroundColor);
-  const apagadoAcrilico = aRgb(csA.getPropertyValue('--muted-foreground').trim());
-  const acrilico = [];
-  for (const [nf, foto] of [
-    ['foto blanca', { r: 255, g: 255, b: 255, a: 1 }],
-    ['foto media', { r: 128, g: 128, b: 128, a: 1 }],
-    ['foto negra', { r: 0, g: 0, b: 0, a: 1 }],
-    ['fondo plano', fondos.background],
+  const blancoPuro = { r: 255, g: 255, b: 255, a: 1 };
+  const veloSobreBlanco = encima(tok('--velo'), blancoPuro);
+  const cristal = [];
+  for (const [clase, detras] of [
+    ['cristal', [['lienzo', fondos.background], ['foto blanca', blancoPuro]]],
+    ['cristal-panel', [['velo sobre lienzo', encima(tok('--velo'), fondos.background)], ['velo sobre foto blanca', veloSobreBlanco]]],
   ]) {
-    let s = encima(tinteAcrilico, foto);
-    s = mezclar(blancoPuro, s, aGrano);
-    acrilico.push({ sobre: nf, hex: hex(s), alfa: Math.round(tinteAcrilico.a * 100),
-      blancoEncima: ratio(blanco, s), apagadoEncima: ratio(apagadoAcrilico, s),
-      apagadoRaizEncima: ratio(apagado, s), rojoTextoEncima: ratio(tok('--primary-text'), s),
-      desenfoque: csA.backdropFilter });
+    probeta.className = clase;
+    const csC = getComputedStyle(probeta);
+    const tinte = aRgb(csC.backgroundColor);
+    for (const [nf, f] of detras) {
+      const s = encima(tinte, f);
+      cristal.push({ clase, sobre: nf, hex: hex(s), alfa: Math.round(tinte.a * 100),
+        blancoEncima: ratio(blanco, s), apagadoEncima: ratio(apagado, s),
+        offEncima: ratio(tok('--off'), s), rojoTextoEncima: ratio(tok('--primary-text'), s),
+        desenfoque: csC.backdropFilter });
+    }
   }
   probeta.remove();
 
@@ -276,6 +204,9 @@ const GUION = `(() => {
     { nombre: '--input sobre background', r: ratio(encima(tok('--input'), fondos.background), fondos.background) },
     { nombre: '--filete sobre card', r: ratio(encima(tok('--filete'), fondos.card), fondos.card) },
     { nombre: '--ring sobre background', r: ratio(tok('--ring'), fondos.background) },
+    { nombre: '--ring sobre accent', r: ratio(tok('--ring'), fondos.accent) },
+    { nombre: '--borde-campo sobre accent', r: ratio(tok('--borde-campo'), fondos.accent) },
+    { nombre: '--cristal-borde sobre lienzo', r: ratio(encima(tok('--cristal-borde'), fondos.background), fondos.background) },
   ];
 
   /**
@@ -316,9 +247,7 @@ const GUION = `(() => {
 
   const salida = {
     fondos: Object.fromEntries(Object.entries(fondos).map(([k, v]) => [k, hex(v)])),
-    alfas: { luz: Math.round(luz.a * 1000) / 10, luzSuave: Math.round(luzSuave.a * 1000) / 10,
-      reticula: aReticula * 100, grano: aGrano * 100 },
-    tabla, pastillas, solidos, organismos, distancias, texturas, tintes, acrilico,
+    tabla, pastillas, solidos, organismos, distancias, cristal,
     bordes, avisoRancio, controlMarcado,
   };
 
@@ -414,15 +343,11 @@ const ok = (v: number, min: number) => {
 };
 const suave = (v: number, min: number) => (v >= min ? 'AA' : 'FALLA');
 
-console.log('Fondos:', r.fondos);
-console.log(
-  'Capas de la textura (opacidad %):',
-  `luz ${r.alfas.luz}  luz-suave ${r.alfas.luzSuave}  retícula ${r.alfas.reticula}  grano ${r.alfas.grano}\n`,
-);
+console.log('Fondos:', r.fondos, '\n');
 
-console.log('— Texto sobre fondo (AA normal 4,5 / AA grande 3,0) —');
+console.log('— Texto sobre fondo (AA normal 4,5 / AA grande 3,0; veredicto con la peor superficie) —');
 console.log(
-  ['token'.padEnd(24), 'hex'.padEnd(9), 'bg'.padEnd(7), 'card'.padEnd(7), 'secondary'.padEnd(10), 'veredicto(card)'].join(''),
+  ['token'.padEnd(24), 'hex'.padEnd(9), 'bg'.padEnd(7), 'card'.padEnd(7), 'popover'.padEnd(8), 'secondary'.padEnd(10), 'accent'.padEnd(7), 'veredicto'].join(''),
 );
 for (const f of r.tabla) {
   if (f.vacio) {
@@ -432,16 +357,19 @@ for (const f of r.tabla) {
   }
   // `--primary` es un relleno, no un texto: como texto se usa `--primary-text`.
   const soloGrande = f.token === '--primary';
+  const peor = Math.min(f.sobre_background, f.sobre_card, f.sobre_popover, f.sobre_secondary, f.sobre_accent);
   console.log(
     [
       f.token.padEnd(24),
       f.hex.padEnd(9),
       String(f.sobre_background).padEnd(7),
       String(f.sobre_card).padEnd(7),
+      String(f.sobre_popover).padEnd(8),
       String(f.sobre_secondary).padEnd(10),
+      String(f.sobre_accent).padEnd(7),
       soloGrande
         ? `${suave(f.sobre_card, 3)} grande · es relleno, como texto va --primary-text`
-        : `${ok(f.sobre_card, 4.5)} normal / ${suave(f.sobre_card, 3)} grande`,
+        : `${ok(peor, 4.5)} normal / ${suave(peor, 3)} grande`,
     ].join(''),
   );
 }
@@ -477,8 +405,8 @@ for (const o of r.organismos) {
   LA PASTILLA DE CIRCUITO TEÑIDA, que es la señal de color de la tarjeta del
   calendario: «FIE · Copa del Mundo» con fondo del color al 14 % y texto en el
   color de identidad. Se mide aparte porque el fondo es un token propio
-  (--org-*-tinte), opaco a propósito: con alfa, la retícula del lienzo se
-  colaba por dentro de la pastilla.
+  (--org-*-tinte), opaco a propósito: con alfa el mismo tinte saldría de
+  otro color sobre cada superficie.
 */
 console.log('\n— Pastilla de circuito teñida (tarjeta del calendario) —');
 console.log('org   tinte      identidad/tinte   tinte/card (se ve la pastilla, 1.2:1 basta)');
@@ -498,39 +426,25 @@ console.log(
 );
 if (peorDistancia < 0.1) fallos += 1;
 
-console.log('\n— La textura: el punto más claro del lienzo con todas las capas apiladas —');
-for (const t of r.texturas) {
+/*
+  El cristal. Sobre el lienzo (las barras en reposo) y bajo el velo (un
+  panel abierto) el texto tiene que pasar AA. La barra sobre una foto blanca
+  se informa: el desenfoque promedia lo de detrás y una foto entera blanca
+  bajo la barra es el caso imposible, no el habitual.
+*/
+console.log('\n— Cristal (.cristal / .cristal-panel): el fondo efectivo depende de lo de detrás —');
+for (const c of r.cristal) {
+  const informativo = c.clase === 'cristal' && c.sobre === 'foto blanca';
+  const v = (x: number) => (informativo ? suave(x, 4.5) : ok(x, 4.5));
   console.log(
-    `sobre ${t.sobre.padEnd(11)} ${t.hex}  capa/base ${String(t.capaVsBase).padEnd(6)}` +
-      `  texto blanco ${String(t.blancoEncima).padEnd(7)} ${ok(t.blancoEncima, 4.5)}` +
-      `  texto apagado ${String(t.apagadoEncima).padEnd(6)} ${ok(t.apagadoEncima, 4.5)}`,
+    `${c.clase.padEnd(14)} sobre ${c.sobre.padEnd(23)} ${c.hex}  alfa ${c.alfa}%  ${c.desenfoque}` +
+      `  blanco ${String(c.blancoEncima).padEnd(6)} ${v(c.blancoEncima)}` +
+      `  apagado ${String(c.apagadoEncima).padEnd(6)} ${v(c.apagadoEncima)}` +
+      `  off ${String(c.offEncima).padEnd(6)} ${v(c.offEncima)}` +
+      `  rojo ${String(c.rojoTextoEncima).padEnd(6)} ${suave(c.rojoTextoEncima, 4.5)}` +
+      (informativo ? '  (informativo)' : ''),
   );
 }
-
-console.log('\n— Tintes de .fondo-cabecera (banda y velo apilados, con la textura encima) —');
-for (const t of r.tintes) {
-  console.log(
-    `tinte-${t.tinte.padEnd(6)} sobre ${t.sobre.padEnd(11)} alfa ${String(t.alfa).padStart(2)}%  ${t.hex}` +
-      `  blanco ${String(t.blancoEncima).padEnd(7)} ${ok(t.blancoEncima, 4.5)}` +
-      `  apagado ${String(t.apagadoEncima).padEnd(6)} ${ok(t.apagadoEncima, 4.5)}` +
-      `  (con el apagado de :root sería ${t.apagadoRaizEncima})`,
-  );
-}
-
-console.log('\n— Acrílico (.acrilico): el fondo efectivo depende de la foto de detrás —');
-console.log(`  desenfoque: ${r.acrilico[0].desenfoque}  ·  tinte: ${r.acrilico[0].alfa} % de --card`);
-for (const a of r.acrilico) {
-  console.log(
-    `sobre ${a.sobre.padEnd(12)} ${a.hex}  blanco ${String(a.blancoEncima).padEnd(7)} ${ok(a.blancoEncima, 4.5)}` +
-      `  apagado ${String(a.apagadoEncima).padEnd(6)} ${ok(a.apagadoEncima, 4.5)}` +
-      `  (con el de :root ${String(a.apagadoRaizEncima).padEnd(5)})` +
-      `  rojo como texto ${String(a.rojoTextoEncima).padEnd(5)} ${suave(a.rojoTextoEncima, 4.5)}`,
-  );
-}
-console.log(
-  '  El rojo como texto encima del acrílico no llega a AA sobre una foto clara:\n' +
-    '  ahí va de relleno (`bg-primary` con texto blanco), no de letra.',
-);
 
 /**
  * Bordes: se informan, no se suspenden.

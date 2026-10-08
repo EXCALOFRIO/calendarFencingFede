@@ -2,13 +2,7 @@
 
 import { ChevronsDown, ChevronsUp, Minus } from 'lucide-react';
 import * as React from 'react';
-import {
-  Carousel,
-  CarouselContent,
-  CarouselItem,
-  CarouselNext,
-  CarouselPrevious,
-} from '@/components/ui/carousel';
+import { CabeceraSeccion, VerMas } from '@/components/sistema/cabecera-seccion';
 import { cn } from '@/lib/utils';
 import { puntos as formatoPuntos } from './formato';
 
@@ -17,51 +11,34 @@ import { puntos as formatoPuntos } from './formato';
  * SEGUIMIENTO POR TEMPORADAS
  * ===========================================================================
  *
- * Copiado del «World Ranking Tracker» de `fie.org/athletes/39653`, que es la
- * referencia 3.2 y la que había que copiar con más ganas: resuelve una
- * petición que el usuario ha hecho dos veces —ver su evolución y poder cambiar
- * de ranking— y la resuelve mejor que una tabla.
+ * Inspirado en el «World Ranking Tracker» de `fie.org/athletes/39653`
+ * (`capturas/ref/fie-escritorio-tira.png`): una tarjeta por temporada, de la
+ * más reciente a la más vieja, con el **puesto en grande**, la **categoría
+ * debajo** (`/ Absoluto`), una **flecha de tendencia** y la temporada abajo.
  *
- * Lo que se copia, mirado en la captura y no de memoria
- * (`capturas/ref/fie-escritorio-tira.png`):
- *
- * - Una **tira horizontal de tarjetas, una por temporada**, de la más reciente
- *   a la más vieja. No una tabla: una tabla de 19 filas de dos números cada
- *   una no se lee, y la tira se recorre con el pulgar.
- * - El **puesto en grande** arriba con la almohadilla pequeña delante, y la
- *   **categoría debajo en pequeño** con la barra apagada delante (`/ Absoluto`).
- * - Una **flecha de tendencia**: verde hacia arriba si mejoró, ámbar hacia
- *   abajo si empeoró.
- * - La **temporada abajo a la derecha**, apagada.
- * - **Botones redondos de anterior y siguiente** arriba a la derecha.
+ * La FIE las pone en una tira que se arrastra en horizontal; aquí van en una
+ * rejilla de dos o tres columnas, porque en la aplicación nada se desplaza en
+ * horizontal (en un móvil de 360 px lo escondido a la derecha no se
+ * descubre). Se ven las seis más recientes y el resto detrás de «Ver más».
  *
  * ---------------------------------------------------------------------------
- * EL TERCER ESTADO, QUE ES LA PARTE LISTA
+ * EL TERCER ESTADO
  * ---------------------------------------------------------------------------
- * Cuando no hay temporada anterior con la que comparar, la FIE pone un
- * **círculo de puntos** en lugar de una flecha. Eso es no inventarse una
- * tendencia, y encaja exactamente con la regla del proyecto: un dato que no se
- * sabe se dice. Se copia tal cual.
- *
- * Y se añade un cuarto caso que la FIE no distingue y aquí sí, porque
- * `ranking.ts` ya lo distingue en su tipo `change`: **quedarse igual** no es lo
- * mismo que **no tener con qué comparar**. El primero lleva una raya, el
- * segundo el círculo de puntos. Las dos son formas neutras, sin color.
+ * Sin temporada anterior con la que comparar, la FIE pone un **círculo de
+ * puntos** en lugar de una flecha: no se inventa una tendencia. Y se añade un
+ * cuarto caso que la FIE no distingue: **quedarse igual** (una raya) no es lo
+ * mismo que **no tener con qué comparar** (el círculo). Las dos, sin color.
  *
  * ---------------------------------------------------------------------------
  * POR QUÉ LA FLECHA VA PEGADA AL PUESTO Y NO A LOS PUNTOS
  * ---------------------------------------------------------------------------
- * Es la única desviación deliberada de la referencia. La FIE pone la flecha al
- * lado de los puntos, y eso deja el cartel ambiguo: el titular de la tarjeta es
- * el puesto, así que la flecha se lee como «he subido de puesto» aunque esté
- * midiendo puntos. Se pueden mover en direcciones contrarias —ganar puntos y
- * perder puesto porque los de delante ganaron más— y entonces la tarjeta
- * mentiría. Aquí la flecha va junto al puesto, con los puestos ganados o
- * perdidos escritos al lado, y los puntos quedan debajo como cifra
- * secundaria. Misma composición, sin la ambigüedad.
+ * La FIE pone la flecha al lado de los puntos, y el titular de la tarjeta es
+ * el puesto: se lee «he subido de puesto» aunque mida puntos, y los dos pueden
+ * moverse en sentidos contrarios. Aquí la flecha va junto al puesto, con los
+ * puestos ganados o perdidos escritos al lado.
  *
- * El color **nunca es la única señal**: va la flecha, que es forma, y va el
- * número de puestos, que es texto. Requisito de accesibilidad del proyecto.
+ * El color **nunca es la única señal**: va la flecha, que es forma, y el
+ * número de puestos, que es texto.
  */
 
 export type TemporadaRanking = {
@@ -79,6 +56,9 @@ export type TemporadaRanking = {
   pruebas?: number | null;
 };
 
+/** Las temporadas que se ven sin tocar «Ver más»: dos filas de tres, tres de dos. */
+const VISIBLES = 6;
+
 type Tendencia =
   | { tipo: 'mejor'; puestos: number }
   | { tipo: 'peor'; puestos: number }
@@ -87,7 +67,7 @@ type Tendencia =
 
 /**
  * Tendencia de una temporada respecto a la siguiente de la lista, que es la
- * anterior en el tiempo (la tira va de más reciente a más vieja).
+ * anterior en el tiempo (la lista va de más reciente a más vieja).
  *
  * Subir en el ranking es bajar de número, así que la resta se hace al revés
  * para que «mejor» signifique lo que la gente espera. Es la misma inversión
@@ -141,53 +121,34 @@ export function TiraTemporadas({
   contexto?: React.ReactNode;
   className?: string;
 }) {
+  const [todas, setTodas] = React.useState(false);
   if (temporadas.length === 0) return null;
+  const visibles = todas ? temporadas : temporadas.slice(0, VISIBLES);
+  const quedan = temporadas.length - visibles.length;
 
   return (
-    <Carousel
-      opts={{ align: 'start', dragFree: true, containScroll: 'trimSnaps' }}
-      className={cn('flex min-w-0 flex-col gap-3', className)}
-      aria-label={titulo}
-    >
-      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h3 className="text-lg sm:text-xl">{titulo}</h3>
-          {contexto ? (
-            <p className="medida text-xs text-muted-foreground">{contexto}</p>
-          ) : null}
-        </div>
-        {/*
-          Los botones redondos van aquí arriba y no flotando a los lados de la
-          tira, que es donde los pone shadcn por defecto: a la izquierda se
-          saldrían del ancho de la aplicación y en un móvil taparían la
-          primera tarjeta. Es también donde los pone la FIE.
-        */}
-        <div className="flex shrink-0 gap-2">
-          <CarouselPrevious className="static size-11 translate-y-0 rounded-full" aria-label="Temporadas anteriores en la tira" />
-          <CarouselNext className="static size-11 translate-y-0 rounded-full" aria-label="Temporadas siguientes en la tira" />
-        </div>
+    <section aria-label={titulo} className={cn('flex min-w-0 flex-col gap-3', className)}>
+      <div className="flex min-w-0 flex-col gap-1">
+        <CabeceraSeccion titulo={titulo} como="h3" />
+        {contexto ? <p className="medida text-xs text-muted-foreground">{contexto}</p> : null}
       </div>
 
-      <CarouselContent className="-ml-2">
-        {temporadas.map((t, i) => (
-          <CarouselItem
-            key={t.id}
-            /*
-              Anchos en fracciones, no fijos: en un iPhone se ven dos tarjetas
-              y un trozo de la tercera, que es lo que dice «esto se arrastra»
-              sin necesidad de explicarlo.
-            */
-            className="basis-[44%] pl-2 sm:basis-[30%] md:basis-[22%] lg:basis-[16.6%]"
-          >
+      <ol className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3">
+        {visibles.map((t, i) => (
+          <li key={t.id} className="min-w-0">
             <Tarjeta
               temporada={t}
               tendencia={tendenciaDe(t, temporadas[i + 1])}
               destacada={i === 0}
             />
-          </CarouselItem>
+          </li>
         ))}
-      </CarouselContent>
-    </Carousel>
+      </ol>
+
+      {quedan > 0 ? (
+        <VerMas onClick={() => setTodas(true)} cuenta={quedan} detalle="temporadas" className="self-center" />
+      ) : null}
+    </section>
   );
 }
 
@@ -204,18 +165,17 @@ function Tarjeta({
   return (
     <article
       className={cn(
-        // Filete de luz arriba, como el canto de una chapa. No sombra.
-        'flex h-full min-h-40 flex-col gap-2 border-t bg-secondary px-3 py-3',
-        destacada ? 'border-t-primary/60' : 'border-t-filete',
+        'flex h-full min-h-40 flex-col gap-2 rounded-xl border bg-card p-3',
+        destacada ? 'border-primary' : 'border-border',
       )}
     >
       <span className="sr-only">{frase(temporada, tendencia)}</span>
 
       <div aria-hidden className="flex min-w-0 flex-col gap-1">
-        <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <span className="flex items-baseline">
             <span className="text-sm text-muted-foreground">#</span>
-            <span className="cifra text-4xl">{temporada.puesto ?? '—'}</span>
+            <span className="cifra text-3xl">{temporada.puesto ?? '—'}</span>
           </span>
           <Flecha tendencia={tendencia} />
         </div>
@@ -261,7 +221,7 @@ function Flecha({ tendencia }: { tendencia: Tendencia }) {
         className="inline-flex items-center"
       >
         {/* El círculo de puntos de la FIE: no hay tendencia que enseñar. */}
-        <span className="size-4 rounded-full border-2 border-dashed border-muted-foreground/70" />
+        <span className="size-4 rounded-full border-2 border-dashed border-muted-foreground" />
       </span>
     );
   }
@@ -270,7 +230,7 @@ function Flecha({ tendencia }: { tendencia: Tendencia }) {
     return (
       <span
         title="Mismo puesto que la temporada anterior"
-        className="inline-flex items-center gap-0.5 text-muted-foreground"
+        className="inline-flex items-center gap-1 text-muted-foreground"
       >
         <Minus className="size-4 shrink-0" />
         <span className="text-xs">igual</span>
@@ -289,7 +249,7 @@ function Flecha({ tendencia }: { tendencia: Tendencia }) {
           : `${tendencia.puestos} puestos peor que la temporada anterior`
       }
       className={cn(
-        'inline-flex items-center gap-0.5',
+        'inline-flex items-center gap-1',
         mejor ? 'text-ok' : 'text-warn',
       )}
     >

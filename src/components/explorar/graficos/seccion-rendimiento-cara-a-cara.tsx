@@ -16,11 +16,11 @@ function Marcador({ datos, a, b }: { datos: RendimientoCaraACara; a: string; b: 
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 items-center justify-between gap-3 text-sm font-semibold">
-        <span className="inline-flex min-w-0 items-center gap-1.5 text-primary-text">
+        <span className="inline-flex min-w-0 items-center gap-2 text-primary-text">
           <span aria-hidden className="size-2 shrink-0 rounded-full bg-primary-text" />
           <span className="truncate">{a}</span>
         </span>
-        <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
+        <span className="inline-flex min-w-0 items-center gap-2 text-muted-foreground">
           <span className="truncate">{b}</span>
           <span aria-hidden className="size-2 shrink-0 rounded-full bg-off" />
         </span>
@@ -34,7 +34,7 @@ function Marcador({ datos, a, b }: { datos: RendimientoCaraACara; a: string; b: 
           <Celda rotulo="Tocados por asalto" className="col-span-2 lg:col-span-4">
             <div className="flex items-end justify-between gap-3">
               <span className="cifra text-3xl leading-none">{decimal(tpa.yo)}</span>
-              <span className="text-[12px] text-muted-foreground tabular-nums">
+              <span className="text-xs text-muted-foreground tabular-nums">
                 {total.dados}–{total.recibidos} en total
               </span>
               <span className="cifra text-3xl leading-none text-muted-foreground">{decimal(tpa.rival)}</span>

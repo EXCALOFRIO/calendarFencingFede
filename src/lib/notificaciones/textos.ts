@@ -4,9 +4,7 @@
  * prueba y puesto, así que un aviso no puede llevar otra cosa.
  */
 
-const ARMA: Record<string, string> = { FLORETE: 'Florete', ESPADA: 'Espada', SABLE: 'Sable' };
-const GENERO_PRUEBA: Record<string, string> = { M: 'masculino', F: 'femenino', MIXTO: 'mixto' };
-const CATEGORIA: Record<string, string> = { ABS: 'absoluto', VET: 'veteranos' };
+import { rotuloPrueba } from '@/lib/sport/rotulos';
 
 export type DescripcionPrueba = {
   arma: string;
@@ -15,15 +13,9 @@ export type DescripcionPrueba = {
   formato?: string | null;
 };
 
-/** «Espada femenino M17», «Sable masculino absoluto · equipos». */
+/** «Espada femenina M17», «Sable masculino · Equipos»: la redacción de `rotuloPrueba`, la de toda la aplicación. */
 export function nombrePrueba(p: DescripcionPrueba): string {
-  const partes = [
-    ARMA[p.arma] ?? p.arma,
-    GENERO_PRUEBA[p.genero] ?? p.genero,
-    CATEGORIA[p.categoria] ?? p.categoria,
-  ].filter(Boolean);
-  const base = partes.join(' ');
-  return p.formato === 'EQUIPOS' ? `${base} · equipos` : base;
+  return rotuloPrueba(p) || 'la prueba';
 }
 
 export function puestoTexto(puesto: number | null): string {

@@ -238,6 +238,9 @@ export function crearDepsPersistenciaFieDb(db: Db): DepsPersistenciaFie {
 
     async upsertPrueba(p) {
       const { clave: tournamentKey, agrupaPruebas } = claveEdicionFie(p);
+      // Con `tournamentId` la edición es el torneo y cada prueba trae SUS fechas:
+      // pisarlas dejaría el torneo con las de la última prueba importada.
+      const abarcaPruebas = agrupaPruebas || p.tournamentId !== null;
       const season = String(p.season);
       const [edicion] = await db
         .insert(sportEdition)
@@ -257,10 +260,10 @@ export function crearDepsPersistenciaFieDb(db: Db): DepsPersistenciaFie {
           set: {
             name: sql`excluded.name`,
             // Una edición compartida abarca todas sus pruebas: LEAST/GREATEST ignoran NULL.
-            startDate: agrupaPruebas
+            startDate: abarcaPruebas
               ? sql`coalesce(min(${sportEdition.startDate}, excluded.start_date), ${sportEdition.startDate}, excluded.start_date)`
               : sql`excluded.start_date`,
-            endDate: agrupaPruebas
+            endDate: abarcaPruebas
               ? sql`coalesce(max(${sportEdition.endDate}, excluded.end_date), ${sportEdition.endDate}, excluded.end_date)`
               : sql`excluded.end_date`,
             city: sql`excluded.city`,

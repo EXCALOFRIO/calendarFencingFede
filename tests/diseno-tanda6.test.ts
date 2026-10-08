@@ -14,7 +14,7 @@ vi.mock('radix-ui', async () => {
 });
 
 const { CuerpoPodios } = await import('@/components/calendario/ficha/resultados-torneo');
-const { CLASE_VER_MAS } = await import('@/components/explorar/buscador-social-fila');
+const { VerMas } = await import('@/components/sistema/cabecera-seccion');
 
 const PRUEBA = '22222222-2222-4222-8222-222222222222';
 const PERSONA = '33333333-3333-4333-8333-333333333333';
@@ -46,18 +46,22 @@ describe('objetivos de 44 px', () => {
     expect(html).toMatch(/<span class="flex min-h-\[44px\][^"]*">((?!<\/li>).)*Natasza/s);
   });
 
-  it('«Ver más» de Buscar es texto de acento con 44 px de toque', () => {
-    expect(CLASE_VER_MAS).toMatch(/\bh-\[44px\]/);
-    expect(CLASE_VER_MAS).not.toContain('before:');
+  it('«Ver más» de Explorar es el del sistema: texto de acento con 44 px de toque', () => {
+    const boton = renderToStaticMarkup(React.createElement(VerMas, { onClick: () => {} }));
+    expect(boton).toContain('data-slot="sistema-ver-mas"');
+    expect(boton).toContain('after:h-[max(100%,44px)]');
+    for (const f of ['resultados.tsx', 'feed-incremental.tsx']) {
+      expect(readFileSync(new URL(`../src/components/explorar/${f}`, import.meta.url), 'utf8')).toContain('<VerMas');
+    }
   });
 
   it('la cabecera del calendario usa los controles del sistema: 32 px a la vista y 44 de toque', () => {
     const vista = readFileSync(new URL('../src/components/calendario/vista.tsx', import.meta.url), 'utf8');
-    // Flechas y lupa como `BotonIcono` md (32 px); «Hoy» como `Boton` sm; los filtros, una fila de chips.
+    // Flechas y lupa como `BotonIcono` md (32 px); «Hoy» como `Boton` sm; los filtros, la barra del sistema.
     expect(vista).toMatch(/<BotonIcono\s+etiqueta=\{vista === 'mes' \? 'Mes anterior' : 'Trimestre anterior'\}\s+tamano="md"/);
     expect(vista).toMatch(/<Boton\s+tamano="sm"\s+aria-label="Hoy: ir al mes actual"/);
-    expect(vista).toContain('<FilaChips etiqueta="Filtros del calendario">');
-    expect(vista).toContain('tipo="menu"');
+    expect(vista).toMatch(/<BarraFiltros\s+etiqueta="Filtros del calendario"/);
+    expect(vista).not.toContain('overflow-x');
     // Nada de alturas en rem en la cabecera: con la raíz de 18 px crecían en el móvil.
     expect(vista).not.toMatch(/className="h-11\b/);
   });

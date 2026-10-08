@@ -47,7 +47,7 @@ export function rangoTemporadas(temporadas: readonly string[]): string[] {
 export function Cambio({ lista }: { lista: Pick<ListaRankingNacional, 'cambio' | 'nueva'> }) {
   if (lista.cambio === null) {
     return lista.nueva ? (
-      <span className="rounded-full border border-filete-alto px-1.5 text-[12px] leading-4 text-muted-foreground">Nuevo</span>
+      <span className="rounded-full border border-filete-alto px-2 text-xs leading-4 text-muted-foreground">Nuevo</span>
     ) : null;
   }
   if (lista.cambio === 0) {
@@ -63,7 +63,7 @@ export function Cambio({ lista }: { lista: Pick<ListaRankingNacional, 'cambio' |
   const n = Math.abs(lista.cambio);
   const texto = `${n} ${n === 1 ? 'puesto' : 'puestos'} ${sube ? 'mejor' : 'peor'} que la temporada anterior`;
   return (
-    <span className={cn('inline-flex items-center gap-0.5', sube ? 'text-ok' : 'text-warn')} title={texto}>
+    <span className={cn('inline-flex items-center gap-1', sube ? 'text-ok' : 'text-warn')} title={texto}>
       <Icono className="size-4 shrink-0" strokeWidth={2.5} aria-hidden />
       <span className="cifra text-sm leading-none" aria-hidden>{n}</span>
       <span className="sr-only">{texto}</span>
@@ -76,8 +76,8 @@ function Cifra({ valor, rotulo, detalle }: { valor: string; rotulo: string; deta
   return (
     <div className="flex min-w-0 flex-col items-center gap-1 bg-card px-2 py-3 text-center">
       <span className="cifra text-3xl leading-none sm:text-4xl">{valor}</span>
-      <span className="max-w-full truncate text-[12px] leading-none text-muted-foreground">{rotulo}</span>
-      {detalle ? <span className="line-clamp-2 max-w-full text-[12px] leading-tight text-muted-foreground">{detalle}</span> : null}
+      <span className="max-w-full truncate text-xs leading-none text-muted-foreground">{rotulo}</span>
+      {detalle ? <span className="line-clamp-2 max-w-full text-xs leading-tight text-muted-foreground">{detalle}</span> : null}
     </div>
   );
 }
@@ -92,7 +92,7 @@ function TarjetaActual({ lista, conArma }: { lista: ListaRankingNacional; conArm
         prefetch={false}
         data-lista={lista.clave}
         className={cn(
-          'flex h-full min-w-0 flex-col gap-1.5 rounded-xl border bg-card px-3 py-2.5 transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
+          'flex h-full min-w-0 flex-col gap-2 rounded-xl border bg-card px-3 py-3 transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
           medalla && CONTORNO_MEDALLA[medalla],
         )}
       >
@@ -101,7 +101,7 @@ function TarjetaActual({ lista, conArma }: { lista: ListaRankingNacional; conArm
           <span className="cifra text-4xl leading-none">{p.puesto}º</span>
           <Cambio lista={lista} />
         </span>
-        <span className="flex min-w-0 flex-wrap gap-x-2 text-[12px] leading-tight text-muted-foreground">
+        <span className="flex min-w-0 flex-wrap gap-x-2 text-xs leading-tight text-muted-foreground">
           {p.de > 0 ? <span>de {p.de}</span> : null}
           {p.puntos !== null ? <span className="truncate">{formatoPuntos(p.puntos)} pts</span> : null}
         </span>
@@ -157,9 +157,9 @@ function Historial({ ranking, nivel }: { ranking: RankingNacional; nivel: Nivel 
       .sort((a, b) => (a.p.puesto ?? 0) - (b.p.puesto ?? 0));
     if (chips.length === 0) return null;
     return (
-      <li key={t} className="flex min-w-0 items-start gap-3 bg-card px-3 py-2.5 sm:px-4">
-        <span className="cifra w-11 shrink-0 pt-3.5 text-lg leading-none text-muted-foreground">{temporadaCorta(t)}</span>
-        <ul className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+      <li key={t} className="flex min-w-0 items-start gap-3 bg-card px-3 py-3 sm:px-4">
+        <span className="cifra w-11 shrink-0 pt-4 text-lg leading-none text-muted-foreground">{temporadaCorta(t)}</span>
+        <ul className="flex min-w-0 flex-1 flex-wrap gap-2">
           {chips.map(({ l, p }) => {
             const medalla = medallaDe(p.puesto);
             return (
@@ -168,7 +168,7 @@ function Historial({ ranking, nivel }: { ranking: RankingNacional; nivel: Nivel 
                   href={enlace(l, t)}
                   prefetch={false}
                   className={cn(
-                    'inline-flex h-[40px] max-w-full min-w-0 items-center gap-1.5 rounded-full border border-filete-alto px-3 text-xs hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
+                    'inline-flex h-[40px] max-w-full min-w-0 items-center gap-2 rounded-full border border-filete-alto px-3 text-xs hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
                     medalla && CLASES_MEDALLA[medalla],
                   )}
                 >
@@ -250,15 +250,15 @@ export function RankingMundialPerfil({ entradas, nivel }: { entradas: readonly E
           return (
             <li
               key={`${e.arma}-${e.genero}-${e.categoria.raw}`}
-              className={cn('flex min-w-0 flex-col gap-1.5 rounded-xl border bg-card px-3 py-2.5', medalla && CONTORNO_MEDALLA[medalla])}
+              className={cn('flex min-w-0 flex-col gap-2 rounded-xl border bg-card px-3 py-3', medalla && CONTORNO_MEDALLA[medalla])}
             >
               <span className="truncate text-xs font-medium">{WEAPON_LABEL[e.arma]} {categoriaRanking(e.categoria.codigo, e.categoria.codigo)}</span>
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center gap-2">
                 {medalla ? <PuntoMedalla medalla={medalla} className="size-2.5" /> : null}
                 <span className="cifra text-4xl leading-none">{e.puesto}º</span>
               </span>
               {e.puntos !== null && Number.isFinite(Number(e.puntos)) ? (
-                <span className="text-[12px] leading-tight text-muted-foreground">{formatoPuntos(Number(e.puntos))} pts</span>
+                <span className="text-xs leading-tight text-muted-foreground">{formatoPuntos(Number(e.puntos))} pts</span>
               ) : null}
             </li>
           );

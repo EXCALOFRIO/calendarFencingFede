@@ -1,6 +1,7 @@
 import { Calculator, CalendarOff, FileText, ListChecks } from 'lucide-react';
 import Link from 'next/link';
-import { Button } from '@/components/ui/button';
+import { Boton } from '@/components/sistema/boton';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import type { getRankingStatus } from '@/lib/queries/ranking';
 
 type Estado = Awaited<ReturnType<typeof getRankingStatus>>;
@@ -17,16 +18,18 @@ export function SinRanking({ estado, esAdmin }: { estado: Estado; esAdmin: boole
   const caso = motivo(estado);
 
   return (
-    <div className="flex max-w-2xl flex-col items-start gap-3 rounded-lg border border-dashed px-4 py-10">
-      <caso.icono className="size-6 text-muted-foreground" aria-hidden />
-      <h2 className="text-xl">{caso.titulo}</h2>
-      <p className="medida text-sm text-muted-foreground">{caso.texto}</p>
-      {esAdmin && caso.accion ? (
-        <Button variant="outline" asChild className="mt-2">
-          <Link href={caso.accion.href}>{caso.accion.texto}</Link>
-        </Button>
-      ) : null}
-    </div>
+    <EstadoVacio
+      icono={caso.icono}
+      titulo={caso.titulo}
+      descripcion={caso.texto}
+      accion={
+        esAdmin && caso.accion ? (
+          <Boton asChild>
+            <Link href={caso.accion.href}>{caso.accion.texto}</Link>
+          </Boton>
+        ) : undefined
+      }
+    />
   );
 }
 

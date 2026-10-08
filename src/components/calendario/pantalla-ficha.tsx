@@ -84,7 +84,7 @@ export function PantallaFicha({
               <Dialog.Title
                 className={cn(
                   // Dos renglones como mucho: 2 × 20 px caben en la fila de 48.
-                  'max-w-[60vw] min-w-0 line-clamp-2 break-words text-center font-sans text-[16px] leading-[20px] font-semibold tracking-normal transition-opacity duration-150 sm:max-w-[420px]',
+                  'max-w-[60vw] min-w-0 line-clamp-2 break-words text-center font-sans text-base leading-5 font-semibold tracking-normal transition-opacity duration-150 sm:max-w-[420px]',
                   conTitulo ? 'opacity-100' : 'opacity-0',
                 )}
               >

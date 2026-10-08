@@ -119,7 +119,7 @@ describe('selector de temporada con las claves de ambas fuentes', () => {
     );
     expect(html).toContain('type="hidden" name="temporada" value="2027"');
     expect(html).not.toContain('id="explorar-temporada"');
-    expect(html).toContain('Quitar filtros');
+    expect(html).toContain('aria-label="Quitar Temporada: FIE 2027"');
   });
 });
 
@@ -140,14 +140,14 @@ describe('fecha inválida en la URL', () => {
     }).not.toThrow();
     expect(chips.find((c) => c.clave === 'desde')).toMatchObject({
       valor: '2026-99-99',
-      quitar: '/explorar?arma=SABLE&hasta=2026-02-31',
+      quitar: '/explorar/buscar?arma=SABLE&hasta=2026-02-31',
     });
     expect(chips.find((c) => c.clave === 'hasta')?.valor).toBe('2026-02-31');
 
     const html = renderToStaticMarkup(React.createElement(ChipsActivos, { criterios: leidos }));
     expect(html).toContain('2026-99-99');
     expect(html).toContain('fecha no válida');
-    expect(html).toContain('href="/explorar?arma=SABLE&amp;hasta=2026-02-31"');
+    expect(html).toContain('href="/explorar/buscar?arma=SABLE&amp;hasta=2026-02-31"');
   });
 
   it('las fechas válidas conservan su formato visible', () => {
@@ -227,11 +227,11 @@ describe('fecha tecleada inválida en Desde/Hasta', () => {
     const base = criterios({ q: 'garcia' });
     expect(prepararBusqueda({ ...base, desde: valorEmitido('28/02/2026', true) })).toEqual({
       ok: true,
-      url: '/explorar?q=garcia&desde=2026-02-28',
+      url: '/explorar/buscar?q=garcia&desde=2026-02-28',
     });
     expect(prepararBusqueda({ ...base, desde: valorEmitido('', true) })).toEqual({
       ok: true,
-      url: '/explorar?q=garcia',
+      url: '/explorar/buscar?q=garcia',
     });
   });
 
@@ -256,7 +256,7 @@ describe('fecha tecleada inválida en Desde/Hasta', () => {
     );
     expect(envio).toEqual({
       ok: true,
-      url: '/explorar?q=garcia&arma=SABLE&temporada=2027&desde=2026-01-01',
+      url: '/explorar/buscar?q=garcia&arma=SABLE&temporada=2027&desde=2026-01-01',
     });
     expect(prepararBusqueda(criterios({ torneo: 'a' })).ok).toBe(false);
     expect(prepararBusqueda(criterios({ nacionalidad: 'ES' })).ok).toBe(false);

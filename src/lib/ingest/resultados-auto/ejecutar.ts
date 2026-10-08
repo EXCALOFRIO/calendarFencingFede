@@ -31,7 +31,7 @@ import {
   leerPruebaFieAuto, resolverDocIdD1, type FilaCatalogoPdf, type LecturaPdfAuto,
 } from './fuentes';
 import {
-  consumoDelDia, DIA, HORA, leerUnidad, margenLedger, migracionAplicada, NUNCA, sentenciaCierre, sentenciaRevision,
+  consumoDelDia, DIA, HORA, hayTrabajoPendiente, leerUnidad, margenLedger, migracionAplicada, NUNCA, sentenciaCierre, sentenciaRevision,
   sentenciaAjusteConsumo, sentenciasAlta, sentenciasConsumo, tablaExiste, unidadesPendientes, type EstadoUnidad, type Unidad,
 } from './estado';
 import { sentenciasEventos, sentenciasIndiceExplorar, sentenciasPerfil } from './posteriores';
@@ -95,6 +95,9 @@ export async function ejecutarResultadosAuto(d: DepsResultadosAuto): Promise<Res
     },
   };
   const lectura = crearBaseResultados(d.db, null, presupuesto);
+  // Una pasada sin nada vencido no toma el lease ni lee topes: es lo normal fuera de los fines de semana.
+  const pendiente = await hayTrabajoPendiente(lectura, inicio, indicesDeDescubrimiento(inicio, cfg).map((i) => i.clave));
+  if (pendiente === false) return { ...r, status: 'sin_pendientes' };
   if (!(await migracionAplicada(lectura))) return { ...r, ok: false, status: 'migracion_pendiente' };
   const consumo = await consumoDelDia(lectura, inicio);
   if (consumo.filas >= cfg.maxFilasDia || consumo.bytes_ledger >= cfg.maxBytesLedgerDia) return { ...r, status: 'tope_diario' };
@@ -246,10 +249,11 @@ export function proximaHecha(fecha: string | null, ahora: number): number {
 
 // ------------------------------------------------------------------ descubrimiento
 
-async function descubrir(c: Ctx) {
-  const temporadas = temporadasActuales(new Date(c.ahora));
-  const septiembre = new Date(c.ahora).getUTCMonth() === 8 && new Date(c.ahora).getUTCDate() <= c.cfg.ventanaDias;
-  const indices = [
+/** Índices que mira el descubrimiento en el instante `ahora`, en orden. */
+export function indicesDeDescubrimiento(ahora: number, cfg: Pick<ConfigResultadosAuto, 'ventanaDias'>) {
+  const temporadas = temporadasActuales(new Date(ahora));
+  const septiembre = new Date(ahora).getUTCMonth() === 8 && new Date(ahora).getUTCDate() <= cfg.ventanaDias;
+  return [
     { clave: `indice|skermo|${temporadas.rfee}`, tipo: 'skermo' as const, season: temporadas.rfee },
     { clave: `indice|fie|${temporadas.fie}`, tipo: 'fie' as const, season: temporadas.fie },
     ...(septiembre ? [
@@ -258,7 +262,10 @@ async function descubrir(c: Ctx) {
       { clave: `indice|fie|${Number(temporadas.fie) - 1}`, tipo: 'fie' as const, season: String(Number(temporadas.fie) - 1) },
     ] : []),
   ];
-  for (const ix of indices) {
+}
+
+async function descubrir(c: Ctx) {
+  for (const ix of indicesDeDescubrimiento(c.ahora, c.cfg)) {
     const u = await c.lectura.leer<{ proxima: number; datos: string | null }>(`select proxima, datos from resultado_auto_unidad where clave=?`, [ix.clave]);
     if (u[0] && Number(u[0].proxima) > c.ahora) continue;
     const datos = u[0]?.datos ? JSON.parse(String(u[0].datos)) as { pagina?: number } : {};

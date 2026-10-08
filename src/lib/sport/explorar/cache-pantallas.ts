@@ -6,6 +6,7 @@ import { ERROR_NO_AUTENTICADO, exigirPerfil, type ContextoExplorador } from './c
 import { UUID_RE } from './cursor';
 import { cargarCatalogoEdiciones, type VistaCatalogo } from './catalogo';
 import type { CriteriosCatalogo } from './catalogo-url';
+import { pruebaPreferida } from './edicion-modelo';
 import type { CriteriosEdicion } from './edicion-url';
 import { construirIndiceEdiciones, leerDatosIndiceEdiciones, type DatosIndiceEdiciones, type IndiceEdiciones } from './indice-ediciones';
 import { cargarEdicion, cargarSeries, type VistaEdicion, type VistaSeries } from './ediciones-pantalla';
@@ -51,6 +52,8 @@ function registrar(que: string, error: unknown) {
 const TEMPORADA_RE = /^\d{4}(-\d{4})?$/;
 const FUENTES_CATALOGO: readonly string[] = ['fie', 'efc', 'skermo_rfee', 'rfee_pdf', 'engarde'];
 const ARMAS: readonly string[] = ['FLORETE', 'ESPADA', 'SABLE'];
+const GENEROS: readonly string[] = ['M', 'F', 'MIXTO'];
+const FORMATOS: readonly string[] = ['INDIVIDUAL', 'EQUIPOS'];
 const FASES: readonly string[] = ['POULE', 'TABLEAU'];
 const AMBITOS: readonly string[] = ['nacional', 'internacional'];
 /** Texto libre más largo que esto (ya normalizado) no se cachea. */
@@ -70,11 +73,12 @@ const ANIO_RE = /^(19|20)\d{2}$/;
 /** Catálogo sin el índice en memoria: sólo combinaciones válidas entran en una clave. */
 export function criteriosCatalogoCacheables(c: Partial<CriteriosCatalogo> & { q: string; fuente: string; temporada: string }): CriteriosCatalogo | null {
   const q = qDeCatalogo(c.q);
-  const { arma = '', categoria = '', desde = '', hasta = '' } = c;
+  const { arma = '', categoria = '', desde = '', hasta = '', genero = '', formato = '' } = c;
   if (q === null || !vacioO(c.fuente, (f) => FUENTES_CATALOGO.includes(f)) || !vacioO(c.temporada, (t) => TEMPORADA_RE.test(t))
     || !vacioO(arma, (a) => ARMAS.includes(a)) || !vacioO(categoria, (x) => CATEGORIA_RE.test(x))
+    || !vacioO(genero, (x) => GENEROS.includes(x)) || !vacioO(formato, (x) => FORMATOS.includes(x))
     || !vacioO(desde, (x) => ANIO_RE.test(x)) || !vacioO(hasta, (x) => ANIO_RE.test(x))) return null;
-  return { q, fuente: c.fuente, temporada: c.temporada, arma, categoria, desde, hasta };
+  return { q, fuente: c.fuente, temporada: c.temporada, arma, categoria, desde, hasta, genero, formato };
 }
 
 /**
@@ -128,7 +132,8 @@ export function crearCachesExplorar({
   publico: (hoy: string) => ContextoExplorador;
 }) {
   const edicion = cache.definir({
-    espacio: 'edicion-pantalla',
+    // `-2`: las rondas pasaron a «Semifinal», «Cuartos», «Octavos», «Tablón de N».
+    espacio: 'edicion-pantalla-2',
     depende: ['deporte'],
     frescoMs: FRESCO,
     caducaMs: CADUCA,
@@ -184,9 +189,10 @@ export function crearCachesExplorar({
     depende: ['deporte'],
     frescoMs: FRESCO,
     caducaMs: CADUCA,
-    cargar: (q: string, fuente: string, temporada: string, arma: string, categoria: string, desde: string, hasta: string) =>
+    cargar: (q: string, fuente: string, temporada: string, arma: string, categoria: string, desde: string, hasta: string,
+      genero: string, formato: string) =>
       cargarCatalogoEdiciones(publico(hoyIso()), Object.fromEntries(
-        Object.entries({ q, fuente, temporada, arma, categoria, desde, hasta }).filter(([, v]) => v),
+        Object.entries({ q, fuente, temporada, arma, categoria, desde, hasta, genero, formato }).filter(([, v]) => v),
       )),
     guardarSi: (v: VistaCatalogo) => v.estado === 'ok',
   });
@@ -198,7 +204,7 @@ export function crearCachesExplorar({
     frescoMs: FRESCO,
     caducaMs: CADUCA,
     cargar: () => leerDatosIndiceEdiciones(publico(hoyIso())),
-    guardarSi: (v: DatosIndiceEdiciones | null) => v !== null && v.v === 2,
+    guardarSi: (v: DatosIndiceEdiciones | null) => v !== null && v.v === 4,
   });
 
   let memoIndice: { indice: IndiceEdiciones | null; hasta: number } | null = null;
@@ -208,7 +214,7 @@ export function crearCachesExplorar({
   function indiceEdiciones(): Promise<IndiceEdiciones | null> {
     if (memoIndice && memoIndice.hasta > Date.now()) return Promise.resolve(memoIndice.indice);
     indiceEnVuelo ??= datosIndice()
-      .then((datos) => (datos && datos.v === 2 ? construirIndiceEdiciones(datos) : null))
+      .then((datos) => (datos && datos.v === 4 ? construirIndiceEdiciones(datos) : null))
       .catch((error) => {
         registrar('el índice de ediciones no se pudo leer', error);
         return null;
@@ -271,24 +277,33 @@ export function crearCachesExplorar({
     ctx: ContextoExplorador,
     criterios: Partial<CriteriosCatalogo> & { q: string; fuente: string; temporada: string },
     cursor: string | undefined,
+    /** Armas de la cuenta: la fila de cada evento abre una edición de ellas. No entra en la caché. */
+    opciones: { armasPreferidas?: readonly string[] } = {},
   ): Promise<{ series: VistaSeries; catalogo: VistaCatalogo }> {
     const guarda = await guardaDeSesion(ctx);
     if (guarda) return { series: guarda, catalogo: { estado: guarda.tipo } };
     const entrada = { ...Object.fromEntries(Object.entries(criterios).filter(([, valor]) => valor)), ...(cursor ? { cursor } : {}) };
     const conCatalogo = async (): Promise<VistaCatalogo> => {
       const indice = await indiceEdiciones();
-      if (indice) return cargarCatalogoEdiciones(ctx, entrada, { indice: async () => indice });
+      if (indice) {
+        return cargarCatalogoEdiciones(ctx, entrada, { indice: async () => indice, armasPreferidas: opciones.armasPreferidas });
+      }
       const directo = () => cargarCatalogoEdiciones(ctx, entrada);
       const clave = cursor ? null : criteriosCatalogoCacheables(criterios);
       return clave
-        ? catalogo(clave.q, clave.fuente, clave.temporada, clave.arma, clave.categoria, clave.desde, clave.hasta).catch(directo)
+        ? catalogo(clave.q, clave.fuente, clave.temporada, clave.arma, clave.categoria, clave.desde, clave.hasta,
+          clave.genero, clave.formato).catch(directo)
         : directo();
     };
     const [s, c] = await Promise.all([series().catch(() => cargarSeries(ctx)), conCatalogo()]);
     return { series: s, catalogo: c };
   }
 
-  /** La edición de la página `/explorar/ediciones/[id]` (con su prueba elegida). */
+  /**
+   * La edición de la página `/explorar/ediciones/[id]` (con su prueba elegida).
+   * Sin `prueba=` en la dirección abre la de las armas de la cuenta, si la
+   * edición tiene alguna (`pruebaPreferida`); si no, la de siempre.
+   */
   async function cargarEdicionCompartida(
     ctx: ContextoExplorador,
     edicionId: string,
@@ -299,7 +314,13 @@ export function crearCachesExplorar({
     if (criterios.cursor) return cargarEdicion(ctx, edicionId, criterios);
     if (!UUID_RE.test(edicionId) || !vacioO(criterios.prueba, (p) => UUID_RE.test(p))) return cargarEdicion(ctx, edicionId, criterios);
     try {
-      return await edicion(edicionId, criterios.prueba);
+      const vista = await edicion(edicionId, criterios.prueba);
+      if (criterios.prueba || vista.tipo !== 'ok') return vista;
+      // La entrada sin prueba es común a todos; la de las armas de la cuenta se
+      // elige después, fuera de la caché, y se lee con su propia clave.
+      const armas = (await ctx.perfil())?.weapons ?? [];
+      const preferida = pruebaPreferida(vista.edicion.pruebasDetalle ?? [], { armas });
+      return preferida && preferida.id !== vista.edicion.pruebaElegida ? await edicion(edicionId, preferida.id) : vista;
     } catch (error) {
       registrar('la caché de la edición falló', error);
       return cargarEdicion(ctx, edicionId, criterios);

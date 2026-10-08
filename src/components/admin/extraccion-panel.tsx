@@ -28,7 +28,7 @@ import type {
   ResumenExtraccion,
 } from '@/app/(app)/admin/extraccion/consultas';
 import { Cifra, TiraCifras, Vacio } from '@/components/admin/piezas';
-import { Rotulos } from '@/components/estado/piezas';
+import { ListaDatos, ParDato } from '@/components/sistema/lista-datos';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -37,7 +37,8 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { formatDateEs, formatDateTimeEs, formatEur, titular } from '@/lib/utils';
+import { fechaCorta, fechaHora } from '@/lib/fechas';
+import { formatEur, titular } from '@/lib/utils';
 
 /**
  * Revisión de la extracción asistida.
@@ -170,7 +171,7 @@ function valorLegible(campo: string, valor: string): { texto: string; cifra: boo
     return { texto: formatEur(valor), cifra: true };
   }
   if (campo.startsWith('deadline.') && /^\d{4}-\d{2}-\d{2}$/.test(valor)) {
-    return { texto: formatDateEs(valor), cifra: true };
+    return { texto: fechaCorta(valor), cifra: true };
   }
   // Una URL nunca en `.cifra`: a 30 px en condensada tapa la cita y además se
   // parte por donde no debe.
@@ -286,19 +287,19 @@ export function ExtraccionPanel({
             spacing={1}
             className="max-w-full flex-wrap"
           >
-            <ToggleGroupItem value="pendientes" className="gap-1.5">
+            <ToggleGroupItem value="pendientes" className="gap-2">
               Por revisar
               <span className="cifra text-xs text-muted-foreground">
                 {pendientes.length}
               </span>
             </ToggleGroupItem>
-            <ToggleGroupItem value="revisadas" className="gap-1.5">
+            <ToggleGroupItem value="revisadas" className="gap-2">
               Revisadas
               <span className="cifra text-xs text-muted-foreground">
                 {revisadas.length}
               </span>
             </ToggleGroupItem>
-            <ToggleGroupItem value="sin_datos" className="gap-1.5">
+            <ToggleGroupItem value="sin_datos" className="gap-2">
               Sin datos
               <span className="cifra text-xs text-muted-foreground">
                 {sinDatos.length}
@@ -448,14 +449,11 @@ function BandaCircular({
           </div>
         </div>
 
-        <Rotulos
-          disposicion="linea"
-          datos={[
-            ['Leída', formatDateTimeEs(extraccion.creadoEn)],
-            ['Páginas', extraccion.paginas ?? 'no publicado'],
-            ['Modelo', extraccion.modelo ?? 'ninguno'],
-          ]}
-        />
+        <ListaDatos disposicion="rejilla" className="sm:grid-cols-3">
+          <ParDato etiqueta="Leída">{fechaHora(extraccion.creadoEn)}</ParDato>
+          <ParDato etiqueta="Páginas">{extraccion.paginas ?? 'no publicado'}</ParDato>
+          <ParDato etiqueta="Modelo">{extraccion.modelo ?? 'ninguno'}</ParDato>
+        </ListaDatos>
       </div>
 
       <BandaEvento extraccion={extraccion} ocupado={ocupado} ejecutar={ejecutar} />
@@ -494,17 +492,11 @@ function BandaCircular({
             <ul className="flex flex-col gap-2 border-t pt-2">
               {extraccion.descartadas.map((campo, i) => (
                 <li key={`${extraccion.id}-${campo.campo}-${i}`} className="min-w-0">
-                  <Rotulos
-                    disposicion="linea"
-                    datos={[
-                      [
-                        etiquetaDeCampo(campo.campo),
-                        campo.valor
-                          ? valorLegible(campo.campo, campo.valor).texto
-                          : 'sin valor',
-                      ],
-                    ]}
-                  />
+                  <ListaDatos disposicion="linea">
+                    <ParDato etiqueta={etiquetaDeCampo(campo.campo)}>
+                      {campo.valor ? valorLegible(campo.campo, campo.valor).texto : 'sin valor'}
+                    </ParDato>
+                  </ListaDatos>
                   <p className="medida text-xs break-words text-danger">{campo.motivo}</p>
                 </li>
               ))}
@@ -551,7 +543,7 @@ function BandaEvento({
         Los campos aprobados van a la ficha de{' '}
         <strong className="font-medium text-foreground">{titular(evento.nombre)}</strong>
         {evento.ciudad ? ` · ${evento.ciudad}` : ''}
-        {evento.inicio ? ` · ${formatDateEs(evento.inicio)}` : ''}.
+        {evento.inicio ? ` · ${fechaCorta(evento.inicio)}` : ''}.
       </p>
     );
   }
@@ -562,7 +554,7 @@ function BandaEvento({
         <p className="medida text-sm">
           <strong className="font-medium">¿Es «{titular(evento.nombre)}»?</strong>{' '}
           {evento.ciudad ? `${evento.ciudad} · ` : ''}
-          {evento.inicio ? formatDateEs(evento.inicio) : ''}
+          {evento.inicio ? fechaCorta(evento.inicio) : ''}
         </p>
         {evento.motivo ? (
           <p className="medida text-xs text-muted-foreground">{evento.motivo}</p>
@@ -617,7 +609,7 @@ function FilaPropuesta({
 
   return (
     <li className="flex min-w-0 flex-wrap items-start gap-x-4 gap-y-2 py-3">
-      <div className="flex min-w-48 flex-1 flex-col gap-1.5">
+      <div className="flex min-w-48 flex-1 flex-col gap-2">
         {/*
           El valor en grande y el nombre del campo diminuto al lado: es el
           marcador. Puesto al revés —rótulo grande, valor pequeño— la lista se
@@ -664,7 +656,7 @@ function FilaPropuesta({
               </Button>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <p className="medida rounded-md bg-muted px-2 py-1.5 text-xs break-words text-muted-foreground">
+              <p className="medida rounded-md bg-muted px-2 py-2 text-xs break-words text-muted-foreground">
                 {propuesta.contexto}
               </p>
             </CollapsibleContent>
@@ -672,18 +664,12 @@ function FilaPropuesta({
         ) : null}
 
         {!pendiente && propuesta.revisadoEn ? (
-          <Rotulos
-            disposicion="linea"
-            datos={[
-              [
-                propuesta.estado === 'aprobada' ? 'Aprobado' : 'Rechazado',
-                formatDateTimeEs(propuesta.revisadoEn),
-              ],
-              ...(propuesta.revisadoPor
-                ? ([['Por', propuesta.revisadoPor]] as [string, React.ReactNode][])
-                : []),
-            ]}
-          />
+          <ListaDatos disposicion="rejilla">
+            <ParDato etiqueta={propuesta.estado === 'aprobada' ? 'Aprobado' : 'Rechazado'}>
+              {fechaHora(propuesta.revisadoEn)}
+            </ParDato>
+            {propuesta.revisadoPor ? <ParDato etiqueta="Por">{propuesta.revisadoPor}</ParDato> : null}
+          </ListaDatos>
         ) : null}
       </div>
 

@@ -36,9 +36,18 @@
   width: calc(6ch + 3.9em);
   max-width: 100%;
   height: 56px;
+  /* Una cifra de más (un IME a media composición) nunca se pinta fuera de las seis casillas. */
+  overflow: hidden;
+  border-radius: 6px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 32px;
   font-variant-numeric: tabular-nums;
+}
+
+/* El anillo de foco va en el contenedor: el del campo lo recortaría `overflow`. */
+.codigo:has(.entradaCodigo:focus-visible) {
+  outline: 2px solid var(--foreground);
+  outline-offset: 4px;
 }
 
 .posiciones {
@@ -66,6 +75,10 @@
   box-shadow: inset 0 -2px var(--foreground);
 }
 
+.codigo:has(.entradaCodigo[aria-invalid='true']) .posicion {
+  border-color: var(--destructive);
+}
+
 .entradaCodigo {
   position: relative;
   /* La media separación final queda fuera del texto; no desplaza las cifras
@@ -83,7 +96,12 @@
   text-align: left;
 }
 
-.entradaCodigo:focus-visible,
+@supports selector(:has(*)) {
+  .entradaCodigo:focus-visible {
+    outline: none;
+  }
+}
+
 .entradaCorreo:focus-visible,
 .principal:focus-visible,
 .secundario:focus-visible {

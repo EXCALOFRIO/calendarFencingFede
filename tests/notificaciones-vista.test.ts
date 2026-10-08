@@ -63,11 +63,11 @@ describe('bandeja', () => {
     const secciones = agruparBandeja(filas, AHORA, new Date('2026-03-08T00:00:00Z').getTime());
     const salida = html(React.createElement(BandejaNotificaciones, { secciones, ahora: AHORA.getTime(), abrir: '/abrir' }));
     expect(salida.match(/<button type="submit"/g)).toHaveLength(2);
-    expect(salida).toMatch(/>hace 1 h<\/time> · 2 avisos</);
+    expect(salida).toMatch(/>hace 1 h<\/time><span aria-hidden="true"> · <\/span><span class="sr-only">, <\/span>2 avisos</);
     expect(salida).not.toContain('Anterior');
     expect(salida).not.toContain('<details');
-    // Escala del sistema: 14 / 13 / 12 px, nada por debajo.
-    expect(salida).not.toMatch(/text-\[(?:[0-9]|1[01])px\]|text-xs|text-\[10px\]/);
+    // Escala del sistema: sólo los tamaños de Tailwind (`text-xs` son 12 px), nada arbitrario.
+    expect(salida).not.toMatch(/text-\[\d+(?:\.\d+)?(?:px|rem)\]/);
     expect(salida).not.toMatch(/(?:bg|text|divide|border)-[a-z-]+\/\d+/);
     expect(salida).toContain('Lucía García');
     expect(salida).toContain('3.º');
@@ -118,10 +118,10 @@ describe('ajustes', () => {
     expect(salida).toContain('Enviar prueba');
     expect(salida).toContain('>Activar</span></button>');
     expect(salida).toContain('Solo nombre, prueba y puesto');
-    // Los interruptores se tocan en una caja real de 44 px, sin alfa en las superficies ni texto de menos de 12 px.
+    // Los interruptores se tocan en una caja real de 44 px, sin alfa en las superficies ni tamaños de letra arbitrarios.
     expect(salida.match(/role="switch"[^>]*class="[^"]*h-\[44px\]/g)).toHaveLength(6);
     expect(salida).not.toMatch(/(?:bg|text|divide|border)-[a-z-]+\/\d+/);
-    expect(salida).not.toMatch(/text-\[(?:[0-9]|1[01])px\]|text-xs/);
+    expect(salida).not.toMatch(/text-\[\d+(?:\.\d+)?(?:px|rem)\]/);
     // Los pasos de iPhone no están en la página hasta que se piden: nada oculto.
     expect(salida).not.toContain('Añadir a pantalla de inicio');
   });

@@ -719,6 +719,8 @@ export type FieTiradoresStats = {
   clasificacionPedidas: number;
   /** De las pedidas, las que respondieron. Si no son todas, no cuenta como leída. */
   clasificacionRespondidas: number;
+  /** Filas de la clasificación mundial escritas o retiradas. Sin el dato, el runner no puede decir «sin cambios». */
+  clasificacionCambios?: number;
   note: string | null;
 };
 
@@ -765,6 +767,7 @@ export async function ingestFieTiradores(
     propuestos: 0,
     clasificacionPedidas: 0,
     clasificacionRespondidas: 0,
+    clasificacionCambios: 0,
     note: null,
   };
 
@@ -1303,6 +1306,7 @@ export async function ingestFieTiradores(
   stats.peticiones += clasificacion.peticiones;
   stats.clasificacionPedidas = clasificacion.pedidas;
   stats.clasificacionRespondidas = clasificacion.combos;
+  stats.clasificacionCambios = clasificacion.escritas + clasificacion.retiradas;
 
   // --- 10. Cuarentena ---
   for (const lote of lotesDeInsercion(cuarentena, ingestQuarantine)) {
@@ -1401,6 +1405,8 @@ async function guardarClasificacionMundial(opciones: {
   selecciones: number;
   vacias: number;
   retiradas: number;
+  /** Filas nuevas o cambiadas que se han escrito. */
+  escritas: number;
 }> {
   const { fieClasificacion } = await import('@/db/schema');
   const { db } = await import('@/db');
@@ -1419,6 +1425,7 @@ async function guardarClasificacionMundial(opciones: {
     vacias: 0,
     /** Filas que ya no estaban en la lista de la FIE y se han retirado. */
     retiradas: 0,
+    escritas: 0,
   };
 
   /** Las dos clasificaciones de cada combinación, individual primero. */
@@ -1515,6 +1522,7 @@ async function guardarClasificacionMundial(opciones: {
     }
 
     resumen.filas += filas.length;
+    resumen.escritas += porEscribir.length;
     if (format === 'INDIVIDUAL') resumen.individuales += filas.length;
     else resumen.selecciones += filas.length;
 
@@ -1549,7 +1557,7 @@ async function guardarClasificacionMundial(opciones: {
     const cierre = await cerrarLecturaGrupo(
       escritorLectura,
       { season: opciones.season, format, weapon, gender, categoryRaw: tarea.category },
-      { ok: true, fieIds: filas.map((f) => f.addrId), sourceUrl },
+      { ok: true, fieIds: filas.map((f) => f.addrId), sourceUrl, yaGuardadas: previos.size },
     );
     resumen.retiradas += cierre.borradas;
   }

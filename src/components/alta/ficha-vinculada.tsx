@@ -1,10 +1,15 @@
 import { CircleCheck, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import type { ResumenFicha } from '@/app/(app)/alta/consultas';
-import { Cuenta, Rotulos, Seccion } from '@/components/estado/piezas';
+import { Cuenta, Seccion } from '@/components/estado/piezas';
 import { puntos } from '@/components/ranking/formato';
 import { Button } from '@/components/ui/button';
-import { CATEGORY_LABEL, GENDER_LABEL, WEAPON_LABEL, formatDateEs } from '@/lib/utils';
+import { frescura } from '@/lib/fechas';
+import { rotuloArma, rotuloCategoria, rotuloGenero } from '@/lib/sport/rotulos';
+
+import { Datos } from './datos';
+
+const categoria = (c: string) => rotuloCategoria(c) || c;
 
 /**
  * La prueba de que el alta ha funcionado.
@@ -29,19 +34,16 @@ export function FichaVinculada({
   varias: boolean;
 }) {
   const mejor = resumen.clasificaciones[0] ?? null;
-  const categoria = mejor
-    ? (CATEGORY_LABEL[mejor.categoria as keyof typeof CATEGORY_LABEL] ??
-      mejor.categoria)
+  const suCategoria = mejor
+    ? categoria(mejor.categoria)
     : resumen.categoriaPropia
-      ? (CATEGORY_LABEL[
-          resumen.categoriaPropia as keyof typeof CATEGORY_LABEL
-        ] ?? resumen.categoriaPropia)
+      ? categoria(resumen.categoriaPropia)
       : null;
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h1 className="text-2xl sm:text-3xl">
+        <h1 className="text-2xl">
           {reciente ? 'Tu ficha ya está vinculada' : 'Tu ficha'}
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -53,7 +55,7 @@ export function FichaVinculada({
 
       {reciente ? (
         <p className="medida flex items-start gap-2 text-sm text-ok">
-          <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <CircleCheck className="h-5 w-4 shrink-0" aria-hidden />
           <span>
             Hecho. Nada de esto lo has escrito tú: si el puesto y los puntos son
             los tuyos, está bien vinculada.
@@ -72,7 +74,7 @@ export function FichaVinculada({
         es una cifra. El puesto y los puntos sí, y son justamente los dos datos
         que confirman que la ficha es la correcta.
       */}
-      <div className="flex flex-col gap-4 rounded-lg border-t border-filete bg-card px-4 py-4">
+      <div className="flex flex-col gap-4 rounded-xl border-t border-filete bg-card px-4 py-4">
         <div className="flex flex-wrap items-end gap-x-10 gap-y-4">
           <Cuenta
             valor={mejor?.puesto ?? '—'}
@@ -98,15 +100,15 @@ export function FichaVinculada({
           />
         </div>
 
-        <Rotulos
+        <Datos
           datos={[
             [
               resumen.armas.length === 1 ? 'Tu arma' : 'Tus armas',
               resumen.armas.length > 0
-                ? resumen.armas.map((a) => WEAPON_LABEL[a]).join(', ')
+                ? resumen.armas.map((a) => rotuloArma(a)).join(', ')
                 : 'sin asignar',
             ],
-            ['Tu categoría', categoria ?? 'sin derivar'],
+            ['Tu categoría', suCategoria ?? 'sin derivar'],
             [
               resumen.clasificaciones.length === 1
                 ? 'Clasificación oficial'
@@ -126,7 +128,7 @@ export function FichaVinculada({
           }
           contexto={
             resumen.actualizadoEl
-              ? `Leída el ${formatDateEs(resumen.actualizadoEl)}`
+              ? frescura(resumen.actualizadoEl)
               : undefined
           }
           className="lg:col-start-1 lg:row-start-1"
@@ -147,7 +149,7 @@ export function FichaVinculada({
                 >
                   <div className="flex items-baseline gap-3">
                     <span className="cifra text-5xl">{c.puesto ?? '—'}</span>
-                    <span className="text-xs leading-tight text-muted-foreground">
+                    <span className="text-xs leading-4 text-muted-foreground">
                       {c.puesto
                         ? c.deCuantos > 0
                           ? `puesto de ${c.deCuantos}`
@@ -157,15 +159,11 @@ export function FichaVinculada({
                   </div>
 
                   {/* Cada dato con su rótulo, no encadenados con puntos medios. */}
-                  <Rotulos
+                  <Datos
                     datos={[
-                      ['Arma', WEAPON_LABEL[c.arma]],
-                      ['Género', GENDER_LABEL[c.genero]],
-                      [
-                        'Categoría',
-                        CATEGORY_LABEL[c.categoria as keyof typeof CATEGORY_LABEL] ??
-                          c.categoria,
-                      ],
+                      ['Arma', rotuloArma(c.arma)],
+                      ['Género', rotuloGenero(c.genero)],
+                      ['Categoría', categoria(c.categoria)],
                       [
                         'Puntos',
                         <span key="p" className="cifra text-base">
@@ -195,7 +193,7 @@ export function FichaVinculada({
             <Button asChild>
               <Link href="/">
                 {resumen.armas.length > 0
-                  ? `Ver mi calendario de ${WEAPON_LABEL[resumen.armas[0]].toLowerCase()}`
+                  ? `Ver mi calendario de ${rotuloArma(resumen.armas[0]).toLowerCase()}`
                   : 'Ver el calendario'}
               </Link>
             </Button>
@@ -208,7 +206,8 @@ export function FichaVinculada({
         <aside className="flex min-w-0 flex-col gap-6 lg:col-start-2 lg:row-start-1">
           <Seccion titulo="Lo que dice tu ficha">
             <div className="flex flex-col gap-3 py-4">
-              <Rotulos
+              <Datos
+                disposicion="linea"
                 datos={[
                   ['Nombre', resumen.nombre],
                   ['Licencia RFEE', resumen.licencia ?? 'no publicado'],
@@ -217,17 +216,14 @@ export function FichaVinculada({
                   [
                     resumen.armas.length === 1 ? 'Arma' : 'Armas',
                     resumen.armas.length > 0
-                      ? resumen.armas.map((a) => WEAPON_LABEL[a]).join(', ')
+                      ? resumen.armas.map((a) => rotuloArma(a)).join(', ')
                       : 'ninguna',
                   ],
                   [
                     'Puede competir en',
                     resumen.categoriasElegibles.length > 0
                       ? resumen.categoriasElegibles
-                          .map(
-                            (c) =>
-                              CATEGORY_LABEL[c as keyof typeof CATEGORY_LABEL] ?? c,
-                          )
+                          .map(categoria)
                           .join(', ')
                       : 'sin derivar',
                   ],

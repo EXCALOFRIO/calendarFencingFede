@@ -32,14 +32,9 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import type { EntryStatus } from '@/lib/entries/state-machine';
-import {
-  CATEGORY_LABEL,
-  GENDER_LABEL,
-  WEAPON_LABEL,
-  cn,
-  formatDateEs,
-  titular,
-} from '@/lib/utils';
+import { fechaCorta } from '@/lib/fechas';
+import { rotuloPrueba } from '@/lib/sport/rotulos';
+import { cn, titular } from '@/lib/utils';
 
 /**
  * Bandeja de inscripciones de la dirección técnica.
@@ -351,7 +346,7 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
               return (
                 <SelectItem key={f.clave} value={f.clave}>
                   {f.etiqueta}
-                  <span className="cifra ms-1.5 text-xs text-muted-foreground">
+                  <span className="cifra ms-2 text-xs text-muted-foreground">
                     {cuantas}
                   </span>
                 </SelectItem>
@@ -402,7 +397,7 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
                 }
               >
                 {accion.etiqueta}
-                <span className="cifra text-xs opacity-70">{accion.cuantas}</span>
+                <span className="cifra text-xs">{accion.cuantas}</span>
               </Button>
             ))}
             <Button size="sm" variant="secondary" disabled={ocupado} onClick={exportar}>
@@ -420,7 +415,7 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
           </div>
 
           {sinLicencia.length > 0 ? (
-            <p className="flex w-full items-start gap-1.5 text-xs text-warn">
+            <p className="flex w-full items-start gap-2 text-xs text-warn">
               <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
               {sinLicencia.length === 1
                 ? `${sinLicencia[0].tirador} no tiene licencia RFEE en su ficha: esa celda saldrá vacía en el CSV.`
@@ -476,7 +471,7 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
                   <h2 className="min-w-0 text-base">{grupo.titulo}</h2>
                   {/* Cada dato con su rótulo, no encadenados con puntos. */}
                   <span className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
-                    <span>{formatDateEs(grupo.fecha)}</span>
+                    <span>{fechaCorta(grupo.fecha)}</span>
                     <span>
                       <span className="cifra text-foreground">
                         {grupo.filas.length}
@@ -499,7 +494,7 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
                     <li
                       key={f.id}
                       className={cn(
-                        'grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-1.5 px-3 py-3 sm:grid-cols-[auto_minmax(0,1.3fr)_minmax(0,1fr)_auto] sm:items-center',
+                        'grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-3 py-3 sm:grid-cols-[auto_minmax(0,1.3fr)_minmax(0,1fr)_auto] sm:items-center',
                         /*
                           La fila marcada, con el token del proyecto. Iba con
                           `bg-accent/40`, que es un alfa de superficie: está
@@ -526,10 +521,10 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
                           nombre a medias en una bandeja donde se aprueba gente
                           es exactamente el dato que no se puede adivinar.
                         */}
-                        <span className="text-[0.95rem] font-medium leading-tight">
+                        <span className="text-sm font-medium leading-5">
                           {f.tirador}
                         </span>
-                        <span className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                        <span className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           <span className="min-w-0">
                             {f.clubNombre ?? 'Sin club en su ficha'}
                           </span>
@@ -545,27 +540,15 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
                       </div>
 
                       <div className="col-start-2 flex min-w-0 flex-col sm:col-start-3">
-                        {/*
-                          Arma y género en blanco, categoría y formato
-                          apagados. Es la misma información que daba
-                          «Sable femenino · M17» pero jerarquizada: lo que
-                          se busca al repasar la bandeja es el arma.
-                        */}
                         <span className="text-sm">
-                          {WEAPON_LABEL[f.weapon as keyof typeof WEAPON_LABEL] ??
-                            f.weapon}{' '}
-                          {(
-                            GENDER_LABEL[f.gender as keyof typeof GENDER_LABEL] ??
-                            f.gender
-                          ).toLowerCase()}{' '}
-                          <span className="text-muted-foreground">
-                            {CATEGORY_LABEL[
-                              f.category as keyof typeof CATEGORY_LABEL
-                            ] ?? f.category}
-                            {f.format === 'EQUIPOS' ? ', equipos' : ''}
-                          </span>
+                          {rotuloPrueba({
+                            arma: f.weapon,
+                            genero: f.gender,
+                            categoria: f.category,
+                            formato: f.format,
+                          })}
                         </span>
-                        <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                        <span className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           <span>
                             {f.diasHastaEvento <= 0 ? (
                               'Empieza hoy'
@@ -585,7 +568,7 @@ export function BandejaInscripciones({ filas }: { filas: FilaInscripcion[] }) {
                         </span>
                       </div>
 
-                      <div className="col-start-2 flex flex-wrap items-center gap-1.5 sm:col-start-4 sm:justify-end">
+                      <div className="col-start-2 flex flex-wrap items-center gap-2 sm:col-start-4 sm:justify-end">
                         {!f.licenciaRfee ? (
                           <Badge
                             variant="outline"

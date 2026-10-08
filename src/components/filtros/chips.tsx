@@ -5,6 +5,7 @@ import * as React from 'react';
 import { Boton } from '@/components/sistema/boton';
 import { ChipFiltro, clasesChip } from '@/components/sistema/chip-filtro';
 import { HojaInferior } from '@/components/sistema/hoja-inferior';
+import { SelectorSegmentado } from '@/components/sistema/selector-segmentado';
 import { AREA_TACTIL, FOCO, SIN_MINIMO } from '@/components/sistema/tactil';
 import { cn } from '@/lib/utils';
 
@@ -57,7 +58,7 @@ export function CampoBuscar({
   */
   return (
     <div role="search" className={cn('relative min-w-0', className)}>
-      <label className="relative block py-[2px]">
+      <label className="relative block py-1">
         <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
         {/* 16 px en el móvil: por debajo, iOS hace zoom al enfocar. */}
         <input
@@ -70,7 +71,7 @@ export function CampoBuscar({
           enterKeyHint="search"
           className={cn(
             SIN_MINIMO,
-            'h-[40px] w-full rounded-[12px] border border-transparent bg-secondary pr-9 pl-9 text-[16px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring sm:text-[14px]',
+            'h-[40px] w-full rounded-[12px] border border-transparent bg-secondary pr-9 pl-9 text-base text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring sm:text-sm',
             '[&::-webkit-search-cancel-button]:hidden',
           )}
         />
@@ -80,7 +81,7 @@ export function CampoBuscar({
           type="button"
           onClick={() => onCambio('')}
           aria-label="Vaciar la búsqueda"
-          className={cn(SIN_MINIMO, FOCO, AREA_TACTIL, 'absolute top-1/2 right-1.5 grid size-6 -translate-y-1/2 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground')}
+          className={cn(SIN_MINIMO, FOCO, AREA_TACTIL, 'absolute top-1/2 right-2 grid size-6 -translate-y-1/2 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground')}
         >
           <X className="size-3.5" aria-hidden />
         </button>
@@ -91,22 +92,55 @@ export function CampoBuscar({
 
 export type OpcionFiltro = { valor: string; etiqueta: React.ReactNode; detalle?: React.ReactNode };
 
-/** Un apartado de la hoja: título pequeño y las opciones en chips (se elige una). */
+/** Un apartado de la hoja con contenido libre: título pequeño y lo que se pase debajo. */
+export function SeccionFiltro({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+  const id = React.useId();
+  return (
+    <section aria-labelledby={id} className="flex min-w-0 flex-col gap-2">
+      <h3 id={id} className="text-xs font-medium text-muted-foreground">{titulo}</h3>
+      {children}
+    </section>
+  );
+}
+
+/**
+ * Un apartado de la hoja: título pequeño y las opciones (se elige una). En
+ * chips que saltan de línea o, con `variante="segmentado"`, en un
+ * `SelectorSegmentado` para dos a cuatro valores cortos («Individual / Equipos»).
+ */
 export function OpcionesFiltro({
   titulo,
   valor,
   opciones,
   onCambio,
+  variante = 'chips',
 }: {
   titulo: string;
   valor: string;
   opciones: readonly OpcionFiltro[];
   onCambio: (v: string) => void;
+  variante?: 'chips' | 'segmentado';
 }) {
   const id = React.useId();
+  if (variante === 'segmentado') {
+    return (
+      <SeccionFiltro titulo={titulo}>
+        <SelectorSegmentado
+          etiqueta={titulo}
+          valor={valor}
+          onCambio={onCambio}
+          opciones={opciones.map((o) => ({
+            valor: o.valor,
+            etiqueta: o.etiqueta,
+            ...(typeof o.detalle === 'number' ? { cuenta: o.detalle } : {}),
+          }))}
+        />
+      </SeccionFiltro>
+    );
+  }
   return (
     <fieldset className="flex min-w-0 flex-col">
-      <legend id={id} className="mb-[8px] text-[12px] font-medium text-muted-foreground">{titulo}</legend>
+      <legend id={id} className="mb-2 text-xs font-medium text-muted-foreground">{titulo}</legend>
       <div role="radiogroup" aria-labelledby={id} className="flex min-w-0 flex-wrap gap-[8px]">
         {opciones.map((o) => {
           const elegido = o.valor === valor;
@@ -122,7 +156,7 @@ export function OpcionesFiltro({
               {elegido ? <Check aria-hidden /> : null}
               <span>{o.etiqueta}</span>
               {o.detalle !== undefined ? (
-                <span className={cn('text-[12px] tabular-nums', elegido ? 'text-background' : 'text-muted-foreground')}>{o.detalle}</span>
+                <span className={cn('text-xs tabular-nums', elegido ? 'text-background' : 'text-muted-foreground')}>{o.detalle}</span>
               ) : null}
             </button>
           );

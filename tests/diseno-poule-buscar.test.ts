@@ -9,7 +9,16 @@ vi.mock('@/app/(app)/explorar/favoritos-acciones', () => ({
   quitarFavoritoAccion: vi.fn(),
 }));
 
-const { MatrizPoule } = await import('@/components/explorar/prueba/hoja-poule');
+const {
+  ANCHO_TARJETA_360,
+  CASILLA_MIN,
+  NOMBRE_MIN,
+  anchoSinNombre,
+  casillaEstrecha,
+  columnasPoule,
+  conLetra,
+  nombreEstrecho,
+} = await import('@/components/explorar/prueba/medidas-poule');
 const { nombreCompacto } = await import('@/lib/sport/nombre-visible');
 const { PoulesDePrueba } = await import('@/components/explorar/asaltos-prueba');
 const { BotonSeguirCompacto } = await import('@/components/explorar/buscador-social-seguir');
@@ -30,7 +39,7 @@ const poule: PouleDePrueba = {
   ],
 };
 
-describe('hoja de la poule: nombres compactos y totales fijos', () => {
+describe('poule en su sitio: nombres compactos y matriz que cabe en 360 px', () => {
   it('primer apellido con sus partículas e inicial del nombre', () => {
     expect(nombreCompacto('ZABALA GUTIERREZ Juan')).toBe('Zabala J.');
     expect(nombreCompacto('DE LA FUENTE RUIZ Bea')).toBe('De la Fuente B.');
@@ -40,21 +49,34 @@ describe('hoja de la poule: nombres compactos y totales fijos', () => {
     expect(nombreCompacto('Juan Zabala')).toBe('Juan Zabala');
   });
 
-  it('los cinco totales van fijos a la derecha, apilados por su ancho', () => {
-    const marcado = html(React.createElement(MatrizPoule, { poule, enlace: (id: string) => `/explorar/${id}`, filtro: { consulta: '' } }));
-    const derechas = [...marcado.matchAll(/<th scope="col" class="[^"]*sticky[^"]*" style="right:(\d+)(?:px)?"><abbr[^>]*>(\w+)<\/abbr>/g)].map((m) => [m[2], Number(m[1])]);
-    expect(derechas).toEqual([['V', 94], ['TD', 72], ['TR', 50], ['Ind', 24], ['Pto', 0]]);
-    // Cada fila repite los cinco fijos.
-    expect(marcado.match(/<td class="[^"]*sticky[^"]*"/g)).toHaveLength(15);
-    // Ancho mínimo: nombre de 96 px + 3 casillas de 26 + 114 de totales.
-    expect(marcado).toContain('min-width:288px');
+  it('a 360 px la matriz cabe sin desplazar: casillas de 22 a 30 px de 5 a 9 tiradores y el nombre no baja de 66', () => {
+    const casillas = [5, 6, 7, 8, 9].map((n) => Math.floor(casillaEstrecha(n)));
+    expect(casillas).toEqual([30, 30, 28, 25, 22]);
+    for (const n of [5, 6, 7, 8, 9]) {
+      expect(casillaEstrecha(n)).toBeGreaterThanOrEqual(22);
+      expect(nombreEstrecho(n)).toBeGreaterThanOrEqual(NOMBRE_MIN);
+      expect(anchoSinNombre(n) + NOMBRE_MIN).toBeLessThanOrEqual(ANCHO_TARJETA_360 + 0.001);
+      expect(conLetra(n)).toBe(true);
+    }
+    // Poules raras: la casilla encoge (sin letra) y se recorta el nombre, nunca la tarjeta.
+    for (const n of [10, 11, 12, 14]) {
+      expect(anchoSinNombre(n)).toBeLessThan(ANCHO_TARJETA_360);
+      expect(casillaEstrecha(n)).toBeGreaterThanOrEqual(CASILLA_MIN);
+    }
+    expect(conLetra(11)).toBe(false);
+    // En 320 px las casillas se reparten el ancho real (cqw) con el mismo tope.
+    expect(columnasPoule(7, true).asaltos).toContain('repeat(7, clamp(14px, calc((100cqw - 126px) / 7), 30px))');
+    expect(columnasPoule(7, false).amplia).toBe(columnasPoule(7, false).resumen);
   });
 
   it('el nombre es un enlace de 44 px con el nombre compacto y el completo para el lector', () => {
-    const marcado = html(React.createElement(MatrizPoule, { poule, enlace: (id: string) => `/explorar/${id}`, filtro: { consulta: '' } }));
+    const marcado = html(React.createElement(PoulesDePrueba, { poules: [poule], enlace: (id: string) => `/explorar/${id}`, filtro: { consulta: '' }, caraInicial: 'asaltos' }));
     // Sin aria-label que tape el apellido visible (WCAG 2.5.3): el nombre entero va en sr-only.
-    expect(marcado).toMatch(/<a [^>]*class="flex min-h-\[44px\][^"]*"/);
+    expect(marcado).toMatch(/<a [^>]*class="[^"]*flex min-h-\[44px\][^"]*"/);
     expect(marcado).not.toContain('aria-label="Ficha de');
+    // Con los asaltos, «V5» / «D3» en cada casilla y la propia en gris.
+    expect(marcado).toMatch(/<span aria-hidden="true">D<\/span>2/);
+    expect(marcado.match(/bg-muted/g)).toHaveLength(3);
     expect(marcado).toContain('<span class="sr-only">: Juan Zabala Gutierrez</span>');
     expect(marcado).toContain('>Zabala J.<');
     expect(marcado).toContain('>De la Fuente B.<');
@@ -67,10 +89,11 @@ describe('lista de la poule en móvil', () => {
   it('el enlace del nombre llena su hueco con 44 px de alto sin engordar la fila', () => {
     const marcado = html(React.createElement(PoulesDePrueba, { poules: [poule], enlace: (id: string) => `/explorar/${id}`, filtro: { consulta: '' } }));
     expect(marcado).toMatch(/<a [^>]*class="[^"]*flex min-h-\[44px\] flex-1 items-center[^"]*"[^>]*><span class="min-w-0 truncate">Zabala J\.<\/span><span class="sr-only">: Juan Zabala Gutierrez<\/span><\/a>/);
-    expect(marcado).toContain('grid min-h-[44px] items-center');
+    expect(marcado).toMatch(/<li class="grid [^"]*min-h-\[44px\] items-center/);
     expect(marcado).not.toContain('min-h-10');
-    // En la tabla ancha el toque cubre la casilla del nombre.
-    expect(marcado).toContain("after:absolute after:inset-0 after:content-[&#x27;&#x27;]");
+    // Ni botón «Hoja» ni área táctil que tape la tarjeta.
+    expect(marcado).not.toContain('Hoja');
+    expect(marcado).not.toContain('after:inset-0');
   });
 });
 

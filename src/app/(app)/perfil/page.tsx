@@ -7,7 +7,8 @@ import { Seccion } from '@/components/estado/piezas';
 import { EnlaceFavoritos } from '@/components/explorar/favoritos';
 import { Calendarios, type FeedVista } from '@/components/perfil/calendarios';
 import { HistorialPropio } from '@/components/perfil/historial-propio';
-import { Dato, FichaTirador } from '@/components/perfil/tirador';
+import { FichaTirador } from '@/components/perfil/tirador';
+import { ListaDatos, ParDato } from '@/components/sistema/lista-datos';
 import { Button } from '@/components/ui/button';
 import { getManagedAthletes, requireProfile } from '@/lib/auth/session';
 import { deriveCategoriesFromBirthDate } from '@/lib/categories';
@@ -86,8 +87,8 @@ export default async function Pagina({
     /* Pantalla de lectura: más de 900 px por línea de dato no se lee mejor. */
     <div className="flex w-full max-w-4xl flex-col gap-6">
       {/* Mismo filete que en `Cabecera` y en el calendario. */}
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-b border-filete pb-3">
-        <h1 className="text-2xl sm:text-3xl">Mi perfil</h1>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-filete pb-3">
+        <h1 className="text-2xl">Mi perfil</h1>
         {/*
           El correo se parte, no se recorta: un correo con puntos suspensivos
           no se puede leer ni comprobar, y en esta pantalla está justamente
@@ -99,18 +100,16 @@ export default async function Pagina({
       </div>
 
       <Seccion titulo="Tu cuenta">
-        <dl className="flex flex-wrap gap-x-8 gap-y-3 pt-3">
-          <Dato etiqueta="Nombre">{perfil.fullName}</Dato>
-          <Dato etiqueta="Correo">
+        <ListaDatos disposicion="linea" className="pt-1">
+          <ParDato etiqueta="Nombre">{perfil.fullName}</ParDato>
+          <ParDato etiqueta="Correo">
             <span className="block break-all">{perfil.email}</span>
-          </Dato>
-          <Dato etiqueta="Papel">{PAPEL[perfil.role] ?? perfil.role}</Dato>
-          <Dato etiqueta="Club">
-            {perfil.clubName ?? (
-              <span className="text-muted-foreground">Sin club asignado</span>
-            )}
-          </Dato>
-        </dl>
+          </ParDato>
+          <ParDato etiqueta="Papel">{PAPEL[perfil.role] ?? perfil.role}</ParDato>
+          <ParDato etiqueta="Club">
+            {perfil.clubName ?? <span className="text-muted-foreground">Sin club asignado</span>}
+          </ParDato>
+        </ListaDatos>
       </Seccion>
 
       <Seccion titulo="Favoritos" accion={<EnlaceFavoritos />}>

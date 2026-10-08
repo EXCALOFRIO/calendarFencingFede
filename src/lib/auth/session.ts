@@ -134,27 +134,12 @@ async function leerPerfilAutenticado(): Promise<SessionProfile | null> {
   const user = session?.user;
   if (!user?.email || !correoVerificado(user)) return null;
 
-  const [row] = await db
-    .select({
-      profileId: userProfile.id,
-      email: userProfile.email,
-      fullName: userProfile.fullName,
-      role: userProfile.role,
-      clubId: userProfile.clubId,
-      clubName: club.name,
-      icalToken: userProfile.icalToken,
-      authUserId: userProfile.authUserId,
-      inviteStatus: userProfile.inviteStatus,
-    })
-    .from(userProfile)
-    .leftJoin(club, eq(userProfile.clubId, club.id))
-    .where(
-      and(
-        eq(userProfile.authUserId, user.id),
-        sql`lower(trim(${userProfile.email})) = ${user.email.trim().toLowerCase()}`,
-      ),
-    )
-    .limit(1);
+  // `createManagedAuth` already read the D1 profile (club and coach weapons
+  // included) to authorize this session: one query per request instead of
+  // three. The checks below still run on it; the query only runs when the
+  // session arrives without a profile.
+  const managed = session && 'profile' in session ? session.profile : undefined;
+  const row = managed ? { ...managed, profileId: managed.id } : await leerFilaPerfil(user.id, user.email);
 
   if (!row) return null;
 
@@ -173,8 +158,8 @@ async function leerPerfilAutenticado(): Promise<SessionProfile | null> {
 
   // Solo se consultan las armas de quien puede tenerlas: para un tirador o un
   // tutor sería una consulta de más en cada carga de página.
-  let weapons: Weapon[] = [];
-  if (row.role === 'coach') {
+  let weapons: Weapon[] = managed?.weapons ?? [];
+  if (!managed && row.role === 'coach') {
     const rows = await db
       .select({ weapon: profileWeapon.weapon })
       .from(profileWeapon)
@@ -193,6 +178,31 @@ async function leerPerfilAutenticado(): Promise<SessionProfile | null> {
     icalToken: row.icalToken,
     weapons,
   };
+}
+
+async function leerFilaPerfil(authUserId: string, email: string) {
+  const [row] = await db
+    .select({
+      profileId: userProfile.id,
+      email: userProfile.email,
+      fullName: userProfile.fullName,
+      role: userProfile.role,
+      clubId: userProfile.clubId,
+      clubName: club.name,
+      icalToken: userProfile.icalToken,
+      authUserId: userProfile.authUserId,
+      inviteStatus: userProfile.inviteStatus,
+    })
+    .from(userProfile)
+    .leftJoin(club, eq(userProfile.clubId, club.id))
+    .where(
+      and(
+        eq(userProfile.authUserId, authUserId),
+        sql`lower(trim(${userProfile.email})) = ${email.trim().toLowerCase()}`,
+      ),
+    )
+    .limit(1);
+  return row;
 }
 
 /** La vista previa siempre vuelve a comprobar la cuenta administradora real. */

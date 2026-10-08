@@ -1,14 +1,19 @@
 'use client';
 
-import { Search, X } from 'lucide-react';
+import { Search, SearchX, X } from 'lucide-react';
 import Link from 'next/link';
 import * as React from 'react';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
+import { urlPaises } from '@/lib/sport/explorar/ambitos-url';
 import { buscarPaises, PAISES, rutaPais, type Pais } from '@/lib/sport/explorar/paises';
 import { cn } from '@/lib/utils';
 import { CAMPO_BUSCAR, CLASE_FILA_PAIS, ContenidoPais } from './buscador-filtros';
 
 const AVANZAR = [TIPO_TRANSICION.avanzar];
+
+/** Tras la última tecla, lo escrito pasa a la URL (sin ir al servidor): Atrás y el cambio de ámbito lo conservan. */
+const ESPERA_URL = 400;
 
 /** Fila de un país que abre su pantalla. */
 export function FilaPais({ pais, className }: { pais: Pais; className?: string }) {
@@ -22,15 +27,25 @@ export function FilaPais({ pais, className }: { pais: Pais; className?: string }
 }
 
 /**
- * Pestaña Países de Buscar: un campo que filtra al escribir (nombre en
- * castellano u otro idioma, código del COI, con erratas) y la lista de
- * países. Sin filtros: un país no tiene arma ni categoría propias. Todo pasa
- * en el navegador: la lista es fija y no consulta la base.
+ * Ámbito Países de Explorar: un campo que filtra al escribir (nombre en
+ * castellano u otro idioma, código del COI, con erratas), el selector de
+ * ámbitos (`cabecera`) y la lista de países. Sin filtros: un país no tiene
+ * arma ni categoría propias. Todo pasa en el navegador: la lista es fija y no
+ * consulta la base; lo escrito se apunta en la URL con `replaceState`.
  */
-export function BuscadorPaises({ qInicial = '' }: { qInicial?: string }) {
+export function BuscadorPaises({ qInicial = '', cabecera }: { qInicial?: string; cabecera?: React.ReactNode }) {
   const entrada = React.useRef<HTMLInputElement>(null);
   const [texto, setTexto] = React.useState(qInicial);
   const lista = texto.trim() ? buscarPaises(texto, PAISES.length) : PAISES;
+
+  React.useEffect(() => {
+    const t = setTimeout(() => {
+      const url = urlPaises(texto);
+      if (`${window.location.pathname}${window.location.search}` !== url) window.history.replaceState(window.history.state, '', url);
+    }, ESPERA_URL);
+    return () => clearTimeout(t);
+  }, [texto]);
+
   return (
     <div className="flex min-w-0 flex-col gap-3 lg:max-w-2xl">
       <form role="search" aria-label="Buscar países" className="relative w-full" onSubmit={(e) => e.preventDefault()}>
@@ -46,9 +61,9 @@ export function BuscadorPaises({ qInicial = '' }: { qInicial?: string }) {
           autoCorrect="off"
           spellCheck={false}
           enterKeyHint="search"
-          placeholder="España, ITA…"
+          placeholder="Buscar países"
           aria-controls="paises-lista"
-          className={cn(CAMPO_BUSCAR, 'pr-[40px]')}
+          className={cn(CAMPO_BUSCAR, 'pr-10')}
           onChange={(e) => setTexto(e.target.value)}
         />
         {texto ? (
@@ -62,13 +77,14 @@ export function BuscadorPaises({ qInicial = '' }: { qInicial?: string }) {
           </button>
         ) : null}
       </form>
+      {cabecera}
       <p role="status" className="sr-only">{`${lista.length} ${lista.length === 1 ? 'país' : 'países'}`}</p>
       {lista.length ? (
         <ul id="paises-lista" aria-label="Países" className="flex flex-col">
           {lista.map((p) => <FilaPais key={p.codigo} pais={p} />)}
         </ul>
       ) : (
-        <p className="px-[8px] py-[12px] text-[14px] text-muted-foreground">Ningún país se parece a «{texto.trim()}».</p>
+        <EstadoVacio icono={SearchX} titulo="Ningún país" descripcion={`Nada se parece a «${texto.trim()}».`} />
       )}
     </div>
   );

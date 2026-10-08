@@ -49,14 +49,9 @@ import {
 } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { fechaCorta, rangoFechas } from '@/lib/fechas';
 import { toCampoFecha } from '@/lib/callups/fechas';
-import {
-  CATEGORY_LABEL,
-  CIRCUIT_LABEL,
-  WEAPON_LABEL,
-  formatDateEs,
-  formatEur,
-} from '@/lib/utils';
+import { CATEGORY_LABEL, CIRCUIT_LABEL, WEAPON_LABEL, formatEur } from '@/lib/utils';
 
 /**
  * Normativa configurable.
@@ -189,7 +184,7 @@ export function NormativaPanel({ normativa }: { normativa: Normativa }) {
 
         {temporada ? (
           <span className="text-xs text-muted-foreground">
-            {formatDateEs(temporada.startDate)} – {formatDateEs(temporada.endDate)}
+            {rangoFechas(temporada.startDate, temporada.endDate, 'linea', { anio: 'siempre' })}
           </span>
         ) : null}
 
@@ -215,7 +210,7 @@ export function NormativaPanel({ normativa }: { normativa: Normativa }) {
       </div>
 
       <Tabs defaultValue="plazos">
-        <TabsList className="no-scrollbar max-w-full overflow-x-auto">
+        <TabsList className="max-w-full flex-wrap group-data-[orientation=horizontal]/tabs:h-auto">
           <TabsTrigger value="plazos">Plazos y recargos</TabsTrigger>
           <TabsTrigger value="categorias">Categorías</TabsTrigger>
           <TabsTrigger value="ranking">Ranking</TabsTrigger>
@@ -257,7 +252,7 @@ export function NormativaPanel({ normativa }: { normativa: Normativa }) {
                     </span>
                   </div>
 
-                  <div className="flex min-w-44 flex-1 flex-col gap-0.5">
+                  <div className="flex min-w-44 flex-1 flex-col gap-1">
                     <span className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{p.label}</span>
                       <Badge variant="secondary" className="font-normal">
@@ -290,7 +285,7 @@ export function NormativaPanel({ normativa }: { normativa: Normativa }) {
                       fecha={p.updatedAt}
                     />
                     {p.actualizadoPor ? (
-                      <span className="text-xs text-muted-foreground/80">
+                      <span className="text-xs text-muted-foreground">
                         Último cambio: {p.actualizadoPor}
                       </span>
                     ) : null}
@@ -366,7 +361,7 @@ export function NormativaPanel({ normativa }: { normativa: Normativa }) {
                     {CATEGORY_LABEL[c.code as keyof typeof CATEGORY_LABEL] ?? c.code}
                   </span>
 
-                  <div className="flex min-w-40 flex-1 flex-col gap-0.5">
+                  <div className="flex min-w-40 flex-1 flex-col gap-1">
                     <span className="text-sm">
                       {c.birthYearMin === null && c.birthYearMax === null
                         ? 'Sin franja de años definida'
@@ -440,7 +435,7 @@ export function NormativaPanel({ normativa }: { normativa: Normativa }) {
               {reglas.map((r) => (
                 <li key={r.id} className="flex min-w-0 flex-col gap-2 rounded-lg border bg-card px-3 py-3">
                   <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
-                    <div className="flex min-w-40 flex-1 flex-col gap-0.5">
+                    <div className="flex min-w-40 flex-1 flex-col gap-1">
                       <span className="flex flex-wrap items-center gap-2 font-medium">
                         {r.weapon
                           ? (WEAPON_LABEL[r.weapon as keyof typeof WEAPON_LABEL] ?? r.weapon)
@@ -463,7 +458,7 @@ export function NormativaPanel({ normativa }: { normativa: Normativa }) {
                       />
                       {r.cutoffDate ? (
                         <span className="text-xs text-muted-foreground">
-                          Corte para convocatorias: {formatDateEs(r.cutoffDate)}
+                          Corte para convocatorias: {fechaCorta(r.cutoffDate)}
                         </span>
                       ) : (
                         <span className="text-xs text-muted-foreground">
@@ -538,7 +533,7 @@ export function NormativaPanel({ normativa }: { normativa: Normativa }) {
                   {TABLA_LABEL[c.tableName] ?? c.tableName}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {c.quien ?? 'cuenta borrada'} · {formatDateEs(c.changedAt)}
+                  {c.quien ?? 'cuenta borrada'} · {fechaCorta(c.changedAt)}
                 </span>
               </li>
             ))}
@@ -1286,7 +1281,7 @@ function Campo({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       <Label htmlFor={id}>{etiqueta}</Label>
       {children}
       {ayuda ? <p className="medida text-xs text-muted-foreground">{ayuda}</p> : null}
@@ -1308,7 +1303,7 @@ function CampoSelect({
   opciones: { valor: string; etiqueta: string }[];
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       <Label htmlFor={id}>{etiqueta}</Label>
       <Select value={valor} onValueChange={onChange}>
         <SelectTrigger id={id} className="w-full">
@@ -1341,11 +1336,11 @@ function Interruptor({
 }) {
   return (
     <div className="flex items-start justify-between gap-4">
-      <div className="flex flex-col gap-0.5">
+      <div className="flex flex-col gap-1">
         <Label htmlFor={id}>{etiqueta}</Label>
         <p className="medida text-xs text-muted-foreground">{ayuda}</p>
       </div>
-      <Switch id={id} checked={valor} onCheckedChange={onChange} className="mt-1" />
+      <Switch id={id} checked={valor} onCheckedChange={onChange} className="-my-3 justify-end" />
     </div>
   );
 }

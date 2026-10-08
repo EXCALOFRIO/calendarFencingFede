@@ -41,7 +41,7 @@ export default async function VistaPrevia({
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col gap-6 px-4 py-8">
       <div>
-        <h1 className="text-2xl sm:text-3xl">Vista previa privada</h1>
+        <h1 className="text-2xl">Vista previa privada</h1>
         <p className="mt-3 text-sm text-muted-foreground">
           {admin.qa
             ? 'Acceso técnico temporal de QA, exclusivamente de solo lectura.'

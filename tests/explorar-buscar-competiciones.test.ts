@@ -201,8 +201,9 @@ describe('catálogo con el índice: sin D1 por tecla', () => {
     const pr = local.sqlite.prepare(`INSERT INTO sport_competition
       (id,edition_id,source,season,competition_key,weapon,gender,category,format) VALUES (?,?,?,?,?,?,?,?,?)`);
     for (let n = 1; n <= 40; n++) {
+      // Una semana y un día entre una y otra: ninguna se encadena con la anterior del mismo nombre (son eventos distintos).
       ed.run(id(n), 'fie', '2026', `ed-${n}`, n % 2 ? 'Coupe du Monde' : 'Championnats du Monde', n % 2 ? 'Turin' : 'Torino', 'ITA',
-        `2026-${String((n % 12) + 1).padStart(2, '0')}-${String((n % 27) + 1).padStart(2, '0')}`, null);
+        new Date(Date.UTC(2026, 0, 1) + n * 8 * 86_400_000).toISOString().slice(0, 10), null);
       pr.run(id(n + 1000), id(n), 'fie', '2026', `pr-${n}`, n % 3 ? 'ESPADA' : 'SABLE', 'F', 'ABS', 'INDIVIDUAL');
     }
     const datos = await leerDatosIndiceEdiciones(ctx);

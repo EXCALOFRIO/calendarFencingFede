@@ -292,7 +292,7 @@ describe('Favoritos alcanzable sin otro destino principal', () => {
   it('la barra de navegación no gana ningún destino: Favoritos es Tú › Siguiendo', () => {
     const hrefs = DESTINOS_APP.map((d) => d.href);
     expect(hrefs).not.toContain('/explorar/favoritos');
-    expect(hrefs).toEqual(['/', '/explorar', '/explorar/buscar', '/ranking', '/explorar/yo']);
+    expect(hrefs).toEqual(['/', '/explorar', '/ranking', '/explorar/yo']);
     expect(pestanaDeRuta('/explorar/favoritos', false)).toBe('tu');
   });
 
@@ -304,7 +304,7 @@ describe('Favoritos alcanzable sin otro destino principal', () => {
   });
 
   it('Explorar (por su barra) y el perfil incluyen el enlace', () => {
-    expect(readFileSync('src/components/explorar/vista-buscar.tsx', 'utf8')).toContain('<CabeceraExplorar');
+    expect(readFileSync('src/components/explorar/formulario-filtros.tsx', 'utf8')).toContain('<CabeceraExplorar');
     expect(readFileSync('src/app/(app)/perfil/page.tsx', 'utf8')).toContain('<EnlaceFavoritos');
   });
 

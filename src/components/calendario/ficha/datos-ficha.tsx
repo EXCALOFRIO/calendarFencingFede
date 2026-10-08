@@ -3,7 +3,8 @@
 import { ChevronDown, ExternalLink, Navigation } from 'lucide-react';
 import * as React from 'react';
 import { BanderaPais } from '@/components/bandera';
-import { Button } from '@/components/ui/button';
+import { Boton } from '@/components/sistema/boton';
+import { ListaDatos, ParDato } from '@/components/sistema/lista-datos';
 import { mapsLinks } from '@/lib/travel';
 import {
   Collapsible,
@@ -13,12 +14,11 @@ import {
 import type { CompetitionView, DatoExtraidoView, EventView } from '@/lib/queries/calendar';
 import { cn, formatEur, titular } from '@/lib/utils';
 import {
-  CitaConvocatoria,
-  MarcaConvocatoria,
   contradiccion,
   creible,
   dominioDe,
   enlacesDeConvocatoria,
+  esImporte,
   huecoDe,
   plazosDeConvocatoria,
 } from '../datos-convocatoria';
@@ -29,32 +29,24 @@ import { accesoCreible, horariosDelTorneo, tituloDeDia } from '../horarios-torne
  * LO QUE DICE LA CONVOCATORIA, POR GRUPOS
  * ===========================================================================
  *
- * Al final de la ficha había un desplegable «Ver las 19 frases del PDF» con
- * cada dato extraído en una fila —«Apertura de la instalación · 2026-10-18
- * team event · Team Event 06:30»— y la frase del PDF debajo de cada uno. Era
- * comprobable y era ilegible: la clave interna asomaba por el rótulo, la cuota
- * salía como «80.00» y el horario, la sede y los enlaces se repetían de lo que
- * ya estaba arriba.
+ * Cada dato leído va **una sola vez**, en el grupo al que pertenece:
  *
- * Ahora cada dato va **una sola vez**, en el grupo al que pertenece:
- *
- *  · **Inscripción** — cuotas en euros, cupos, edad mínima, forma de pago y
- *    requisitos, en la banda del plazo;
- *  · **Sede** — pabellón, dirección, acceso y lo demás del recinto, en «Dónde
- *    y cuándo», con el botón del mapa;
- *  · **Horario** — la línea de tiempo por días de `horarios-torneo.tsx`;
+ *  · **Condiciones** — la cuota de la prueba, cupos, edad mínima, forma de
+ *    pago y requisitos, en la banda del plazo;
+ *  · **Sede** — pabellón, dirección, acceso y lo demás del recinto;
+ *  · **Horario** — `horarios-torneo.tsx`;
  *  · **Organiza** y **Enlaces** — en la banda de la convocatoria.
  *
- * La trazabilidad no se pierde: cada valor leído lleva la marca de documento
- * leído y al tocarlo sale su frase literal del PDF (`CitaConvocatoria`).
+ * Todo en pares rótulo–valor (`ListaDatos`), sin nada pegado detrás del
+ * valor. La frase de la que sale cada uno se ve desde el botón «Según la
+ * convocatoria» de su banda (`segun-convocatoria.tsx`).
  *
  * LA RED DE SEGURIDAD
  * -------------------
  * Lo que no tiene sitio en ningún grupo —un campo nuevo, una cuota cuya frase
- * no habla de euros, una hora sin día— no desaparece: va a «Otros datos de la
- * convocatoria», plegado. Para saber qué falta se apunta qué ha usado cada
- * grupo (`usados`), en vez de mantener una segunda lista de campos que se
- * desincronizaría con la primera.
+ * no habla de euros, una hora sin día— va a «Más datos», plegado. Para saber
+ * qué falta se apunta qué ha usado cada grupo (`usados`), en vez de mantener
+ * una segunda lista de campos que se desincronizaría con la primera.
  */
 
 export type LineaDato = {
@@ -75,7 +67,7 @@ const empieza = (d: DatoExtraidoView, campo: string) =>
   d.campo === campo || d.campo.startsWith(`${campo}.`);
 
 /** «80.00» → «80 €»; si no es una cifra, el texto tal cual. */
-function euros(valor: string): string {
+export function euros(valor: string): string {
   const n = Number.parseFloat(valor.replace(',', '.'));
   return Number.isFinite(n) && /^\s*\d/.test(valor) ? formatEur(n) : valor;
 }
@@ -92,12 +84,9 @@ export function leidosDe(evento: EventView, prueba: CompetitionView | null): Dat
 type TipoCuota = 'individual' | 'equipos' | string;
 
 /**
- * De qué es una cuota leída.
- *
- * `fee_eur.equipos` lo dice la clave. `fee_eur` a secas lo dice el texto de
- * la prueba («Individual», «Team»), y si no dice nada y cuelga de una prueba,
- * es la de esa prueba. Lo demás (`fee_eur.m17`) lleva su concepto en la
- * etiqueta, que ya está en castellano.
+ * De qué es una cuota leída. `fee_eur.equipos` lo dice la clave; `fee_eur` a
+ * secas lo dice el texto de la prueba («Individual», «Team») o, si cuelga de
+ * una prueba, su modalidad. Lo demás (`fee_eur.m17`) es otro concepto.
  */
 function tipoDeCuota(d: DatoExtraidoView, deLaPrueba: CompetitionView | null): TipoCuota {
   if (d.campo === 'fee_eur.equipos') return 'equipos';
@@ -107,12 +96,6 @@ function tipoDeCuota(d: DatoExtraidoView, deLaPrueba: CompetitionView | null): T
   if (/individual|individuel/.test(texto)) return 'individual';
   if (deLaPrueba) return deLaPrueba.format === 'EQUIPOS' ? 'equipos' : 'individual';
   return 'individual';
-}
-
-function rotuloDeCuota(tipo: TipoCuota, d: DatoExtraidoView | null): string {
-  if (tipo === 'individual') return 'Cuota individual';
-  if (tipo === 'equipos') return 'Cuota por equipos';
-  return d ? d.etiqueta.replace(' · ', ' ') : 'Cuota';
 }
 
 /** Requisitos que llegan en inglés de los dossieres de la FIE, en castellano. */
@@ -126,9 +109,8 @@ function requisitoLegible(valor: string): string {
 }
 
 /**
- * «12» → «12 tiradores». La unidad la dice la clave, no se adivina:
- * `entry_quota.equipos` cuenta equipos y las demás cuentan tiradores. Un
- * valor que no es un número suelto se deja como viene.
+ * «12» → «12 tiradores». La unidad la dice la clave: `entry_quota.equipos`
+ * cuenta equipos y las demás, tiradores. Lo que no es un número, tal cual.
  */
 function cupo(d: DatoExtraidoView): string {
   const v = d.valor.trim();
@@ -139,6 +121,7 @@ function cupo(d: DatoExtraidoView): string {
 }
 
 export type DatosInscripcion = {
+  /** Como mucho una: la de la prueba elegida. */
   cuotas: LineaDato[];
   condiciones: LineaDato[];
   requisitos: LineaDato[];
@@ -151,72 +134,51 @@ export function inscripcionDe(
 ): DatosInscripcion {
   const usados = new Set<string>();
   const cuotas: LineaDato[] = [];
-  const vistas = new Set<string>();
 
-  /**
-   * La cuota publicada manda sobre la leída del mismo tipo. Las leídas a
-   * nivel de torneo nunca vienen marcadas como «pisadas» (no se sabe de qué
-   * prueba son hasta leer su texto), así que se apartan aquí: si no, la
-   * cuota individual saldría dos veces, la de la fuente y la del PDF.
-   */
-  const tipoPublicado = prueba.format === 'EQUIPOS' ? 'equipos' : 'individual';
+  /*
+    UNA cifra, la de esta prueba: la publicada si la hay y, si no, la leída de
+    su misma modalidad. Los demás importes (la otra modalidad, alojamiento,
+    árbitros) se dan por usados y no salen en la ficha (`esImporte`). Un
+    «importe» cuya frase no habla de euros no es un precio y sigue su camino
+    hasta «Más datos».
+  */
+  const tipoPropio = prueba.format === 'EQUIPOS' ? 'equipos' : 'individual';
   if (prueba.feeEur !== null) {
-    // La publicada es la de esta prueba, sin duda posible: no hace falta
-    // decir si es individual o por equipos, eso ya lo dice la pastilla.
-    cuotas.push({
-      clave: 'publicada',
-      rotulo: 'Cuota de inscripción',
-      valor: euros(prueba.feeEur),
-      dato: null,
-    });
-    vistas.add(tipoPublicado);
+    cuotas.push({ clave: 'publicada', rotulo: 'Cuota de inscripción', valor: euros(prueba.feeEur), dato: null });
   }
 
   const candidatas: [DatoExtraidoView, CompetitionView | null][] = [
     ...prueba.datosExtraidos.map((d) => [d, prueba] as [DatoExtraidoView, CompetitionView]),
     ...evento.datosExtraidos.map((d) => [d, null] as [DatoExtraidoView, null]),
   ];
-  // Las revisadas por una persona primero: si dos documentos dan dos cuotas
-  // del mismo tipo, gana la firmada.
+  // Si dos documentos dan dos cuotas, gana la revisada por una persona.
   candidatas.sort(([a], [b]) => Number(b.estado === 'aprobado') - Number(a.estado === 'aprobado'));
   for (const [d, dueña] of candidatas) {
-    if (!empieza(d, 'fee_eur') || d.pisadoPorPublicado || !creible(d, null)) continue;
-    const tipo = tipoDeCuota(d, dueña);
-    if (vistas.has(tipo)) {
-      usados.add(d.id);
-      continue;
-    }
-    vistas.add(tipo);
+    if (!esImporte(d.campo) || d.pisadoPorPublicado) continue;
+    if (empieza(d, 'fee_eur') && !creible(d, null)) continue;
     usados.add(d.id);
-    cuotas.push({ clave: d.id, rotulo: rotuloDeCuota(tipo, d), valor: euros(d.valor), dato: d });
+    if (cuotas.length === 0 && empieza(d, 'fee_eur') && tipoDeCuota(d, dueña) === tipoPropio) {
+      cuotas.push({ clave: d.id, rotulo: 'Cuota de inscripción', valor: euros(d.valor), dato: d });
+    }
   }
-  // La de la prueba que se está mirando, primero.
-  cuotas.sort(
-    (a, b) =>
-      Number(b.rotulo === rotuloDeCuota(tipoPublicado, null)) -
-      Number(a.rotulo === rotuloDeCuota(tipoPublicado, null)),
-  );
 
   const leidos = leidosDe(evento, prueba).filter((d) => !d.pisadoPorPublicado);
   const condiciones: LineaDato[] = [];
-  const una = (campo: string, rotulo: string, valor: (d: DatoExtraidoView) => string) => {
-    const d = huecoDe(leidos, campo);
-    if (!d) return;
-    usados.add(d.id);
-    condiciones.push({ clave: d.id, rotulo, valor: valor(d), dato: d });
-  };
 
   for (const d of leidos.filter((x) => x.campo.startsWith('entry_quota'))) {
     usados.add(d.id);
     condiciones.push({ clave: d.id, rotulo: d.etiqueta, valor: cupo(d), dato: d });
   }
-  una('min_age', 'Edad mínima', (d) => (/^\d+$/.test(d.valor.trim()) ? `${d.valor.trim()} años` : d.valor));
+  const edad = huecoDe(leidos, 'min_age');
+  if (edad) {
+    usados.add(edad.id);
+    const v = edad.valor.trim();
+    condiciones.push({ clave: edad.id, rotulo: 'Edad mínima', valor: /^\d+$/.test(v) ? `${v} años` : edad.valor, dato: edad });
+  }
 
   /*
-    Las formas de pago pueden ser varias (`payment_method.<forma>`), y son UNA
-    condición: «En efectivo o por transferencia». La cita que se enseña es la
-    de la primera; las demás quedan apuntadas como usadas porque su valor está
-    en la misma línea.
+    Las formas de pago pueden ser varias (`payment_method.<forma>`) y son UNA
+    condición: «En efectivo o por transferencia».
   */
   const pagos = leidos.filter((d) => empieza(d, 'payment_method'));
   if (pagos.length > 0) {
@@ -225,15 +187,12 @@ export function inscripcionDe(
     condiciones.push({
       clave: pagos[0].id,
       rotulo: 'Forma de pago',
-      valor: valores
-        .map((v, i) => (i === 0 ? v : v.charAt(0).toLowerCase() + v.slice(1)))
-        .join(' o '),
+      valor: valores.map((v, i) => (i === 0 ? v : v.charAt(0).toLowerCase() + v.slice(1))).join(' o '),
       dato: pagos[0],
     });
   }
 
-  const admitidas = leidos.filter((d) => d.campo.startsWith('category_allowed'));
-  for (const d of admitidas) {
+  for (const d of leidos.filter((x) => x.campo.startsWith('category_allowed'))) {
     usados.add(d.id);
     condiciones.push({ clave: d.id, rotulo: 'Categoría admitida', valor: titular(d.valor), dato: d });
   }
@@ -250,37 +209,17 @@ export function inscripcionDe(
   return { cuotas, condiciones, requisitos, usados };
 }
 
-/** Un par rótulo/valor; el valor, si es leído del PDF, es tocable y lleva su cita. */
-export function ParDato({
-  linea,
-  grande = false,
-  className,
-}: {
-  linea: LineaDato;
-  grande?: boolean;
-  className?: string;
-}) {
-  const { dato } = linea;
+/** Pares rótulo–valor en filas, con su filete: la forma de todos los datos de la ficha. */
+export function FilasDatos({ lineas, className }: { lineas: readonly LineaDato[]; className?: string }) {
+  if (lineas.length === 0) return null;
   return (
-    <CitaConvocatoria dato={dato} className={cn('py-0.5', className)}>
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-[13px] text-muted-foreground">{linea.rotulo}</span>
-        <span
-          className={cn(
-            'min-w-0 break-words',
-            grande ? 'cifra text-2xl leading-none' : 'text-[14px] leading-[20px] font-medium',
-            dato && dato.estado !== 'aprobado' && 'text-foreground/85',
-          )}
-        >
-          {linea.valor}
-          {dato ? (
-            <MarcaConvocatoria
-              className={cn('ml-1.5 text-muted-foreground', grande && 'size-3.5 align-baseline')}
-            />
-          ) : null}
-        </span>
-      </div>
-    </CitaConvocatoria>
+    <ListaDatos disposicion="linea" className={className}>
+      {lineas.map((l) => (
+        <ParDato key={l.clave} etiqueta={l.rotulo}>
+          {l.valor}
+        </ParDato>
+      ))}
+    </ListaDatos>
   );
 }
 
@@ -299,68 +238,16 @@ export function Tarjeta({
   return (
     <section
       aria-label={titulo}
-      className={cn('flex min-w-0 flex-col gap-3 rounded-lg border border-filete bg-card p-3', className)}
+      className={cn('flex min-w-0 flex-col gap-2 rounded-xl border border-filete bg-card px-3 pt-3 pb-1', className)}
     >
       {titulo || accion ? (
         <header className="flex flex-wrap items-center justify-between gap-2">
-          {titulo ? <h4 className="text-[14px] leading-[20px] font-semibold">{titulo}</h4> : <span />}
+          {titulo ? <h4 className="text-sm font-semibold text-foreground">{titulo}</h4> : <span />}
           {accion}
         </header>
       ) : null}
       {children}
     </section>
-  );
-}
-
-export function TarjetaInscripcion({
-  evento,
-  prueba,
-}: {
-  evento: EventView;
-  prueba: CompetitionView;
-}) {
-  const { cuotas, condiciones, requisitos } = inscripcionDe(evento, prueba);
-  // Lo que no se publica no se pinta: ni «cuota no publicada» ni recuadro vacío.
-  if (cuotas.length + condiciones.length + requisitos.length === 0) return null;
-
-  return (
-    <Tarjeta titulo="Condiciones">
-      {cuotas.length > 0 ? (
-        <div className="grid grid-cols-2 items-start gap-x-4 gap-y-3">
-          {cuotas.map((l) => (
-            <ParDato key={l.clave} linea={l} grande />
-          ))}
-        </div>
-      ) : null}
-
-      {condiciones.length > 0 ? (
-        <div
-          className={cn(
-            'grid grid-cols-2 items-start gap-x-4 gap-y-3',
-            cuotas.length > 0 && 'border-t border-t-filete pt-3',
-          )}
-        >
-          {condiciones.map((l) => (
-            <ParDato key={l.clave} linea={l} />
-          ))}
-        </div>
-      ) : null}
-
-      {requisitos.length > 0 ? (
-        <ul
-          className={cn(
-            'flex flex-col gap-1',
-            cuotas.length + condiciones.length > 0 && 'border-t border-t-filete pt-3',
-          )}
-        >
-          {requisitos.map((l) => (
-            <li key={l.clave}>
-              <ParDato linea={l} />
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </Tarjeta>
   );
 }
 
@@ -395,12 +282,9 @@ export type DatosSede = {
 };
 
 /**
- * ¿Hay sede de verdad, o el campo «sede» repite la ciudad?
- *
- * Varias fuentes rellenan la sede con el nombre de la ciudad cuando todavía
- * no se sabe el pabellón. Si se toma al pie de la letra, la ficha pone «San
- * Salvador» dos veces seguidas y el botón promete llevarte a un pabellón que
- * no existe.
+ * ¿Hay sede de verdad, o el campo «sede» repite la ciudad? Varias fuentes
+ * rellenan la sede con la ciudad cuando todavía no se sabe el pabellón, y la
+ * ficha ponía «San Salvador» dos veces seguidas.
  */
 export function sedeDe(evento: EventView): DatosSede {
   const datos = evento.datosExtraidos;
@@ -410,12 +294,11 @@ export function sedeDe(evento: EventView): DatosSede {
       : null;
   const sedeLeida = sedePublicada ? null : huecoDe(datos, 'venue', evento.city);
   const direccionLeida = evento.venueAddress ? null : huecoDe(datos, 'venue_address', evento.city);
-  // Cuando la fuente ya publica la sede pero el papel dice otra, se dice. Pero
-  // no si lo que «dice» el papel es la ciudad: eso no es otra sede.
+  // Si el papel nombra otra sede se dice, salvo que esa «sede» sea la ciudad.
   const contraria = contradiccion(datos, 'venue', sedePublicada);
   const otraSede = contraria && creible(contraria, evento.city) ? contraria : null;
   const leido = huecoDe(datos, 'venue_access', evento.city);
-  // Lo que no es creíble como acceso va a «Otros datos» y no se marca usado.
+  // Lo que no es creíble como acceso va a «Más datos» y no se marca usado.
   const acceso = leido && accesoCreible(leido.valor) ? leido : null;
 
   const usados = new Set<string>();
@@ -425,8 +308,7 @@ export function sedeDe(evento: EventView): DatosSede {
   for (const [campo, rotulo] of EXTRAS_SEDE) {
     const d = huecoDe(datos, campo);
     if (!d) continue;
-    // Pistas y aforo son cifras. «Pistas: ESPADA MASCULINO» (leído así en un
-    // TNR) es el rótulo de otra columna del PDF: va a «Otros datos», no aquí.
+    // «Pistas: ESPADA MASCULINO» es el rótulo de otra columna del PDF, no una cifra.
     if ((campo === 'venue_pistas' || campo === 'venue_aforo') && !/\d/.test(d.valor)) continue;
     usados.add(d.id);
     extras.push({ clave: d.id, rotulo, valor: d.valor, dato: d });
@@ -461,36 +343,24 @@ export function TarjetaOrganiza({ evento }: { evento: EventView }) {
   const mapa = direccion ? mapsLinks({ venueAddress: direccion.valor })?.google ?? null : null;
   return (
     <Tarjeta titulo="Organiza">
-      <div className="flex flex-col gap-1">
-        {quien ? (
-          <CitaConvocatoria dato={quien}>
-            <span className="text-[14px] leading-[20px] font-medium">
-              {titular(quien.valor)}
-              <MarcaConvocatoria className="ml-1.5 text-muted-foreground" />
-            </span>
-          </CitaConvocatoria>
-        ) : null}
-        {direccion ? <LineaDireccion texto={titular(direccion.valor)} mapa={mapa} leida={direccion} /> : null}
-      </div>
+      {quien ? <p className="text-base font-medium text-foreground">{titular(quien.valor)}</p> : null}
+      {direccion ? <LineaDireccion texto={titular(direccion.valor)} mapa={mapa} /> : null}
     </Tarjeta>
   );
 }
 
 /**
  * Una dirección en una sola línea que abre el mapa. Entera va en el `title` y
- * en el propio mapa; la marca del documento, si se leyó del PDF, es un botón
- * aparte porque no puede ir dentro del enlace.
+ * en el propio mapa.
  */
 export function LineaDireccion({
   pais,
   texto,
   mapa,
-  leida,
 }: {
   pais?: string | null;
   texto: string;
   mapa: string | null;
-  leida: DatoExtraidoView | null;
 }) {
   const contenido = (
     <>
@@ -498,34 +368,23 @@ export function LineaDireccion({
       <span className="min-w-0 flex-1 truncate">{texto}</span>
     </>
   );
-  return (
-    <div className="flex min-w-0 items-center gap-1">
-      {mapa ? (
-        <a
-          href={mapa}
-          target="_blank"
-          rel="noreferrer"
-          title={texto}
-          className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-md text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-        >
-          {contenido}
-          <Navigation className="size-4 shrink-0 text-primary-text" aria-hidden />
-          {/* Detrás de la dirección visible, no en un aria-label que la tape (WCAG 2.5.3). */}
-          <span className="sr-only">: abrir en el mapa (se abre en otra pestaña)</span>
-        </a>
-      ) : (
-        <p title={texto} className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 text-sm text-muted-foreground">
-          {contenido}
-        </p>
-      )}
-      {leida ? (
-        <CitaConvocatoria dato={leida} className="mx-0 px-0">
-          <span className="flex size-[32px] items-center justify-center text-muted-foreground">
-            <MarcaConvocatoria />
-          </span>
-        </CitaConvocatoria>
-      ) : null}
-    </div>
+  return mapa ? (
+    <a
+      href={mapa}
+      target="_blank"
+      rel="noreferrer"
+      title={texto}
+      className="flex min-h-[44px] min-w-0 items-center gap-2 rounded-md text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+    >
+      {contenido}
+      <Navigation className="size-4 shrink-0 text-primary-text" aria-hidden />
+      {/* Detrás de la dirección visible, no en un aria-label que la tape (WCAG 2.5.3). */}
+      <span className="sr-only">: abrir en el mapa (se abre en otra pestaña)</span>
+    </a>
+  ) : (
+    <p title={texto} className="flex min-h-[44px] min-w-0 items-center gap-2 text-sm text-muted-foreground">
+      {contenido}
+    </p>
   );
 }
 
@@ -534,11 +393,8 @@ export function LineaDireccion({
 // ---------------------------------------------------------------------------
 
 /**
- * Los datos leídos que ningún grupo ha enseñado.
- *
- * No entra lo «pisado por lo publicado»: la fuente ya publica ese dato y la
- * ficha enseña el publicado; si el papel dice otra cosa, eso ya sale como
- * contradicción en su sitio.
+ * Los datos leídos que ningún grupo ha enseñado. No entra lo «pisado por lo
+ * publicado»: la ficha enseña el publicado.
  */
 export function otrosDatosDe(evento: EventView, prueba: CompetitionView | null): DatoExtraidoView[] {
   const usados = new Set<string>([
@@ -557,12 +413,9 @@ export function otrosDatosDe(evento: EventView, prueba: CompetitionView | null):
 }
 
 /**
- * El rótulo sin la clave interna.
- *
- * `etiquetaDeCampo` añade el sufijo de la clave, y en los horarios ese sufijo
- * es el día y la prueba en forma de slug («Inicio · 2026-10-14 training
- * available in the sub arena»). El día y la prueba se enseñan aparte y bien
- * escritos, así que aquí se quita.
+ * El rótulo sin la clave interna. En los horarios el sufijo de la clave es el
+ * día y la prueba en forma de slug («Inicio · 2026-10-14 training…»); el día y
+ * la prueba se enseñan aparte y bien escritos.
  */
 export function rotuloLimpio(d: DatoExtraidoView): string {
   const [base, ...resto] = d.etiqueta.split(' · ');
@@ -577,66 +430,42 @@ function esEnlace(d: DatoExtraidoView): boolean {
 export function OtrosDatos({ datos }: { datos: DatoExtraidoView[] }) {
   if (datos.length === 0) return null;
   return (
-    <Collapsible className="group/collapsible">
+    <Collapsible className="group/collapsible flex flex-col gap-2">
       <CollapsibleTrigger asChild>
-        <Button variant="ghost" size="sm" className="self-start rounded-full px-3">
-          <MarcaConvocatoria />
-          Más datos
-          <span className="cifra text-muted-foreground">{datos.length}</span>
-          <ChevronDown className="transition-transform group-data-[state=open]/collapsible:rotate-180" />
-        </Button>
+        <Boton variante="fantasma" tamano="sm" className="self-start">
+          Más datos ({datos.length})
+          <ChevronDown aria-hidden className="transition-transform group-data-[state=open]/collapsible:rotate-180 motion-reduce:transition-none" />
+        </Boton>
       </CollapsibleTrigger>
-      <CollapsibleContent className="pt-1">
-        <ul className="flex flex-col divide-y divide-filete rounded-lg border border-filete bg-card">
-          {datos.map((d) => {
-            const contexto = [d.fecha ? tituloDeDia(d.fecha) : null, d.prueba ? titular(d.prueba) : null]
-              .filter(Boolean)
-              .join(' · ');
-            return (
-              <li key={d.id} className="px-3 py-2">
-                {esEnlace(d) ? (
-                  <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                    <CitaConvocatoria dato={d}>
-                      <span className="text-[13px] text-muted-foreground">
-                        <MarcaConvocatoria className="mr-1.5" />
-                        {rotuloLimpio(d)}
-                      </span>
-                    </CitaConvocatoria>
-                    <Button variant="outline" size="sm" asChild>
-                      <a
-                        href={/^https?:\/\//i.test(d.valor) ? d.valor : `https://${d.valor}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {dominioDe(d.valor)}
-                        <ExternalLink />
-                      </a>
-                    </Button>
-                  </div>
-                ) : (
-                  <CitaConvocatoria dato={d} className="w-full">
-                    <div className="flex min-w-0 flex-col gap-0.5">
-                      <span className="text-[13px] text-muted-foreground">
-                        {rotuloLimpio(d)}
-                        {contexto ? ` · ${contexto}` : ''}
-                      </span>
-                      <span className="min-w-0 break-words text-[14px] leading-[20px] font-medium">
-                        {/*
-                          El VALOR pasa por `titular()` y la CITA no: el valor
-                          se va a leer y las convocatorias lo escriben todo en
-                          mayúsculas; la cita es la prueba de que el dato
-                          existe, y una prueba retocada no prueba nada.
-                        */}
-                        {titular(d.valor)}
-                        <MarcaConvocatoria className="ml-1.5 text-muted-foreground" />
-                      </span>
-                    </div>
-                  </CitaConvocatoria>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+      <CollapsibleContent>
+        <Tarjeta className="pb-3">
+          {/* En columna: estos rótulos traen el día y la prueba y no caben al lado del valor. */}
+          <ListaDatos disposicion="columna">
+            {datos.map((d) => {
+              const contexto = [d.fecha ? tituloDeDia(d.fecha) : null, d.prueba ? titular(d.prueba) : null]
+                .filter(Boolean)
+                .join(' · ');
+              return (
+                <ParDato key={d.id} etiqueta={contexto ? `${rotuloLimpio(d)} · ${contexto}` : rotuloLimpio(d)}>
+                  {esEnlace(d) ? (
+                    <a
+                      href={/^https?:\/\//i.test(d.valor) ? d.valor : `https://${d.valor}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex min-h-[44px] items-center gap-1 text-primary-text underline-offset-4 hover:underline"
+                    >
+                      {dominioDe(d.valor)}
+                      <ExternalLink className="size-4 shrink-0" aria-hidden />
+                    </a>
+                  ) : (
+                    // El valor pasa por `titular()` (las convocatorias lo escriben en mayúsculas); la cita, no.
+                    titular(d.valor)
+                  )}
+                </ParDato>
+              );
+            })}
+          </ListaDatos>
+        </Tarjeta>
       </CollapsibleContent>
     </Collapsible>
   );

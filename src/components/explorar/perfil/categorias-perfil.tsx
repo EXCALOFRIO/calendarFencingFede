@@ -38,18 +38,18 @@ export function CategoriasPerfil({ categorias, nivel }: { categorias: readonly R
               </span>
             </div>
             <dl className="grid grid-cols-2 gap-2">
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <dt className="text-[12px] leading-none text-muted-foreground">Mejor</dt>
+              <div className="flex min-w-0 flex-col gap-1">
+                <dt className="text-xs leading-none text-muted-foreground">Mejor</dt>
                 <dd className="cifra text-3xl leading-none">{c.mejorPuesto !== null ? `${c.mejorPuesto}º` : '—'}</dd>
               </div>
               {c.finales != null ? (
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <dt className="text-[12px] leading-none text-muted-foreground">Top 8</dt>
+                <div className="flex min-w-0 flex-col gap-1">
+                  <dt className="text-xs leading-none text-muted-foreground">Top 8</dt>
                   <dd className="cifra text-3xl leading-none">{c.finales}</dd>
                 </div>
               ) : c.podios != null ? (
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <dt className="text-[12px] leading-none text-muted-foreground">Podios</dt>
+                <div className="flex min-w-0 flex-col gap-1">
+                  <dt className="text-xs leading-none text-muted-foreground">Podios</dt>
                   <dd className="cifra text-3xl leading-none">{c.podios}</dd>
                 </div>
               ) : null}

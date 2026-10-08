@@ -127,11 +127,12 @@ export default async function Pagina({
     );
   }
 
-  // «Cara a cara», en la cabecera compacta, es un rótulo: el `<h1>` es el nombre, con el aspecto de antes.
+  // Sin rival: la página de elegir, para enlaces directos y sin JavaScript. Desde el perfil se elige en una hoja.
+  // «Cara a cara», en la cabecera compacta, es un rótulo: el `<h1>` es el nombre.
   return (
     <div className="flex flex-col gap-6">
       {vista.tipo === 'elegir' ? (
-        <h1 className="font-sans text-[16px] leading-[20px] font-semibold tracking-normal break-words [text-wrap:wrap]">{nombre}</h1>
+        <h1 className="font-sans text-base leading-5 font-semibold tracking-normal break-words [text-wrap:wrap]">{nombre}</h1>
       ) : null}
 
       {vista.tipo === 'elegir' ? filtros : null}

@@ -435,7 +435,7 @@ describe('pantallas de ediciones', () => {
     const marcado = html(React.createElement(PruebasDeEdicion, { edicion: edicionDetalle, seleccionada: PRUEBA }));
     expect(marcado).toContain(`href="${construirUrlEdicion(ED_JO, { prueba: PRUEBA })}"`);
     expect(marcado).toContain(`href="${construirUrlEdicion(ED_JO, { prueba: UUID_B })}"`);
-    expect(marcado).toMatch(/aria-current="true"[^>]*>Individual</);
+    expect(marcado).toMatch(/aria-current="page"[^>]*>(?:<[^>]+>)*Individual</);
     expect(marcado).toContain('>Equipos<');
     expect(marcado).not.toContain('Senior');
     expect(marcado).not.toContain('Ver la clasificación');

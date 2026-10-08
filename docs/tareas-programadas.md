@@ -141,6 +141,48 @@ escrituras de Skermo y `rfee_wp` no depende de ella.
 Forzar solo salta los niveles. Las cadencias propias de cada fuente siguen
 aplicándose: la del ranking nacional y la de los inscritos FIE.
 
+Forzar también salta la huella de página de Skermo (ver abajo). Para que la
+próxima pasada programada procese las páginas enteras sin forzar nada más:
+
+```sql
+DELETE FROM refresco_programado WHERE tarea IN ('huella_pagina', 'huella_pagina_leida');
+```
+
+## Escrituras y caché de la cadena nocturna
+
+Detalle y cifras en `docs/ingesta-optimizacion-2026-10-08.md`.
+
+- **Inscritos**: solo se escriben filas nuevas o con algún dato cambiado. Las
+  bajas salen de comparar lo guardado con lo leído en la pasada (por prueba y
+  fuente leída), no de `last_seen_at`. Esa fecha («leída el …» en la ficha) se
+  renueva a diario en las pruebas del día −1 al +14 y una vez por semana en las
+  demás (`hayQueMarcarListaVista`).
+- **Plazos publicados**: solo se escriben si el cierre se mueve. Un fallo al
+  guardarlos deja la pasada en `parcial` con la nota «plazos sin guardar», sin
+  tumbar el calendario.
+- **Huella de página de Skermo**: cada calendario se resume en
+  `refresco_programado` (`huella_pagina` y `huella_pagina_leida`, clave
+  `<fuente>:<federación>`). Una página idéntica a la de su última lectura
+  completa no se parsea ni se cruza con la base; solo se renueva la fecha de
+  lectura de lo que se tira ya. Una vez por semana se procesa entera igualmente.
+  `VERSION_LECTURA_SKERMO` (en `runner.ts`) se sube cuando cambia el parseo o
+  el guardado, para invalidar todas las huellas.
+- **Emparejado FIE↔Skermo**: por cron, una vez por noche tras
+  `skermo_regional` (aunque falle); a mano, tras cada fuente de calendario.
+  Solo escribe los pares que cambian.
+- **Snapshot del HTML de la RFEE**: se sube a R2 solo si cambia; la URL y el
+  SHA-256 quedan en `ingest_run.snapshot_url` y `snapshot_hash`.
+- **Caché**: cada fuente dice si cambió algo visible (`sinCambios`). Por la
+  franja del cron, la familia que cambió queda pendiente
+  (`refresco_programado`, tarea `cache_pendiente`) y la invalida una sola vez
+  la última fuente de la cadena que la toca: `calendario` en `rfee_wp`,
+  `ranking` en `skermo_ranking`, `ranking-fie` y `deporte` en `fie_tiradores`
+  (`CIERRE_NOCTURNO` en `tras-ingesta.ts`). Si esa fuente no llega a correr,
+  la siguiente pasada de la cadena invalida lo pendiente con más de 12 h. Con
+  `?forzar=1`, el panel o la CLI se invalida en el acto.
+- **Resultados automáticos**: una pasada sin nada vencido hace una sola
+  lectura indexada y no toma el lease (`status: 'sin_pendientes'`).
+
 ## Resultados automáticos
 
 `/api/cron/resultados` (`src/lib/ingest/resultados-auto/`) lleva al corpus

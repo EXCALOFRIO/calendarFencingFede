@@ -11,7 +11,7 @@ import type { Weapon } from '@/lib/auth/session';
  * POR QUÉ HACE FALTA UNA CONSULTA PARA ESTO
  * ---------------------------------------------------------------------------
  * `CallUpDetail` trae el arma de cada convocado, pero **ya formateada**:
- * `competitionLabel()` devuelve «Espada femenino · Absoluto», una cadena para
+ * `competitionLabel()` devuelve «Espada femenina · Absoluto», una cadena para
  * leer. Filtrar por arma deshaciendo esa cadena sería adivinar el dato a partir
  * de su presentación, y se rompe el día que alguien cambie una etiqueta.
  *

@@ -1,5 +1,17 @@
 /** Contador efímero del navegador: no persiste datos ni sustituye la sesión del servidor. */
-export const INTERVALO_AVISOS_MS = 60_000;
+/**
+ * Sondeo mientras la pestaña se ve. Cada consulta comprueba la sesión y cuenta
+ * en D1; lo urgente llega antes por otras vías: el push (mensaje del service
+ * worker), volver a la pestaña tras `OCULTA_MIN_MS` y recuperar la red.
+ */
+export const INTERVALO_AVISOS_MS = 300_000;
+/** Al volver a una pestaña que estuvo oculta al menos esto, se consulta ya. */
+export const OCULTA_MIN_MS = 60_000;
+
+/** ¿Hay que consultar al volver a la pestaña? `ocultaDesde` null = no estuvo oculta. */
+export function consultarAlVolver(ocultaDesde: number | null, ahora: number): boolean {
+  return ocultaDesde !== null && ahora - ocultaDesde >= OCULTA_MIN_MS;
+}
 type Lectura = { numero: number; revision: number };
 type Oyente = (numero: number) => void;
 type Estado = {

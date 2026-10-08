@@ -20,6 +20,8 @@ const {
   EstadoFicha,
   FichaCompleta,
   HistorialFicha,
+  PanelRendimiento,
+  PanelRivales,
   RankingCompacto,
 } = await import('@/components/explorar/ficha-deportiva');
 
@@ -134,7 +136,8 @@ describe('cargarFichaPantalla: historial propio por defecto', () => {
       const html = renderToStaticMarkup(
         React.createElement(EstadoFicha, { vista: { tipo: 'propia_no_confirmada', motivo }, incrustado: true }),
       );
-      expect(html).toContain('<h3');
+      // El estado no lleva encabezado propio: sirve igual dentro de /perfil que como pantalla.
+      expect(html).toContain('data-slot="sistema-estado-vacio"');
       expect(html).toContain('href="/explorar"');
       expect(html).not.toMatch(/Nadie|Sin resultados/);
     }
@@ -556,17 +559,36 @@ describe('rutas y perfil', () => {
         conTitulo: false,
       }),
     );
-    expect(salida).toContain('Tu ficha');
+    expect(salida).toContain('data-slot="sistema-marca-propia"');
     expect(salida).toContain('Copa del Mundo Madrid');
-    // Cabecera tipo perfil y marcador: el nombre formateado, el año a año y el mano a mano.
     expect(salida).toContain('Lucia Garcia');
-    expect(salida).toContain('Año a año');
-    expect(salida).toContain('Mano a mano');
-    expect(salida).toContain('Sin asaltos importados');
-    expect(salida).toContain(`href="/explorar/${UUID_A}/cara-a-cara"`);
-    expect(salida).toContain('FIE 2026');
-    expect(salida).toMatch(/>14(<!-- -->)?º</);
+    // Pestañas segmentadas y sólo el panel elegido en el DOM, como en el perfil público.
+    expect(salida).toContain('aria-label="Secciones de la ficha"');
+    expect(salida).toContain('data-slot="sistema-segmentado"');
+    expect(salida).toContain('data-panel="resultados"');
+    expect(salida).not.toContain('data-panel="estadisticas"');
+    expect(salida).not.toContain('Año a año');
+    expect(salida).not.toContain('Mano a mano');
     expect(salida).not.toContain('<h1');
     expect(salida).not.toMatch(/cuenta@example|token-privado/);
+
+    // Las otras pestañas, tal y como las monta el selector al elegirlas.
+    const rendimiento = html(
+      React.createElement(PanelRendimiento, {
+        ficha: vista.ficha,
+        rendimiento: null,
+        rankingEnRendimiento: React.createElement(RankingCompacto, { ficha: vista.ficha, nivel: 'seccion' }),
+        nivel: 'seccion',
+      }),
+    );
+    expect(rendimiento).toContain('Año a año');
+    expect(rendimiento).toContain('FIE 2026');
+    expect(rendimiento).toMatch(/>14(<!-- -->)?º</);
+    const rivales = html(
+      React.createElement(PanelRivales, { ficha: vista.ficha, perfil: vista.ficha.perfil!, nivel: 'seccion' }),
+    );
+    expect(rivales).toContain('Mano a mano');
+    expect(rivales).toContain('Sin asaltos importados');
+    expect(rivales).toContain(`href="/explorar/${UUID_A}/cara-a-cara"`);
   });
 });

@@ -11,7 +11,7 @@ export const metadata = { title: 'Siguiendo' };
 
 /**
  * Pestaña Siguiendo: la lista de personas que sigue la cuenta, con «Siguiendo»
- * para dejar de seguir. Sus resultados están en Inicio (`/explorar`).
+ * para dejar de seguir. Sus resultados están en «Para ti» (`/explorar`).
  *
  * La guarda de sesión va aquí además de en el layout porque la ruta se puede
  * abrir escribiendo la dirección. La cuenta sale siempre de la sesión: de la

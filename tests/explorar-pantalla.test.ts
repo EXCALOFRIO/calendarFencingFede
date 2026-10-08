@@ -21,7 +21,7 @@ vi.mock('next/navigation', () => ({
 const { ChipsActivos, EstadoSinCoincidencias, EstadoSinLista, ListaDeportistas, anadirSinRepetir } = await import(
   '@/components/explorar/resultados'
 );
-const { FormularioFiltros } = await import('@/components/explorar/formulario-filtros');
+const { FormularioFiltros, HojaTirador } = await import('@/components/explorar/formulario-filtros');
 
 const criterios = (parcial: Partial<CriteriosExplorar>): CriteriosExplorar => ({
   ...CRITERIOS_VACIOS,
@@ -211,8 +211,8 @@ describe('vista de resultados', () => {
       resumen({ id: UUID_B, nombre: 'Ana Perez', mismoNombre: 2, pais: 'FRA', anioNacimiento: 1994 }),
     ]);
     // Cada fila lleva además la búsqueda a la que volver desde la ficha.
-    expect(html).toContain(`href="/explorar/${UUID_A}?volver=%2Fexplorar%3Fq%3Dgarcia"`);
-    expect(html).toContain(`href="/explorar/${UUID_B}?volver=%2Fexplorar%3Fq%3Dgarcia"`);
+    expect(html).toContain(`href="/explorar/${UUID_A}?volver=%2Fexplorar%2Fbuscar%3Fq%3Dgarcia"`);
+    expect(html).toContain(`href="/explorar/${UUID_B}?volver=%2Fexplorar%2Fbuscar%3Fq%3Dgarcia"`);
     expect(html).toContain('2 personas con este nombre');
     expect(html).toContain('n. 2001');
     expect(html).toContain('n. 1994');
@@ -221,7 +221,7 @@ describe('vista de resultados', () => {
   it('cada fila lleva lo que el buscador guarda en Recientes al abrirla, dentro de su contenedor', () => {
     const fila = resumen({ id: UUID_A, nombre: 'ZABALA Juan', pais: 'ESP' });
     const html = lista([fila, resumen({ id: UUID_B, nombre: 'Sin País', pais: null })]);
-    expect(html).toMatch(new RegExp(`<a [^>]*data-fila-perfil=""[^>]*data-persona="${UUID_A}"[^>]*data-nombre="ZABALA Juan"[^>]*data-pais="ESP"`));
+    expect(html).toMatch(new RegExp(`<li [^>]*data-fila-perfil=""[^>]*data-persona="${UUID_A}"[^>]*data-nombre="ZABALA Juan"[^>]*data-pais="ESP"`));
     expect(html).toMatch(new RegExp(`data-persona="${UUID_B}"[^>]*data-pais=""`));
     const c = criterios({ q: 'zabala' });
     const pagina = renderToStaticMarkup(React.createElement(FormularioFiltros, {
@@ -274,8 +274,9 @@ describe('vista de resultados', () => {
 
   it('enlaza la página siguiente con cursor y la primera página al continuar', () => {
     const html = lista([resumen()], { siguiente: 'tok-2', cursorActual: 'tok-1' });
-    expect(html).toContain('/explorar?q=garcia&amp;cursor=tok-2');
-    expect(html).toContain('href="/explorar?q=garcia"');
+    // «Ver más» añade la página siguiente sin navegar; «Ir a los primeros» sustituye la entrada del historial.
+    expect(html).toContain('data-slot="sistema-ver-mas"');
+    expect(html).toContain('href="/explorar/buscar?q=garcia"');
     expect(html).toContain('Ver más');
     expect(lista([resumen()])).not.toContain('Ver más');
   });
@@ -290,7 +291,11 @@ describe('vista de resultados', () => {
     }
     const sin = renderToStaticMarkup(React.createElement(EstadoSinCoincidencias, { criterios: criterios({ q: 'zz' }) }));
     expect(sin).toContain('Nadie coincide');
-    expect(sin).toContain('Quitar todos los filtros');
+    // Sólo con el nombre no hay filtros que quitar; con filtros, se quitan y el nombre se queda.
+    expect(sin).not.toContain('Quitar filtros');
+    const conFiltros = renderToStaticMarkup(React.createElement(EstadoSinCoincidencias, { criterios: criterios({ q: 'zz', arma: 'SABLE' }) }));
+    expect(conFiltros).toContain('Quitar filtros');
+    expect(conFiltros).toContain('href="/explorar/buscar?q=zz"');
   });
 
   it('los filtros activos son enlaces que quitan uno solo', () => {
@@ -298,8 +303,8 @@ describe('vista de resultados', () => {
       React.createElement(ChipsActivos, { criterios: criterios({ arma: 'FLORETE', nacionalidad: 'ESP' }) }),
     );
     expect(html).toContain('aria-label="Quitar filtro Arma: Florete"');
-    expect(html).toContain('href="/explorar?nacionalidad=ESP"');
-    expect(html).toContain('href="/explorar?arma=FLORETE"');
+    expect(html).toContain('href="/explorar/buscar?nacionalidad=ESP"');
+    expect(html).toContain('href="/explorar/buscar?arma=FLORETE"');
   });
 });
 
@@ -308,36 +313,49 @@ describe('formulario de filtros', () => {
     renderToStaticMarkup(
       React.createElement(FormularioFiltros, { criterios: c, temporadas: opcionesTemporada('2026-10-02', 2), atajoEspana }),
     );
+  const hoja = (atajoEspana: boolean, c: CriteriosExplorar = CRITERIOS_VACIOS) =>
+    renderToStaticMarkup(React.createElement(HojaTirador, { borrador: c, poner: () => {}, atajoEspana }));
 
-  it('el atajo España sólo existe cuando la pantalla lo habilita para el rol', () => {
-    expect(formulario(true)).toContain('Solo España');
-    expect(formulario(false)).not.toContain('Solo España');
+  it('el atajo España sólo existe cuando la pantalla lo habilita para el rol, y refleja el estado', () => {
+    expect(hoja(true)).toContain('Solo España');
+    expect(hoja(false)).not.toContain('Solo España');
+    expect(hoja(true, criterios({ nacionalidad: 'ESP' }))).toMatch(/aria-pressed="true"[^>]*>(?:<[^>]+>)*Solo España</);
   });
 
-  it('el atajo refleja el estado activo; el campo tiene etiqueta y los filtros son chips que abren una hoja', () => {
-    const html = formulario(true, criterios({ nacionalidad: 'ESP' }));
-    expect(html).toContain('aria-pressed="true"');
+  it('un solo botón «Filtros» abre una sola hoja; los puestos son chips que se quitan y el campo tiene etiqueta', () => {
+    const html = formulario(true, criterios({ nacionalidad: 'ESP', arma: 'ESPADA' }));
     expect(html).toContain('for="explorar-q"');
-    for (const chip of ['Arma', 'Género', 'Categoría']) {
-      expect(html).toMatch(new RegExp(`aria-haspopup="dialog"[^>]*>(?:<[^>]+>)*${chip}<`));
-    }
-    // El país elegido se ve en su chip, marcado.
-    expect(html).toMatch(/data-tipo="menu" data-marcado="true"[^>]*>(?:<[^>]+>)*España</);
     expect(html).toContain('role="search"');
+    expect(html.match(/aria-haspopup="dialog"/g)).toHaveLength(1);
+    expect(html).toMatch(/aria-haspopup="dialog"[^>]*>(?:<[^>]+>)*Filtros</);
+    expect(html).toContain('aria-label="Quitar Espada"');
+    expect(html).toContain('aria-label="Quitar España"');
+    expect(html).toContain('Quitar todos');
+    // El selector de ámbitos va con el buscador, encima de los filtros.
+    expect(html.indexOf('data-slot="sistema-segmentado"')).toBeLessThan(html.indexOf('data-slot="barra-filtros"'));
+  });
+
+  it('la hoja: arma y género segmentados, categoría en chips y país con buscador', () => {
+    const html = hoja(false, criterios({ arma: 'ESPADA' }));
+    expect(html).toMatch(/role="radio" aria-checked="true"[^>]*>(?:<[^>]+>)*Espada</);
+    expect(html.match(/data-slot="sistema-segmentado"/g)).toHaveLength(2);
+    for (const t of ['Arma', 'Género', 'Categoría', 'País']) expect(html).toContain(`>${t}<`);
+    expect(html).toContain('aria-label="Buscar país"');
   });
 
   it('filtros de tirador: arma, género, categoría y país; sin año, temporada, fechas ni torneo', () => {
     const conFiltro = formulario(false, criterios({ temporada: '2025-2026', arma: 'ESPADA' }));
-    expect(conFiltro).toMatch(/data-marcado="true"[^>]*>(?:<[^>]+>)*Espada</);
-    expect(conFiltro).toContain('Quitar filtros');
+    // Un filtro de un enlace antiguo se ve con su nombre y se puede quitar.
+    expect(conFiltro).toContain('Quitar Temporada: 2025-2026');
     const vacio = formulario(false);
     expect(vacio).toContain('Buscar tiradores');
     expect(vacio).not.toContain('Aplicar filtros');
-    expect(vacio).not.toContain('Quitar filtros');
+    expect(vacio).not.toContain('Quitar todos');
+    const enHoja = hoja(false);
     for (const id of ['explorar-temporada', 'explorar-desde', 'explorar-hasta', 'explorar-torneo', 'explorar-ambito', 'explorar-organizador']) {
-      expect(vacio).not.toContain(`id="${id}"`);
+      expect(vacio + enHoja).not.toContain(`id="${id}"`);
     }
-    expect(vacio).not.toMatch(/>(Temporada|Fechas|Torneo|Ámbito|Organizador)</);
-    expect(vacio).not.toContain('<select');
+    expect(vacio + enHoja).not.toMatch(/>(Temporada|Fechas|Torneo|Ámbito|Organizador)</);
+    expect(vacio + enHoja).not.toContain('<select');
   });
 });

@@ -36,7 +36,7 @@ export function Lectura({
   };
   return (
     <div
-      className={cn('flex min-w-0 flex-col gap-1.5', className)}
+      className={cn('flex min-w-0 flex-col gap-2', className)}
       onPointerOver={leer}
       onClick={leer}
       // En táctil el puntero «sale» justo después de tocar: sólo el ratón borra la lectura.

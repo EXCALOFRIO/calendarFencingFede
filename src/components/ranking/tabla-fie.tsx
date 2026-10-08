@@ -5,7 +5,9 @@ import * as React from 'react';
 import { OpcionesFiltro } from '@/components/filtros/chips';
 import { BurbujaOlimpica } from '@/components/olimpica/burbuja-olimpica';
 import { FiltroOlimpico } from '@/components/olimpica/filtro-olimpico';
-import { ChipFiltro, clasesChip } from '@/components/sistema/chip-filtro';
+import { VerMas } from '@/components/sistema/cabecera-seccion';
+import { ChipFiltro } from '@/components/sistema/chip-filtro';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import type {
   FilaFie,
   FormatoClasificacion,
@@ -15,11 +17,11 @@ import type {
 import { nombreCasa } from '@/lib/nombres';
 import { ordenarSoloJjoo } from '@/lib/ranking/olimpica';
 import type { TablaFieCompleta } from '@/lib/ranking/tabla-fie-completa';
-import { cn, formatDateEs } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { claveTablaFie, escribirUrl, urlDeGrupo, useRanking } from './estado-ranking';
 import { FilaLinea } from './fila-linea';
 import { clave } from './formato';
-import { Procedencia, VerMas } from './piezas';
+import { Procedencia } from './piezas';
 import { BarraFiltrosRanking, type Quitable } from './selectores-grupo';
 
 /** Filas por tanda. Igual que en la tabla oficial. */
@@ -266,7 +268,6 @@ export function TablaRankingFie({
           activo={soloJjoo}
           onCambio={cambiarJjoo}
           cuantos={conJjoo.length}
-          className={cn(clasesChip(soloJjoo), 'border-0 shadow-none')}
         />
       ) : null}
     </>
@@ -312,7 +313,7 @@ export function TablaRankingFie({
       {tabla ? (
         <Procedencia
           temporada={`Temporada ${tabla.season}`}
-          leida={tabla.actualizadoEl ? formatDateEs(tabla.actualizadoEl) : null}
+          leida={tabla.actualizadoEl}
           url={tabla.sourceUrl}
         />
       ) : null}
@@ -357,22 +358,23 @@ export function TablaRankingFie({
       ) : null}
 
       {filtradas.length === 0 && !cargando ? (
-        <p className="medida text-sm text-muted-foreground">
-          {busqueda
-            ? 'Ningún nombre coincide. Prueba otro nombre o país.'
-            : soloJjoo
-              ? 'Nadie entra hoy ni está cerca de entrar en los Juegos.'
-              : soloEspana
-                ? 'Nadie de España en esta prueba.'
-                : 'Sin clasificación internacional en esta prueba.'}
-        </p>
+        <EstadoVacio
+          titulo={
+            busqueda
+              ? 'Ningún nombre coincide'
+              : soloJjoo
+                ? 'Nadie entra hoy ni está cerca de los Juegos'
+                : soloEspana
+                  ? 'Nadie de España en esta prueba'
+                  : 'Sin clasificación internacional en esta prueba'
+          }
+          descripcion={busqueda ? 'Prueba otro nombre o país.' : undefined}
+        />
       ) : null}
 
       {quedan > 0 ? (
-        <VerMas onClick={() => setTope(tope + PASO)}>
-          Ver {Math.min(quedan, PASO)} más
-          <span className="cifra text-[12px] text-muted-foreground">de {filtradas.length}</span>
-        </VerMas>
+        <VerMas onClick={() => setTope(tope + PASO)} cuenta={quedan} detalle="tiradores de la clasificación" className="self-center" />
+
       ) : null}
     </div>
   );

@@ -4,8 +4,9 @@
  * El control se ve de 28-36 px y se toca en 44: el área sobrante es un
  * `::after` transparente centrado en el control, así que no ocupa sitio en
  * la maqueta. El pseudoelemento se recorta si un antepasado tiene
- * `overflow` distinto de `visible`; por eso `FilaChips` deja 6 px de margen
- * vertical dentro de su zona desplazable.
+ * `overflow` distinto de `visible`: dentro de una caja con `overflow` hace
+ * falta margen alrededor del control. `FilaChips` no lo necesita porque salta
+ * de línea y no recorta.
  *
  * Las medidas van en px: por debajo de 640 px la raíz son 18 px y cualquier
  * medida en rem crecería un 12,5 %.

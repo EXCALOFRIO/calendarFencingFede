@@ -92,7 +92,7 @@ export function BotonSeguirCompacto({
         <span
           className={cn(
             clasesSeguir(optimista, error),
-            'h-[30px] gap-1 rounded-full px-3 text-[13px] group-focus-visible:ring-[3px] group-focus-visible:ring-ring',
+            'h-[30px] gap-1 rounded-full px-3 text-sm group-focus-visible:ring-[3px] group-focus-visible:ring-ring',
             'max-[359px]:size-[32px] max-[359px]:px-0',
             pendiente && 'opacity-70',
           )}

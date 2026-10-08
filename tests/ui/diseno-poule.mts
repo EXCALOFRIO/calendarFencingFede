@@ -25,7 +25,7 @@ import { AppRouterContext } from 'next/dist/shared/lib/app-router-context.shared
 import { createD1Database } from '@/db/d1/runtime';
 import type { D1Binding, D1QueryResult, D1Statement } from '@/db/d1/binding';
 import { EdicionCompleta } from '@/components/explorar/ediciones';
-import { MatrizPoule } from '@/components/explorar/prueba/hoja-poule';
+import { PoulesDePrueba } from '@/components/explorar/asaltos-prueba';
 import { BotonIcono } from '@/components/sistema/boton';
 import { X } from 'lucide-react';
 import { enlaceFichaDePrueba } from '@/components/explorar/prueba/enlaces';
@@ -148,7 +148,7 @@ function hoja(poule: PouleDePrueba) {
         React.createElement('span', { className: 'text-xs text-muted-foreground' }, poule.filas.length),
         React.createElement(BotonIcono, { etiqueta: 'Cerrar', tamano: 'md', className: 'ml-auto' }, React.createElement(X, { 'aria-hidden': true })),
       ),
-      React.createElement(MatrizPoule, { poule, enlace, filtro: { consulta: '', persona: ZABALA } }),
+      React.createElement(PoulesDePrueba, { poules: [poule], enlace, filtro: { consulta: '', persona: ZABALA }, caraInicial: 'asaltos' }),
     ),
   );
 }

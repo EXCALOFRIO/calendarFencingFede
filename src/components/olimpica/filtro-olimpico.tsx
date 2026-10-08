@@ -1,10 +1,10 @@
 'use client';
 
-import { Toggle } from '@/components/ui/toggle';
+import { ChipFiltro } from '@/components/sistema/chip-filtro';
 import { cn } from '@/lib/utils';
 import { IconoAros } from './icono-aros';
 
-/** Pastilla «Solo JJOO» para los filtros del ranking internacional. */
+/** Chip «Solo JJOO» para los filtros del ranking internacional. */
 export function FiltroOlimpico({
   activo,
   onCambio,
@@ -18,22 +18,18 @@ export function FiltroOlimpico({
   className?: string;
 }) {
   return (
-    <Toggle
-      variant="outline"
-      size="sm"
-      pressed={activo}
-      onPressedChange={onCambio}
+    <ChipFiltro
+      marcado={activo}
+      onClick={() => onCambio(!activo)}
+      contador={cuantos}
+      // Detrás de lo visible: el nombre accesible empieza por «Solo JJOO» (WCAG 2.5.3).
+      detalle="(LA 2028)"
+      icono={IconoAros}
       data-filtro-olimpico=""
-      className={cn('rounded-full px-3', className)}
+      // Los aros son el doble de anchos que de altos: el cuadrado de icono del chip los encogería.
+      className={cn('[&_svg]:h-auto! [&_svg]:w-5!', className)}
     >
-      <IconoAros className="w-[1.375rem]" />
-      <span>Solo JJOO</span>
-      {cuantos !== undefined ? (
-        // Hereda el color del rótulo: un gris propio no llega a 4,5:1 sobre el chip marcado.
-        <span className="cifra -my-px text-[14px] tabular-nums">{cuantos}</span>
-      ) : null}
-      {/* Detrás de lo visible: el nombre accesible empieza por «Solo JJOO» (WCAG 2.5.3). */}
-      <span className="sr-only"> (LA 2028)</span>
-    </Toggle>
+      Solo JJOO
+    </ChipFiltro>
   );
 }

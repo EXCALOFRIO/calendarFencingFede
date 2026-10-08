@@ -9,7 +9,7 @@ import { leerOlimpicaPersonas } from './olimpica-perfil';
 import { SALTOS } from './personas';
 import {
   consultaSugerencias, MAX_CANDIDATOS_SUGERENCIAS, MAX_CONSULTA_SUGERENCIAS, MAX_SUGERENCIAS,
-  MAX_SUGERENCIAS_SOCIAL, ordenarSugerencias, type CandidatoSugerencia,
+  MAX_SUGERENCIAS_SOCIAL, ordenarSugerencias, puntuarSugerencia, type CandidatoSugerencia,
 } from './sugerencias-modelo';
 import type { Arma } from './tipos';
 import type { SugerenciaConResumen } from './tipos-busqueda';
@@ -218,16 +218,21 @@ type FilaResumenSugerencia = {
   resultados: number;
   armas: string | null;
   ultimaFecha: string | null;
-  seguida: number;
 };
 
 /**
  * Resumen de las elegidas (veinte como mucho) con los resultados de todo su
- * grupo de fusión: cuántos, armas, fecha del más reciente y si la cuenta sigue
- * a alguna persona del grupo. Una fecha más de un mes en el futuro es un dato
- * erróneo y no cuenta como «última».
+ * grupo de fusión: cuántos, armas, fecha del más reciente y, sólo con
+ * `profileId`, si la cuenta sigue a alguna persona del grupo. Una fecha más de
+ * un mes en el futuro es un dato erróneo y no cuenta como «última».
  */
-export function sqlResumenSugerencias(ids: readonly string[], profileId: string): SQL {
+export function sqlResumenSugerencias(ids: readonly string[], profileId?: string): SQL {
+  const seguida = profileId ? sql`,
+           EXISTS (
+             SELECT 1 FROM sport_favorite f
+             WHERE f.profile_id = ${profileId}
+               AND f.person_id IN (SELECT m.id FROM miembros_grupo m WHERE m.canonica = g.canonica)
+           ) AS seguida` : sql``;
   return sql`
     WITH RECURSIVE miembros_grupo(canonica, id, salto) AS (
       SELECT id, id, 0 FROM sport_person WHERE id IN (${listaUuid(ids)})
@@ -238,12 +243,7 @@ export function sqlResumenSugerencias(ids: readonly string[], profileId: string)
     )
     SELECT g.canonica AS id, count(r.id) AS resultados,
            group_concat(DISTINCT c.weapon) AS armas,
-           max(CASE WHEN r.occurred_on <= date('now', '+1 month') THEN r.occurred_on END) AS "ultimaFecha",
-           EXISTS (
-             SELECT 1 FROM sport_favorite f
-             WHERE f.profile_id = ${profileId}
-               AND f.person_id IN (SELECT m.id FROM miembros_grupo m WHERE m.canonica = g.canonica)
-           ) AS seguida
+           max(CASE WHEN r.occurred_on <= date('now', '+1 month') THEN r.occurred_on END) AS "ultimaFecha"${seguida}
     FROM miembros_grupo g
     -- LEFT JOIN desde el grupo: también quien no tiene resultados, sin recorrer sport_result.
     LEFT JOIN sport_result r ON r.person_id = g.id
@@ -251,7 +251,145 @@ export function sqlResumenSugerencias(ids: readonly string[], profileId: string)
     GROUP BY g.canonica`;
 }
 
-export async function sugerirPersonas(ctx: ContextoExplorador, datos: unknown): Promise<ResultadoSugerencias> {
+type MarcasOlimpicas = Awaited<ReturnType<typeof leerOlimpicaPersonas>>;
+
+export type ResumenPublicoSugerencia = { resultados: number; armas: Arma[]; ultimaFecha: string | null };
+
+/**
+ * Lo de una consulta que es igual para cualquier cuenta: candidatas del
+ * índice (sin `seguida`), y resumen y marcas olímpicas de las
+ * `MAX_SUGERENCIAS_SOCIAL` primeras en orden público. Es lo que guarda la
+ * caché compartida por consulta normalizada y día (`sugerencias-cache-real.ts`);
+ * lo de la cuenta se calcula aparte en cada petición (`sqlSeguidasParaSugerir`).
+ * El año de nacimiento ya va filtrado (`anioNacimientoPublico`) para no
+ * guardar el de un posible menor.
+ */
+export type SugerenciasPublicas = {
+  candidatos: CandidatoSugerencia[];
+  resumen: Record<string, ResumenPublicoSugerencia>;
+  olimpica: MarcasOlimpicas;
+};
+
+async function resumenPublico(
+  db: ContextoExplorador['db'],
+  ids: readonly string[],
+): Promise<{ resumen: Record<string, ResumenPublicoSugerencia>; olimpica: MarcasOlimpicas }> {
+  if (ids.length === 0) return { resumen: {}, olimpica: {} };
+  const [crudo, olimpica] = await Promise.all([
+    db.execute(sqlResumenSugerencias(ids)),
+    leerOlimpicaPersonas(db, ids),
+  ]);
+  const resumen: Record<string, ResumenPublicoSugerencia> = {};
+  for (const c of filas<FilaResumenSugerencia>(crudo)) {
+    resumen[c.id] = {
+      resultados: Number(c.resultados ?? 0),
+      armas: c.armas ? (c.armas.split(',').sort() as Arma[]) : [],
+      ultimaFecha: typeof c.ultimaFecha === 'string' ? c.ultimaFecha.slice(0, 10) : null,
+    };
+  }
+  return { resumen, olimpica };
+}
+
+/**
+ * Parte pública de las sugerencias de `q` (ya normalizada por
+ * `consultaSugerencias`). No lee la sesión ni ninguna tabla de cuenta: el
+ * contexto puede ser `contextoPublico`. Exige el índice de Explorar.
+ */
+export async function leerSugerenciasPublicas(ctx: ContextoExplorador, q: string): Promise<SugerenciasPublicas> {
+  const hoy = ctx.hoy();
+  const candidatos = filas<CandidatoSugerencia>(await ctx.db.execute(sqlCandidatosIndexados(q)))
+    .map(({ seguida: _seguida, ...c }) => ({ ...c, anioNacimiento: anioNacimientoPublico(c.anioNacimiento, hoy) }));
+  const primeras = ordenarSugerencias(q, candidatos, MAX_SUGERENCIAS_SOCIAL).map((s) => s.id);
+  return { candidatos, ...(await resumenPublico(ctx.db, primeras)) };
+}
+
+/** Personas seguidas que se consideran como sugerencia propia: acota una cuenta con muchísimas. */
+const MAX_FILAS_SEGUIDAS = 2_000;
+
+/**
+ * Personas que sigue la cuenta, llevadas a la persona que prevalece (subiendo
+ * por la cadena de fusiones hasta `SALTOS`), con su nombre, los alias de la
+ * persona guardada y de la que prevalece, y su peso en el índice. Cubre las
+ * dos cosas de la cuenta:
+ *
+ * - `seguida`: una persona del grupo está entre sus favoritos, lo mismo que
+ *   preguntar desde el grupo hacia abajo (`sqlResumenSugerencias` con cuenta);
+ * - que lo seguido salga aunque haya más de `MAX_RAICES_INDEXADAS` homónimas
+ *   más populares fuera de la parte pública.
+ *
+ * Lee por la clave primaria de sport_favorite (profile_id, person_id): unas
+ * pocas filas por persona seguida, nada por cada búsqueda de otras cuentas.
+ */
+export function sqlSeguidasParaSugerir(profileId: string): SQL {
+  // Sin cruzar CTE materializados entre sí: D1 cuenta cada fila recorrida de
+  // un CTE, y un cruce de N seguidas por N cuesta N² filas. Las filas de alias
+  // sólo llevan `id` y el alias; el resto lo completa `seguidasDeFilas`.
+  return sql`WITH RECURSIVE sube(origen, id, destino, salto) AS (
+      SELECT f.person_id, p.id, p.merged_into_person_id, 0
+      FROM sport_favorite f CROSS JOIN sport_person p ON p.id = f.person_id
+      WHERE f.profile_id = ${profileId}
+      UNION ALL
+      SELECT s.origen, p.id, p.merged_into_person_id, s.salto + 1
+      FROM sube s CROSS JOIN sport_person p ON p.id = s.destino
+      WHERE s.salto < ${SALTOS}
+    ),
+    raices(origen, canonica) AS MATERIALIZED (SELECT origen, id FROM sube WHERE destino IS NULL)
+    SELECT p.id, substr(p.display_name, 1, 160) AS nombre, NULL AS alias, p.country_code AS pais,
+           p.gender AS genero, p.birth_year AS "anioNacimiento", coalesce(ep.peso, 0) AS peso,
+           p.name_normalized AS clave
+    FROM raices k
+    CROSS JOIN sport_person p ON p.id = k.canonica
+    LEFT JOIN explorar_persona ep ON ep.name_normalized = p.name_normalized AND ep.id = p.id
+    UNION ALL
+    SELECT k.canonica, NULL, substr(a.name_original, 1, 160), NULL, NULL, NULL, NULL, a.name_normalized
+    FROM raices k CROSS JOIN sport_person_alias a ON a.person_id = k.canonica
+    UNION ALL
+    SELECT k.canonica, NULL, substr(a.name_original, 1, 160), NULL, NULL, NULL, NULL, a.name_normalized
+    FROM raices k CROSS JOIN sport_person_alias a ON a.person_id = k.origen
+    WHERE k.origen <> k.canonica
+    LIMIT ${MAX_FILAS_SEGUIDAS}`;
+}
+
+type FilaSeguida = Omit<CandidatoSugerencia, 'nombreComparado'> & { clave: string | null };
+
+/**
+ * Candidatas propias a partir de `sqlSeguidasParaSugerir`: una por persona
+ * seguida (su nombre) y otra por alias de la cadena que no repita el nombre.
+ */
+export function seguidasDeFilas(filasSeguidas: readonly FilaSeguida[]): CandidatoSugerencia[] {
+  const personas = new Map<string, FilaSeguida>();
+  for (const f of filasSeguidas) if (f.nombre !== null && !personas.has(f.id)) personas.set(f.id, f);
+  const salida: CandidatoSugerencia[] = [];
+  const vistos = new Set<string>();
+  for (const f of filasSeguidas) {
+    const p = personas.get(f.id);
+    if (!p) continue;
+    const alias = f.nombre === null ? f.alias : null;
+    if (alias !== null && f.clave === p.clave) continue;
+    const llave = `${f.id}\u0000${alias ?? ''}`;
+    if (vistos.has(llave)) continue;
+    vistos.add(llave);
+    salida.push({
+      id: p.id, nombre: p.nombre, alias, pais: p.pais, genero: p.genero,
+      anioNacimiento: p.anioNacimiento, nombreComparado: alias ?? p.nombre, peso: p.peso,
+    });
+  }
+  return salida;
+}
+
+export type OpcionesSugerencias = {
+  /**
+   * Parte pública ya cacheada para `(q, hoy)`. `null` (o sin función) la lee
+   * con `ctx`. No recibe nada de la cuenta.
+   */
+  publicas?: (q: string, hoy: string) => Promise<SugerenciasPublicas | null>;
+};
+
+export async function sugerirPersonas(
+  ctx: ContextoExplorador,
+  datos: unknown,
+  opciones: OpcionesSugerencias = {},
+): Promise<ResultadoSugerencias> {
   const perfil = await exigirPerfil(ctx);
   const parsed = entrada.safeParse(datos);
   if (!parsed.success) return { estado: 'entrada_invalida' };
@@ -262,31 +400,40 @@ export async function sugerirPersonas(ctx: ContextoExplorador, datos: unknown): 
   // Sin el índice de Explorar no hay búsqueda: la variante con LIKE
   // (`sqlCandidatosSugerencias`) recorre personas y alias en cada pulsación.
   if (!ctx.indiceExplorar || !(await ctx.indiceExplorar())) return { estado: 'no_disponible' };
-  const candidatos = filas<CandidatoSugerencia>(await ctx.db.execute(
-    sqlCandidatosIndexados(q, perfil.profileId),
-  ));
+  const hoy = ctx.hoy();
+  const [publicas, crudoSeguidas] = await Promise.all([
+    (async () => (await opciones.publicas?.(q, hoy)) ?? leerSugerenciasPublicas(ctx, q))(),
+    (async () => ctx.db.execute(sqlSeguidasParaSugerir(perfil.profileId)))(),
+  ]);
+  const deCuenta = seguidasDeFilas(filas<FilaSeguida>(crudoSeguidas));
+  const seguidas = new Set(deCuenta.map((c) => c.id));
+  // Delante, y sólo las que encajan: `ordenarSugerencias` corta en
+  // MAX_CANDIDATOS_SUGERENCIAS y no deben desplazar a las públicas.
+  const propias = deCuenta
+    .filter((c) => puntuarSugerencia(q, c.nombreComparado) > 0)
+    .map((c) => ({ ...c, seguida: 1 }));
+  const candidatos = [
+    ...propias,
+    ...publicas.candidatos.map((c) => (seguidas.has(c.id) ? { ...c, seguida: 1 } : c)),
+  ];
   const elegidas = ordenarSugerencias(q, candidatos, parsed.data.limite ?? MAX_SUGERENCIAS);
   if (elegidas.length === 0) return { estado: 'ok', items: [] };
-  // Una sola consulta acotada a las elegidas, por grupo de fusión, y a la vez sus marcas olímpicas.
-  const ids = elegidas.map((s) => s.id);
-  const [crudo, marcas] = await Promise.all([
-    ctx.db.execute(sqlResumenSugerencias(ids, perfil.profileId)),
-    leerOlimpicaPersonas(ctx.db, ids),
-  ]);
-  const resumen = filas<FilaResumenSugerencia>(crudo);
-  const porId = new Map(resumen.map((c) => [c.id, c]));
-  const hoy = ctx.hoy();
+  // Sólo lo que no traía la parte pública (una seguida fuera de sus primeras).
+  const faltan = elegidas.map((s) => s.id).filter((id) => !Object.hasOwn(publicas.resumen, id));
+  const extra = await resumenPublico(ctx.db, faltan);
+  const resumen = { ...publicas.resumen, ...extra.resumen };
+  const marcas = { ...publicas.olimpica, ...extra.olimpica };
   return {
     estado: 'ok',
     items: elegidas.map((s) => {
-      const c = porId.get(s.id);
+      const c = resumen[s.id];
       return {
         ...s,
         anioNacimiento: anioNacimientoPublico(s.anioNacimiento, hoy),
-        resultados: c ? Number(c.resultados) : 0,
-        armas: c?.armas ? (c.armas.split(',').sort() as Arma[]) : [],
-        ultimaFecha: typeof c?.ultimaFecha === 'string' ? c.ultimaFecha.slice(0, 10) : null,
-        seguida: Boolean(Number(c?.seguida ?? 0)),
+        resultados: c?.resultados ?? 0,
+        armas: c?.armas ?? [],
+        ultimaFecha: c?.ultimaFecha ?? null,
+        seguida: seguidas.has(s.id),
         ...(marcas[s.id]?.length ? { olimpica: marcas[s.id] } : {}),
       };
     }),

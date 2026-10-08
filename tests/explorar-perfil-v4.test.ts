@@ -193,18 +193,18 @@ describe('vista de resultados', () => {
       personaId: YO,
     }));
 
-  it('con los dos ámbitos ofrece el selector en la URL y filtra la lista', () => {
+  it('con los dos ámbitos ofrece el selector (la URL fija el inicial) y filtra la lista', () => {
     const f = carrera();
     const todo = vista(f);
-    expect(todo).toContain(`href="/explorar/${YO}?ambito=internacional#historial"`);
-    expect(todo).toContain(`href="/explorar/${YO}?ambito=nacional#historial"`);
+    expect(todo).toContain('role="radiogroup" aria-label="Ámbito de los resultados"');
+    for (const r of ['Todo', 'Internacional', 'Nacional']) expect(todo).toMatch(new RegExp(`role="radio"[^>]*>(?:<span[^>]*></span>)?<span[^>]*>${r}</span>`));
     expect(todo).toContain('Mejores competiciones');
     expect(todo).toContain('data-medalla="1"');
     expect(todo).toContain('rel="noopener noreferrer"');
     const nacional = vista(f, { ...CRITERIOS_FICHA_VACIOS, ambito: 'nacional' });
     expect(nacional).toMatch(/tnr abs madrid/i);
     expect(nacional).not.toMatch(/copa del mundo|coupe du monde/i);
-    expect(nacional).toMatch(/aria-current="page"[^>]*data-ambito="nacional"/);
+    expect(nacional).toMatch(/aria-checked="true"[^>]*>(?:<span[^>]*><\/span>)?<span[^>]*>Nacional<\/span>/);
   });
 
   it('con un solo ámbito no hay selector y un ámbito vacío en la URL no deja la pestaña en blanco', () => {
@@ -349,7 +349,7 @@ describe('cara a cara: rivales y cruces', () => {
     expect(html).toContain('id="h2h-cruces"');
     expect(html).toContain('aria-label="Por delante: Yo 1, Rival 1, de 2"');
     // «Grand Prix Doha» es común pero sin asalto entre las dos.
-    expect(html).toContain('Asaltos disponibles en 3 de 4 pruebas comunes');
+    expect(html).toContain('3 con asaltos');
     expect(html).toContain('>15–9<');
     expect(html).toContain(`href="/explorar/ediciones/ed-cm?prueba=cm&amp;persona=${YO}"`);
   });

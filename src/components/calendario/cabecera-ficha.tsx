@@ -3,17 +3,17 @@
 import { Flag, MapPin } from 'lucide-react';
 import * as React from 'react';
 import { InsigniaOrganismo } from '@/components/insignia-organismo';
-import { Badge } from '@/components/ui/badge';
+import { Pastilla } from '@/components/sistema/pastilla';
 import type { EventView } from '@/lib/queries/calendar';
 import {
   CIRCUIT_LABEL,
   type Organismo,
   cn,
-  formatDateRangeEs,
   organismoDe,
   titular,
   titularTorneo,
 } from '@/lib/utils';
+import { rangoFechas } from '@/lib/fechas';
 import { torneoTerminado } from './ficha/terminado';
 
 /**
@@ -100,31 +100,30 @@ export function CabeceraFicha({ evento }: { evento: EventView }) {
 
       <div
         className={cn(
-          'relative flex flex-col gap-[8px] px-[16px]',
-          hayFoto ? '-mt-[64px] sm:-mt-[80px]' : 'pt-[16px]',
+          'relative flex flex-col gap-2 px-4',
+          hayFoto ? '-mt-16 sm:-mt-20' : 'pt-4',
         )}
       >
-        <div className="flex flex-wrap items-center gap-[6px]">
-          <InsigniaOrganismo organismo={organismo} className="h-[24px] text-[12px]" />
-          <Badge variant="outline" className="text-[12px]">
+        <div className="flex flex-wrap items-center gap-2">
+          <InsigniaOrganismo organismo={organismo} />
+          <Pastilla tamano="md" className="border-border bg-transparent text-xs">
             {CIRCUIT_LABEL[evento.circuit] ?? evento.circuit}
-          </Badge>
+          </Pastilla>
           {/* Un torneo pasado se abre para ver quién ganó: icono y palabra, no solo color. */}
           {terminado ? (
-            <Badge variant="secondary" className="gap-1 bg-muted text-[12px] text-muted-foreground">
-              <Flag aria-hidden />
+            <Pastilla tamano="md" icono={Flag} className="bg-muted text-xs text-muted-foreground">
               Terminada
-            </Badge>
+            </Pastilla>
           ) : null}
         </div>
-        <h2 data-titulo-ficha className="text-[28px] leading-[30px] text-balance">
+        <h2 data-titulo-ficha className="text-3xl leading-tight text-balance">
           {titularTorneo(evento.name)}
         </h2>
-        <dl className="grid grid-cols-2 gap-x-[12px] gap-y-[4px]">
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-1">
           <div className="flex min-w-0 flex-col">
-            <dt className="text-[12px] leading-[16px] text-muted-foreground">Dónde</dt>
-            <dd className="flex min-w-0 items-start gap-[6px] text-[14px] leading-[20px] text-foreground">
-              <MapPin className="mt-[3px] size-[14px] shrink-0" aria-hidden />
+            <dt className="text-xs text-muted-foreground">Dónde</dt>
+            <dd className="flex min-w-0 items-start gap-1 text-sm text-foreground">
+              <MapPin className="mt-1 size-4 shrink-0" aria-hidden />
               <span className="min-w-0 break-words">
                 {evento.city ? titular(evento.city) : 'Sin sede'}
                 {evento.country ? `, ${evento.country}` : ''}
@@ -132,9 +131,9 @@ export function CabeceraFicha({ evento }: { evento: EventView }) {
             </dd>
           </div>
           <div className="flex flex-col">
-            <dt className="text-[12px] leading-[16px] text-muted-foreground">Cuándo</dt>
-            <dd className="text-[14px] leading-[20px] text-foreground">
-              {formatDateRangeEs(evento.startDate, evento.endDate)}
+            <dt className="text-xs text-muted-foreground">Cuándo</dt>
+            <dd className="text-sm text-foreground">
+              {rangoFechas(evento.startDate, evento.endDate, 'linea', { anio: 'auto' })}
             </dd>
           </div>
         </dl>

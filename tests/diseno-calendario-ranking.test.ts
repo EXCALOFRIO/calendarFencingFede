@@ -211,8 +211,8 @@ const temporadas = () => React.createElement(TiraTemporadas, {
 });
 
 describe('calendario, navegación y ranking: contrato de presentación', () => {
-  it('una sola barra con los mismos cinco destinos para todos, sin submenús', () => {
-    expect(DESTINOS_APP.map((d) => d.href)).toEqual(['/', '/explorar', '/explorar/buscar', '/ranking', '/explorar/yo']);
+  it('una sola barra con los mismos cuatro destinos para todos, sin submenús', () => {
+    expect(DESTINOS_APP.map((d) => d.href)).toEqual(['/', '/explorar', '/ranking', '/explorar/yo']);
     for (const Nav of [NavEscritorio, NavMovil]) {
       const marcado = html(React.createElement(Nav, { role: 'admin' }));
       expect(marcado).toContain('aria-current="page"');
@@ -251,9 +251,9 @@ describe('calendario, navegación y ranking: contrato de presentación', () => {
   it('la fecha manda y cada torneo conserva el nombre, la sede y la acción', () => {
     const segundo = { ...evento, id: 'otro-evento', name: 'COPA DEL MUNDO DE FLORETE', source: 'fie', scope: 'INTERNACIONAL' as const, city: 'PARIS', country: 'FRA' };
     const bloque = agruparEnBloques([evento, segundo])[0];
-    for (const variante of ['apilada', 'zonas'] as const) {
+    {
       const marcado = html(React.createElement(TarjetaBloque, {
-        bloque, variante, inscripciones: {}, resaltados: new Set<string>(),
+        bloque, inscripciones: {}, resaltados: new Set<string>(),
         proximo: null, mostrarArma: true, mostrarGenero: true, mostrarCategoria: true, onAbrir: vi.fn(),
       }));
       expect(marcado).toContain('torneos coinciden');
@@ -262,7 +262,7 @@ describe('calendario, navegación y ranking: contrato de presentación', () => {
       // El botón se nombra por lo que enseña (WCAG 2.5.3), sin aria-label que lo tape.
       expect(marcado).toContain('data-barra="torneo"');
       expect(marcado).not.toContain('Abrir la ficha.');
-      expect(marcado).toContain('cifra text-4xl');
+      expect(marcado).toContain('data-slot="sistema-bloque-fecha"');
       expect(marcado).not.toMatch(/uppercase|tracking-widest|truncate|objetivo-libre/);
     }
   });
@@ -294,7 +294,13 @@ describe('calendario, navegación y ranking: contrato de presentación', () => {
     expect(marcado).toContain('sin clasificar');
     expect(marcado).toContain('puntos no publicados');
     expect(marcado).toContain('sin temporada anterior con la que comparar');
-    expect(marcado).toContain('size-11');
+    // Rejilla, no carrusel: nada se desplaza en horizontal y el resto va detrás de «Ver más».
+    expect(marcado).not.toMatch(/carousel|overflow-x/);
+    const muchas = html(React.createElement(TiraTemporadas, {
+      temporadas: Array.from({ length: 8 }, (_, i) => ({ id: `t${i}`, temporada: String(2026 - i), puesto: i + 1, puntos: 10, categoria: 'Absoluto' })),
+    }));
+    expect(muchas.match(/<article/g)).toHaveLength(6);
+    expect(muchas).toContain('Ver más (2)');
   });
 
   it('conserva cuota, recargos, horas, procedencia y fechas estimadas sin elipsis', () => {

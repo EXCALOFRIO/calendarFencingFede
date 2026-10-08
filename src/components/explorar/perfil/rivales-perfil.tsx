@@ -1,49 +1,38 @@
-import { Swords, TriangleAlert } from 'lucide-react';
-import Link from 'next/link';
-import { BanderaPais } from '@/components/bandera';
-import { Button } from '@/components/ui/button';
-import { construirUrlCaraACara, rutaCaraACara } from '@/lib/sport/explorar/cara-a-cara-url';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
+import { FilaPersona } from '@/components/sistema/fila-persona';
+import { construirUrlCaraACara } from '@/lib/sport/explorar/cara-a-cara-url';
 import type { PerfilDeportivo, RivalFrecuente } from '@/lib/sport/explorar/tipos-perfil';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { cn, titular } from '@/lib/utils';
-import { FotoDeportista } from '../foto-deportista';
-import { Bloque, fechaLegible, type Nivel } from '../piezas';
+import { Bloque, type Nivel } from '../piezas';
+import { CaraACaraHoja } from './elegir-rival-hoja';
 
 function FilaRival({ personaId, r }: { personaId: string; r: RivalFrecuente }) {
   const gano = r.ultimo.favor > r.ultimo.contra;
   const empate = r.ultimo.favor === r.ultimo.contra;
+  const nombre = nombreVisible(r.nombre) || r.nombre;
   return (
-    <li>
-      <Link
+    <li className="px-3 sm:px-4">
+      <FilaPersona
+        persona={{ id: r.id, nombre, pais: r.pais }}
         href={construirUrlCaraACara(personaId, { rival: r.id })}
-        prefetch={false}
-        className="grid min-h-14 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-2.5 hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:px-5"
-      >
-        <span className="flex min-w-0 items-center gap-3">
-          <FotoDeportista personaId={r.id} nombre={nombreVisible(r.nombre)} tamano="lista" apagado />
-          <span className="flex min-w-0 flex-col gap-0.5">
-            <span className="flex min-w-0 items-center gap-1.5">
-              {r.pais ? <BanderaPais pais={r.pais} soloBandera className="shrink-0" /> : null}
-              <span className="truncate font-medium">{nombreVisible(r.nombre)}</span>
-            </span>
-            <span className="truncate text-xs text-muted-foreground" title={titular(r.ultimo.torneo)}>
-              <span
-                className={cn('font-semibold', empate ? 'text-foreground' : gano ? 'text-ok' : 'text-danger')}
-                title={empate ? 'Último asalto sin decidir' : gano ? 'Último asalto ganado' : 'Último asalto perdido'}
-              >
-                {r.ultimo.favor}–{r.ultimo.contra}
-              </span>
-              {' · '}
-              {titular(r.ultimo.torneo)}
-              {r.ultimo.fecha ? ` · ${fechaLegible(r.ultimo.fecha)}` : ''}
-            </span>
+        meta={
+          <span title={titular(r.ultimo.torneo)}>
+            <span
+              className={cn('font-semibold', empate ? 'text-foreground' : gano ? 'text-ok' : 'text-danger')}
+              title={empate ? 'Último asalto sin decidir' : gano ? 'Último asalto ganado' : 'Último asalto perdido'}
+            >
+              {r.ultimo.favor}–{r.ultimo.contra}
+            </span>{' '}
+            {titular(r.ultimo.torneo)}
           </span>
-        </span>
-        <span className="flex flex-col items-end" title={`${r.asaltos} ${r.asaltos === 1 ? 'asalto' : 'asaltos'}`}>
-          <span className="cifra text-2xl leading-none">{r.victorias}–{r.derrotas}</span>
-          <span className="text-[12px] text-muted-foreground">{r.asaltos} {r.asaltos === 1 ? 'asalto' : 'asaltos'}</span>
-        </span>
-      </Link>
+        }
+        insignias={
+          <span className="cifra text-2xl leading-none" title={`${r.asaltos} ${r.asaltos === 1 ? 'asalto' : 'asaltos'}`}>
+            {r.victorias}–{r.derrotas}
+          </span>
+        }
+      />
     </li>
   );
 }
@@ -55,6 +44,7 @@ function FilaRival({ personaId, r }: { personaId: string; r: RivalFrecuente }) {
  */
 export function ManoAMano({
   personaId,
+  nombre,
   perfil,
   nivel,
   enPestana = false,
@@ -65,26 +55,13 @@ export function ManoAMano({
   nivel: Nivel;
   enPestana?: boolean;
 }) {
-  const otro = (
-    <Button asChild variant="outline" size="sm" className="h-[40px] min-h-[40px] rounded-full px-4">
-      <Link href={rutaCaraACara(personaId)} prefetch={false}>
-        <Swords aria-hidden />
-        Elegir otro rival
-      </Link>
-    </Button>
-  );
+  const otro = <CaraACaraHoja personaId={personaId} nombre={nombreVisible(nombre) || nombre} rotulo="Elegir rival" />;
   return (
     <Bloque id="ficha-rivales" titulo="Mano a mano" nivel={nivel} tituloOculto={enPestana}>
       {perfil.rivales === null ? (
-        <div role="alert" className="flex items-center gap-2 rounded-xl border bg-card px-3 py-3 text-sm">
-          <TriangleAlert className="size-4 shrink-0 text-warn" aria-hidden />
-          <p>No se han podido cargar los rivales.</p>
-        </div>
+        <EstadoVacio tipo="error" titulo="No se han podido cargar" descripcion="Inténtalo de nuevo en un momento." />
       ) : perfil.rivales.length === 0 ? (
-        <div role="status" className="flex flex-col items-start gap-3">
-          <p className="text-sm text-muted-foreground">Sin asaltos importados.</p>
-          {otro}
-        </div>
+        <EstadoVacio titulo="Sin asaltos importados" accion={otro} />
       ) : (
         <>
           <ol className="divide-y overflow-hidden rounded-xl border bg-card" aria-label="Rivales con más asaltos">

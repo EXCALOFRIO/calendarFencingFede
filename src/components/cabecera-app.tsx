@@ -1,12 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
+import { usePathname } from 'next/navigation';
 import { useFichaPropia } from '@/components/explorar/perfil/ficha-propia';
 import { Marca } from '@/components/marca';
-import { cabeceraDeRuta, hayBusqueda } from '@/components/navegacion-app';
+import { cabeceraDeRuta, esRutaNeutra } from '@/components/navegacion-app';
 import { CabeceraCompacta } from '@/components/sistema/cabecera-compacta';
+import { pestanaHeredada, useHerenciaLista } from '@/components/sistema/herencia-pestanas';
 import { AREA_TACTIL } from '@/components/sistema/tactil';
 import { cn } from '@/lib/utils';
 
@@ -26,22 +26,16 @@ type Props = {
  *
  * En escritorio la navegación va en la cabecera de 56 px del layout; esta
  * fila se queda debajo, sin pegarse, con el título y la flecha de volver.
+ *
+ * Sólo depende de la ruta (no de la consulta), así que se pinta una vez, sin
+ * `Suspense`. La pestaña heredada (después de hidratar) decide adónde sube
+ * «Volver» en una ruta neutra abierta con un enlace directo o recargada.
  */
-export function CabeceraApp(props: Props) {
-  return (
-    <Suspense fallback={<Cabecera {...props} conBusqueda={false} />}>
-      <CabeceraViva {...props} />
-    </Suspense>
-  );
-}
-
-function CabeceraViva(props: Props) {
-  return <Cabecera {...props} conBusqueda={hayBusqueda(useSearchParams())} />;
-}
-
-function Cabecera({ campana, aviso, conBusqueda }: Props & { conBusqueda: boolean }) {
+export function CabeceraApp({ campana, aviso }: Props) {
   const pathname = usePathname() ?? '/';
-  const c = cabeceraDeRuta(pathname, conBusqueda, useFichaPropia());
+  const lista = useHerenciaLista();
+  const heredada = lista ? pestanaHeredada(pathname, esRutaNeutra(pathname)) : null;
+  const c = cabeceraDeRuta(pathname, false, useFichaPropia(), heredada);
   const enCalendario = pathname === '/';
 
   let cabecera: React.ReactNode = null;
@@ -79,9 +73,9 @@ function Cabecera({ campana, aviso, conBusqueda }: Props & { conBusqueda: boolea
 /** El logo con el nombre, sólo en la raíz del Calendario. */
 function EnlaceMarca() {
   return (
-    <Link href="/" className={cn('flex h-[36px] items-center gap-[8px] rounded-full pr-[6px] pl-[4px] outline-none focus-visible:ring-2 focus-visible:ring-ring', AREA_TACTIL)}>
+    <Link href="/" className={cn('flex h-[36px] items-center gap-2 rounded-full pr-2 pl-1 outline-none focus-visible:ring-2 focus-visible:ring-ring', AREA_TACTIL)}>
       <Marca className="size-[26px]" />
-      <span className="font-display text-[20px] leading-[24px] font-semibold tracking-tight">
+      <span className="font-display text-xl leading-6 font-semibold tracking-tight">
         Calendar<span className="text-primary-text">Fencing</span>
       </span>
     </Link>

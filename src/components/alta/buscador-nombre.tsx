@@ -1,13 +1,14 @@
 import { CircleUser, Search, TriangleAlert, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 import { confirmarQueSoyYo } from '@/app/(app)/alta/acciones';
-import { Rotulos } from '@/components/estado/piezas';
+import { FilaPersona } from '@/components/sistema/fila-persona';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { CandidatoNombre, ResultadoNombres } from '@/lib/altas/por-nombre';
-import { CATEGORY_LABEL, WEAPON_LABEL } from '@/lib/utils';
+import { rotuloArma, rotuloCategoria } from '@/lib/sport/rotulos';
 import { BotonSoyYo, FalloAlVincular } from './boton-soy-yo';
+import { Datos } from './datos';
 
 /**
  * «¿Cómo te llamas?» y «¿eres tú?».
@@ -59,7 +60,7 @@ export function BuscadorNombre({
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h1 className="text-2xl sm:text-3xl">Vincula tu ficha</h1>
+        <h1 className="text-2xl">Vincula tu ficha</h1>
         <p className="text-sm text-muted-foreground">
           Dinos tu nombre y búscate en las listas oficiales
         </p>
@@ -88,7 +89,7 @@ export function BuscadorNombre({
         campo medía 1.290 px con el botón perdido en la otra punta.
       */}
       <form method="get" action="/alta" className="flex flex-wrap items-end gap-2">
-        <div className="flex min-w-0 flex-1 basis-64 flex-col gap-1.5 sm:max-w-88">
+        <div className="flex min-w-0 flex-1 basis-64 flex-col gap-2 sm:max-w-88">
           <Label htmlFor="mi-nombre">¿Cómo te llamas?</Label>
           <Input
             id="mi-nombre"
@@ -114,7 +115,7 @@ export function BuscadorNombre({
           role="alert"
           className="medida flex items-start gap-2 text-sm text-danger"
         >
-          <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <TriangleAlert className="h-5 w-4 shrink-0" aria-hidden />
           <span>{resultado.error}</span>
         </p>
       ) : null}
@@ -184,20 +185,18 @@ function Candidatos({
 
       <ul className="flex flex-col divide-y">
         {candidatos.map((c) => (
-          <li key={c.clave} className="flex min-w-0 flex-col gap-2.5 py-4">
-            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-              <p className="text-base font-medium">{c.nombre}</p>
-              {/*
-                El nombre tal y como lo publica la fuente: la FIE escribe
-                «CASAUS PIELAGO Jorge» y la RFEE «JORGE CASAUS PIELAGO». Verlo
-                es parte de reconocerse, y además deja auditar el emparejado sin
-                abrir la base de datos.
-              */}
-              <span className="min-w-0 text-xs text-muted-foreground">
-                {c.fuente === 'RANKING_RFEE' ? 'en la RFEE, ' : 'en la FIE, '}«
-                {c.nombrePublicado}»
-              </span>
-            </div>
+          <li key={c.clave} className="flex min-w-0 flex-col gap-3 py-4">
+            {/*
+              El nombre tal y como lo publica la fuente: la FIE escribe
+              «CASAUS PIELAGO Jorge» y la RFEE «JORGE CASAUS PIELAGO». Verlo
+              es parte de reconocerse, y además deja auditar el emparejado sin
+              abrir la base de datos.
+            */}
+            <FilaPersona
+              persona={{ nombre: c.nombre }}
+              meta={`${c.fuente === 'RANKING_RFEE' ? 'En la RFEE' : 'En la FIE'}: «${c.nombrePublicado}»`}
+              className="py-0"
+            />
 
             {/*
               Los datos que distinguen a dos homónimos, cada uno con su rótulo.
@@ -205,24 +204,21 @@ function Candidatos({
               y la fecha completa de un menor no se pinta en una pantalla a la
               que se llega escribiendo un apellido.
             */}
-            <Rotulos
+            <Datos
               disposicion="linea"
               datos={[
                 ['Nació en', c.anioNacimiento ?? 'no publicado'],
                 [
                   c.armas.length === 1 ? 'Arma' : 'Armas',
                   c.armas.length > 0
-                    ? c.armas.map((a) => WEAPON_LABEL[a]).join(', ')
+                    ? c.armas.map((a) => rotuloArma(a)).join(', ')
                     : 'no publicada',
                 ],
                 [
                   c.categorias.length === 1 ? 'Categoría' : 'Categorías',
                   c.categorias.length > 0
                     ? c.categorias
-                        .map(
-                          (k) =>
-                            CATEGORY_LABEL[k as keyof typeof CATEGORY_LABEL] ?? k,
-                        )
+                        .map((k) => rotuloCategoria(k) || k)
                         .join(', ')
                     : 'no publicada',
                 ],
@@ -250,7 +246,7 @@ function Candidatos({
 
             {c.yaVinculado ? (
               <p className="medida flex items-start gap-2 text-sm text-warn">
-                <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                <TriangleAlert className="h-5 w-4 shrink-0" aria-hidden />
                 <span>
                   Esta ficha ya está vinculada a una cuenta. Si es la tuya, entra
                   con ella; si no lo es, escribe a la dirección técnica para que
@@ -259,7 +255,7 @@ function Candidatos({
               </p>
             ) : c.faltaDato ? (
               <p className="medida flex items-start gap-2 text-sm text-muted-foreground">
-                <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                <TriangleAlert className="h-5 w-4 shrink-0" aria-hidden />
                 <span>
                   De esta ficha la fuente no publica {c.faltaDato}, y sin eso no
                   se puede crear tu ficha sin inventárselo. Pídele la
@@ -299,7 +295,7 @@ function Candidatos({
       ) : null}
 
       <p className="medida flex items-start gap-2 pt-3 text-xs text-muted-foreground">
-        <UserCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
+        <UserCheck className="h-5 w-4 shrink-0" aria-hidden />
         <span>
           El botón guarda una solicitud, no concede acceso a esta ficha.
           La dirección técnica debe verificar tu identidad por una vía independiente
@@ -321,7 +317,7 @@ function NoApareces({ esPersonal }: { esPersonal: boolean }) {
   return (
     <div className="border-t pt-4">
       <p className="medida flex items-start gap-2 text-xs text-muted-foreground">
-        <CircleUser className="mt-0.5 size-4 shrink-0" aria-hidden />
+        <CircleUser className="h-5 w-4 shrink-0" aria-hidden />
         <span>
           ¿No te encuentras por tu nombre? En las listas oficiales solo están
           los que han competido, así que es normal no salir si empiezas en M13 o

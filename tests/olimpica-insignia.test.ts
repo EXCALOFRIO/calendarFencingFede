@@ -105,7 +105,8 @@ describe('PastillaOlimpica: verde, amarillo y gris, sin check', () => {
     expect(v).toContain('text-ok');
     // Tinte opaco sobre `--card` y sin borde (diseno-sistema § 9).
     expect(v).toContain('var(--card)');
-    expect(v).not.toMatch(/\bborder(-ok)?\b|bg-ok\/\d+/);
+    expect(v).not.toMatch(/\bborder-ok\b|bg-ok\/\d+/);
+    expect(v).toContain('border-transparent');
     expect(v).toContain('data-icono="aros"');
     expect(v).not.toContain('lucide-check');
     expect(v).not.toContain('laurel');
@@ -186,7 +187,7 @@ describe('ContenidoBurbujaOlimpica', () => {
     expect(o).toContain('Pendiente');
     expect(o).toContain('Participación sin decidir');
     expect(o).toContain('Si contara');
-    expect(o).toContain('Top 4 equipos');
+    expect(o).toContain('4 primeros equipos');
     expect(o).toContain('ranking por equipos');
     expect(o).not.toContain('Rival');
     expect(o).not.toContain('<time');
@@ -197,7 +198,7 @@ describe('ContenidoBurbujaOlimpica', () => {
       anotacion: { ...CERCA, fechaRanking: FECHA, prueba: { arma: 'ESPADA', genero: 'F' } },
     }));
     expect(o).toContain(`dateTime="${FECHA}"`);
-    expect(o).toContain('LA 2028 · Espada fem.');
+    expect(o).toContain('LA 2028 · Espada Fem.');
   });
 });
 
@@ -208,7 +209,7 @@ describe('BurbujaOlimpica, InsigniaOlimpica, MarcaOlimpicaPersona y FiltroOlimpi
     expect(o).toContain('aria-label="JJOO LA 2028: por asegurar, Mejor de Europa, le faltan 30 puntos"');
     // 44 px de alto de verdad (lo que mide un dedo y la sonda), sin agrandar la fila.
     expect(o).toContain('h-[44px]');
-    expect(o).toContain('-my-[12px]');
+    expect(o).toContain('-my-3');
     expect(o).toContain('data-color-olimpico="amarillo"');
     expect(o).not.toContain('role="img"');
     expect(html(h(BurbujaOlimpica, { anotacion: null, fechaRanking: FECHA }))).toBe('');
@@ -238,6 +239,6 @@ describe('BurbujaOlimpica, InsigniaOlimpica, MarcaOlimpicaPersona y FiltroOlimpi
     expect(off).toContain('>13<');
     const on = html(h(FiltroOlimpico, { activo: true, onCambio: () => {} }));
     expect(on).toContain('aria-pressed="true"');
-    expect(on).toContain('data-state="on"');
+    expect(on).toContain('data-marcado="true"');
   });
 });

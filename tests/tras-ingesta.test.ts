@@ -1,6 +1,16 @@
 import { readFileSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
+import type { SQL } from 'drizzle-orm';
+import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { trasIngesta } from '../src/lib/ingest/tras-ingesta';
+import {
+  CIERRE_NOCTURNO,
+  ORDEN_NOCTURNO,
+  PENDIENTE_MAX_MS,
+  planInvalidacion,
+  trasIngesta,
+} from '../src/lib/ingest/tras-ingesta';
+import { TAREAS_CRON } from '../src/lib/cron/programado';
 import { despuesDePasada, FUENTE_RESULTADOS_AUTO } from '../src/lib/ingest/resultados-auto/runtime';
 import type { ResumenResultadosAuto } from '../src/lib/ingest/resultados-auto/ejecutar';
 import { dependenciasDeFuente } from '../src/lib/cache/invalidar';
@@ -118,7 +128,7 @@ describe('cableado', () => {
   });
 
   it('el cron pasa el resultado para no invalidar lo que no cambió', () => {
-    expect(leer('src/app/api/cron/ingest/[source]/route.ts')).toContain('await trasIngesta(source, { resultado })');
+    expect(leer('src/app/api/cron/ingest/[source]/route.ts')).toContain('await trasIngesta(source, { resultado, cadena: !forzar })');
   });
 
   it('la pasada automática pasa por despuesDePasada', () => {
@@ -142,5 +152,103 @@ describe('invalidarCacheSinFallar', () => {
     const { invalidarCacheSinFallar } = await import('../src/lib/cache');
     await expect(invalidarCacheSinFallar(['calendario'], 'prueba')).resolves.toBeUndefined();
     registro.mockRestore();
+  });
+});
+
+/** refresco_programado real (0012) sobre node:sqlite, con el `execute` que usan los módulos. */
+function baseRefresco() {
+  const sqlite = new DatabaseSync(':memory:');
+  sqlite.exec(readFileSync(new URL('../drizzle-d1/0012_refresco_programado.sql', import.meta.url), 'utf8'));
+  const dialecto = new SQLiteSyncDialect();
+  const db = {
+    async execute(query: SQL) {
+      const q = dialecto.sqlToQuery(query);
+      return { rows: sqlite.prepare(q.sql).all(...(q.params as (string | number | null)[])) };
+    },
+  } as unknown as DbAvisos;
+  const pendientes = () =>
+    sqlite.prepare(`SELECT clave FROM refresco_programado WHERE tarea = 'cache_pendiente' ORDER BY clave`).all().map((f) => f.clave);
+  return { db, pendientes };
+}
+
+describe('una invalidación por familia y noche', () => {
+  const notificar = async () => resumenNotificar;
+
+  it('el orden de la cadena es el de TAREAS_CRON', () => {
+    const rutas = Object.entries(TAREAS_CRON)
+      .filter(([, ruta]) => ruta.startsWith('/api/cron/ingest/'))
+      .sort(([a], [b]) => {
+        const hora = (e: string) => { const [m, h] = e.split(' ').map(Number); return h * 60 + m; };
+        return hora(a) - hora(b);
+      })
+      .map(([, ruta]) => ruta.replace('/api/cron/ingest/', ''));
+    expect(rutas).toEqual([...ORDEN_NOCTURNO]);
+    for (const cierre of Object.values(CIERRE_NOCTURNO)) expect(ORDEN_NOCTURNO).toContain(cierre);
+  });
+
+  it('plan: aplaza hasta el cierre de cada familia y entonces invalida lo pendiente', () => {
+    const ahora = 1_000_000_000;
+    expect(planInvalidacion('skermo_rfee', ['calendario', 'deporte'], new Map(), ahora)).toEqual({
+      ahora: [], aplazar: ['calendario', 'deporte'], limpiar: [],
+    });
+    const pendientes = new Map([['calendario', ahora - 1000], ['deporte', ahora - 1000]] as const);
+    expect(planInvalidacion('rfee_wp', [], pendientes, ahora)).toEqual({ ahora: ['calendario'], aplazar: [], limpiar: ['calendario'] });
+    expect(planInvalidacion('fie_tiradores', ['ranking-fie', 'deporte'], pendientes, ahora)).toEqual({
+      ahora: ['ranking-fie', 'deporte', 'calendario'], aplazar: [], limpiar: ['deporte', 'calendario'],
+    });
+  });
+
+  it('plan: lo pendiente demasiado viejo se invalida en la siguiente pasada de la cadena', () => {
+    const ahora = 10 * PENDIENTE_MAX_MS;
+    const viejo = new Map([['calendario', ahora - PENDIENTE_MAX_MS - 1]] as const);
+    expect(planInvalidacion('skermo_rfee', [], viejo, ahora).ahora).toEqual(['calendario']);
+  });
+
+  it('una noche entera sube cada época una sola vez, al cerrar su familia', async () => {
+    const { db, pendientes } = baseRefresco();
+    const familias: string[][] = [];
+    const invalidarFamilias = vi.fn(async (d: readonly string[]) => { familias.push([...d].sort()); });
+    const cambia = { sinCambios: false };
+    const quieta = { sinCambios: true };
+    const noche: [string, { sinCambios: boolean }][] = [
+      ['skermo_rfee', cambia], ['fie', cambia], ['efc', quieta], ['skermo_regional', cambia],
+      ['rfee_wp', quieta], ['skermo_ranking', quieta], ['fie_tiradores', quieta],
+    ];
+    const caches: string[] = [];
+    for (const [fuente, resultado] of noche) {
+      const r = await trasIngesta(fuente, { db, notificar, registro: silencio, resultado, cadena: true, invalidarFamilias });
+      caches.push(r.cache);
+    }
+    expect(familias).toEqual([['calendario'], ['deporte']]);
+    expect(caches).toEqual(['aplazada', 'aplazada', 'sin_cambios', 'aplazada', 'ok', 'sin_cambios', 'ok']);
+    expect(pendientes()).toEqual([]);
+  });
+
+  it('sin cambios en toda la noche no se invalida nada', async () => {
+    const { db } = baseRefresco();
+    const invalidarFamilias = vi.fn(async () => {});
+    for (const fuente of ORDEN_NOCTURNO) {
+      await trasIngesta(fuente, { db, notificar, registro: silencio, resultado: { sinCambios: true }, cadena: true, invalidarFamilias });
+    }
+    expect(invalidarFamilias).not.toHaveBeenCalled();
+  });
+
+  it('si la invalidación falla, lo pendiente se conserva para la siguiente', async () => {
+    const { db, pendientes } = baseRefresco();
+    await trasIngesta('skermo_rfee', { db, notificar, registro: silencio, resultado: { sinCambios: false }, cadena: true, invalidarFamilias: async () => {} });
+    const r = await trasIngesta('rfee_wp', {
+      db, notificar, registro: silencio, resultado: { sinCambios: true }, cadena: true,
+      invalidarFamilias: async () => { throw new Error('D1'); },
+    });
+    expect(r.cache).toBe('error');
+    expect(pendientes()).toEqual(['calendario', 'deporte']);
+  });
+
+  it('sin la tabla, invalida en el acto como antes', async () => {
+    const roto = { execute: async () => { throw new Error('no such table: refresco_programado'); } } as unknown as DbAvisos;
+    const invalidarFamilias = vi.fn(async () => {});
+    const r = await trasIngesta('skermo_rfee', { db: roto, notificar, registro: silencio, resultado: { sinCambios: false }, cadena: true, invalidarFamilias });
+    expect(r.cache).toBe('ok');
+    expect(invalidarFamilias).toHaveBeenCalledWith(['calendario', 'deporte']);
   });
 });

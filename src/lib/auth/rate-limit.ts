@@ -52,22 +52,35 @@ export type OtpRequestOptions = {
   dailyLimit?: number;
 };
 
+/**
+ * - `permitido`: the request may reach the provider.
+ * - `limitado`: an email-independent limit (per IP, or per IP + address) was hit.
+ *   Invited and invented addresses reach it at exactly the same point, so the
+ *   UI may say so without revealing whether the address exists.
+ * - `denegado`: not invited, or an invited-only limit was hit. Indistinguishable
+ *   from success to the caller.
+ */
+export type OtpDecision = 'permitido' | 'limitado' | 'denegado';
+
 export async function allowOtpRequest(
   db: AuthDatabase, secret: string, email: string, headers: Headers, send: boolean,
   { invited, dailyLimit = otpDailyLimit() }: OtpRequestOptions,
-): Promise<boolean> {
+): Promise<OtpDecision> {
   // Cloudflare overwrites this header. Never trust forwarded-for/client-supplied IP aliases.
   const ip = headers.get('cf-connecting-ip') ?? 'local-or-missing-ip';
   const minute = 60_000;
   const hour = 60 * minute;
-  if (!await takeAuthLimit(db, secret, send ? 'send-ip-minute' : 'verify-ip-minute', ip, send ? 5 : 20, minute)) return false;
-  if (!await takeAuthLimit(db, secret, send ? 'send-ip-hour' : 'verify-ip-hour', ip, send ? 20 : 100, hour)) return false;
-  // Uninvited addresses never reach the provider: no per-address rows, no global quota.
-  if (!invited) return false;
-  if (!await takeAuthLimit(db, secret, send ? 'send-email-hour' : 'verify-email-hour', email, send ? 5 : 20, hour)) return false;
+  if (!await takeAuthLimit(db, secret, send ? 'send-ip-minute' : 'verify-ip-minute', ip, send ? 5 : 20, minute)) return 'limitado';
+  // Clubs and venues share one public IP (Wi-Fi, CGNAT): the per-IP hour is a
+  // high ceiling and the per-person budget is keyed by IP + address instead.
+  if (!await takeAuthLimit(db, secret, send ? 'send-ip-hour' : 'verify-ip-hour', ip, send ? 120 : 100, hour)) return 'limitado';
+  if (send && !await takeAuthLimit(db, secret, 'send-ip-email-hour', `${ip}\n${email}`, 5, hour)) return 'limitado';
+  // Uninvited addresses never reach the provider, the per-address rows or the global quota.
+  if (!invited) return 'denegado';
+  if (!await takeAuthLimit(db, secret, send ? 'send-email-hour' : 'verify-email-hour', email, send ? 5 : 20, hour)) return 'denegado';
   if (send) {
-    if (!await takeAuthLimit(db, secret, 'send-delay', email, 1, minute)) return false;
-    if (!await takeAuthLimit(db, secret, 'send-global-day', 'all', dailyLimit, 24 * hour)) return false;
+    if (!await takeAuthLimit(db, secret, 'send-delay', email, 1, minute)) return 'denegado';
+    if (!await takeAuthLimit(db, secret, 'send-global-day', 'all', dailyLimit, 24 * hour)) return 'denegado';
   }
-  return true;
+  return 'permitido';
 }

@@ -31,11 +31,26 @@ export type GrupoClasificacionFie = {
 };
 
 export type LecturaGrupoFie =
-  | { ok: true; fieIds: readonly number[]; sourceUrl: string | null }
+  | {
+      ok: true;
+      fieIds: readonly number[];
+      sourceUrl: string | null;
+      /**
+       * De los presentes, cuántos ya estaban guardados antes del upsert. Con
+       * él, el recuento sale de la lectura anterior más los nuevos, sin
+       * `count(*)` sobre el grupo.
+       */
+      yaGuardadas?: number;
+    }
   | { ok: false };
 
 export type EscritorLecturaFie = {
-  contarGuardadas(grupo: GrupoClasificacionFie): Promise<number>;
+  /**
+   * Filas guardadas del grupo, ya con el upsert de esta lectura. Con `previo`
+   * puede salir de `fie_clasificacion_lectura.row_count` (lo guardado tras la
+   * lectura anterior) más las filas nuevas.
+   */
+  contarGuardadas(grupo: GrupoClasificacionFie, previo?: { nuevas: number; ahora: Date }): Promise<number>;
   borrarAusentes(grupo: GrupoClasificacionFie, presentes: readonly number[]): Promise<number>;
   registrarLectura(
     grupo: GrupoClasificacionFie,
@@ -44,6 +59,9 @@ export type EscritorLecturaFie = {
 };
 
 export const PROPORCION_MINIMA_PARA_PODAR = 0.5;
+
+/** Pasado esto, el recuento guardado no se usa y se vuelve a contar el grupo. */
+export const VIGENCIA_RECUENTO_MS = 30 * 86_400_000;
 
 export async function cerrarLecturaGrupo(
   escritor: EscritorLecturaFie,
@@ -55,11 +73,19 @@ export async function cerrarLecturaGrupo(
     return { borradas: 0, registrada: false, podaOmitida: true };
   }
   const presentes = [...new Set(lectura.fieIds)];
-  const guardadas = await escritor.contarGuardadas(grupo);
+  const guardadas = await escritor.contarGuardadas(
+    grupo,
+    lectura.yaGuardadas === undefined
+      ? undefined
+      : { nuevas: Math.max(0, presentes.length - lectura.yaGuardadas), ahora },
+  );
   const podaOmitida = presentes.length < guardadas * PROPORCION_MINIMA_PARA_PODAR;
-  const borradas = podaOmitida ? 0 : await escritor.borrarAusentes(grupo, presentes);
+  // Todo lo presente está guardado: si no hay más filas que presentes, no sobra ninguna.
+  const nadaQueBorrar = guardadas <= presentes.length;
+  const borradas = podaOmitida || nadaQueBorrar ? 0 : await escritor.borrarAusentes(grupo, presentes);
   await escritor.registrarLectura(grupo, {
-    filas: presentes.length,
+    // Lo que queda guardado tras esta lectura: es lo que usa la siguiente para no contar.
+    filas: podaOmitida ? guardadas : presentes.length,
     borradas,
     leidoEn: ahora,
     sourceUrl: lectura.sourceUrl,
@@ -91,7 +117,21 @@ export function escritorLecturaD1(
     );
 
   return {
-    async contarGuardadas(g) {
+    async contarGuardadas(g, previo) {
+      if (previo) {
+        try {
+          const { rows } = await db.execute(sql`
+            select row_count as n, read_at as r from fie_clasificacion_lectura
+            where season = ${g.season} and format = ${g.format} and weapon = ${g.weapon}
+              and gender = ${g.gender} and category_raw = ${g.categoryRaw}`);
+          const fila = rows[0] as { n?: number; r?: number } | undefined;
+          if (fila && previo.ahora.getTime() - Number(fila.r) < VIGENCIA_RECUENTO_MS) {
+            return Number(fila.n) + previo.nuevas;
+          }
+        } catch {
+          // Sin 0009 se cuenta como antes.
+        }
+      }
       const { rows } = await db.execute(
         sql`select count(*) as n from ${tabla} where ${delGrupo(g)}`,
       );

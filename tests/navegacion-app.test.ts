@@ -41,10 +41,12 @@ describe('pestaña activa', () => {
   it.each([
     ['/', '', 'calendario'],
     ['/explorar', '', 'explorar'],
-    ['/explorar', 'q=garcia', 'buscar'],
+    ['/explorar', 'q=garcia', 'explorar'],
     ['/explorar', 'medallas=1', 'explorar'],
-    ['/explorar/buscar', '', 'buscar'],
-    ['/explorar/ediciones/abc', '', 'buscar'],
+    ['/explorar/buscar', '', 'explorar'],
+    ['/explorar/buscar', 'ver=paises', 'explorar'],
+    ['/explorar/ediciones', '', 'explorar'],
+    ['/explorar/ediciones/abc', '', 'explorar'],
     ['/explorar/00000000-0000-4000-8000-000000000001', '', 'explorar'],
     ['/explorar/00000000-0000-4000-8000-000000000001/rivales', '', 'explorar'],
     ['/ranking', '', 'ranking'],
@@ -77,7 +79,9 @@ describe('tocar la pestaña activa', () => {
     expect(toquePestana('/explorar', destino('explorar'), 'explorar')).toEqual({ accion: 'subir' });
     expect(toquePestana('/explorar/abc', destino('explorar'), 'explorar')).toEqual({ accion: 'raiz', tipos: ['nav-volver'] });
     expect(toquePestana('/estado', destino('tu'), 'tu')).toEqual({ accion: 'raiz', tipos: ['nav-volver'] });
-    expect(toquePestana('/explorar', destino('buscar'), 'buscar')).toEqual({ accion: 'raiz', tipos: ['nav-volver'] });
+    // Desde otro ámbito (Tiradores, Torneos, Países) la brújula vuelve a «Para ti».
+    expect(toquePestana('/explorar/buscar', destino('explorar'), 'explorar')).toEqual({ accion: 'raiz', tipos: ['nav-volver'] });
+    expect(toquePestana('/explorar/ediciones', destino('explorar'), 'explorar')).toEqual({ accion: 'raiz', tipos: ['nav-volver'] });
     expect(toquePestana('/', destino('ranking'), 'calendario')).toEqual({ accion: 'navegar', tipos: ['nav-pestana'] });
   });
 
@@ -102,7 +106,7 @@ describe('la brújula no se queda con la ficha propia (bucle Explorar → ficha 
   it('arreglo: con la ficha propia ya conocida, Explorar no la recuerda y la memoria vieja se limpia', () => {
     expect(pestanaQueRecuerda({ marcada: 'explorar', pathname: PROPIA, conBusqueda: false, fichaPropia: PROPIA, heredada: null })).toBeNull();
     expect(pestanaQueRecuerda({ marcada: 'tu', pathname: PROPIA, conBusqueda: false, fichaPropia: PROPIA, heredada: null })).toBe('tu');
-    const limpia = sinFichaPropiaAjena({ explorar: PROPIA, tu: PROPIA, buscar: `${PROPIA}/temporadas`, ranking: `${PROPIA}/cara-a-cara?rival=x` }, PROPIA);
+    const limpia = sinFichaPropiaAjena({ explorar: PROPIA, tu: PROPIA, calendario: `${PROPIA}/temporadas`, ranking: `${PROPIA}/cara-a-cara?rival=x` }, PROPIA);
     expect(limpia).toEqual({ tu: PROPIA, ranking: `${PROPIA}/cara-a-cara?rival=x` });
     expect(hrefDePestana(destino('explorar'), 'tu', limpia)).toBe('/explorar');
   });
@@ -115,13 +119,15 @@ describe('la brújula no se queda con la ficha propia (bucle Explorar → ficha 
     for (const r of ['/', '/explorar', '/explorar/buscar', '/explorar/yo', '/explorar/siguiendo', '/explorar/ediciones', '/ranking']) {
       expect(esRutaNeutra(r)).toBe(false);
     }
-    for (const clave of ['calendario', 'explorar', 'buscar', 'ranking', 'tu']) {
+    for (const clave of ['calendario', 'explorar', 'ranking', 'tu']) {
       expect(pestanaDeRuta('/explorar/abc', false, null, clave)).toBe(clave);
       expect(pestanaDeRuta('/explorar/pais/ESP', false, null, clave)).toBe(clave);
     }
     // Las pantallas propias de una pestaña no heredan nada.
-    expect(pestanaDeRuta('/ranking', false, null, 'buscar')).toBe('ranking');
+    expect(pestanaDeRuta('/ranking', false, null, 'explorar')).toBe('ranking');
     expect(pestanaDeRuta('/explorar/abc', false, null, 'inventada')).toBe('explorar');
+    // La pestaña «buscar» de antes, anotada en una sesión vieja, ya no existe: manda el prefijo.
+    expect(pestanaDeRuta('/explorar/abc', false, null, 'buscar')).toBe('explorar');
   });
 
   it('la herencia: un enlace hereda la pestaña anterior; atrás y recargar usan lo anotado; un enlace directo no hereda', async () => {
@@ -139,7 +145,7 @@ describe('la brújula no se queda con la ficha propia (bucle Explorar → ficha 
       expect(herencia.pestanaHeredada('/explorar/abc', true)).toBe('ranking');
       expect(herencia.pestanaHeredada('/ranking', false)).toBeNull();
       herencia.confirmarPestana('/explorar/abc', 'ranking', true);
-      herencia.confirmarPestana('/explorar/buscar', 'buscar', false);
+      herencia.confirmarPestana('/explorar/buscar', 'explorar', false);
       // Atrás hasta la persona: manda lo anotado, no la pantalla de la que se viene.
       for (const f of oyentes) f();
       expect(herencia.pestanaHeredada('/explorar/abc', true)).toBe('ranking');
@@ -173,7 +179,6 @@ describe('tocar la pestaña activa vacía su pila', () => {
     const casos: [string, string, string][] = [
       ['calendario', '/', '/notificaciones'],
       ['explorar', '/explorar', '/explorar/abc'],
-      ['buscar', '/explorar/buscar', '/explorar/ediciones/abc'],
       ['ranking', '/ranking', '/explorar/abc'],
       ['tu', '/explorar/yo', '/explorar/siguiendo'],
     ];
@@ -201,8 +206,8 @@ describe('tocar la pestaña activa vacía su pila', () => {
 });
 
 describe('cabecera del país', () => {
-  it('la ficha de un país vuelve a Buscar y el cara a cara de selecciones al país', () => {
-    expect(cabeceraDeRuta('/explorar/pais/ESP', false)).toMatchObject({ variante: 'subpantalla', titulo: 'País' });
+  it('la ficha de un país vuelve a Países y el cara a cara de selecciones al país', () => {
+    expect(cabeceraDeRuta('/explorar/pais/ESP', false)).toMatchObject({ variante: 'subpantalla', titulo: 'País', volverA: '/explorar/buscar?ver=paises' });
     expect(cabeceraDeRuta('/explorar/pais/ESP/contra/FRA', false)).toMatchObject({
       variante: 'subpantalla',
       titulo: 'Selecciones',
@@ -281,8 +286,11 @@ describe('cabecera compacta por pantalla', () => {
   it('raíz de cada pestaña: título a la izquierda; subpantalla: volver', () => {
     expect(cabeceraDeRuta('/', false)).toMatchObject({ variante: 'raiz', marca: true, campana: true });
     expect(cabeceraDeRuta('/explorar', false)).toMatchObject({ variante: 'raiz', titulo: 'Explorar', campana: true });
-    expect(cabeceraDeRuta('/explorar', true)).toMatchObject({ variante: 'raiz', titulo: 'Buscar' });
-    expect(cabeceraDeRuta('/explorar/buscar', false)).toMatchObject({ variante: 'raiz', titulo: 'Buscar' });
+    // Los cuatro ámbitos de Explorar llevan la misma cabecera, con o sin búsqueda.
+    for (const r of ['/explorar/buscar', '/explorar/ediciones']) {
+      expect(cabeceraDeRuta(r, false)).toEqual(cabeceraDeRuta('/explorar', false));
+    }
+    expect(cabeceraDeRuta('/explorar', true)).toEqual(cabeceraDeRuta('/explorar', false));
     expect(cabeceraDeRuta('/explorar/yo', false)).toMatchObject({ variante: 'raiz', titulo: 'Tú' });
     expect(cabeceraDeRuta('/explorar/siguiendo', false)).toEqual({ variante: 'subpantalla', titulo: 'Siguiendo', volverA: '/explorar/yo' });
     expect(cabeceraDeRuta('/estado', false)).toMatchObject({ variante: 'subpantalla', volverA: '/explorar/yo' });
@@ -353,7 +361,7 @@ describe('roles en «Tú»', () => {
     expect(html).toContain('>Ajustes</h2>');
   });
 
-  it('el escritorio lleva los mismos cinco destinos para todos', () => {
+  it('el escritorio lleva los mismos cuatro destinos para todos', () => {
     ir('/explorar/yo');
     const html = pintar(h(NavEscritorio, {}));
     for (const d of DESTINOS_APP) expect(html).toContain(`>${d.etiqueta}<`);

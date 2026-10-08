@@ -267,25 +267,106 @@ export async function leerFeedSiguiendo(
   if (!(await ctx.esquema()).identidad) return { estado: 'no_disponible' };
 
   const limite = analizada.data.limite ?? LIMITE_POR_DEFECTO;
-  let rows = filas<FilaFeed>(
-    await ctx.db.execute(sqlFeedSiguiendo(perfil.profileId, limite, clave, soloMedallas)),
-  );
-  // Página corta con ventana: puede haber filas más antiguas que cuenten.
-  if (rows.length <= limite && (rows.length === 0 || rows[0].umbral !== SIN_UMBRAL)) {
-    rows = filas<FilaFeed>(
-      await ctx.db.execute(sqlFeedSiguiendo(perfil.profileId, limite, clave, soloMedallas, null)),
+  const leer = async (): Promise<ResultadoSiguiendo> => {
+    let rows = filas<FilaFeed>(
+      await ctx.db.execute(sqlFeedSiguiendo(perfil.profileId, limite, clave, soloMedallas)),
     );
-  }
-  const pagina = rows.slice(0, limite);
-  const ultima = pagina[pagina.length - 1];
-  return {
-    estado: 'ok',
-    items: pagina.map(aEntrada),
-    siguiente: rows.length > limite && ultima
-      ? codificarCursor(CLASE, filtros, [ultima.fechaOrden, ultima.id])
-      : null,
-    sinResultados: pagina.length === 0,
+    // Página corta con ventana: puede haber filas más antiguas que cuenten.
+    if (rows.length <= limite && (rows.length === 0 || rows[0].umbral !== SIN_UMBRAL)) {
+      rows = filas<FilaFeed>(
+        await ctx.db.execute(sqlFeedSiguiendo(perfil.profileId, limite, clave, soloMedallas, null)),
+      );
+    }
+    const pagina = rows.slice(0, limite);
+    const ultima = pagina[pagina.length - 1];
+    return {
+      estado: 'ok',
+      items: pagina.map(aEntrada),
+      siguiente: rows.length > limite && ultima
+        ? codificarCursor(CLASE, filtros, [ultima.fechaOrden, ultima.id])
+        : null,
+      sinResultados: pagina.length === 0,
+    };
   };
+  return conMemoFeed(ctx.db, perfil.profileId, [soloMedallas, limite, analizada.data.cursor ?? null], leer);
+}
+
+/**
+ * Memo del feed por cuenta, sólo en la memoria del isolate: volver a Inicio o
+ * atrás en el minuto siguiente no relee las ~2.700 filas. Nunca va a la caché
+ * compartida (es de la cuenta) y la clave empieza por su `profileId`.
+ *
+ * Una entrada sólo vale con la misma revisión, que se lee en cada visita con
+ * una sentencia de pocas filas (`sqlRevisionFeed`): el contador de escrituras
+ * de `sport_*` (cualquier resultado, persona o fusión nuevos lo suben) y la
+ * huella de las seguidas (cuántas y cuándo se guardaron). Seguir o dejar de
+ * seguir cambia la huella aunque la petición caiga en otro isolate. Lo que no
+ * cubre (la tabla `event`, que sólo aporta el tipo de competición) caduca a
+ * los `MEMO_FEED_MS`.
+ */
+const MEMO_FEED_MS = 60_000;
+const MAX_MEMO_FEED = 200;
+type MemoFeed = { hasta: number; revision: string; valor: ResultadoSiguiendo };
+const memosFeed = new WeakMap<object, Map<string, MemoFeed>>();
+
+export function sqlRevisionFeed(profileId: string) {
+  return sql`
+    SELECT (SELECT accounted_bytes FROM sport_capacity_ledger WHERE key = 'global') AS datos,
+           count(*) AS n, max(f.created_at) AS ultima, total(f.created_at) AS suma
+    FROM sport_favorite f WHERE f.profile_id = ${profileId}`;
+}
+
+async function revisionFeed(db: ContextoExplorador['db'], profileId: string): Promise<string | null> {
+  try {
+    const [fila] = filas<{ datos: number | null; n: number; ultima: number | null; suma: number }>(
+      await db.execute(sqlRevisionFeed(profileId)),
+    );
+    // Sin contador de escrituras no se sabe si los datos cambiaron: sin memo.
+    if (!fila || fila.datos === null || fila.datos === undefined) return null;
+    return `${fila.datos}|${fila.n}|${fila.ultima ?? ''}|${fila.suma}`;
+  } catch {
+    return null;
+  }
+}
+
+/** Para las pruebas: vacía el memo de esa base. */
+export function olvidarMemoFeed(db: object): void {
+  memosFeed.delete(db);
+}
+
+async function conMemoFeed(
+  db: ContextoExplorador['db'],
+  profileId: string,
+  partes: readonly unknown[],
+  leer: () => Promise<ResultadoSiguiendo>,
+): Promise<ResultadoSiguiendo> {
+  let memo = memosFeed.get(db);
+  if (!memo) {
+    memo = new Map();
+    memosFeed.set(db, memo);
+  }
+  const clave = JSON.stringify([profileId, ...partes]);
+  const previa = memo.get(clave);
+  let revision: string | null;
+  let valor: ResultadoSiguiendo;
+  if (previa && previa.hasta > Date.now()) {
+    revision = await revisionFeed(db, profileId);
+    if (revision !== null && revision === previa.revision) {
+      memo.delete(clave);
+      memo.set(clave, previa);
+      return previa.valor;
+    }
+    valor = await leer();
+  } else {
+    // Sin entrada no se espera a la revisión: va en paralelo con el feed.
+    [revision, valor] = await Promise.all([revisionFeed(db, profileId), leer()]);
+  }
+  memo.delete(clave);
+  if (revision !== null && valor.estado === 'ok') {
+    memo.set(clave, { hasta: Date.now() + MEMO_FEED_MS, revision, valor });
+    while (memo.size > MAX_MEMO_FEED) memo.delete(memo.keys().next().value as string);
+  }
+  return valor;
 }
 
 export function sqlConteoSiguiendo(profileId: string) {

@@ -166,10 +166,10 @@ describe('fila de inscrito', () => {
     });
     expect(m).toContain(`href="/explorar/${P1}"`);
     expect(m).toContain('Ana Perez Garcia');
-    expect(m).toMatch(/FIE <span[^>]*>23<\/span>/);
-    expect(m).toMatch(/RFEE <span[^>]*>4<\/span>/);
-    expect(m).toContain(' abs');
-    expect(m).toContain('min-h-[44px]');
+    expect(m).toContain('FIE #23');
+    expect(m).toContain('RFEE Abs #4');
+    expect(m).toContain('data-slot="sistema-fila-persona"');
+    expect(m).toContain('min-h-11');
     expect(m).not.toContain('CLUB');
     expect(m).not.toMatch(/text-\[(1[01]|[0-9])px\]/);
   });

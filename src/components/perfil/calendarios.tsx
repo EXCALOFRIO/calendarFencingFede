@@ -90,7 +90,7 @@ function Fila({
 
       <code
         id={`url-${feed.tipo}`}
-        className="min-w-0 break-all rounded-md border bg-muted/40 px-2.5 py-1.5 font-mono text-[12px] leading-relaxed text-muted-foreground"
+        className="min-w-0 break-all rounded-md border bg-muted/40 px-3 py-2 font-mono text-xs leading-relaxed text-muted-foreground"
       >
         {feed.url}
       </code>
@@ -178,7 +178,7 @@ export function Calendarios({
 
       <div className="flex flex-col items-start gap-3">
         <p className="medida flex items-start gap-2 text-sm text-warn">
-          <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <ShieldAlert className="mt-1 size-4 shrink-0" aria-hidden />
           <span>
             Estas direcciones son personales: quien tenga una ve tus
             competiciones sin necesidad de entrar. No las publiques. Si se te

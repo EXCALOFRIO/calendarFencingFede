@@ -229,12 +229,11 @@ describe('la inscripción, agrupada', () => {
     ],
   });
 
-  it('cuotas en euros, cupos con su unidad y requisitos en castellano', () => {
+  it('una sola cuota, la de la prueba, en euros; cupos con su unidad y requisitos en castellano', () => {
     const r = inscripcionDe(ev, ev.competitions[0]);
-    expect(r.cuotas.map((c) => [c.rotulo, sinNbsp(c.valor)])).toEqual([
-      ['Cuota individual', '80 €'],
-      ['Cuota por equipos', '400 €'],
-    ]);
+    expect(r.cuotas.map((c) => [c.rotulo, sinNbsp(c.valor)])).toEqual([['Cuota de inscripción', '80 €']]);
+    const equipos = prueba({ id: 'flo-f-eq', format: 'EQUIPOS' });
+    expect(inscripcionDe(ev, equipos).cuotas.map((c) => sinNbsp(c.valor))).toEqual(['400 €']);
     expect(r.condiciones.map((c) => [c.rotulo, c.valor])).toEqual([
       ['Cupo por federación', '12 tiradores'],
       ['Cupo de equipos', '1 equipo'],
@@ -244,13 +243,19 @@ describe('la inscripción, agrupada', () => {
     expect(r.requisitos.map((c) => c.valor)).toEqual(['Licencia FIE en vigor esta temporada']);
   });
 
-  it('la cuota publicada manda sobre la leída del mismo tipo, sin repetirla', () => {
+  it('la cuota publicada manda sobre la leída, y los demás importes no salen en la ficha', () => {
     const conPublicada = { ...ev, competitions: [prueba({ feeEur: '75' })] };
     const r = inscripcionDe(conPublicada, conPublicada.competitions[0]);
     expect(r.cuotas.map((c) => [c.rotulo, sinNbsp(c.valor), c.dato === null])).toEqual([
       ['Cuota de inscripción', '75 €', true],
-      ['Cuota por equipos', '400 €', false],
     ]);
+    const conArbitro = {
+      ...ev,
+      datosExtraidos: [...ev.datosExtraidos, dato('referee_fine_eur', '150', { cita: 'Multa por árbitro: 150 €' })],
+    };
+    const otros = otrosDatosDe(conArbitro, conArbitro.competitions[0]).map((d) => d.campo);
+    expect(otros).not.toContain('referee_fine_eur');
+    expect(otros).not.toContain('fee_eur');
   });
 
   it('un importe cuya frase no habla de euros no es cuota y va a «otros datos»', () => {

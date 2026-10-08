@@ -1,29 +1,27 @@
-import {
-  CATEGORY_LABEL,
-  GENDER_LABEL,
-  WEAPON_LABEL,
-  esFechaIsoReal,
-  formatDateEs,
-} from '@/lib/utils';
+import { fechaCorta } from '@/lib/fechas';
+import { CATEGORY_LABEL, GENDER_LABEL, WEAPON_LABEL, esFechaIsoReal } from '@/lib/utils';
 
 /**
  * Criterios de Explorar tal y como viajan en la URL.
  *
  * Es la única fuente de verdad de la pantalla: el servidor los lee de
- * `searchParams`, el formulario los escribe con `router.push` y el botón Atrás
- * recupera exactamente la búsqueda anterior. No importa nada de servidor, de
- * modo que el formulario (cliente) y la página (servidor) comparten estas
- * mismas funciones.
+ * `searchParams` y el formulario los escribe con `router.replace`, así que
+ * cambiar de búsqueda no apila entradas y Atrás sale de la pantalla de una
+ * vez. No importa nada de servidor, de modo que el formulario (cliente) y la
+ * página (servidor) comparten estas mismas funciones.
  */
 
 export const RUTA_EXPLORAR = '/explorar';
 
 /**
- * Pestaña «Buscar» sin nada escrito. `/explorar` a secas es el feed de Inicio;
- * una búsqueda con criterios sigue viajando como `/explorar?…` para que los
- * enlaces y los retornos de ficha de siempre sigan valiendo.
+ * Ámbito «Tiradores» de Explorar, con o sin búsqueda. `/explorar` a secas es
+ * «Para ti»; `/explorar?q=…` (enlaces y retornos de ficha antiguos) redirige
+ * aquí con la misma consulta.
  */
 export const RUTA_BUSCAR = `${RUTA_EXPLORAR}/buscar`;
+
+/** Ámbito «Países»: misma ruta que Tiradores, otra lista. */
+export const RUTA_BUSCAR_PAISES = `${RUTA_BUSCAR}?ver=paises`;
 
 /** El orden de esta lista es el de la URL y el de los chips. */
 export const CLAVES_CRITERIO = [
@@ -117,18 +115,33 @@ export function aEntrada(
   return entrada;
 }
 
-/** Cambiar un criterio cambia la consulta: por eso el cursor nunca se arrastra. */
-export function construirUrl(criterios: CriteriosExplorar, cursor?: string): string {
+function consulta(criterios: CriteriosExplorar, cursor?: string): string {
   const params = new URLSearchParams();
   for (const clave of CLAVES_CRITERIO) {
     if (criterios[clave] !== '') params.set(clave, criterios[clave]);
   }
   if (cursor) params.set('cursor', cursor);
-  const texto = params.toString();
+  return params.toString();
+}
+
+/**
+ * Forma antigua de una búsqueda (`/explorar?…`), que aún sirve de clave y de
+ * retorno de las listas: `sanitizarRetorno` la convierte en
+ * `construirUrlBuscar`. Para navegar, usar `construirUrlBuscar`: ésta pasa
+ * por una redirección.
+ */
+export function construirUrl(criterios: CriteriosExplorar, cursor?: string): string {
+  const texto = consulta(criterios, cursor);
   return texto ? `${RUTA_EXPLORAR}?${texto}` : RUTA_BUSCAR;
 }
 
-/** Hay búsqueda en la URL aunque esté vacía (`?q=`): entonces `/explorar` es Buscar, no Inicio. */
+/** Dirección de una búsqueda de tiradores. Cambiar un criterio cambia la consulta: el cursor nunca se arrastra. */
+export function construirUrlBuscar(criterios: CriteriosExplorar, cursor?: string): string {
+  const texto = consulta(criterios, cursor);
+  return texto ? `${RUTA_BUSCAR}?${texto}` : RUTA_BUSCAR;
+}
+
+/** Hay búsqueda en la URL aunque esté vacía (`?q=`): `/explorar` con ella redirige a Tiradores. */
 export function esBusqueda(params: ParametrosPagina): boolean {
   return CLAVES_CRITERIO.some((clave) => params[clave] !== undefined);
 }
@@ -176,7 +189,7 @@ const FORMATO_LABEL: Record<string, string> = {
 
 /** Una fecha que no existe se muestra en bruto: formatearla lanzaría o la disfrazaría. */
 function fechaLegible(iso: string): string {
-  return esFechaIsoReal(iso) ? formatDateEs(iso) : iso;
+  return esFechaIsoReal(iso) ? fechaCorta(iso, { anio: 'siempre' }) : iso;
 }
 
 export function valorLegible(clave: ClaveCriterio, valor: string): string {
@@ -218,7 +231,7 @@ export function chipsActivos(criterios: CriteriosExplorar): ChipCriterio[] {
     clave,
     etiqueta: ETIQUETA[clave],
     valor: valorLegible(clave, criterios[clave]),
-    quitar: construirUrl({ ...criterios, [clave]: '' }),
+    quitar: construirUrlBuscar({ ...criterios, [clave]: '' }),
     fechaInvalida: (clave === 'desde' || clave === 'hasta') && !esFechaIsoReal(criterios[clave]),
   }));
 }

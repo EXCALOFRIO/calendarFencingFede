@@ -85,12 +85,14 @@ describe('sin esqueletos en el perfil', () => {
   it('las pestañas se precargan sólo con intención y marcan la pulsada al instante', () => {
     const codigo = readFileSync('src/components/explorar/perfil/pestanas-perfil.tsx', 'utf8');
     // Precargar las cuatro secciones al ver el perfil serían cuatro renderizados de servidor por visita.
-    expect(codigo).toContain('<EnlacePrecarga');
+    // `SelectorSegmentado` con enlaces usa `EnlacePrecarga`: precarga sólo con intención.
+    expect(codigo).toContain('<SelectorSegmentado');
     expect(codigo).not.toMatch(/\bprefetch\b(?!=)/);
     expect(codigo).not.toMatch(/<Link\b/);
     expect(codigo).toContain('setPulsada(');
     const salida = renderToStaticMarkup(React.createElement(PestanasPerfil, { personaId: UUID_A, secciones: ['resultados', 'estadisticas'], activa: 'resultados' }));
-    expect(salida).toMatch(/aria-current="page"[^>]*data-seccion="resultados"[^>]*data-marcada="true"/);
+    expect(salida).toMatch(new RegExp(`<a(?=[^>]*href="/explorar/${UUID_A}")(?=[^>]*aria-current="page")`));
+    expect(salida.match(/aria-current="page"/g)).toHaveLength(1);
   });
 
   it('Estadísticas no relee la ficha si el rendimiento llega', () => {

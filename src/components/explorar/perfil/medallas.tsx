@@ -1,3 +1,4 @@
+import { Puesto } from '@/components/sistema/pastilla';
 import { CLASES_MEDALLA, COLOR_MEDALLA, medallaDe, type Medalla } from '@/lib/sport/explorar/presentacion';
 import { cn } from '@/lib/utils';
 
@@ -17,52 +18,35 @@ export function nombreMedalla(m: Medalla, n = 1): string {
   return NOMBRE[m][n === 1 ? 0 : 1];
 }
 
-const TAMANO = {
-  sm: 'size-9 text-lg',
-  md: 'size-11 text-2xl',
-  lg: 'size-14 text-3xl',
-} as const;
-
-/** Disco con el puesto: relleno del metal en el podio, aro en la final, filete fuera de ella. */
+/**
+ * El puesto de una fila de resultado: el `Puesto` del sistema (disco con el
+ * metal del 1 al 3, que el lector oye) en una caja fija de 32 px, para que
+ * los nombres caigan en la misma vertical. Sin puesto numérico, el literal
+ * publicado («DNF») queda en el `title` y el lector lo oye; nunca un cero.
+ */
 export function DiscoPuesto({
   puesto,
   puestoPublicado = null,
-  tamano = 'md',
   className,
 }: {
   puesto: number | null;
   puestoPublicado?: string | null;
-  tamano?: keyof typeof TAMANO;
+  /** @deprecated Todas las filas usan la misma medida. */
+  tamano?: 'sm' | 'md' | 'lg';
   className?: string;
 }) {
-  const medalla = medallaDe(puesto);
   if (puesto === null) {
     const texto = puestoPublicado ?? 'Sin puesto publicado';
     return (
-      <span
-        role="img"
-        aria-label={texto}
-        title={texto}
-        className={cn('inline-flex shrink-0 items-center justify-center rounded-full border border-dashed border-filete-alto text-muted-foreground', TAMANO[tamano], className)}
-      >
-        <span aria-hidden="true" className="cifra leading-none">–</span>
+      <span title={texto} className={cn('inline-flex size-8 shrink-0 items-center justify-center text-sm text-muted-foreground', className)}>
+        <span className="sr-only">{texto}</span>
+        <span aria-hidden="true">–</span>
       </span>
     );
   }
   return (
-    <span
-      role="img"
-      aria-label={medalla ? `Puesto ${puesto}, ${nombreMedalla(medalla)}` : `Puesto ${puesto}`}
-      data-medalla={medalla ? puesto : undefined}
-      className={cn(
-        'inline-flex shrink-0 items-center justify-center rounded-full',
-        TAMANO[tamano],
-        medalla ? 'text-[#1a1408] shadow-[inset_0_-2px_0_rgb(0_0_0/0.18)]' : puesto <= 8 ? 'border-2 border-foreground/70' : 'border border-filete-alto',
-        className,
-      )}
-      style={medalla ? { backgroundColor: COLOR_MEDALLA[medalla] } : undefined}
-    >
-      <span aria-hidden="true" className={cn('cifra leading-none', puesto >= 100 && 'text-[0.8em]')}>{puesto}</span>
+    <span data-medalla={medallaDe(puesto) ? puesto : undefined} className={cn('inline-flex size-8 shrink-0 items-center justify-center', className)}>
+      <Puesto puesto={puesto} tamano="md" />
     </span>
   );
 }
@@ -105,7 +89,7 @@ export function Medallero({
           key={m}
           title={`${n} ${nombreMedalla(m, n)}`}
           className={cn(
-            'inline-flex h-6 items-center gap-1 rounded-full border px-1.5 text-xs font-semibold leading-none whitespace-nowrap',
+            'inline-flex h-6 items-center gap-1 rounded-full border px-2 text-xs font-semibold leading-none whitespace-nowrap',
             n > 0 ? CLASES_MEDALLA[m] : 'border-filete-alto text-muted-foreground',
           )}
         >

@@ -1,5 +1,6 @@
 import { Ban, ExternalLink, FileText, FileX2, Layers, Search, X } from 'lucide-react';
 import Link from 'next/link';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { requireProfile } from '@/lib/auth/session';
@@ -8,7 +9,8 @@ import {
   type VersionAnterior,
   datosDeDocumentos,
 } from '@/lib/documentos/consultas';
-import { formatDateEs, titularDocumento } from '@/lib/utils';
+import { fechaCorta } from '@/lib/fechas';
+import { titularDocumento } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -118,7 +120,7 @@ export default async function DocumentosPage({
           {verTodas ? <input type="hidden" name="todas" value="1" /> : null}
           <div className="relative min-w-0 flex-1">
             <Search
-              className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70"
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
               aria-hidden
             />
             <Input
@@ -127,7 +129,7 @@ export default async function DocumentosPage({
               placeholder="Buscar circular, título o temporada"
               type="search"
               aria-label="Buscar en la normativa"
-              className="h-11 pl-8 sm:h-9"
+              className="h-11 pl-9 sm:h-9"
             />
           </div>
           <button type="submit" className="sr-only">
@@ -158,7 +160,7 @@ export default async function DocumentosPage({
         */}
         {!termino && fueraDeJuego > 0 ? (
           <p className="medida text-xs text-muted-foreground">
-            <Layers className="mr-1.5 inline size-3.5 align-[-0.15em]" aria-hidden />
+            <Layers className="mr-2 inline size-3.5 align-[-0.15em]" aria-hidden />
             <span className="cifra text-sm text-foreground">{fueraDeJuego}</span> han
             quedado atrás porque hay una versión posterior.{' '}
             <Link
@@ -180,24 +182,24 @@ export default async function DocumentosPage({
       </div>
 
       {datos.filas.length === 0 ? (
-        <div className="flex flex-col items-start gap-1 border-t py-10">
-          <FileText className="size-5 text-muted-foreground" aria-hidden />
-          <p className="mt-1 text-sm font-medium">
-            {termino ? 'Ninguna circular coincide' : 'Todavía no hay circulares'}
-          </p>
-          <p className="medida text-xs text-muted-foreground">
-            {termino
-              ? 'Solo se indexa lo que la RFEE publica en esgrima.es. Prueba con el número de circular o con la temporada.'
-              : 'Se cargan una vez al día desde esgrima.es. Pide a un administrador que lance la carga.'}
-          </p>
-          {termino ? (
-            <Button variant="outline" size="sm" asChild className="mt-3">
-              <Link href="/documentos">Ver todas las circulares</Link>
-            </Button>
-          ) : null}
-        </div>
+        <EstadoVacio
+          icono={FileText}
+          titulo={termino ? 'Ninguna circular coincide' : 'Todavía no hay circulares'}
+          descripcion={
+            termino
+              ? 'Prueba con el número de circular o con la temporada.'
+              : 'Se cargan una vez al día desde esgrima.es.'
+          }
+          accion={
+            termino ? (
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/documentos">Ver todas las circulares</Link>
+              </Button>
+            ) : null
+          }
+        />
       ) : (
-        <ul className="divide-y divide-border overflow-hidden rounded-[10px] border border-border bg-card">
+        <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
           {datos.filas.map((d) => (
             <li key={d.id}>
               <Circular fila={d} />
@@ -234,7 +236,7 @@ export default async function DocumentosPage({
         */}
         {datos.conPdfRoto > 0 ? (
           <p className="medida flex items-start gap-2 text-xs text-warn">
-            <FileX2 className="mt-px size-3.5 shrink-0" aria-hidden />
+            <FileX2 className="h-4 w-3.5 shrink-0" aria-hidden />
             <span>
               <span className="cifra text-sm">{datos.conPdfRoto}</span> de las{' '}
               <span className="cifra text-sm">{datos.totalAbsoluto}</span> circulares
@@ -246,7 +248,7 @@ export default async function DocumentosPage({
           </p>
         ) : null}
 
-        <p className="medida text-xs text-muted-foreground/70">
+        <p className="medida text-xs text-off">
           Los PDF se enlazan al original de esgrima.es, no se copian. Qué versión
           manda se deduce del título y de la fecha que publica la federación, no
           del contenido del documento: si una circular deroga otra sin decirlo en
@@ -298,21 +300,21 @@ function Circular({ fila }: { fila: FilaDocumento }) {
   return (
     <Contenedor
       {...propiedadesDeEnlace}
-      className={`group grid grid-cols-[2rem_minmax(0,1fr)_1rem] items-start gap-3 px-3 py-2.5 transition-colors sm:grid-cols-[2rem_minmax(0,1fr)_9rem_1rem] sm:items-center ${
-        fila.pdfRoto ? 'opacity-55' : 'hover:bg-accent/40'
-      } ${apagada ? 'opacity-60' : ''}`}
+      className={`group grid grid-cols-[2rem_minmax(0,1fr)_1rem] items-start gap-3 px-3 py-3 transition-colors sm:grid-cols-[2rem_minmax(0,1fr)_9rem_1rem] sm:items-center ${
+        fila.pdfRoto ? '' : 'hover:bg-accent/40'
+      }`}
     >
       {/*
         El número de circular es por lo que se pregunta: "mírate la 12". Va
         delante y en grande. Cuando el fichero no lo trae no se inventa: se pone
         el icono de documento y ya.
       */}
-      <span className="w-8 shrink-0 pt-0.5 text-center">
+      <span className="w-8 shrink-0 pt-1 text-center">
         {numero ? (
           <>
-            <span className="cifra block text-lg text-foreground">{numero}</span>
+            <span className={`cifra block text-lg ${apagada || fila.pdfRoto ? 'text-muted-foreground' : 'text-foreground'}`}>{numero}</span>
             {anio ? (
-              <span className="block text-[12px] text-muted-foreground/70">{anio}</span>
+              <span className="block text-xs text-off">{anio}</span>
             ) : null}
           </>
         ) : (
@@ -324,7 +326,7 @@ function Circular({ fila }: { fila: FilaDocumento }) {
             circulares». Un guion corto ocupa el hueco y dice lo que hay —nada—
             sin pretender ser un dato.
           */
-          <span className="cifra block text-lg text-muted-foreground/60" aria-hidden>
+          <span className="cifra block text-lg text-off" aria-hidden>
             —
           </span>
         )}
@@ -333,16 +335,16 @@ function Circular({ fila }: { fila: FilaDocumento }) {
       <span className="min-w-0">
         <span
           className={`line-clamp-2 text-sm font-medium sm:truncate ${
-            cancelada ? 'line-through decoration-danger/60' : ''
-          }`}
+            apagada || fila.pdfRoto ? 'text-muted-foreground' : 'text-foreground'
+          } ${cancelada ? 'line-through decoration-danger/60' : ''}`}
         >
           {titularDocumento(fila.title)}
         </span>
 
-        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+        <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
           {/* En el móvil la fecha va aquí; donde hay sitio se va a su columna. */}
           <span className="text-muted-foreground sm:hidden">
-            {formatDateEs(fila.publishedAt)}
+            {fechaCorta(fila.publishedAt)}
           </span>
 
           {/*
@@ -412,17 +414,17 @@ function Circular({ fila }: { fila: FilaDocumento }) {
             <span className="text-foreground">
               {titularDocumento(fila.sustituidaPor.title)}
             </span>
-            , del {formatDateEs(fila.sustituidaPor.publishedAt)}
+            , del {fechaCorta(fila.sustituidaPor.publishedAt)}
           </span>
         ) : null}
       </span>
 
       <span className="hidden text-right sm:block">
         <span className="block text-xs text-muted-foreground">
-          {formatDateEs(fila.publishedAt)}
+          {fechaCorta(fila.publishedAt)}
         </span>
         {fila.seasonLabel ? (
-          <span className="block text-[12px] text-muted-foreground/70">
+          <span className="block text-xs text-off">
             {fila.seasonLabel}
           </span>
         ) : null}
@@ -438,7 +440,7 @@ function Circular({ fila }: { fila: FilaDocumento }) {
       ) : (
         <>
           <ExternalLink
-            className="size-4 shrink-0 text-muted-foreground/70 transition-colors group-hover:text-foreground"
+            className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
             aria-hidden
           />
           <span className="sr-only">Abre el PDF en otra pestaña</span>
@@ -458,14 +460,14 @@ function Circular({ fila }: { fila: FilaDocumento }) {
  */
 function Anteriores({ lista }: { lista: VersionAnterior[] }) {
   return (
-    <ul className="border-t border-border/50 bg-muted/30 px-3 pb-2 pt-1.5 sm:pl-[3.75rem]">
+    <ul className="border-t border-border/50 bg-muted/30 px-3 pb-2 pt-2 sm:pl-[3.75rem]">
       {/*
         Rótulo en sentence case y no en MAYÚSCULAS espaciadas: el contrato de
         interfaz las prohíbe explícitamente («Rótulos en MAYÚSCULAS espaciadas
         encima de cada título» es uno de los cinco rasgos de «generado por IA»
         que el usuario rechazó).
       */}
-      <li className="mb-1 text-[12px] text-muted-foreground/70">Lo que decía antes</li>
+      <li className="mb-1 text-xs text-off">Lo que decía antes</li>
       {lista.map((v) => {
         /* Mismo criterio que arriba: sin PDF no hay enlace. */
         const Contenedor = v.pdfRoto ? 'span' : 'a';
@@ -483,11 +485,11 @@ function Anteriores({ lista }: { lista: VersionAnterior[] }) {
             */}
             <Contenedor
               {...propiedadesDeEnlace}
-              className={`flex items-baseline gap-2 py-1 text-[12px] text-muted-foreground ${
-                v.pdfRoto ? 'opacity-70' : 'transition-colors hover:text-foreground'
+              className={`flex items-baseline gap-2 py-1 text-xs ${
+                v.pdfRoto ? 'text-off' : 'text-muted-foreground transition-colors hover:text-foreground'
               }`}
             >
-              <span className="shrink-0 tabular-nums">{formatDateEs(v.publishedAt)}</span>
+              <span className="shrink-0 tabular-nums">{fechaCorta(v.publishedAt)}</span>
               <span className="min-w-0 flex-1 truncate">{titularDocumento(v.title)}</span>
               {v.estado === 'duplicada' ? (
                 <span className="shrink-0">copia exacta</span>

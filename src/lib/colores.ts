@@ -1,4 +1,3 @@
-import type { TinteFondo } from '@/components/fondo/fondo';
 import { CIRCUIT_SHORT, type Organismo, organismoDe } from '@/lib/utils';
 
 /**
@@ -74,10 +73,6 @@ export type ColorOrganismo = {
   punto: string;
   /** Borde del mismo color, para el filete de 2 px de una barra. */
   borde: string;
-  /** Tinte para `<Fondo tinte={…}>`: la cabecera sin foto. */
-  tinte: TinteFondo;
-  /** El mismo tinte como clase, para ponerlo junto a `.fondo-cabecera`. */
-  tinteClase: string;
   /** Cómo se llama en la interfaz. Corto y largo, en castellano. */
   corto: string;
   largo: string;
@@ -101,8 +96,6 @@ export const COLOR_ORGANISMO: Record<Organismo, ColorOrganismo> = {
     textoSobreSuperficie: 'text-foreground',
     punto: 'bg-org-rfee',
     borde: 'border-org-rfee',
-    tinte: 'rfee',
-    tinteClase: 'tinte-rfee',
     corto: 'RFEE',
     largo: 'Nacional (RFEE)',
   },
@@ -113,8 +106,6 @@ export const COLOR_ORGANISMO: Record<Organismo, ColorOrganismo> = {
     textoSobreSuperficie: 'text-foreground',
     punto: 'bg-org-fie',
     borde: 'border-org-fie',
-    tinte: 'fie',
-    tinteClase: 'tinte-fie',
     corto: 'FIE',
     largo: 'Internacional (FIE)',
   },
@@ -125,8 +116,6 @@ export const COLOR_ORGANISMO: Record<Organismo, ColorOrganismo> = {
     textoSobreSuperficie: 'text-foreground',
     punto: 'bg-org-efc',
     borde: 'border-org-efc',
-    tinte: 'efc',
-    tinteClase: 'tinte-efc',
     corto: 'EFC',
     largo: 'Europeo (EFC)',
   },
@@ -137,8 +126,6 @@ export const COLOR_ORGANISMO: Record<Organismo, ColorOrganismo> = {
     textoSobreSuperficie: 'text-foreground',
     punto: 'bg-org-aut',
     borde: 'border-org-aut',
-    tinte: 'aut',
-    tinteClase: 'tinte-aut',
     corto: 'Autonómico',
     largo: 'Autonómica',
   },

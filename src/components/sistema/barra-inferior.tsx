@@ -2,11 +2,12 @@
 
 import { useLinkStatus } from 'next/link';
 import { EnlacePrecarga } from './enlace-precarga';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useRecordadas } from './memoria-pestanas';
 import { hrefDePestana, pestanaActiva, toquePestana, type DestinoBarra } from './navegacion';
+import { redHolgada } from './red-cliente';
 import { SIN_MINIMO } from './tactil';
 import { recordarSiEsSuya, resolverToque, useRouterOpcional, type DeLaPestana } from './toque-pestana';
 
@@ -19,9 +20,10 @@ import { recordarSiEsSuya, resolverToque, useRouterOpcional, type DeLaPestana } 
  * destino con `retrato` pinta esa foto (24 px) en vez del icono en cuanto
  * carga, con un aro fino cuando está marcado.
  *
- * La precarga es por intención (ratón detenido o foco de teclado): las
- * pantallas son dinámicas y precargarlas todas al pintar la barra serían
- * cuatro renderizados de servidor por visita.
+ * Precarga (§ 5.4): por intención (ratón detenido, foco de teclado y al
+ * poner el dedo en una pestaña) y, una vez por sesión y solo en 4G sin
+ * ahorro de datos, las raíces de las demás pestañas cuando el navegador
+ * está ocioso. Nunca al pintar: son pantallas dinámicas.
  *
  * Cada pestaña recuerda su última URL en sessionStorage (como Instagram):
  * volver al calendario desde Explorar lo deja en el mes y los filtros que
@@ -33,9 +35,12 @@ export type PropsBarraInferior = {
   /** Por defecto se deduce de la ruta. `null` no marca ninguna. */
   activa?: string | null;
   etiqueta?: string;
-  /** `material`: translúcida con desenfoque real; sin soporte, sólida. */
-  fondo?: 'solido' | 'material';
-  /** `visibles` añade un rótulo de 10 px bajo cada icono. */
+  /**
+   * `cristal` (por defecto): el cristal del sistema (`.cristal`), sólido sin
+   * soporte o con transparencia reducida. `solido` para muestras y arneses.
+   */
+  fondo?: 'solido' | 'cristal';
+  /** `visibles` añade un rótulo de 12 px bajo cada icono. */
   rotulos?: 'ocultos' | 'visibles';
   /** `estatica` sólo para la página de muestra y los arneses. */
   posicion?: 'fija' | 'estatica';
@@ -57,19 +62,61 @@ export type PropsBarraInferior = {
 };
 
 const FONDO = {
-  solido: 'bg-background',
-  material: cn(
-    'bg-background',
-    'supports-[backdrop-filter:blur(1px)]:bg-[color-mix(in_oklab,var(--background)_82%,transparent)]',
-    'supports-[backdrop-filter:blur(1px)]:backdrop-blur-[20px] supports-[backdrop-filter:blur(1px)]:backdrop-saturate-[1.6]',
-  ),
+  solido: 'bg-background border-filete-alto',
+  cristal: 'cristal',
 } as const;
+
+const CLAVE_PRECARGA_OCIOSA = 'sistema:pestanas-precargadas';
+
+type OpcionesPrecarga = Parameters<ReturnType<typeof useRouter>['prefetch']>[1];
+// `router.prefetch` por defecto solo trae la parte estática, que en estas rutas dinámicas es casi nada.
+const PRECARGA_COMPLETA = { kind: 'full' } as unknown as OpcionesPrecarga;
+
+function useRouterPrecarga() {
+  try {
+    return useRouter();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Una vez por sesión, con el navegador ocioso y en 4G sin ahorro de datos,
+ * precarga las raíces de las pestañas que no están a la vista. Así el primer
+ * cambio de pestaña no espera al servidor.
+ */
+function usePrecargaOciosa(destinos: readonly DestinoBarra[], marcada: string | null, activa: boolean) {
+  const router = useRouterPrecarga();
+  useEffect(() => {
+    if (!activa || !router || !redHolgada()) return;
+    try {
+      if (sessionStorage.getItem(CLAVE_PRECARGA_OCIOSA)) return;
+    } catch {
+      return;
+    }
+    const precargar = () => {
+      if (!redHolgada()) return;
+      try {
+        sessionStorage.setItem(CLAVE_PRECARGA_OCIOSA, '1');
+      } catch {
+        return;
+      }
+      for (const d of destinos) if (d.clave !== marcada) router.prefetch(d.href, PRECARGA_COMPLETA);
+    };
+    if ('requestIdleCallback' in window) {
+      const id = window.requestIdleCallback(precargar, { timeout: 4000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const t = setTimeout(precargar, 2000);
+    return () => clearTimeout(t);
+  }, [activa, router, destinos, marcada]);
+}
 
 export function BarraInferior({
   destinos,
   activa,
   etiqueta = 'Secciones',
-  fondo = 'solido',
+  fondo = 'cristal',
   rotulos = 'ocultos',
   posicion = 'fija',
   soloMovil = true,
@@ -87,13 +134,15 @@ export function BarraInferior({
     if (fija) recordarSiEsSuya(destinos, marcada, deLaPestana);
   }, [pathname, busqueda, marcada, fija, destinos, deLaPestana]);
 
+  usePrecargaOciosa(destinos, marcada, fija);
+
   return (
     <nav
       aria-label={etiqueta}
       data-slot="sistema-barra-inferior"
       data-barra="app"
       className={cn(
-        'border-t border-filete-alto pb-[env(safe-area-inset-bottom)]',
+        'border-t pb-[env(safe-area-inset-bottom)]',
         FONDO[fondo],
         // Capa propia y quieta: sin ella iOS la repinta con la página al desplazar y se ve temblar.
         fija && 'fixed inset-x-0 bottom-0 z-40 [transform:translateZ(0)] [backface-visibility:hidden]',
@@ -151,6 +200,7 @@ function Pestana({
   return (
     <EnlacePrecarga
       href={href}
+      alPulsar={!es}
       transitionTypes={toque.accion === 'navegar' ? toque.tipos : undefined}
       aria-label={conRotulo ? undefined : nombre}
       aria-current={es ? 'page' : undefined}
@@ -161,14 +211,14 @@ function Pestana({
         if (resolverToque({ toque, destino, href, deLaPestana, router })) e.preventDefault();
       }}
       className={cn(
-        'group flex h-[50px] w-full flex-col items-center justify-center gap-[2px] outline-none select-none [-webkit-tap-highlight-color:transparent]',
+        'group flex h-[50px] w-full flex-col items-center justify-center gap-1 outline-none select-none [-webkit-tap-highlight-color:transparent]',
         'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
         SIN_MINIMO,
       )}
     >
       <IconoPestana destino={destino} es={es} />
       {conRotulo ? (
-        <span className={cn('text-[10px] leading-[12px] font-medium', es ? 'text-foreground' : 'text-muted-foreground')}>
+        <span className={cn('text-xs leading-none font-medium', es ? 'text-foreground' : 'text-muted-foreground')}>
           {destino.etiqueta}
         </span>
       ) : null}

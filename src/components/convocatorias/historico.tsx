@@ -1,7 +1,8 @@
 import { CircleCheck, Clock, FileText, X } from 'lucide-react';
 import type { CallUpForAthlete } from '@/lib/callups/tipos';
 import { PLACE_TYPE_LABEL } from '@/lib/callups/tipos';
-import { cn, formatDateRangeEs, formatDateTimeEs, titular } from '@/lib/utils';
+import { fechaCorta, rangoFechas } from '@/lib/fechas';
+import { cn, titular } from '@/lib/utils';
 
 /**
  * Convocatorias pasadas, con lo que se respondió en su día.
@@ -37,12 +38,12 @@ export function Historico({
             </p>
             {/* Cada dato con su hueco, no encadenados con puntos medios. */}
             <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
-              <span>{formatDateRangeEs(c.eventStartDate, c.eventEndDate)}</span>
+              <span>{rangoFechas(c.eventStartDate, c.eventEndDate, 'linea', { anio: 'auto' })}</span>
               {c.competition ? <span>{c.competition}</span> : null}
               <span>{PLACE_TYPE_LABEL[c.placeType].toLowerCase()}</span>
             </p>
             {c.rejectionReason ? (
-              <p className="medida mt-0.5 text-xs text-muted-foreground">
+              <p className="medida mt-1 text-xs text-muted-foreground">
                 Motivo: {c.rejectionReason}
               </p>
             ) : null}
@@ -79,12 +80,12 @@ function Respuesta({ convocatoria: c }: { convocatoria: CallUpForAthlete }) {
   const Icono = estilo.icono;
 
   return (
-    <span className={cn('flex items-center gap-1.5 text-xs', estilo.clase)}>
+    <span className={cn('flex items-center gap-1 text-xs', estilo.clase)}>
       <Icono className="size-3.5" aria-hidden />
       {estilo.texto}
       {c.respondedAt ? (
         <span className="hidden text-muted-foreground sm:inline">
-          {formatDateTimeEs(c.respondedAt).slice(0, 10)}
+          {fechaCorta(c.respondedAt)}
         </span>
       ) : null}
     </span>

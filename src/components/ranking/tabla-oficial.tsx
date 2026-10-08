@@ -3,6 +3,8 @@
 import { ChevronRight, ExternalLink, Scissors } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import * as React from 'react';
+import { VerMas } from '@/components/sistema/cabecera-seccion';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import { HojaInferior } from '@/components/sistema/hoja-inferior';
 import type {
   BreakdownEntry,
@@ -16,11 +18,11 @@ import { puedeVerInterno } from '@/lib/ranking/acceso-interno';
 import type { CutoffStatus } from '@/lib/ranking/compute';
 import { nombreCasa } from '@/lib/nombres';
 import { temporadaCorta } from '@/lib/ranking/url-nacional';
-import { cn, formatDateEs } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { Desglose } from './desglose';
 import { escribirUrl, urlDeGrupo, useRanking } from './estado-ranking';
 import { FilaLinea } from './fila-linea';
-import { Procedencia, VerMas } from './piezas';
+import { Procedencia } from './piezas';
 import { BarraFiltrosRanking } from './selectores-grupo';
 import { clave, etiquetaGrupo, grupoMasParecido, puntos } from './formato';
 
@@ -342,30 +344,30 @@ export function TablaRankingOficial({
           key={fila.id}
           type="button"
           onClick={() => setAbierto(fila.athleteId)}
-          className="flex min-h-0! min-w-0 cursor-pointer items-start gap-3 rounded-xl border border-filete-alto bg-card px-3 py-2.5 text-left transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
+          className="flex min-h-0! min-w-0 cursor-pointer items-start gap-3 rounded-xl border border-filete-alto bg-card px-3 py-3 text-left transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
         >
           {conMiFicha ? null : (
             <span className="flex w-12 shrink-0 flex-col">
-              <span className="cifra text-4xl leading-none text-primary-text">
+              <span className="cifra text-3xl leading-none text-primary-text">
                 {fila.position ?? '—'}
               </span>
-              <span className="mt-1 text-[12px] leading-tight text-muted-foreground">
+              <span className="mt-1 text-xs leading-tight text-muted-foreground">
                 {fila.position ? 'tu puesto oficial' : 'sin clasificar todavía'}
               </span>
             </span>
           )}
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="text-[14px] font-medium">
+          <span className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="text-sm font-medium">
               {conMiFicha ? 'A cuánto estás del corte' : fila.nombre}
             </span>
-            <span className="medida text-[13px] text-muted-foreground">
+            <span className="medida text-sm text-muted-foreground">
               <Corte
                 corte={fila.athleteId ? (corteDelGrupo[fila.athleteId] ?? null) : null}
                 puntosTotales={fila.totalPoints}
                 deCuantos={tabla.clasificados}
               />
             </span>
-            <span className="mt-0.5 inline-flex items-center gap-1 text-[13px] text-primary-text">
+            <span className="inline-flex items-center gap-1 text-sm text-primary-text">
               {verCalculo ? 'Ver tus datos y el cálculo' : 'Ver tus datos'}
               <ChevronRight className="size-4 shrink-0" aria-hidden />
             </span>
@@ -398,7 +400,7 @@ export function TablaRankingOficial({
       */}
       <Procedencia
         temporada={tabla.seasonLabel ? `Temporada ${temporadaCorta(tabla.seasonLabel)}` : null}
-        leida={tabla.actualizadoEl ? formatDateEs(tabla.actualizadoEl) : null}
+        leida={tabla.actualizadoEl}
         url={tabla.sourceUrl}
       />
 
@@ -407,9 +409,10 @@ export function TablaRankingOficial({
       </p>
 
       {filasVisibles.length === 0 ? (
-        <p className="border-y border-filete-alto py-6 text-sm text-muted-foreground">
-          {busqueda ? 'Ningún tirador coincide. Prueba otro nombre.' : 'Sin puestos publicados en este grupo.'}
-        </p>
+        <EstadoVacio
+          titulo={busqueda ? 'Ningún tirador coincide' : 'Sin puestos publicados en este grupo'}
+          descripcion={busqueda ? 'Prueba otro nombre.' : undefined}
+        />
       ) : null}
 
       {/*
@@ -448,7 +451,7 @@ export function TablaRankingOficial({
                   }
                 />
                 {hayCorte && fila.position === plazas ? (
-                  <li className="flex items-center gap-2 border-y border-gold bg-[color-mix(in_oklab,var(--color-gold)_7%,var(--card))] px-2 py-1.5 text-xs text-gold">
+                  <li className="flex items-center gap-2 border-y border-gold bg-[color-mix(in_oklab,var(--color-gold)_7%,var(--card))] px-2 py-2 text-xs text-gold">
                     <Scissors className="size-3.5 shrink-0" aria-hidden />
                     <span>
                       Corte de convocatoria: las {plazas} primeras plazas salen por ranking
@@ -465,16 +468,9 @@ export function TablaRankingOficial({
         </ol>
       ) : null}
 
-      {/*
-        «Ver más», con el número de lo que falta: «ver 50 más» de «209»
-        informa de dónde estás; «ver más» a secas, no. Ancho completo porque
-        se toca con el pulgar al final de una lista larga.
-      */}
+      {/* «Ver más (159)»: con lo que falta, que dice dónde estás. */}
       {quedan > 0 ? (
-        <VerMas onClick={() => setTope(limite + PASO)}>
-          Ver {Math.min(quedan, PASO)} más
-          <span className="cifra text-[12px] text-muted-foreground">de {filtradas.length}</span>
-        </VerMas>
+        <VerMas onClick={() => setTope(limite + PASO)} cuenta={quedan} detalle="tiradores de la clasificación" className="self-center" />
       ) : null}
 
       {conFicha < tabla.rows.length ? (
@@ -597,7 +593,7 @@ function Oficial({
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end gap-x-8 gap-y-4">
         <span className="flex items-baseline gap-2">
-          <span className="cifra text-4xl">
+          <span className="cifra text-3xl">
             {fila.position ? `${fila.position}.º` : '—'}
           </span>
           <span className="max-w-28 text-xs leading-tight text-muted-foreground">
@@ -607,7 +603,7 @@ function Oficial({
           </span>
         </span>
         <span className="flex items-baseline gap-2">
-          <span className="cifra text-4xl">
+          <span className="cifra text-3xl">
             {fila.totalPoints === null ? '—' : puntos(fila.totalPoints)}
           </span>
           <span className="max-w-24 text-xs leading-tight text-muted-foreground">
@@ -627,7 +623,7 @@ function Oficial({
       {corte ? (
         <p
           className={cn(
-            'medida rounded-lg border px-3 py-2.5 text-sm',
+            'medida rounded-xl border px-3 py-3 text-sm',
             corte.inside ? 'border-ok/40 text-ok' : 'text-muted-foreground',
           )}
         >

@@ -23,7 +23,14 @@ import {
   leerCriteriosEdicion,
   sanitizarRetornoEdicion,
 } from '@/lib/sport/explorar/edicion-url';
-import { etiquetaCortaRonda, ordenarCuadro, partePorFase, rondaCuadro, type FilaAsaltoPrueba } from '@/lib/sport/explorar/ediciones-asaltos';
+import {
+  etiquetaTamano,
+  ordenarCuadro,
+  partePorFase,
+  rondaCuadro,
+  rotuloRonda,
+  type FilaAsaltoPrueba,
+} from '@/lib/sport/explorar/ediciones-asaltos';
 import { leerEdicion } from '@/lib/sport/explorar/ediciones';
 import type { AsaltoDePrueba, RondaCuadro } from '@/lib/sport/explorar/tipos-busqueda';
 import { nombreCompacto } from '@/lib/sport/nombre-visible';
@@ -47,7 +54,7 @@ const asalto = (id: string, a: [string, number], b: [string, number], ronda = 'A
   a: tirador(a[0], a[1]),
   b: tirador(b[0], b[1]),
 });
-const ronda = (clave: string, tamano: number, asaltos: AsaltoDePrueba[], etiqueta = `Tablón de ${tamano}`): RondaCuadro => ({
+const ronda = (clave: string, tamano: number, asaltos: AsaltoDePrueba[], etiqueta = etiquetaTamano(tamano)): RondaCuadro => ({
   ronda: clave,
   etiqueta,
   tamano,
@@ -163,25 +170,37 @@ describe('rondas de la FIE con cuadro previo y principal', () => {
   });
 
   it('B… es el cuadro principal y A… su previa, en ese orden hacia la final', () => {
-    expect(rondaCuadro('B16')).toEqual({ tamano: 16, etiqueta: 'Tablón de 16' });
+    expect(rondaCuadro('B16')).toEqual({ tamano: 16, etiqueta: 'Octavos' });
     const cuadro = ordenarCuadro([
       fila('1', 'A4', 'X', 'Y', 15, 3),
       fila('2', 'B4', 'X', 'Z', 15, 9),
       fila('3', 'B2', 'X', 'W', 15, 14),
     ]);
     expect(cuadro.map((r) => r.ronda)).toEqual(['A4', 'B4', 'B2']);
-    expect(cuadro[0].etiqueta).toBe('Previa · Semifinales');
-    expect(cuadro.map((r) => etiquetaCortaRonda(r))).toEqual(['Previa · Semifinales', 'Semifinal', 'Final']);
+    expect(cuadro.map((r) => r.etiqueta)).toEqual(['Previa · Semifinal', 'Semifinal', 'Final']);
   });
 
-  it('rótulos cortos de columna', () => {
-    expect([64, 16, 8, 4, 2].map((n) => etiquetaCortaRonda({ tamano: n, etiqueta: `Tablón de ${n}` }))).toEqual([
+  it('un solo vocabulario de rondas: Poule, Tablón de 64/32, Octavos, Cuartos, Semifinal y Final', () => {
+    expect([64, 32, 16, 8, 4, 2].map(etiquetaTamano)).toEqual([
       'Tablón de 64',
+      'Tablón de 32',
       'Octavos',
       'Cuartos',
       'Semifinal',
       'Final',
     ]);
+    expect(rotuloRonda('POULE', 'V2P3')).toBe('Poule');
+    expect(['A64', 'T32', 'B16', 'QF', 'CF', 'SF', 'A4', 'F'].map((k) => rotuloRonda('TABLEAU', k))).toEqual([
+      'Tablón de 64',
+      'Tablón de 32',
+      'Octavos',
+      'Cuartos',
+      'Cuartos',
+      'Semifinal',
+      'Semifinal',
+      'Final',
+    ]);
+    expect(rotuloRonda('TABLEAU', 'C2')).toBe('Tercer puesto');
   });
 });
 
@@ -332,26 +351,30 @@ describe('dirección de la prueba', () => {
 describe('vistas de la prueba en pantalla', () => {
   const cuadro: RondaCuadro[] = [
     ronda('A8', 8, [asalto('c1', ['ANA', 15], ['EVA', 1], 'A8'), asalto('c2', ['DORA', 15], ['FE', 2], 'A8')]),
-    ronda('A4', 4, [asalto('s1', ['ANA', 15], ['DORA', 5], 'A4')], 'Semifinales'),
+    ronda('A4', 4, [asalto('s1', ['ANA', 15], ['DORA', 5], 'A4')], 'Semifinal'),
     ronda('A2', 2, [asalto('f', ['ANA', 15], ['BEA', 10], 'A2')], 'Final'),
     { ronda: 'C2', etiqueta: 'Tercer puesto', tamano: null, asaltos: [asalto('t', ['DORA', 15], ['GEMA', 3], 'C2')] },
   ];
 
-  it('el cuadro abre con tres rondas en escritorio y dos en móvil, y la flecha atrás empieza desactivada', () => {
+  it('el cuadro se pinta una vez: dos rondas en móvil (el servidor), y la flecha atrás empieza desactivada', () => {
     const marcado = html(React.createElement(CuadroDePrueba, { cuadro }));
     expect(marcado).toMatch(/disabled="" aria-label="Ronda anterior"/);
-    expect(marcado).toContain('Cuartos');
-    expect(marcado).toContain('Semifinal');
+    expect(marcado.match(/aria-label="Ronda anterior"/g)).toHaveLength(1);
+    expect(marcado).toContain('>Cuartos<');
+    expect(marcado).toContain('>Semifinal<');
     expect(marcado).toContain('Tercer puesto');
     expect(marcado).toContain('ganó con');
-    // Final: oculta en móvil (dos columnas), visible desde sm.
-    const final = marcado.match(/<h3(?:(?!<\/h3>).)*>Final<\/span><\/h3>/)?.[0];
-    expect(final).toMatch(/class="[^"]*\bhidden\b[^"]*sm:block/);
+    // La final no está en la ventana de dos rondas: ni pintada ni escondida.
+    expect(marcado).not.toMatch(/<h3[^>]*><span[^>]*>Final<\/span><\/h3>/);
+    expect(marcado).not.toMatch(/\bsm:block\b|\bsm:hidden\b|--col-m/);
+    // Cada asalto, una vez.
+    expect(marcado.match(/id="asalto-c1"/g)).toHaveLength(1);
   });
 
   it('con la final a la vista no se puede avanzar', () => {
     const marcado = html(React.createElement(CuadroDePrueba, { cuadro, inicio: 9 }));
-    expect(marcado.match(/disabled="" aria-label="Ronda siguiente"/g)).toHaveLength(2);
+    expect(marcado.match(/disabled="" aria-label="Ronda siguiente"/g)).toHaveLength(1);
+    expect(marcado).toMatch(/<h3[^>]*><span[^>]*>Final<\/span><\/h3>/);
   });
 
   it('las poules enlazan sólo a fichas vinculadas y resaltan la poule de la persona', () => {
@@ -366,12 +389,16 @@ describe('vistas de la prueba en pantalla', () => {
     const marcado = html(React.createElement(PoulesDePrueba, {
       poules, enlace: (id: string) => `/explorar/${id}`, filtro: { consulta: '', persona: UUID_A },
     }));
-    expect(marcado).toContain('<caption');
-    expect(marcado).toContain('>V5<');
     expect(marcado).toContain('data-resaltado="true"');
-    // Dos enlaces a la misma ficha: la lista de móvil y la matriz de escritorio.
-    expect(marcado.match(/<a /g)).toHaveLength(2);
+    // Una sola estructura: un enlace por ficha, sin lista de móvil y tabla de escritorio a la vez.
+    expect(marcado.match(/<a /g)).toHaveLength(1);
+    expect(marcado).not.toContain('<table');
     expect(marcado).toContain(`href="/explorar/${UUID_A}"`);
+    // Las casillas no se montan hasta el primer giro.
+    expect(marcado).not.toContain('contra el 2');
+    const girada = html(React.createElement(PoulesDePrueba, { poules, caraInicial: 'asaltos' }));
+    expect(girada).toContain('data-cara="asaltos"');
+    expect(girada).toMatch(/<span aria-hidden="true">V<\/span>5/);
   });
 
   it('VistaPrueba abre la vista pedida, resalta a la persona y su enlace vuelve con ella', () => {

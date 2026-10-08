@@ -155,7 +155,7 @@ function Marco({
       <p className="medida text-sm text-muted-foreground">{texto}</p>
       <div className="mt-2 flex flex-wrap gap-2">{children}</div>
       {referencia ? (
-        <p className="text-xs text-muted-foreground/70">
+        <p className="text-xs text-off">
           Referencia del fallo: <span className="cifra">{referencia}</span>
         </p>
       ) : null}

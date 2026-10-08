@@ -30,14 +30,46 @@ export const HORA = 3_600_000;
 export const DIA = 24 * HORA;
 
 export async function migracionAplicada(base: BaseResultados): Promise<boolean> {
+  if (TABLAS_PROPIAS.every((t) => base.tablasConocidas?.has(t))) return true;
   const filas = await base.leer<{ n: number }>(
     `select count(*) n from sqlite_master where type='table' and name in (${TABLAS_PROPIAS.map(() => '?').join(',')})`,
     [...TABLAS_PROPIAS]);
-  return Number(filas[0]?.n) === TABLAS_PROPIAS.length;
+  const aplicada = Number(filas[0]?.n) === TABLAS_PROPIAS.length;
+  if (aplicada) for (const t of TABLAS_PROPIAS) base.tablasConocidas?.add(t);
+  return aplicada;
 }
 
+/** Solo se recuerda el «sí»: una tabla que falta puede crearla la siguiente migración. */
 export async function tablaExiste(base: BaseResultados, nombre: string): Promise<boolean> {
-  return (await base.leer(`select 1 from sqlite_master where type='table' and name=?`, [nombre])).length > 0;
+  if (base.tablasConocidas?.has(nombre)) return true;
+  const existe = (await base.leer(`select 1 from sqlite_master where type='table' and name=?`, [nombre])).length > 0;
+  if (existe) base.tablasConocidas?.add(nombre);
+  return existe;
+}
+
+/**
+ * ¿Hay algo que hacer en esta pasada? Una sola lectura indexada: alguna unidad
+ * vencida (índice `resultado_auto_unidad_proxima_idx`) o algún índice de
+ * descubrimiento vencido o sin leer nunca. `null` si no se puede saber (p. ej.
+ * sin la migración 0017): entonces se sigue el camino normal, que lo explica.
+ */
+export async function hayTrabajoPendiente(
+  base: BaseResultados,
+  ahora: number,
+  clavesIndices: readonly string[],
+): Promise<boolean | null> {
+  try {
+    const [f] = await base.leer<{ u: number; q: number }>(
+      `select exists(select 1 from resultado_auto_unidad where proxima <= ?
+          and estado in ('pendiente','esperando','error','hecho') and fuente <> 'indice') u,
+        (select count(*) from resultado_auto_unidad where clave in (${clavesIndices.map(() => '?').join(',') || "''"})
+          and proxima > ?) q`,
+      [ahora, ...clavesIndices, ahora]);
+    if (!f) return null;
+    return Number(f.u) === 1 || Number(f.q) < clavesIndices.length;
+  } catch {
+    return null;
+  }
 }
 
 function aUnidad(f: Record<string, unknown>): Unidad {

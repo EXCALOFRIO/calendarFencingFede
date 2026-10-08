@@ -77,9 +77,9 @@ export function EditorPares({
           Todavía no hay ninguno. Añade el primero con el botón de abajo.
         </p>
       ) : (
-        <ul className="flex flex-col gap-1.5">
+        <ul className="flex flex-col gap-2">
           {pares.map((par, i) => (
-            <li key={i} className="flex items-center gap-1.5">
+            <li key={i} className="flex items-center gap-2">
               {clavesSugeridas ? (
                 <Select
                   value={par.clave}

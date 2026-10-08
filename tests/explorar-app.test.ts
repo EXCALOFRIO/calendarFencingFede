@@ -10,7 +10,7 @@ import { codificarCursor } from '@/lib/sport/explorar/cursor';
 import { construirUrlInicio, RUTA_YO } from '@/lib/sport/explorar/inicio-url';
 import { cargarInicio, cargarListaSiguiendo } from '@/lib/sport/explorar/inicio-pantalla';
 import { leerListaSiguiendo } from '@/lib/sport/explorar/siguiendo-lista';
-import { CRITERIOS_VACIOS, construirUrl, esBusqueda } from '@/lib/sport/explorar/url';
+import { CRITERIOS_VACIOS, construirUrl, construirUrlBuscar, esBusqueda } from '@/lib/sport/explorar/url';
 import { crearContexto, perfil } from './helpers/explorar';
 
 /**
@@ -75,15 +75,15 @@ function fixture() {
 const html = (nodo: React.ReactElement) => renderToStaticMarkup(nodo);
 
 describe('una sola app: la barra es la misma dentro y fuera de Explorar', () => {
-  it('cinco destinos: Calendario, Explorar, Buscar, Ranking y Tú', () => {
-    expect(DESTINOS_APP.map((d) => d.href)).toEqual(['/', '/explorar', '/explorar/buscar', '/ranking', RUTA_YO]);
+  it('cuatro destinos: Calendario, Explorar (que también busca), Ranking y Tú', () => {
+    expect(DESTINOS_APP.map((d) => d.href)).toEqual(['/', '/explorar', '/ranking', RUTA_YO]);
   });
 
-  it('marca la pestaña por la ruta y por la búsqueda de la URL', () => {
+  it('marca la pestaña por la ruta; los cuatro ámbitos de Explorar marcan Explorar', () => {
     expect(pestanaDeRuta('/explorar', false)).toBe('explorar');
-    expect(pestanaDeRuta('/explorar', true)).toBe('buscar');
-    expect(pestanaDeRuta('/explorar/buscar', false)).toBe('buscar');
-    expect(pestanaDeRuta('/explorar/ediciones/x', false)).toBe('buscar');
+    expect(pestanaDeRuta('/explorar', true)).toBe('explorar');
+    expect(pestanaDeRuta('/explorar/buscar', false)).toBe('explorar');
+    expect(pestanaDeRuta('/explorar/ediciones/x', false)).toBe('explorar');
     expect(pestanaDeRuta('/explorar/siguiendo', false)).toBe('tu');
     expect(pestanaDeRuta(`/explorar/${uuid(1)}`, false)).toBe('explorar');
   });
@@ -94,8 +94,8 @@ describe('una sola app: la barra es la misma dentro y fuera de Explorar', () => 
     const movil = html(React.createElement(NavMovil, { role: 'coach' }));
     expect(movil).toContain('data-barra="app"');
     expect(movil).not.toContain('Volver al calendario');
-    expect(movil).toMatch(/<a(?=[^>]*aria-label="Buscar")(?=[^>]*aria-current="page")/);
-    expect(movil).not.toMatch(/<a(?=[^>]*aria-label="Explorar")(?=[^>]*aria-current)/);
+    expect(movil).toMatch(/<a(?=[^>]*aria-label="Explorar")(?=[^>]*aria-current="page")/);
+    expect(movil).not.toContain('aria-label="Buscar"');
     expect(movil).toContain('size-[22px]');
     expect(movil).not.toMatch(/<span[^>]*>Explorar<\/span>/);
     const escritorio = html(React.createElement(NavEscritorio, { role: 'coach' }));
@@ -124,20 +124,23 @@ describe('una sola app: la barra es la misma dentro y fuera de Explorar', () => 
 });
 
 describe('URL: Inicio, Buscar y la búsqueda de siempre', () => {
-  it('`/explorar` sin criterios es Inicio; con cualquier criterio (aunque vacío) es Buscar', () => {
+  it('`/explorar` sin criterios es «Para ti»; con cualquier criterio (aunque vacío) redirige a Tiradores', () => {
     expect(esBusqueda({})).toBe(false);
     expect(esBusqueda({ medallas: '1', cursor: 'x' })).toBe(false);
     expect(esBusqueda({ q: '' })).toBe(true);
     expect(esBusqueda({ arma: 'ESPADA' })).toBe(true);
     expect(construirUrl(CRITERIOS_VACIOS)).toBe('/explorar/buscar');
     expect(construirUrl({ ...CRITERIOS_VACIOS, q: 'ana' })).toBe('/explorar?q=ana');
+    expect(construirUrlBuscar({ ...CRITERIOS_VACIOS, q: 'ana' })).toBe('/explorar/buscar?q=ana');
     expect(construirUrlInicio({ soloMedallas: true, cursor: 'c' })).toBe('/explorar?medallas=1&cursor=c');
   });
 
-  it('Buscar tiene dos pestañas: tiradores y competiciones', () => {
+  it('Explorar tiene cuatro ámbitos: Para ti, Tiradores, Torneos y Países', () => {
     const marcado = html(React.createElement(CabeceraExplorar, {}));
-    expect(marcado).toMatch(/<a[^>]*aria-current="page"[^>]*>Tiradores</);
+    expect(marcado).toMatch(/<a[^>]*aria-current="page"[^>]*>(?:<[^>]+>)*Tiradores</);
+    expect(marcado).toContain('href="/explorar"');
     expect(marcado).toContain('href="/explorar/ediciones"');
+    expect(marcado).toContain('href="/explorar/buscar?ver=paises"');
   });
 });
 

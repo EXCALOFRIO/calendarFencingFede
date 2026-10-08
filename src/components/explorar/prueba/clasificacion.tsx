@@ -1,8 +1,9 @@
 import Link from 'next/link';
+import { memo } from 'react';
 import { BanderaPais } from '@/components/bandera';
 import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
-import type { FilaClasificacion } from '@/lib/sport/explorar/edicion-modelo';
 import { rutaPaisDe } from '@/lib/sport/explorar/enlace-pais';
+import type { FilaClasificacionLigera } from '@/lib/sport/explorar/prueba-datos';
 import { CLASES_MEDALLA, medallaDe, type Medalla } from '@/lib/sport/explorar/presentacion';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
 import { cn } from '@/lib/utils';
@@ -52,9 +53,13 @@ export function repiteNombre(nombre: string, club: string | null | undefined): b
   return c !== '' && c === comparable(nombre);
 }
 
-function Fila({ fila, enlace, filtro }: { fila: FilaClasificacion; enlace?: EnlaceFicha; filtro: Filtro }) {
+/**
+ * Memorizada: al escribir en el buscador sólo se repintan las filas que
+ * cambian de resaltado. Fuera de la pantalla no se maquetan
+ * (`content-visibility`), con 44 px de alto estimado.
+ */
+const Fila = memo(function Fila({ fila, enlace, marcada }: { fila: FilaClasificacionLigera; enlace?: EnlaceFicha; marcada: boolean }) {
   const nombre = nombreVisible(fila.nombre);
-  const marcada = resaltado(fila, filtro);
   const podio = medallaDe(fila.puesto) !== null;
   // Sin club: en Explorar no se enseña. En equipos, el nombre ya es el del equipo.
   const contenido = (
@@ -75,7 +80,7 @@ function Fila({ fila, enlace, filtro }: { fila: FilaClasificacion; enlace?: Enla
       id={idFilaClasificacion(fila.id)}
       data-resaltado={marcada ? 'true' : undefined}
       className={cn(
-        'grid scroll-mt-24 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1 pr-3',
+        'grid scroll-mt-24 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-1 pr-3 [contain-intrinsic-size:auto_44px] [content-visibility:auto]',
         marcada && 'bg-marcado shadow-[inset_3px_0_0_var(--color-primary)]',
       )}
     >
@@ -111,25 +116,31 @@ function Fila({ fila, enlace, filtro }: { fila: FilaClasificacion; enlace?: Enla
       )}
     </li>
   );
-}
+});
 
-/** Clasificación final: puesto (con medalla en el podio), nombre y país. */
+/**
+ * Clasificación final: puesto (con medalla en el podio), nombre y país. Con
+ * `limite`, sólo las primeras filas (quien la usa ofrece «Ver más»).
+ */
 export function ListaClasificacion({
   filas,
   enlace,
   filtro = { consulta: '' },
+  limite,
 }: {
-  filas: FilaClasificacion[];
+  filas: readonly FilaClasificacionLigera[];
   enlace?: EnlaceFicha;
   filtro?: Filtro;
+  limite?: number;
 }) {
   if (filas.length === 0) {
     return <p className="text-sm text-muted-foreground">Sin clasificación.</p>;
   }
+  const visibles = limite === undefined ? filas : filas.slice(0, limite);
   return (
     <ol aria-label="Clasificación" className="divide-y overflow-hidden rounded-lg border bg-card">
-      {filas.map((f) => (
-        <Fila key={f.id} fila={f} enlace={enlace} filtro={filtro} />
+      {visibles.map((f) => (
+        <Fila key={f.id} fila={f} enlace={enlace} marcada={resaltado(f, filtro)} />
       ))}
     </ol>
   );

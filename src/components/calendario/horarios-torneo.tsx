@@ -1,22 +1,18 @@
 'use client';
 
+import { FilaHorario, MarcaDia } from '@/components/sistema/hora-doble';
 import type { CompetitionView, DatoExtraidoView, EventView } from '@/lib/queries/calendar';
-import {
-  CATEGORY_LABEL,
-  CATEGORY_SHORT,
-  GENDER_LABEL,
-  WEAPON_LABEL,
-  cn,
-} from '@/lib/utils';
+import { rotuloPrueba } from '@/lib/sport/rotulos';
+import { cn } from '@/lib/utils';
 
 import {
+  convertirHora,
   leerHora,
   mismoReloj,
   siglasHuso,
   useHusoDispositivo,
 } from '@/lib/huso-dispositivo';
-import { CitaConvocatoria, MarcaConvocatoria, huecoDe } from './datos-convocatoria';
-import { HoraEnTuHuso } from './ficha/horas';
+import { huecoDe } from './datos-convocatoria';
 
 /**
  * ===========================================================================
@@ -37,10 +33,15 @@ import { HoraEnTuHuso } from './ficha/horas';
  * Así que se enseña el torneo entero como una línea de tiempo: un titular por
  * día y debajo cada hito con su hora y la prueba a la que va. En Takamatsu:
  *
+ *   JST     Horario                          Tu hora
  *   Jue 15 oct
- *     07:00  Apertura y control de armas · Florete masculino   00:00 tu hora
- *     09:00  Poules y primeras directas · Florete masculino    02:00
- *     13:00  Control de armas y acreditación · Florete femenino
+ *   07:00   Apertura y control de armas      00:00
+ *           Florete masculino
+ *   09:00   Poules y primeras directas       02:00
+ *           Florete masculino
+ *
+ * Tres columnas fijas en cada fila (`FilaHorario`): hora de la sede, qué es y
+ * para qué prueba, y la hora del dispositivo con «−1 día» si cambia el día.
  *
  * Dentro del día van **por hora**: cada fila dice su prueba, así que mezclar
  * armas no confunde y es como se vive el día en el pabellón. A igual hora,
@@ -51,8 +52,8 @@ import { HoraEnTuHuso } from './ficha/horas';
  * ---------------------------------------------------------------------------
  *  · las **columnas publicadas** de la prueba (`installation_open`,
  *    `call_time`, `scratch_time`, `start_time`), sin marca;
- *  · lo **leído de la convocatoria**, con la marca de documento leído; al
- *    tocar la fila sale la frase literal del PDF.
+ *  · lo **leído de la convocatoria**, cuya frase literal se ve desde «Según la
+ *    convocatoria», al pie de la banda.
  *
  * Las dos están en **hora de la sede**, que es como las escribe quien
  * organiza. Si el dispositivo está en otro reloj, cada fila lleva al lado la
@@ -158,7 +159,7 @@ export function rotuloDeHito(campo: string, dato: DatoExtraidoView | null): stri
     case 'call_time':
       return 'Llamada';
     case 'scratch_time':
-      return 'Cierre del scratch';
+      return 'Confirmación de presencia';
     case 'pools_start':
       return /preliminary|de tableau|direct elimination|eliminacion directa|directas/.test(texto)
         ? 'Poules y primeras directas'
@@ -177,18 +178,12 @@ export function rotuloDeHito(campo: string, dato: DatoExtraidoView | null): stri
   }
 }
 
-/** «Florete femenino», «Florete masculino · equipos»; con categoría si el torneo tiene varias. */
+/** «Florete femenino», «Espada femenina M17 · Equipos»; la categoría sólo si el torneo tiene varias. */
 export function nombreCortoDePrueba(p: CompetitionView, conCategoria: boolean): string {
-  const categoria = conCategoria
-    ? ` ${
-        CATEGORY_SHORT[p.category] ??
-        CATEGORY_LABEL[p.category as keyof typeof CATEGORY_LABEL] ??
-        p.category
-      }`
-    : '';
-  return `${WEAPON_LABEL[p.weapon]} ${GENDER_LABEL[p.gender].toLowerCase()}${categoria}${
-    p.format === 'EQUIPOS' ? ' · equipos' : ''
-  }`;
+  return rotuloPrueba(
+    { arma: p.weapon, genero: p.gender, categoria: p.category, formato: p.format },
+    { categoria: conCategoria ? 'si-no-absoluto' : 'nunca' },
+  );
 }
 
 /**
@@ -340,6 +335,12 @@ export function tituloDeDia(iso: string): string {
   return texto.charAt(0).toUpperCase() + texto.slice(1);
 }
 
+/**
+ * Las tres columnas del horario, las mismas que `FilaHorario`: la cabecera y
+ * el titular de cada día caen así en la misma vertical que las filas.
+ */
+const COLUMNAS = 'grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)_3.5rem] gap-x-3';
+
 export function HorariosTorneo({
   evento,
   prueba,
@@ -356,163 +357,86 @@ export function HorariosTorneo({
 
   const husoSede = evento.timezone;
   /**
-   * Solo hay dos columnas cuando los relojes no coinciden. Sin huso de la
-   * sede no se convierte nada: se enseña la hora tal cual la escribe la
-   * convocatoria, que es hora local, y no se dice de dónde porque no se sabe.
+   * La columna de la derecha sólo se rellena cuando los relojes no coinciden.
+   * Sin huso de la sede no se convierte nada: la hora es la que escribe la
+   * convocatoria, que es la local.
    */
-  const dosRelojes =
-    husoSede !== null && !mismoReloj(husoSede, huso, evento.startDate);
+  const dosRelojes = husoSede !== null && !mismoReloj(husoSede, huso, evento.startDate);
+  const tuya = (fecha: string, hora: string) =>
+    dosRelojes && husoSede ? convertirHora(fecha, hora, husoSede, huso) : null;
 
   return (
-    <section
-      aria-label="Horario"
-      className="flex flex-col overflow-hidden rounded-lg border border-filete bg-card"
-    >
-      {/*
-        La cabecera es la de una tabla: el titular en la columna del texto y,
-        encima de cada columna de horas, su rótulo diminuto —las siglas del
-        huso de la sede y «tu hora»—. Sustituye a «Hora local de Japón (JST)
-        | Tu hora (CEST)», que era una frase para decir dos palabras.
-      */}
-      <header className="grid grid-cols-[48px_minmax(0,1fr)_auto] items-baseline gap-x-[12px] border-b border-b-filete px-3 py-2">
-        <span className="text-[12px] text-muted-foreground">
-          {dosRelojes && husoSede ? siglasHuso(husoSede, evento.startDate) : null}
-        </span>
-        <h4 className="text-[14px] leading-[20px] font-semibold">Horario</h4>
-        <span className="text-right text-[12px] text-muted-foreground">
-          {dosRelojes ? 'tu hora' : null}
-        </span>
+    <section aria-label="Horario" className="flex flex-col overflow-hidden rounded-xl border border-filete bg-card">
+      <header className={cn(COLUMNAS, 'items-center border-b border-filete px-3 py-2 text-xs text-muted-foreground')}>
+        <span>{dosRelojes && husoSede ? siglasHuso(husoSede, evento.startDate) : null}</span>
+        <h4 className="text-sm font-semibold text-foreground">Horario</h4>
+        <span className="text-right">{dosRelojes ? 'Tu hora' : null}</span>
       </header>
 
       <ol className="flex flex-col">
-        {dias.map((dia) => (
-          <li key={dia.fecha} className="border-b border-b-filete last:border-b-0">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 px-3 pt-2.5 pb-1">
-              <h5 className="cifra text-[14px] text-muted-foreground">
-                {tituloDeDia(dia.fecha)}
-                {dia.apertura ? (
-                  <CitaConvocatoria dato={dia.apertura.dato} className="mx-0 inline px-1">
-                    <span className="font-sans text-[12px]">
-                      {' · '}abre <span className="cifra text-[14px] text-foreground">{dia.apertura.hora}</span>
-                    </span>
-                  </CitaConvocatoria>
-                ) : null}
-              </h5>
-              {dia.apertura && dosRelojes && husoSede ? (
-                <HoraEnTuHuso fecha={dia.fecha} hora={dia.apertura.hora} husoSede={husoSede} />
-              ) : null}
-            </div>
-            <ul className="flex flex-col pb-1.5">
-              {dia.hitos.map((h) => (
-                <FilaHito
-                  key={`${h.prueba?.id ?? ''}|${h.campo}|${h.hora}|${h.dato?.id ?? ''}`}
-                  hito={h}
-                  fecha={dia.fecha}
-                  husoSede={dosRelojes ? husoSede : null}
-                  destacada={prueba !== null && h.prueba?.id === prueba.id}
-                />
-              ))}
-            </ul>
-          </li>
-        ))}
+        {dias.map((dia) => {
+          const apertura = dia.apertura ? tuya(dia.fecha, dia.apertura.hora) : null;
+          return (
+            <li key={dia.fecha} className="border-b border-filete last:border-b-0">
+              {/* El día, y la apertura del pabellón, que vale para todo el día. */}
+              <div className={cn(COLUMNAS, 'items-start px-3 pt-3 pb-1')}>
+                <h5 className="col-span-2 text-sm font-medium text-muted-foreground">
+                  {tituloDeDia(dia.fecha)}
+                  {dia.apertura ? (
+                    <>
+                      {' · '}abre <span className="font-semibold text-foreground tabular-nums">{dia.apertura.hora}</span>
+                    </>
+                  ) : null}
+                </h5>
+                <span className="flex flex-col items-end gap-1 text-sm text-muted-foreground tabular-nums">
+                  {apertura ? (
+                    <>
+                      {apertura.hora}
+                      <MarcaDia dias={apertura.dias} />
+                    </>
+                  ) : null}
+                </span>
+              </div>
+              <ul className="flex flex-col divide-y divide-filete">
+                {dia.hitos.map((h) => {
+                  const destacada = prueba !== null && h.prueba?.id === prueba.id;
+                  return (
+                    <li
+                      key={`${h.prueba?.id ?? ''}|${h.campo}|${h.hora}|${h.dato?.id ?? ''}`}
+                      data-destacada={destacada || undefined}
+                      // La prueba elegida, con fondo y filete interior: no desplaza el texto.
+                      className={cn(destacada && 'bg-marcado shadow-[inset_2px_0_0_var(--primary)]')}
+                    >
+                      <FilaHorario
+                        hora={h.hora}
+                        titulo={h.rotulo}
+                        subtitulo={h.aQue}
+                        local={tuya(dia.fecha, h.hora)}
+                        etiquetaLocal="tu hora"
+                        className="px-3"
+                      />
+                    </li>
+                  );
+                })}
+              </ul>
+            </li>
+          );
+        })}
       </ol>
     </section>
   );
 }
 
-function FilaHito({
-  hito,
-  fecha,
-  husoSede,
-  destacada,
-}: {
-  hito: HitoHorario;
-  fecha: string;
-  /** `null` = no hay que convertir. */
-  husoSede: string | null;
-  destacada: boolean;
-}) {
-  const sinRevisar = hito.dato !== null && hito.dato.estado !== 'aprobado';
-  return (
-    <li
-      className={cn(
-        'border-l-2 border-l-transparent',
-        /* La prueba que se está mirando, con el filete rojo a la izquierda:
-           es la señal que el resto de la aplicación usa para «esto es lo
-           tuyo», y no depende solo del color porque además es una arista. */
-        destacada && 'border-l-primary bg-marcado',
-      )}
-    >
-      <CitaConvocatoria dato={hito.dato} className="mx-0 w-full rounded-none px-0">
-        <div className="grid w-full grid-cols-[48px_minmax(0,1fr)_auto] items-baseline gap-x-[12px] px-[12px] py-[6px]">
-          <span
-            className={cn(
-              'cifra text-[16px] leading-[20px]',
-              sinRevisar && 'text-muted-foreground',
-            )}
-          >
-            {hito.hora}
-          </span>
-          <span className="flex min-w-0 flex-col gap-0.5">
-            <span className="text-[14px] leading-[20px] break-words hyphens-auto">
-              {hito.rotulo}
-              {hito.dato ? (
-                <MarcaConvocatoria className="ml-1.5 size-3 align-baseline text-muted-foreground/70" />
-              ) : null}
-            </span>
-            {hito.aQue ? (
-              <span className="text-[13px] leading-[16px] text-muted-foreground">
-                {hito.aQue}
-              </span>
-            ) : null}
-          </span>
-          {husoSede ? (
-            <HoraEnTuHuso fecha={fecha} hora={hito.hora} husoSede={husoSede} />
-          ) : (
-            <span />
-          )}
-        </div>
-      </CitaConvocatoria>
-    </li>
-  );
-}
-
 /**
- * El acceso al pabellón, que NO es la dirección.
- *
- * Separado a propósito, y el caso que lo justifica está en `campos.ts`: en
- * Lima el pabellón es «VELODROMO - CAR VIDENA (GATE 7)» y la entrada está en
- * «Av. San Luis N° 1308», que es otra calle. El dato se estaba leyendo y se
- * quedaba en la lista de frases del PDF, al final y plegado, o sea invisible.
- * Petición literal: *«si sabemos ya por dónde es el acceso, ponlo directo»*.
- *
- * Va debajo de la dirección y con su propio rótulo, porque quien llega a la
- * dirección del recinto y no sabe esto se queda fuera.
+ * El acceso al pabellón, que NO es la dirección: en Lima el pabellón es
+ * «VELODROMO - CAR VIDENA (GATE 7)» y se entra por «Av. San Luis N° 1308»,
+ * otra calle. Quien llega a la dirección del recinto y no sabe esto se queda
+ * fuera. `null` si no se sabe, no es creíble o repite la dirección.
  */
-export function AccesoAlPabellon({
-  evento,
-  direccion = null,
-}: {
-  evento: EventView;
-  /** La dirección que ya se enseña: si el acceso la repite, no sale. */
-  direccion?: string | null;
-}) {
+export function accesoVisible(evento: EventView, direccion: string | null = null): DatoExtraidoView | null {
   const acceso = huecoDe(evento.datosExtraidos, 'venue_access', evento.city);
-  if (!acceso || !accesoCreible(acceso.valor) || accesoRepiteDireccion(acceso.valor, direccion)) {
-    return null;
-  }
-
-  return (
-    <CitaConvocatoria dato={acceso}>
-      <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
-        <span className="text-muted-foreground">Se entra por</span>
-        <span className="min-w-0 text-foreground">
-          {acceso.valor}
-          <MarcaConvocatoria className="ml-1.5 text-muted-foreground" />
-        </span>
-      </p>
-    </CitaConvocatoria>
-  );
+  if (!acceso || !accesoCreible(acceso.valor) || accesoRepiteDireccion(acceso.valor, direccion)) return null;
+  return acceso;
 }
 
 /**

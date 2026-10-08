@@ -1,17 +1,17 @@
 import type * as React from 'react';
+import { TransicionContenido } from '@/components/sistema/transicion';
 import type { VistaExplorar } from '@/lib/sport/explorar/pantalla';
 import { construirUrl, hayCriterios, type CriteriosExplorar, type OpcionTemporada } from '@/lib/sport/explorar/url';
-import { CabeceraExplorar } from './cabecera-explorar';
-import { CLAVES_FILTRO_TIRADOR } from '@/lib/sport/explorar/filtros-buscar';
 import { FormularioFiltros } from './formulario-filtros';
-import { ChipsActivos, EstadoSinCoincidencias, EstadoSinLista, ListaDeportistas } from './resultados';
-
-const OMITIR = ['q', ...CLAVES_FILTRO_TIRADOR] as const;
+import { EstadoSinCoincidencias, EstadoSinLista, ListaDeportistas } from './resultados';
 
 /**
- * Pestaña Buscar: la barra de perfiles en vivo, los filtros y, debajo, la
- * lista completa de la búsqueda de la URL o, sin búsqueda, `sugerencias`
- * (que la página entrega en diferido para no retrasar la barra).
+ * Ámbito Tiradores de Explorar: la barra de perfiles en vivo, el selector de
+ * ámbitos y los filtros (`FormularioFiltros`, que se mantiene montado entre
+ * búsquedas para no cerrar la hoja) y, debajo, la lista completa de la
+ * búsqueda de la URL o, sin búsqueda, `sugerencias` (que la página entrega en
+ * diferido para no retrasar la barra). Los filtros puestos se ven una vez,
+ * como chips de la barra de filtros.
  */
 export function VistaBuscar({
   criterios,
@@ -51,19 +51,10 @@ export function VistaBuscar({
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-3 lg:mx-auto lg:max-w-2xl">
-      <CabeceraExplorar activa="personas" />
-      <FormularioFiltros
-        key={construirUrl(criterios, cursor)}
-        criterios={criterios}
-        temporadas={temporadas}
-        atajoEspana={atajoEspana}
-        profileId={profileId}
-      >
-        <div className="flex min-w-0 flex-col gap-3">
-          {/* Lo que tiene chip arriba no se repite; aquí quedan los filtros de enlaces antiguos (temporada, torneo…). */}
-          {inicio ? null : <ChipsActivos criterios={criterios} omitir={OMITIR} />}
-          {contenido}
-        </div>
+      <FormularioFiltros criterios={criterios} temporadas={temporadas} atajoEspana={atajoEspana} profileId={profileId}>
+        <TransicionContenido clave="personas" nombre="explorar-contenido">
+          <div className="flex min-w-0 flex-col gap-3">{contenido}</div>
+        </TransicionContenido>
       </FormularioFiltros>
     </div>
   );

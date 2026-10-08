@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
-import { cn, formatDateEs } from '@/lib/utils';
+import { fechaCorta } from '@/lib/fechas';
+import { cn } from '@/lib/utils';
 
 /**
  * Piezas compartidas por las pantallas de gestión y por «Tiradores».
@@ -42,7 +43,7 @@ export function Cabecera({
 }) {
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-filete pb-3">
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
         <h1 className="text-2xl sm:text-3xl">{titulo}</h1>
         {contexto ? (
           <p className="medida text-xs leading-snug text-muted-foreground sm:text-sm">
@@ -105,7 +106,7 @@ export function Cifra({
           resumido.
         */}
         {detalle ? (
-          <span className="hidden text-xs leading-tight text-muted-foreground/80 sm:block">
+          <span className="hidden text-xs leading-4 text-muted-foreground sm:block">
             {detalle}
           </span>
         ) : null}
@@ -130,7 +131,7 @@ export function Cifra({
     lista por debajo del pliegue era la altura total, no los renglones.
   */
   const clases =
-    'flex min-w-0 flex-1 basis-36 items-baseline gap-2 bg-card px-3 py-2.5 sm:basis-44';
+    'flex min-w-0 flex-1 basis-36 items-baseline gap-2 bg-card px-3 py-3 sm:basis-44';
 
   if (href) {
     return (
@@ -200,7 +201,7 @@ export function Procedencia({
   fecha?: Date | string | null;
   className?: string;
 }) {
-  const cuando = fecha ? formatDateEs(fecha) : null;
+  const cuando = fecha ? fechaCorta(fecha) : null;
 
   if (!documento) {
     return (

@@ -64,6 +64,8 @@ export default async function Pagina({
 
   if (vista.tipo === 'ok') {
     const datos = vista.datos;
+    // Si la página pedida falla se dice en la lista; antes se enseñaba la primera como si fuera ella.
+    const fallida = Boolean(desde) && pagina?.tipo !== 'ok';
     const paginaVista = pagina?.tipo === 'ok' ? pagina.datos : datos;
     return (
       <DueloPaisesVista
@@ -72,7 +74,8 @@ export default async function Pagina({
         filtros={filtros}
         categorias={datos.categorias}
         frases={frasesDuelo(nombrePaisFie(codigo), nombrePaisFie(rival), datos, filtros)}
-        desde={pagina?.tipo === 'ok' ? desde : ''}
+        desde={desde}
+        paginaFallida={fallida}
       />
     );
   }

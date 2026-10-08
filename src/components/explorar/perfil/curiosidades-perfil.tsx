@@ -10,8 +10,10 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
+import { BotonIcono } from '@/components/sistema/boton';
 import { EnlacePrecarga } from '@/components/sistema/enlace-precarga';
-import { BanderaPais } from '@/components/bandera';
+import { FilaPersona } from '@/components/sistema/fila-persona';
+import { fechaCorta } from '@/lib/fechas';
 import { construirUrlCaraACara } from '@/lib/sport/explorar/cara-a-cara-url';
 import type {
   ClaveCuriosidad,
@@ -21,11 +23,9 @@ import type {
 } from '@/lib/sport/explorar/tipos-social';
 import { rutaFicha } from '@/lib/sport/explorar/url';
 import { nombreVisible } from '@/lib/sport/nombre-visible';
-import { cn, titular } from '@/lib/utils';
-import { FotoDeportista } from '../foto-deportista';
-import { Bloque, fechaLegible, type Nivel } from '../piezas';
+import { titular } from '@/lib/utils';
+import { Bloque, type Nivel } from '../piezas';
 import { Cifra, Metrica, SinDato } from './piezas-perfil';
-import { TACTIL } from './tactil';
 
 const ICONOS: Record<ClaveCuriosidad, LucideIcon> = {
   rivalMasHabitual: Users,
@@ -103,8 +103,8 @@ function TarjetaCuriosidad({ personaId, c, nivel }: { personaId: string; c: Curi
       className="flex min-w-0 flex-col gap-3 bg-card px-4 py-4 sm:px-5"
       data-curiosidad={c.clave}
     >
-      <span className="flex items-center gap-2.5">
-        <span className="inline-flex size-[36px] shrink-0 items-center justify-center rounded-full bg-marcado text-primary-text">
+      <span className="flex items-center gap-3">
+        <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-marcado text-primary-text">
           <Icono className="size-4.5" aria-hidden />
         </span>
         <Titulo className="font-sans text-sm leading-tight font-semibold">{c.etiqueta}</Titulo>
@@ -117,34 +117,24 @@ function TarjetaCuriosidad({ personaId, c, nivel }: { personaId: string; c: Curi
       {c.marcador ? (
         <p className="text-sm leading-snug break-words">
           {fraseCuriosidad(c)}
-          {c.marcador.fecha ? <span className="block text-xs text-muted-foreground">{fechaLegible(c.marcador.fecha)}</span> : null}
+          {c.marcador.fecha ? <span className="block text-xs text-muted-foreground">{fechaCorta(c.marcador.fecha, { anio: 'siempre' })}</span> : null}
         </p>
       ) : null}
       <div className="flex min-w-0 flex-col gap-2 border-t pt-3 sm:mt-auto">
-        <div className="flex min-w-0 items-center gap-2">
-          <EnlacePrecarga
-            href={rutaFicha(c.rival.id)}
-            className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2.5 rounded-sm underline-offset-4 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
-          >
-            {/* La misma persona sale en varias tarjetas: `FotoDeportista` la pide una sola vez. */}
-            <FotoDeportista personaId={c.rival.id} nombre={nombre} tamano="lista" apagado />
-            <span className="flex min-w-0 items-center gap-1.5">
-              {c.rival.pais ? <BanderaPais pais={c.rival.pais} soloBandera className="shrink-0" /> : null}
-              <span className="truncate text-sm leading-tight font-medium" title={nombre}>{nombre}</span>
-            </span>
-          </EnlacePrecarga>
-          {/* En móvil sólo el icono: el nombre se queda con el ancho. */}
-          <EnlacePrecarga
-            href={construirUrlCaraACara(personaId, { rival: c.rival.id })}
-            aria-label={`Cara a cara con ${nombre}`}
-            title="Cara a cara"
-            className={cn(TACTIL, 'inline-flex size-[32px] shrink-0 items-center justify-center gap-1.5 rounded-full border text-xs font-medium hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:w-auto sm:px-3')}
-          >
-            <Swords className="size-4" aria-hidden />
-            <span className="hidden sm:inline">Cara a cara</span>
-          </EnlacePrecarga>
-        </div>
-        <span className="flex min-w-0 flex-col gap-1.5">
+        {/* La misma persona sale en varias tarjetas: el avatar la pide una sola vez. */}
+        <FilaPersona
+          persona={{ id: c.rival.id, nombre, pais: c.rival.pais }}
+          href={rutaFicha(c.rival.id)}
+          densidad="compacta"
+          insignias={
+            <BotonIcono asChild variante="secundario" tamano="md" etiqueta={`Cara a cara con ${nombre}`}>
+              <EnlacePrecarga href={construirUrlCaraACara(personaId, { rival: c.rival.id })} title="Cara a cara">
+                <Swords aria-hidden />
+              </EnlacePrecarga>
+            </BotonIcono>
+          }
+        />
+        <span className="flex min-w-0 flex-col gap-2">
           <span className="flex items-baseline justify-between gap-2 text-xs text-muted-foreground">
             <span>
               <strong className="cifra text-base text-foreground">{b.victorias}–{b.derrotas}</strong>{' '}
@@ -194,7 +184,7 @@ function RegistroFase({ etiqueta, r }: { etiqueta: string; r: RegistroAsaltos })
       detalle={r.asaltos > 0 ? `${r.asaltos} ${r.asaltos === 1 ? 'asalto' : 'asaltos'}${p !== null ? `, ${p}% ganados` : ''}` : undefined}
     >
       {r.asaltos === 0 ? <SinDato>Sin asaltos importados</SinDato> : (
-        <Cifra className="text-[36px] sm:text-[44px]">{r.victorias}–{r.derrotas}</Cifra>
+        <Cifra className="text-4xl sm:text-5xl">{r.victorias}–{r.derrotas}</Cifra>
       )}
     </Metrica>
   );

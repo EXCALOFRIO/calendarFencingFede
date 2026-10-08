@@ -284,7 +284,7 @@ describe('nombres, enlaces y tramos', () => {
       'Florete masculino · Veteranos',
     );
     expect(nombreDePruebaPasada({ ...base, categoria: 'M17', categoriaRaw: '+50', formato: 'EQUIPOS' })).toBe(
-      'Espada femenina · M17 · equipos',
+      'Espada femenina M17 · Equipos',
     );
   });
 

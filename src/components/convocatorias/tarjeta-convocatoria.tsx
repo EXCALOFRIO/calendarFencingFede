@@ -3,7 +3,6 @@
 import {
   Check,
   CircleAlert,
-  CircleCheck,
   FileText,
   MapPin,
   Medal,
@@ -13,6 +12,8 @@ import {
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { BanderaPais } from '@/components/bandera';
+import { BloqueFecha } from '@/components/sistema/bloque-fecha';
+import { Pastilla } from '@/components/sistema/pastilla';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -29,12 +30,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { responderConvocatoria } from '@/lib/callups/actions';
 import { CALL_UP_STATUS_LABEL } from '@/lib/callups/tipos';
 import type { CallUpForAthlete } from '@/lib/callups/tipos';
-import {
-  cn,
-  formatDateRangeEs,
-  formatDateTimeEs,
-  titular,
-} from '@/lib/utils';
+import { fechaHora } from '@/lib/fechas';
+import { cn, titular } from '@/lib/utils';
 import { PLAZA_CORTA, partirPrueba } from './etiquetas';
 import { CLASE_TONO, type Plazo, palabraPlazo } from './plazo';
 
@@ -95,93 +92,64 @@ export function TarjetaConvocatoria({
 
   return (
     /*
-      El filete de arriba es de oro.
+      El filete de arriba es de oro: es la única superficie de la aplicación
+      que lo lleva, y sin leer una palabra dice «te han convocado». La
+      superficie es sólida (`bg-card`), sin alfa ni textura.
 
-      Es la única superficie de la aplicación que lo lleva, y es el canto de
-      chapa del tema aplicado a lo que de verdad significa algo: sin leer una
-      palabra, una banda con el borde superior dorado es «te han convocado».
-
-      Y la superficie es SÓLIDA: `bg-card` con la textura teñida de oro encima
-      (`fondo-cabecera tinte-oro`). Antes era `bg-gold/[0.04]`, o sea un 4 % de
-      oro sobre el fondo de la página: un tinte con alfa baja, que es lo que el
-      usuario ha rechazado tres veces con capturas. El acrílico y la
-      transparencia se reservan para lo que de verdad flota sobre una imagen, y
-      aquí detrás no hay foto que desenfocar. Al pasar a sólido + tinte, el oro
-      se ve más y no queda turbio.
+      La cabecera tiene la forma de las tarjetas de competición: la fecha en
+      bloque a la izquierda, el nombre en el centro y el estado a la derecha.
     */
-    <article className="fondo-cabecera tinte-oro flex flex-col gap-4 rounded-lg border-t-2 border-gold bg-card p-4 sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-        <div className="min-w-56 flex-1">
-          <p className="flex items-center gap-1.5 text-xs font-medium text-gold">
-            <Medal className="size-3.5 shrink-0" aria-hidden />
-            Convocatoria de selección
-          </p>
+    <article className="flex flex-col gap-4 rounded-xl border border-t-2 border-border border-t-gold bg-card p-4 sm:p-5">
+      <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3">
+        <BloqueFecha desde={c.eventStartDate} hasta={c.eventEndDate} tamano="tarjeta" />
 
-          <h2 className="mt-1 text-xl sm:text-2xl">{titular(c.eventName)}</h2>
+        <div className="min-w-0">
+          <p className="flex items-center gap-1 text-xs font-medium text-gold">
+            <Medal className="size-4 shrink-0" aria-hidden />
+            Convocatoria
+          </p>
+          <h2 className="mt-1 text-lg leading-6 font-semibold break-words">{titular(c.eventName)}</h2>
+          {c.eventCity ? (
+            <p className="mt-1 flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+              <MapPin className="size-4 shrink-0" aria-hidden />
+              <span className="min-w-0 truncate">{titular(c.eventCity)}</span>
+              {/* El país sólo cuando no es España: marcar «ESP» en nueve de cada diez no distingue nada. */}
+              {c.eventCountry && c.eventCountry !== 'ES' ? (
+                <BanderaPais pais={c.eventCountry} tamaño="fila" />
+              ) : null}
+            </p>
+          ) : null}
         </div>
 
-        {/* La cifra que importa: cuántos días quedan para contestar. En móvil
-            baja a su propia línea; apretada contra el título no se lee. */}
+        {/* La cifra que importa: cuántos días quedan para contestar. */}
         {pendiente ? (
-          <div className="flex w-full shrink-0 items-baseline gap-2 sm:w-auto">
-            <span className={cn('cifra text-6xl', CLASE_TONO[plazo.tono])}>
+          <div className="flex max-w-24 shrink-0 flex-col items-end text-right">
+            <span className={cn('cifra text-3xl leading-none', CLASE_TONO[plazo.tono])}>
               {plazo.dias === null ? '—' : Math.abs(plazo.dias)}
             </span>
             <span
               className={cn(
-                'max-w-40 text-xs leading-tight sm:max-w-24',
+                'mt-1 text-xs leading-tight',
                 plazo.vencido ? CLASE_TONO.danger : 'text-muted-foreground',
               )}
             >
               {palabraPlazo(plazo)}
-              {c.respondBy ? (
-                <span className="mt-0.5 block text-muted-foreground">
-                  {formatDateTimeEs(c.respondBy)}
-                </span>
-              ) : null}
             </span>
           </div>
-        ) : null}
+        ) : (
+          <Pastilla tono={c.status === 'confirmado' ? 'ok' : 'peligro'} tamano="md">
+            {CALL_UP_STATUS_LABEL[c.status]}
+          </Pastilla>
+        )}
       </div>
 
       {/*
-        Los datos, en filas con su rótulo.
-
-        El tipo de plaza es la diferencia entre «te lo has ganado en la
-        pista» y «te ha elegido el seleccionador», y nadie quiere
-        confundirlas: por eso va con el rótulo delante y no como una pastilla
-        más en una cadena de pastillas.
+        Los datos, en filas con su rótulo. El tipo de plaza es la diferencia
+        entre «te lo has ganado en la pista» y «te ha elegido el
+        seleccionador»: va con su rótulo delante, no como una pastilla más.
       */}
       <dl className="flex flex-wrap gap-x-8 gap-y-3">
         {mostrarNombre ? <Dato rotulo="Tirador" valor={c.athleteName} /> : null}
-        <Dato
-          rotulo="Cuándo"
-          valor={formatDateRangeEs(c.eventStartDate, c.eventEndDate)}
-        />
-        {c.eventCity ? (
-          <Dato
-            rotulo="Dónde"
-            valor={
-              <span className="inline-flex items-center gap-1.5">
-                <MapPin className="size-3.5 shrink-0" aria-hidden />
-                {titular(c.eventCity)}
-                {/*
-                  El país, en la pastilla compartida de `bandera.tsx`, y no
-                  como el código ISO crudo entre paréntesis que había antes:
-                  «(FR)» es un dato de base de datos, «FRA» es como lo escriben
-                  la FIE y la RFEE.
-
-                  Solo cuando NO es España, que es lo que ya hacía: en una
-                  aplicación española, marcar «ESP» en nueve de cada diez
-                  competiciones es ruido que no distingue nada.
-                */}
-                {c.eventCountry && c.eventCountry !== 'ES' ? (
-                  <BanderaPais pais={c.eventCountry} tamaño="fila" />
-                ) : null}
-              </span>
-            }
-          />
-        ) : null}
         {prueba ? <Dato rotulo="Prueba" valor={prueba.prueba} /> : null}
         {prueba?.categoria ? (
           <Dato rotulo="Categoría" valor={prueba.categoria} />
@@ -197,8 +165,8 @@ export function TarjetaConvocatoria({
             </span>
           }
         />
+        {pendiente && c.respondBy ? <Dato rotulo="Responder antes del" valor={fechaHora(c.respondBy)} /> : null}
       </dl>
-
       {c.body ? <p className="medida text-sm whitespace-pre-line">{c.body}</p> : null}
 
       {c.travelNotes ? (
@@ -207,43 +175,15 @@ export function TarjetaConvocatoria({
         </p>
       ) : null}
 
-      {/* Respuesta ya dada. Se conserva visible: es un compromiso adquirido. */}
-      {!pendiente ? (
-        <div
-          className={cn(
-            'flex items-start gap-2 rounded-md border px-3 py-2.5 text-sm',
-            c.status === 'confirmado'
-              ? 'border-ok/40 text-ok'
-              : 'border-danger/40 text-danger',
-          )}
-        >
-          {/*
-            `CircleCheck` y no `Check`: esto es un estado ya cerrado, no el
-            botón de confirmar. En toda la aplicación el visto dentro de un
-            círculo significa «ya está», y el visto suelto es la acción.
-          */}
-          {c.status === 'confirmado' ? (
-            <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
-          ) : (
-            <X className="mt-0.5 size-4 shrink-0" aria-hidden />
-          )}
-          <div className="min-w-0">
-            <p className="font-medium">
-              {CALL_UP_STATUS_LABEL[c.status]}
-              {c.respondedAt ? (
-                <span className="font-normal text-muted-foreground">
-                  {' '}
-                  el {formatDateTimeEs(c.respondedAt)}
-                </span>
-              ) : null}
-            </p>
-            {c.rejectionReason ? (
-              <p className="medida mt-0.5 text-muted-foreground">{c.rejectionReason}</p>
-            ) : null}
-          </div>
+      {/* Respuesta ya dada: el estado va arriba; aquí cuándo y, si la hay, la razón. */}
+      {!pendiente && (c.respondedAt || c.rejectionReason) ? (
+        <div className="flex flex-col gap-1 rounded-md bg-secondary px-3 py-2 text-sm">
+          {c.respondedAt ? (
+            <p className="text-muted-foreground">Respondida el {fechaHora(c.respondedAt)}</p>
+          ) : null}
+          {c.rejectionReason ? <p className="medida">{c.rejectionReason}</p> : null}
         </div>
       ) : null}
-
       {aviso ? (
         <p
           className={cn(
@@ -256,7 +196,7 @@ export function TarjetaConvocatoria({
         </p>
       ) : null}
 
-      <Separator className="bg-gold/20" />
+      <Separator />
 
       <div className="flex flex-wrap items-center gap-2">
         {pendiente ? (
@@ -331,7 +271,7 @@ export function TarjetaConvocatoria({
               placeholder="Lesión, examen, coste del viaje…"
             />
             {motivo.trim().length > 0 && motivo.trim().length < 3 ? (
-              <p className="flex items-center gap-1.5 text-xs text-danger">
+              <p className="flex items-center gap-1 text-xs text-danger">
                 <CircleAlert className="size-3.5" aria-hidden />
                 Hace falta escribir el motivo.
               </p>

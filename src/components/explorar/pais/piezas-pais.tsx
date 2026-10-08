@@ -14,7 +14,7 @@ export function Bandera({ codigo, className }: { codigo: string; className?: str
 /** El país con su bandera y su código, para filas y chips. */
 export function PaisCorto({ codigo }: { codigo: string }) {
   return (
-    <span className="inline-flex min-w-0 items-center gap-[6px]">
+    <span className="inline-flex min-w-0 items-center gap-2">
       <Bandera codigo={codigo} />
       <span className="truncate">{nombrePaisFie(codigo)}</span>
     </span>
@@ -23,7 +23,7 @@ export function PaisCorto({ codigo }: { codigo: string }) {
 
 export function TituloSeccion({ id, children }: { id: string; children: React.ReactNode }) {
   return (
-    <h2 id={id} className="text-[16px] leading-[20px] font-semibold">
+    <h2 id={id} className="text-base leading-5 font-semibold">
       {children}
     </h2>
   );
@@ -33,7 +33,7 @@ export function TituloSeccion({ id, children }: { id: string; children: React.Re
 export function Frases({ frases }: { frases: readonly string[] }) {
   if (frases.length === 0) return null;
   return (
-    <ul className="flex flex-col gap-[6px] text-[14px] leading-[20px] text-foreground">
+    <ul className="flex flex-col gap-2 text-sm leading-5 text-foreground">
       {frases.map((f) => (
         <li key={f}>{f}</li>
       ))}
@@ -54,12 +54,12 @@ export function PuntoMedalla({ medalla, className }: { medalla: Medalla; classNa
 /** Cifra con su rótulo debajo, en una baldosa. */
 export function Baldosa({ valor, rotulo, medalla }: { valor: string; rotulo: string; medalla?: Medalla }) {
   return (
-    <div className="flex min-w-0 flex-col gap-[2px] rounded-[12px] bg-card px-[12px] py-[10px]">
-      <span className="cifra flex items-center gap-[6px] text-[28px] leading-[32px] tabular-nums">
+    <div className="flex min-w-0 flex-col gap-1 rounded-xl bg-card px-3 py-3">
+      <span className="cifra flex items-center gap-2 text-3xl leading-8 tabular-nums">
         {medalla ? <PuntoMedalla medalla={medalla} /> : null}
         {valor}
       </span>
-      <span className="truncate text-[12px] leading-[16px] text-muted-foreground">{rotulo}</span>
+      <span className="truncate text-xs leading-4 text-muted-foreground">{rotulo}</span>
     </div>
   );
 }
@@ -68,12 +68,12 @@ export function Baldosa({ valor, rotulo, medalla }: { valor: string; rotulo: str
 export function EstadoPais({ titulo, linea, volver }: { titulo: string; linea: string; volver?: { href: string; texto: string } }) {
   return (
     <div className="flex flex-col items-start gap-[8px] rounded-[12px] bg-card px-[16px] py-[20px]">
-      <p className="text-[16px] leading-[20px] font-semibold">{titulo}</p>
-      <p className="text-[14px] leading-[20px] text-muted-foreground">{linea}</p>
+      <p className="text-base leading-5 font-semibold">{titulo}</p>
+      <p className="text-sm leading-5 text-muted-foreground">{linea}</p>
       {volver ? (
         <Link
           href={volver.href}
-          className={cn('mt-[4px] inline-flex h-[32px] items-center rounded-full bg-secondary px-[14px] text-[13px] font-medium', AREA_TACTIL, FOCO)}
+          className={cn('mt-1 inline-flex h-[32px] items-center rounded-full bg-secondary px-4 text-sm font-medium', AREA_TACTIL, FOCO)}
         >
           {volver.texto}
         </Link>

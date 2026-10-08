@@ -279,8 +279,8 @@ export function BanderaPais({
         'font-semibold uppercase tracking-wide text-foreground no-underline',
         'tabular-nums',
         tamaño === 'fila'
-          ? 'min-w-[2.4em] px-1 py-px text-[12px] leading-[14px] tracking-normal'
-          : 'min-w-[2.7em] px-1.5 py-0.5 text-xs leading-tight',
+          ? 'min-w-[2.4em] px-1 text-xs leading-4 tracking-normal'
+          : 'h-5 min-w-[2.7em] px-2 text-xs leading-4',
         conNombre ? null : className,
       )}
     >
@@ -306,7 +306,7 @@ export function BanderaPais({
       );
     }
     return (
-      <span className={cn('inline-flex items-center gap-1.5', className)}>
+      <span className={cn('inline-flex items-center gap-2', className)}>
         {bandera}
         {pastilla}
       </span>
@@ -314,7 +314,7 @@ export function BanderaPais({
   }
 
   return (
-    <span className={cn('inline-flex items-center gap-1.5', className)}>
+    <span className={cn('inline-flex items-center gap-2', className)}>
       {bandera}
       {pastilla}
       {/*

@@ -3,24 +3,21 @@
 import { ChevronDown, TriangleAlert } from 'lucide-react';
 import * as React from 'react';
 import { Buscador } from '@/components/admin/buscador';
-import { Vacio } from '@/components/admin/piezas';
-import { Badge } from '@/components/ui/badge';
+import { ChipFiltro, FilaChips } from '@/components/sistema/chip-filtro';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
+import { Pastilla } from '@/components/sistema/pastilla';
+import { SelectorSegmentado } from '@/components/sistema/selector-segmentado';
 import { Button } from '@/components/ui/button';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { Weapon } from '@/lib/auth/session';
-import { ARMAS, armasDeArranque, esArma, type PerfilAmbito } from '@/lib/ambito';
-import {
-  CATEGORY_LABEL,
-  WEAPON_LABEL,
-  cn,
-  formatDateEs,
-  titular,
-} from '@/lib/utils';
+import { ARMAS, armasDeArranque, type PerfilAmbito } from '@/lib/ambito';
+import { diasEntre, fechaCorta, hoyMadrid } from '@/lib/fechas';
+import { rotuloArma, rotuloCategoria, rotuloPrueba } from '@/lib/sport/rotulos';
+import { cn, titular } from '@/lib/utils';
 import type { TiradorVista } from './tipos';
 
 /**
@@ -51,7 +48,7 @@ import type { TiradorVista } from './tipos';
  */
 /** «florete», «florete y espada», «florete, espada y sable». */
 function nombresDeArmas(armas: Weapon[]): string {
-  const nombres = armas.map((a) => WEAPON_LABEL[a].toLowerCase());
+  const nombres = armas.map((a) => rotuloArma(a).toLowerCase());
   if (nombres.length <= 1) return nombres[0] ?? 'ninguna arma';
   return `${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]}`;
 }
@@ -102,38 +99,39 @@ export function PanelTiradores({
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
-        <ToggleGroup
-          type="single"
-          value={vista}
-          onValueChange={(v) => v && setVista(v as 'tiradores' | 'competiciones')}
-          variant="outline"
-          size="sm"
-          spacing={1}
-        >
-          <ToggleGroupItem value="tiradores">Por tirador</ToggleGroupItem>
-          <ToggleGroupItem value="competiciones">Por competición</ToggleGroupItem>
-        </ToggleGroup>
+        <SelectorSegmentado
+          etiqueta="Vista"
+          tamano="sm"
+          anchoMinimo={8}
+          valor={vista}
+          onCambio={(v) => setVista(v as 'tiradores' | 'competiciones')}
+          opciones={[
+            { valor: 'tiradores', etiqueta: 'Por tirador' },
+            { valor: 'competiciones', etiqueta: 'Por competición' },
+          ]}
+          className="w-full sm:w-80"
+        />
 
         {/* Nunca se queda vacío: una lista en blanco no responde a nada. */}
-        <ToggleGroup
-          type="multiple"
-          value={armas}
-          onValueChange={(v) => v.length > 0 && setArmas(v.filter(esArma))}
-          variant="outline"
-          size="sm"
-          spacing={1}
-          aria-label="Armas"
-          className="max-w-full flex-wrap"
-        >
-          {ARMAS.map((a) => (
-            <ToggleGroupItem key={a} value={a} className="gap-1.5">
-              {WEAPON_LABEL[a]}
-              <span className="cifra text-xs text-muted-foreground">
-                {porArma.get(a) ?? 0}
-              </span>
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+        <FilaChips etiqueta="Armas">
+          {ARMAS.map((a) => {
+            const marcada = armas.includes(a);
+            return (
+              <ChipFiltro
+                key={a}
+                marcado={marcada}
+                contador={porArma.get(a) ?? 0}
+                onClick={() => {
+                  const siguiente = marcada ? armas.filter((x) => x !== a) : [...armas, a];
+                  if (siguiente.length > 0) setArmas(ARMAS.filter((x) => siguiente.includes(x)));
+                }}
+              >
+                {rotuloArma(a)}
+              </ChipFiltro>
+            );
+          })}
+        </FilaChips>
+
 
         {/*
           Con las tres marcadas no hace falta ofrecer «todas»: ya lo están.
@@ -148,7 +146,7 @@ export function PanelTiradores({
             onClick={() => setArmas([...ARMAS])}
           >
             Ver las tres armas
-            <span className="cifra ml-1.5 text-xs text-muted-foreground">
+            <span className="cifra ml-2 text-xs text-muted-foreground">
               {tiradores.length}
             </span>
           </Button>
@@ -168,9 +166,10 @@ export function PanelTiradores({
       </div>
 
       {visibles.length === 0 ? (
-        <Vacio
+        <EstadoVacio
           titulo="Nadie coincide con este filtro"
-          explicacion={
+          descripcion={
+
             busqueda
               ? `Nadie coincide con «${busqueda}» en ${nombresDeArmas(armas)}. ` +
                 'Prueba con las tres armas o con otro nombre.'
@@ -220,24 +219,23 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
         {tiradores.map((t) => (
         <li key={t.id} className="min-w-0">
           <Collapsible>
-            <div className="flex flex-wrap items-start gap-x-4 gap-y-2 py-3.5">
+            <div className="flex flex-wrap items-start gap-x-4 gap-y-2 py-4">
               {/* Puesto en el ranking: la cifra que de verdad ordena. */}
               {hayRanking ? (
                 <div className="flex w-14 shrink-0 flex-col">
                   {t.ranking.length > 0 ? (
                     <>
-                      <span className="cifra text-4xl">{t.ranking[0].position}</span>
-                      <span className="mt-0.5 text-xs leading-tight text-muted-foreground">
-                        en{' '}
-                        {CATEGORY_LABEL[
-                          t.ranking[0].category as keyof typeof CATEGORY_LABEL
-                        ] ?? t.ranking[0].category}
+                      <span className="cifra text-3xl">{t.ranking[0].position}</span>
+                      <span className="mt-1 text-xs leading-tight text-muted-foreground">
+                        en {rotuloCategoria(t.ranking[0].category) || t.ranking[0].category}
                       </span>
+
                     </>
                   ) : (
                     <>
-                      <span className="cifra text-4xl text-muted-foreground">—</span>
-                      <span className="mt-0.5 text-xs leading-tight text-muted-foreground">
+                      <span className="cifra text-3xl text-muted-foreground">—</span>
+                      <span className="mt-1 text-xs
+ leading-tight text-muted-foreground">
                         sin puesto
                       </span>
                     </>
@@ -245,24 +243,18 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
                 </div>
               ) : null}
 
-              <div className="flex min-w-44 flex-1 flex-col gap-1.5">
+              <div className="flex min-w-44 flex-1 flex-col gap-2">
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="text-base font-medium">{t.fullName}</span>
                   {t.weapons.map((a) => (
-                    <Badge key={a} variant="secondary" className="font-normal">
-                      {WEAPON_LABEL[a]}
-                    </Badge>
+                    <Pastilla key={a}>{rotuloArma(a)}</Pastilla>
                   ))}
-                  {t.category ? (
-                    <Badge variant="outline" className="font-normal">
-                      {CATEGORY_LABEL[t.category as keyof typeof CATEGORY_LABEL] ??
-                        t.category}
-                    </Badge>
-                  ) : null}
+                  {t.category ? <Pastilla>{rotuloCategoria(t.category) || t.category}</Pastilla> : null}
+
                 </span>
 
                 {/* Cada dato con su rótulo, no encadenados con puntos. */}
-                <span className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+                <span className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <span>{t.clubName ?? 'Sin club en su ficha'}</span>
                   {t.rfeeLicense ? (
                     <span>
@@ -277,8 +269,9 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
 
                 {t.warnings.length > 0 ? (
                   <span className="flex flex-wrap items-start gap-x-2 gap-y-1 text-xs text-warn">
-                    <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                    <span className="flex flex-col gap-0.5">
+                    <TriangleAlert className="mt-1 size-3.5 shrink-0" aria-hidden />
+                    <span className="flex flex-col gap-1">
+
                       {t.warnings.map((aviso) => (
                         <span key={aviso}>{aviso}</span>
                       ))}
@@ -290,7 +283,7 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
               {/* En móvil la cuenta y el botón comparten una línea propia; en
                   escritorio se alinean a la derecha de la ficha. */}
               <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
-                <span className="flex items-baseline gap-1.5 sm:flex-col sm:items-end sm:gap-0.5">
+                <span className="flex items-baseline gap-2 sm:flex-col sm:items-end sm:gap-1">
                   <span className="cifra text-3xl">
                     {t.upcoming.length + t.enClub.length}
                   </span>
@@ -314,7 +307,7 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
 
             <CollapsibleContent>
               <div className="grid gap-4 border-t border-filete bg-card px-3 py-3 sm:grid-cols-2">
-                <div className="flex min-w-0 flex-col gap-1.5">
+                <div className="flex min-w-0 flex-col gap-2">
                   <h3 className="text-sm">A dónde va</h3>
                   {t.upcoming.length === 0 && t.enClub.length === 0 ? (
                     <p className="text-xs text-muted-foreground">
@@ -329,16 +322,15 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
                           className="flex flex-wrap items-baseline gap-x-2 text-xs"
                         >
                           <span className="text-muted-foreground">
-                            {formatDateEs(u.date)}
+                            {fechaCorta(u.date)}
                           </span>
                           <span className="min-w-0 flex-1 truncate">
                             {titular(u.name)}
                           </span>
                           <span className="text-muted-foreground">
-                            {WEAPON_LABEL[u.weapon]}{' '}
-                            {CATEGORY_LABEL[u.category as keyof typeof CATEGORY_LABEL] ??
-                              u.category}
+                            {rotuloPrueba({ arma: u.weapon, categoria: u.category })}
                           </span>
+
                         </li>
                       ))}
                       {t.enClub.map((u) => (
@@ -347,7 +339,7 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
                           className="flex flex-wrap items-baseline gap-x-2 text-xs"
                         >
                           <span className="text-muted-foreground">
-                            {formatDateEs(u.date)}
+                            {fechaCorta(u.date)}
                           </span>
                           <span className="min-w-0 flex-1 truncate">
                             {titular(u.name)}
@@ -359,7 +351,7 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
                   )}
                 </div>
 
-                <div className="flex min-w-0 flex-col gap-1.5">
+                <div className="flex min-w-0 flex-col gap-2">
                   <h3 className="text-sm">Últimos resultados</h3>
                   {t.recentResults.length === 0 ? (
                     <p className="text-xs text-muted-foreground">
@@ -378,7 +370,7 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
                             {titular(r.eventName)}
                           </span>
                           <span className="text-muted-foreground">
-                            {formatDateEs(r.date)}
+                            {fechaCorta(r.date)}
                           </span>
                         </li>
                       ))}
@@ -417,7 +409,7 @@ function EstadoInscripciones({ tirador }: { tirador: TiradorVista }) {
   }
 
   return (
-    <span className="flex flex-col gap-0.5 text-xs">
+    <span className="flex flex-col gap-1 text-xs">
       <span className="flex flex-wrap items-center gap-x-2">
         {enMarcha > 0 ? (
           <span className="text-ok">
@@ -433,7 +425,7 @@ function EstadoInscripciones({ tirador }: { tirador: TiradorVista }) {
       {tirador.nextEvent ? (
         <span className="text-muted-foreground">
           La próxima: {titular(tirador.nextEvent.name)}, el{' '}
-          {formatDateEs(tirador.nextEvent.date)}
+          {fechaCorta(tirador.nextEvent.date)}
         </span>
       ) : null}
     </span>
@@ -507,23 +499,23 @@ function ListaCompeticiones({ tiradores }: { tiradores: TiradorVista[] }) {
 
   if (grupos.length === 0) {
     return (
-      <Vacio
+      <EstadoVacio
         titulo="Todavía no va nadie a ninguna competición"
-        explicacion="En cuanto se pida una inscripción para una competición futura, aparecerá aquí agrupada por competición, con quién va a cada una."
+        descripcion=
+"En cuanto se pida una inscripción para una competición futura, aparecerá aquí agrupada por competición, con quién va a cada una."
       />
     );
   }
 
-  const hoy = Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
+  const hoy = hoyMadrid();
 
   return (
     <ul className="flex flex-col gap-3">
       {grupos.map((g) => {
-        const dias = Math.round(
-          (Date.parse(`${g.fecha}T00:00:00Z`) - hoy) / 86_400_000,
-        );
+        const dias = diasEntre(hoy, g.fecha);
+
         return (
-          <li key={g.eventId} className="min-w-0 rounded-lg border-t border-filete bg-card">
+          <li key={g.eventId} className="min-w-0 rounded-xl border bg-card">
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b px-3 py-3">
               {/* Un «0 días» repetido cinco veces se lee como un fallo de
                   cálculo. Cuando la competición es hoy, se dice hoy. */}
@@ -539,7 +531,7 @@ function ListaCompeticiones({ tiradores }: { tiradores: TiradorVista[] }) {
               )}
               <h2 className="min-w-0 flex-1 text-base">{titular(g.nombre)}</h2>
               <span className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
-                <span>{formatDateEs(g.fecha)}</span>
+                <span>{fechaCorta(g.fecha)}</span>
                 {g.ciudad ? <span>{g.ciudad}</span> : null}
                 <span>
                   <span className="cifra text-foreground">
@@ -563,15 +555,14 @@ function ListaCompeticiones({ tiradores }: { tiradores: TiradorVista[] }) {
               {g.asistentes.map((a, i) => (
                 <li
                   key={`${a.id}-${a.weapon}-${a.category}-${i}`}
-                  className="flex min-w-0 flex-col gap-0.5 px-3 py-2 sm:flex-row sm:items-center sm:gap-3"
+                  className="flex min-w-0 flex-col gap-1 px-3 py-2 sm:flex-row sm:items-center sm:gap-3"
                 >
                   <span className="min-w-0 flex-1 text-sm leading-tight">{a.nombre}</span>
-                  <span className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+                  <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                     <span className="text-muted-foreground">
-                      {WEAPON_LABEL[a.weapon]}{' '}
-                      {CATEGORY_LABEL[a.category as keyof typeof CATEGORY_LABEL] ??
-                        a.category}
+                      {rotuloPrueba({ arma: a.weapon, categoria: a.category })}
                     </span>
+
                     {a.avisos.length > 0 ? (
                       <span
                         className="flex items-center gap-1 text-warn"

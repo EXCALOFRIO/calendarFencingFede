@@ -5,9 +5,13 @@ import { Historico } from '@/components/convocatorias/historico';
 import { PanelConvocatorias } from '@/components/convocatorias/panel-convocatorias';
 import { calcularPlazo } from '@/components/convocatorias/plazo';
 import { TarjetaConvocatoria } from '@/components/convocatorias/tarjeta-convocatoria';
+import { Boton } from '@/components/sistema/boton';
+import { CabeceraSeccion } from '@/components/sistema/cabecera-seccion';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import { armasDeArranque } from '@/lib/ambito';
 import { getManagedAthletes, getSessionProfile } from '@/lib/auth/session';
 import type { CallUpDetail, EventoConvocable } from '@/lib/callups/tipos';
+import { hoyMadrid } from '@/lib/fechas';
 import {
   getCallUpDetail,
   listCallUpsForAdmin,
@@ -67,7 +71,7 @@ export default async function Pagina() {
     if (puedeGestionar) eventos = await listEventosConvocables();
   }
 
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyMadrid();
   const ahora = new Date();
   const activas = mias.filter((c) => c.eventEndDate >= hoy);
   const pasadas = mias.filter((c) => c.eventEndDate < hoy).reverse();
@@ -76,12 +80,8 @@ export default async function Pagina() {
 
   return (
     <div className="flex min-w-0 max-w-5xl flex-col gap-6">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h1 className="text-2xl sm:text-3xl">Selección</h1>
-        <p className="text-sm text-muted-foreground">
-          {contextoCabecera(perfil.role, atletas.length, sinResponder)}
-        </p>
-      </div>
+      <CabeceraSeccion nivel="pagina" titulo="Selección" contexto={contextoCabecera(perfil.role, atletas.length, sinResponder)} />
+
 
       {atletas.length > 0 ? (
         activas.length > 0 ? (
@@ -102,14 +102,11 @@ export default async function Pagina() {
 
       {pasadas.length > 0 ? (
         <section className="flex min-w-0 flex-col">
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b pb-2">
-            <h2 className="text-xl">Convocatorias anteriores</h2>
-            <p className="text-sm text-muted-foreground">
-              {pasadas.length === 1
-                ? '1 competición ya celebrada'
-                : `${pasadas.length} competiciones ya celebradas`}
-            </p>
-          </div>
+          <CabeceraSeccion
+            titulo="Convocatorias anteriores"
+            contexto={pasadas.length === 1 ? '1 competición ya celebrada' : `${pasadas.length} competiciones ya celebradas`}
+          />
+
           <Historico convocatorias={pasadas} mostrarNombre={atletas.length > 1} />
         </section>
       ) : null}
@@ -144,21 +141,8 @@ function contextoCabecera(
 }
 
 /**
- * Estado vacío del tirador.
- *
- * Dice qué va a aparecer ahí y cuándo, que es lo único que le interesa a quien
- * entra y no encuentra nada. No se disculpa y no dice «no hay datos».
- *
- * La superficie es **sólida** con la textura teñida de oro (`fondo-panel
- * tinte-oro` sobre `bg-card`) y el filete de oro arriba. Antes era un recuadro
- * de línea discontinua, que se lee como «aquí falta algo» —un hueco de
- * plantilla— cuando lo que hay que decir es «esto es lo más importante que te
- * puede pasar, y todavía no ha pasado».
- *
- * Pero el filete va a UN píxel y sin el rótulo «Convocatoria de selección»
- * encima, al revés que una convocatoria de verdad, que lleva dos píxeles y el
- * rótulo. Con los dos iguales, la captura se leía como si hubiera una
- * convocatoria abierta hasta que uno llegaba al titular.
+ * Estado vacío del tirador: qué va a aparecer aquí y cuándo. No se disculpa
+ * y no dice «no hay datos».
  */
 function SinConvocatorias({ nombres }: { nombres: string[] }) {
   const quien =
@@ -167,24 +151,16 @@ function SinConvocatorias({ nombres }: { nombres: string[] }) {
       : `${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]}`;
 
   return (
-    <div className="fondo-panel tinte-oro flex max-w-2xl flex-col items-start gap-3 rounded-lg border-t border-gold/60 bg-card px-4 py-6 sm:px-5">
-      <h2 className="flex items-center gap-2 text-xl">
-        <Medal className="size-5 shrink-0 text-gold" aria-hidden />
-        Ninguna convocatoria abierta
-      </h2>
-      <p className="medida text-sm text-muted-foreground">
-        Cuando el seleccionador convoque a {quien} para un campeonato o una
-        concentración, aparecerá aquí con el tipo de plaza, el PDF oficial y la
-        fecha límite para contestar. También te llegará un correo el mismo día en
-        que se publique.
-      </p>
-      <p className="medida text-sm text-muted-foreground">
-        Las plazas por ranking salen de la clasificación de la temporada: en{' '}
-        <Link href="/estado" className="underline underline-offset-2 transition-colors hover:text-foreground">
-          Mi estado
-        </Link>{' '}
-        se ve en qué puesto vas y a cuántos puestos y puntos estás del corte.
-      </p>
-    </div>
+    <EstadoVacio
+      icono={Medal}
+      className="rounded-xl bg-card"
+      titulo="Ninguna convocatoria abierta"
+      descripcion={`Cuando el seleccionador convoque a ${quien}, saldrá aquí con la plaza, el PDF y la fecha límite. También llegará un correo.`}
+      accion={
+        <Boton asChild>
+          <Link href="/estado">Ver mi puesto</Link>
+        </Boton>
+      }
+    />
   );
 }

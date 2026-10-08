@@ -7,6 +7,7 @@ import { NavMovil } from '@/components/nav';
 import { CampanaNotificaciones } from '@/components/notificaciones/campana';
 import { describirCuenta, ROL } from '@/components/tu/cuenta';
 import { Button } from '@/components/ui/button';
+import { Toaster } from '@/components/ui/sonner';
 import { getManagedAthletes, getSessionProfile } from '@/lib/auth/session';
 import { getCurrentSeason, getDataFreshness } from '@/lib/queries/calendar';
 import { formatDateEs } from '@/lib/utils';
@@ -48,7 +49,7 @@ export default async function AppLayout({
     las pantallas.
   */
   const aviso = frescura.stale ? (
-    <p role="status" className="ancho-app flex items-center gap-[6px] px-4 pt-[8px] text-[12px] leading-[16px] text-warn">
+    <p role="status" className="ancho-app flex items-center gap-2 px-4 pt-2 text-xs leading-4 text-warn">
       <TriangleAlert aria-hidden className="size-[14px] shrink-0" />
       {frescura.lastSeenAt
         ? `Sin actualizar desde el ${formatDateEs(frescura.lastSeenAt)}. Comprueba en la fuente oficial.`
@@ -72,7 +73,7 @@ export default async function AppLayout({
       {perfil.preview ? (
         <aside aria-label="Vista previa de solo lectura" className="border-b border-filete bg-warn-tinte">
           <div className="ancho-app flex flex-wrap items-center justify-between gap-3 px-4 py-2">
-            <p className="min-w-0 text-[13px]">
+            <p className="min-w-0 text-sm">
               <strong>{perfil.qa ? 'QA temporal' : 'Vista previa'} · {ROL[perfil.role]}</strong>
               <span className="block text-muted-foreground sm:ml-2 sm:inline">Solo lectura. Caduca a los 30 minutos.</span>
             </p>
@@ -108,6 +109,16 @@ export default async function AppLayout({
       </main>
 
       <NavMovil cuenta={perfil.profileId} />
+      {/*
+        Avisos de toda la aplicación («Inscripción solicitada», «Convocatoria
+        publicada»): sin este montaje `sonner` no pinta nada. Aquí y no en la
+        raíz porque /entrar no avisa de nada y así no descarga la librería.
+
+        `richColors` está apagado a propósito: los colores los pone el tema
+        de la aplicación, y el rojo y el verde de la librería no son los del
+        semáforo de plazos.
+      */}
+      <Toaster position="bottom-center" closeButton />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 'use server';
 
 import { requireProfile } from '@/lib/auth/session';
-import { hoyMadrid } from '@/lib/callups/fechas';
+import { diasEntre, hoyMadrid } from '@/lib/fechas';
 import { calendarioCompartido } from '@/lib/queries/calendario-cache';
 import type { TramoPasado } from '@/lib/queries/calendario-pasado-modelo';
 import { MAXIMO_DIAS_TRAMO, tramoPasadoDe } from '@/lib/queries/calendario-pasado-tramo';
@@ -20,8 +20,7 @@ export async function pasadoDelTramo(desde: unknown, hasta: unknown): Promise<Tr
   await requireProfile();
   if (typeof desde !== 'string' || typeof hasta !== 'string') return null;
   if (!esFechaIsoReal(desde) || !esFechaIsoReal(hasta) || desde > hasta) return null;
-  const dias = (Date.parse(`${hasta}T12:00:00Z`) - Date.parse(`${desde}T12:00:00Z`)) / 86_400_000;
-  if (dias > MAXIMO_DIAS_TRAMO) return null;
+  if (diasEntre(desde, hasta) > MAXIMO_DIAS_TRAMO) return null;
 
   const hoy = hoyMadrid();
   const tramo = tramoPasadoDe(desde, hasta, hoy);

@@ -1,9 +1,10 @@
+import { clasesPastilla } from '@/components/sistema/pastilla';
 import { COLOR_ORGANISMO } from '@/lib/colores';
 import { cn, type Organismo } from '@/lib/utils';
 
 /**
- * Insignia de quién organiza una prueba: siglas sobre el tinte del organismo y
- * un filete de su color a la izquierda, la misma señal que la barra del
+ * Insignia de quién organiza una prueba: una pastilla con las siglas sobre el
+ * tinte del organismo y un punto de su color, el mismo de la leyenda del
  * calendario. Es propia de la aplicación y vale igual para los cuatro: no se
  * usa el logotipo de nadie (y de la EFC tampoco la bandera de la UE, que no es
  * suya).
@@ -31,13 +32,14 @@ export function InsigniaOrganismo({
       data-organismo={organismo}
       title={NOMBRE[organismo]}
       className={cn(
-        'inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md border-l-[3px] pr-2 pl-1.5 text-[12px] leading-none font-bold tracking-[0.08em]',
-        color.borde,
+        clasesPastilla('neutro', 'md'),
+        'gap-2 text-xs font-semibold tracking-wide',
         color.tintePastilla,
         color.texto,
         className,
       )}
     >
+      <span aria-hidden className={cn('size-2 shrink-0 rounded-full', color.punto)} />
       <span className="sr-only">Organiza: </span>
       {SIGLAS[organismo]}
       <span className="sr-only"> ({NOMBRE[organismo]})</span>

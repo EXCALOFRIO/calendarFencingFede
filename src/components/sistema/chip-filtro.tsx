@@ -25,8 +25,10 @@ export type PropsChipFiltro = Omit<React.ComponentProps<'button'>, 'children'> &
 
 export function clasesChip(marcado: boolean): string {
   return cn(
-    'inline-flex h-[32px] shrink-0 items-center gap-[6px] rounded-full px-[12px] text-[13px] font-medium whitespace-nowrap select-none',
+    'inline-flex h-[32px] max-w-full shrink-0 items-center gap-1 rounded-full px-3 text-sm font-medium whitespace-nowrap select-none',
     '[&_svg]:pointer-events-none [&_svg]:size-[14px] [&_svg]:shrink-0 disabled:pointer-events-none disabled:text-off',
+    // Un rótulo largo se recorta con «…» en vez de desbordar la fila en un móvil estrecho.
+    '[&>span]:min-w-0 [&>span]:truncate',
     SIN_MINIMO,
     AREA_TACTIL,
     FOCO,
@@ -71,7 +73,7 @@ export function ChipFiltro({
       {Icono ? <Icono aria-hidden /> : null}
       <span>{children}</span>
       {contador !== undefined && contador > 0 ? (
-        <span className="cifra -my-px text-[14px] tabular-nums">{contador}</span>
+        <span className="cifra -my-px text-sm tabular-nums">{contador}</span>
       ) : null}
       {detalle ? <span className="sr-only"> {detalle}</span> : null}
       {tipo === 'menu' ? <ChevronDown aria-hidden /> : null}
@@ -81,17 +83,18 @@ export function ChipFiltro({
 }
 
 /**
- * Fila de chips. Por defecto se desplaza en horizontal sin barra, a sangre
- * hasta el borde de la pantalla (los `-mx`/`px` deshacen el margen del
- * contenedor); con `envolver` salta de línea.
+ * Fila de chips. Salta de línea cuando no caben: nada en la aplicación se
+ * desplaza en horizontal, porque en un móvil de 360 px los chips escondidos
+ * a la derecha no se descubren. El hueco vertical (12 px) más el chip (32 px)
+ * suman los 44 px del área táctil, así que las áreas de dos filas no se pisan.
  */
 export function FilaChips({
   etiqueta,
-  envolver = false,
   className,
   children,
 }: {
   etiqueta: string;
+  /** @deprecated La fila siempre salta de línea; se acepta para no romper a quien lo pasa. */
   envolver?: boolean;
   className?: string;
   children: React.ReactNode;
@@ -101,13 +104,7 @@ export function FilaChips({
       role="group"
       aria-label={etiqueta}
       data-slot="sistema-fila-chips"
-      className={cn(
-        'flex gap-[8px]',
-        envolver
-          ? 'flex-wrap'
-          : 'no-scrollbar -mx-[16px] -my-[6px] snap-x overflow-x-auto overscroll-x-contain px-[16px] py-[6px] scroll-px-[16px] [&>*]:snap-start',
-        className,
-      )}
+      className={cn('flex min-w-0 flex-wrap gap-x-2 gap-y-3', className)}
     >
       {children}
     </div>

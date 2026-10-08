@@ -10,7 +10,6 @@ import type { PouleDePrueba } from '@/lib/sport/explorar/tipos-busqueda';
 import { UUID_A, UUID_B, UUID_C } from './helpers/explorar';
 
 const { PoulesDePrueba } = await import('@/components/explorar/asaltos-prueba');
-const { MatrizPoule } = await import('@/components/explorar/prueba/hoja-poule');
 const { AsaltosCaraACara, CabeceraCaraACara, CaraACaraCompleto, ElegirRival, asaltosDirectos } = await import(
   '@/components/explorar/cara-a-cara'
 );
@@ -37,43 +36,53 @@ const poule: PouleDePrueba = {
   ],
 };
 
-describe('poule en móvil: hoja de poule a pantalla completa', () => {
+describe('poule en móvil: se gira en su sitio', () => {
   it('el puesto sigue cociente de victorias, índice y tocados dados, y comparte los empates', () => {
     expect(puestosPoule(poule.filas)).toEqual([2, 1, 3]);
     const empate = { victorias: 2, asaltos: 3, tocados: 10, recibidos: 8 };
     expect(puestosPoule([empate, { ...empate }, { victorias: 3, asaltos: 3, tocados: 15, recibidos: 2 }])).toEqual([2, 2, 1]);
   });
 
-  it('la matriz pinta V5 / D3, los totales con el puesto y resalta fila y columna de la persona', () => {
+  it('girada, la matriz pinta V5 / D3 con V al final y resalta fila y columna de la persona', () => {
     const marcado = html(
-      React.createElement(MatrizPoule, { poule, enlace: (id: string) => `/explorar/${id}`, filtro: { consulta: '', persona: UUID_B } }),
+      React.createElement(PoulesDePrueba, {
+        poules: [poule],
+        enlace: (id: string) => `/explorar/${id}`,
+        filtro: { consulta: '', persona: UUID_B },
+        caraInicial: 'asaltos',
+      }),
     );
-    expect(marcado).toContain('>V5<');
-    expect(marcado).toContain('>D3<');
-    expect(marcado).toContain('>D1<');
-    expect(marcado).toContain('>Pto<');
-    expect(marcado).toContain('>1º<');
-    expect(marcado).toContain('>+1<');
-    // Fila resaltada (una sola) y la cabecera de su columna.
+    expect(marcado).toMatch(/victoria <\/span><span aria-hidden="true">V<\/span>5/);
+    expect(marcado).toMatch(/derrota <\/span><span aria-hidden="true">D<\/span>3/);
+    expect(marcado).toMatch(/derrota <\/span><span aria-hidden="true">D<\/span>1/);
+    // Una sola tarjeta resaltada; su fila y la cabecera de su columna, marcadas.
     expect(marcado.match(/data-resaltado="true"/g)).toHaveLength(1);
-    expect(marcado).toMatch(/<th scope="col" class="[^"]*bg-marcado[^"]*"><span class="sr-only">Contra el <\/span>2<\/th>/);
-    // Nombres fijos y desplazamiento sólo dentro de la matriz.
-    expect(marcado).toContain('sticky left-0');
-    expect(marcado).toMatch(/class="[^"]*overflow-auto[^"]*" data-matriz-poule=""/);
+    expect(marcado.match(/<li class="[^"]*bg-marcado/g)).toHaveLength(1);
+    expect(marcado).toMatch(/<span class="[^"]*font-semibold text-primary-text">2<\/span>/);
+    // Nada se desplaza: ni tabla con columnas fijas ni contenedor con scroll.
+    expect(marcado).not.toContain('sticky');
+    expect(marcado).not.toContain('overflow-auto');
+    expect(marcado).not.toContain('overflow-x');
     expect(marcado).toContain(`href="/explorar/${UUID_A}"`);
     expect(marcado).toContain('>Ruiz B.<');
   });
 
-  it('cerrada, cada poule conserva la lista y ofrece un botón para abrir la hoja', () => {
+  it('cada poule se gira tocando su cabecera: un botón real, sin hoja ni historial', () => {
     const marcado = html(React.createElement(PoulesDePrueba, { poules: [poule], filtro: { consulta: '' } }));
-    // La etiqueta empieza por lo que se ve, «Hoja» (WCAG 2.5.3), y no queda rastro de «matriz».
-    expect(marcado).toContain('aria-label="Hoja de Poule 1"');
-    expect(marcado).toMatch(/<\/svg>Hoja<\/button>/);
-    expect(marcado).not.toMatch(/>[^<]*[Mm]atriz/);
-    expect(marcado).toContain('aria-haspopup="dialog"');
-    expect(marcado).toContain('aria-expanded="false"');
-    expect(marcado).not.toContain('data-matriz-poule');
+    expect(marcado).toMatch(/<h3 id="poule-P1-titulo"[^>]*><button type="button" aria-expanded="false" aria-controls="poule-P1-cuerpo"/);
+    expect(marcado).toContain('Ver asaltos');
+    expect(marcado).not.toContain('Hoja');
+    expect(marcado).not.toContain('aria-haspopup');
+    expect(marcado).toContain('data-cara="resumen"');
+    expect(marcado).toContain('id="poule-P1-cuerpo"');
     expect(marcado).toMatch(/<ol class="divide-y" aria-label="Poule 1">/);
+    // Resumen: puesto, V, TD, TR e índice; las casillas no están montadas.
+    expect(marcado).toContain('<span class="sr-only">Puesto </span>2');
+    expect(marcado).toContain('>+1<');
+    expect(marcado).not.toContain('contra el');
+    const girada = html(React.createElement(PoulesDePrueba, { poules: [poule], caraInicial: 'asaltos' }));
+    expect(girada).toContain('aria-expanded="true"');
+    expect(girada).toContain('Ver resumen');
   });
 });
 
@@ -147,7 +156,7 @@ describe('cara a cara: asaltos directos antes que los cruces', () => {
 
   it('cada fila enlaza la prueba en la persona, con la ronda en palabras y el ganador marcado', () => {
     const marcado = html(React.createElement(AsaltosCaraACara, { datos: datos(), encuentros }));
-    expect(marcado).toMatch(/<h2 id="h2h-asaltos"[^>]*>Asaltos<span[^>]*>3<\/span><\/h2>/);
+    expect(marcado).toMatch(/<h2 id="h2h-asaltos"[^>]*>Asaltos <span[^>]*>3<\/span><\/h2>/);
     expect(marcado).toContain(`href="/explorar/ediciones/ed2?prueba=c2&amp;persona=${UUID_A}"`);
     expect(marcado).toContain(`href="/explorar/ediciones/ed1?prueba=c1&amp;persona=${UUID_A}"`);
     expect(marcado).toContain('>Tablón de 32<');
@@ -159,6 +168,10 @@ describe('cara a cara: asaltos directos antes que los cruces', () => {
     expect(marcado.match(/bg-ok/g)).toHaveLength(2);
     expect(marcado.match(/bg-danger/g)).toHaveLength(1);
     expect(marcado).toContain('M23');
+    // Fecha en `BloqueFecha` (día y mes) y el año como cabecera de grupo, nunca «05/10/26».
+    expect(marcado).toContain('data-slot="sistema-bloque-fecha"');
+    expect(marcado).toMatch(/<h3[^>]*>20\d\d<\/h3>/);
+    expect(marcado).not.toMatch(/\b\d{2}\/\d{2}\/\d{2}\b/);
   });
 
   it('va antes que los cruces y desaparece sin asaltos', () => {

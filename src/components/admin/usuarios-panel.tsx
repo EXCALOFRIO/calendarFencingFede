@@ -38,9 +38,10 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { fechaCorta } from '@/lib/fechas';
 import type { Weapon } from '@/lib/auth/session';
 import { ageOn, requiresGuardianAccount } from '@/lib/categories';
-import { WEAPON_LABEL, cn, formatDateEs } from '@/lib/utils';
+import { WEAPON_LABEL, cn } from '@/lib/utils';
 
 /**
  * Altas de usuarios.
@@ -105,7 +106,7 @@ export function UsuariosPanel({
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <Tabs defaultValue="individual">
-        <TabsList className="no-scrollbar max-w-full overflow-x-auto">
+        <TabsList className="max-w-full flex-wrap group-data-[orientation=horizontal]/tabs:h-auto">
           <TabsTrigger value="individual">Alta individual</TabsTrigger>
           <TabsTrigger value="csv">Importar un CSV</TabsTrigger>
         </TabsList>
@@ -143,11 +144,11 @@ export function UsuariosPanel({
             {altas.map((a) => (
               <li
                 key={a.id}
-                className="flex min-w-0 flex-col gap-1.5 px-3 py-3 sm:flex-row sm:items-start sm:gap-4"
+                className="flex min-w-0 flex-col gap-2 px-3 py-3 sm:flex-row sm:items-start sm:gap-4"
               >
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="text-[0.95rem] font-medium">{a.fullName}</span>
+                    <span className="text-sm font-medium">{a.fullName}</span>
                     <Badge
                       variant={ROL_RETIRADO.has(a.role) ? 'outline' : 'secondary'}
                       className={cn(
@@ -173,11 +174,11 @@ export function UsuariosPanel({
                     {a.email}
                   </span>
 
-                  <span className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+                  <span className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                     <span>
                       Alta el{' '}
                       <span className="tabular-nums text-foreground">
-                        {formatDateEs(a.createdAt)}
+                        {fechaCorta(a.createdAt)}
                       </span>
                     </span>
                     {a.clubNombre ? <span>Club {a.clubNombre}</span> : null}
@@ -298,7 +299,7 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-col gap-1.5 rounded-lg border bg-card p-4">
+      <div className="flex flex-col gap-2 rounded-lg border bg-card p-4">
         <Label htmlFor="alta-rol-arriba">Papel</Label>
         <Select
           value={rol}
@@ -330,7 +331,7 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
       {desdeRanking ? null : (
     <div className="flex min-w-0 flex-col gap-4 rounded-lg border bg-card p-4">
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           <Label htmlFor="alta-nombre">Nombre</Label>
           <Input
             id="alta-nombre"
@@ -340,7 +341,7 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
           />
         </div>
 
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           <Label htmlFor="alta-apellidos">Apellidos</Label>
           <Input
             id="alta-apellidos"
@@ -350,7 +351,7 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
           />
         </div>
 
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           <Label htmlFor="alta-correo">Correo</Label>
           <Input
             id="alta-correo"
@@ -368,7 +369,7 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
           ) : null}
         </div>
 
-        <div className="flex flex-col gap-1.5 sm:col-span-2">
+        <div className="flex flex-col gap-2 sm:col-span-2">
           <Label htmlFor="alta-club">Club</Label>
           <div className="flex gap-2">
             <Select value={clubId} onValueChange={setClubId}>
@@ -406,7 +407,7 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
               ayuda="Obligatoria: la categoría se deriva de ella, nunca se escribe a mano."
             />
 
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-2">
               <Label htmlFor="alta-genero">Género</Label>
               <Select value={gender} onValueChange={setGender}>
                 <SelectTrigger id="alta-genero" className="w-full">
@@ -422,7 +423,7 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
               </p>
             </div>
 
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-2">
               <Label htmlFor="alta-licencia">Licencia RFEE</Label>
               <Input
                 id="alta-licencia"
@@ -446,12 +447,12 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
         */}
         {esTirador || esSeleccionador ? (
           <fieldset className="flex flex-col gap-2 sm:col-span-2">
-            <legend className="mb-1.5 text-sm font-medium">
+            <legend className="mb-2 text-sm font-medium">
               {esSeleccionador ? 'Armas que lleva' : 'Armas'}
             </legend>
             <div className="flex flex-wrap gap-4">
               {ARMAS.map((arma) => (
-                <div key={arma} className="flex items-center gap-2.5">
+                <div key={arma} className="flex items-center gap-3">
                   <Checkbox
                     id={`alta-arma-${arma}`}
                     checked={armas.includes(arma)}
@@ -488,7 +489,7 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
             propio. No es configurable: lo impone el RGPD.
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-2">
               <Label htmlFor="alta-tutor-correo">Correo del tutor</Label>
               <Input
                 id="alta-tutor-correo"
@@ -499,7 +500,7 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
                 placeholder="madre@ejemplo.es"
               />
             </div>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-2">
               <Label htmlFor="alta-tutor-nombre">Nombre del tutor</Label>
               <Input
                 id="alta-tutor-nombre"
@@ -595,7 +596,7 @@ function DialogClub({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => v
         </DialogHeader>
 
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-2">
             <Label htmlFor="club-nombre">Nombre</Label>
             <Input
               id="club-nombre"
@@ -604,7 +605,7 @@ function DialogClub({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => v
               placeholder="Sala de Armas de Valencia"
             />
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-2">
             <Label htmlFor="club-federacion">Federación autonómica</Label>
             <Input
               id="club-federacion"
@@ -613,7 +614,7 @@ function DialogClub({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => v
               placeholder="Comunidad Valenciana"
             />
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-2">
             <Label htmlFor="club-correo">Correo de contacto</Label>
             <Input
               id="club-correo"
@@ -739,7 +740,7 @@ function ImportadorCsv() {
           </Button>
           <Label
             htmlFor="csv-fichero"
-            className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border bg-background px-3 text-sm font-medium shadow-xs hover:bg-accent"
+            className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-md border bg-background px-3 text-sm font-medium shadow-xs hover:bg-accent"
           >
             <FileUp className="size-4" /> Elegir un fichero
           </Label>
@@ -836,7 +837,7 @@ function ImportadorCsv() {
               <li
                 key={f.linea}
                 className={cn(
-                  'flex flex-wrap items-start gap-x-3 gap-y-1 px-3 py-2.5',
+                  'flex flex-wrap items-start gap-x-3 gap-y-1 px-3 py-3',
                   f.errores.length > 0 && 'bg-destructive/5',
                 )}
               >
@@ -844,7 +845,7 @@ function ImportadorCsv() {
                   {f.linea}
                 </span>
 
-                <div className="flex min-w-44 flex-1 flex-col gap-0.5">
+                <div className="flex min-w-44 flex-1 flex-col gap-1">
                   <span className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">
                       {`${f.firstName} ${f.lastName}`.trim() || 'Fila sin nombre'}
@@ -872,7 +873,7 @@ function ImportadorCsv() {
                         ? f.guardianEmail || 'sin correo de tutor'
                         : f.email || 'sin correo'}
                     </span>
-                    {f.birthDate ? <span>{formatDateEs(f.birthDate)}</span> : null}
+                    {f.birthDate ? <span>{fechaCorta(f.birthDate)}</span> : null}
                     {f.clubName ? (
                       <span className="min-w-0 truncate">{f.clubName}</span>
                     ) : null}

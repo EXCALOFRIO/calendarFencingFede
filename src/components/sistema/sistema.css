@@ -15,6 +15,40 @@
   --sis-curva: cubic-bezier(0.2, 0, 0, 1);
   --sis-curva-salida: cubic-bezier(0.4, 0, 1, 1);
   --sis-recorrido: 28px;
+  /* Pulsar: respuesta inmediata, más corta que cualquier transición. */
+  --sis-pulsar: 120ms;
+  /* Indicador de un control segmentado o de pestañas que se desliza al elegido. */
+  --sis-indicador: 180ms;
+  /* Hojas y diálogos (curva de iOS al abrir) y paneles pequeños (menú, `popover`, `select`). */
+  --sis-hoja-entrada: 240ms;
+  --sis-hoja-salida: 180ms;
+  --sis-curva-hoja: cubic-bezier(0.32, 0.72, 0, 1);
+  --sis-panel-entrada: 160ms;
+  --sis-panel-salida: 120ms;
+}
+
+/*
+ * `.pulsable`: el control se hunde un 2 % mientras se pulsa. Solo `scale`,
+ * que va en el compositor y no mueve nada alrededor. En capa de utilidades
+ * para que un `active:scale-*` del propio elemento lo pueda cambiar.
+ *
+ * `.sis-indicador`: para la pieza que marca el segmento elegido; se mueve con
+ * `translate`/`scale`, nunca con `left` o `width`.
+ */
+@layer utilities {
+  .pulsable {
+    transition: scale var(--sis-pulsar) var(--sis-curva);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .pulsable:active {
+    scale: 0.98;
+  }
+  .sis-indicador {
+    transition:
+      translate var(--sis-indicador) var(--sis-curva),
+      scale var(--sis-indicador) var(--sis-curva),
+      opacity var(--sis-indicador) var(--sis-curva);
+  }
 }
 
 /* Mientras dura la transición, los toques pasan a la página viva. */
@@ -84,16 +118,16 @@
   animation: none;
 }
 
-/* Mismo sitio, otro contenido. */
+/* Mismo sitio, otro contenido (arma, temporada, ámbito): como una pestaña, ≤ 150 ms. */
 ::view-transition-group(.sis-fundido) {
-  animation-duration: 160ms;
+  animation-duration: 150ms;
   animation-timing-function: var(--sis-curva);
 }
 ::view-transition-old(.sis-fundido) {
-  animation: 100ms var(--sis-curva-salida) both sis-desvanecer;
+  animation: 90ms var(--sis-curva-salida) both sis-desvanecer;
 }
 ::view-transition-new(.sis-fundido) {
-  animation: 160ms var(--sis-curva) both sis-aparecer;
+  animation: 150ms var(--sis-curva) both sis-aparecer;
 }
 
 /*
@@ -131,28 +165,52 @@
 .sis-aparecer-lista > :nth-child(8) { animation-delay: 140ms; }
 
 /*
- * Hojas y diálogos de `ui/` (Radix + tw-animate): la hoja lateral traía
- * 500 ms al abrir y 300 al cerrar. Se igualan a `HojaInferior`: 240 / 180 ms
- * con la curva de iOS. `--tw-animation-duration` manda sobre `duration-*`
- * en `animate-in`/`animate-out`, y esto va fuera de capa, así que gana a
- * las utilidades sin tocar los componentes.
+ * Entradas y salidas de lo que flota (Radix + tw-animate), todas iguales:
+ * desplazamiento corto + opacidad, nunca alto ni ancho.
+ *
+ * - hojas, diálogos y la `HojaInferior`: 240 ms al abrir con la curva de
+ *   iOS, 180 ms al cerrar;
+ * - menú, `popover` y `select`: 160 / 120 ms. Un menú que tarda lo que una
+ *   hoja se nota lento, porque se abre y se cierra muchas veces seguidas;
+ * - velos: el fundido acompaña al panel.
+ *
+ * `--tw-animation-duration` manda sobre `duration-*` en `animate-in` y
+ * `animate-out`, y esto va fuera de capa: gana a las utilidades sin tocar
+ * los componentes.
  */
-[data-slot='sheet-content'][data-state='open'] {
-  --tw-animation-duration: 240ms;
-  --tw-ease: cubic-bezier(0.32, 0.72, 0, 1);
+:is([data-slot='sheet-content'], [data-slot='dialog-content'], [data-slot='sistema-hoja'])[data-state='open'] {
+  --tw-animation-duration: var(--sis-hoja-entrada);
+  --tw-ease: var(--sis-curva-hoja);
 }
-[data-slot='sheet-content'][data-state='closed'] {
-  --tw-animation-duration: 180ms;
+:is([data-slot='sheet-content'], [data-slot='dialog-content'], [data-slot='sistema-hoja'])[data-state='closed'] {
+  --tw-animation-duration: var(--sis-hoja-salida);
   --tw-ease: var(--sis-curva-salida);
 }
-[data-slot='dialog-content'][data-state='open'] {
-  --tw-animation-duration: 200ms;
+:is([data-slot='sheet-overlay'], [data-slot='dialog-overlay'], [data-slot='sistema-hoja-velo'])[data-state='open'] {
+  --tw-animation-duration: var(--sis-hoja-entrada);
   --tw-ease: var(--sis-curva);
 }
-[data-slot='dialog-content'][data-state='closed'],
-[data-slot='sheet-overlay'][data-state='closed'],
-[data-slot='dialog-overlay'][data-state='closed'] {
-  --tw-animation-duration: 150ms;
+:is([data-slot='sheet-overlay'], [data-slot='dialog-overlay'], [data-slot='sistema-hoja-velo'])[data-state='closed'] {
+  --tw-animation-duration: var(--sis-hoja-salida);
+  --tw-ease: var(--sis-curva-salida);
+}
+:is(
+    [data-slot='popover-content'],
+    [data-slot='dropdown-menu-content'],
+    [data-slot='dropdown-menu-sub-content'],
+    [data-slot='select-content']
+  )[data-state='open'] {
+  --tw-animation-duration: var(--sis-panel-entrada);
+  --tw-ease: var(--sis-curva);
+}
+:is(
+    [data-slot='popover-content'],
+    [data-slot='dropdown-menu-content'],
+    [data-slot='dropdown-menu-sub-content'],
+    [data-slot='select-content']
+  )[data-state='closed'] {
+  --tw-animation-duration: var(--sis-panel-salida);
+  --tw-ease: var(--sis-curva-salida);
 }
 
 @keyframes sis-desvanecer {
@@ -209,5 +267,8 @@
   .sis-aparecer-lista > *,
   [data-slot='card'] {
     animation: none !important;
+  }
+  .pulsable:active {
+    scale: none;
   }
 }

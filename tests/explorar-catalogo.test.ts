@@ -243,13 +243,13 @@ describe('catálogo: URL y pantalla de servidor', () => {
     const vacio = renderToStaticMarkup(React.createElement(CatalogoEdiciones, {
       criterios: C(), vista: { estado: 'ok', total: 0, pruebas: 0, ediciones: [], siguiente: null },
     }));
-    expect(vacio).toContain('Sin ediciones con estos filtros');
+    expect(vacio).toContain('Sin competiciones con estos filtros');
     for (const estado of ['error', 'no_disponible', 'entrada_invalida', 'cursor_invalido'] as const) {
       const html = renderToStaticMarkup(React.createElement(CatalogoEdiciones, {
         criterios: C({ q: '<script>peligro</script>' }), vista: { estado },
       }));
       expect(html).toContain('role="alert"');
-      expect(html).not.toContain('Sin ediciones con estos filtros');
+      expect(html).not.toContain('Sin competiciones con estos filtros');
       expect(html).not.toContain('<script>');
       expect(html).toContain('&lt;script&gt;');
     }

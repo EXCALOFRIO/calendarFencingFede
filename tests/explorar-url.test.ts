@@ -86,7 +86,7 @@ describe('criterios de Explorar en la URL', () => {
     expect(chips.map((c) => c.clave)).toEqual(['nacionalidad', 'arma', 'desde']);
     const arma = chips.find((c) => c.clave === 'arma');
     expect(arma).toMatchObject({ etiqueta: 'Arma', valor: 'Florete' });
-    expect(arma?.quitar).toBe('/explorar?nacionalidad=ESP&desde=2026-01-10');
+    expect(arma?.quitar).toBe('/explorar/buscar?nacionalidad=ESP&desde=2026-01-10');
   });
 
   it('la ficha de un deportista se abre por su identificador, no por el nombre', () => {

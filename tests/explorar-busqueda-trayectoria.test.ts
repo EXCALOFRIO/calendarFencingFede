@@ -146,7 +146,7 @@ describe('poules y cuadro de una prueba', () => {
     ]);
     expect(p1.filas[0].pais).toBe('ITA');
     expect(p1.filas[0].celdas).toEqual([null, { tantos: 5, victoria: true }, { tantos: 5, victoria: true }]);
-    expect(r.cuadro.map((x) => x.etiqueta)).toEqual(['Semifinales', 'Final']);
+    expect(r.cuadro.map((x) => x.etiqueta)).toEqual(['Semifinal', 'Final']);
     // La semifinal de la finalista A (Ana) va primero, como se dibuja el cuadro.
     expect(r.cuadro[0].asaltos.map((x) => [x.a.nombre, x.b.nombre])).toEqual([['ANA', 'DORA'], ['BEA', 'CARLA']]);
     expect(JSON.stringify(r)).not.toMatch(/"ref|skermo/);

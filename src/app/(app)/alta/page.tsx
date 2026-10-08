@@ -88,7 +88,7 @@ export default async function Pagina({
   if (pendiente) {
     return (
       <section className="flex min-w-0 flex-col gap-4">
-        <h1 className="text-2xl sm:text-3xl">Solicitud pendiente de revisión</h1>
+        <h1 className="text-2xl">Solicitud pendiente de revisión</h1>
         <p role="status" className="medida text-sm text-muted-foreground">
           La dirección técnica debe verificar tu identidad antes de vincular la ficha.
           Todavía no tienes permisos para gestionar sus convocatorias o inscripciones.

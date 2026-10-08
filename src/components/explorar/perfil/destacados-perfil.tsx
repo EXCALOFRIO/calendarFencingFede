@@ -121,7 +121,7 @@ export function DestacadosPerfil({ perfil, porTipo }: { perfil: PerfilDeportivo;
             <li
               key={d.clave}
               className={cn(
-                'flex min-w-0 items-center gap-2.5 rounded-xl border bg-card px-3 py-2.5',
+                'flex min-w-0 items-center gap-3 rounded-xl border bg-card px-3 py-3',
                 d.resaltado && CONTORNO_MEDALLA.oro,
               )}
             >
@@ -129,7 +129,7 @@ export function DestacadosPerfil({ perfil, porTipo }: { perfil: PerfilDeportivo;
               <span className="flex min-w-0 flex-col">
                 <span className="cifra truncate text-2xl leading-none">{d.cifra}</span>
                 <span className="truncate text-xs leading-tight font-medium text-foreground">{d.rotulo}</span>
-                {d.detalle ? <span className="truncate text-[12px] leading-tight text-muted-foreground">{d.detalle}</span> : null}
+                {d.detalle ? <span className="truncate text-xs leading-tight text-muted-foreground">{d.detalle}</span> : null}
               </span>
             </li>
           );

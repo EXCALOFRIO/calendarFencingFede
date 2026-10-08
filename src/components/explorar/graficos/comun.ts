@@ -13,6 +13,13 @@ import { nombreVisible, partesNombre } from '@/lib/sport/nombre-visible';
  * letra crezca ni los círculos se deformen.
  */
 
+/**
+ * Para bloques largos por debajo del pliegue: el navegador no los maqueta ni
+ * pinta hasta que se acercan a la pantalla. El alto de reserva evita que la
+ * barra de desplazamiento salte; `auto` recuerda el real una vez pintado.
+ */
+export const FUERA_DE_PANTALLA = '[content-visibility:auto] [contain-intrinsic-size:auto_480px]';
+
 export const COLOR_TONO: Record<TonoTipo, string> = {
   gold: 'var(--gold)',
   primary: 'var(--primary-text)',

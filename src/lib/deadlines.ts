@@ -342,6 +342,25 @@ export function deadlineStatus(
   };
 }
 
+export type ResumenPlazo = { texto: string; tono: 'ok' | 'aviso' | 'peligro' | 'neutro' };
+
+/**
+ * El estado del plazo en dos o tres palabras, para la pastilla de la cabecera
+ * de «Inscripción»: «Cierra en 2 días», «Cierra hoy», «Cerrada». Lo que cierra
+ * es el tramo vigente, sea el último o uno con recargo detrás. `null` cuando
+ * no hay plazo publicado: no se rellena con avisos.
+ */
+export function resumenPlazo(estado: DeadlineStatus): ResumenPlazo | null {
+  if (estado.closed || estado.state === 'cerrado') return { texto: 'Cerrada', tono: 'neutro' };
+  if (estado.state === 'sin_datos') return null;
+  const tono = estado.state === 'rojo' ? 'peligro' : estado.state === 'ambar' ? 'aviso' : 'ok';
+  const dias = estado.daysLeft;
+  if (dias === null) return { texto: 'Plazo vencido', tono };
+  if (dias <= 0) return { texto: 'Cierra hoy', tono };
+  if (dias === 1) return { texto: 'Cierra mañana', tono };
+  return { texto: `Cierra en ${dias} días`, tono };
+}
+
 /**
  * Los eventos con cierre inminente son los que hay que refrescar con más
  * cuidado: los últimos 7 días antes de un cierre son los críticos. El cron

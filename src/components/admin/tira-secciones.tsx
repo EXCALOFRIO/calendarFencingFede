@@ -1,87 +1,70 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import * as React from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { PANTALLAS_ADMIN, TITULO_CORTO } from '@/components/admin/admin-screens';
 import { ACTIVO, INACTIVO } from '@/components/nav';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 /**
- * Tira de secciones del panel.
+ * Secciones del panel.
  *
  * En el móvil la barra inferior no llega hasta aquí (solo caben cinco
- * secciones y «Gestión» es la séptima), así que esta tira es la única forma
- * de moverse entre las secciones del panel desde un teléfono. Por eso va en
- * el layout y no en la portada.
+ * secciones y «Gestión» es la séptima), así que esto es la única forma de
+ * moverse entre las secciones del panel desde un teléfono. Por eso va en el
+ * layout y no en la portada.
  *
- * Se desplaza en horizontal en vez de apilarse en tres pisos: un menú de
- * ocho elementos envuelto ocupa media pantalla de un iPhone antes de que se
- * vea ni un dato.
+ * Son nueve: envueltas ocuparían tres pisos de un iPhone antes del primer
+ * dato, y una tira que se desplaza de lado escondía la sección activa. En el
+ * móvil van en un desplegable de una línea; desde 640 px, en filas que saltan.
  */
 export function TiraSecciones() {
   const pathname = usePathname();
+  const router = useRouter();
 
   const delMenu = ['/admin', ...PANTALLAS_ADMIN.map((p) => p.href)];
 
-  /**
-   * Las secciones del menú, más la de ahora si no está en el menú.
-   *
-   * `/admin/inscripciones` se sacó del índice pero sigue viva por URL. Sin
-   * este añadido, al entrar en ella la tira no marcaba nada como activo y no
-   * había forma de saber en qué sección estabas: pintaba ocho pestañas y
-   * ninguna encendida.
-   */
-  const enlaces = delMenu.includes(pathname)
-    ? delMenu.map((href) => ({ href }))
-    : [...delMenu, pathname].map((href) => ({ href }));
-
-  /**
-   * La pestaña de ahora se trae a la vista.
-   *
-   * Son nueve y la tira se desplaza en horizontal: en un iPhone caben tres y
-   * media, así que al entrar en «Ajustes» —o en «Inscripciones», que va al
-   * final por no estar en el menú— la pestaña encendida quedaba fuera de
-   * pantalla y la tira mentía: parecía que estabas en la portada. Se comprobó
-   * en captura.
-   *
-   * `block: 'nearest'` es lo que evita que el navegador desplace también la
-   * página en vertical para centrar la tira.
-   */
-  const activa = React.useRef<HTMLAnchorElement | null>(null);
-  React.useEffect(() => {
-    activa.current?.scrollIntoView({ block: 'nearest', inline: 'center' });
-  }, [pathname]);
+  /*
+    `/admin/inscripciones` se sacó del índice pero sigue viva por URL: si la
+    sección de ahora no está en el menú se añade, o nada saldría como activo.
+  */
+  const enlaces = delMenu.includes(pathname) ? delMenu : [...delMenu, pathname];
+  const esActivo = (href: string) => (href === '/admin' ? pathname === '/admin' : pathname.startsWith(href));
+  const actual = enlaces.filter(esActivo).sort((a, b) => b.length - a.length)[0] ?? '/admin';
 
   return (
-    <nav
-      aria-label="Secciones de gestión"
-      className="no-scrollbar -mx-4 flex gap-1 overflow-x-auto px-4 pb-1"
-    >
-      {enlaces.map(({ href }) => {
-        const activo = href === '/admin' ? pathname === '/admin' : pathname.startsWith(href);
-        return (
-          <Link
-            key={href}
-            href={href}
-            ref={activo ? activa : undefined}
-            aria-current={activo ? 'page' : undefined}
-            /*
-              El par activo/inactivo se importa de la barra de navegación en
-              vez de repetirse aquí. Estaba copiado letra por letra, y una
-              convención escrita dos veces son dos convenciones en cuanto
-              alguien toca una: la barra de arriba y esta tira se ven seguidas
-              en la misma pantalla de gestión.
-            */
-            className={cn(
-              'shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-              activo ? ACTIVO : INACTIVO,
-            )}
-          >
-            {TITULO_CORTO[href] ?? href}
-          </Link>
-        );
-      })}
+    <nav aria-label="Secciones de gestión">
+      <div className="sm:hidden">
+        <Select value={actual} onValueChange={(href) => router.push(href)}>
+          <SelectTrigger aria-label="Sección de gestión" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent position="popper">
+            {enlaces.map((href) => (
+              <SelectItem key={href} value={href}>
+                {TITULO_CORTO[href] ?? href}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <ul className="hidden flex-wrap gap-1 sm:flex">
+        {enlaces.map((href) => {
+          const activo = esActivo(href);
+          return (
+            <li key={href}>
+              <Link
+                href={href}
+                aria-current={activo ? 'page' : undefined}
+                className={cn('block rounded-md px-3 py-2 text-sm font-medium transition-colors', activo ? ACTIVO : INACTIVO)}
+              >
+                {TITULO_CORTO[href] ?? href}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
     </nav>
   );
 }

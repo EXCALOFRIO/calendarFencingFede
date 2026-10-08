@@ -1,4 +1,5 @@
 import { puntos as formatoPuntos } from '@/components/ranking/formato';
+import { textoVerMas } from '@/components/sistema/cabecera-seccion';
 import { categoriaRanking } from '@/lib/ranking/categoria-nacional';
 import { temporadaCorta } from '@/lib/ranking/url-nacional';
 import { CLASES_MEDALLA, CONTORNO_MEDALLA, medallaDe } from '@/lib/sport/explorar/presentacion';
@@ -57,11 +58,11 @@ function TarjetaPuesto({ p, conArma }: { p: PuestoInternacional; conArma: boolea
   return (
     <li className={cn('flex min-w-0 flex-col gap-1 rounded-xl border bg-card px-3 py-2', medalla && CONTORNO_MEDALLA[medalla])}>
       <span className="truncate text-xs font-medium">{nombreSerie(p, conArma)}</span>
-      <span className="flex items-center gap-1.5">
+      <span className="flex items-center gap-2">
         {medalla ? <PuntoMedalla medalla={medalla} className="size-2.5" /> : null}
         <span className="cifra text-3xl leading-none">{p.puesto}º</span>
       </span>
-      <span className="flex min-w-0 flex-wrap gap-x-2 text-[12px] leading-tight text-muted-foreground">
+      <span className="flex min-w-0 flex-wrap gap-x-2 text-xs leading-tight text-muted-foreground">
         {p.de ? <span>de {p.de}</span> : null}
         {p.puntos !== null ? <span className="truncate">{formatoPuntos(p.puntos)} pts</span> : null}
       </span>
@@ -74,7 +75,7 @@ function FilaSerie({ s, conArma }: { s: SerieInternacional; conArma: boolean }) 
   if (puestos.length === 0) return null;
   const visibles = puestos.slice(0, TEMPORADAS_POR_SERIE);
   return (
-    <li className="flex min-w-0 flex-col gap-1.5 bg-card px-3 py-2.5 sm:flex-row sm:items-start sm:gap-3">
+    <li className="flex min-w-0 flex-col gap-2 bg-card px-3 py-3 sm:flex-row sm:items-start sm:gap-3">
       <span className="min-w-0 truncate pt-1 text-xs font-medium sm:w-36 sm:shrink-0">
         {nombreSerie(s, conArma)}
         {s.mejor?.puesto ? <span className="font-normal text-muted-foreground"> · mejor {s.mejor.puesto}º</span> : null}
@@ -86,7 +87,7 @@ function FilaSerie({ s, conArma }: { s: SerieInternacional; conArma: boolean }) 
             <li
               key={`${p.fuente}-${p.anioFin}`}
               className={cn(
-                'inline-flex h-6 items-center gap-1 rounded-full border border-filete-alto px-2 text-[12px]',
+                'inline-flex h-6 items-center gap-1 rounded-full border border-filete-alto px-2 text-xs',
                 medalla && CLASES_MEDALLA[medalla],
               )}
             >
@@ -96,7 +97,7 @@ function FilaSerie({ s, conArma }: { s: SerieInternacional; conArma: boolean }) 
           );
         })}
         {puestos.length > visibles.length ? (
-          <li className="inline-flex h-6 items-center px-1 text-[12px] text-muted-foreground">+{puestos.length - visibles.length}</li>
+          <li className="inline-flex h-6 items-center px-1 text-xs text-muted-foreground">+{puestos.length - visibles.length}</li>
         ) : null}
       </ul>
     </li>
@@ -126,7 +127,7 @@ export function RankingAmbitoPerfil({
           {actual.map((p) => <TarjetaPuesto key={`${p.fuente}-${p.arma}-${p.categoriaRaw}`} p={p} conArma={conArma} />)}
         </ul>
       ) : mejor ? (
-        <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-sm" data-mejor-ranking>
+        <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm" data-mejor-ranking>
           <span className="text-muted-foreground">Mejor</span>
           <span className="cifra text-lg leading-none">{mejor.puesto}º</span>
           <span className="text-muted-foreground">{nombreSerie(mejor, true)} · {temporadaDe(mejor)}</span>
@@ -139,8 +140,8 @@ export function RankingAmbitoPerfil({
       ) : null}
       {resto.length > 0 ? (
         <details className="group min-w-0">
-          <summary className="inline-flex min-h-[44px] cursor-pointer items-center text-sm text-primary-text group-open:hidden">
-            Ver más listas
+          <summary className="inline-flex min-h-11 cursor-pointer list-none items-center text-sm font-medium text-primary-text group-open:hidden [&::-webkit-details-marker]:hidden">
+            {textoVerMas(resto.length)}
           </summary>
           <ol className="grid min-w-0 gap-px overflow-hidden rounded-xl border bg-border">
             {resto.map((s) => <FilaSerie key={s.clave} s={s} conArma={conArma} />)}

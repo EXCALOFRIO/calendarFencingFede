@@ -61,7 +61,7 @@ const GIRO = trazo('GIRO');
 const TRAZO = trazo('TRAZO');
 
 /* Los tokens de `globals.css`, resueltos a hexadecimal. */
-const FONDO = '#0e0f13'; // --background
+const FONDO = '#090A0F'; // --background
 const CARD = '#17191e'; // --card
 const ROJO = '#c60c1e'; // --primary
 const BLANCO = '#fcfcfc'; // --primary-foreground

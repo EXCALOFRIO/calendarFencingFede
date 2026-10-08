@@ -1,4 +1,4 @@
-import { CATEGORY_LABEL, GENDER_LABEL, WEAPON_LABEL } from '@/lib/utils';
+import { rotuloPrueba } from '@/lib/sport/rotulos';
 
 /**
  * Formato de las cifras del ranking.
@@ -44,12 +44,7 @@ export function grupoMasParecido<G extends ClaveGrupo>(grupos: readonly G[], des
     ?? null;
 }
 
-/** "Espada femenino M17" */
+/** «Espada femenina M17», «Florete masculino» (ABS no se escribe). */
 export function etiquetaGrupo(g: ClaveGrupo): string {
-  const arma = WEAPON_LABEL[g.weapon as keyof typeof WEAPON_LABEL] ?? g.weapon;
-  const genero = GENDER_LABEL[g.gender as keyof typeof GENDER_LABEL] ?? g.gender;
-  const cat = CATEGORY_LABEL[g.category as keyof typeof CATEGORY_LABEL] ?? g.category;
-  // Sin punto medio: la etiqueta se lee entera como el nombre de un grupo,
-  // no como tres datos encadenados.
-  return `${arma} ${genero.toLowerCase()} ${cat}`;
+  return rotuloPrueba({ arma: g.weapon, genero: g.gender, categoria: g.category });
 }

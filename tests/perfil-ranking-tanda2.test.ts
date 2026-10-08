@@ -159,7 +159,7 @@ describe('carga diferida del perfil', () => {
 });
 
 describe('tarjeta giratoria', () => {
-  it('pinta las dos caras físicas, la oculta inerte, y con una sola cara no hay controles', () => {
+  it('sólo la cara elegida está en el DOM, con un selector segmentado; con una sola cara no hay controles', () => {
     const caras = [
       { clave: 'general', rotulo: 'General', contenido: React.createElement('p', null, 'G') },
       { clave: 'internacional', rotulo: 'Internacional', contenido: React.createElement('p', null, 'I') },
@@ -167,11 +167,15 @@ describe('tarjeta giratoria', () => {
     ];
     const salida = html(React.createElement(TarjetaGiratoria, { caras, etiqueta: 'Cifras' }));
     expect(salida).toContain('data-cara="general"');
-    expect(salida).toContain('data-cara="internacional"');
-    expect(salida).toMatch(/data-cara="internacional"[^>]*aria-hidden="true"/);
-    expect(salida).toContain('aria-pressed="true"');
-    expect(salida).toContain('motion-reduce:opacity-0');
-    expect(salida).toContain('[backface-visibility:hidden]');
+    expect(salida).not.toContain('data-cara="internacional"');
+    expect(salida).not.toContain('>I</p>');
+    expect(salida).toContain('role="radiogroup"');
+    expect(salida).toContain('aria-checked="true"');
+    expect(salida).toContain('sis-aparecer');
+    expect(salida).not.toMatch(/rotateY|preserve-3d/);
+    const nacional = html(React.createElement(TarjetaGiratoria, { caras, etiqueta: 'Cifras', inicial: 2 }));
+    expect(nacional).toContain('data-cara="nacional"');
+    expect(nacional).not.toContain('data-cara="general"');
     const una = html(React.createElement(TarjetaGiratoria, { caras: caras.slice(0, 1), etiqueta: 'Cifras' }));
     expect(una).not.toContain('<button');
   });

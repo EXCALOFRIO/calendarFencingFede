@@ -493,7 +493,7 @@ describe('cargarCaraACaraPantalla: elegir rival', () => {
       }),
     );
     expect(marcado).toContain('role="status"');
-    expect(marcado).toContain('Sin rivales con asaltos.');
+    expect(marcado).toContain('Sin rivales con asaltos');
     expect(marcado).not.toMatch(/nunca|Nadie|Puede faltar/i);
   });
 });
@@ -769,7 +769,7 @@ describe('cara a cara: cifras y cruces', () => {
     expect(marcado).toContain('Lucia Garcia 1º, Marta Ruiz 8º');
     expect(marcado).toContain('Lucia Garcia sin puesto, Marta Ruiz 3º');
     expect(marcado).toContain('bg-amber-100');
-    expect(marcado).toContain('Asaltos disponibles en 1 de 2 pruebas comunes');
+    expect(marcado).toContain('1 con asaltos');
     for (const texto of SUPERFLUO) expect(marcado).not.toContain(texto);
     expect(marcado).not.toContain('GARCIA Lucia');
   });
@@ -836,7 +836,7 @@ describe('cara a cara: cifras y cruces', () => {
       resumenEncuentros: undefined,
     });
     const marcado = html(React.createElement(CaraACaraCompleto, { datos: vacio, criterios: criterios() }));
-    expect(marcado).toContain('Sin pruebas comunes importadas con estos filtros.');
+    expect(marcado).toContain('Sin pruebas comunes');
     expect(marcado).not.toContain('>Tocados<');
     expect(marcado).not.toMatch(PROHIBIDO);
     const cabecera = html(React.createElement(CabeceraCaraACara, { datos: vacio, criterios: criterios() }));
@@ -899,12 +899,12 @@ describe('cabecera y entradas al cara a cara', () => {
     expect(marcado).toContain(`href="/explorar/${UUID_A}/cara-a-cara"`);
   });
 
-  it('toda ficha, propia o ajena, ofrece elegir rival y avisa de que sólo cuenta lo individual', () => {
+  it('toda ficha, propia o ajena, ofrece elegir rival en una hoja que también es enlace a la página de elegir', () => {
     const ficha = { id: UUID_A, nombre: 'Lucia Garcia' } as never;
     const marcado = html(React.createElement(EntradaCaraACara, { ficha, nivel: 'seccion' }));
     expect(marcado).toContain(`href="/explorar/${UUID_A}/cara-a-cara"`);
-    expect(marcado).toContain('Elegir un rival');
-    expect(marcado).toContain('asaltos individuales');
+    expect(marcado).toContain('Elegir rival');
+    expect(marcado).toContain('aria-haspopup="dialog"');
     expect(typeof FichaCompleta).toBe('function');
   });
 });

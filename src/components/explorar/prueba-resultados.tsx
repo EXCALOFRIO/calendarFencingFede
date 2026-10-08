@@ -7,8 +7,8 @@ import {
   type EstadoResultados,
   type PruebaDeEdicion,
 } from '@/lib/sport/explorar/edicion-modelo';
-import { categoriaVisible } from '@/lib/sport/explorar/presentacion';
-import { GENDER_LABEL, WEAPON_LABEL, cn } from '@/lib/utils';
+import { rotuloPrueba } from '@/lib/sport/rotulos';
+import { cn } from '@/lib/utils';
 
 /**
  * Piezas de lectura de una prueba con resultados, compartidas por la página de
@@ -27,18 +27,16 @@ const ICONO_ESTADO: Record<EstadoResultados, { icono: typeof CircleCheck; tono: 
 
 /** «Espada femenina», «Florete masculino»: el género concuerda con el arma. */
 export function armaYGenero(p: Pick<PruebaDeEdicion, 'arma' | 'genero'>): string {
-  const genero = GENDER_LABEL[p.genero].toLowerCase();
-  return `${WEAPON_LABEL[p.arma]} ${p.arma === 'ESPADA' ? genero.replace(/o$/, 'a') : genero}`;
+  return rotuloPrueba(p, { categoria: 'nunca', formato: 'nunca' });
 }
 
 /**
- * Nombre de la prueba: arma, género, categoría y formato. La categoría es el
- * código normalizado («Absoluto», «M20»), nunca el literal de la fuente («S», «SENIOR»).
+ * Nombre de la prueba: arma, género, categoría y formato («Espada femenina
+ * Absoluto · Individual»). La categoría es el código normalizado, nunca el
+ * literal de la fuente («S», «SENIOR»).
  */
 export function nombreDePrueba(p: Pick<PruebaDeEdicion, 'arma' | 'genero' | 'categoria' | 'formato'>): string {
-  return `${armaYGenero(p)} · ${categoriaVisible(p.categoria.codigo)} · ${
-    p.formato === 'EQUIPOS' ? 'equipos' : 'individual'
-  }`;
+  return rotuloPrueba(p, { categoria: 'siempre', formato: 'siempre' });
 }
 
 export function EstadoResultadosPrueba({
@@ -53,8 +51,8 @@ export function EstadoResultadosPrueba({
   const { icono: Icono, tono } = ICONO_ESTADO[estado];
   const texto = TEXTO_ESTADO_RESULTADOS[estado];
   return (
-    <p className={cn('flex min-w-0 flex-col gap-0.5 text-sm', className)}>
-      <span className={cn('inline-flex items-center gap-1.5 font-medium', tono)}>
+    <p className={cn('flex min-w-0 flex-col gap-1 text-sm', className)}>
+      <span className={cn('inline-flex items-center gap-1 font-medium', tono)}>
         <Icono className="size-4 shrink-0" aria-hidden />
         {texto.titulo}
         {importados > 0 ? (

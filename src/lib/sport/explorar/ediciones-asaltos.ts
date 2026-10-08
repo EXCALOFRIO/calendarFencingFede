@@ -75,10 +75,16 @@ export type FilaAsaltoPrueba = {
 
 /* --------------------------------------------------------------- rondas */
 
+/**
+ * El único vocabulario de rondas de la aplicación: «Tablón de 64», «Tablón
+ * de 32», «Octavos», «Cuartos», «Semifinal» (en singular: es la ronda, no
+ * los dos asaltos) y «Final».
+ */
 export function etiquetaTamano(n: number): string {
   if (n === 2) return 'Final';
-  if (n === 4) return 'Semifinales';
-  if (n === 8) return 'Cuartos de final';
+  if (n === 4) return 'Semifinal';
+  if (n === 8) return 'Cuartos';
+  if (n === 16) return 'Octavos';
   return `Tablón de ${n}`;
 }
 
@@ -96,31 +102,24 @@ export function rondaCuadro(clave: string): { tamano: number | null; etiqueta: s
     const n = Number(tabla[1]);
     return { tamano: n, etiqueta: etiquetaTamano(n) };
   }
-  if (k === 'F') return { tamano: 2, etiqueta: 'Final' };
-  if (k === 'SF') return { tamano: 4, etiqueta: 'Semifinales' };
-  if (k === 'QF' || k === 'CF') return { tamano: 8, etiqueta: 'Cuartos de final' };
+  if (k === 'F') return { tamano: 2, etiqueta: etiquetaTamano(2) };
+  if (k === 'SF') return { tamano: 4, etiqueta: etiquetaTamano(4) };
+  if (k === 'QF' || k === 'CF') return { tamano: 8, etiqueta: etiquetaTamano(8) };
   if (k === 'C2') return { tamano: null, etiqueta: 'Tercer puesto' };
   return { tamano: null, etiqueta: `Ronda ${clave}` };
 }
 
-/** Rótulo corto de una ronda del cuadro, para la cabecera de cada columna. */
-export function etiquetaCortaRonda(r: { tamano: number | null; etiqueta: string }): string {
-  if (r.etiqueta.startsWith('Previa')) return r.etiqueta;
-  switch (r.tamano) {
-    case 2:
-      return 'Final';
-    case 4:
-      return 'Semifinal';
-    case 8:
-      return 'Cuartos';
-    case 16:
-      return 'Octavos';
-    default:
-      return r.etiqueta;
-  }
+/**
+ * Rótulo de la ronda de un asalto: «Poule» para cualquier poule y, en el
+ * cuadro, el de `etiquetaTamano` (o «Tercer puesto»). Nunca la clave publicada
+ * salvo que no se reconozca.
+ */
+export function rotuloRonda(fase: string, clave: string): string {
+  if (fase === 'POULE') return 'Poule';
+  return rondaCuadro(clave).etiqueta;
 }
 
-/** Clave de ronda publicada en palabras, para listas de asaltos sueltos. */
+/** Como `rotuloRonda`, pero con el número de la poule («Poule 4», «Vuelta 2, poule 3»). */
 export function etiquetaRonda(fase: string, clave: string): string {
   if (fase === 'POULE') return poule(clave).etiqueta;
   return rondaCuadro(clave).etiqueta;

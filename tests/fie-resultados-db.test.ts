@@ -60,6 +60,27 @@ describe('persistencia FIE con SQLite real y guardia D1, sin red', () => {
     await local.lease!.liberar();
   });
 
+  it('con tournamentId la edición abarca las fechas de todas sus pruebas, no las de la última', async () => {
+    const local = await database();
+    await local.deps.upsertPrueba({
+      season: 2027, competitionId: 1479, tournamentId: 1,
+      nombre: 'Prueba sintética', ciudad: 'Madrid', federacion: 'ESP',
+      inicio: '2026-09-27', fin: '2026-09-27', fecha: '2026-09-27',
+      arma: 'ESPADA', genero: 'M', categoria: 'ABS', categoriaOriginal: 'S',
+      formato: 'EQUIPOS', url: 'https://fie.org/competitions/2027/1479',
+    });
+    await local.deps.upsertPrueba({
+      season: 2027, competitionId: 1480, tournamentId: 1,
+      nombre: 'Prueba sintética', ciudad: 'Madrid', federacion: 'ESP',
+      inicio: '2026-09-26', fin: '2026-09-26', fecha: '2026-09-26',
+      arma: 'ESPADA', genero: 'F', categoria: 'ABS', categoriaOriginal: 'S',
+      formato: 'INDIVIDUAL', url: 'https://fie.org/competitions/2027/1480',
+    });
+    expect(local.sqlite.prepare("SELECT count(*) n, min(start_date) i, max(end_date) f FROM sport_edition WHERE source = 'fie'").get())
+      .toEqual({ n: 1, i: '2026-09-25', f: '2026-09-27' });
+    await local.lease!.liberar();
+  });
+
   it('cuenta como sin cambios las filas que el upsert no devuelve', async () => {
     const local = await database();
     const rows = [resultado, { ...resultado, sourceFactKey: '2' }];

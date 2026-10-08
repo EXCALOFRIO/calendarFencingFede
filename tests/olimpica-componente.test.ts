@@ -51,16 +51,16 @@ describe('PruebaOlimpica', () => {
   const out = html(React.createElement(PruebaOlimpica, { resultado }));
 
   it('pinta la prueba con pastilla provisional y la fecha del ranking', () => {
-    expect(out).toContain('Espada masculino');
+    expect(out).toContain('Espada masculina');
     expect(out).toContain('data-provisional');
     expect(out).toContain('Provisional');
     expect(out).toContain('dateTime="2026-09-28T10:00:00.000Z"');
-    expect(out).toMatch(/28 sept? 2026/);
+    expect(out).toMatch(/28 sept?( 2026)?</);
   });
 
   it('enseña los 8 equipos con su camino y resalta España', () => {
     expect((out.match(/data-propio=""/g) ?? []).length).toBeGreaterThanOrEqual(1);
-    expect(out).toContain('Top 4');
+    expect(out).toContain('4 primeros');
     expect(out).toContain('Europa');
     expect(out).toContain('Asia-Oceanía');
     expect(out).toContain('América');
@@ -79,7 +79,7 @@ describe('PruebaOlimpica', () => {
   });
 
   it('plazas individuales: top 2, zonas, siguiente por zona y los zonales', () => {
-    expect(out).toContain('Top 2');
+    expect(out).toContain('2 primeros');
     expect(out).not.toContain('Mundial');
     expect(out).toContain('REIZLIN Roman');
     expect(out).toContain('MEHDI Salim');
@@ -121,7 +121,7 @@ describe('ClasificacionOlimpica', () => {
     ];
     const out = html(React.createElement(ClasificacionOlimpica, { resultados }));
     expect(out).toContain('Florete femenino');
-    expect(out).not.toContain('Espada masculino');
+    expect(out).not.toContain('Espada masculina');
     expect(out).toContain('aria-label="Arma"');
     expect(out).toContain('aria-label="Género"');
   });

@@ -1,3 +1,4 @@
+import { Compass } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 
@@ -15,14 +16,13 @@ export const metadata = { title: 'Página no encontrada' };
 export default function NoEncontrado() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[1320px] flex-col items-start justify-center gap-3 px-4 py-16">
-      <p className="cifra text-5xl text-muted-foreground/40">404</p>
-      <h1 className="text-2xl sm:text-3xl">Esta dirección no lleva a ningún sitio</h1>
+      <Compass className="size-6 text-muted-foreground" aria-hidden />
+      <h1 className="text-2xl">Esta página no existe</h1>
       <p className="medida text-sm text-muted-foreground">
-        La página no existe o se ha movido. Lo que había en enlaces antiguos
-        suele estar en el calendario, que es la pantalla principal.
+        Puede que el enlace esté anticuado. Desde el calendario se llega a todo.
       </p>
       <Button asChild className="mt-2">
-        <Link href="/">Ir al calendario</Link>
+        <Link href="/">Volver al calendario</Link>
       </Button>
     </main>
   );

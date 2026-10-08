@@ -31,7 +31,7 @@ export type DestinoBarra = {
   href: string;
   etiqueta: string;
   icono: ComponentType<{ className?: string; strokeWidth?: number; 'aria-hidden'?: boolean }>;
-  /** Otras rutas que también marcan esta pestaña (p. ej. `/explorar/ediciones` para Buscar). */
+  /** Otras rutas que también marcan esta pestaña (p. ej. `/estado` para «Tú»). */
   prefijos?: readonly string[];
   /** Punto rojo de novedades. */
   insignia?: boolean;

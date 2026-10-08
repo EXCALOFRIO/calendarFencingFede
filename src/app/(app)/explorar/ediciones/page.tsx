@@ -6,10 +6,11 @@ import { leerCriteriosCatalogo } from '@/lib/sport/explorar/catalogo-url';
 import { contextoReal } from '@/lib/sport/explorar/real';
 
 export const dynamic = 'force-dynamic';
-export const metadata = { title: 'Ediciones y series' };
+export const metadata = { title: 'Competiciones' };
 
 /**
- * Catálogo paginado de todas las ediciones importadas y series especiales.
+ * Catálogo paginado de todas las competiciones importadas (una fila por
+ * evento, con sus ediciones juntas) y series especiales.
  *
  * La guarda de sesión va aquí además de en el layout porque la ruta se puede
  * abrir escribiendo la dirección. Sólo lee lo ya indexado en D1: no llama a
@@ -24,7 +25,10 @@ export default async function Pagina({
   if (!perfil) redirect('/entrar');
 
   const { criterios, cursor } = leerCriteriosCatalogo(await searchParams);
-  const { series: vista, catalogo } = await cargarCatalogoCompartido(contextoReal(), criterios, cursor);
+  // Las armas de la cuenta sólo eligen qué edición abre cada evento; la lista es la misma para todos.
+  const { series: vista, catalogo } = await cargarCatalogoCompartido(contextoReal(), criterios, cursor, {
+    armasPreferidas: perfil.weapons,
+  });
   if (vista.tipo === 'sin_sesion' || catalogo.estado === 'sin_sesion') redirect('/entrar');
 
   return <PantallaEdiciones catalogo={catalogo} criterios={criterios} cursor={cursor} series={vista} />;

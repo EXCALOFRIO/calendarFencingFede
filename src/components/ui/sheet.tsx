@@ -81,9 +81,10 @@ function SheetContent({
 
         Tres cosas, y ninguna sobra:
 
-        - `bg-popover`: nivel 3 sólido. El panel es más claro que el lienzo
+        - `cristal-panel`: `--popover` al 86 % con desenfoque (sólido sin
+          soporte o con transparencia reducida). Más claro que el lienzo
           velado, que es la regla del modo oscuro.
-        - `border-filete-alto`: el canto de luz al 12 %. Da la línea de un
+        - el canto de luz del cristal (`--cristal-borde`), la línea de un
           píxel que dice dónde empieza el panel.
         - La sombra **dirigida hacia el contenido que tapa** y dura: negro al
           70 % y 30 px de radio. Una sombra hacia abajo no separa dos cosas
@@ -96,15 +97,15 @@ function SheetContent({
       <SheetPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          "fixed z-50 flex flex-col gap-4 overscroll-contain bg-popover transition ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:animate-in data-[state=open]:duration-500",
+          "cristal-panel fixed z-50 flex flex-col gap-4 overscroll-contain data-[state=closed]:animate-out data-[state=open]:animate-in",
           side === "right" &&
-            "inset-y-0 right-0 h-full w-3/4 border-l border-filete-alto shadow-[var(--sombra-hoja-der)] data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm",
+            "inset-y-0 right-0 h-full w-3/4 border-l shadow-[var(--sombra-hoja-der)] data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm",
           side === "left" &&
-            "inset-y-0 left-0 h-full w-3/4 border-r border-filete-alto shadow-[var(--sombra-hoja-izq)] data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:max-w-sm",
+            "inset-y-0 left-0 h-full w-3/4 border-r shadow-[var(--sombra-hoja-izq)] data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:max-w-sm",
           side === "top" &&
-            "inset-x-0 top-0 h-auto border-b border-filete-alto shadow-[var(--sombra-hoja-arr)] data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top",
+            "inset-x-0 top-0 h-auto border-b shadow-[var(--sombra-hoja-arr)] data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top",
           side === "bottom" &&
-            "inset-x-0 bottom-0 h-auto border-t border-filete-alto shadow-[var(--sombra-hoja-aba)] data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
+            "inset-x-0 bottom-0 h-auto border-t shadow-[var(--sombra-hoja-aba)] data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
           className
         )}
         {...props}
@@ -133,7 +134,7 @@ function SheetContent({
             `min-width`, que sí gana: 44 × 44 con el dedo.
         */}
         {showCloseButton && (
-          <SheetPrimitive.Close className="cerrar-hoja absolute top-3.5 right-3.5 grid size-10 place-items-center rounded-full border border-filete-alto bg-accent text-foreground transition-colors hover:bg-foreground hover:text-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden disabled:pointer-events-none">
+          <SheetPrimitive.Close className="cerrar-hoja absolute top-3 right-3 grid size-10 place-items-center rounded-full border border-filete-alto bg-accent text-foreground transition-colors hover:bg-foreground hover:text-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden disabled:pointer-events-none">
             <XIcon className="size-4.5" />
             <span className="sr-only">Cerrar</span>
           </SheetPrimitive.Close>
@@ -147,7 +148,7 @@ function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="sheet-header"
-      className={cn("flex flex-col gap-1.5 p-4", className)}
+      className={cn("flex flex-col gap-2 p-4", className)}
       {...props}
     />
   )

@@ -276,7 +276,11 @@ export type PruebaPropia = {
   city: string | null;
   country: string | null;
   venue: string | null;
+  /** Huso de la sede (IANA), para dar las horas también en hora de España. */
+  timezone: string | null;
   circuit: string | null;
+  /** El día de la prueba, si la fuente lo publica; si no, vale el inicio del torneo. */
+  competitionDate: string | null;
   weapon: 'FLORETE' | 'ESPADA' | 'SABLE';
   gender: 'M' | 'F' | 'MIXTO';
   category: string;
@@ -402,6 +406,7 @@ export async function getPruebasPropias(
       callTime: eventCompetition.callTime,
       scratchTime: eventCompetition.scratchTime,
       startTime: eventCompetition.startTime,
+      competitionDate: eventCompetition.competitionDate,
       eventId: event.id,
       eventName: event.name,
       startDate: event.startDate,
@@ -409,6 +414,7 @@ export async function getPruebasPropias(
       city: event.city,
       country: event.country,
       venue: event.venue,
+      timezone: event.timezone,
       circuit: event.circuit,
       scope: event.scope,
     })
@@ -499,7 +505,9 @@ export async function getPruebasPropias(
         city: c.city,
         country: c.country,
         venue: c.venue,
+        timezone: c.timezone,
         circuit: c.circuit,
+        competitionDate: c.competitionDate,
         weapon: c.weapon,
         gender: c.gender,
         category: c.category,

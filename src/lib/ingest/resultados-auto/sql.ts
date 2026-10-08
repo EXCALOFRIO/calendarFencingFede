@@ -21,7 +21,15 @@ export interface BaseResultados {
   escribirPropias(sentencias: readonly Omit<Sentencia, 'filas'>[]): Promise<void>;
   /** Filas sport_* planificadas y enviadas en esta pasada. */
   readonly filasEscritas: number;
+  /**
+   * Tablas que ya se sabe que existen en esta base, compartidas por todas las
+   * pasadas del isolate: una tabla creada no desaparece, así que no se vuelve
+   * a preguntar a `sqlite_master` en cada pasada.
+   */
+  readonly tablasConocidas?: Set<string>;
 }
+
+const tablasPorBase = new WeakMap<object, Set<string>>();
 
 /** Une texto con `?` y parámetros en un SQL de Drizzle (los `?` nunca van dentro de literales). */
 export function aSql(texto: string, params: readonly unknown[] = []): SQL {
@@ -49,7 +57,13 @@ export function crearBaseResultados(
     for (let i = 0; i < lista.length; i += n) salida.push(lista.slice(i, i + n));
     return salida;
   };
+  let tablasConocidas = tablasPorBase.get(rawDb);
+  if (!tablasConocidas) {
+    tablasConocidas = new Set<string>();
+    tablasPorBase.set(rawDb, tablasConocidas);
+  }
   return {
+    tablasConocidas,
     get filasEscritas() { return filas; },
     async leer<T extends Fila>(texto: string, params: readonly unknown[] = []) {
       if (!/^\s*(select|with)\b/i.test(texto)) throw new Error('resultados_auto_lectura_no_select');

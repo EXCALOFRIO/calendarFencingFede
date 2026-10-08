@@ -2,8 +2,12 @@ import { createNeonAuth } from '@neondatabase/auth/next/server';
 import { parseSetCookieHeader } from 'better-auth/cookies';
 import { cookies } from 'next/headers';
 import { db } from '@/db';
-import { createManagedAuth } from './managed-auth';
+import { createManagedAuth, type ProviderSession } from './managed-auth';
 import { otpDailyLimit } from './rate-limit';
+import { createSessionCache } from './session-cache';
+
+/** Per isolate, shared by every request it serves. 30 s: see `session-cache.ts` for the residual risk. */
+const sesionesValidadas = createSessionCache<ProviderSession>({ ttlMs: 30_000 });
 
 /** Lazy: importing a page during a build must not resolve a Worker binding or secret. */
 export function getAuth() {
@@ -11,6 +15,8 @@ export function getAuth() {
   const baseUrl = process.env.NEON_AUTH_URL ?? process.env.NEON_AUTH_BASE_URL;
   const secret = process.env.NEON_AUTH_COOKIE_SECRET ?? '';
   if (!origin || !baseUrl) throw new Error('Falta la configuración de Neon Auth y del origen de la aplicación.');
+  // `sessionDataTtl: 1` and `disableCookieCache` keep the SDK's signed-cookie
+  // cache out of the way; the only reuse of a validated session is `sesionesValidadas`.
   const managed = createNeonAuth({
     baseUrl,
     cookies: { secret, sameSite: 'lax', sessionDataTtl: 1 },
@@ -20,6 +26,7 @@ export function getAuth() {
   return createManagedAuth(db, {
     secret, origin,
     otpDailyLimit: otpDailyLimit(),
+    sessionCache: sesionesValidadas,
     request: (request, path) => {
       const context = { params: Promise.resolve({ path: path.split('/') }) };
       return request.method === 'GET' ? handlers.GET(request, context) : handlers.POST(request, context);

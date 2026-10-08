@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   agruparEnBloques,
-  capsulaDeFecha,
   diasSemanaOcupados,
   esEntreSemana,
   huecoEntre,
@@ -10,7 +9,9 @@ import {
   rangoCorto,
   rangoRealDeEvento,
   textoDeDuracion,
+  textoDeHueco,
 } from '@/lib/calendario/bloques';
+import { rangoFechas } from '@/lib/fechas';
 import type { CompetitionView, EventView } from '@/lib/queries/calendar';
 
 /**
@@ -124,11 +125,8 @@ describe('el rango honesto de un torneo', () => {
       ],
     });
     expect(rangoRealDeEvento(e)).toEqual({ desde: '2026-11-14', hasta: '2026-11-15' });
-    expect(capsulaDeFecha(rangoRealDeEvento(e))).toEqual({
-      dias: '14 - 15',
-      mes: 'NOV',
-      semana: 'SÁB - DOM',
-    });
+    const r = rangoRealDeEvento(e);
+    expect(rangoFechas(r.desde, r.hasta, 'bloque')).toMatchObject({ dias: '14–15', mes: 'NOV' });
   });
 
   /**
@@ -311,10 +309,20 @@ describe('el hueco entre dos bloques', () => {
     expect(huecoEntre('2026-10-04', '2026-10-04')).toBeNull();
   });
 
+  it('el texto del divisor concuerda en número: «1 semana libre», «2 semanas libres»', () => {
+    expect(textoDeHueco(7)).toBe('1 semana libre');
+    expect(textoDeHueco(8)).toBe('1 semana libre');
+    expect(textoDeHueco(9)).toBe('9 días libres');
+    expect(textoDeHueco(14)).toBe('2 semanas libres');
+    expect(huecoEntre('2026-10-04', '2026-10-12')!.texto).toBe('1 semana libre');
+    expect(huecoEntre('2026-10-04', '2026-10-24')!.texto).toBe('19 días libres');
+    expect(huecoEntre('2026-10-04', '2026-10-20')!.texto).toBe('2 semanas libres');
+  });
+
   it('el rango se escribe con el mes una sola vez cuando es el mismo', () => {
-    expect(rangoCorto({ desde: '2026-10-15', hasta: '2026-10-27' })).toBe('15 – 27 oct');
+    expect(rangoCorto({ desde: '2026-10-15', hasta: '2026-10-27' })).toBe('15–27 oct');
     expect(rangoCorto({ desde: '2026-10-28', hasta: '2026-11-03' })).toBe(
-      '28 oct – 3 nov',
+      '28 oct–3 nov',
     );
   });
 });

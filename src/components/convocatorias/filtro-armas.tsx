@@ -1,30 +1,16 @@
 'use client';
 
-import { MarcaArma } from '@/components/calendario/iconos-arma';
+import { ChipFiltro, FilaChips } from '@/components/sistema/chip-filtro';
 import { Button } from '@/components/ui/button';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { ARMAS } from '@/lib/ambito';
 import type { Weapon } from '@/lib/auth/session';
-import { WEAPON_LABEL } from '@/lib/utils';
+import { rotuloArma } from '@/lib/sport/rotulos';
 
 /**
- * El filtro de arma de «Selección».
- *
- * `ToggleGroup type="multiple"` con `variant="outline"`, que es la convención
- * de la sección 9.1 de `REFERENCIAS.md` para la selección múltiple: lo marcado
- * se indica con **superficie y borde**, nunca con el relleno de acento, que
- * está reservado a la acción principal de la pantalla (aquí, publicar una
- * convocatoria). Es el mismo control y el mismo aspecto que la fila de filtros
- * del calendario, a propósito: la misma pregunta se contesta igual en todas las
- * pantallas.
- *
- * El dibujo del arma va a 22 px, que es el umbral por debajo del cual `MarcaArma`
- * cambia a la abreviatura, y al lado el nombre entero. En un filtro el nombre
- * entero gana a `FLO`: no es una barra estrecha del calendario, es un control
- * que se lee una vez y se deja puesto.
- *
- * Y el color nunca es la única señal: hay superficie, borde, `aria-checked` de
- * Radix y el nombre del arma escrito.
+ * El filtro de arma de «Selección»: chips que se encienden y se apagan, los
+ * mismos de los filtros del resto de la aplicación. Sin armas marcadas no se
+ * filtra nada: desmarcar las tres es «quiero verlo todo», no «no quiero ver
+ * nada».
  */
 export function FiltroArmas({
   armas,
@@ -49,27 +35,20 @@ export function FiltroArmas({
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <ToggleGroup
-        type="multiple"
-        variant="outline"
-        value={armas}
-        /*
-          Sin armas marcadas no se filtra nada, en vez de dejar la pantalla en
-          blanco: desmarcar las tres es «quiero verlo todo», no «no quiero ver
-          nada». Es lo mismo que hace el calendario.
-        */
-        onValueChange={(v) => onCambiar(v as Weapon[])}
-        spacing={2}
-        className="flex-wrap"
-        aria-label="Armas que se enseñan"
-      >
-        {ARMAS.map((arma) => (
-          <ToggleGroupItem key={arma} value={arma} className="h-11 gap-2 px-3">
-            <MarcaArma armas={[arma]} px={22} />
-            {WEAPON_LABEL[arma]}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+      <FilaChips etiqueta="Armas que se enseñan">
+        {ARMAS.map((arma) => {
+          const marcada = armas.includes(arma);
+          return (
+            <ChipFiltro
+              key={arma}
+              marcado={marcada}
+              onClick={() => onCambiar(marcada ? armas.filter((a) => a !== arma) : ARMAS.filter((a) => a === arma || armas.includes(a)))}
+            >
+              {rotuloArma(arma)}
+            </ChipFiltro>
+          );
+        })}
+      </FilaChips>
 
       {/*
         Navegación entre dos vistas, así que botón fantasma: ni relleno de

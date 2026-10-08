@@ -108,7 +108,12 @@ describe('vista del buscador social', () => {
     expect(html).toContain('data-pais="ESP"');
     expect(html).toContain('>Espada<');
     expect(html).not.toContain('competiciones');
-    expect(html).toMatch(/<\/a><button/);
+    // El botón no va dentro del enlace (no se anidan controles) y la fila es la del sistema.
+    const enlace = /<a [^>]*>[\s\S]*?<\/a>/.exec(html)?.[0] ?? '';
+    expect(enlace).toContain('Zabala');
+    expect(enlace).not.toContain('<button');
+    expect(html).toContain('data-slot="sistema-fila-persona"');
+    expect(html).toMatch(/<li [^>]*data-fila-perfil=""/);
   });
 
   it('las propuestas para seguir son filas con «Seguir»; si fallan se dice sin romper la página', () => {

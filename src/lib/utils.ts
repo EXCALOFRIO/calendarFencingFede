@@ -1,6 +1,9 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { parseFechaMadrid } from './callups/fechas';
+import {
+  CODIGO_ARMA, CODIGO_GENERO, ROTULO_ARMA, ROTULO_CATEGORIA, ROTULO_CATEGORIA_CORTO, ROTULO_GENERO,
+} from './sport/rotulos';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -143,54 +146,23 @@ export function isoDateMinusDays(iso: string, days: number): Date {
   );
 }
 
-export const WEAPON_LABEL = {
-  FLORETE: 'Florete',
-  ESPADA: 'Espada',
-  SABLE: 'Sable',
-} as const;
+/** @deprecated Usa `rotuloArma` de `@/lib/sport/rotulos`. */
+export const WEAPON_LABEL = ROTULO_ARMA;
 
-/** Abreviatura de arma para las celdas del mes, donde no cabe el nombre. */
-export const WEAPON_SHORT = {
-  FLORETE: 'FLO',
-  ESPADA: 'ESP',
-  SABLE: 'SAB',
-} as const;
+/** @deprecated Sólo tablas densas: `rotuloArma(arma, 'codigo')` de `@/lib/sport/rotulos`. */
+export const WEAPON_SHORT = CODIGO_ARMA;
 
-export const GENDER_LABEL = {
-  M: 'Masculino',
-  F: 'Femenino',
-  MIXTO: 'Mixto',
-} as const;
+/** @deprecated Usa `rotuloGenero` de `@/lib/sport/rotulos`, que concuerda con el arma. */
+export const GENDER_LABEL = ROTULO_GENERO;
 
-export const GENDER_SHORT = { M: 'M', F: 'F', MIXTO: 'Mx' } as const;
+/** @deprecated Usa `rotuloGenero(g, { variante: 'corto' })` de `@/lib/sport/rotulos`. */
+export const GENDER_SHORT = CODIGO_GENERO;
 
-export const CATEGORY_LABEL = {
-  M7: 'M7',
-  M9: 'M9',
-  M10: 'M10',
-  M11: 'M11',
-  M12: 'M12',
-  M13: 'M13',
-  M14: 'M14',
-  M15: 'M15',
-  M17: 'M17',
-  M20: 'M20',
-  M23: 'M23',
-  ABS: 'Absoluto',
-  VET: 'Veteranos',
-} as const;
+/** @deprecated Usa `rotuloCategoria` de `@/lib/sport/rotulos`. */
+export const CATEGORY_LABEL = ROTULO_CATEGORIA;
 
-/**
- * La categoría abreviada, para las pastillas donde no cabe el nombre entero.
- *
- * Solo dos entradas porque solo dos categorías tienen nombre largo: el resto
- * ya son códigos («M17»). Estaba escrita dentro de la rejilla del mes con el
- * comentario «"Absoluto" no cabe en una pastilla», y la tira de pruebas de la
- * ficha necesita lo mismo desde que enseña también las de equipos: «SAB M
- * Absoluto · equipos» no cabe en ningún sitio. Vive aquí para que la
- * abreviatura sea la misma en las dos pantallas.
- */
-export const CATEGORY_SHORT: Record<string, string> = { ABS: 'Abs', VET: 'Vet' };
+/** @deprecated Usa `rotuloCategoria(c, { variante: 'corto' })` de `@/lib/sport/rotulos`. */
+export const CATEGORY_SHORT: Record<string, string> = ROTULO_CATEGORIA_CORTO;
 
 export const CIRCUIT_LABEL: Record<string, string> = {
   TNR: 'Torneo Nacional de Ranking',

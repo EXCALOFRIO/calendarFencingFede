@@ -88,8 +88,9 @@ describe('cupo de códigos: sólo lo gastan los invitados', () => {
     expect(provider).not.toHaveBeenCalled();
     expect(contador('send-global-day', 'all')).toBe(0);
     expect(contador('send-email-hour', 'inventada-0@example.test')).toBe(0);
-    // Sólo quedan los contadores por IP, que no identifican direcciones.
-    expect(filasThrottle()).toBe(200);
+    // Sólo quedan los contadores por IP y por IP + dirección (HMAC, acotados por
+    // el tope de cada IP): ninguno es un contador de la dirección sola.
+    expect(filasThrottle()).toBe(300);
     // El cupo sigue intacto para una invitada real.
     invitar('real@example.test');
     await peticion(auth, SEND, { email: 'real@example.test', type: 'sign-in' });
@@ -161,9 +162,10 @@ describe('cuenta revocada', { timeout: 30_000 }, () => {
     const auth = createManagedAuth(local.db, { secret: SECRET, origin: ORIGIN, request: provider });
     const id = invitar('ya@example.test', { status: 'aceptada', authUserId: 'neon-ya' });
     h.usuario = { id: 'neon-ya', email: 'ya@example.test', emailVerified: true };
-    expect(await auth.api.getSession({ headers: new Headers() })).not.toBeNull();
+    const headers = () => new Headers({ cookie: '__Secure-neon-auth.session_token=tok' });
+    expect(await auth.api.getSession({ headers: headers() })).not.toBeNull();
     local.sqlite.prepare(`UPDATE user_profile SET invite_status = 'revocada' WHERE id = ?`).run(id);
-    expect(await auth.api.getSession({ headers: new Headers() })).toBeNull();
+    expect(await auth.api.getSession({ headers: headers() })).toBeNull();
     provider.mockClear();
     await peticion(auth, SEND, { email: 'ya@example.test', type: 'sign-in' });
     expect(provider.mock.calls.filter((c) => c[1] === SEND)).toHaveLength(0);

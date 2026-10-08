@@ -53,8 +53,8 @@ describe('filtros compactos: las piezas del sistema', () => {
     const campo = html(React.createElement(CampoBuscar, { valor: 'llav', onCambio: nada, etiqueta: 'Buscar un tirador' }));
     expect(campo).toContain('role="search"');
     expect(campo).toContain('h-[40px]');
-    expect(campo).toContain('text-[16px]');
-    expect(campo).toContain('<label class="relative block py-[2px]">');
+    expect(campo).toContain('text-base');
+    expect(campo).toContain('<label class="relative block py-1">');
     expect(campo).toContain('aria-label="Vaciar la búsqueda"');
   });
 
@@ -80,8 +80,8 @@ describe('barra de filtros de /ranking', () => {
     expect(suelta).toContain('placeholder="Buscar"');
     const dentro = html(React.createElement(ProveedorRanking, { ambitoInicial: 'FIE', hayInternacional: true, hayEuropeo: true, children: () => barra({ activos: 1 }) }));
     expect(dentro).toContain('aria-label="Qué ranking se enseña"');
-    expect(dentro).toMatch(/aria-pressed="true"[^>]*><span>Internacional/);
-    expect(dentro).toMatch(/aria-pressed="false"[^>]*><span>Nacional/);
+    expect(dentro).toMatch(/role="radio" aria-checked="true"[^>]*>.*?data-ambito="FIE">Internacional/);
+    expect(dentro).toMatch(/role="radio" aria-checked="false"[^>]*>.*?data-ambito="RFEE">Nacional/);
     expect(dentro).toContain('>Europeo<');
     expect(dentro).toContain('<span class="sr-only"> activo</span>');
   });

@@ -29,7 +29,7 @@ import { CabeceraCaraACara, CaraACaraCompleto, ElegirRival } from '@/components/
 import { EdicionCompleta } from '@/components/explorar/ediciones';
 import { FiltrosCaraACara } from '@/components/explorar/filtros-cara-a-cara';
 import { SeccionRendimientoCaraACara } from '@/components/explorar/graficos/seccion-rendimiento-cara-a-cara';
-import { MatrizPoule } from '@/components/explorar/prueba/hoja-poule';
+import { PoulesDePrueba } from '@/components/explorar/asaltos-prueba';
 import { BotonIcono } from '@/components/sistema/boton';
 import { X } from 'lucide-react';
 import { enlaceFichaDePrueba } from '@/components/explorar/prueba/enlaces';
@@ -127,7 +127,7 @@ const hoja = React.createElement(
       React.createElement('span', { className: 'text-xs text-muted-foreground' }, poulePropia.filas.length),
       React.createElement(BotonIcono, { etiqueta: 'Cerrar', tamano: 'md', className: 'ml-auto' }, React.createElement(X, { 'aria-hidden': true })),
     ),
-    React.createElement(MatrizPoule, { poule: poulePropia, enlace, filtro: { consulta: '', persona: ZABALA } }),
+    React.createElement(PoulesDePrueba, { poules: [poulePropia], enlace, filtro: { consulta: '', persona: ZABALA }, caraInicial: 'asaltos' }),
   ),
 );
 

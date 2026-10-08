@@ -14,3 +14,15 @@
 # changes: without this the assets default (max-age=0, must-revalidate) costs a 304 per file.
 /_next/static/*
   Cache-Control: public, max-age=31536000, immutable
+
+# Photos, flags and icons have NO hash in their names, so not `immutable`: 30 days fresh, then
+# served from cache while revalidating. Replacing one in place takes up to 30 days to reach
+# every device; give it a new name when it must change at once.
+/fotos/*
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=31536000
+
+/banderas/*
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=31536000
+
+/iconos/*
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=31536000

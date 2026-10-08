@@ -83,9 +83,11 @@ export function crearCachesPais({
     depende: ['deporte'],
     frescoMs: FRESCO,
     caducaMs: CADUCA,
-    cargar: (codigo: string, rival: string, arma: string, genero: string, categoria: string, modalidad: string, temporada: string, _marca: number) =>
+    // `version` de los agregados en la clave: el DTO cambia de forma con ella.
+    cargar: (codigo: string, rival: string, arma: string, genero: string, categoria: string, modalidad: string, temporada: string,
+      _marca: number, version: number) =>
       leerSeguro(() => leerDueloPaises(publico(hoy()).db, codigo, rival,
-        { arma, genero, categoria, modalidad, temporada } as FiltrosDuelo), 'cara a cara de países'),
+        { arma, genero, categoria, modalidad, temporada } as FiltrosDuelo, '', version), 'cara a cara de países'),
     guardarSi: (v: VistaPais<DueloPaises>) => v.tipo === 'ok',
   });
 
@@ -123,9 +125,9 @@ export function crearCachesPais({
     const directo = () => leerSeguro(() => leerDueloPaises(ctx.db, codigo, rival, f, desde), 'cara a cara de países');
     if (desde) return directo();
     try {
-      const m = await marca(ctx);
-      if (m === null) return { tipo: 'sin_datos' };
-      return await duelo(codigo, rival, f.arma, f.genero, f.categoria, f.modalidad, f.temporada, m);
+      const estado = await leerEstadoPaises(ctx.db);
+      if (estado === null) return { tipo: 'sin_datos' };
+      return await duelo(codigo, rival, f.arma, f.genero, f.categoria, f.modalidad, f.temporada, estado.construidoEn, estado.version);
     } catch (error) {
       registrar('la caché del cara a cara de países falló', error);
       return directo();

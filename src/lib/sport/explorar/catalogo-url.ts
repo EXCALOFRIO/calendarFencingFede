@@ -10,17 +10,37 @@ export const FUENTES_CATALOGO = [
   { valor: 'engarde', etiqueta: 'Engarde' },
 ] as const;
 
-/** El orden es el de la URL. `desde` y `hasta` son años; `temporada` sigue valiendo en enlaces antiguos. */
-export const CLAVES_CATALOGO = ['q', 'fuente', 'arma', 'categoria', 'desde', 'hasta', 'temporada'] as const;
+/**
+ * El orden es el de la URL. `desde` y `hasta` son años; `temporada` sigue
+ * valiendo en enlaces antiguos. `genero` y `formato` van al final para que las
+ * direcciones que ya existían no cambien.
+ */
+export const CLAVES_CATALOGO = ['q', 'fuente', 'arma', 'categoria', 'desde', 'hasta', 'temporada', 'genero', 'formato'] as const;
 export type ClaveCatalogo = (typeof CLAVES_CATALOGO)[number];
 export type CriteriosCatalogo = Record<ClaveCatalogo, string>;
 
 export const CRITERIOS_CATALOGO_VACIOS: CriteriosCatalogo = {
-  q: '', fuente: '', arma: '', categoria: '', desde: '', hasta: '', temporada: '',
+  q: '', fuente: '', arma: '', categoria: '', desde: '', hasta: '', temporada: '', genero: '', formato: '',
 };
 
-const LIMITES: Record<ClaveCatalogo, number> = { q: 100, fuente: 40, arma: 10, categoria: 10, desde: 4, hasta: 4, temporada: 9 };
-const EN_MAYUSCULAS: ReadonlySet<ClaveCatalogo> = new Set(['arma', 'categoria']);
+/** Los filtros (todo menos el texto), vacíos: «Quitar filtros». */
+export const SIN_FILTROS_CATALOGO: Omit<CriteriosCatalogo, 'q'> = {
+  fuente: '', arma: '', categoria: '', desde: '', hasta: '', temporada: '', genero: '', formato: '',
+};
+
+export const GENEROS_CATALOGO = ['M', 'F', 'MIXTO'] as const;
+export const FORMATOS_CATALOGO = ['INDIVIDUAL', 'EQUIPOS'] as const;
+
+/** Cuántos filtros hay puestos, como los cuenta el botón «Filtros (N)»: las fechas cuentan uno. */
+export function cuantosFiltrosCatalogo(criterios: CriteriosCatalogo): number {
+  return (['fuente', 'arma', 'genero', 'formato', 'categoria', 'temporada'] as const).filter((k) => criterios[k]).length
+    + (criterios.desde || criterios.hasta ? 1 : 0);
+}
+
+const LIMITES: Record<ClaveCatalogo, number> = {
+  q: 100, fuente: 40, arma: 10, categoria: 10, desde: 4, hasta: 4, temporada: 9, genero: 10, formato: 10,
+};
+const EN_MAYUSCULAS: ReadonlySet<ClaveCatalogo> = new Set(['arma', 'categoria', 'genero', 'formato']);
 
 type Parametros = Record<string, string | string[] | undefined>;
 
@@ -61,6 +81,8 @@ const VALIDOS: Partial<Record<ClaveCatalogo, (v: string) => boolean>> = {
   fuente: (v) => FUENTES_CATALOGO.some((f) => f.valor === v),
   arma: (v) => ['FLORETE', 'ESPADA', 'SABLE'].includes(v),
   categoria: (v) => /^(M\d{1,2}|ABS|VET)$/.test(v),
+  genero: (v) => (GENEROS_CATALOGO as readonly string[]).includes(v),
+  formato: (v) => (FORMATOS_CATALOGO as readonly string[]).includes(v),
   desde: (v) => /^(19|20)\d{2}$/.test(v),
   hasta: (v) => /^(19|20)\d{2}$/.test(v),
   temporada: (v) => /^\d{4}(?:-\d{4})?$/.test(v),

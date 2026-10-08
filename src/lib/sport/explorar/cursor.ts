@@ -1,5 +1,3 @@
-import { z } from 'zod';
-
 /**
  * Cursores de paginación por clave (keyset) ligados a la consulta que los
  * emitió.
@@ -59,11 +57,22 @@ function deBase64Url(texto: string): string {
   return new TextDecoder().decode(Uint8Array.from(binario, (c) => c.charCodeAt(0)));
 }
 
-const forma = z.object({
-  v: z.literal(1),
-  h: z.string().max(32),
-  k: z.array(z.union([z.string().max(300), z.number()])).max(4),
-});
+// Validación a mano en lugar de zod: este módulo puede alcanzar el bundle del
+// cliente y zod pesa ~87 KB comprimido.
+function leerForma(valor: unknown): { h: string; k: ClaveCursor } | null {
+  if (!valor || typeof valor !== 'object' || Array.isArray(valor)) return null;
+  const { v, h, k } = valor as Record<string, unknown>;
+  if (v !== 1 || typeof h !== 'string' || h.length > 32) return null;
+  if (!Array.isArray(k) || k.length > 4) return null;
+  for (const parte of k) {
+    if (typeof parte === 'string') {
+      if (parte.length > 300) return null;
+    } else if (typeof parte !== 'number') {
+      return null;
+    }
+  }
+  return { h, k: k as ClaveCursor };
+}
 
 export function codificarCursor(clase: string, filtros: unknown, clave: ClaveCursor): string {
   return aBase64Url(JSON.stringify({ v: 1, h: huellaConsulta(clase, filtros), k: clave }));
@@ -77,14 +86,13 @@ export function decodificarCursor(
   longitud: number,
 ): ClaveCursor | null {
   try {
-    const analizado = forma.safeParse(JSON.parse(deBase64Url(cursor)));
-    if (!analizado.success) return null;
-    if (analizado.data.h !== huellaConsulta(clase, filtros)) return null;
-    return analizado.data.k.length === longitud ? analizado.data.k : null;
+    const analizado = leerForma(JSON.parse(deBase64Url(cursor)));
+    if (!analizado) return null;
+    if (analizado.h !== huellaConsulta(clase, filtros)) return null;
+    return analizado.k.length === longitud ? analizado.k : null;
   } catch {
     return null;
   }
 }
 
-export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export const FECHA_RE = /^\d{4}-\d{2}-\d{2}$/;
+export { FECHA_RE, UUID_RE } from './patrones';

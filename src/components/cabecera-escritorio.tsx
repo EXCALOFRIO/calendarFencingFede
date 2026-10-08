@@ -31,10 +31,10 @@ export function CabeceraEscritorio({
       <div className="ancho-app flex h-[56px] items-center gap-4 px-4">
         <Link
           href="/"
-          className={cn('flex h-[36px] shrink-0 items-center gap-[10px] rounded-full pr-[6px] outline-none focus-visible:ring-2 focus-visible:ring-ring', AREA_TACTIL)}
+          className={cn('flex h-[36px] shrink-0 items-center gap-3 rounded-full pr-2 outline-none focus-visible:ring-2 focus-visible:ring-ring', AREA_TACTIL)}
         >
           <Marca className="size-[28px]" />
-          <span className="text-[15px] font-semibold tracking-tight">
+          <span className="text-base font-semibold tracking-tight">
             Calendar<span className="text-primary-text">Fencing</span>
           </span>
         </Link>
@@ -43,7 +43,7 @@ export function CabeceraEscritorio({
           <NavEscritorio />
         </div>
 
-        <div className="flex shrink-0 items-center gap-[4px]">
+        <div className="flex shrink-0 items-center gap-1">
           {campana}
           {esAdmin ? (
             <BotonIcono asChild etiqueta="Gestión">
@@ -55,17 +55,17 @@ export function CabeceraEscritorio({
           <Link
             href="/explorar/yo"
             prefetch={false}
-            className={cn('flex h-[40px] items-center gap-[8px] rounded-full py-[4px] pr-[10px] pl-[4px] outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring', AREA_TACTIL)}
+            className={cn('flex h-[40px] items-center gap-2 rounded-full py-1 pr-3 pl-1 outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring', AREA_TACTIL)}
           >
             {/* Sin aria-label que tape el nombre visible (WCAG 2.5.3); las iniciales sobran para el lector. */}
             <span className="sr-only">Tú: </span>
-            <Avatar aria-hidden className="size-[32px]">
-              <AvatarFallback className="text-[12px]">{cuenta.iniciales}</AvatarFallback>
+            <Avatar aria-hidden className="size-8">
+              <AvatarFallback className="text-xs">{cuenta.iniciales}</AvatarFallback>
             </Avatar>
-            <span className="flex min-w-0 flex-col leading-tight">
-              <span className="max-w-36 truncate text-[12px] font-medium">{cuenta.nombre}</span>
+            <span className="flex min-w-0 flex-col leading-4">
+              <span className="max-w-36 truncate text-xs font-medium">{cuenta.nombre}</span>
               {cuenta.segundaLinea ? (
-                <span className="max-w-36 truncate text-[12px] text-muted-foreground">{cuenta.segundaLinea}</span>
+                <span className="max-w-36 truncate text-xs text-muted-foreground">{cuenta.segundaLinea}</span>
               ) : null}
             </span>
           </Link>

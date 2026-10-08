@@ -59,16 +59,16 @@ function DialogContent({
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
       {/*
-        Mismo arreglo que la hoja lateral: el diálogo es una superficie de
-        nivel 3 (`bg-popover`), no del color del lienzo, y la sombra es negro
-        duro en vez de la `shadow-lg` de Tailwind, que a `rgb(0 0 0 / 10%)`
-        sobre un fondo casi negro no se ve. Aquí la sombra sí va hacia abajo:
-        el diálogo está en el centro y tapa por todos lados.
+        Mismo material que la hoja lateral: cristal de panel sobre `--popover`
+        y sombra de negro duro (la `shadow-lg` de Tailwind no se ve sobre un
+        fondo casi negro). Aquí la sombra va hacia abajo: el diálogo está en
+        el centro y tapa por todos lados. Entra subiendo 8 px con un fundido;
+        las duraciones están en `sistema.css`.
       */}
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 overscroll-contain rounded-lg border border-filete-alto bg-popover p-6 shadow-[var(--sombra-flotante)] duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
+          "cristal-panel fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 overscroll-contain rounded-xl border p-6 shadow-[var(--sombra-flotante)] outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-bottom-2 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-2 sm:max-w-lg",
           className
         )}
         {...props}

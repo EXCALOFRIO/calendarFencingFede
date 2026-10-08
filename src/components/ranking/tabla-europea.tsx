@@ -2,15 +2,17 @@
 
 import { useSearchParams } from 'next/navigation';
 import * as React from 'react';
+import { VerMas } from '@/components/sistema/cabecera-seccion';
 import { ChipFiltro } from '@/components/sistema/chip-filtro';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import type { RankingGroupKey } from '@/lib/queries/ranking';
 import { nombreCasa } from '@/lib/nombres';
 import { temporadaCorta } from '@/lib/ranking/url-nacional';
-import { cn, formatDateEs, titular } from '@/lib/utils';
+import { cn, titular } from '@/lib/utils';
 import { escribirUrl, urlDeGrupo, useRanking } from './estado-ranking';
 import { FilaLinea } from './fila-linea';
 import { clave, grupoMasParecido } from './formato';
-import { Procedencia, VerMas } from './piezas';
+import { Procedencia } from './piezas';
 import { BarraFiltrosRanking } from './selectores-grupo';
 import type { GrupoEuropeo, TablaEuropea } from './tipos-europeo';
 
@@ -151,7 +153,7 @@ export function TablaRankingEuropeo({
       {tabla ? (
         <Procedencia
           temporada={`Temporada ${temporadaCorta(tabla.temporada)}`}
-          leida={tabla.publicadaEl ? formatDateEs(tabla.publicadaEl) : null}
+          leida={tabla.publicadaEl}
           url={tabla.sourceUrl}
         />
       ) : null}
@@ -184,20 +186,14 @@ export function TablaRankingEuropeo({
       ) : null}
 
       {filtradas.length === 0 && !cargando ? (
-        <p className="medida text-sm text-muted-foreground">
-          {busqueda
-            ? 'Ningún nombre coincide. Prueba otro nombre o país.'
-            : soloEspana
-              ? 'Nadie de España en esta prueba.'
-              : 'Sin clasificación europea en esta prueba.'}
-        </p>
+        <EstadoVacio
+          titulo={busqueda ? 'Ningún nombre coincide' : soloEspana ? 'Nadie de España en esta prueba' : 'Sin clasificación europea en esta prueba'}
+          descripcion={busqueda ? 'Prueba otro nombre o país.' : undefined}
+        />
       ) : null}
 
       {quedan > 0 ? (
-        <VerMas onClick={() => setTope(tope + PASO)}>
-          Ver {Math.min(quedan, PASO)} más
-          <span className="cifra text-[12px] text-muted-foreground">de {filtradas.length}</span>
-        </VerMas>
+        <VerMas onClick={() => setTope(tope + PASO)} cuenta={quedan} detalle="tiradores de la clasificación" className="self-center" />
       ) : null}
     </div>
   );

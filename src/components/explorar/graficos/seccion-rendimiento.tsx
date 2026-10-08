@@ -4,12 +4,13 @@ import type {
   TemporadaRendimiento,
   VistaRendimiento,
 } from '@/lib/sport/explorar/rendimiento';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import { cn } from '@/lib/utils';
 import { Bloque, type Nivel } from '../piezas';
-import { TACTIL } from '../perfil/tactil';
+import { Paneles } from '../perfil/paneles';
 import { BarrasApiladas } from './barras-apiladas';
 import { BarrasTipo, type FilaDesglose } from './barras-tipo';
-import { COLOR, COLOR_AMBITO, conSigno, decimal, MEDALLAS, pct, top } from './comun';
+import { COLOR, COLOR_AMBITO, conSigno, decimal, FUERA_DE_PANTALLA, MEDALLAS, pct, top } from './comun';
 import { lecturaPuesto } from './dispersion-puestos';
 import { Donut } from './donut';
 import {
@@ -31,23 +32,6 @@ const OPCIONES: { clave: AmbitoRendimiento; rotulo: string }[] = [
   { clave: 'internacional', rotulo: 'Internacional' },
   { clave: 'nacional', rotulo: 'Nacional' },
 ];
-
-/**
- * El cambio de panel es sólo CSS, como en el resto de la ficha: radios y
- * `:has(:checked)`. Las clases van escritas enteras (Tailwind no ve las que se
- * montan en ejecución) y se seleccionan por clase del radio, no por ID, para
- * que dos secciones en la misma página no se pisen.
- */
-const PANEL: Record<AmbitoRendimiento, string> = {
-  todo: 'group-has-[.rend-todo:checked]/rend:flex',
-  internacional: 'group-has-[.rend-internacional:checked]/rend:flex',
-  nacional: 'group-has-[.rend-nacional:checked]/rend:flex',
-};
-const RADIO: Record<AmbitoRendimiento, string> = {
-  todo: 'rend-todo',
-  internacional: 'rend-internacional',
-  nacional: 'rend-nacional',
-};
 
 const porAsalto = (tocados: number, asaltos: number) => (asaltos > 0 ? tocados / asaltos : null);
 const capital = (s: string) => s.charAt(0).toLocaleUpperCase('es') + s.slice(1).toLocaleLowerCase('es');
@@ -88,7 +72,7 @@ function Cifras({ v }: { v: VistaRendimiento }) {
           max={1}
           color={COLOR.marca}
         />
-        <span className="flex items-baseline justify-between gap-2 text-[12px] text-muted-foreground">
+        <span className="flex items-baseline justify-between gap-2 text-xs text-muted-foreground">
           Directa
           <strong className="cifra text-xl font-semibold text-foreground">
             {pct(directa.porcentaje) ?? '–'}
@@ -110,7 +94,7 @@ function Cifras({ v }: { v: VistaRendimiento }) {
             colorDerecha={COLOR.apagado}
           />
         ) : null}
-        <span className="flex justify-between gap-2 text-[12px] leading-none text-muted-foreground">
+        <span className="flex justify-between gap-2 text-xs leading-none text-muted-foreground">
           <span>Dados</span>
           <span>Recibidos</span>
         </span>
@@ -120,7 +104,7 @@ function Cifras({ v }: { v: VistaRendimiento }) {
         cifra={v.total.mediana !== null ? `${Math.round(v.total.mediana)}º` : '–'}
         className="col-span-2 lg:col-span-1"
       >
-        <span className="flex items-baseline justify-between gap-2 text-[12px] text-muted-foreground">
+        <span className="flex items-baseline justify-between gap-2 text-xs text-muted-foreground">
           {top(v.total.percentilMediano) ?? ''}
           <span>
             Mejor <strong className="cifra text-xl font-semibold text-foreground">{v.total.mejor !== null ? `${v.total.mejor}º` : '–'}</strong>
@@ -248,11 +232,7 @@ function PorTemporada({ v, ambito }: { v: VistaRendimiento; ambito: AmbitoRendim
 
 function Panel({ v, ambito, nivel }: { v: VistaRendimiento; ambito: AmbitoRendimiento; nivel: Nivel }) {
   if (v.total.competiciones === 0) {
-    return (
-      <p className="py-6 text-sm text-muted-foreground">
-        Sin competiciones {ambito === 'nacional' ? 'nacionales' : 'internacionales'}.
-      </p>
-    );
+    return <EstadoVacio titulo={`Sin competiciones ${ambito === 'nacional' ? 'nacionales' : 'internacionales'}`} />;
   }
   const ultimo = v.evolucion.at(-1);
   const tipos: FilaDesglose[] = v.porTipo;
@@ -273,25 +253,25 @@ function Panel({ v, ambito, nivel }: { v: VistaRendimiento; ambito: AmbitoRendim
           />
         </section>
       ) : null}
-      <section className="flex min-w-0 flex-col gap-2">
+      <section className={cn('flex min-w-0 flex-col gap-2', FUERA_DE_PANTALLA)}>
         <Subtitulo nivel={nivel}>Por temporada</Subtitulo>
         <PorTemporada v={v} ambito={ambito} />
       </section>
-      <section className="flex min-w-0 flex-col gap-2">
+      <section className={cn('flex min-w-0 flex-col gap-2', FUERA_DE_PANTALLA)}>
         <Subtitulo nivel={nivel}>Por tipo</Subtitulo>
         <Frases frases={[fraseMejorGrupo(tipos)]} />
         <BarrasTipo filas={tipos} titulo="Rendimiento por tipo de competición" />
       </section>
       {/* Con una sola categoría también sale: es la lectura que se busca (mejor puesto, poule y directa). */}
       {categorias.length > 0 ? (
-        <section className="flex min-w-0 flex-col gap-2">
+        <section className={cn('flex min-w-0 flex-col gap-2', FUERA_DE_PANTALLA)}>
           <Subtitulo nivel={nivel}>Por categoría</Subtitulo>
           <Frases frases={[fraseMejorGrupo(categorias)]} />
           <BarrasTipo filas={categorias} titulo="Rendimiento por categoría" />
         </section>
       ) : null}
       {armas.length > 1 ? (
-        <section className="flex min-w-0 flex-col gap-2">
+        <section className={cn('flex min-w-0 flex-col gap-2', FUERA_DE_PANTALLA)}>
           <Subtitulo nivel={nivel}>Por arma</Subtitulo>
           <Frases frases={[fraseMejorGrupo(armas)]} />
           <BarrasTipo filas={armas} titulo="Rendimiento por arma" />
@@ -304,8 +284,8 @@ function Panel({ v, ambito, nivel }: { v: VistaRendimiento; ambito: AmbitoRendim
 /**
  * Rendimiento del perfil: cifras, evolución de puestos, series por
  * temporada y desgloses por tipo y categoría, con un selector
- * Todo / Internacional / Nacional que funciona sin JavaScript. Si sólo hay
- * uno de los dos ámbitos, el selector no se pinta.
+ * Todo / Internacional / Nacional (`Paneles`: sólo el elegido entra en el
+ * DOM). Si sólo hay uno de los dos ámbitos, el selector no se pinta.
  */
 export function SeccionRendimiento({
   datos,
@@ -324,47 +304,17 @@ export function SeccionRendimiento({
   if (vistas.todo.total.competiciones === 0) return null;
   const opciones = OPCIONES.filter((o) => o.clave === 'todo' || vistas[o.clave].total.competiciones > 0);
   const conSelector = opciones.length > 2;
+  const visibles = conSelector ? opciones : opciones.slice(0, 1);
   return (
     <Bloque id={id} titulo={titulo} nivel={nivel} tituloOculto={tituloOculto}>
-      <div className="group/rend flex min-w-0 flex-col gap-5">
-        {conSelector ? (
-          <fieldset className="min-w-0">
-            <legend className="sr-only">Qué competiciones contar</legend>
-            <div className="grid w-full grid-cols-3 gap-1 rounded-full border bg-card p-1 sm:inline-flex sm:w-auto sm:max-w-full">
-              {opciones.map((o) => (
-                <label
-                  key={o.clave}
-                  className={cn(
-                    // Con cifras de tres dígitos «Internacional» no cabe en un tercio de 393 px: en móvil la cifra va debajo en los tres.
-                    TACTIL,
-                    'inline-flex min-h-[32px] min-w-0 cursor-pointer flex-row items-center justify-center gap-x-1 rounded-full px-1.5 py-0.5 text-center text-xs leading-tight text-muted-foreground max-[359px]:flex-col sm:gap-x-1.5 sm:px-3 sm:text-[0.8125rem]',
-                    'hover:text-foreground has-[:checked]:bg-marcado has-[:checked]:font-semibold has-[:checked]:text-primary-text',
-                    'has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring',
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name={`${id}-ambito`}
-                    value={o.clave}
-                    defaultChecked={o.clave === 'todo'}
-                    className={cn(RADIO[o.clave], 'sr-only')}
-                  />
-                  <span>{o.rotulo}</span>
-                  <span className="cifra text-sm leading-none">{vistas[o.clave].total.competiciones}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-        ) : null}
-        {(conSelector ? opciones : opciones.slice(0, 1)).map((o) => (
-          <div
-            key={o.clave}
-            className={cn('min-w-0 flex-col gap-6', conSelector ? cn('hidden', PANEL[o.clave]) : 'flex')}
-          >
-            <Panel v={vistas[o.clave]} ambito={conSelector ? o.clave : soloAmbito(datos)} nivel={nivel} />
-          </div>
-        ))}
-      </div>
+      <Paneles
+        etiqueta="Qué competiciones contar"
+        opciones={visibles.map((o) => ({ valor: o.clave, etiqueta: o.rotulo, cuenta: vistas[o.clave].total.competiciones }))}
+        paneles={Object.fromEntries(visibles.map((o) => [
+          o.clave,
+          <Panel key={o.clave} v={vistas[o.clave]} ambito={conSelector ? o.clave : soloAmbito(datos)} nivel={nivel} />,
+        ]))}
+      />
     </Bloque>
   );
 }

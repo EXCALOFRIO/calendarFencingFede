@@ -238,8 +238,8 @@ describe('pantalla Siguiendo', () => {
     const criterios = { cursor: '', soloMedallas: false };
     const salida = html(React.createElement(FeedSiguiendo, { items: vista.items, siguiente: 'CUR', criterios }));
     expect(salida).toContain(`href="/explorar/${RIVAL}"`);
-    // El feed es Inicio: la página siguiente es `/explorar?cursor=…`, no la lista de Siguiendo.
-    expect(salida).toContain('href="/explorar?cursor=CUR"');
+    // La página siguiente se añade debajo con el «Ver más» del sistema, sin navegar.
+    expect(salida).toContain('data-slot="sistema-ver-mas"');
     expect(salida).toContain('Ver más');
     expect(salida).toContain('data-tipo="COPA_MUNDO"');
     // Cada tarjeta lleva el retrato de la persona.

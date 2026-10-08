@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { convocatoriaVisible, ocultasPorArma } from '@/app/(app)/convocatorias/filtro';
 import { MarcaArma } from '@/components/calendario/iconos-arma';
-import { Badge } from '@/components/ui/badge';
+import { CabeceraSeccion } from '@/components/sistema/cabecera-seccion';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
+import { Pastilla } from '@/components/sistema/pastilla';
 import { Button } from '@/components/ui/button';
 import {
   Collapsible,
@@ -34,15 +36,11 @@ import type { Weapon } from '@/lib/auth/session';
 import { eliminarConvocatoria, publicarConvocatoria } from '@/lib/callups/actions';
 import { CALL_UP_STATUS_LABEL } from '@/lib/callups/tipos';
 import type { CallUpDetail, EventoConvocable } from '@/lib/callups/tipos';
-import {
-  WEAPON_LABEL,
-  cn,
-  formatDateRangeEs,
-  formatDateTimeEs,
-  titular,
-} from '@/lib/utils';
+import { fechaHora, rangoFechas } from '@/lib/fechas';
+import { rotuloArma } from '@/lib/sport/rotulos';
+import { cn, titular } from '@/lib/utils';
 import { ElegirConvocados } from './elegir-convocados';
-import { PLAZA_CORTA, partirPrueba } from './etiquetas';
+import { PLAZA_CORTA } from './etiquetas';
 import { FiltroArmas } from './filtro-armas';
 import { NuevaConvocatoria } from './nueva-convocatoria';
 import { Respuestas } from './respuestas';
@@ -93,19 +91,18 @@ export function PanelConvocatorias({
 
   return (
     <section className="flex min-w-0 flex-col gap-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 border-b pb-2">
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
-          <h2 className="text-xl">Convocatorias que gestionas</h2>
-          <p className="text-sm text-muted-foreground">
-            {visibles.length === 0
-              ? 'ninguna'
-              : sinContestar > 0
-                ? `${visibles.length}, con ${sinContestar} sin contestar`
-                : `${visibles.length}, todas contestadas`}
-          </p>
-        </div>
-        {puedeGestionar ? <NuevaConvocatoria eventos={eventos} /> : null}
-      </div>
+      <CabeceraSeccion
+        titulo="Convocatorias que gestionas"
+        contexto={
+          visibles.length === 0
+            ? 'Ninguna'
+            : sinContestar > 0
+              ? `${visibles.length}, con ${sinContestar} sin contestar`
+              : `${visibles.length}, todas contestadas`
+        }
+        accion={puedeGestionar ? <NuevaConvocatoria eventos={eventos} /> : null}
+      />
+
 
       {convocatorias.length > 0 ? (
         <FiltroArmas
@@ -120,20 +117,22 @@ export function PanelConvocatorias({
         <p className="medida text-sm text-muted-foreground">
           Puedes ver y seguir las respuestas de{' '}
           {armasArranque.length < ARMAS.length
-            ? `tu arma (${armasArranque.map((a) => WEAPON_LABEL[a].toLowerCase()).join(' y ')}), con los dos géneros`
+            ? `tu arma (${armasArranque.map((a) => rotuloArma(a).toLowerCase()).join(' y ')}), con los dos géneros`
             : 'todas las armas'}
           . Crear, modificar y publicar lo hace la dirección técnica.
         </p>
       ) : null}
 
       {convocatorias.length === 0 ? (
-        <p className="medida py-2 text-sm text-muted-foreground">
-          Aquí aparecerá cada convocatoria con su lista de convocados y lo que ha
-          contestado cada uno.{' '}
-          {puedeGestionar
-            ? 'Empieza por crear un borrador: eliges la competición, marcas las plazas y publicas cuando esté.'
-            : 'Se verán en cuanto la dirección técnica cree la primera.'}
-        </p>
+        <EstadoVacio
+          titulo="Todavía no hay convocatorias"
+          descripcion={
+            puedeGestionar
+              ? 'Crea un borrador: eliges la competición, marcas las plazas y publicas cuando esté.'
+              : 'Se verán en cuanto la dirección técnica cree la primera.'
+          }
+        />
+
       ) : visibles.length === 0 ? (
         /*
           El estado vacío del filtro dice el número, no solo «nada»: «ninguna de
@@ -147,27 +146,19 @@ export function PanelConvocatorias({
           pantalla se leía como si hubiera fallado la carga. Visto en
           `capturas/prueba-coach-escritorio-convocatorias.png`.
         */
-        <div className="fondo-panel mt-1 flex max-w-2xl flex-col items-start gap-3 rounded-lg border-t border-filete bg-card px-4 py-6 sm:px-5">
-          <p className="medida text-sm text-muted-foreground">
-            Ninguna convocatoria de{' '}
-            {armas.map((a) => WEAPON_LABEL[a].toLowerCase()).join(' ni ')}.
-            {ocultas > 0
-              ? ocultas === 1
-                ? ' Hay 1 de otra arma.'
-                : ` Hay ${ocultas} de otras armas.`
-              : ''}
-          </p>
-          {ocultas > 0 ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="cursor-pointer"
-              onClick={() => setArmas([...ARMAS])}
-            >
-              Ver todas las armas
-            </Button>
-          ) : null}
-        </div>
+        <EstadoVacio
+          className="rounded-xl bg-card"
+          titulo={`Ninguna convocatoria de ${armas.map((a) => rotuloArma(a).toLowerCase()).join(' ni ')}`}
+          descripcion={ocultas > 0 ? (ocultas === 1 ? 'Hay 1 de otra arma.' : `Hay ${ocultas} de otras armas.`) : undefined}
+          accion={
+            ocultas > 0 ? (
+              <Button variant="outline" size="sm" className="cursor-pointer" onClick={() => setArmas([...ARMAS])}>
+                Ver todas las armas
+              </Button>
+            ) : undefined
+          }
+        />
+
       ) : (
         <ul className="flex flex-col divide-y">
           {visibles.map((c) => (
@@ -228,7 +219,7 @@ function Fila({
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:gap-6">
           <CollapsibleTrigger className="group flex min-w-0 flex-1 cursor-pointer items-start gap-2 text-left">
             <ChevronDown
-              className="mt-1.5 size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180"
+              className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180"
               aria-hidden
             />
             <span className="min-w-0 flex-1">
@@ -241,27 +232,22 @@ function Fila({
                 ) : null}
                 <span className="min-w-0 text-base font-medium">{c.title}</span>
                 {c.published ? (
-                  <Badge variant="outline" className="border-gold/50 text-gold">
-                    Publicada
-                  </Badge>
+                  <Pastilla tono="oro">Publicada</Pastilla>
                 ) : (
-                  <Badge variant="secondary">Borrador</Badge>
+                  <Pastilla>Borrador</Pastilla>
                 )}
+
               </span>
 
               {/* Con el rótulo delante, no encadenados con puntos medios. */}
-              <span className="mt-1 flex min-w-0 flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+              <span className="mt-1 flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                 <span className="min-w-0 truncate">{titular(c.eventName)}</span>
                 <span>
-                  <span className="text-muted-foreground">Se compite </span>
-                  {formatDateRangeEs(c.eventStartDate, c.eventEndDate)}
+                  {rangoFechas(c.eventStartDate, c.eventEndDate, 'linea', { anio: 'auto' })}
                 </span>
                 {c.respondBy ? (
                   <span>
-                    <span className="text-muted-foreground">
-                      Responden antes del{' '}
-                    </span>
-                    {formatDateTimeEs(c.respondBy)}
+                    Responden antes del {fechaHora(c.respondBy)}
                   </span>
                 ) : null}
               </span>
@@ -297,18 +283,12 @@ function Fila({
                 </TableHeader>
                 <TableBody>
                   {c.convocados.map((a) => {
-                    const prueba = partirPrueba(a.competition);
                     return (
                       <TableRow key={a.id}>
                         <TableCell className="pl-0 align-top whitespace-normal">
                           <span className="block text-sm">{a.athleteName}</span>
-                          <span className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground md:hidden">
-                            {prueba ? (
-                              <span>
-                                {prueba.prueba}
-                                {prueba.categoria ? ` ${prueba.categoria}` : ''}
-                              </span>
-                            ) : null}
+                          <span className="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground md:hidden">
+                            {a.competition ? <span>{a.competition}</span> : null}
                             <span
                               className={
                                 a.placeType === 'ranking' ? 'text-gold' : undefined
@@ -319,16 +299,8 @@ function Fila({
                           </span>
                         </TableCell>
                         <TableCell className="hidden align-top md:table-cell">
-                          {prueba ? (
-                            <>
-                              <span className="text-foreground">{prueba.prueba}</span>
-                              {prueba.categoria ? (
-                                <span className="text-muted-foreground">
-                                  {' '}
-                                  {prueba.categoria}
-                                </span>
-                              ) : null}
-                            </>
+                          {a.competition ? (
+                            <span className="text-foreground">{a.competition}</span>
                           ) : (
                             <span className="text-muted-foreground">sin prueba</span>
                           )}
@@ -358,7 +330,7 @@ function Fila({
                             {CALL_UP_STATUS_LABEL[a.status]}
                           </span>
                           {a.rejectionReason ? (
-                            <span className="mt-0.5 ml-auto block max-w-64 text-xs text-muted-foreground">
+                            <span className="mt-1 ml-auto block max-w-64 text-xs text-muted-foreground">
                               {a.rejectionReason}
                             </span>
                           ) : null}
@@ -421,7 +393,7 @@ function Fila({
                   ) : (
                     <span className="text-xs text-muted-foreground">
                       Publicada
-                      {c.publishedAt ? ` el ${formatDateTimeEs(c.publishedAt)}` : ''}
+                      {c.publishedAt ? ` el ${fechaHora(c.publishedAt)}` : ''}
                       {c.createdByName ? ` por ${c.createdByName}` : ''}
                     </span>
                   )}

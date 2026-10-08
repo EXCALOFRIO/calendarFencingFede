@@ -1,10 +1,8 @@
 'use client';
 
-import { LoaderCircle } from 'lucide-react';
-import Link from 'next/link';
 import * as React from 'react';
 import { masFeedAccion } from '@/app/(app)/explorar/acciones';
-import { construirUrlInicio } from '@/lib/sport/explorar/inicio-url';
+import { VerMas } from '@/components/sistema/cabecera-seccion';
 import type { EntradaSiguiendo } from '@/lib/sport/explorar/tipos-social';
 import { anadirSinRepetir } from './resultados';
 import { TarjetaSiguiendo } from './tarjeta-feed';
@@ -13,9 +11,9 @@ type Estado = 'reposo' | 'cargando' | 'error' | 'fin';
 
 /**
  * Feed con carga incremental: al acercarse al final se pide la página
- * siguiente por el cursor y se añade debajo, sin navegar ni repetir. Sin
- * JavaScript (o si el observador no está), «Ver más» es un enlace a esa
- * página, y el mismo botón reintenta tras un fallo.
+ * siguiente por el cursor y se añade debajo, sin navegar ni repetir. Si el
+ * observador no está, «Ver más» la pide a mano, y el mismo botón reintenta
+ * tras un fallo.
  */
 export function FeedIncremental({
   items,
@@ -71,25 +69,11 @@ export function FeedIncremental({
       </ol>
       <div ref={centinela} className="flex min-h-[44px] flex-col items-center justify-center gap-1 pt-1">
         {cursor ? (
-          <Link
-            href={construirUrlInicio({ soloMedallas, cursor })}
-            prefetch={false}
-            rel="next"
-            aria-disabled={estado === 'cargando'}
-            className="inline-flex h-[44px] items-center gap-1.5 px-4 text-[13px] font-semibold text-primary-text outline-none focus-visible:ring-[3px] focus-visible:ring-ring"
-            onClick={(ev) => {
-              if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button !== 0) return;
-              ev.preventDefault();
-              void cargar();
-            }}
-          >
-            {estado === 'cargando' ? <LoaderCircle className="size-[16px] animate-spin motion-reduce:animate-none" aria-hidden /> : null}
-            {estado === 'error' ? 'Reintentar' : 'Ver más'}
-          </Link>
+          <VerMas onClick={() => void cargar()} detalle="resultados" />
         ) : lista.length > limite ? (
-          <p className="text-[12px] text-muted-foreground">No hay más resultados.</p>
+          <p className="text-xs text-muted-foreground">No hay más resultados.</p>
         ) : null}
-        <p role="status" className="sr-only">
+        <p role="status" className={estado === 'error' ? 'text-center text-sm text-danger' : 'sr-only'}>
           {estado === 'cargando' ? 'Leyendo más resultados' : estado === 'error' ? 'No se han podido cargar más resultados.' : ''}
         </p>
       </div>

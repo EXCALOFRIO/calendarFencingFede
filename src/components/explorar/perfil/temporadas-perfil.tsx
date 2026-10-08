@@ -74,7 +74,7 @@ function Grafico({ serie }: { serie: NonNullable<ReturnType<typeof serieTemporad
           return (
             <li key={p.temporada} className="flex min-w-0 flex-col items-center">
               <span className={cn('cifra truncate text-sm leading-tight sm:block sm:text-base', denso && 'hidden')}>{p.texto}</span>
-              <span className="text-[12px] leading-tight whitespace-nowrap text-muted-foreground sm:truncate sm:text-xs">
+              <span className="text-xs leading-tight whitespace-nowrap text-muted-foreground sm:truncate sm:text-xs">
                 <span className={cn('sm:hidden', !rotuladaEnMovil && 'invisible')}>
                   {p.temporada.replace(/^\d{2}(\d{2})-\d{2}(\d{2})$/, '$1-$2')}
                 </span>
@@ -91,22 +91,22 @@ function Grafico({ serie }: { serie: NonNullable<ReturnType<typeof serieTemporad
 function FilaTemporada({ t }: { t: TemporadaPerfil }) {
   const pct = porcentajeVictorias(t.asaltos);
   return (
-    <li className="grid min-w-0 grid-cols-[4rem_minmax(0,1fr)_2.25rem_2.25rem_2.5rem] items-center gap-x-1.5 bg-card px-3 py-2.5 sm:grid-cols-[6rem_minmax(0,1fr)_4rem_4rem_4rem] sm:px-4">
+    <li className="grid min-w-0 grid-cols-[4rem_minmax(0,1fr)_2.25rem_2.25rem_2.5rem] items-center gap-x-2 bg-card px-3 py-3 sm:grid-cols-[6rem_minmax(0,1fr)_4rem_4rem_4rem] sm:px-4">
       <span className="cifra text-xl leading-none">{etiquetaTemporadaDeportiva(t.temporada)}</span>
       <span className="flex min-w-0">
         <Medallero oros={t.medallero.oros} platas={t.medallero.platas} bronces={t.medallero.bronces} ocultarCeros />
       </span>
       <span className="flex flex-col items-end leading-none">
         <span className="cifra text-xl">{t.pruebas > 0 ? t.pruebas : '—'}</span>
-        <span className="text-[12px] text-muted-foreground">pruebas</span>
+        <span className="text-xs text-muted-foreground">pruebas</span>
       </span>
       <span className="flex flex-col items-end leading-none">
         <span className="cifra text-xl">{t.mejorPuesto !== null ? `${t.mejorPuesto}º` : '—'}</span>
-        <span className="text-[12px] text-muted-foreground">mejor</span>
+        <span className="text-xs text-muted-foreground">mejor</span>
       </span>
       <span className="flex flex-col items-end leading-none">
         <span className="cifra text-xl">{pct !== null ? `${pct}%` : '—'}</span>
-        <span className="text-[12px] text-muted-foreground">ganados</span>
+        <span className="text-xs text-muted-foreground">ganados</span>
       </span>
     </li>
   );

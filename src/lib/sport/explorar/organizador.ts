@@ -65,12 +65,17 @@ export function organizadorDe(
 /** Lo que hace `plegarNombre` y `plegarSql` no: el resto de la puntuación y los espacios dobles. */
 const PUNTUACION = ['"', "''", '(', ')', ':', ';', '_', '&', '+', '!', '?', '«', '»', '·', '#', '*', '[', ']', '’', '‘', '´', '`', '|', '–', '—', '“', '”'];
 
-function plegadoConBordes(columna: SQL): SQL {
-  let texto = plegarSql(columna);
+/** La segunda mitad de `plegadoConBordes`, sobre un texto ya pasado por `plegarSql`. */
+export function bordesSql(plegado: SQL): SQL {
+  let texto = plegado;
   for (const p of PUNTUACION) texto = sql`replace(${texto}, ${sql.raw(`'${p}'`)}, ' ')`;
   texto = sql`replace(replace(${texto}, 'С', 'c'), 'с', 'c')`;
   // Bordes de palabra: «% efc %» sólo coincide con la palabra entera.
   return sql`replace(replace(replace(' ' || ${texto} || ' ', '    ', ' '), '  ', ' '), '  ', ' ')`;
+}
+
+function plegadoConBordes(columna: SQL): SQL {
+  return bordesSql(plegarSql(columna));
 }
 
 /**
@@ -80,13 +85,32 @@ function plegadoConBordes(columna: SQL): SQL {
  */
 const FORMAS_CHAMP = ['champ', 'champs', 'champion', 'champions', 'championat', 'championats', 'championnat', 'championnats', 'championship', 'championships'];
 
-/** `tipoPorNombre` en SQL: el tipo que da el nombre, o NULL. */
-export function sqlTipoPorNombre(columna: SQL): SQL {
-  const casos = FRASES_TIPO.map(([tipo, frases]) => {
+/**
+ * D1 rechaza árboles de expresión de más de 100 niveles, y SQLite encadena
+ * `a OR b OR c…` como un árbol de tantos niveles como términos: la lista de
+ * los campeonatos llega a 186. Agrupados por mitades quedan en ~8.
+ */
+export function oEquilibrado(terminos: readonly string[]): string {
+  if (terminos.length === 1) return terminos[0];
+  const mitad = Math.ceil(terminos.length / 2);
+  return `(${oEquilibrado(terminos.slice(0, mitad))} OR ${oEquilibrado(terminos.slice(mitad))})`;
+}
+
+/** Los `WHEN … THEN` de `tipoPorNombre` sobre la columna `t`, ya plegada y con bordes. */
+export function casosTipoPorNombre(): string {
+  return FRASES_TIPO.map(([tipo, frases]) => {
     const literales = frases.flatMap((f) => (f.includes('champ%') ? FORMAS_CHAMP.map((c) => f.replace('champ%', c)) : [f]));
-    return `WHEN ${literales.map((f) => `t LIKE '% ${f} %'`).join(' OR ')} THEN '${tipo}'`;
+    return `WHEN ${oEquilibrado(literales.map((f) => `t LIKE '% ${f} %'`))} THEN '${tipo}'`;
   }).join('\n');
-  return sql`(SELECT CASE ${sql.raw(casos)} END FROM (SELECT ${plegadoConBordes(columna)} AS t))`;
+}
+
+/**
+ * `tipoPorNombre` en SQL: el tipo que da el nombre, o NULL. Sólo para SQLite
+ * local (pruebas): en D1 pasa de 100 niveles de expresión. En D1, por etapas
+ * como `sqlOrganizador` o `SENTENCIAS_TIPO_EDICION` de `pais-indice-sql.ts`.
+ */
+export function sqlTipoPorNombre(columna: SQL): SQL {
+  return sql`(SELECT CASE ${sql.raw(casosTipoPorNombre())} END FROM (SELECT ${plegadoConBordes(columna)} AS t))`;
 }
 
 const TIPOS_EFC = sql.raw(`'CTO_EUROPA', 'CIRCUITO_EUROPEO'`);
@@ -96,6 +120,11 @@ const TIPOS_RFEE = sql.raw(`'CTO_ESPANA', 'TNR', 'LIGA_CLUBES', 'LIGA_MASTER', '
  * Condición SQL sobre la edición (`e`) con la misma regla que `organizadorDe`.
  * El tipo se calcula una vez por edición en una subconsulta sin correlación:
  * son unos pocos miles de filas, no una por resultado.
+ *
+ * Por etapas `MATERIALIZED`: escrito como una sola subconsulta, SQLite copiaba
+ * el pliegue del nombre (~90 `replace` anidados) dentro de cada `LIKE` y D1
+ * rechazaba la consulta (árbol de expresión de más de 100 niveles). Una CTE
+ * materializada no se aplana, así que cada etapa es un árbol aparte.
  */
 export function sqlOrganizador(organizador: OrganizadorFiltro): SQL {
   const efc = sql`(o.source = 'efc' OR coalesce(o.tipo, '') IN (${TIPOS_EFC}))`;
@@ -106,6 +135,9 @@ export function sqlOrganizador(organizador: OrganizadorFiltro): SQL {
         ? sql`(o.source = 'fie' AND NOT ${efc})`
         : sql`(o.source NOT IN ('efc', 'fie') AND (o.tipo IN (${TIPOS_RFEE}) OR (o.tipo IS NULL
             AND o.source <> 'skermo_regional' AND coalesce(nullif(o.country_code, ''), 'ESP') = 'ESP')))`;
-  return sql`e.id IN (SELECT o.id FROM (SELECT x.id, x.source, x.country_code,
-    ${sqlTipoPorNombre(sql`x.name`)} AS tipo FROM sport_edition x) o WHERE ${condicion})`;
+  return sql`e.id IN (WITH
+    org_plegado AS MATERIALIZED (SELECT x.id, x.source, x.country_code, ${plegarSql(sql`x.name`)} AS t FROM sport_edition x),
+    org_bordes AS MATERIALIZED (SELECT id, source, country_code, ${bordesSql(sql`t`)} AS t FROM org_plegado),
+    o AS MATERIALIZED (SELECT id, source, country_code, CASE ${sql.raw(casosTipoPorNombre())} END AS tipo FROM org_bordes)
+    SELECT o.id FROM o WHERE ${condicion})`;
 }

@@ -22,7 +22,7 @@ import {
 } from '@/lib/entries/identidad';
 import { esquemaDeportivo } from '@/lib/sport/esquema-db';
 import { parseFechaMadrid } from '../callups/fechas';
-import { hayQueMarcarVisto } from '../cron/niveles';
+import { LIMITES, hayQueMarcarListaVista, hayQueMarcarVisto } from '../cron/niveles';
 import { sha256 } from '../utils';
 import { escribirEnlacesDirecto, type FilaDirecto } from './directos';
 import type { NormalizedEvent } from './types';
@@ -39,10 +39,40 @@ export type UpsertStats = {
   registrationsMatched: number;
   /** Los que ya no figuran en la lista oficial: se marcan, no se borran. */
   registrationsWithdrawn: number;
+  /** Inscritos nuevos o con datos cambiados (no cuenta la renovación de `last_seen_at`). */
+  registrationsChanged: number;
+  /** Pruebas cuyo nº de inscritos publicado ha cambiado. */
+  competitionCountsChanged: number;
+  /** Plazos publicados nuevos o movidos. */
+  deadlinesWritten: number;
+  /** Si los plazos no se pudieron guardar: el resto de la pasada sigue valiendo. */
+  deadlinesError: string | null;
+  documentsInserted: number;
+  liveLinksWritten: number;
   notificationsQueued: number;
   /** Cambios detectados, para poder enseñarlos en el panel de admin. */
   changes: ChangeRecord[];
 };
+
+/**
+ * Filas que cambian algo que se ve (calendario, fichas, listas). No cuenta
+ * `last_seen_at` ni los recuentos de cuarentena: con 0, la caché del
+ * calendario no tiene por qué invalidarse.
+ */
+export function cambiosVisibles(s: UpsertStats): number {
+  return (
+    s.created +
+    s.updated +
+    s.competitionsCreated +
+    s.competitionsUpdated +
+    s.competitionCountsChanged +
+    s.registrationsChanged +
+    s.registrationsWithdrawn +
+    s.deadlinesWritten +
+    s.documentsInserted +
+    s.liveLinksWritten
+  );
+}
 
 export type ChangeRecord = {
   eventName: string;
@@ -170,6 +200,12 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
     registrationsSeen: 0,
     registrationsMatched: 0,
     registrationsWithdrawn: 0,
+    registrationsChanged: 0,
+    competitionCountsChanged: 0,
+    deadlinesWritten: 0,
+    deadlinesError: null,
+    documentsInserted: 0,
+    liveLinksWritten: 0,
     notificationsQueued: 0,
     changes: [],
   };
@@ -317,6 +353,7 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
     source: NormalizedEvent['source'];
     sourceUrl: string | null;
     rows: NonNullable<NormalizedEvent['competitions'][number]['registrations']>;
+    fechaPrueba: string | null;
   }[] = [];
   const documentInserts: (typeof eventDocument.$inferInsert)[] = [];
   const liveInserts: FilaDirecto[] = [];
@@ -382,6 +419,7 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
         // El nº de inscritos cambia a diario y no entra en el hash a propósito,
         // pero sí interesa tenerlo al día.
         const mismoRecuento = existing.registrationCount === c.registrationCount;
+        if (!mismoRecuento) stats.competitionCountsChanged += 1;
         if (
           !mismoRecuento ||
           hayQueMarcarVisto({ endDate: normalized.endDate, lastSeenAt: existing.lastSeenAt }, now)
@@ -398,6 +436,7 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
           source: normalized.source,
           sourceUrl: c.sourceUrl,
           rows: c.registrations,
+          fechaPrueba: c.competitionDate,
         });
       }
 
@@ -510,13 +549,15 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
   }
 
   for (const batch of lotesDeInsercion(documentInserts, eventDocument)) {
-    await db
+    const nuevos = await db
       .insert(eventDocument)
       .values(batch)
-      .onConflictDoNothing({ target: [eventDocument.eventId, eventDocument.url] });
+      .onConflictDoNothing({ target: [eventDocument.eventId, eventDocument.url] })
+      .returning({ id: eventDocument.id });
+    stats.documentsInserted += nuevos.length;
   }
 
-  await escribirEnlacesDirecto(
+  stats.liveLinksWritten = await escribirEnlacesDirecto(
     liveInserts.flatMap((fila, i): FilaDirecto[] => {
       const clave = liveCompetitionKeys[i];
       if (!clave) return [{ ...fila, eventCompetitionId: null }];
@@ -548,6 +589,7 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
   stats.registrationsSeen = registrationStats.seen;
   stats.registrationsMatched = registrationStats.matched;
   stats.registrationsWithdrawn = registrationStats.withdrawn;
+  stats.registrationsChanged = registrationStats.changed;
 
   /**
    * El cierre que publica la fuente se guarda como plazo de origen PUBLICADO,
@@ -600,49 +642,83 @@ export async function upsertEvents(events: NormalizedEvent[]): Promise<UpsertSta
     };
   }
 
-  const deadlineInserts = publishedDeadlines
-    .map((d) => {
-      const competition = existingCompetitions.get(d.competitionKey);
-      if (!competition) return null;
-      const { instante, hora } = horaDeCierre(d.closeDate, d.scope);
-      return {
-        eventId: d.eventId,
-        eventCompetitionId: competition.id,
-        type: 'L1' as const,
-        deadlineAt: instante,
-        surchargeEur: null,
-        blocking: false,
-        origin: 'PUBLICADO' as const,
-        sourceDocument: hora,
-        sourceUrl: d.sourceUrl,
-        updatedAt: now,
-      };
-    })
-    .filter((d): d is NonNullable<typeof d> => d !== null);
+  try {
+    stats.deadlinesWritten = await guardarPlazosPublicados();
+  } catch (error) {
+    // Un plazo que no entra no puede tumbar el calendario entero (pasó el 06-10 con la RFEE).
+    stats.deadlinesError = (error instanceof Error ? error.message : String(error)).slice(0, 200);
+  }
 
-  const dedupedDeadlines = dedupeBy(
-    deadlineInserts,
-    (d) => `${d.eventId}|${d.eventCompetitionId}|${d.type}`,
-  );
-
-  for (const batch of lotesDeInsercion(dedupedDeadlines, eventDeadline)) {
-    await db
-      .insert(eventDeadline)
-      .values(batch)
-      .onConflictDoUpdate({
-        target: [
-          eventDeadline.eventId,
-          eventDeadline.eventCompetitionId,
-          eventDeadline.type,
-        ],
-        set: {
-          // `excluded` es la fila que se intentaba insertar: así, si la fuente
-          // mueve el cierre, el plazo guardado se actualiza en vez de ignorarse.
-          deadlineAt: sql`excluded."deadline_at"`,
-          origin: 'PUBLICADO',
+  async function guardarPlazosPublicados(): Promise<number> {
+    const deadlineInserts = publishedDeadlines
+      .map((d) => {
+        const competition = existingCompetitions.get(d.competitionKey);
+        if (!competition) return null;
+        const { instante, hora } = horaDeCierre(d.closeDate, d.scope);
+        // `deadline_at` es NOT NULL: una fecha que no se entiende no se guarda.
+        if (!(instante instanceof Date) || Number.isNaN(instante.getTime())) return null;
+        return {
+          eventId: d.eventId,
+          eventCompetitionId: competition.id,
+          type: 'L1' as const,
+          deadlineAt: instante,
+          surchargeEur: null,
+          blocking: false,
+          origin: 'PUBLICADO' as const,
+          sourceDocument: hora,
+          sourceUrl: d.sourceUrl,
           updatedAt: now,
-        },
-      });
+        };
+      })
+      .filter((d): d is NonNullable<typeof d> => d !== null);
+
+    const claveDePlazo = (d: { eventId: string; eventCompetitionId: string | null; type: string }) =>
+      `${d.eventId}|${d.eventCompetitionId}|${d.type}`;
+    const dedupedDeadlines = dedupeBy(deadlineInserts, claveDePlazo);
+
+    /**
+     * Solo los plazos nuevos o movidos. Antes se reescribían todos cada noche
+     * (con `updated_at`), y `deadline_at` está indexada: dos filas por plazo.
+     */
+    const guardados = new Map<string, { deadlineAt: Date; origin: string }>();
+    for (const lote of chunk([...new Set(dedupedDeadlines.map((d) => d.eventId))], 300)) {
+      const filas = await db
+        .select({
+          eventId: eventDeadline.eventId,
+          eventCompetitionId: eventDeadline.eventCompetitionId,
+          type: eventDeadline.type,
+          deadlineAt: eventDeadline.deadlineAt,
+          origin: eventDeadline.origin,
+        })
+        .from(eventDeadline)
+        .where(inArray(eventDeadline.eventId, lote));
+      for (const f of filas) guardados.set(claveDePlazo(f), f);
+    }
+    const plazosQueCambian = dedupedDeadlines.filter((d) => {
+      const previo = guardados.get(claveDePlazo(d));
+      return !previo || previo.origin !== 'PUBLICADO' || previo.deadlineAt?.getTime() !== d.deadlineAt.getTime();
+    });
+
+    for (const batch of lotesDeInsercion(plazosQueCambian, eventDeadline)) {
+      await db
+        .insert(eventDeadline)
+        .values(batch)
+        .onConflictDoUpdate({
+          target: [
+            eventDeadline.eventId,
+            eventDeadline.eventCompetitionId,
+            eventDeadline.type,
+          ],
+          set: {
+            // `excluded` es la fila que se intentaba insertar: así, si la fuente
+            // mueve el cierre, el plazo guardado se actualiza en vez de ignorarse.
+            deadlineAt: sql`excluded."deadline_at"`,
+            origin: 'PUBLICADO',
+            updatedAt: now,
+          },
+        });
+    }
+    return plazosQueCambian.length;
   }
 
   // --- 5. Avisos, al final y una sola vez ---
@@ -694,11 +770,12 @@ async function upsertRegistrations(
     source: NormalizedEvent['source'];
     sourceUrl: string | null;
     rows: FilaDeListaOficial[];
+    fechaPrueba: string | null;
   }[],
   competitions: Map<string, typeof eventCompetition.$inferSelect>,
   now: Date,
-): Promise<{ seen: number; matched: number; withdrawn: number }> {
-  if (batches.length === 0) return { seen: 0, matched: 0, withdrawn: 0 };
+): Promise<ResumenListas> {
+  if (batches.length === 0) return { seen: 0, matched: 0, withdrawn: 0, changed: 0, refreshed: 0 };
 
   const porPrueba: ListaDeInscritos[] = [];
   for (const batch of batches) {
@@ -709,6 +786,7 @@ async function upsertRegistrations(
       source: batch.source,
       sourceUrl: batch.sourceUrl,
       rows: batch.rows,
+      fechaPrueba: batch.fechaPrueba,
     });
   }
 
@@ -723,6 +801,12 @@ export type ListaDeInscritos = {
   rows: FilaDeListaOficial[];
   /** Día (YYYY-MM-DD) de la prueba: es el día del hecho para ámbitos y vigencias. */
   dia?: string | null;
+  /**
+   * Día de la prueba solo para decidir cada cuánto se renueva `last_seen_at`
+   * (`hayQueMarcarListaVista`). Va aparte de `dia` porque `dia` también cambia
+   * el día de observación de las referencias, y el calendario no lo pasa.
+   */
+  fechaPrueba?: string | null;
 };
 
 /**
@@ -737,21 +821,66 @@ export type ListaDeInscritos = {
  *  · la pasada de inscritos de la FIE, que lee las pruebas de la base y ya
  *    tiene el `id` en la mano.
  */
+export type ResumenListas = {
+  seen: number;
+  matched: number;
+  withdrawn: number;
+  /** Filas nuevas o con algún dato cambiado (incluye bajas deshechas). */
+  changed: number;
+  /** Filas iguales reescritas solo para renovar `last_seen_at`. */
+  refreshed: number;
+};
+
+type FilaGuardada = {
+  id: string;
+  eventCompetitionId: string;
+  sourceAthleteName: string;
+  sourceTeam: string;
+  source: NormalizedEvent['source'];
+  athleteId: string | null;
+  sourceUrl: string | null;
+  sourceLicense: string | null;
+  sourceClub: string | null;
+  sourceRegisteredAt: string | null;
+  lastSeenAt: Date | null;
+  withdrawnAt: Date | null;
+};
+
+/**
+ * ¿Cambia algo si se aplica la cláusula `ON CONFLICT` de abajo a esta fila?
+ * Reproduce sus `coalesce` uno a uno: lo que no cambiaría no se escribe.
+ */
+export function filaInscritaCambia(
+  previa: Omit<FilaGuardada, 'id' | 'eventCompetitionId' | 'sourceAthleteName' | 'sourceTeam' | 'source' | 'lastSeenAt'>,
+  nueva: typeof competitionRegistration.$inferInsert,
+): boolean {
+  if (previa.withdrawnAt) return true;
+  if ((previa.athleteId ?? nueva.athleteId ?? null) !== previa.athleteId) return true;
+  if ((nueva.sourceUrl ?? null) !== previa.sourceUrl) return true;
+  if (nueva.sourceLicense != null && nueva.sourceLicense !== previa.sourceLicense) return true;
+  if (nueva.sourceClub != null && nueva.sourceClub !== previa.sourceClub) return true;
+  if (nueva.sourceRegisteredAt != null && nueva.sourceRegisteredAt !== previa.sourceRegisteredAt) return true;
+  return false;
+}
+
 export async function upsertListasDeInscritos(
   listas: ListaDeInscritos[],
   now: Date,
-): Promise<{ seen: number; matched: number; withdrawn: number }> {
+): Promise<ResumenListas> {
   const inserts: (typeof competitionRegistration.$inferInsert)[] = [];
   /**
    * Pruebas cuya lista hemos leído de verdad, con la fuente que la publica:
    * solo ahí, y solo de esa fuente, se dan bajas.
    */
   const touched: { id: string; source: NormalizedEvent['source'] }[] = [];
+  /** Día de la prueba de cada fila de `inserts`, para decidir si toca renovar `last_seen_at`. */
+  const fechaPruebaPorFila: (string | null)[] = [];
 
   for (const lista of listas) {
     touched.push({ id: lista.eventCompetitionId, source: lista.source });
 
     for (const row of lista.rows) {
+      fechaPruebaPorFila.push(lista.fechaPrueba ?? lista.dia ?? null);
       inserts.push({
         eventCompetitionId: lista.eventCompetitionId,
         sourceAthleteName: row.sourceAthleteName,
@@ -768,7 +897,7 @@ export async function upsertListasDeInscritos(
   }
 
   if (touched.length === 0) {
-    return { seen: 0, matched: 0, withdrawn: 0 };
+    return { seen: 0, matched: 0, withdrawn: 0, changed: 0, refreshed: 0 };
   }
 
   let matched = 0;
@@ -825,14 +954,16 @@ export async function upsertListasDeInscritos(
     }
   }
 
-  const deduped = dedupeBy(
-    inserts,
-    (r) => `${r.eventCompetitionId}|${r.sourceAthleteName}|${r.sourceTeam}`,
-  );
-
   /** Referencias publicadas, agrupadas por la clave natural de la inscripción. */
   const claveDe = (r: { eventCompetitionId: string; sourceAthleteName: string; sourceTeam?: string }) =>
     `${r.eventCompetitionId}|${r.sourceAthleteName}|${r.sourceTeam ?? ''}`;
+
+  const deduped = dedupeBy(inserts, claveDe);
+  const fechaPorClave = new Map<string, string | null>();
+  for (const [i, row] of inserts.entries()) {
+    const clave = claveDe(row);
+    if (!fechaPorClave.has(clave)) fechaPorClave.set(clave, fechaPruebaPorFila[i]);
+  }
   const refsPorClave = new Map<string, Map<string, RefPublicada>>();
   for (const [i, row] of inserts.entries()) {
     const clave = claveDe(row);
@@ -844,7 +975,61 @@ export async function upsertListasDeInscritos(
   }
   const guardarReferencias = (await esquemaDeportivo()).referencias;
 
-  for (const lote of lotesDeInsercion(deduped, competitionRegistration)) {
+  /**
+   * =========================================================================
+   * SOLO SE ESCRIBE LO QUE CAMBIA
+   * =========================================================================
+   *
+   * Antes cada noche se reescribían las ~2.600 filas de Skermo solo para mover
+   * `last_seen_at`, que además era lo que decidía las bajas. Ahora se leen las
+   * filas guardadas de las pruebas leídas (lecturas, mucho más baratas que
+   * escrituras en D1) y se escribe una fila solo si:
+   *  · es nueva, o alguno de sus datos cambiaría con la cláusula de abajo
+   *    (`filaInscritaCambia`), o
+   *  · trae referencias publicadas que guardar (FIE: esa ruta ya solo llega
+   *    aquí cuando la huella de la lista cambió), o
+   *  · toca renovar la fecha de lectura (`hayQueMarcarListaVista`).
+   */
+  const guardadasPorClave = new Map<string, FilaGuardada>();
+  for (const lote of chunk([...new Set(touched.map((t) => t.id))], 300)) {
+    const filas = await db
+      .select({
+        id: competitionRegistration.id,
+        eventCompetitionId: competitionRegistration.eventCompetitionId,
+        sourceAthleteName: competitionRegistration.sourceAthleteName,
+        sourceTeam: competitionRegistration.sourceTeam,
+        source: competitionRegistration.source,
+        athleteId: competitionRegistration.athleteId,
+        sourceUrl: competitionRegistration.sourceUrl,
+        sourceLicense: competitionRegistration.sourceLicense,
+        sourceClub: competitionRegistration.sourceClub,
+        sourceRegisteredAt: competitionRegistration.sourceRegisteredAt,
+        lastSeenAt: competitionRegistration.lastSeenAt,
+        withdrawnAt: competitionRegistration.withdrawnAt,
+      })
+      .from(competitionRegistration)
+      .where(inArray(competitionRegistration.eventCompetitionId, lote));
+    for (const f of filas as FilaGuardada[]) guardadasPorClave.set(claveDe(f), f);
+  }
+
+  let changed = 0;
+  let refreshed = 0;
+  const aEscribir = deduped.filter((row) => {
+    const clave = claveDe(row);
+    const previa = guardadasPorClave.get(clave);
+    if (!previa || filaInscritaCambia(previa, row)) {
+      changed += 1;
+      return true;
+    }
+    if (guardarReferencias && (refsPorClave.get(clave)?.size ?? 0) > 0) return true;
+    if (hayQueMarcarListaVista(fechaPorClave.get(clave), previa.lastSeenAt, now)) {
+      refreshed += 1;
+      return true;
+    }
+    return false;
+  });
+
+  for (const lote of lotesDeInsercion(aEscribir, competitionRegistration)) {
     const guardadas = await db
       .insert(competitionRegistration)
       .values(lote)
@@ -941,10 +1126,11 @@ export async function upsertListasDeInscritos(
   }
 
   /**
-   * Bajas. En vez de comparar listas fila a fila, se aprovecha que a todo lo
-   * visto se le acaba de poner `last_seen_at = now`: lo que siga con una marca
-   * anterior dentro de una prueba que SÍ hemos leído es que ya no está. Una
-   * sola sentencia por lote de pruebas, en vez de una por prueba.
+   * Bajas: lo guardado y vivo de una prueba cuya lista SÍ se ha leído en esta
+   * pasada, de esa misma fuente, que no aparece en ninguna de las listas
+   * leídas de esa prueba. Se compara con el conjunto leído, no con
+   * `last_seen_at`, porque esa fecha ya no se renueva cada noche. Una sola
+   * sentencia por lote de bajas.
    *
    * Y SOLO DE LA FUENTE QUE SE ACABA DE LEER, que es la parte importante. Una
    * misma prueba puede acabar con la lista de dos publicadores —la de la FIE y
@@ -957,31 +1143,26 @@ export async function upsertListasDeInscritos(
    * propia lista—, así que esto es un cinturón, no un cambio de conducta.
    */
   let withdrawn = 0;
-  const porFuente = new Map<NormalizedEvent['source'], string[]>();
-  for (const t of touched) {
-    const lista = porFuente.get(t.source) ?? [];
-    lista.push(t.id);
-    porFuente.set(t.source, lista);
-  }
-  for (const [fuente, ids] of porFuente) {
-    for (const lote of chunk([...new Set(ids)], 300)) {
-      const filas = await db
-        .update(competitionRegistration)
-        .set({ withdrawnAt: now })
-        .where(
-          and(
-            inArray(competitionRegistration.eventCompetitionId, lote),
-            eq(competitionRegistration.source, fuente),
-            isNull(competitionRegistration.withdrawnAt),
-            sql`${competitionRegistration.lastSeenAt} < ${now.getTime()}`,
-          ),
-        )
-        .returning({ id: competitionRegistration.id });
-      withdrawn += filas.length;
-    }
+  const leidas = new Set(touched.map((t) => `${t.id}|${t.source}`));
+  const vistas = new Set(deduped.map(claveDe));
+  const bajas = [...guardadasPorClave.values()]
+    .filter(
+      (f) =>
+        f.withdrawnAt === null &&
+        leidas.has(`${f.eventCompetitionId}|${f.source}`) &&
+        !vistas.has(claveDe(f)),
+    )
+    .map((f) => f.id);
+  for (const lote of chunk(bajas, 300)) {
+    const filas = await db
+      .update(competitionRegistration)
+      .set({ withdrawnAt: now })
+      .where(and(inArray(competitionRegistration.id, lote), isNull(competitionRegistration.withdrawnAt)))
+      .returning({ id: competitionRegistration.id });
+    withdrawn += filas.length;
   }
 
-  return { seen: deduped.length, matched, withdrawn };
+  return { seen: deduped.length, matched, withdrawn, changed, refreshed };
 }
 
 /**
@@ -1083,6 +1264,11 @@ export async function markMissingEvents(
   source: string,
   seenSourceIds: string[],
   runStartedAt: Date,
+  /**
+   * Solo los `source_id` que empiezan así (`skermo-FCE-`): permite cerrar una
+   * federación leída entera aunque otra de la misma fuente no respondiera.
+   */
+  prefijo?: string,
 ): Promise<number> {
   if (seenSourceIds.length === 0) return 0;
 
@@ -1092,6 +1278,7 @@ export async function markMissingEvents(
     .where(
       and(
         eq(event.source, source as never),
+        prefijo ? sql`substr(${event.sourceId}, 1, ${prefijo.length}) = ${prefijo}` : undefined,
         notInArray(event.sourceId, seenSourceIds),
         isNull(event.disappearedAt),
       ),
@@ -1099,4 +1286,36 @@ export async function markMissingEvents(
     .returning({ id: event.id });
 
   return result.length;
+}
+
+/**
+ * Lo que `upsertEvents` habría escrito con una página idéntica a la última
+ * leída entera, y que se ve: la fecha de lectura de los eventos que se tiran
+ * ya (`hayQueMarcarVisto`, rama diaria) y la de las listas de inscritos de
+ * las pruebas inminentes (`hayQueMarcarListaVista`). Dos sentencias en vez de
+ * parsear 2,5 MB y cruzarlos con la base. Lo semanal llega con la lectura
+ * completa semanal.
+ */
+export async function renovarVistosSinCambios(source: string, prefijo: string, ahora: Date): Promise<void> {
+  const dia = (desplazamiento: number) =>
+    new Date(ahora.getTime() + desplazamiento * 86_400_000).toISOString().slice(0, 10);
+  await db
+    .update(event)
+    .set({ lastSeenAt: ahora })
+    .where(
+      and(
+        eq(event.source, source as never),
+        sql`substr(${event.sourceId}, 1, ${prefijo.length}) = ${prefijo}`,
+        isNull(event.disappearedAt),
+        sql`${event.endDate} >= ${dia(-LIMITES.inicioFinal)}`,
+        sql`${event.lastSeenAt} < ${ahora.getTime()}`,
+      ),
+    );
+  await db.execute(sql`
+    UPDATE competition_registration SET last_seen_at = ${ahora.getTime()}
+     WHERE source = ${source} AND withdrawn_at IS NULL AND last_seen_at < ${ahora.getTime()}
+       AND event_competition_id IN (
+         SELECT ec.id FROM event_competition ec JOIN event e ON e.id = ec.event_id
+          WHERE e.source = ${source} AND substr(e.source_id, 1, ${prefijo.length}) = ${prefijo}
+            AND ec.competition_date BETWEEN ${dia(-1)} AND ${dia(LIMITES.diasDelanteDiario)})`);
 }

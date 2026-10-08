@@ -199,7 +199,8 @@ describe('managed Neon Auth with native SQLite application authorization', () =>
   });
   it('ordinary get-session never claims an unlinked invitation and bypasses cookie caches', async () => {
     invite(); active = true;
-    expect(await auth.api.getSession({ headers: new Headers() })).toBeNull();
+    const headers = new Headers({ cookie: '__Secure-neon-auth.session_token=synthetic-token' });
+    expect(await auth.api.getSession({ headers })).toBeNull();
     const req = provider.mock.calls[0][0] as Request;
     expect(new URL(req.url).searchParams.get('disableCookieCache')).toBe('true');
     expect(local.sqlite.prepare('SELECT auth_user_id FROM user_profile').get()!.auth_user_id).toBeNull();
@@ -279,9 +280,9 @@ describe('bounded, persistent and privacy-safe app-side OTP controls', () => {
     const results = await Promise.all(Array.from({ length: 20 }, () => takeAuthLimit(local.db, SECRET, 'atomic', EMAIL, 3, 60_000)));
     expect(results.filter(Boolean)).toHaveLength(3);
     const headers = new Headers({ 'cf-connecting-ip': '192.0.2.2', 'x-forwarded-for': '198.51.100.1' });
-    for (let i = 0; i < 5; i++) expect(await allowOtpRequest(local.db, SECRET, `email${i}@example.test`, headers, true, { invited: true })).toBe(true);
+    for (let i = 0; i < 5; i++) expect(await allowOtpRequest(local.db, SECRET, `email${i}@example.test`, headers, true, { invited: true })).toBe('permitido');
     headers.set('x-forwarded-for', '198.51.100.2');
-    expect(await allowOtpRequest(local.db, SECRET, 'next@example.test', headers, true, { invited: true })).toBe(false);
+    expect(await allowOtpRequest(local.db, SECRET, 'next@example.test', headers, true, { invited: true })).toBe('limitado');
   });
   it('invented addresses never write per-address rows nor spend the global daily quota', async () => {
     auth = createManagedAuth(local.db, { secret: SECRET, origin: ORIGIN, request: provider, writeCookies, otpDailyLimit: 1 });

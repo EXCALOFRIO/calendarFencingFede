@@ -97,7 +97,7 @@ describe('Explorar de una prueba', () => {
   it('lleva edición, arma, género, formato y categoría literal, y Explorar los lee tal cual', () => {
     const url = urlExplorarDePrueba(UUID_A, prueba);
     const consulta = new URL(url, 'http://x').searchParams;
-    expect(url.startsWith('/explorar?')).toBe(true);
+    expect(url.startsWith('/explorar/buscar?')).toBe(true);
     expect(consulta.get('edicionId')).toBe(UUID_A);
     expect(consulta.get('formato')).toBe('INDIVIDUAL');
     expect(consulta.get('categoriaRaw')).toBe('Senior');

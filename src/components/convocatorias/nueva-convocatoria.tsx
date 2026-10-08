@@ -32,7 +32,8 @@ import {
 } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import type { EventoConvocable } from '@/lib/callups/tipos';
-import { cn, formatDateEs, formatDateRangeEs, titular } from '@/lib/utils';
+import { fechaCorta, rangoFechas } from '@/lib/fechas';
+import { cn, titular } from '@/lib/utils';
 
 /**
  * Por la ruta propia y no por la acción de servidor: las acciones admiten
@@ -150,7 +151,7 @@ export function NuevaConvocatoria({ eventos }: { eventos: EventoConvocable[] }) 
                   <span className="min-w-0 flex-1 truncate">
                     {evento ? titular(evento.name) : 'Busca la competición'}
                   </span>
-                  <ChevronsUpDown className="opacity-50" aria-hidden />
+                  <ChevronsUpDown className="text-muted-foreground" aria-hidden />
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-[min(28rem,calc(100vw-2rem))] p-0" align="start">
@@ -188,7 +189,7 @@ export function NuevaConvocatoria({ eventos }: { eventos: EventoConvocable[] }) 
                           <span className="min-w-0">
                             <span className="block truncate">{titular(e.name)}</span>
                             <span className="block text-xs text-muted-foreground">
-                              {formatDateRangeEs(e.startDate, e.endDate)}
+                              {rangoFechas(e.startDate, e.endDate, 'linea', { anio: 'auto' })}
                               {e.city ? ` · ${titular(e.city)}` : ''} · {e.competitions.length}{' '}
                               {e.competitions.length === 1 ? 'prueba' : 'pruebas'}
                             </span>
@@ -202,7 +203,7 @@ export function NuevaConvocatoria({ eventos }: { eventos: EventoConvocable[] }) 
             </Popover>
             {evento ? (
               <p className="text-xs text-muted-foreground">
-                {formatDateRangeEs(evento.startDate, evento.endDate)}
+                {rangoFechas(evento.startDate, evento.endDate, 'linea', { anio: 'auto' })}
                 {evento.city ? ` · ${titular(evento.city)}` : ''}
               </p>
             ) : null}
@@ -324,7 +325,7 @@ function plazosPosibles(inicio: string): { valor: string; etiqueta: string }[] {
     .filter((o) => o.iso >= hoy)
     .map((o) => ({
       valor: `${o.iso}T23:59`,
-      etiqueta: `${o.d} días antes · ${formatDateEs(o.iso)}, 23:59`,
+      etiqueta: `${o.d} días antes · ${fechaCorta(o.iso)}, 23:59`,
     }));
 
   return [...opciones, { valor: SIN_PLAZO, etiqueta: 'Sin plazo de respuesta' }];

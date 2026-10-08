@@ -2,6 +2,15 @@ import { sql, type SQL } from 'drizzle-orm';
 import { filas, type ContextoExplorador } from './contexto';
 import { rondaCuadro } from './ediciones-asaltos';
 import { CATEGORIAS_PAIS, modalidadAgregado, type FiltrosDuelo, type FiltrosPais } from './pais-url';
+import { importanciaCompeticion, TIPOS_COMPETICION } from './tipo-competicion';
+import type { TipoCompeticion } from './tipos-social';
+
+/**
+ * Versión de los agregados (`VERSION_PAISES` de `pais-indice-sql.ts`, que no
+ * se importa aquí para no arrastrar el SQL de la reconstrucción a la página)
+ * con fases, tipo de competición y `explorar_pais_tirador`.
+ */
+export const VERSION_DUELO_COMPLETO = 2;
 
 /**
  * Lecturas de las fichas de país sobre los agregados de la 0018
@@ -254,6 +263,12 @@ export async function leerFichaPais(db: Db, codigo: string, f: FiltrosPais): Pro
 }
 // ---------------------------------------------------------------- cara a cara de selecciones
 
+export type Marcador = { victorias: number; derrotas: number };
+
+/**
+ * Asaltos (o encuentros por equipos) con ganador: los de tanteo igual no
+ * cuentan (`pais-indice-sql.ts`), así que `asaltos = victorias + derrotas`.
+ */
 export type BalanceDuelo = {
   pruebas: number;
   asaltos: number;
@@ -261,12 +276,41 @@ export type BalanceDuelo = {
   derrotas: number;
   tocadosFavor: number;
   tocadosContra: number;
+  poule: Marcador;
+  /** Eliminación directa (cuadro). */
+  directa: Marcador;
 };
 
 export type TemporadaDuelo = {
   temporada: string;
-  individual: { victorias: number; derrotas: number };
-  equipos: { victorias: number; derrotas: number };
+  individual: Marcador;
+  equipos: Marcador;
+};
+
+/** Por tipo de competición (`TipoCompeticion`: CTO_MUNDO, COPA_MUNDO…). */
+export type NivelDuelo = {
+  tipo: string;
+  individual: Marcador;
+  equipos: Marcador;
+};
+
+export type TiradorDuelo = {
+  personaId: string;
+  nombre: string;
+  asaltos: number;
+  victorias: number;
+  derrotas: number;
+  tocadosFavor: number;
+  tocadosContra: number;
+};
+
+export type TiradoresDuelo = {
+  /** Los nuestros con más victorias contra el rival. */
+  nuestros: TiradorDuelo[];
+  /** Los suyos con más victorias contra nosotros. */
+  suyos: TiradorDuelo[];
+  /** Los suyos con mejor porcentaje contra nosotros: la bestia negra. */
+  bestias: TiradorDuelo[];
 };
 
 export type LadoCruce = {
@@ -324,22 +368,38 @@ export type DueloPaises = {
   temporadas: TemporadaDuelo[];
   /** Categorías con cruces con los demás filtros (para el filtro). */
   categorias: string[];
+  /** Por tipo de competición, del más importante al menos; vacío antes de la versión 2 de los agregados. */
+  niveles: NivelDuelo[];
+  /** Tiradores con al menos `MIN_ASALTOS_TIRADOR` asaltos; `null` en equipos o antes de la versión 2. */
+  tiradores: TiradoresDuelo | null;
+  /** Agregados de la versión 2: hay fases, tipos y tiradores. */
+  completo: boolean;
   pruebas: PruebaDuelo[];
   /** Cursor de la página siguiente (`fecha~prueba`), o `null`. */
   siguiente: string | null;
 };
 
 export const PRUEBAS_POR_PAGINA = 10;
+export const MIN_ASALTOS_TIRADOR = 5;
+export const TIRADORES_POR_LISTA = 5;
+export const BESTIAS_POR_LISTA = 3;
 
-const BALANCE_VACIO: BalanceDuelo = { pruebas: 0, asaltos: 0, victorias: 0, derrotas: 0, tocadosFavor: 0, tocadosContra: 0 };
+const marcadorVacio = (): Marcador => ({ victorias: 0, derrotas: 0 });
+const balanceVacio = (): BalanceDuelo => ({
+  pruebas: 0, asaltos: 0, victorias: 0, derrotas: 0, tocadosFavor: 0, tocadosContra: 0,
+  poule: marcadorVacio(), directa: marcadorVacio(),
+});
 
 /**
  * Balance de la pareja: la suma de sus filas por prueba, por modalidad,
- * categoría y temporada, ya orientada desde `codigo`. Sin la categoría: las
- * demás categorías con cruces salen de las mismas filas (para el filtro). Con
- * arma, el índice de filtros lee sólo las filas de esa arma.
+ * categoría, temporada y tipo de competición, ya orientada desde `codigo`. De
+ * la misma lectura salen el resumen, las fases, la serie por temporada, el
+ * reparto por tipo y la comparación de individual y equipos. Sin la
+ * categoría: las demás categorías con cruces salen de las mismas filas (para
+ * el filtro). Con arma, el índice de filtros lee sólo las filas de esa arma.
+ * `completo = false` (agregados de la versión 1) no nombra las columnas de la 0021.
  */
-export function sqlDuelo(codigo: string, rival: string, f: FiltrosDuelo): SQL {
+export function sqlDuelo(codigo: string, rival: string, f: FiltrosDuelo, completo = true): SQL {
   const { a, b, invertida } = parejaOrdenada(codigo, rival);
   const c: SQL[] = [sql`pais_a = ${a}`, sql`pais_b = ${b}`];
   const mod = modalidadAgregado(f.modalidad);
@@ -348,10 +408,73 @@ export function sqlDuelo(codigo: string, rival: string, f: FiltrosDuelo): SQL {
   if (f.genero) c.push(sql`genero = ${f.genero}`);
   const [nuestro, suyo] = invertida ? ['b', 'a'] : ['a', 'b'];
   const indice = f.arma ? sql.raw('INDEXED BY explorar_pais_prueba_filtro_idx') : sql.raw('');
+  const v2 = completo
+    ? `tipo, sum(poule_v${nuestro}) AS pv, sum(poule_v${suyo}) AS pd, sum(directa_v${nuestro}) AS dv, sum(directa_v${suyo}) AS dd`
+    : `'' AS tipo, 0 AS pv, 0 AS pd, 0 AS dv, 0 AS dd`;
   return sql`SELECT modalidad, categoria, temporada, count(*) AS pruebas, sum(asaltos) AS asaltos,
-      ${sql.raw(`sum(victorias_${nuestro}) AS victorias, sum(victorias_${suyo}) AS derrotas, sum(tocados_${nuestro}) AS favor, sum(tocados_${suyo}) AS contra`)}
+      ${sql.raw(`sum(victorias_${nuestro}) AS victorias, sum(victorias_${suyo}) AS derrotas, sum(tocados_${nuestro}) AS favor, sum(tocados_${suyo}) AS contra, ${v2}`)}
     FROM explorar_pais_prueba ${indice} WHERE ${sql.join(c, sql` AND `)}
-    GROUP BY modalidad, categoria, temporada`;
+    GROUP BY modalidad, categoria, temporada${sql.raw(completo ? ', tipo' : '')}`;
+}
+
+/**
+ * Tiradores de `pais` contra los de `rival` con los filtros (sólo
+ * individual): la suma de sus filas por temporada, con al menos
+ * `MIN_ASALTOS_TIRADOR` asaltos. `mejores`: más victorias y, a igualdad, mejor
+ * porcentaje; `bestias` (si se piden): mejor porcentaje y, a igualdad, más
+ * victorias. Lee sólo las filas de la pareja y la temporada ('' = todas) y
+ * agrupa por persona en el orden de la clave: ~2.600 filas en la pareja más grande.
+ */
+export function sqlTiradoresDuelo(pais: string, rival: string, f: FiltrosDuelo, conBestias: boolean): SQL {
+  const c: SQL[] = [sql`pais = ${pais}`, sql`rival = ${rival}`, sql`temporada = ${f.temporada}`];
+  if (f.genero) c.push(sql`genero = ${f.genero}`);
+  if (f.arma) c.push(sql`arma = ${f.arma}`);
+  if (f.categoria) c.push(sql`categoria = ${f.categoria}`);
+  c.push(sql`modalidad = 'I'`);
+  const ratio = sql.raw('victorias * 1.0 / asaltos');
+  const bestias = conBestias
+    ? sql`UNION ALL SELECT * FROM (SELECT 'bestias' AS lista, * FROM t ORDER BY ${ratio} DESC, victorias DESC, persona LIMIT ${BESTIAS_POR_LISTA})`
+    : sql``;
+  return sql`WITH t AS MATERIALIZED (
+      SELECT persona_id AS persona, sum(asaltos) AS asaltos, sum(victorias) AS victorias, sum(derrotas) AS derrotas,
+        sum(tf) AS favor, sum(tc) AS contra
+      FROM explorar_pais_tirador WHERE ${sql.join(c, sql` AND `)}
+      GROUP BY persona_id HAVING sum(asaltos) >= ${MIN_ASALTOS_TIRADOR}
+    ),
+    l AS (
+      SELECT * FROM (SELECT 'mejores' AS lista, * FROM t ORDER BY victorias DESC, ${ratio} DESC, persona LIMIT ${TIRADORES_POR_LISTA})
+      ${bestias}
+    )
+    SELECT l.lista, coalesce(q.id, p.id, l.persona) AS "personaId", coalesce(q.display_name, p.display_name, '') AS nombre,
+      l.asaltos, l.victorias, l.derrotas, l.favor, l.contra
+    FROM l
+    LEFT JOIN sport_person p ON p.id = l.persona
+    LEFT JOIN sport_person q ON q.id = p.merged_into_person_id`;
+}
+
+type FilaTirador = {
+  lista: string; personaId: string; nombre: string;
+  asaltos: number; victorias: number; derrotas: number; favor: number; contra: number;
+};
+
+const ratioDe = (t: Pick<TiradorDuelo, 'victorias' | 'asaltos'>) => t.victorias / Math.max(1, t.asaltos);
+
+/** Las filas de `sqlTiradoresDuelo` por lista, en el orden de la consulta (el JOIN no lo garantiza). */
+export function aTiradores(rows: readonly FilaTirador[]): Record<'mejores' | 'bestias', TiradorDuelo[]> {
+  const de = (lista: string) => rows.filter((r) => r.lista === lista).map((r): TiradorDuelo => ({
+    personaId: r.personaId,
+    nombre: r.nombre ?? '',
+    asaltos: n(r.asaltos),
+    victorias: n(r.victorias),
+    derrotas: n(r.derrotas),
+    tocadosFavor: n(r.favor),
+    tocadosContra: n(r.contra),
+  }));
+  const desempate = (x: TiradorDuelo, y: TiradorDuelo) => x.personaId.localeCompare(y.personaId);
+  return {
+    mejores: de('mejores').sort((x, y) => y.victorias - x.victorias || ratioDe(y) - ratioDe(x) || desempate(x, y)),
+    bestias: de('bestias').sort((x, y) => ratioDe(y) - ratioDe(x) || y.victorias - x.victorias || desempate(x, y)),
+  };
 }
 /** Las filas de la pareja se guardan una vez, con el país menor en `pais_a`. */
 export function parejaOrdenada(codigo: string, rival: string): { a: string; b: string; invertida: boolean } {
@@ -496,24 +619,31 @@ export function aCruces(rows: readonly FilaCruce[], relevos: readonly FilaRelevo
 }
 
 type FilaDuelo = {
-  modalidad: string; categoria: string; temporada: string;
+  modalidad: string; categoria: string; temporada: string; tipo?: string | null;
   pruebas: number; asaltos: number; victorias: number; derrotas: number; favor: number; contra: number;
+  pv?: number; pd?: number; dv?: number; dd?: number;
 };
+
+/** Tipos sin `TIPOS_COMPETICION` (o vacíos, antes de la versión 2) van al final. */
+function ordenTipo(tipo: string): number {
+  return tipo in TIPOS_COMPETICION ? importanciaCompeticion(tipo as TipoCompeticion) : 99;
+}
 
 export function aBalances(
   rows: readonly FilaDuelo[],
   { temporada, categoria }: { temporada: string; categoria: string },
-): Pick<DueloPaises, 'individual' | 'equipos' | 'temporadas' | 'categorias'> {
-  const individual = { ...BALANCE_VACIO };
-  const equipos = { ...BALANCE_VACIO };
+): Pick<DueloPaises, 'individual' | 'equipos' | 'temporadas' | 'categorias' | 'niveles'> {
+  const individual = balanceVacio();
+  const equipos = balanceVacio();
   const porTemporada = new Map<string, TemporadaDuelo>();
+  const porTipo = new Map<string, NivelDuelo>();
   const categorias = new Set<string>();
+  // Las pruebas se cuentan una vez por fila; con el tipo en la agrupación una
+  // prueba sigue siendo una sola fila (cada prueba tiene un tipo).
   for (const r of rows) {
     if (CATEGORIAS_FILTRO.includes(r.categoria)) categorias.add(r.categoria);
     if (categoria && r.categoria !== categoria) continue;
-    const t = porTemporada.get(r.temporada) ?? {
-      temporada: r.temporada, individual: { victorias: 0, derrotas: 0 }, equipos: { victorias: 0, derrotas: 0 },
-    };
+    const t = porTemporada.get(r.temporada) ?? { temporada: r.temporada, individual: marcadorVacio(), equipos: marcadorVacio() };
     const lado = r.modalidad === 'E' ? t.equipos : t.individual;
     lado.victorias += n(r.victorias);
     lado.derrotas += n(r.derrotas);
@@ -526,12 +656,25 @@ export function aBalances(
     b.derrotas += n(r.derrotas);
     b.tocadosFavor += n(r.favor);
     b.tocadosContra += n(r.contra);
+    b.poule.victorias += n(r.pv);
+    b.poule.derrotas += n(r.pd);
+    b.directa.victorias += n(r.dv);
+    b.directa.derrotas += n(r.dd);
+    const tipo = r.tipo ?? '';
+    if (tipo) {
+      const nivel = porTipo.get(tipo) ?? { tipo, individual: marcadorVacio(), equipos: marcadorVacio() };
+      const m = r.modalidad === 'E' ? nivel.equipos : nivel.individual;
+      m.victorias += n(r.victorias);
+      m.derrotas += n(r.derrotas);
+      porTipo.set(tipo, nivel);
+    }
   }
   return {
     individual,
     equipos,
     temporadas: [...porTemporada.values()].sort((a, b) => a.temporada.localeCompare(b.temporada)),
     categorias: [...categorias].sort((a, b) => CATEGORIAS_FILTRO.indexOf(a) - CATEGORIAS_FILTRO.indexOf(b)),
+    niveles: [...porTipo.values()].sort((a, b) => ordenTipo(a.tipo) - ordenTipo(b.tipo) || a.tipo.localeCompare(b.tipo)),
   };
 }
 
@@ -549,11 +692,20 @@ function idsDe(texto: string): string[] {
   }
 }
 
-export async function leerDueloPaises(db: Db, codigo: string, rival: string, f: FiltrosDuelo, desde = ''): Promise<DueloPaises> {
+/** `version`: la de los agregados si quien llama ya la leyó (la caché la lleva en la clave). */
+export async function leerDueloPaises(
+  db: Db, codigo: string, rival: string, f: FiltrosDuelo, desde = '', version?: number,
+): Promise<DueloPaises> {
   const { invertida } = parejaOrdenada(codigo, rival);
-  const [duelo, pagina] = await Promise.all([
-    desde ? Promise.resolve(null) : db.execute(sqlDuelo(codigo, rival, f)),
+  // Con la 0021 aplicada pero sin reconstruir, las columnas nuevas valen 0 y
+  // `explorar_pais_tirador` está vacía; sin la 0021 no existen: se lee como en la versión 1.
+  const completo = (version ?? (await leerEstadoPaises(db))?.version ?? 0) >= VERSION_DUELO_COMPLETO;
+  const conTiradores = completo && !desde && f.modalidad !== 'equipos';
+  const [duelo, pagina, nuestros, suyos] = await Promise.all([
+    desde ? Promise.resolve(null) : db.execute(sqlDuelo(codigo, rival, f, completo)),
     db.execute(sqlPruebasDuelo(codigo, rival, f, desde)),
+    conTiradores ? db.execute(sqlTiradoresDuelo(codigo, rival, f, false)) : Promise.resolve(null),
+    conTiradores ? db.execute(sqlTiradoresDuelo(rival, codigo, f, true)) : Promise.resolve(null),
   ]);
   const filasPagina = filas<FilaPruebaDuelo>(pagina);
   const visibles = filasPagina.slice(0, PRUEBAS_POR_PAGINA);
@@ -581,11 +733,16 @@ export async function leerDueloPaises(db: Db, codigo: string, rival: string, f: 
   const porPrueba = aCruces(cruces, relevos, nuestroEsADe);
   const ultima = filasPagina.length > PRUEBAS_POR_PAGINA ? visibles[visibles.length - 1] : null;
   const balances = duelo ? aBalances(filas<FilaDuelo>(duelo), f)
-    : { individual: { ...BALANCE_VACIO }, equipos: { ...BALANCE_VACIO }, temporadas: [], categorias: [] };
+    : { individual: balanceVacio(), equipos: balanceVacio(), temporadas: [], categorias: [], niveles: [] };
+  const deSuyos = suyos ? aTiradores(filas<FilaTirador>(suyos)) : null;
   return {
     codigo,
     rival,
     ...balances,
+    tiradores: nuestros && deSuyos
+      ? { nuestros: aTiradores(filas<FilaTirador>(nuestros)).mejores, suyos: deSuyos.mejores, bestias: deSuyos.bestias }
+      : null,
+    completo,
     pruebas: visibles.map((p) => ({
       pruebaId: p.pruebaId,
       edicionId: p.edicionId,

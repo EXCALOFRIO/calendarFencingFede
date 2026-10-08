@@ -1,10 +1,6 @@
-'use client';
-
 import Link from 'next/link';
-import { useState } from 'react';
-import { ChipFiltro, FilaChips, clasesChip } from '@/components/sistema/chip-filtro';
-import { HojaInferior } from '@/components/sistema/hoja-inferior';
-import { cn } from '@/lib/utils';
+import { clasesChip, FilaChips } from '@/components/sistema/chip-filtro';
+import { MenuEnlaces } from './menu-enlaces';
 
 export type OpcionRival = {
   codigo: string;
@@ -16,52 +12,34 @@ export type OpcionRival = {
   bandera: React.ReactNode;
 };
 
-const EN_FILA = 8;
+const EN_FILA = 4;
 
 /**
- * Selector del rival desde la ficha del país: los que más se han cruzado en
- * una fila de chips y todos en una hoja. Cada opción es un enlace al cara a
- * cara con los filtros que ya había en la ficha.
+ * Selector del rival desde la ficha del país: un botón que abre la hoja con
+ * todos los rivales (con buscador) y, debajo, los que más se han cruzado como
+ * atajos. Cada opción es un enlace al cara a cara con los filtros de la ficha.
  */
 export function ElegirRival({ opciones }: { opciones: readonly OpcionRival[] }) {
-  const [abierta, setAbierta] = useState(false);
   if (opciones.length === 0) return null;
   return (
-    <FilaChips etiqueta="Rivales">
-      {opciones.slice(0, EN_FILA).map((o) => (
-        <Link key={o.codigo} href={o.href} prefetch={false} className={clasesChip(false)}>
-          {o.bandera}
-          <span>{o.codigo}</span>
-        </Link>
-      ))}
-      {opciones.length > EN_FILA ? (
-        <HojaInferior
-          abierta={abierta}
-          alCambiar={setAbierta}
-          titulo="Rivales"
-          disparador={<ChipFiltro tipo="menu">Todos</ChipFiltro>}
-        >
-          <ul className="-mx-[16px] flex flex-col">
-            {opciones.map((o) => (
-              <li key={o.codigo}>
-                <Link
-                  href={o.href}
-                  prefetch={false}
-                  onClick={() => setAbierta(false)}
-                  className={cn(
-                    'flex min-h-[48px] items-center gap-[12px] px-[16px] text-[14px] leading-[20px] outline-none',
-                    'hover:bg-accent focus-visible:bg-accent',
-                  )}
-                >
-                  {o.bandera}
-                  <span className="min-w-0 flex-1 truncate">{o.nombre}</span>
-                  <span className="shrink-0 text-[12px] leading-[16px] text-muted-foreground tabular-nums">{o.balance}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </HojaInferior>
-      ) : null}
-    </FilaChips>
+    <div className="flex min-w-0 flex-col gap-3">
+      <MenuEnlaces
+        titulo="Comparar con"
+        rotulo="Comparar con otro país"
+        elegido={null}
+        boton
+        mantenerScroll={false}
+        buscar={opciones.length > 8}
+        opciones={opciones.map((o) => ({ clave: o.codigo, texto: o.nombre, href: o.href, marcado: false, detalle: o.balance, icono: o.bandera }))}
+      />
+      <FilaChips etiqueta="Rivales más frecuentes">
+        {opciones.slice(0, EN_FILA).map((o) => (
+          <Link key={o.codigo} href={o.href} prefetch={false} className={clasesChip(false)}>
+            {o.bandera}
+            <span>{o.nombre}</span>
+          </Link>
+        ))}
+      </FilaChips>
+    </div>
   );
 }

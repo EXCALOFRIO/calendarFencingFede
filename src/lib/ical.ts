@@ -26,13 +26,10 @@
 
 import { type ComputedDeadline, DEADLINE_TYPE_LABEL } from './deadlines';
 import type { CompetitionView, EventView, Scope } from './queries/calendar';
+import { rotuloArma, rotuloCategoria, rotuloPrueba } from './sport/rotulos';
 import { countryName, timezoneInfo } from './travel';
 import {
-  CATEGORY_LABEL,
   CIRCUIT_LABEL,
-  GENDER_LABEL,
-  GENDER_SHORT,
-  WEAPON_LABEL,
   formatDateRangeEs,
   formatDateTimeEs,
   formatEur,
@@ -449,22 +446,18 @@ function buildSummary(ev: EventView, comp: CompetitionView): string {
   const circuitLabel = ev.circuit !== 'OTRO' ? CIRCUIT_LABEL[ev.circuit] : null;
   const title = circuitLabel ?? ev.name;
 
-  const weapon = WEAPON_LABEL[comp.weapon];
-  const gender = GENDER_SHORT[comp.gender];
   const implicit = CATEGORIA_IMPLICITA[ev.circuit];
-  const categoryLabel = CATEGORY_LABEL[comp.category] ?? comp.categoryRaw ?? comp.category;
   const showCategory = !circuitLabel || implicit !== comp.category;
 
-  const prueba = [weapon, gender, showCategory ? categoryLabel : null]
-    .filter(Boolean)
-    .join(' ');
+  // «Espada femenina M17 · Equipos»: la modalidad ya va detrás de su separador.
+  const prueba = rotuloPrueba(
+    { arma: comp.weapon, genero: comp.gender, categoria: comp.category, formato: comp.format },
+    { categoria: showCategory ? 'si-no-absoluto' : 'nunca' },
+  );
 
   const lugar = ev.city ?? countryName(ev.country) ?? 'sede no publicada';
 
-  const partes = [title, prueba, lugar];
-  if (comp.format === 'EQUIPOS') partes.splice(2, 0, 'Equipos');
-
-  return partes.join(' · ');
+  return [title, prueba, lugar].filter(Boolean).join(' · ');
 }
 
 /**
@@ -502,9 +495,12 @@ function buildDescription(
 ): string {
   const lines: string[] = [];
 
-  lines.push(`Prueba: ${WEAPON_LABEL[comp.weapon]} ${GENDER_LABEL[comp.gender]} ` +
-    `${CATEGORY_LABEL[comp.category] ?? comp.category} ` +
-    `${comp.format === 'EQUIPOS' ? 'por equipos' : 'individual'}`);
+  lines.push(
+    `Prueba: ${rotuloPrueba(
+      { arma: comp.weapon, genero: comp.gender, categoria: comp.category, formato: comp.format },
+      { categoria: 'siempre', formato: 'siempre' },
+    )}`,
+  );
   lines.push(`Competición: ${ev.name}`);
   lines.push(`Fechas del evento: ${formatDateRangeEs(ev.startDate, ev.endDate)}`);
 
@@ -674,8 +670,8 @@ function buildVEvent(
 
   const categorias = [
     'Esgrima',
-    WEAPON_LABEL[comp.weapon],
-    CATEGORY_LABEL[comp.category] ?? comp.category,
+    rotuloArma(comp.weapon),
+    rotuloCategoria(comp.category) || comp.category,
     ev.scope === 'NACIONAL'
       ? 'Nacional'
       : ev.scope === 'INTERNACIONAL'

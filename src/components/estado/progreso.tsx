@@ -59,7 +59,7 @@ export function ProgresoInscripcion({ estado }: { estado: EntryStatus }) {
     <ol
       // Con más ancho los tramos se convierten en una barra gigante que no
       // dice nada: la línea de progreso se lee de un vistazo o no sirve.
-      className="flex max-w-sm items-start gap-1.5"
+      className="flex max-w-sm items-start gap-2"
       aria-label={`Inscripción: ${ENTRY_STATUS_LABEL[estado]}, paso ${actual + 1} de ${ENTRY_PROGRESS.length}`}
     >
       {ENTRY_PROGRESS.map((paso, i) => (

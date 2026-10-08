@@ -65,7 +65,7 @@ export function ListaSiguiendo({ items, siguiente }: { items: PersonaSeguida[]; 
             rel="next"
             aria-disabled={estado === 'cargando'}
             onClick={verMas}
-            className="inline-flex h-[44px] items-center gap-1.5 px-4 text-[13px] font-semibold text-primary-text outline-none focus-visible:ring-[3px] focus-visible:ring-ring"
+            className="inline-flex h-[44px] items-center gap-2 px-4 text-sm font-semibold text-primary-text outline-none focus-visible:ring-[3px] focus-visible:ring-ring"
           >
             {estado === 'cargando' ? <LoaderCircle className="size-[16px] animate-spin motion-reduce:animate-none" aria-hidden /> : null}
             {estado === 'error' ? 'Reintentar' : 'Ver más'}

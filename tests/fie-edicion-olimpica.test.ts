@@ -157,17 +157,21 @@ describe('París 2024: persistir individual y equipos → una edición → clasi
     expect([...sql.ediciones.values()][0]).toMatchObject({ inicio: '2024-07-27', fin: '2024-08-04' });
   });
 
-  it('el SQL sólo ensancha fechas en ediciones compartidas y no cambia las claves de competencia ni hechos', async () => {
+  it('el SQL ensancha fechas en ediciones de varias pruebas (serie o torneo), pisa las de una sola y no cambia las claves', async () => {
     const local = await almacenSql();
     const deps = crearDepsPersistenciaFieDb(local.db);
     await deps.upsertPrueba(prueba());
     await deps.upsertPrueba(prueba({ tournamentId: 107 }));
+    await deps.upsertPrueba(prueba({ nombre: 'Grand Prix de Paris', competitionId: 300 }));
     const consultas = local.calls.map((c) => c.sql);
-    const [olimpica, torneo] = consultas.filter((c) => /insert into "sport_edition"/i.test(c));
-    expect(olimpica).toMatch(/"start_date" = coalesce\(min\(/i);
-    expect(olimpica).toMatch(/"end_date" = coalesce\(max\(/i);
-    expect(torneo).toMatch(/"start_date" = excluded\.start_date/i);
-    expect(torneo).not.toMatch(/\bmin\(|\bmax\(/i);
+    const [olimpica, torneo, suelta] = consultas.filter((c) => /insert into "sport_edition"/i.test(c));
+    // Con tournamentId cada prueba trae sus fechas: pisarlas dejaba el torneo con las de la última.
+    for (const varias of [olimpica, torneo]) {
+      expect(varias).toMatch(/"start_date" = coalesce\(min\(/i);
+      expect(varias).toMatch(/"end_date" = coalesce\(max\(/i);
+    }
+    expect(suelta).toMatch(/"start_date" = excluded\.start_date/i);
+    expect(suelta).not.toMatch(/\bmin\(|\bmax\(/i);
     for (const c of consultas.filter((c) => /insert into "sport_competition"/i.test(c))) {
       expect(c).toMatch(/on conflict \("sport_competition"\."source",\s*"sport_competition"\."season",\s*"sport_competition"\."competition_key"\)/i);
     }

@@ -1,10 +1,11 @@
 import { VistaCalendario, type TiradorOpcion } from '@/components/calendario/vista';
+import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import { requireProfile } from '@/lib/auth/session';
 import { leerContextoCalendario, leerEventoCalendario } from '@/lib/calendario/contexto-url';
 import { deriveCategoriesFromBirthDate } from '@/lib/categories';
 import { requestEntry } from '@/lib/entries/actions';
+import { frescura as textoFrescura, hoyMadrid } from '@/lib/fechas';
 import { cargarPantallaCalendario } from '@/lib/queries/calendario-pantalla';
-import { hoyMadrid } from '@/lib/callups/fechas';
 import { pasadoDelTramo } from './calendario-pasado';
 
 export const dynamic = 'force-dynamic';
@@ -45,10 +46,12 @@ export default async function CalendarioPage({
    * El resto del pasado lo pide la vista al navegar hacia atrás (y al mostrar
    * intención de hacerlo).
    */
+  // Un solo «hoy» para el servidor y para el primer pintado del cliente (ver `VistaCalendario`).
+  const hoy = hoyMadrid();
   const { eventos, atletas, inscripciones, temporada, frescura, pasadoInicial } =
     await cargarPantallaCalendario({
       profileId: perfil.profileId,
-      hoy: hoyMadrid(),
+      hoy,
       mes: inicial.mes ?? null,
       meses: (inicial.vista ?? 'trimestre') === 'mes' ? 1 : 3,
     });
@@ -65,12 +68,13 @@ export default async function CalendarioPage({
 
   if (eventos.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-start justify-center gap-[4px]">
+      <div className="flex flex-1 flex-col justify-center">
         <h1 className="sr-only">Calendario</h1>
-        <p className="text-[16px] leading-[20px] font-semibold">Calendario sin cargar</p>
-        <p className="text-[14px] leading-[20px] text-muted-foreground">
-          Avisa a dirección técnica para que revise la carga.
-        </p>
+        <EstadoVacio
+          tipo="error"
+          titulo="Calendario sin cargar"
+          descripcion="Avisa a dirección técnica para que revise la carga."
+        />
       </div>
     );
   }
@@ -100,17 +104,8 @@ export default async function CalendarioPage({
       tiradores={tiradores}
       inscripciones={inscripciones}
       temporada={temporada?.label ?? null}
-      actualizado={
-        frescura.lastSeenAt
-          ? new Intl.DateTimeFormat('es-ES', {
-              day: '2-digit',
-              month: 'short',
-              hour: '2-digit',
-              minute: '2-digit',
-              timeZone: 'Europe/Madrid',
-            }).format(frescura.lastSeenAt)
-          : null
-      }
+      actualizado={frescura.lastSeenAt ? textoFrescura(frescura.lastSeenAt, { referencia: hoy }) : null}
+      hoy={hoy}
       solicitarInscripcion={requestEntry}
       pasadoInicial={pasadoInicial}
       cargarPasado={pasadoDelTramo}

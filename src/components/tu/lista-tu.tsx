@@ -28,18 +28,18 @@ const ICONO: Record<ClaveFila, React.ComponentType<{ className?: string; strokeW
 };
 
 const FILA =
-  'flex min-h-[48px] w-full items-center gap-[12px] px-[12px] text-left text-[14px] leading-[20px] font-medium outline-none transition-colors duration-150 ease-out [-webkit-tap-highlight-color:transparent] hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset active:bg-secondary';
+  'flex min-h-[48px] w-full items-center gap-3 px-3 text-left text-sm leading-5 font-medium outline-none transition-colors duration-150 ease-out [-webkit-tap-highlight-color:transparent] hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset active:bg-secondary';
 
 /** Quién eres: el avatar y tu nombre, arriba de la lista (el avatar ya no está en la cabecera del móvil). */
 export function IdentidadTu({ nombre, iniciales, segundaLinea }: { nombre: string; iniciales: string; segundaLinea: string | null }) {
   return (
-    <div className="flex min-w-0 items-center gap-[12px] px-[4px]">
+    <div className="flex min-w-0 items-center gap-3 px-1">
       <Avatar className="size-[56px]">
-        <AvatarFallback className="text-[16px] font-semibold">{iniciales}</AvatarFallback>
+        <AvatarFallback className="text-base font-semibold">{iniciales}</AvatarFallback>
       </Avatar>
       <div className="flex min-w-0 flex-col">
-        <p className="truncate text-[16px] leading-[20px] font-semibold">{nombre}</p>
-        {segundaLinea ? <p className="truncate text-[12px] leading-[16px] text-muted-foreground">{segundaLinea}</p> : null}
+        <p className="truncate text-base leading-5 font-semibold">{nombre}</p>
+        {segundaLinea ? <p className="truncate text-xs leading-4 text-muted-foreground">{segundaLinea}</p> : null}
       </div>
     </div>
   );
@@ -56,7 +56,7 @@ export function ListaTu({ secciones }: { secciones: SeccionTu[] }) {
       {secciones.map((s) => (
         <section key={s.clave} aria-labelledby={s.titulo ? `tu-${s.clave}` : undefined} className="flex min-w-0 flex-col gap-[8px]">
           {s.titulo ? (
-            <h2 id={`tu-${s.clave}`} className="px-[4px] font-sans text-[13px] leading-[16px] font-semibold tracking-normal text-muted-foreground">
+            <h2 id={`tu-${s.clave}`} className="px-1 font-sans text-xs leading-4 font-semibold tracking-normal text-muted-foreground">
               {s.titulo}
             </h2>
           ) : null}
@@ -68,7 +68,7 @@ export function ListaTu({ secciones }: { secciones: SeccionTu[] }) {
                   <EnlacePrecarga href={f.href} transitionTypes={[TIPO_TRANSICION.avanzar]} data-fila={f.clave} className={FILA}>
                     <Icono className="size-[18px] shrink-0 text-muted-foreground" strokeWidth={2} aria-hidden />
                     <span className="min-w-0 flex-1 truncate">{f.etiqueta}</span>
-                    {f.detalle ? <span className="shrink-0 text-[12px] leading-[16px] font-normal text-muted-foreground">{f.detalle}</span> : null}
+                    {f.detalle ? <span className="shrink-0 text-xs leading-4 font-normal text-muted-foreground">{f.detalle}</span> : null}
                     <ChevronRight className="size-[16px] shrink-0 text-muted-foreground" strokeWidth={2} aria-hidden />
                   </EnlacePrecarga>
                 </li>

@@ -1,59 +1,37 @@
 import { CircleCheck, CircleHelp, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import type { PruebaPropia } from '@/app/(app)/estado/consultas';
-import { BanderaPais } from '@/components/bandera';
 import { BarraPlazos } from '@/components/calendario/barra-plazos';
-import { MarcaArma } from '@/components/calendario/iconos-arma';
+import { FilaCompeticion } from '@/components/calendario/fila-competicion';
+import { PastillaPlazo } from '@/components/calendario/tarjeta-bloque';
 import { Escudo } from '@/components/escudo';
-import { etiquetaGrupo } from '@/components/ranking/formato';
-import { colorDeCircuito } from '@/lib/colores';
+import { ListaDatos, ParDato } from '@/components/sistema/lista-datos';
+import { Pastilla } from '@/components/sistema/pastilla';
+import { textoDePlazo, type TonoPlazo } from '@/lib/calendario/rotulos';
 import { etiquetaRecargo } from '@/lib/deadlines';
-import {
-  cn,
-  formatDateEs,
-  formatDateRangeEs,
-  formatEur,
-  titular,
-} from '@/lib/utils';
-import { conBarraDePlazos, diasEntre } from '@/app/(app)/estado/oficial';
-import { Horarios, Rotulos, Seccion, tamanoCifra } from './piezas';
+import { fechaCorta } from '@/lib/fechas';
+import { rotuloPrueba } from '@/lib/sport/rotulos';
+import { formatEur, titularTorneo } from '@/lib/utils';
+import { conBarraDePlazos } from '@/app/(app)/estado/oficial';
+import { Horarios, Seccion } from './piezas';
 
 /**
- * ===========================================================================
- * «TUS COMPETICIONES»: LAS DOS PRIMERAS PREGUNTAS EN LA MISMA FILA
- * ===========================================================================
+ * «Tus competiciones»: ¿estoy dentro? y ¿cuánto me queda?, en la misma fila
+ * porque hablan del mismo objeto. La fila es la del calendario: fecha en
+ * bloque, nombre y sede, y el estado a la derecha (plazo y lista oficial).
  *
- * ¿Estoy dentro? y ¿cuánto me queda? hablan del mismo objeto —una competición—
- * así que van en la misma fila y no en dos secciones. Antes eran «lo que ya has
- * pedido» y «todavía no te has inscrito», y la diferencia entre las dos era si
- * había un trámite abierto en medio. Fuera el trámite, fuera la división.
- *
- * Cada fila lleva una cifra a la izquierda y esa cifra cambia de significado
- * según en qué lado estés, porque la pregunta útil también cambia:
- *
- *   - **Si estás dentro**, lo que queda por saber es cuándo compites. La cifra
- *     son los días hasta el torneo y debajo salen los horarios del día en
- *     cuanto la organización los publica.
- *   - **Si no estás**, lo que queda por saber es cuánto tiempo tienes. La cifra
- *     son los días de plazo, con el semáforo, y debajo la barra de tramos.
- *
- * La barra de plazos es de la ficha de torneo y se importa (`barra-plazos.tsx`,
- * sección 9 de `REFERENCIAS.md`). Va con `conEstado={false}` porque la frase de
- * estado ya la escribe la cifra de la izquierda con su palabra y su color: la
- * misma frase dos veces en cuatro centímetros no informa, ocupa.
+ * Dentro de la lista, lo que queda por saber son los horarios del día; fuera,
+ * los tramos del plazo, con la barra de la ficha de torneo (sólo en la que
+ * antes cierra). La barra va sin su frase de estado: ya la dice la pastilla.
  */
 
-const TONO_PLAZO = {
-  verde: 'text-ok',
-  ambar: 'text-warn',
-  rojo: 'text-danger',
-  cerrado: 'text-muted-foreground',
-  sin_datos: 'text-muted-foreground',
-} as const;
-
-/** La forma de la pastilla de estado. El color lo pone quien la usa. */
-const PASTILLA =
-  'flex shrink-0 items-center gap-1.5 rounded-full border py-0.5 pe-2.5 ps-2 text-xs';
+const TONO_ESTADO: Record<PruebaPropia['estado']['state'], TonoPlazo> = {
+  rojo: 'peligro',
+  ambar: 'aviso',
+  verde: 'neutro',
+  cerrado: 'neutro',
+  sin_datos: 'neutro',
+};
 
 export function Pruebas({
   pruebas,
@@ -70,9 +48,7 @@ export function Pruebas({
   hayTiradorSinArma: boolean;
 }) {
   const dentro = pruebas.filter((p) => p.oficial.estado === 'dentro').length;
-  const sinConfirmar = pruebas.filter(
-    (p) => p.oficial.estado === 'sin_emparejar',
-  );
+  const sinConfirmar = pruebas.some((p) => p.oficial.estado === 'sin_emparejar');
 
   return (
     <Seccion
@@ -82,12 +58,12 @@ export function Pruebas({
           ? undefined
           : dentro > 0
             ? `${dentro} de ${pruebas.length} en la lista oficial`
-            : `las ${pruebas.length} que antes cierran`
+            : `Las ${pruebas.length} que antes cierran`
       }
       accion={
         <Link
           href="/"
-          className="text-sm text-primary-text underline underline-offset-4 transition-colors hover:text-foreground"
+          className="inline-flex min-h-11 items-center text-sm font-medium text-primary-text hover:text-foreground"
         >
           Ver el calendario
         </Link>
@@ -96,46 +72,32 @@ export function Pruebas({
       {pruebas.length === 0 ? (
         <p className="medida py-4 text-sm text-muted-foreground">
           {hayTiradorSinArma
-            ? 'Para saber qué competiciones te tocan hace falta un arma y una ' +
-              'categoría en la ficha. En cuanto estén, aquí saldrá cada prueba ' +
-              'que te corresponda, con los días que quedan de plazo y con lo ' +
-              'que diga de ti la lista oficial.'
-            : 'No queda ninguna prueba de tu arma y tu categoría con el plazo ' +
-              'abierto, y tampoco figuras en ninguna lista oficial de las que ' +
-              'están por venir. Aquí aparecerán en cuanto se abra la ' +
-              'inscripción de la siguiente.'}
+            ? 'Añade un arma y una categoría a la ficha para ver qué pruebas te tocan.'
+            : 'Ninguna prueba de tu arma y categoría tiene el plazo abierto. Saldrá aquí en cuanto abra la siguiente.'}
         </p>
       ) : (
         <>
-          <ul className="flex flex-col divide-y">
+          <ul className="flex flex-col divide-y divide-border">
             {pruebas.map((p, i) => (
               <Fila
                 key={p.clave}
                 prueba={p}
                 hoy={hoy}
                 conNombre={conNombre}
-                /* La lista va ordenada por urgencia, así que la primera es la
-                   que antes cierra y es la única que se lleva la barra. */
+                // Van por urgencia: la primera es la que antes cierra y sólo ella lleva la barra.
                 destacada={i === 0}
               />
             ))}
           </ul>
 
-          {/*
-            La explicación de «Sin confirmar», UNA vez y al pie.
-            Iba en cada fila con su escudo, y eran ocho párrafos idénticos y
-            ocho peticiones al servidor de la RFEE por la misma imagen. Medido
-            en la captura: la sección pasaba de 3.891 px. Al pie se lee igual y
-            se dice una vez, que es lo que hace falta.
-          */}
-          {sinConfirmar.length > 0 ? (
-            <p className="mt-3 flex flex-wrap items-start gap-x-2 gap-y-1 border-t border-filete pt-3 text-xs text-muted-foreground">
+          {/* La explicación de «Sin confirmar», una vez y al pie, no en cada fila. */}
+          {sinConfirmar ? (
+            <p className="flex items-start gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
               <Escudo federacion="RFEE" tamano="nota" decorativo />
               <span className="medida">
-                «Sin confirmar» <strong className="font-medium">no</strong>{' '}
-                quiere decir que no estés: las listas de inscritos que publica la
-                federación no traen la licencia, que es lo único por lo que esta
-                aplicación puede emparejarte. Abre la lista y búscate.
+                «Sin confirmar» <strong className="font-medium">no</strong> quiere decir que no estés:
+                las listas no traen la licencia, que es lo que usamos para encontrarte. Abre la lista y
+                búscate.
               </span>
             </p>
           ) : null}
@@ -158,203 +120,103 @@ function Fila({
 }) {
   const estaDentro = p.oficial.estado === 'dentro';
   const compiteHoy = p.startDate <= hoy && p.endDate >= hoy;
-  const conBarra = conBarraDePlazos(p.estado, destacada);
-  const color = colorDeCircuito(p.circuit);
-  const recargo = p.estado.next?.surchargeEur
-    ? etiquetaRecargo(p.estado.next.surchargeEur)
-    : null;
+  const conBarra = !estaDentro && conBarraDePlazos(p.estado, destacada);
+  const recargo = p.estado.next?.surchargeEur ? etiquetaRecargo(p.estado.next.surchargeEur) : null;
+  // Sin barra, la fecha de cierre y el recargo posterior: lo que la pastilla de días no dice.
+  const conCierre = !estaDentro && !conBarra && p.estado.next;
 
   return (
-    <li className="flex gap-3 py-4 sm:gap-4">
-      <Cifra prueba={p} hoy={hoy} compiteHoy={compiteHoy} dentro={estaDentro} />
-
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <h3 className="min-w-0 text-lg">{titular(p.eventName)}</h3>
-          <PastillaOficial prueba={p} />
-        </div>
-
-        {/* Fechas en pastilla y sede al lado, como en la banda del calendario:
-            la pastilla dice «esto es un rango de fechas» sin escribir «Cuándo». */}
-        <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-          <span
-            className={cn(
-              'cifra shrink-0 rounded-full px-2 py-0.5 text-sm',
-              color.superficie,
-              color.textoSobreSuperficie,
-            )}
-          >
-            {formatDateRangeEs(p.startDate, p.endDate)}
-          </span>
-          <span className="min-w-0 text-muted-foreground">
-            {p.city ? titular(p.city) : 'sede no publicada'}
-          </span>
-          {p.country && p.country !== 'ES' ? (
-            <BanderaPais pais={p.country} tamaño="fila" />
-          ) : null}
-        </p>
-
-        {/*
-          Arma, género y categoría en UN solo rótulo, con `etiquetaGrupo` del
-          ranking. En dos rótulos —«Prueba: Florete masculino» y «Categoría:
-          Absoluto»— se partían en dos renglones en un iPhone, o sea una línea
-          más por fila y cinco líneas más por pantalla, para decir lo mismo.
-        */}
-        <Rotulos
-          disposicion="linea"
-          datos={[
-            [
-              'Prueba',
-              <span key="p" className="inline-flex items-center gap-1.5">
-                <MarcaArma armas={[p.weapon]} px={22} />
-                {etiquetaGrupo({
-                  weapon: p.weapon,
-                  gender: p.gender,
-                  category: p.category,
-                })}
-              </span>,
-            ],
-            ...(p.format === 'EQUIPOS'
-              ? ([['Formato', 'Equipos']] as [string, React.ReactNode][])
-              : []),
-            ...(p.oficial.equipo
-              ? ([['Equipo', p.oficial.equipo]] as [string, React.ReactNode][])
-              : []),
-            /* La cuota solo si la fuente la publica: en la base real ninguna de
-               las 484 pruebas la tiene, así que «—» sería el caso normal y un
-               rótulo que siempre está vacío es ruido. */
-            ...(p.feeEur
-              ? ([['Cuota', formatEur(p.feeEur)]] as [string, React.ReactNode][])
-              : []),
-            /* Sin barra, la fecha de cierre y el recargo posterior van aquí:
-               son los dos datos concretos que la cifra de días no da, y los dos
-               que cambian una decisión. El recargo solo si la fuente lo publica
-               —«sin recargo» es una afirmación que casi nunca hace—, que es lo
-               que decide `etiquetaRecargo`. */
-            ...(!estaDentro && !conBarra && p.estado.next
-              ? ([
-                  [
-                    'Cierra el',
-                    `${formatDateEs(p.estado.next.deadlineAt)}${
-                      p.estado.next.origin === 'CALCULADO' ? ' (estimado)' : ''
-                    }`,
-                  ],
-                  ...(recargo?.tono === 'warn'
-                    ? ([['Después', recargo.texto]] as [string, React.ReactNode][])
-                    : []),
-                ] as [string, React.ReactNode][])
-              : []),
-            ...(conNombre
-              ? ([['Tirador', p.athleteName]] as [string, React.ReactNode][])
-              : []),
-          ]}
-        />
-
-        {estaDentro ? (
-          /* Dentro, lo que queda por saber son las horas del día. El plazo ya
-             no cambia nada: la organización ya te tiene. */
-          <Horarios
-            horas={[
-              ['Apertura', p.installationOpen],
-              ['Llamada', p.callTime],
-              ['Scratch', p.scratchTime],
-              ['Inicio', p.startTime],
-            ]}
-          />
-        ) : conBarra ? (
-          <BarraPlazos plazos={p.plazos} estado={p.estado} conEstado={false} />
+    <li>
+      <FilaCompeticion
+        className="px-0"
+        desde={p.startDate}
+        hasta={p.endDate}
+        titulo={titularTorneo(p.eventName)}
+        ciudad={p.city}
+        pais={p.country}
+        estado={
+          <>
+            {compiteHoy ? <Pastilla tono="marca">Compites hoy</Pastilla> : null}
+            {estaDentro || compiteHoy ? null : <PlazoDePrueba prueba={p} />}
+            <PastillaOficial prueba={p} />
+          </>
+        }
+        detalle={
+          <>
+            <Pastilla>
+              {rotuloPrueba(
+                { arma: p.weapon, genero: p.gender, categoria: p.category, formato: p.format },
+                { categoria: 'siempre' },
+              )}
+            </Pastilla>
+            {conNombre ? <span className="min-w-0 text-xs text-muted-foreground">{p.athleteName}</span> : null}
+          </>
+        }
+      >
+        {p.oficial.equipo || p.feeEur || conCierre ? (
+          <ListaDatos disposicion="rejilla" className="pt-2">
+            {p.oficial.equipo ? <ParDato etiqueta="Equipo">{p.oficial.equipo}</ParDato> : null}
+            {/* La cuota sólo si la fuente la publica: casi nunca, y un «—» fijo es ruido. */}
+            {p.feeEur ? <ParDato etiqueta="Cuota">{formatEur(p.feeEur)}</ParDato> : null}
+            {conCierre && p.estado.next ? (
+              <ParDato etiqueta="Cierra el">
+                {fechaCorta(p.estado.next.deadlineAt, { referencia: hoy })}
+                {p.estado.next.origin === 'CALCULADO' ? ' (estimado)' : ''}
+              </ParDato>
+            ) : null}
+            {conCierre && recargo?.tono === 'warn' ? <ParDato etiqueta="Después">{recargo.texto}</ParDato> : null}
+          </ListaDatos>
         ) : null}
 
-        {p.oficial.estado === 'sin_publicar' ? null : (
-          <Procedencia oficial={p.oficial} />
-        )}
-      </div>
+        {estaDentro ? (
+          <div className="pt-2">
+            <Horarios
+              fecha={p.competitionDate ?? p.startDate}
+              huso={p.timezone}
+              horas={[
+                ['Apertura', p.installationOpen],
+                ['Llamada', p.callTime],
+                ['Confirmación de presencia', p.scratchTime],
+                ['Inicio', p.startTime],
+              ]}
+            />
+          </div>
+        ) : conBarra ? (
+          <div className="pt-2">
+            <BarraPlazos plazos={p.plazos} estado={p.estado} conEstado={false} />
+          </div>
+        ) : null}
+
+        {p.oficial.estado === 'sin_publicar' ? null : <Procedencia oficial={p.oficial} />}
+      </FilaCompeticion>
     </li>
   );
 }
 
-/**
- * La cifra de la izquierda, que es la razón de que la fila exista.
- *
- * Dentro: los días hasta competir. Fuera: los días de plazo, con el semáforo.
- * El ancho es fijo para que las cifras de toda la lista queden alineadas en
- * columna, que es lo que permite recorrerla con la vista en vez de leerla.
- */
-function Cifra({
-  prueba: p,
-  hoy,
-  compiteHoy,
-  dentro,
-}: {
-  prueba: PruebaPropia;
-  hoy: string;
-  compiteHoy: boolean;
-  dentro: boolean;
-}) {
-  if (compiteHoy) {
-    return (
-      <div className="w-16 shrink-0 sm:w-20">
-        <span className="cifra block text-4xl text-primary-text sm:text-5xl">
-          Hoy
-        </span>
-        <span className="mt-1 block text-xs leading-tight text-muted-foreground">
-          compites
-        </span>
-      </div>
-    );
-  }
-
-  if (dentro) {
-    const dias = diasEntre(hoy, p.startDate);
-    return (
-      <div className="w-16 shrink-0 sm:w-20">
-        <span className={cn('cifra block', tamanoCifra(dias))}>{dias}</span>
-        <span className="mt-1 block text-xs leading-tight text-muted-foreground">
-          {dias === 1 ? 'día para competir' : 'días para competir'}
-        </span>
-      </div>
-    );
-  }
-
+/** «Cierra en 3 días» con el semáforo; sin plazo, lo dice. */
+function PlazoDePrueba({ prueba: p }: { prueba: PruebaPropia }) {
   if (p.estado.daysLeft !== null) {
     const estimado = p.estado.next?.origin === 'CALCULADO';
     return (
-      <div className="w-16 shrink-0 sm:w-20">
-        <span
-          className={cn(
-            'cifra block',
-            tamanoCifra(p.estado.daysLeft),
-            TONO_PLAZO[p.estado.state],
-          )}
-        >
-          {p.estado.daysLeft}
-        </span>
-        <span className="mt-1 block text-xs leading-tight text-muted-foreground">
-          {p.estado.daysLeft === 1 ? 'día de plazo' : 'días de plazo'}
-          {estimado ? ' (estimado)' : ''}
-        </span>
-      </div>
+      <PastillaPlazo
+        plazo={{
+          texto: `${textoDePlazo(p.estado.daysLeft)}${estimado ? ' (estimado)' : ''}`,
+          tono: TONO_ESTADO[p.estado.state],
+        }}
+      />
     );
   }
-
   return (
-    <div className="w-16 shrink-0 sm:w-20">
-      <span className="block text-xs leading-tight text-muted-foreground">
-        {p.estado.closed ? 'Plazo cerrado' : 'Plazo no publicado'}
-      </span>
-    </div>
+    <PastillaPlazo
+      plazo={{ texto: p.estado.closed ? 'Inscripción cerrada' : 'Plazo sin publicar', tono: 'neutro', cerrado: true }}
+    />
   );
 }
 
 /**
- * ¿Estoy dentro?, en tres palabras y con forma además de color.
- *
- * `Dentro` solo cuando la ficha figura de verdad en la lista publicada. Los
- * otros dos estados **no dicen «no estás»**, y eso es deliberado: hoy ninguna
- * fila de lista oficial trae licencia, que es lo único por lo que se empareja,
- * así que la aplicación no puede afirmar que alguien no esté. Decir «no estás»
- * a quien sí figura con su nombre es cómo se pierde un torneo, igual que lo
- * contrario. El motivo exacto va escrito debajo, en `Procedencia`.
+ * ¿Estoy dentro?, con forma además de color. `Dentro` sólo cuando la ficha
+ * figura en la lista publicada. Los otros estados no dicen «no estás»: las
+ * listas no traen licencia, así que no se puede afirmar que alguien no esté.
  */
 export const ROTULO_PASTILLA: Record<PruebaPropia['oficial']['estado'], string> = {
   dentro: 'Dentro',
@@ -367,53 +229,35 @@ export const ROTULO_PASTILLA: Record<PruebaPropia['oficial']['estado'], string> 
 export function PastillaOficial({ prueba: p }: { prueba: PruebaPropia }) {
   if (p.oficial.estado === 'dentro') {
     return (
-      <span className={cn(PASTILLA, 'border-ok/40 bg-ok/10 font-medium text-ok')}>
-        <CircleCheck className="size-3.5 shrink-0" aria-hidden />
+      <Pastilla tono="ok" icono={CircleCheck} className="border-ok/40">
         Dentro
-      </span>
+      </Pastilla>
     );
   }
-
   return (
-    <span
-      className={cn(PASTILLA, 'border-border bg-secondary/60 text-muted-foreground')}
-    >
-      <CircleHelp className="size-3.5 shrink-0" aria-hidden />
+    <Pastilla icono={CircleHelp} className="text-muted-foreground">
       {ROTULO_PASTILLA[p.oficial.estado]}
-    </span>
+    </Pastilla>
   );
 }
 
-/**
- * Una línea con lo que la lista oficial dice de esta prueba, y el enlace.
- *
- * Sin escudo: el escudo va una sola vez al pie de la sección, porque repetido
- * en ocho filas son ocho peticiones al servidor de la RFEE por la misma imagen.
- * Y sin párrafo: la explicación de qué significa «Sin confirmar» también va al
- * pie. Aquí solo el dato, que es el número de inscritos y de quién es la lista.
- */
+/** Lo que la lista oficial dice de esta prueba, en una línea, y el enlace a la lista. */
 export function Procedencia({ oficial }: { oficial: PruebaPropia['oficial'] }) {
   return (
-    <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-muted-foreground">
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-xs text-muted-foreground">
       <span>
         {oficial.estado === 'dentro' ? (
           <>
             Figuras en la lista de inscritos
-            {oficial.leidoEl ? `, leída el ${formatDateEs(oficial.leidoEl)}` : ''}
+            {oficial.leidoEl ? `, leída el ${fechaCorta(oficial.leidoEl)}` : ''}
           </>
         ) : oficial.estado === 'sin_emparejar' ? (
-          /* Sin el nombre de la fuente: lo dice una vez el escudo del pie de la
-             sección, y repetido en cada fila partía la línea en dos. */
           <>
-            <span className="cifra text-sm text-foreground">
-              {oficial.publicados}
-            </span>{' '}
-            {oficial.publicados === 1
-              ? 'inscrito publicado'
-              : 'inscritos publicados'}
+            <span className="font-medium text-foreground tabular-nums">{oficial.publicados}</span>{' '}
+            {oficial.publicados === 1 ? 'inscrito publicado' : 'inscritos publicados'}
           </>
         ) : oficial.estado === 'vacia' ? (
-          <>La lista se leyó y todavía no publica inscritos</>
+          <>La lista se leyó y aún no tiene inscritos</>
         ) : (
           <>Lista de inscritos sin consultar</>
         )}
@@ -423,7 +267,7 @@ export function Procedencia({ oficial }: { oficial: PruebaPropia['oficial'] }) {
           href={oficial.sourceUrl}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1 text-primary-text underline underline-offset-4 transition-colors hover:text-foreground"
+          className="inline-flex min-h-11 items-center gap-1 font-medium text-primary-text hover:text-foreground"
         >
           Ver la lista
           <ExternalLink className="size-3 shrink-0" aria-hidden />
