@@ -98,7 +98,7 @@ function AvisoPasado({ estado }: { estado: EstadoDelMes }) {
   if (estado !== 'fallo') return null;
   return (
     <p role="alert" className="py-2 text-xs text-muted-foreground">
-      No se pudo cargar
+      No se han podido cargar los torneos anteriores.
     </p>
   );
 }
@@ -107,7 +107,14 @@ function claveDeItem(item: ItemMes): string {
   return item.tipo === 'bloque' ? item.bloque.clave : `hueco_${item.hueco.desde}`;
 }
 
-function ItemDeLista({ item, ...comun }: { item: ItemMes } & Comun) {
+/**
+ * La tarjeta de un bloque va dentro de un `<li>` sin maquetar fuera de
+ * pantalla: en el feed del móvil y en la columna del escritorio, lo que no se
+ * ve no se maqueta (`content-visibility`), con 88 px de alto estimado — una
+ * tarjeta de un torneo mide unos 90 px (`auto` recuerda el alto real).
+ * Memorizada para que abrir una ficha no repinte el mes entero.
+ */
+const ItemDeLista = React.memo(function ItemDeLista({ item, ...comun }: { item: ItemMes } & Comun) {
   if (item.tipo === 'hueco') {
     return (
       <li>
@@ -119,11 +126,11 @@ function ItemDeLista({ item, ...comun }: { item: ItemMes } & Comun) {
     );
   }
   return (
-    <li>
+    <li className="[content-visibility:auto] [contain-intrinsic-size:auto_88px]">
       <TarjetaBloque bloque={item.bloque} {...comun} />
     </li>
   );
-}
+});
 
 /**
  * El mes vacío. No explica nada que no conste: un mes sin torneos cargados no
@@ -159,7 +166,7 @@ function MesVacio({
 
 function textoDeMesVacio(nombre: string, estado: EstadoDelMes): string {
   if (estado === 'cargando') return '';
-  if (estado === 'fallo') return 'No se pudo cargar';
+  if (estado === 'fallo') return `No se han podido cargar los torneos de ${nombre.toLocaleLowerCase('es-ES')}`;
   return `Sin competiciones cargadas en ${nombre.toLocaleLowerCase('es-ES')}`;
 }
 

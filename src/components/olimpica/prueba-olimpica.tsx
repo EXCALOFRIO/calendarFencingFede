@@ -203,10 +203,10 @@ export function PruebaOlimpica({
 
   return (
     <details
-      className="group min-w-0 max-w-3xl rounded-xl border bg-card"
+      className="sis-details group min-w-0 max-w-3xl rounded-xl border bg-card"
       data-prueba={`${resultado.arma}-${resultado.genero}`}
     >
-      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl px-3 py-2 focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:px-4 [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl px-3 py-2 transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:px-4 [&::-webkit-details-marker]:hidden">
         <div className="mr-auto min-w-0">
           <h3 className="text-base leading-tight">Clasificación olímpica · LA 2028</h3>
           <div className="truncate text-xs text-muted-foreground">
@@ -216,7 +216,7 @@ export function PruebaOlimpica({
         <EstadoPropio estado={resultado.seguidos[nocPropio]} />
         <ChevronDown
           aria-hidden
-          className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+          className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180 motion-reduce:transition-none"
         />
       </summary>
 

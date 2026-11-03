@@ -50,12 +50,14 @@ export function PantallaError({
       <h1 className="text-2xl sm:text-3xl">{titulo}</h1>
       <p className="medida text-sm text-muted-foreground">
         No se ha podido cargar esta pantalla. Los datos están intactos: ha
-        fallado la consulta, no lo que hay guardado.
+        fallado la lectura, no lo que hay guardado. Si se repite, avisa a la
+        dirección técnica.
       </p>
-      <p className="medida rounded-md border bg-card px-3 py-2 font-mono text-xs text-muted-foreground">
-        {error.message || 'Error sin mensaje.'}
-        {error.digest ? ` (${error.digest})` : ''}
-      </p>
+      {error.digest ? (
+        <p className="medida text-xs text-muted-foreground">
+          Referencia del fallo: {error.digest}
+        </p>
+      ) : null}
       <div className="mt-2 flex flex-wrap gap-2">
         <Button onClick={reintentar}>Volver a intentarlo</Button>
         <Button variant="outline" asChild>

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { ListaDatos, ParDato } from '@/components/sistema/lista-datos';
+import { AREA_TACTIL } from '@/components/sistema/tactil';
 import { fechaCorta } from '@/lib/fechas';
 import type { MyCallUp } from '@/lib/queries/my-status';
 import { cn, titularTorneo } from '@/lib/utils';
@@ -52,7 +53,7 @@ export function Convocatorias({
       accion={
         <Link
           href="/convocatorias"
-          className="text-sm text-primary-text underline underline-offset-4 transition-colors hover:text-foreground"
+          className={cn('text-sm text-primary-text underline underline-offset-4 transition-colors hover:text-foreground', AREA_TACTIL)}
         >
           Ver la selección
         </Link>

@@ -31,13 +31,17 @@ export const CABECERAS_SEGURIDAD = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
 ];
 
+/** Un día de caché de navegador para las rutas estáticas de metadatos (ver `headers()`). */
+const CABECERA_CACHE_UN_DIA = { key: 'Cache-Control', value: 'public, max-age=86400' };
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
 
   /**
    * Sólo para HTML y API que sirve el Worker. `/_next/static` y `public/` los
    * sirve Cloudflare Assets sin pasar por Next, así que no llevan estas
-   * cabeceras (y no las necesitan para lo que protegen).
+   * cabeceras (y no las necesitan para lo que protegen); su política de caché
+   * está en `public/_headers`.
    */
   async headers() {
     return [
@@ -50,6 +54,18 @@ const nextConfig: NextConfig = {
         source: '/((?!api/archivos/).*)',
         headers: [{ key: 'Content-Security-Policy', value: "frame-ancestors 'none'" }],
       },
+      /*
+        El manifiesto y los iconos de la app son rutas prerenderizadas
+        (`app/manifest.ts`, `app/icon.*`) que sirve el Worker; Next las emite
+        con `max-age=0, must-revalidate`, así que cada visita pagaba una
+        revalidación. Un día de caché de navegador basta: no llevan hash en el
+        nombre —nada de `immutable`— y si alguno cambia, el cambio llega con el
+        siguiente despliegue en menos de 24 h.
+      */
+      { source: '/manifest.webmanifest', headers: [CABECERA_CACHE_UN_DIA] },
+      { source: '/icon.svg', headers: [CABECERA_CACHE_UN_DIA] },
+      { source: '/icon.png', headers: [CABECERA_CACHE_UN_DIA] },
+      { source: '/apple-icon.png', headers: [CABECERA_CACHE_UN_DIA] },
     ];
   },
 
@@ -62,6 +78,19 @@ const nextConfig: NextConfig = {
     serverActions: { bodySizeLimit: '1mb' },
     // Volver a una pestaña vista hace menos de 30 s no repite el render de servidor.
     staleTimes: { dynamic: 30 },
+    /**
+     * `radix-ui` (el metapaquete del que salen los `import { Dialog } from
+     * 'radix-ui'` de `src/components/ui/**`) reexporta las ~35 primitivas
+     * desde un único índice: sin esta opción, un `import { Dialog }` carga el
+     * grafo entero para compilar y para tree-shakear. NO está en la lista que
+     * Next optimiza por defecto (esa cubre `lucide-react`, `date-fns`, MUI,
+     * react-icons… —comprobado en `next/dist/server/config.js` de la 16.3.6),
+     * así que hace falta declararlo. Con ella, cada primitiva se importa por
+     * su módulo real (`@radix-ui/react-dialog`…): menos módulos por ruta en
+     * Turbopack y en el paquete del Worker. Si el optimizador no puede
+     * analizar el paquete, cae al import normal sin romper nada.
+     */
+    optimizePackageImports: ['radix-ui'],
   },
 
   /**

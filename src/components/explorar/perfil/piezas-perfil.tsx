@@ -28,7 +28,7 @@ export function Metrica({
   );
 }
 
-export function SinDato({ children = 'Sin datos importados' }: { children?: React.ReactNode }) {
+export function SinDato({ children = 'Todavía no hay datos' }: { children?: React.ReactNode }) {
   return <span className="text-sm leading-snug text-muted-foreground">{children}</span>;
 }
 

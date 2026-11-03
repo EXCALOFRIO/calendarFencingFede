@@ -426,45 +426,18 @@ export function TablaRankingOficial({
           aria-busy={pendiente ? true : undefined}
           className={cn('grid w-full min-w-0 max-w-3xl gap-px overflow-hidden rounded-xl border bg-border transition-opacity duration-150', pendiente && 'opacity-60')}
         >
-          {filasVisibles.map((fila) => {
-            const esMia = fila.athleteId !== null && mios.includes(fila.athleteId);
-            return (
-              <React.Fragment key={fila.id}>
-                <FilaLinea
-                  puesto={fila.position}
-                  nombre={fila.nombre}
-                  personaId={personaDe(fila.id)}
-                  club={fila.club}
-                  puntos={fila.totalPoints}
-                  mio={esMia}
-                  accion={
-                    fila.athleteId ? (
-                      <button
-                        type="button"
-                        onClick={() => setAbierto(fila.athleteId)}
-                        aria-label={`Ver los datos de ${fila.nombre}`}
-                        className="relative -mr-1 inline-flex size-7 min-h-0! min-w-0! items-center justify-center rounded-full text-muted-foreground after:absolute after:-inset-2 after:content-[''] hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
-                      >
-                        <ChevronRight className="size-4" aria-hidden />
-                      </button>
-                    ) : null
-                  }
-                />
-                {hayCorte && fila.position === plazas ? (
-                  <li className="flex items-center gap-2 border-y border-gold bg-[color-mix(in_oklab,var(--color-gold)_7%,var(--card))] px-2 py-2 text-xs text-gold">
-                    <Scissors className="size-3.5 shrink-0" aria-hidden />
-                    <span>
-                      Corte de convocatoria: las {plazas} primeras plazas salen por ranking
-                      {tabla.rule && tabla.rule.technicalPlaces > 0
-                        ? `; otras ${tabla.rule.technicalPlaces} las decide el criterio técnico`
-                        : ''}
-                      .
-                    </span>
-                  </li>
-                ) : null}
-              </React.Fragment>
-            );
-          })}
+          {filasVisibles.map((fila) => (
+            <FilaTabla
+              key={fila.id}
+              fila={fila}
+              mio={fila.athleteId !== null && mios.includes(fila.athleteId)}
+              personaId={personaDe(fila.id)}
+              hayCorte={hayCorte}
+              plazas={plazas}
+              plazasTecnicas={tabla.rule?.technicalPlaces ?? 0}
+              onAbrir={setAbierto}
+            />
+          ))}
         </ol>
       ) : null}
 
@@ -505,6 +478,66 @@ export function TablaRankingOficial({
     </div>
   );
 }
+
+/**
+ * La fila de un tirador, con su línea de corte si cae en su puesto,
+ * memorizada con props planas: al escribir en el buscador o al abrir el
+ * panel, antes se repintaba la tabla entera — el `accion` era un elemento
+ * nuevo en cada render y anulaba cualquier memoización. Ahora sólo se
+ * repintan las filas que entran o salen de la lista.
+ */
+const FilaTabla = React.memo(function FilaTabla({
+  fila,
+  mio,
+  personaId,
+  hayCorte,
+  plazas,
+  plazasTecnicas,
+  onAbrir,
+}: {
+  fila: FilaOficial;
+  mio: boolean;
+  personaId: string | null;
+  hayCorte: boolean;
+  plazas: number;
+  plazasTecnicas: number;
+  onAbrir: (athleteId: string | null) => void;
+}) {
+  return (
+    <>
+      <FilaLinea
+        puesto={fila.position}
+        nombre={fila.nombre}
+        personaId={personaId}
+        club={fila.club}
+        puntos={fila.totalPoints}
+        mio={mio}
+        accion={
+          fila.athleteId ? (
+            <button
+              type="button"
+              onClick={() => onAbrir(fila.athleteId)}
+              aria-label={`Ver los datos de ${fila.nombre}`}
+              className="relative -mr-1 inline-flex size-7 min-h-0! min-w-0! items-center justify-center rounded-full text-muted-foreground after:absolute after:-inset-2 after:content-[''] transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
+            >
+              <ChevronRight className="size-4" aria-hidden />
+            </button>
+          ) : null
+        }
+      />
+      {hayCorte && fila.position === plazas ? (
+        <li className="flex items-center gap-2 border-y border-gold bg-[color-mix(in_oklab,var(--color-gold)_7%,var(--card))] px-2 py-2 text-xs text-gold">
+          <Scissors className="size-3.5 shrink-0" aria-hidden />
+          <span>
+            Corte de convocatoria: las {plazas} primeras plazas salen por ranking
+            {plazasTecnicas > 0 ? `; otras ${plazasTecnicas} las decide el criterio técnico` : ''}
+            .
+          </span>
+        </li>
+      ) : null}
+    </>
+  );
+});
 
 /**
  * Cuerpo del panel de una fila oficial: el dato de la federación siempre y,

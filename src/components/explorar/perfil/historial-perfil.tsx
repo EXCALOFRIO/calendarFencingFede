@@ -104,7 +104,7 @@ function TarjetaMejor({ r, className }: { r: FilaListaPerfil; className?: string
       <Link
         href={r.href}
         prefetch={false}
-        className="flex h-full min-w-0 flex-col gap-3 rounded-xl border bg-card p-3 hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:p-4"
+        className="flex h-full min-w-0 flex-col gap-3 rounded-xl border bg-card p-3 transition-colors hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:p-4"
       >
         <span className="flex min-w-0 items-center justify-between gap-2">
           <DiscoPuesto puesto={r.puesto} puestoPublicado={r.puestoPublicado} />
@@ -297,7 +297,7 @@ export function HistorialPerfil({
             <button
               type="button"
               onClick={limpiar}
-              className={cn(TACTIL, 'inline-flex min-h-[32px] w-fit items-center gap-1 rounded-full px-3 text-sm text-primary-text hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none')}
+              className={cn(TACTIL, 'inline-flex min-h-[32px] w-fit items-center gap-1 rounded-full px-3 text-sm text-primary-text transition-colors hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none')}
             >
               <X className="size-4" aria-hidden />
               Quitar filtros

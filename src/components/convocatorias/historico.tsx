@@ -1,4 +1,5 @@
 import { CircleCheck, Clock, FileText, X } from 'lucide-react';
+import { AREA_TACTIL } from '@/components/sistema/tactil';
 import type { CallUpForAthlete } from '@/lib/callups/tipos';
 import { PLACE_TYPE_LABEL } from '@/lib/callups/tipos';
 import { fechaCorta, rangoFechas } from '@/lib/fechas';
@@ -55,7 +56,7 @@ export function Historico({
                 href={c.pdfUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="text-muted-foreground transition-colors hover:text-foreground"
+                className={cn('text-muted-foreground transition-colors hover:text-foreground', AREA_TACTIL)}
                 aria-label={`PDF de ${c.eventName}`}
               >
                 <FileText className="size-4" aria-hidden />

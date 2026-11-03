@@ -219,7 +219,7 @@ export function Procedencia({
           href={url}
           target="_blank"
           rel="noreferrer"
-          className="underline underline-offset-2 hover:text-foreground"
+          className="underline underline-offset-2 transition-colors hover:text-foreground"
         >
           {documento}
         </a>

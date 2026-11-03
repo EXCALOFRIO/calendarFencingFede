@@ -2,6 +2,7 @@ import { CircleCheck, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import type { ResumenFicha } from '@/app/(app)/alta/consultas';
 import { Cuenta, Seccion } from '@/components/estado/piezas';
+import { AREA_TACTIL } from '@/components/sistema/tactil';
 import { puntos } from '@/components/ranking/formato';
 import { Button } from '@/components/ui/button';
 import { frescura } from '@/lib/fechas';
@@ -178,7 +179,7 @@ export function FichaVinculada({
                       href={c.urlFuente}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex w-fit items-center gap-1 text-xs text-primary-text underline underline-offset-4"
+                      className={`inline-flex w-fit items-center gap-1 text-xs text-primary-text underline underline-offset-4 ${AREA_TACTIL}`}
                     >
                       Verlo en la página de la RFEE
                       <ExternalLink className="size-3 shrink-0" aria-hidden />

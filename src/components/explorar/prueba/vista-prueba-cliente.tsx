@@ -310,7 +310,7 @@ export function VistaPruebaCliente({
                 <button
                   type="submit"
                   aria-label="Siguiente coincidencia"
-                  className="inline-flex size-[40px] items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
+                  className="inline-flex size-[40px] items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
                 >
                   <ChevronDown className="size-4" aria-hidden />
                 </button>
@@ -319,7 +319,7 @@ export function VistaPruebaCliente({
                 type="button"
                 onClick={() => buscar('')}
                 aria-label="Borrar la búsqueda"
-                className="inline-flex size-[40px] items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
+                className="inline-flex size-[40px] items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
               >
                 <X className="size-4" aria-hidden />
               </button>

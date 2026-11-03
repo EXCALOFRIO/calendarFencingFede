@@ -87,7 +87,7 @@ export function SelectorSegmentado({
       SIN_MINIMO,
       FOCO,
       'group/segmento relative isolate inline-flex min-w-0 items-center justify-center gap-1 px-2 text-sm font-medium select-none',
-      '[-webkit-tap-highlight-color:transparent] disabled:pointer-events-none disabled:text-off',
+      '[-webkit-tap-highlight-color:transparent] transition-colors disabled:pointer-events-none disabled:text-off',
       tamano === 'md' ? 'h-11' : cn('h-9', AREA_TACTIL),
       pastilla ? 'rounded-md' : '',
       activa ? (pastilla ? 'text-background' : 'font-semibold text-foreground') : 'text-muted-foreground hover:text-foreground',
@@ -98,7 +98,7 @@ export function SelectorSegmentado({
       aria-hidden
       data-indicador
       className={cn(
-        'pointer-events-none absolute -z-10 transition-[opacity,scale] duration-200 ease-out motion-reduce:transition-none',
+        'pointer-events-none absolute -z-10 sis-indicador',
         pastilla ? 'inset-0 rounded-md bg-foreground' : 'inset-x-2 bottom-0 h-0 border-b-2 border-primary',
         activa ? 'scale-100 opacity-100' : pastilla ? 'scale-95 opacity-0' : 'scale-x-0 opacity-0',
       )}

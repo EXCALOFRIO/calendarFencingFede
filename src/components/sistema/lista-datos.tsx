@@ -62,7 +62,7 @@ function BotonFuente({ fuente }: { fuente: FuenteDato }) {
     SIN_MINIMO,
     FOCO,
     AREA_TACTIL,
-    'ml-auto inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground hover:text-foreground [&_svg]:size-4',
+    'pulsable ml-auto inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground hover:text-foreground [&_svg]:size-4',
     'group-data-[disposicion=linea]/datos:ml-0',
   );
   if (fuente.href) {

@@ -18,7 +18,7 @@ const { BandaEstasDentro, BandaFuentes } = await import(
   '@/components/calendario/ficha-evento'
 );
 
-const AVISO = 'La última lectura falló';
+const AVISO = 'No se ha podido actualizar la lista';
 const SIN_LECTURA = 'No se ha podido leer la lista de inscritos';
 
 const evento = { id: 'ev-1', source: 'fie' } as unknown as EventView;
@@ -209,6 +209,30 @@ describe('BandaEstasDentro: de qué fuente es la lista y a dónde salta', () => 
       { inscritos: datos({ estados: { 'prueba-a': 'sin_consultar' } }) },
     );
     expect(html).toBe('');
+  });
+
+  it('la completa se ofrece dentro: «Ver todos los países» además del enlace a fie.org', () => {
+    const html = renderCon(
+      { sourceUrl: ENTRIES },
+      { inscritos: conLista() },
+    );
+    // El desplegable que pide la lista entera a nuestra ruta…
+    expect(html).toContain('Ver todos los países');
+    // …y el salto a fie.org se queda como enlace secundario.
+    expect(html).toContain('Todos los países en fie.org');
+  });
+
+  it('también con la lista unida de Skermo y FIE', () => {
+    const html = renderCon(
+      { sourceUrl: SKERMO, inscritosFieUrl: ENTRIES },
+      { inscritos: conLista() },
+    );
+    expect(html).toContain('Ver todos los países');
+  });
+
+  it('sin fuente FIE no hay desplegable de países', () => {
+    const html = renderCon({ sourceUrl: SKERMO }, { inscritos: conLista() });
+    expect(html).not.toContain('Ver todos los países');
   });
 });
 

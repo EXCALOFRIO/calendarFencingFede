@@ -72,8 +72,8 @@ export default async function CalendarioPage({
         <h1 className="sr-only">Calendario</h1>
         <EstadoVacio
           tipo="error"
-          titulo="Calendario sin cargar"
-          descripcion="Avisa a dirección técnica para que revise la carga."
+          titulo="El calendario está vacío"
+          descripcion="Todavía no hay competiciones cargadas esta temporada. Si esperabas ver alguna, avisa a la dirección técnica."
         />
       </div>
     );

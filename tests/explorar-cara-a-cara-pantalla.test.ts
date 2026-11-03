@@ -580,7 +580,7 @@ describe('elegir rival: sólo por nombre', () => {
     const marcado = html(
       React.createElement(ElegirRival, { persona: v.persona, rivales: v.rivales, otros: v.otros, criterios: entrada }),
     );
-    expect(marcado).toContain('Ha fallado la consulta; no es que no haya rivales');
+    expect(marcado).toContain('Ha fallado la lectura; no es que no haya rivales');
     expect(marcado).toContain('Nora Diaz');
     expect(marcado).toContain('>Otras personas<');
     expect(marcado).not.toContain('Aún no tienen asaltos confirmados');
@@ -681,7 +681,7 @@ describe('elegir rival: sólo por nombre', () => {
       }),
     );
     expect(marcado).toContain('Marta Ruiz');
-    expect(marcado).toContain('otras personas indexadas');
+    expect(marcado).toContain('otras personas');
     expect(marcado).toContain('no es que no haya coincidencias');
     expect(marcado).toContain('role="alert"');
   });

@@ -255,7 +255,7 @@ export function AltaTiradorDesdeRanking({ aMano }: { aMano: () => void }) {
         <button
           type="button"
           onClick={aMano}
-          className="underline underline-offset-2 hover:text-foreground"
+          className="underline underline-offset-2 transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
         >
           Darlo de alta a mano
         </button>

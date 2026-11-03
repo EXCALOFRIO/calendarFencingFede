@@ -1,16 +1,28 @@
 import { defineCloudflareConfig } from '@opennextjs/cloudflare';
+import cacheEnEstaticos from '@opennextjs/cloudflare/overrides/incremental-cache/static-assets-incremental-cache';
 
 /**
  * Configuración del adaptador de Cloudflare (OpenNext).
  *
- * Sin caché incremental a propósito: **todas** las páginas y rutas de esta
- * aplicación declaran `export const dynamic = 'force-dynamic'` (comprobado:
- * 24 de 24 ficheros con directiva). No hay ISR, ni `use cache`, ni páginas
- * prerenderizadas que revalidar, así que un cubo de R2 para la caché
- * incremental sería un cubo vacío y una dependencia más que crear antes de
- * desplegar.
+ * Caché incremental **en los propios static assets del Worker**
+ * (`cdn-cgi/_next_cache/<buildId>/`, servida por el binding `ASSETS`, que ya
+ * existe). Las páginas de la aplicación son todas `force-dynamic` —no hay ISR
+ * que revalidar— pero SÍ hay rutas prerenderizadas en el manifiesto de build:
+ * `/manifest.webmanifest`, `/icon.svg`, `/icon.png`, `/apple-icon.png`,
+ * `/_not-found` y `/_global-error`. Sin caché incremental, cada petición a
+ * esas rutas reejecuta su route handler dentro del Worker; con ella se sirven
+ * leyendo el fichero `.cache` sembrado en los assets.
  *
- * Si algún día se añade una página con `revalidate`, hay que volver aquí:
+ * No cuesta nada ni pide bindings nuevos: `opennextjs-cloudflare
+ * preview|deploy|upload` copia `.open-next/cache/` dentro de los assets al
+ * desplegar (`populateCache`), y el acceso es una lectura del ASSETS binding,
+ * que no es una invocación extra. Al estar bajo `cdn-cgi/` esos ficheros no
+ * son accesibles desde fuera, sólo desde el propio Worker.
+ *
+ * Es de SÓLO LECTURA: si algún día una página declara `revalidate` (ISR de
+ * verdad) o se usa `unstable_cache`/`use cache` con persistencia, los `set`
+ * fallan con un error en el registro y la entrada no se actualiza nunca.
+ * En ese momento hay que cambiar a:
  *
  *   import r2IncrementalCache from
  *     '@opennextjs/cloudflare/overrides/incremental-cache/r2-incremental-cache';
@@ -18,4 +30,4 @@ import { defineCloudflareConfig } from '@opennextjs/cloudflare';
  *
  * y añadir el binding `NEXT_INC_CACHE_R2_BUCKET` en `wrangler.jsonc`.
  */
-export default defineCloudflareConfig();
+export default defineCloudflareConfig({ incrementalCache: cacheEnEstaticos });

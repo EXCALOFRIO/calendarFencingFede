@@ -79,7 +79,7 @@ export function SugeridosPerfil({
   return (
     <Bloque id="ficha-sugeridos" titulo="Sugeridos" nivel={nivel}>
       {sugeridos === null ? (
-        <EstadoVacio tipo="error" titulo="No se han podido cargar" />
+        <EstadoVacio tipo="error" titulo="No se han podido cargar los sugeridos" />
       ) : (
         <ul className="divide-y overflow-hidden rounded-xl border bg-card" aria-label="Tiradores sugeridos">
           {sugeridos.slice(0, 6).map((s) => <FilaSugerido key={s.id} personaId={personaId} s={s} />)}

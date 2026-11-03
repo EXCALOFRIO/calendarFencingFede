@@ -63,7 +63,7 @@ export function Pruebas({
       accion={
         <Link
           href="/"
-          className="inline-flex min-h-11 items-center text-sm font-medium text-primary-text hover:text-foreground"
+          className="inline-flex min-h-11 items-center text-sm font-medium text-primary-text transition-colors hover:text-foreground"
         >
           Ver el calendario
         </Link>
@@ -267,7 +267,7 @@ export function Procedencia({ oficial }: { oficial: PruebaPropia['oficial'] }) {
           href={oficial.sourceUrl}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex min-h-11 items-center gap-1 font-medium text-primary-text hover:text-foreground"
+          className="inline-flex min-h-11 items-center gap-1 font-medium text-primary-text transition-colors hover:text-foreground"
         >
           Ver la lista
           <ExternalLink className="size-3 shrink-0" aria-hidden />

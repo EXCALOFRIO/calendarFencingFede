@@ -51,8 +51,8 @@ export function Aclaracion({
   children: React.ReactNode;
 }) {
   return (
-    <details className="min-w-0 text-sm">
-      <summary className="min-h-[44px] cursor-pointer content-center rounded-sm py-2 text-muted-foreground break-words hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none">
+    <details className="sis-details min-w-0 text-sm">
+      <summary className="min-h-[44px] cursor-pointer content-center rounded-sm py-2 text-muted-foreground break-words transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none">
         {titulo}
       </summary>
       <div className="flex min-w-0 flex-col gap-3 border-l pl-4 pb-3">{children}</div>

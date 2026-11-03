@@ -16,6 +16,7 @@ import {
 import { AltaTiradorDesdeRanking } from '@/components/admin/alta-tirador';
 import { CampoFecha } from '@/components/admin/campo-fecha';
 import { Vacio } from '@/components/admin/piezas';
+import { AREA_TACTIL } from '@/components/sistema/tactil';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -539,7 +540,7 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
           <button
             type="button"
             onClick={() => setAMano(false)}
-            className="underline underline-offset-2 hover:text-foreground"
+            className="underline underline-offset-2 transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
           >
             Buscarlo en la clasificación
           </button>
@@ -738,22 +739,28 @@ function ImportadorCsv() {
           <Button variant="outline" size="sm" onClick={descargarPlantilla}>
             <Download /> Descargar la plantilla
           </Button>
-          <Label
-            htmlFor="csv-fichero"
-            className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-md border bg-background px-3 text-sm font-medium shadow-xs hover:bg-accent"
-          >
-            <FileUp className="size-4" /> Elegir un fichero
-          </Label>
+          {/* El input va primero, oculto al estilo `peer`, para que el anillo de
+              foco caiga sobre la etiqueta visible cuando el foco está en él. */}
           <input
             id="csv-fichero"
             type="file"
             accept=".csv,text/csv"
-            className="sr-only"
+            className="peer sr-only"
             onChange={(e) => {
               const fichero = e.target.files?.[0];
               if (fichero) void leerFichero(fichero);
             }}
           />
+          <Label
+            htmlFor="csv-fichero"
+            className={cn(
+              'inline-flex h-8 cursor-pointer items-center gap-2 rounded-md border bg-background px-3 text-sm font-medium shadow-xs transition-colors hover:bg-accent',
+              'peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background',
+              AREA_TACTIL,
+            )}
+          >
+            <FileUp className="size-4" aria-hidden /> Elegir un fichero
+          </Label>
           <p className="text-xs text-muted-foreground">
             También puedes pegar el contenido abajo. Separador «;» o «,»: se detecta
             solo.

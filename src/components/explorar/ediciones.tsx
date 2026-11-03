@@ -136,7 +136,9 @@ export function FilaEdicion({ e, catalogo }: { e: EdicionResumen & { clasificado
         href={construirUrlEdicion(e.id, { catalogo })}
         transitionTypes={AVANZAR}
         title={generico && ciudad ? `${nombre} ${ciudad}` : undefined}
-        className="flex min-h-16 items-center gap-3 px-1 py-2 transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset motion-reduce:transition-none"
+        // Las listas de ediciones son largas (el catálogo agrupa temporadas
+        // enteras): fuera de pantalla no se maqueta; 64 px, su `min-h-16`.
+        className="flex min-h-16 items-center gap-3 px-1 py-2 transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset motion-reduce:transition-none [content-visibility:auto] [contain-intrinsic-size:auto_64px]"
       >
         {e.inicio ? (
           <BloqueFecha desde={e.inicio} hasta={e.fin} />
@@ -569,7 +571,7 @@ function ResultadosDePrueba({
   if (filas.length === 0 && (asaltos === null || (asaltos !== 'error' && asaltos.poules.length === 0 && asaltos.cuadro.length === 0))) {
     return (
       <p role="status" className="border-y py-6 text-center text-sm text-muted-foreground">
-        Sin resultados.
+        Sin resultados en esta prueba.
       </p>
     );
   }
@@ -600,23 +602,58 @@ function ResultadosDePrueba({
   );
 }
 
-export function EstadoEdicion({ vista }: { vista: Exclude<VistaEdicion, { tipo: 'ok' } | { tipo: 'sin_sesion' }> }) {
+export function EstadoEdicion({
+  vista,
+  reintentar,
+}: {
+  vista: Exclude<VistaEdicion, { tipo: 'ok' } | { tipo: 'sin_sesion' }>;
+  /** URL de la misma edición, para volver a pedirla. */
+  reintentar?: string;
+}) {
+  const verEdiciones = (
+    <Button asChild variant="outline" size="sm" className="rounded-full">
+      <EnlaceIntencion href={RUTA_EDICIONES}>Ver las ediciones</EnlaceIntencion>
+    </Button>
+  );
+  const otraVez = reintentar ? (
+    <Button asChild variant="outline" size="sm" className="rounded-full">
+      <EnlaceIntencion href={reintentar}>Reintentar</EnlaceIntencion>
+    </Button>
+  ) : null;
   switch (vista.tipo) {
     case 'no_encontrada':
-      return <Aviso icono={<SearchX className="size-5 text-muted-foreground" aria-hidden />} titulo="Esta edición no existe" />;
+      return (
+        <Aviso icono={<SearchX className="size-5 text-muted-foreground" aria-hidden />} titulo="Esta edición no existe">
+          <p className="text-sm text-muted-foreground">Puede que el enlace sea antiguo.</p>
+          {verEdiciones}
+        </Aviso>
+      );
     case 'entrada_invalida':
-      return <Aviso alerta icono={<TriangleAlert className="size-5 text-warn" aria-hidden />} titulo="Dirección no válida" />;
+      return (
+        <Aviso alerta icono={<TriangleAlert className="size-5 text-warn" aria-hidden />} titulo="Dirección no válida">
+          <p className="text-sm text-muted-foreground">Revisa la dirección o vuelve a las ediciones.</p>
+          {verEdiciones}
+        </Aviso>
+      );
     case 'cursor_invalido':
       return (
-        <Aviso alerta icono={<TriangleAlert className="size-5 text-warn" aria-hidden />} titulo="Esa página de la clasificación ya no vale" />
+        <Aviso alerta icono={<TriangleAlert className="size-5 text-warn" aria-hidden />} titulo="Esa página de la clasificación ya no vale">
+          <p className="text-sm text-muted-foreground">La lista ha cambiado; vuelve a la primera página.</p>
+          {otraVez ?? verEdiciones}
+        </Aviso>
       );
     case 'no_disponible':
       return (
-        <Aviso alerta icono={<TriangleAlert className="size-5 text-warn" aria-hidden />} titulo="Las ediciones aún no están activas" />
+        <Aviso alerta icono={<TriangleAlert className="size-5 text-warn" aria-hidden />} titulo="Las ediciones aún no están activas">
+          <p className="text-sm text-muted-foreground">Todavía no están disponibles.</p>
+        </Aviso>
       );
     default:
       return (
-        <Aviso alerta icono={<TriangleAlert className="size-5 text-danger" aria-hidden />} titulo="No se ha podido leer la edición" />
+        <Aviso alerta icono={<TriangleAlert className="size-5 text-danger" aria-hidden />} titulo="No se ha podido leer la edición">
+          <p className="text-sm text-muted-foreground">Inténtalo de nuevo en un momento.</p>
+          {otraVez ?? verEdiciones}
+        </Aviso>
       );
   }
 }

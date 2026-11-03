@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { memo } from 'react';
 import { BanderaPais } from '@/components/bandera';
 import { Avatar } from '@/components/sistema/avatar';
 import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
@@ -46,15 +47,19 @@ const SUBRAYADO = 'rounded-sm underline-offset-4 hover:underline focus-visible:r
  * con un `after` invisible, así el toque es la fila entera sin que se dibuje
  * ningún botón. El torneo queda por encima con su propio enlace, que se toca
  * en 44 px (`AREA_TACTIL`) sin mover las líneas.
+ *
+ * Memorizada y sin maquetar fuera de pantalla (`content-visibility`, con 88 px
+ * de alto estimado — `auto` recuerda el real): al cargar otra tanda del feed
+ * o reintentar tras un fallo no se repintan las ya pintadas.
  */
-export function TarjetaSiguiendo({ e }: { e: EntradaSiguiendo }) {
+export const TarjetaSiguiendo = memo(function TarjetaSiguiendo({ e }: { e: EntradaSiguiendo }) {
   const nombre = nombreVisible(e.persona.nombre) || e.persona.nombre;
   const torneo = nombrePrueba({ nombre: e.prueba.torneo, formato: e.prueba.formato, fuente: e.prueba.fuente });
   const lugar = [torneo, e.prueba.ciudad ? titular(e.prueba.ciudad) : null].filter(Boolean).join(SEPARADOR);
   const prueba = textoPrueba(e.prueba);
   const de = e.puesto !== null && e.participantes > 0 ? e.participantes : null;
   return (
-    <li className="min-w-0">
+    <li className="min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_88px]">
       <article className="relative flex min-w-0 items-center gap-3 py-3" aria-label={`${nombre}, ${torneo}`}>
         <Avatar personaId={e.persona.id} nombre={nombre} tamano={40} />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -99,4 +104,4 @@ export function TarjetaSiguiendo({ e }: { e: EntradaSiguiendo }) {
       </article>
     </li>
   );
-}
+});

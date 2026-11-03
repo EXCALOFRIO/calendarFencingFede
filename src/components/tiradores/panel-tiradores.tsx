@@ -217,7 +217,9 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
       */}
       <ul className="flex flex-col divide-y border-t">
         {tiradores.map((t) => (
-        <li key={t.id} className="min-w-0">
+        // Las bandas no se maquetan fuera de pantalla; 112 px de reserva
+        // plegada (`auto` recuerda el alto real, también abierta).
+        <li key={t.id} className="min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_112px]">
           <Collapsible>
             <div className="flex flex-wrap items-start gap-x-4 gap-y-2 py-4">
               {/* Puesto en el ranking: la cifra que de verdad ordena. */}
@@ -298,7 +300,7 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
                     size="sm"
                     className="group/det ms-auto shrink-0 text-xs text-muted-foreground sm:ms-0"
                   >
-                    <ChevronDown className="transition-transform group-data-[state=open]/det:rotate-180" />
+                    <ChevronDown className="transition-transform group-data-[state=open]/det:rotate-180 motion-reduce:transition-none" />
                     Detalle
                   </Button>
                 </CollapsibleTrigger>

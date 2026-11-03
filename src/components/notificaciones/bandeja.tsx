@@ -165,7 +165,7 @@ export function BandejaNotificaciones({
         icono={BellOff}
         className="py-12"
         titulo={sinMigracion ? 'Avisos sin activar' : 'Sin avisos'}
-        descripcion={sinMigracion ? 'El servidor aún no tiene las notificaciones.' : 'Aquí verás resultados, ranking y plazos.'}
+        descripcion={sinMigracion ? 'Los avisos todavía no están activos.' : 'Aquí verás resultados, ranking y plazos.'}
         accion={
           <Link href="/ajustes/notificaciones" className={CAJA_TACTIL}>
             <span className={clasesPastilla('secundario')}>Elegir avisos</span>

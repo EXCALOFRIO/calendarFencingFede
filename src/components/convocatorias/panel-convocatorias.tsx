@@ -219,7 +219,7 @@ function Fila({
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:gap-6">
           <CollapsibleTrigger className="group flex min-w-0 flex-1 cursor-pointer items-start gap-2 text-left">
             <ChevronDown
-              className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180"
+              className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180 motion-reduce:transition-none"
               aria-hidden
             />
             <span className="min-w-0 flex-1">

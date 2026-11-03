@@ -31,7 +31,7 @@ export function mensajeSeguir(cambio: CambioFavorito | null | undefined, nombre:
  */
 export function clasesSeguir(siguiendo: boolean, error = false): string {
   return cn(
-    'inline-flex shrink-0 items-center justify-center gap-1 rounded-lg font-semibold whitespace-nowrap transition-colors motion-reduce:transition-none',
+    'inline-flex shrink-0 items-center justify-center gap-1 rounded-lg font-semibold whitespace-nowrap transition-[color,background-color,filter] motion-reduce:transition-none',
     error
       ? 'bg-transparent text-danger ring-1 ring-danger/50 ring-inset'
       : siguiendo

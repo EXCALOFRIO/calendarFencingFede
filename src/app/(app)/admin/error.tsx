@@ -4,10 +4,10 @@ import { PantallaError } from '@/components/admin/pantalla-error';
 
 export default function ErrorGestion({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
-  return <PantallaError titulo="Gestión" error={error} reintentar={reset} />;
+  return <PantallaError titulo="Gestión" error={error} reintentar={retry} />;
 }

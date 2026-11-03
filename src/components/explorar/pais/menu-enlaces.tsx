@@ -97,7 +97,7 @@ export function MenuEnlaces({
               onClick={() => setAbierta(false)}
               className={cn(
                 'flex min-h-12 items-center gap-3 px-4 text-sm outline-none',
-                'hover:bg-accent focus-visible:bg-accent',
+                'transition-colors hover:bg-accent focus-visible:bg-accent',
                 o.marcado && 'font-semibold',
               )}
             >

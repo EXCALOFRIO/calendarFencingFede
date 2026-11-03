@@ -81,7 +81,7 @@ export function CampoBuscar({
           type="button"
           onClick={() => onCambio('')}
           aria-label="Vaciar la búsqueda"
-          className={cn(SIN_MINIMO, FOCO, AREA_TACTIL, 'absolute top-1/2 right-2 grid size-6 -translate-y-1/2 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground')}
+          className={cn(SIN_MINIMO, FOCO, AREA_TACTIL, 'absolute top-1/2 right-2 grid size-6 -translate-y-1/2 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground')}
         >
           <X className="size-3.5" aria-hidden />
         </button>

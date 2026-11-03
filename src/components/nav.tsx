@@ -35,7 +35,7 @@ import { cn } from '@/lib/utils';
  */
 export const ACTIVO =
   'bg-marcado font-semibold text-primary-text ring-1 ring-primary-text ring-inset';
-export const INACTIVO = 'text-muted-foreground hover:bg-accent hover:text-foreground';
+export const INACTIVO = 'text-muted-foreground transition-colors hover:bg-accent hover:text-foreground';
 
 /**
  * La pestaña de una ruta con lo que se sabe AHORA, fuera del render: la ficha
@@ -200,7 +200,7 @@ function ContenidoPastilla({ destino, es }: { destino: DestinoBarra; es: boolean
     <span
       data-pendiente={pending || undefined}
       className={cn(
-        'inline-flex h-[34px] items-center gap-2 rounded-full px-3 text-sm transition-[color,background-color,scale] duration-150 ease-out group-active:scale-[0.96] group-focus-visible:ring-2 group-focus-visible:ring-ring',
+        'inline-flex h-[34px] items-center gap-2 rounded-full px-3 text-sm transition-[color,background-color,scale] duration-150 ease-out group-active:scale-[0.98] group-focus-visible:ring-2 group-focus-visible:ring-ring',
         marcada ? 'bg-secondary font-semibold text-foreground' : 'font-medium text-muted-foreground group-hover:bg-accent group-hover:text-foreground',
       )}
     >

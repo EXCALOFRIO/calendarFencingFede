@@ -290,7 +290,7 @@ function cuerpoDelAviso(
   const prueba = rotuloPrueba({ arma: fila.weapon, genero: fila.gender, categoria: fila.category, formato: fila.format });
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, '') ?? '';
-  const ficha = appUrl ? `${appUrl}/calendario?evento=${fila.eventId}` : null;
+  const ficha = appUrl ? `${appUrl}/?evento=${fila.eventId}` : null;
 
   const consecuencia = plazo.blocking
     ? 'Pasada esa fecha ya no se puede inscribir, ni pagando recargo.'

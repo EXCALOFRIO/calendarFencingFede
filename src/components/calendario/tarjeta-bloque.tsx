@@ -84,7 +84,11 @@ export function PastillaPlazo({
   );
 }
 
-export function TarjetaBloque({
+/**
+ * Memorizada: las tarjetas de un mes se repintaban todas al abrir una ficha o
+ * escribir en el buscador, aunque ninguna prop suya hubiera cambiado.
+ */
+export const TarjetaBloque = React.memo(function TarjetaBloque({
   bloque,
   inscripciones,
   resaltados,
@@ -174,7 +178,7 @@ export function TarjetaBloque({
       ) : null}
     </article>
   );
-}
+});
 
 /** Un torneo del bloque: la fila entera abre su ficha. */
 function FilaEvento({

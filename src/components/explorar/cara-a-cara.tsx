@@ -339,7 +339,15 @@ export function CaraACaraCompleto({
       <ResumenEncuentrosVista datos={datos} resumen={datos.resumenEncuentros} criterios={criterios} />
       <AsaltosCaraACara datos={datos} encuentros={datos.encuentros ?? []} />
       {rendimiento}
-      <EncuentrosCaraACara datos={datos} encuentros={datos.encuentros ?? []} />
+      <EncuentrosCaraACara
+        datos={datos}
+        encuentros={datos.encuentros ?? []}
+        quitarFiltros={
+          criterios.temporada || criterios.arma || criterios.fase || criterios.ambito
+            ? construirUrlCaraACara(datos.personas.yo.id, { rival: datos.personas.rival.id })
+            : undefined
+        }
+      />
     </div>
   );
 }
@@ -526,10 +534,10 @@ function ListaCruces({
 /** «Ver más (N)» que despliega el resto de una lista sin JavaScript. */
 function Desplegar({ resto, children }: { resto: number; children: React.ReactNode }) {
   return (
-    <details className="group min-w-0">
+    <details className="sis-details group min-w-0">
       <summary
         className={cn(
-          'flex min-h-11 cursor-pointer list-none items-center justify-center gap-1 border-t border-filete text-sm font-medium text-primary-text hover:bg-secondary [&::-webkit-details-marker]:hidden',
+          'flex min-h-11 cursor-pointer list-none items-center justify-center gap-1 border-t border-filete text-sm font-medium text-primary-text transition-colors hover:bg-secondary [&::-webkit-details-marker]:hidden',
           ENLACE_CLASES,
         )}
       >
@@ -672,7 +680,16 @@ function armaMasComun(encuentros: readonly EncuentroCaraACara[]): string {
  * fecha, prueba, los dos puestos (persona consultada primero) y, si se
  * enfrentaron, cada asalto con su ronda. Cada fila abre la prueba.
  */
-export function EncuentrosCaraACara({ datos, encuentros }: { datos: DatosCaraACara; encuentros: EncuentroCaraACara[] }) {
+export function EncuentrosCaraACara({
+  datos,
+  encuentros,
+  quitarFiltros,
+}: {
+  datos: DatosCaraACara;
+  encuentros: EncuentroCaraACara[];
+  /** Enlace al mismo cara a cara sin filtros, sólo cuando hay alguno puesto. */
+  quitarFiltros?: string;
+}) {
   const { yo, rival } = datos.personas;
   const fila = {
     yo: yo.id,
@@ -693,7 +710,18 @@ export function EncuentrosCaraACara({ datos, encuentros }: { datos: DatosCaraACa
         }
       />
       {encuentros.length === 0 ? (
-        <EstadoVacio titulo="Sin pruebas comunes" descripcion="Prueba a quitar algún filtro." className="rounded-xl border bg-card" />
+        <EstadoVacio
+          titulo="Sin pruebas comunes"
+          descripcion={quitarFiltros ? 'Con estos filtros no sale ninguna.' : 'Todavía no han coincidido en ninguna prueba.'}
+          accion={
+            quitarFiltros ? (
+              <Boton asChild variante="contorno" tamano="lg">
+                <EnlaceIntencion href={quitarFiltros}>Quitar filtros</EnlaceIntencion>
+              </Boton>
+            ) : undefined
+          }
+          className="rounded-xl border bg-card"
+        />
       ) : (
         <div className="min-w-0 overflow-hidden rounded-xl border bg-card">
           <div aria-hidden className={cn(FILA, 'items-center py-2 text-xs font-semibold text-muted-foreground')}>
@@ -732,7 +760,7 @@ function OtrosCoincidentes({
       <EstadoVacio
         tipo="error"
         titulo="No se ha podido buscar"
-        descripcion="Falló la búsqueda de otras personas indexadas; no es que no haya coincidencias."
+        descripcion="Ha fallado la búsqueda de otras personas; no es que no haya coincidencias."
       />
     );
   }
@@ -770,10 +798,10 @@ function OtrosCoincidentes({
 }
 
 const MENSAJES_RIVALES: Record<'cursor_invalido' | 'entrada_invalida' | 'no_disponible' | 'error', { titulo: string; descripcion: string }> = {
-  cursor_invalido: { titulo: 'Página caducada', descripcion: 'Vuelve a la primera.' },
+  cursor_invalido: { titulo: 'Página caducada', descripcion: 'La lista ha cambiado; vuelve a la primera.' },
   entrada_invalida: { titulo: 'Enlace no válido', descripcion: 'Revisa la dirección.' },
   no_disponible: { titulo: 'Aún no está activo', descripcion: 'Los datos deportivos aún no están listos.' },
-  error: { titulo: 'No se han podido cargar', descripcion: 'Ha fallado la consulta; no es que no haya rivales.' },
+  error: { titulo: 'No se han podido cargar los rivales', descripcion: 'Ha fallado la lectura; no es que no haya rivales.' },
 };
 
 export function ElegirRival({
@@ -879,7 +907,7 @@ export function ChipsCaraACara({
             href={chip.quitar}
             aria-label={`Quitar filtro ${chip.etiqueta}: ${chip.valor}`}
             className={cn(
-              'inline-flex min-h-11 max-w-full flex-wrap items-center gap-2 rounded-full border bg-secondary px-3 text-sm hover:bg-accent',
+              'inline-flex min-h-11 max-w-full flex-wrap items-center gap-2 rounded-full border bg-secondary px-3 text-sm transition-colors hover:bg-accent',
               ENLACE_CLASES,
             )}
           >
@@ -947,6 +975,6 @@ export function EstadoCaraACara({
     case 'no_disponible':
       return <EstadoVacio tipo="error" titulo="Aún no está activo" descripcion="Los datos deportivos aún no están listos." />;
     default:
-      return <EstadoVacio tipo="error" titulo="No se ha podido abrir" descripcion="Ha fallado la consulta; no es que no haya asaltos." accion={empezar} />;
+      return <EstadoVacio tipo="error" titulo="No se ha podido abrir el cara a cara" descripcion="Ha fallado la lectura; no es que no haya asaltos." accion={empezar} />;
   }
 }

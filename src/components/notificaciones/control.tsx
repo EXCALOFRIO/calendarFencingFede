@@ -13,7 +13,7 @@ export const CAJA_TACTIL =
   'group inline-flex h-[44px] min-w-[44px] shrink-0 items-center justify-center outline-none select-none [-webkit-tap-highlight-color:transparent] disabled:pointer-events-none';
 
 const DIBUJO =
-  'inline-flex items-center justify-center rounded-full transition-[scale,background-color,color] duration-150 ease-out group-active:scale-[0.96] motion-reduce:transition-none group-focus-visible:ring-2 group-focus-visible:ring-ring group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-background [&_svg]:pointer-events-none [&_svg]:shrink-0';
+  'inline-flex items-center justify-center rounded-full transition-[scale,background-color,color,filter] duration-150 ease-out group-active:scale-[0.98] motion-reduce:transition-none group-focus-visible:ring-2 group-focus-visible:ring-ring group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-background [&_svg]:pointer-events-none [&_svg]:shrink-0';
 
 /** Superficies opacas, sin alfa: el `hover` cambia de token o de brillo. */
 const VARIANTE = {

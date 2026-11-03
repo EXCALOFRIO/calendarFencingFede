@@ -70,7 +70,7 @@ export function Buscador({
       setBuscado(texto.trim());
     } catch {
       setError(
-        'La búsqueda no ha respondido. Vuelve a intentarlo en unos segundos.',
+        'La búsqueda no ha respondido. Revisa la conexión y vuelve a intentarlo.',
       );
     } finally {
       setBuscando(false);
@@ -342,8 +342,8 @@ function Confirmacion({
       onHecho();
     } catch {
       setError(
-        'No se ha podido vincular la ficha. Vuelve a intentarlo en unos ' +
-          'segundos; si sigue fallando, avisa a la dirección técnica.',
+        'No se ha podido vincular la ficha. Revisa la conexión y vuelve a ' +
+          'intentarlo; si sigue fallando, avisa a la dirección técnica.',
       );
     } finally {
       setEnviando(false);

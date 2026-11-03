@@ -1,5 +1,6 @@
 'use client';
 
+import { AREA_TACTIL } from '@/components/sistema/tactil';
 import './globals.css';
 
 /**
@@ -43,13 +44,13 @@ export default function ErrorGlobal({
             <button
               type="button"
               onClick={() => retry()}
-              className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground transition-[filter] hover:brightness-110"
+              className="inline-flex h-10 items-center justify-center rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground transition-[filter] outline-none hover:brightness-110 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               Reintentar
             </button>
             <a
               href="/"
-              className="inline-flex h-10 items-center justify-center rounded-md border border-input px-5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+              className={`inline-flex h-10 items-center justify-center rounded-md border border-input px-5 text-sm font-medium text-foreground transition-colors hover:bg-accent ${AREA_TACTIL}`}
             >
               Volver al calendario
             </a>

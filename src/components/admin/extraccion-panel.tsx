@@ -483,7 +483,7 @@ function BandaCircular({
               size="sm"
               className="group/desc w-full justify-start px-0 text-xs text-muted-foreground hover:bg-transparent"
             >
-              <ChevronDown className="transition-transform group-data-[state=open]/desc:rotate-180" />
+              <ChevronDown className="transition-transform group-data-[state=open]/desc:rotate-180 motion-reduce:transition-none" />
               {extraccion.descartadas.length} campos descartados: el modelo citó algo
               que no está en el PDF
             </Button>
@@ -651,7 +651,7 @@ function FilaPropuesta({
                 size="sm"
                 className="group/ctx h-auto justify-start px-0 py-1 text-xs text-muted-foreground hover:bg-transparent"
               >
-                <ChevronDown className="transition-transform group-data-[state=open]/ctx:rotate-180" />
+                <ChevronDown className="transition-transform group-data-[state=open]/ctx:rotate-180 motion-reduce:transition-none" />
                 Ver el trozo del PDF
               </Button>
             </CollapsibleTrigger>

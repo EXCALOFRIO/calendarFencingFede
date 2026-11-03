@@ -70,7 +70,7 @@ export function BuscadorPaises({ qInicial = '', cabecera }: { qInicial?: string;
           <button
             type="button"
             aria-label="Borrar búsqueda"
-            className="absolute top-1/2 right-0 flex size-[44px] -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring"
+            className="absolute top-1/2 right-0 flex size-[44px] -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring"
             onClick={() => { setTexto(''); entrada.current?.focus(); }}
           >
             <X className="size-[18px]" aria-hidden />
@@ -84,7 +84,11 @@ export function BuscadorPaises({ qInicial = '', cabecera }: { qInicial?: string;
           {lista.map((p) => <FilaPais key={p.codigo} pais={p} />)}
         </ul>
       ) : (
-        <EstadoVacio icono={SearchX} titulo="Ningún país" descripcion={`Nada se parece a «${texto.trim()}».`} />
+        <EstadoVacio
+          icono={SearchX}
+          titulo="Ningún país coincide"
+          descripcion={`Nada se parece a «${texto.trim()}». Prueba con otro nombre o con el código («ESP», «ITA»…).`}
+        />
       )}
     </div>
   );

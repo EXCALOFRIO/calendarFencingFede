@@ -104,7 +104,8 @@ export function FilaCompeticion({
         {...datos}
         className={cn(
           clases,
-          // `.pulsable` ya fija `transition` (scale); un `transition-colors` aquí lo pisaría.
+          // `.pulsable` ya fija la `transition` completa (scale + colores); un
+          // `transition-colors` de Tailwind aquí pisaría la parte del hundido.
           'pulsable cursor-pointer outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
         )}
       >

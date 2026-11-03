@@ -282,7 +282,7 @@ describe('control en la ficha', () => {
 
   it('sin la migración deportiva lo dice y no ofrece guardar; persona inexistente no pinta nada', () => {
     const salida = control({ tipo: 'no_disponible' });
-    expect(salida).toContain('aún no está activo');
+    expect(salida).toContain('no está disponible');
     expect(salida).not.toContain('Guardar en favoritos');
     expect(control({ tipo: 'no_encontrada' })).toBe('');
   });

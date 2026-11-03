@@ -261,7 +261,7 @@ export function BarraPlazos({ plazos, estado, conEstado = true }: Props) {
           rel="noreferrer"
           title={plazos[0].sourceDocument ?? undefined}
           className={cn(
-            'inline-flex size-[32px] items-center justify-center self-start rounded-full text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+            'inline-flex size-[32px] items-center justify-center self-start rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
             AREA_TACTIL,
           )}
         >

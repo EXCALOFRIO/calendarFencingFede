@@ -176,9 +176,17 @@ export function EstadoSiguiendo({
       );
     }
     case 'cursor_invalido':
-      return <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Página caducada" accion={<Reintentar href={primera}>Lo más reciente</Reintentar>} />;
+      return (
+        <EstadoVacio
+          tipo="error"
+          icono={TriangleAlert}
+          titulo="Página caducada"
+          descripcion="La lista ha cambiado; vuelve al principio."
+          accion={<Reintentar href={primera}>Lo más reciente</Reintentar>}
+        />
+      );
     case 'no_disponible':
-      return <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Siguiendo aún no está activo" descripcion="Aún no está activo en esta instalación." />;
+      return <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Siguiendo aún no está activo" descripcion="Todavía no está disponible." />;
     case 'entrada_invalida':
     case 'error':
       return (

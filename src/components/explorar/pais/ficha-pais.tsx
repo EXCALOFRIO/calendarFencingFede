@@ -128,7 +128,7 @@ function Podios({ podios }: { podios: readonly PodioPais[] }) {
               <Link
                 href={href}
                 prefetch={false}
-                className={cn('flex min-h-[56px] items-center gap-3 px-3 py-[8px] hover:bg-secondary', FOCO)}
+                className={cn('flex min-h-[56px] items-center gap-3 px-3 py-[8px] transition-colors hover:bg-secondary', FOCO)}
               >
                 <PuntoMedalla medalla={medalla} className="size-[12px]" />
                 <span className="flex min-w-0 flex-1 flex-col">

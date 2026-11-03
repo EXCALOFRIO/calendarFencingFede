@@ -34,7 +34,7 @@ export default async function LayoutPerfil({
   // Independientes entre sí: el favorito no espera a la ficha (y si falla, sólo se omite).
   const [{ vista, extras }, favorito] = await Promise.all([cabeceraPerfil(personaId), favoritoPerfil(personaId)]);
   if (vista.tipo === 'sin_sesion' || favorito.tipo === 'sin_sesion') redirect('/entrar');
-  if (vista.tipo !== 'ok') return <EstadoFicha vista={vista} />;
+  if (vista.tipo !== 'ok') return <EstadoFicha vista={vista} reintentar={`${RUTA_EXPLORAR}/${personaId}`} />;
 
   const chips = chipsRanking({
     nacional: extras.rankingNacional,

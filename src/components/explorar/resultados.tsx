@@ -5,6 +5,7 @@ import Link from 'next/link';
 import * as React from 'react';
 import { masDeportistasAccion } from '@/app/(app)/explorar/acciones';
 import { Boton } from '@/components/sistema/boton';
+import { AREA_TACTIL } from '@/components/sistema/tactil';
 import { CabeceraSeccion, VerMas } from '@/components/sistema/cabecera-seccion';
 import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import { Pastilla } from '@/components/sistema/pastilla';
@@ -60,7 +61,7 @@ export function ChipsActivos({
           >
             <span
               className={cn(
-                'inline-flex h-8 max-w-full items-center gap-1 rounded-full border bg-secondary px-3 text-xs whitespace-nowrap group-hover:bg-accent group-focus-visible:ring-[3px] group-focus-visible:ring-ring',
+                'inline-flex h-8 max-w-full items-center gap-1 rounded-full border bg-secondary px-3 text-xs whitespace-nowrap transition-colors group-hover:bg-accent group-focus-visible:ring-[3px] group-focus-visible:ring-ring',
                 chip.fechaInvalida && 'border-danger',
               )}
             >
@@ -204,7 +205,7 @@ export function ListaDeportistas({
           href={construirUrlBuscar(criterios)}
           prefetch={false}
           replace
-          className="py-2 text-sm text-primary-text underline-offset-4 hover:underline"
+          className={cn('py-2 text-sm text-primary-text underline-offset-4 hover:underline', AREA_TACTIL)}
         >
           Ir a los primeros resultados
         </Link>
@@ -266,11 +267,12 @@ export function EstadoSinLista({
           tipo="error"
           icono={TriangleAlert}
           titulo="Página caducada"
+          descripcion="La lista ha cambiado; vuelve a los primeros resultados."
           accion={<Accion href={reintentar}>Ir a los primeros resultados</Accion>}
         />
       );
     case 'no_disponible':
-      return <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Búsqueda no disponible" descripcion="Aún no está activa en esta instalación." />;
+      return <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Búsqueda no disponible" descripcion="Todavía no está activa." />;
     case 'error':
       return (
         <EstadoVacio

@@ -230,6 +230,10 @@ function Foto({
         src={foto.url}
         alt={`Foto de ${foto.nombrePublicado ?? nombreCompleto} publicada por la FIE`}
         className="aspect-[4/5] object-cover object-top"
+        decoding="async"
+        // Radix lo pasa también al `new Image()` de la precarga: sin él, el
+        // Referer viajaba a fie.org (el resto de fotos FIE ya van `no-referrer`).
+        referrerPolicy="no-referrer"
       />
       <AvatarFallback className="cifra rounded-xl bg-muted text-3xl text-muted-foreground">
         {iniciales}

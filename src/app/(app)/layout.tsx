@@ -62,7 +62,7 @@ export default async function AppLayout({
       {/* Primer elemento enfocable: salta la cabecera y la navegación. */}
       <a
         href="#contenido"
-        className="sr-only z-50 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
+        className="sr-only z-50 min-h-11 items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:inline-flex"
       >
         Saltar al contenido
       </a>

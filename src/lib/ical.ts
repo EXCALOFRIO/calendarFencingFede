@@ -646,7 +646,7 @@ function buildVEvent(
     lines.push(`DTEND;VALUE=DATE:${toIcalDate(isoPlusDays(fin, 1))}`);
   }
 
-  const fichaUrl = `${ctx.baseUrl.replace(/\/+$/, '')}/calendario?evento=${ev.id}`;
+  const fichaUrl = `${ctx.baseUrl.replace(/\/+$/, '')}/?evento=${ev.id}`;
 
   lines.push(`SUMMARY:${escapeIcalText(buildSummary(ev, comp))}`);
 

@@ -517,7 +517,7 @@ export function HistorialFicha({
     <Bloque id="historial" titulo="Resultados" nivel={nivel} tituloOculto={enPestana}>
       {historial.tipo === 'ok' ? (
         historial.sinResultados ? (
-          <EstadoVacio titulo="Sin puestos finales importados" />
+          <EstadoVacio titulo="Todavía no hay puestos finales" />
         ) : (
           <>
             <ol
@@ -569,13 +569,13 @@ export function HistorialFicha({
       ) : (
         <EstadoVacio
           tipo="error"
-          titulo={historial.tipo === 'cursor_invalido' ? 'Página caducada' : 'No se ha podido cargar'}
+          titulo={historial.tipo === 'cursor_invalido' ? 'Página caducada' : 'No se han podido cargar los resultados'}
           descripcion={
             historial.tipo === 'cursor_invalido'
-              ? 'Vuelve a los resultados más recientes.'
+              ? 'La lista ha cambiado; vuelve a los resultados más recientes.'
               : historial.tipo === 'no_disponible'
                 ? 'Los datos deportivos aún no están listos.'
-                : 'Ha fallado la consulta. Inténtalo de nuevo.'
+                : 'Ha fallado la lectura; inténtalo de nuevo en un momento.'
           }
         />
       )}
@@ -684,7 +684,7 @@ export function FichaCompleta({
             <EuropeoDiferido
               promesa={diferidos.europeo}
               nivel={nivel}
-              vacio={soloEuropeo ? <EstadoVacio tipo="error" titulo="No se ha podido cargar" /> : null}
+              vacio={soloEuropeo ? <EstadoVacio tipo="error" titulo="No se ha podido cargar el ranking europeo" /> : null}
             />
           </Suspense>
         ) : null}
@@ -783,7 +783,7 @@ export function PanelRendimiento({
       </>
     );
   }
-  if (!perfil) return <EstadoVacio tipo="error" titulo="No se han podido cargar" />;
+  if (!perfil) return <EstadoVacio tipo="error" titulo="No se ha podido cargar el rendimiento" />;
   return (
     <>
       <CifrasPerfil perfil={perfil} />
@@ -885,7 +885,7 @@ export function VolverAExplorar({ volver }: { volver: string }) {
       <Link
         href={destino}
         prefetch={false}
-        className="inline-flex min-h-11 items-center gap-2 text-sm text-muted-foreground hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
+        className="inline-flex min-h-11 items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
       >
         <ArrowLeft className="size-4" aria-hidden />
         {aFavoritos
@@ -909,8 +909,11 @@ export function VolverAExplorar({ volver }: { volver: string }) {
  */
 export function EstadoFicha({
   vista,
+  reintentar,
 }: {
   vista: Exclude<VistaFicha, { tipo: 'ok' } | { tipo: 'sin_sesion' }>;
+  /** URL de la misma ficha, para volver a pedirla. */
+  reintentar?: string;
   incrustado?: boolean;
 }) {
   const volver = (
@@ -920,6 +923,13 @@ export function EstadoFicha({
       </Link>
     </Boton>
   );
+  const otraVez = reintentar ? (
+    <Boton asChild variante="contorno" tamano="lg">
+      <Link href={reintentar} prefetch={false}>
+        Reintentar
+      </Link>
+    </Boton>
+  ) : null;
   switch (vista.tipo) {
     case 'propia_no_confirmada': {
       const e = explicacionSinVinculo(vista.motivo);
@@ -930,8 +940,8 @@ export function EstadoFicha({
     case 'entrada_invalida':
       return <EstadoVacio tipo="error" titulo="Enlace no válido" descripcion="Revisa la dirección o busca la ficha." accion={volver} />;
     case 'no_disponible':
-      return <EstadoVacio tipo="error" titulo="Fichas aún no activas" descripcion="Los datos deportivos aún no están cargados." />;
+      return <EstadoVacio tipo="error" titulo="Fichas aún no activas" descripcion="Los datos deportivos aún no están cargados." accion={otraVez ?? undefined} />;
     default:
-      return <EstadoVacio tipo="error" titulo="No se pudo abrir la ficha" descripcion="Inténtalo de nuevo en un momento." />;
+      return <EstadoVacio tipo="error" titulo="No se ha podido abrir la ficha" descripcion="Inténtalo de nuevo en un momento." accion={otraVez ?? volver} />;
   }
 }

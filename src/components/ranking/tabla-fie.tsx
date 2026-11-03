@@ -16,7 +16,7 @@ import type {
   RankingGroupKey,
 } from '@/lib/queries/ranking';
 import { nombreCasa } from '@/lib/nombres';
-import { ordenarSoloJjoo } from '@/lib/ranking/olimpica';
+import { ordenarSoloJjoo, type AnotacionOlimpica, type ReglasOlimpicas } from '@/lib/ranking/olimpica';
 import type { TablaFieCompleta } from '@/lib/ranking/tabla-fie-completa';
 import { cn } from '@/lib/utils';
 import { claveTablaFie, escribirUrl, urlDeGrupo, useRanking } from './estado-ranking';
@@ -348,27 +348,19 @@ export function TablaRankingFie({
           aria-busy={cargando || undefined}
           className={cn('grid w-full min-w-0 max-w-3xl gap-px overflow-hidden rounded-xl border bg-border transition-opacity duration-150', cargando && 'opacity-60')}
         >
-          {visibles.map((fila) => {
-            const mio = fila.athleteId !== null && mios.includes(fila.athleteId);
-            return (
-              <FilaLinea
-                key={`${fila.fieId}-${fila.position ?? 'sc'}`}
-                puesto={fila.position}
-                nombre={porEquipos ? (fila.paisNombre ?? fila.pais ?? '—') : (fila.nombre ?? `FIE ${fila.fieId}`)}
-                personaId={porEquipos ? null : (tabla?.personas[String(fila.fieId)] ?? null)}
-                enlaceExterno={porEquipos ? null : fila.fichaUrl}
-                pais={conBandera || porEquipos ? fila.pais : null}
-                puntos={fila.points}
-                mio={mio}
-                resaltada={fila.pais === 'ESP'}
-                sinRetrato={porEquipos}
-                enlacePais={porEquipos}
-                tras={anotacionDe(fila)?.estado ? (
-                  <BurbujaOlimpica anotacion={anotacionDe(fila)} fechaRanking={olimpica?.fechaRanking ?? null} reglas={olimpica?.resultado.reglas} compacta className="shrink-0" />
-                ) : undefined}
-              />
-            );
-          })}
+          {visibles.map((fila) => (
+            <FilaTablaFie
+              key={`${fila.fieId}-${fila.position ?? 'sc'}`}
+              fila={fila}
+              porEquipos={porEquipos}
+              conBandera={conBandera}
+              mio={fila.athleteId !== null && mios.includes(fila.athleteId)}
+              personaId={porEquipos ? null : (tabla?.personas[String(fila.fieId)] ?? null)}
+              anotacion={anotacionDe(fila)}
+              fechaRanking={olimpica?.fechaRanking ?? null}
+              reglas={olimpica?.resultado.reglas}
+            />
+          ))}
         </ol>
       ) : null}
 
@@ -394,3 +386,47 @@ export function TablaRankingFie({
     </div>
   );
 }
+
+/**
+ * La fila memorizada con props planas: al escribir en el buscador o tocar un
+ * filtro se repintaba la tabla entera — la burbuja olímpica era un elemento
+ * nuevo en cada render y anulaba el `memo` de `FilaLinea`. Con la anotación
+ * como dato estable sólo se repintan las filas que entran o salen.
+ */
+const FilaTablaFie = React.memo(function FilaTablaFie({
+  fila,
+  porEquipos,
+  conBandera,
+  mio,
+  personaId,
+  anotacion,
+  fechaRanking,
+  reglas,
+}: {
+  fila: FilaFie;
+  porEquipos: boolean;
+  conBandera: boolean;
+  mio: boolean;
+  personaId: string | null;
+  anotacion: AnotacionOlimpica | undefined;
+  fechaRanking: string | null;
+  reglas: ReglasOlimpicas | undefined;
+}) {
+  return (
+    <FilaLinea
+      puesto={fila.position}
+      nombre={porEquipos ? (fila.paisNombre ?? fila.pais ?? '—') : (fila.nombre ?? `FIE ${fila.fieId}`)}
+      personaId={personaId}
+      enlaceExterno={porEquipos ? null : fila.fichaUrl}
+      pais={conBandera || porEquipos ? fila.pais : null}
+      puntos={fila.points}
+      mio={mio}
+      resaltada={fila.pais === 'ESP'}
+      sinRetrato={porEquipos}
+      enlacePais={porEquipos}
+      tras={anotacion?.estado ? (
+        <BurbujaOlimpica anotacion={anotacion} fechaRanking={fechaRanking} reglas={reglas} compacta className="shrink-0" />
+      ) : undefined}
+    />
+  );
+});

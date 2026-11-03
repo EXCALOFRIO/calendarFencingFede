@@ -69,7 +69,6 @@ async function registrarCambio(
 async function revalidar(deps: readonly Dependencia[] = ['calendario']) {
   revalidatePath('/admin/normativa');
   // Los plazos alimentan el semáforo de todo el calendario.
-  revalidatePath('/calendario');
   revalidatePath('/');
   // La caché compartida no la ve `revalidatePath`: los plazos y la temporada actual van en ella.
   await invalidarCacheSinFallar(deps, 'normativa');

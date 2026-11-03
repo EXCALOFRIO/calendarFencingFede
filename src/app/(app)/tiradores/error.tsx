@@ -4,10 +4,10 @@ import { PantallaError } from '@/components/admin/pantalla-error';
 
 export default function ErrorTiradores({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
-  return <PantallaError titulo="Tiradores" error={error} reintentar={reset} />;
+  return <PantallaError titulo="Tiradores" error={error} reintentar={retry} />;
 }

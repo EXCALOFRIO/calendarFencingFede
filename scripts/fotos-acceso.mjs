@@ -43,7 +43,7 @@ import { readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
  * codificar WebP.
  */
 
-const ORIGEN = 'public/fotos';
+const ORIGEN = 'assets-origen/fotos';
 const DESTINO = 'public/fotos/acceso';
 
 /**

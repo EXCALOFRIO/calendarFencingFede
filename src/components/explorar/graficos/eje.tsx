@@ -112,7 +112,7 @@ export function Punto({
       className={cn(
         'absolute -translate-x-1/2 -translate-y-1/2 rounded-full',
         // Área táctil mayor que el punto, sin cambiar lo que se ve.
-        lectura ? "before:absolute before:-inset-2 before:content-[''] hover:z-10 hover:scale-150" : null,
+        lectura ? "before:absolute before:-inset-2 before:content-[''] transition-transform hover:z-10 hover:scale-150 motion-reduce:transition-none motion-reduce:hover:scale-100" : null,
         className,
       )}
       style={{

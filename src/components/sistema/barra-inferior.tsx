@@ -261,6 +261,8 @@ function IconoPestana({ destino, es }: { destino: DestinoBarra; es: boolean }) {
           width={24}
           height={24}
           decoding="async"
+          // Un retrato de 24 px en la barra: nunca compite con lo que tarda en pintarse.
+          fetchPriority="low"
           referrerPolicy="no-referrer"
           data-retrato=""
           onLoad={() => setRetratoListo(destino.retrato ?? null)}

@@ -113,8 +113,6 @@ export async function requestEntry(
   await notifyClub(athleteId, competition.eventName, profile.fullName);
 
   revalidatePath('/');
-  revalidatePath('/calendario');
-  revalidatePath('/club');
 
   return {
     ok: true,
@@ -193,7 +191,6 @@ export async function transitionEntry(
   await notifyAthlete(entryId, to, reason);
 
   revalidatePath('/');
-  revalidatePath('/club');
   revalidatePath('/admin/inscripciones');
 
   return { ok: true, message: `Inscripción actualizada: ${check.transition.action}.` };

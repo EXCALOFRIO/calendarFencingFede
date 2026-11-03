@@ -2,7 +2,12 @@ import Link from 'next/link';
 import { SearchX } from 'lucide-react';
 import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import { Button } from '@/components/ui/button';
-import { hayFiltrosCatalogo, urlCatalogo, type CriteriosCatalogo } from '@/lib/sport/explorar/catalogo-url';
+import {
+  SIN_FILTROS_CATALOGO,
+  hayFiltrosCatalogo,
+  urlCatalogo,
+  type CriteriosCatalogo,
+} from '@/lib/sport/explorar/catalogo-url';
 import type { VistaCatalogo } from '@/lib/sport/explorar/catalogo';
 import type { VistaSeries } from '@/lib/sport/explorar/ediciones-pantalla';
 import { BuscadorCompeticiones } from './buscador-competiciones';
@@ -69,7 +74,31 @@ export function CatalogoEdiciones({
             ) : (
               <EstadoVacio
                 icono={SearchX}
-                titulo={cursor ? 'No hay más competiciones' : 'Sin competiciones con estos filtros'}
+                titulo={
+                  cursor
+                    ? 'No hay más competiciones'
+                    : hayFiltrosCatalogo(criterios)
+                      ? 'Sin competiciones con estos filtros'
+                      : criterios.q
+                        ? 'Sin competiciones con ese nombre'
+                        : 'Sin competiciones todavía'
+                }
+                descripcion={
+                  cursor
+                    ? 'Vuelve a las primeras.'
+                    : hayFiltrosCatalogo(criterios) || criterios.q
+                      ? 'Prueba con otras palabras o menos filtros.'
+                      : 'Cuando se carguen, saldrán aquí.'
+                }
+                accion={
+                  !cursor && hayFiltrosCatalogo(criterios) ? (
+                    <Button asChild variant="outline" size="sm" className="rounded-full">
+                      <Link href={urlCatalogo({ ...criterios, ...SIN_FILTROS_CATALOGO })} prefetch={false}>
+                        Quitar filtros
+                      </Link>
+                    </Button>
+                  ) : undefined
+                }
               />
             )}
             {cursor || vista.siguiente ? (
@@ -88,12 +117,30 @@ export function CatalogoEdiciones({
             ) : null}
           </>
         ) : (
-          <p role="alert" className="py-4 text-sm">
-            {vista.estado === 'entrada_invalida' ? 'Revisa la búsqueda.'
-              : vista.estado === 'cursor_invalido' ? 'Esa página ya no vale. Vuelve a buscar.'
-                : vista.estado === 'no_disponible' ? 'El catálogo aún no está listo.'
-                  : 'No se ha podido leer el catálogo.'}
-          </p>
+          <EstadoVacio
+            tipo="error"
+            titulo={
+              vista.estado === 'entrada_invalida' ? 'La búsqueda no es válida'
+                : vista.estado === 'cursor_invalido' ? 'Esta página ya no vale'
+                  : vista.estado === 'no_disponible' ? 'El catálogo aún no está listo'
+                    : 'No se ha podido leer el catálogo'
+            }
+            descripcion={
+              vista.estado === 'entrada_invalida' ? 'Algún filtro de la dirección no se entiende.'
+                : vista.estado === 'cursor_invalido' ? 'La lista ha cambiado; vuelve a buscar.'
+                  : vista.estado === 'no_disponible' ? 'Vuelve a mirarlo en un momento.'
+                    : 'Inténtalo de nuevo en un momento.'
+            }
+            accion={
+              vista.estado === 'no_disponible' ? undefined : (
+                <Button asChild variant="outline" size="sm" className="rounded-full">
+                  <Link href={urlCatalogo(criterios)} prefetch={false}>
+                    {vista.estado === 'error' ? 'Reintentar' : 'Volver a buscar'}
+                  </Link>
+                </Button>
+              )
+            }
+          />
         )}
       </BuscadorCompeticiones>
     </section>

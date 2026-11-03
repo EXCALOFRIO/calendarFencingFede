@@ -130,7 +130,7 @@ export function CompararPerfil({
                 No se ha podido buscar ahora. Pulsa Intro para buscar en el cara a cara.
               </p>
             ) : items.length === 0 ? (
-              <p role="status" className="px-4 py-3 text-sm text-muted-foreground">Nadie con ese nombre en los datos importados.</p>
+              <p role="status" className="px-4 py-3 text-sm text-muted-foreground">Nadie coincide con ese nombre.</p>
             ) : (
               <ul id={listaId} role="listbox" aria-label="Personas encontradas" className="max-h-80 overflow-y-auto py-1">
                 {items.map((s, i) => (
@@ -140,7 +140,7 @@ export function CompararPerfil({
                     role="option"
                     aria-selected={i === activa}
                     onMouseDown={(e) => e.preventDefault()}
-                    className={i === activa ? 'bg-accent' : 'hover:bg-accent'}
+                    className={i === activa ? 'bg-accent' : 'transition-colors hover:bg-accent'}
                   >
                     <Link
                       href={construirUrlCaraACara(personaId, { rival: s.id })}
@@ -177,7 +177,7 @@ export function CompararPerfil({
                 <Link
                   href={construirUrlCaraACara(personaId, { rival: r.id })}
                   prefetch={false}
-                  className="inline-flex min-h-[40px] max-w-full items-center gap-2 rounded-full border bg-background py-1 pr-4 pl-1 text-sm hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
+                  className="inline-flex min-h-[40px] max-w-full items-center gap-2 rounded-full border bg-background py-1 pr-4 pl-1 text-sm transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
                 >
                   <AvatarAnillo nombre={nombreVisible(r.nombre)} tamano="sm" apagado />
                   <span className="min-w-0 max-w-40 truncate font-medium">{nombreVisible(r.nombre)}</span>

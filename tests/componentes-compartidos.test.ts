@@ -69,8 +69,7 @@ describe('SelectorSegmentado', () => {
     expect(html).toContain('href="/?v=mes"');
     expect(html.match(/aria-current="page"/g)).toHaveLength(1);
     expect(html).not.toContain('role="radio"');
-    expect(html).toContain('transition-[opacity,scale]');
-    expect(html).toContain('motion-reduce:transition-none');
+    expect(html).toContain('sis-indicador');
   });
 });
 

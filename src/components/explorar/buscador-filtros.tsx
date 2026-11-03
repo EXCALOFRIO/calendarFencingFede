@@ -25,7 +25,7 @@ export function ContenidoPais({ pais }: { pais: Pais }) {
 }
 
 export const CLASE_FILA_PAIS =
-  'flex min-h-12 w-full min-w-0 items-center gap-3 rounded-xl px-2 text-left outline-none hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring aria-pressed:bg-secondary';
+  'flex min-h-12 w-full min-w-0 items-center gap-3 rounded-xl px-2 text-left outline-none transition-colors hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring aria-pressed:bg-secondary';
 
 export type Anios = { desde: string; hasta: string };
 

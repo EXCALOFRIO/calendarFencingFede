@@ -86,7 +86,7 @@ export function ComoVoy({
             : 'Aún no sales en el ranking oficial. '}
           Pasa si no has puntuado esta temporada o si la licencia de la ficha no
           coincide con la de la federación.{' '}
-          <Link href="/ranking" className="font-medium text-primary-text hover:text-foreground">
+          <Link href="/ranking" className="font-medium text-primary-text transition-colors hover:text-foreground">
             Ver el ranking
           </Link>
         </p>
@@ -208,7 +208,7 @@ function Clasificacion({
           href={p.sourceUrl}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex min-h-11 w-fit items-center gap-1 text-sm font-medium text-primary-text hover:text-foreground"
+          className="inline-flex min-h-11 w-fit items-center gap-1 text-sm font-medium text-primary-text transition-colors hover:text-foreground"
         >
           Ver en la RFEE
           <ExternalLink className="size-4 shrink-0" aria-hidden />
@@ -298,7 +298,7 @@ function CalculoInterno({
 
   return (
     <Collapsible className="mt-4 border-t border-border pt-2">
-      <CollapsibleTrigger className="group flex min-h-11 w-full cursor-pointer items-center gap-2 text-left text-sm text-muted-foreground hover:text-foreground">
+      <CollapsibleTrigger className="group flex min-h-11 w-full cursor-pointer items-center gap-2 text-left text-sm text-muted-foreground transition-colors hover:text-foreground">
         <ChevronDown
           className="size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180 motion-reduce:transition-none"
           aria-hidden

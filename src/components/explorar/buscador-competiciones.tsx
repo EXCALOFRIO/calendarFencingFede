@@ -169,7 +169,7 @@ export function BuscadorCompeticiones({
         <button
           type="button"
           aria-label="Borrar búsqueda"
-          className="absolute top-1/2 right-0 flex size-11 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring"
+          className="absolute top-1/2 right-0 flex size-11 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring"
           onClick={() => { setTexto(''); entrada.current?.focus(); }}
         >
           <X className="size-4" aria-hidden />

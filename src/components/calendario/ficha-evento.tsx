@@ -35,6 +35,7 @@ import { filasSelectorPruebas } from '@/lib/sport/selector-pruebas';
 
 import { BarraPlazos } from './barra-plazos';
 import { FilaInscrito } from './fila-inscrito';
+import { InscritosFieTodos } from './inscritos-fie-todos';
 import { PastillaDirectoDePrueba } from './enlace-directo';
 import { HorariosTorneo, accesoVisible, horariosDelTorneo, tituloDeDia } from './horarios-torneo';
 import {
@@ -601,7 +602,7 @@ export function BandaEstasDentro({
   const avisoDeFallo =
     inscritos !== null && fallo ? (
       <p role="alert" className="text-sm text-warn">
-        La última lectura falló.
+        No se ha podido actualizar la lista; cierra y vuelve a abrir la ficha para reintentar.
       </p>
     ) : null;
 
@@ -647,9 +648,16 @@ export function BandaEstasDentro({
           ) : null}
         </div>
       ) : null}
+      {/*
+        La FIE publica todos los países y aquí sólo se guardan los españoles:
+        la completa va en un desplegable que la pide en vivo al abrir, para no
+        salir a fie.org. `key` por URL: al cambiar de prueba vuelve a empezar
+        plegado, como el «ver más» de la lista local.
+      */}
+      {inscritosFie ? <InscritosFieTodos key={inscritosFie} urlInscritos={inscritosFie} /> : null}
       {inscritos === null ? (
         <p role="alert" className="text-sm text-warn">
-          No se ha podido leer la lista de inscritos.
+          No se ha podido leer la lista de inscritos. Cierra y vuelve a abrir la ficha para reintentar.
         </p>
       ) : oficiales.length === 0 ? (
         <>

@@ -253,6 +253,8 @@ export function Escudo({
           de negro mientras cargaba el cartel.
         */
         decoding="async"
+        // Sirven dos orígenes ajenos: como en las fotos de la FIE, sin Referer nuestro.
+        referrerPolicy="no-referrer"
         onError={() => setRoto(true)}
       />
     </span>

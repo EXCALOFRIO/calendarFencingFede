@@ -85,6 +85,8 @@ export function CabeceraFicha({ evento }: { evento: EventView }) {
             // Es lo primero que se ve: con carga diferida la ficha abría con un boquete.
             loading="eager"
             decoding="async"
+            // El cartel viene de static.fie.org: sin Referer, como el resto de fotos FIE.
+            referrerPolicy="no-referrer"
             // Si el cartel desaparece del origen, se quita el hueco en vez de dejar un icono roto.
             onError={() => setFallo(true)}
           />

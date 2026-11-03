@@ -105,7 +105,7 @@ function VerMasEnlace({ href, children }: { href: string; children: React.ReactN
     <Link
       href={href}
       prefetch={false}
-      className={cn('inline-flex h-9 items-center justify-center rounded-full bg-secondary px-4 text-sm font-medium hover:bg-accent', AREA_TACTIL, FOCO)}
+      className={cn('inline-flex h-9 items-center justify-center rounded-full bg-secondary px-4 text-sm font-medium transition-colors hover:bg-accent', AREA_TACTIL, FOCO)}
     >
       {children}
     </Link>
@@ -309,7 +309,7 @@ function Pruebas({
       {fallida ? (
         <EstadoVacio
           tipo="error"
-          titulo="No se pudo cargar"
+          titulo="No se han podido cargar más cruces"
           accion={(
             <>
               <VerMasEnlace href={urlDuelo(codigo, rival, filtros, desde)}>Reintentar</VerMasEnlace>
@@ -344,7 +344,7 @@ function TarjetaPrueba({ prueba: p, codigo, rival }: { prueba: PruebaDuelo; codi
       <Link
         href={construirUrlEdicion(p.edicionId, { prueba: p.pruebaId })}
         prefetch={false}
-        className={cn('flex min-h-14 items-center gap-3 rounded-t-xl px-3 py-2 hover:bg-secondary', FOCO)}
+        className={cn('flex min-h-14 items-center gap-3 rounded-t-xl px-3 py-2 transition-colors hover:bg-secondary', FOCO)}
       >
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-sm font-semibold">
@@ -383,7 +383,7 @@ function Tirador({ lado, alinear }: { lado: LadoCruce; alinear: 'start' | 'end' 
   const clases = cn('flex min-h-11 min-w-0 items-center text-sm', alinear === 'end' ? 'justify-end text-right' : 'justify-start');
   if (!lado.personaId) return <span className={cn(clases, 'text-muted-foreground')}><span className="truncate">{nombre}</span></span>;
   return (
-    <Link href={rutaFicha(lado.personaId)} prefetch={false} className={cn(clases, 'rounded-md hover:text-primary-text', FOCO)}>
+    <Link href={rutaFicha(lado.personaId)} prefetch={false} className={cn(clases, 'rounded-md transition-colors hover:text-primary-text', FOCO)}>
       <span className="truncate">{nombre}</span>
     </Link>
   );
@@ -417,7 +417,7 @@ function CruceIndividual({ cruce: c, arma, meta }: { cruce: CruceDuelo; arma: st
             href={personal}
             prefetch={false}
             aria-label={`Cara a cara de ${nombreCompacto(c.nuestro.nombre)} y ${nombreCompacto(c.suyo.nombre)}`}
-            className={cn('flex size-11 items-center justify-center rounded-full text-muted-foreground hover:text-foreground', FOCO)}
+            className={cn('flex size-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground', FOCO)}
           >
             <Swords aria-hidden className="size-4" />
           </Link>
@@ -454,8 +454,8 @@ function Relevos({ relevos }: { relevos: readonly RelevoDuelo[] }) {
   const nuestros = alineacion(relevos, 'nuestro');
   const suyos = alineacion(relevos, 'suyo');
   return (
-    <details className="group px-2 pb-2">
-      <summary className={cn('flex min-h-11 cursor-pointer list-none items-center text-sm font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden', FOCO)}>
+    <details className="sis-details group px-2 pb-2">
+      <summary className={cn('flex min-h-11 cursor-pointer list-none items-center text-sm font-medium text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden', FOCO)}>
         Alineación y relevos
       </summary>
       <div className="grid grid-cols-2 gap-3 pb-2 text-xs text-muted-foreground">

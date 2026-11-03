@@ -9,6 +9,7 @@ import {
   Search,
   X,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import * as React from 'react';
 import { toast } from 'sonner';
@@ -62,7 +63,6 @@ import {
   tramoPasadoDe,
 } from '@/lib/queries/calendario-pasado-tramo';
 import { CabeceraFicha } from './cabecera-ficha';
-import { FichaEvento } from './ficha-evento';
 import { PantallaFicha, useEntradaDeHistorial } from './pantalla-ficha';
 import { fichaRecibida, leerFicha, precargarFicha } from './ficha/precarga';
 import { LoQueViene, diasHasta } from './lo-que-viene';
@@ -104,6 +104,15 @@ export type TiradorOpcion = {
  * competiciones lo que hace falta es cambiar de mes.
  */
 const CUANTO_DESPUES = 6;
+
+/**
+ * La ficha del torneo se abre siempre tras un toque, así que su código (y el
+ * de `datos-convocatoria`, `horarios-torneo`, `fila-inscrito`… que sólo usa
+ * ella) va en un trozo aparte: el calendario arranca sin él. En cuanto hay
+ * intención de abrir (`intencionDeFicha`) se precarga para que no pese el
+ * primer toque.
+ */
+const FichaEvento = dynamic(() => import('./ficha-evento').then((m) => m.FichaEvento));
 
 const GENEROS: { v: 'M' | 'F'; largo: string }[] = [
   { v: 'M', largo: rotuloGenero('M') },
@@ -590,6 +599,8 @@ export function VistaCalendario({
       const id = destino instanceof Element ? destino.closest('[data-evento]')?.getAttribute('data-evento') : null;
       const evento = id ? porId.get(id) : undefined;
       if (!evento || importados.has(evento.id)) return;
+      // Los datos y el trozo de la ficha, calentándose antes del toque.
+      void import('./ficha-evento');
       if (esperaMs === 0) precargarFicha(evento);
       else temporizadorFicha.current = setTimeout(() => {
         if (!ahorrarDatos()) precargarFicha(evento);

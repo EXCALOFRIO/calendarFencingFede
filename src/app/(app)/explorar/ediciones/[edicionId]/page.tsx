@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { cache } from 'react';
 import { EdicionCompleta, EstadoEdicion } from '@/components/explorar/ediciones';
 import { getSessionProfile } from '@/lib/auth/session';
-import { edicionDeRuta, leerCriteriosEdicion } from '@/lib/sport/explorar/edicion-url';
+import { construirUrlEdicion, edicionDeRuta, leerCriteriosEdicion } from '@/lib/sport/explorar/edicion-url';
 import { cargarEdicionCompartida } from '@/lib/sport/explorar/cache-real';
 import { urlEventoCalendario } from '@/lib/sport/explorar/enlaces-calendario';
 import { eventoDeEdicionCompartido } from '@/lib/sport/explorar/enlaces-calendario-real';
@@ -80,6 +80,9 @@ export default async function Pagina({
       calendario={evento ? urlEventoCalendario(evento, criterios.origen) : null}
     />
   ) : (
-    <EstadoEdicion vista={vista} />
+    <EstadoEdicion
+      vista={vista}
+      reintentar={edicionId ? construirUrlEdicion(edicionId, { origen: criterios.origen, catalogo: criterios.catalogo }) : undefined}
+    />
   );
 }

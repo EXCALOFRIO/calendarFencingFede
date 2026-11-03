@@ -163,8 +163,8 @@ export function SeccionRivales({
 }
 
 export function SeccionCuriosidades({ personaId, stats }: { personaId: string; stats: EstadisticasRivales | null }) {
-  if (!stats) return <EstadoVacio tipo="error" titulo="No se han podido cargar" descripcion="Inténtalo de nuevo en un momento." />;
-  if (stats.total.asaltos === 0) return <EstadoVacio titulo="Sin asaltos importados" />;
+  if (!stats) return <EstadoVacio tipo="error" titulo="No se han podido cargar las curiosidades" descripcion="Inténtalo de nuevo en un momento." />;
+  if (stats.total.asaltos === 0) return <EstadoVacio titulo="Sin asaltos todavía" />;
   return (
     <>
       <BalanceFasesRivales stats={stats} nivel={NIVEL} />

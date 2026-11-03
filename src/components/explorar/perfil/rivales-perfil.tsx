@@ -59,9 +59,9 @@ export function ManoAMano({
   return (
     <Bloque id="ficha-rivales" titulo="Mano a mano" nivel={nivel} tituloOculto={enPestana}>
       {perfil.rivales === null ? (
-        <EstadoVacio tipo="error" titulo="No se han podido cargar" descripcion="Inténtalo de nuevo en un momento." />
+        <EstadoVacio tipo="error" titulo="No se han podido cargar los rivales" descripcion="Inténtalo de nuevo en un momento." />
       ) : perfil.rivales.length === 0 ? (
-        <EstadoVacio titulo="Sin asaltos importados" accion={otro} />
+        <EstadoVacio titulo="Sin asaltos todavía" accion={otro} />
       ) : (
         <>
           <ol className="divide-y overflow-hidden rounded-xl border bg-card" aria-label="Rivales con más asaltos">

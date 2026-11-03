@@ -40,7 +40,7 @@ export function ResultadosPerfilVista({
     <Bloque id="historial" titulo="Resultados" nivel={nivel} tituloOculto>
       {resultados.items.length === 0 ? (
         <p role="status" className="medida text-sm text-muted-foreground">
-          Sin puestos finales importados.
+          Todavía no hay puestos finales.
         </p>
       ) : (
         <HistorialPerfil

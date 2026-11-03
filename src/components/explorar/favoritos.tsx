@@ -135,9 +135,17 @@ export function EstadoFavoritos({
         />
       );
     case 'cursor_invalido':
-      return <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Página caducada" accion={<Accion href={RUTA_FAVORITOS}>Primera página</Accion>} />;
+      return (
+        <EstadoVacio
+          tipo="error"
+          icono={TriangleAlert}
+          titulo="Página caducada"
+          descripcion="La lista ha cambiado; vuelve a la primera página."
+          accion={<Accion href={RUTA_FAVORITOS}>Primera página</Accion>}
+        />
+      );
     case 'no_disponible':
-      return <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Favoritos aún no está activo" descripcion="Aún no está activo en esta instalación." />;
+      return <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Favoritos aún no está activo" descripcion="Todavía no está disponible." />;
     case 'entrada_invalida':
     case 'error':
       return <EstadoVacio tipo="error" icono={TriangleAlert} titulo="No se ha podido abrir tu lista" accion={<Accion href={reintentar}>Reintentar</Accion>} />;
@@ -162,7 +170,7 @@ export function ControlFavoritoFicha({
     case 'ok':
       return <BotonFavorito key={estado.personaId} personaId={estado.personaId} nombre={nombre} inicial={estado.favorito} lectura={estado} variante="perfil" />;
     case 'no_disponible':
-      return <p className="medida text-xs text-muted-foreground">Seguir aún no está activo en esta instalación.</p>;
+      return <p className="medida text-xs text-muted-foreground">Seguir todavía no está disponible.</p>;
     case 'error':
       return (
         <div role="alert" className="flex flex-col items-start gap-1 text-sm text-danger">

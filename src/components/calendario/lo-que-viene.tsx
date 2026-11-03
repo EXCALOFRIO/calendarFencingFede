@@ -38,7 +38,8 @@ export function LoQueViene({
       <CabeceraSeccion id={idTitulo} titulo="Más adelante" nivel="grupo" como="h2" />
       <ul className="flex min-w-0 flex-col border-t border-border">
         {bloques.map((bloque) => (
-          <li key={bloque.clave}>
+          // La misma reserva que en `ItemDeLista`: fuera de pantalla no se maqueta.
+          <li key={bloque.clave} className="[content-visibility:auto] [contain-intrinsic-size:auto_88px]">
             <TarjetaBloque
               bloque={bloque}
               inscripciones={inscripciones}

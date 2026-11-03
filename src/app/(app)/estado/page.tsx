@@ -106,7 +106,7 @@ export default async function Pagina() {
  * el hueco se nota.
  */
 async function SinTiradores({ rol }: { rol: string }) {
-  const esPersonal = rol === 'athlete' || rol === 'guardian';
+  const esPersonal = rol === 'athlete';
   const oficial = esPersonal ? await contarRankingOficial() : null;
 
   return (

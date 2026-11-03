@@ -1000,20 +1000,40 @@ function diaPublicado(valor: unknown): string | null {
 }
 
 /**
- * EL FILTRO. Convierte la respuesta de `/entries` en la lista de españoles.
+ * Una fila ya saneada de `/entries`, de cualquier país.
  *
- * Tres cosas pasan aquí y ninguna puede pasar en otro sitio:
+ * Es la forma interna del parseo: `inscritosEspanolesDeLaFie` se queda sólo
+ * con los `ESP` e `inscritosDeLaFie` proyecta los campos públicos. Que las dos
+ * salgan de la MISMA lectura es lo que garantiza que ninguna vea nunca un
+ * campo distinto de los aquí escritos.
+ */
+type FilaInscritoFie = {
+  /** `countryCode`, ISO-3166 alfa-3 ("ESP"), en mayúsculas; '' si no vino. */
+  pais: string;
+  /** `flag` ("ES"), en mayúsculas: el respaldo del país, no una segunda opinión. */
+  bandera: string;
+  nombre: string;
+  equipo: string;
+  licencia: string | null;
+  inscritoEl: string | null;
+  fieId: number | null;
+};
+
+/**
+ * EL SANEADO. Convierte la respuesta de `/entries` en filas limpias de TODOS
+ * los países. Tres cosas pasan aquí y ninguna puede pasar en otro sitio:
  *
- *  1. **Se tiran los que no son `ESP`.** No es una preferencia: es la decisión
- *     que tomó el usuario, literal — *«Solo españoles, sin datos de menores»*.
- *     Y el país se mira en `countryCode`, que viene en ISO-3166 alfa-3 y
- *     relleno en las 54 listas medidas; `flag` ("ES") y `country` ("SPAIN")
- *     son respaldos porque son el mismo dato escrito de otra forma, no una
- *     segunda opinión.
+ *  1. **El país se lee pero no se filtra.** Va en `countryCode`, que viene en
+ *     ISO-3166 alfa-3 y relleno en las 54 listas medidas; `flag` ("ES") y
+ *     `country` ("SPAIN") son respaldos porque son el mismo dato escrito de
+ *     otra forma, no una segunda opinión. Quien quiera sólo los españoles
+ *     filtra aguas abajo —el filtro de `ESP` es la decisión del usuario,
+ *     *«Solo españoles, sin datos de menores»*, y está en
+ *     `inscritosEspanolesDeLaFie`.
  *  2. **Se tiran los campos que no se guardan.** `date` (fecha de nacimiento),
  *     `age`, `height`, `image`, los puntos y los puestos no se copian a la
- *     salida, así que no llegan a la capa que escribe. Que sea IMPOSIBLE
- *     guardarlos vale más que confiar en que nadie lo haga.
+ *     salida, así que no llegan a la capa que escribe ni a la que responde.
+ *     Que sea IMPOSIBLE guardarlos vale más que confiar en que nadie lo haga.
  *  3. **El nombre se compone de apellido + nombre.** En las pruebas por
  *     equipos `name` es el nombre del EQUIPO ("Spain") y el tirador está en
  *     `lastName`/`firstName`; usar `name` metería cuatro filas llamadas
@@ -1024,13 +1044,13 @@ function diaPublicado(valor: unknown): string | null {
  * lista es perder una lista; una excepción aquí se llevaría por delante la
  * ingestión de las otras 53.
  */
-export function inscritosEspanolesDeLaFie(payload: unknown): InscritoFie[] {
+function filasInscritosFie(payload: unknown): FilaInscritoFie[] {
   const items =
     payload && typeof payload === 'object' && Array.isArray((payload as { items?: unknown }).items)
       ? ((payload as { items: unknown[] }).items as unknown[])
       : [];
 
-  const salida: InscritoFie[] = [];
+  const salida: FilaInscritoFie[] = [];
 
   for (const item of items) {
     if (!item || typeof item !== 'object') continue;
@@ -1038,11 +1058,8 @@ export function inscritosEspanolesDeLaFie(payload: unknown): InscritoFie[] {
     if (!fila.fencer || typeof fila.fencer !== 'object') continue;
     const f = fila.fencer as FieEntryFencer;
 
-    /** Punto 1: la nacionalidad. Lo que no sea ESP se va sin escribirse. */
     const pais = (texto(f.countryCode) ?? '').toUpperCase();
     const bandera = (texto((f as { flag?: unknown }).flag) ?? '').toUpperCase();
-    const esEspanol = pais ? pais === PAIS_PROPIO : bandera === 'ES';
-    if (!esEspanol) continue;
 
     /** Punto 3: el nombre, compuesto; y el equipo, si `name` dice otra cosa. */
     const apellido = texto(f.lastName);
@@ -1056,8 +1073,10 @@ export function inscritosEspanolesDeLaFie(payload: unknown): InscritoFie[] {
 
     const equipo = publicado && publicado !== compuesto ? publicado : '';
 
-    /** Punto 2: y de todo lo demás, estos tres campos. */
+    /** Punto 2: y de todo lo demás, estos campos. */
     salida.push({
+      pais,
+      bandera,
       nombre: compuesto,
       equipo,
       licencia: texto(f.licenseNumber),
@@ -1067,6 +1086,66 @@ export function inscritosEspanolesDeLaFie(payload: unknown): InscritoFie[] {
   }
 
   return salida;
+}
+
+/**
+ * EL FILTRO. Convierte la respuesta de `/entries` en la lista de españoles.
+ *
+ * El filtro está aquí y no en la capa que guarda: así lo que no se debe
+ * guardar no llega a existir más allá del parseo de la respuesta, y no hay
+ * ninguna capa intermedia en la que alguien pueda decidir otra cosa. Es el
+ * mismo criterio del filtro del alojamiento: *un modelo se salta una
+ * instrucción, un `if` no*.
+ */
+export function inscritosEspanolesDeLaFie(payload: unknown): InscritoFie[] {
+  const salida: InscritoFie[] = [];
+  for (const f of filasInscritosFie(payload)) {
+    /** Lo que no sea ESP se va sin escribirse (`countryCode` manda, `flag` respalda). */
+    const esEspanol = f.pais ? f.pais === PAIS_PROPIO : f.bandera === 'ES';
+    if (!esEspanol) continue;
+    salida.push({
+      nombre: f.nombre,
+      equipo: f.equipo,
+      licencia: f.licencia,
+      inscritoEl: f.inscritoEl,
+      fieId: f.fieId,
+    });
+  }
+  return salida;
+}
+
+/**
+ * Un inscrito de cualquier país, sólo con lo que la ficha ya enseña en la
+ * lista local: nombre, equipo y bandera.
+ *
+ * NI `licencia` NI `inscritoEl` NI `fieId` salen en esta forma:
+ *
+ *   · `licencia` **lleva dentro la fecha de nacimiento** (DDMMAAAA + 3
+ *     dígitos, ver `InscritoFie`): publicarla de un extranjero sería soltar el
+ *     dato que este módulo existe para no enseñar —y menos de un menor.
+ *   · `inscritoEl` y `fieId` sirven para emparejar en la base, no para
+ *     enseñar; la lista pública no los necesita.
+ *
+ * `pais` va en el alfabeto en que la FIE lo publicó (`countryCode` alfa-3, o
+ * `flag` alfa-2 si falta el primero): `BanderaPais` entiende las dos.
+ */
+export type InscritoFiePublico = {
+  nombre: string;
+  equipo: string;
+  pais: string | null;
+};
+
+/**
+ * La lista entera de `/entries`, con los mismos campos saneados que la de
+ * españoles. Es la lectura de la ruta `/api/inscritos-fie`, que enseña «todos
+ * los países» sin salir de la aplicación ni copiar la lista a la base.
+ */
+export function inscritosDeLaFie(payload: unknown): InscritoFiePublico[] {
+  return filasInscritosFie(payload).map((f) => ({
+    nombre: f.nombre,
+    equipo: f.equipo,
+    pais: f.pais || f.bandera || null,
+  }));
 }
 
 /**

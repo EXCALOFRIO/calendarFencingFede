@@ -25,19 +25,33 @@
   --sis-curva-hoja: cubic-bezier(0.32, 0.72, 0, 1);
   --sis-panel-entrada: 160ms;
   --sis-panel-salida: 120ms;
+  /* Despliegue de un `<details>` (ver `.sis-details`). */
+  --sis-detalle: 200ms;
+  /* Cambio de color o de estado (hover, marcado), la fila media de la tabla § 4. */
+  --sis-color: 150ms;
 }
 
 /*
- * `.pulsable`: el control se hunde un 2 % mientras se pulsa. Solo `scale`,
- * que va en el compositor y no mueve nada alrededor. En capa de utilidades
- * para que un `active:scale-*` del propio elemento lo pueda cambiar.
+ * `.pulsable`: el control se hunde un 2 % mientras se pulsa, y su cambio de
+ * color o de estado (`hover:bg-accent`, `hover:brightness-110`, un marcado)
+ * se funde en vez de saltar. `scale` va en el compositor y no mueve nada
+ * alrededor; los colores son la fila media de la tabla de § 4. En capa de
+ * utilidades para que un `active:scale-*` del propio elemento lo pueda
+ * cambiar — y para que un `transition-*` de Tailwind quede pisado por estas
+ * propiedades, así que nadie necesita (ni debe) ponerlo encima.
  *
  * `.sis-indicador`: para la pieza que marca el segmento elegido; se mueve con
  * `translate`/`scale`, nunca con `left` o `width`.
  */
 @layer utilities {
   .pulsable {
-    transition: scale var(--sis-pulsar) var(--sis-curva);
+    transition:
+      scale var(--sis-pulsar) var(--sis-curva),
+      background-color var(--sis-color) ease-out,
+      color var(--sis-color) ease-out,
+      border-color var(--sis-color) ease-out,
+      box-shadow var(--sis-color) ease-out,
+      filter var(--sis-color) ease-out;
     -webkit-tap-highlight-color: transparent;
   }
   .pulsable:active {
@@ -165,6 +179,30 @@
 .sis-aparecer-lista > :nth-child(8) { animation-delay: 140ms; }
 
 /*
+ * Despliegue de un `<details class="sis-details">`: `::details-content`
+ * envuelve todo lo que no es `<summary>`, así que el alto se anima sin
+ * envolver el contenido a mano (ni alturas fijas). `interpolate-size` abre
+ * la interpolación de `auto`, y `content-visibility` con `allow-discrete`
+ * mantiene el contenido pintado durante el cierre, así que se anima en los
+ * dos sentidos. Donde el pseudo aún no existe (Safari, Firefox hoy) abre
+ * de golpe, como siempre; no necesita `@supports` porque una regla que no
+ * casa no cambia nada.
+ */
+.sis-details {
+  interpolate-size: allow-keywords;
+}
+.sis-details::details-content {
+  block-size: 0;
+  overflow: clip;
+  transition:
+    block-size var(--sis-detalle) var(--sis-curva),
+    content-visibility var(--sis-detalle) allow-discrete;
+}
+.sis-details[open]::details-content {
+  block-size: auto;
+}
+
+/*
  * Entradas y salidas de lo que flota (Radix + tw-animate), todas iguales:
  * desplazamiento corto + opacidad, nunca alto ni ancho.
  *
@@ -270,5 +308,9 @@
   }
   .pulsable:active {
     scale: none;
+  }
+  /* `*` no alcanza `::details-content` (igual que los de view transition). */
+  .sis-details::details-content {
+    transition: none;
   }
 }

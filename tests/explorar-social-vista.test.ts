@@ -170,7 +170,7 @@ describe('curiosidades y fases en Rivales', () => {
       sangreFria: { asaltos: 0, victorias: 0, porcentaje: null },
     };
     const sin = html(React.createElement(BalanceFasesRivales, { stats: vacio, nivel: 'pagina' }));
-    expect(sin).toContain('Sin asaltos importados');
+    expect(sin).toContain('Sin asaltos todavía');
     expect(sin).toContain('Ningún asalto decidido por un tocado');
   });
 });

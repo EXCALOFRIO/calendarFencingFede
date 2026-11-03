@@ -447,7 +447,7 @@ export function CuarentenaPanel({ filas }: { filas: FilaCuarentena[] }) {
                       size="sm"
                       className="group/ver w-full justify-start rounded-none border-t text-xs text-muted-foreground"
                     >
-                      <ChevronDown className="transition-transform group-data-[state=open]/ver:rotate-180" />
+                      <ChevronDown className="transition-transform group-data-[state=open]/ver:rotate-180 motion-reduce:transition-none" />
                       Ver lo que se leyó, con los errores enteros
                     </Button>
                   </CollapsibleTrigger>

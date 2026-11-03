@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { memo } from 'react';
 import { BanderaPais } from '@/components/bandera';
 import { Avatar } from '@/components/sistema/avatar';
 import { MarcaPropia, Puesto } from '@/components/sistema/pastilla';
@@ -19,8 +20,14 @@ import { puntos as formatoPuntos } from './formato';
  *
  * El nombre lleva a la ficha de la persona en Explorar cuando se sabe quién
  * es; si no, a su ficha externa (FIE) si la hay, o a nada.
+ *
+ * Memorizada y sin maquetar fuera de pantalla: en las clasificaciones largas
+ * (hasta ~1.250 filas), escribir en el buscador o abrir el detalle repintaba
+ * cada fila. Con props estables sólo se repinta lo que cambia, y el navegador
+ * no maqueta lo que no se ve (`content-visibility`), con 40 px de alto
+ * estimado — la fila mide 40 px (`min-h-[40px]`).
  */
-export function FilaLinea({
+export const FilaLinea = memo(function FilaLinea({
   puesto,
   nombre,
   personaId = null,
@@ -70,7 +77,7 @@ export function FilaLinea({
     <li
       data-mio={mio || undefined}
       className={cn(
-        'grid min-h-[40px] min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-x-2 bg-card px-2 sm:px-3',
+        'grid min-h-[40px] min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-x-2 bg-card px-2 sm:px-3 [content-visibility:auto] [contain-intrinsic-size:auto_40px]',
         /*
           Con algo detrás del nombre, desde 360 px va en su columna pegada al
           nombre (que sólo ocupa lo que mide) y un hueco empuja los puntos a la
@@ -137,4 +144,4 @@ export function FilaLinea({
       </span>
     </li>
   );
-}
+});

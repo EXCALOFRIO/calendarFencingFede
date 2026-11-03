@@ -60,7 +60,7 @@ export default async function Pagina({
       {vista.tipo === 'sin_datos' ? (
         <EstadoPais titulo="Aún sin datos" linea="Las cifras por país se están preparando." volver={{ href: RUTA_BUSCAR_PAISES, texto: 'Países' }} />
       ) : (
-        <EstadoPais titulo="No se pudo cargar" linea="Vuelve a intentarlo en un momento." volver={{ href: urlPais(codigo, filtros), texto: 'Reintentar' }} />
+        <EstadoPais titulo="No se han podido cargar las cifras" linea="Vuelve a intentarlo en un momento." volver={{ href: urlPais(codigo, filtros), texto: 'Reintentar' }} />
       )}
     </div>
   );

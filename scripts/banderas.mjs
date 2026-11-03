@@ -19,8 +19,8 @@ import { copyFileSync, mkdirSync, readdirSync, readFileSync, statSync } from 'no
  * Salen de `flag-icons` (MIT), que trae 271. Se copian TODAS las que pueda
  * necesitar la aplicación en vez de solo las 136 del ranking de hoy: la lista
  * de países cambia cada temporada y una bandera que falta es un hueco en una
- * tabla. Pesan ~2,4 MB en total y **las sirve la red de Cloudflare desde
- * `public/`, sin tocar el Worker**; el navegador solo pide las que ve.
+ * tabla. Los PNG pesan ~211 kB en total y **los sirve la red de Cloudflare
+ * desde `public/`, sin tocar el Worker**; el navegador solo pide las que ve.
  *
  * Se ejecuta a mano, no en cada compilación: `flag-icons` es una dependencia
  * de desarrollo y los ficheros resultantes están versionados, así que quien
@@ -28,8 +28,11 @@ import { copyFileSync, mkdirSync, readdirSync, readFileSync, statSync } from 'no
  */
 const ORIGEN = 'node_modules/flag-icons/flags/4x3';
 const DESTINO = 'public/banderas';
+/** Los SVG no se despliegan (peso muerto): quedan para regenerar en origen. */
+const DESTINO_SVG = 'assets-origen/banderas';
 
 mkdirSync(DESTINO, { recursive: true });
+mkdirSync(DESTINO_SVG, { recursive: true });
 
 /**
  * ---------------------------------------------------------------------------
@@ -43,8 +46,9 @@ mkdirSync(DESTINO, { recursive: true });
  *
  * Así que se convierten a PNG de 48×36 —24 px de ancho a 2x, que es el doble
  * de lo que se pinta—, con lo que **todas pesan lo mismo y poco**. El SVG se
- * copia también: sirve para regenerar y para cualquier sitio donde algún día
- * haga falta una bandera grande.
+ * copia también, a `assets-origen/banderas/` (fuera de `public/`, para no
+ * desplegar ~2 MB que nadie pide): sirve para regenerar y para cualquier
+ * sitio donde algún día haga falta una bandera grande.
  */
 const { chromium } = await import('playwright');
 const svgs = readdirSync(ORIGEN).filter((f) => f.endsWith('.svg'));
@@ -59,8 +63,8 @@ let bytesSvg = 0;
 let bytesPng = 0;
 let mayor = ['', 0];
 for (const f of svgs) {
-  copyFileSync(`${ORIGEN}/${f}`, `${DESTINO}/${f}`);
-  bytesSvg += statSync(`${DESTINO}/${f}`).size;
+  copyFileSync(`${ORIGEN}/${f}`, `${DESTINO_SVG}/${f}`);
+  bytesSvg += statSync(`${DESTINO_SVG}/${f}`).size;
 
   const svg = readFileSync(`${ORIGEN}/${f}`, 'utf8');
   await pagina.setContent(

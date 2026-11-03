@@ -15,7 +15,7 @@ const OPCIONES: { clave: AmbitoRivales; rotulo: string }[] = [
 ];
 
 const SECCIONES: { clave: keyof Omit<ListasRivales, 'rivales'>; titulo: string; vacio: string }[] = [
-  { clave: 'masEnfrentados', titulo: 'Más enfrentados', vacio: 'Sin rivales identificados' },
+  { clave: 'masEnfrentados', titulo: 'Más enfrentados', vacio: 'Sin rivales todavía' },
   { clave: 'aQuienMasGana', titulo: 'A quién más gana', vacio: 'Sin victorias' },
   { clave: 'quienMasLeGana', titulo: 'Quién más le gana', vacio: 'Sin derrotas' },
 ];
@@ -72,10 +72,10 @@ export function RivalesPorAmbitoVista({
   id?: string;
 }) {
   if (datos === null) {
-    return <EstadoVacio tipo="error" titulo="No se han podido cargar" descripcion="Inténtalo de nuevo en un momento." />;
+    return <EstadoVacio tipo="error" titulo="No se han podido cargar los rivales" descripcion="Inténtalo de nuevo en un momento." />;
   }
   if (datos.todos.rivales === 0) {
-    return <EstadoVacio titulo="Sin rivales identificados" />;
+    return <EstadoVacio titulo="Sin rivales todavía" />;
   }
   const opciones = OPCIONES.filter((o) => o.clave === 'todos' || datos[o.clave].rivales > 0);
   const visibles = opciones.length > 2 ? opciones : opciones.slice(0, 1);

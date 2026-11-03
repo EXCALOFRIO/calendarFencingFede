@@ -247,7 +247,7 @@ export function BuscadorSocial({
           <button
             type="button"
             aria-label="Borrar búsqueda"
-            className="absolute top-1/2 right-0 flex size-[44px] -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring"
+            className="absolute top-1/2 right-0 flex size-[44px] -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring"
             onClick={() => { onChange(''); entrada.current?.focus(); }}
           >
             <X className="size-[18px]" aria-hidden />
@@ -296,9 +296,9 @@ export function BuscadorSocial({
             ) : null}
             <button
               type="submit"
-              className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl text-left text-sm font-medium text-primary-text outline-none hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring"
+              className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl text-left text-sm font-medium text-primary-text outline-none transition-colors hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring"
             >
-              <span>Ver todos los resultados de «{vivo}»</span>
+              <span className="min-w-0 truncate">Ver todos los resultados de «{vivo}»</span>
               <ArrowRight className="size-[16px] shrink-0" aria-hidden />
             </button>
             {avisoFiltros ? (

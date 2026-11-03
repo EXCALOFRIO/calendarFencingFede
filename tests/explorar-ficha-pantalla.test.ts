@@ -239,7 +239,7 @@ describe('cargarFichaPantalla: ficha de otra persona', () => {
         }),
       );
       expect(html).toContain('role="alert"');
-      expect(html).not.toContain('Sin puestos finales importados');
+      expect(html).not.toContain('Todavía no hay puestos finales');
     }
     expect(JSON.stringify(espia.mock.calls)).not.toMatch(/caída|Ana/);
     espia.mockRestore();
@@ -322,7 +322,7 @@ describe('menores y ausencia honesta', () => {
         nivel: 'pagina',
       }),
     );
-    expect(html).toContain('Sin puestos finales importados');
+    expect(html).toContain('Todavía no hay puestos finales');
     // Sin pruebas no se pintan cifras ni medallas a cero.
     expect(html).not.toContain('aria-label="Medallas y hitos"');
     expect(html).not.toContain('aria-label="En cifras"');
@@ -459,10 +459,10 @@ describe('historial en la ficha', () => {
 
   it('sin resultados y cursor inválido son estados distintos', () => {
     const vacio = render(historial({ sinResultados: true }));
-    expect(vacio).toContain('Sin puestos finales importados');
+    expect(vacio).toContain('Todavía no hay puestos finales');
     const invalido = render({ tipo: 'cursor_invalido' });
     expect(invalido).toContain('role="alert"');
-    expect(invalido).not.toContain('Sin puestos finales importados');
+    expect(invalido).not.toContain('Todavía no hay puestos finales');
   });
 });
 
@@ -588,7 +588,7 @@ describe('rutas y perfil', () => {
       React.createElement(PanelRivales, { ficha: vista.ficha, perfil: vista.ficha.perfil!, nivel: 'seccion' }),
     );
     expect(rivales).toContain('Mano a mano');
-    expect(rivales).toContain('Sin asaltos importados');
+    expect(rivales).toContain('Sin asaltos todavía');
     expect(rivales).toContain(`href="/explorar/${UUID_A}/cara-a-cara"`);
   });
 });

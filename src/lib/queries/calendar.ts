@@ -347,8 +347,8 @@ const temporadaCompartida = cacheCompartida.definir({
 /** Temporada marcada como actual, con sus categorías. */
 export const getCurrentSeason = cache(() => temporadaCompartida());
 
-/** Reglas de plazos vigentes de la temporada actual. */
-export const getDeadlineRules = cache(async (): Promise<DeadlineRuleRow[]> => {
+/** Reglas de plazos vigentes de la temporada actual (cargador de la caché compartida). */
+async function leerReglasPlazos(): Promise<DeadlineRuleRow[]> {
   const current = await getCurrentSeason();
   if (!current) return [];
 
@@ -376,7 +376,26 @@ export const getDeadlineRules = cache(async (): Promise<DeadlineRuleRow[]> => {
     sourceDocument: r.sourceDocument,
     sourceUrl: r.sourceUrl,
   }));
+}
+
+/*
+  Las mismas reglas para todas las cuentas, y se leen en cada listado del
+  calendario y en Mi estado: caché compartida, como la temporada. Las cambia
+  sólo Gestión › Normativa, que invalida `calendario`; tras ese cambio se
+  espera a la nueva versión en vez de servir la anterior
+  (`anteriorMientrasRevalida: false`, igual que `temporadaCompartida`).
+*/
+const reglasPlazosCompartidas = cacheCompartida.definir({
+  espacio: 'reglas-plazos',
+  depende: ['calendario'],
+  frescoMs: 10 * MINUTO,
+  caducaMs: DIA,
+  anteriorMientrasRevalida: false,
+  cargar: leerReglasPlazos,
 });
+
+/** Reglas de plazos vigentes de la temporada actual. */
+export const getDeadlineRules = cache(() => reglasPlazosCompartidas());
 
 /**
  * Lista de eventos con todo lo que la ficha necesita.

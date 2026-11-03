@@ -27,9 +27,13 @@ export const AREA_TACTIL =
 export const FOCO =
   'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background';
 
-/** Respuesta al toque: un 4 % más pequeño mientras se pulsa, sin velo gris de iOS. */
-export const PULSACION =
-  '[-webkit-tap-highlight-color:transparent] transition-[scale,background-color,color,box-shadow] duration-150 ease-out active:scale-[0.96]';
+/**
+ * Respuesta al toque: la clase `.pulsable` de `sistema.css` — se hunde un 2 %
+ * mientras se pulsa (120 ms), el cambio de color de estado se funde (150 ms)
+ * y con movimiento reducido no hay hundido (la regla global sólo acorta
+ * duraciones; el `scale: none` está en la hoja).
+ */
+export const PULSACION = 'pulsable';
 
 /** Escala de tamaños visibles del sistema, en px. */
 export const MEDIDAS = {

@@ -183,7 +183,7 @@ function RegistroFase({ etiqueta, r }: { etiqueta: string; r: RegistroAsaltos })
       etiqueta={etiqueta}
       detalle={r.asaltos > 0 ? `${r.asaltos} ${r.asaltos === 1 ? 'asalto' : 'asaltos'}${p !== null ? `, ${p}% ganados` : ''}` : undefined}
     >
-      {r.asaltos === 0 ? <SinDato>Sin asaltos importados</SinDato> : (
+      {r.asaltos === 0 ? <SinDato>Sin asaltos todavía</SinDato> : (
         <Cifra className="text-4xl sm:text-5xl">{r.victorias}–{r.derrotas}</Cifra>
       )}
     </Metrica>

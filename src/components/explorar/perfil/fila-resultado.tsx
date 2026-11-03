@@ -1,6 +1,7 @@
 import { ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { BanderaPais } from '@/components/bandera';
+import { AREA_TACTIL } from '@/components/sistema/tactil';
 import { fechaCorta as fechaInterfaz } from '@/lib/fechas';
 import type { FilaListaPerfil } from '@/lib/sport/explorar/resultados-perfil';
 import { rotuloArma } from '@/lib/sport/rotulos';
@@ -36,7 +37,8 @@ export function IconoFuente({ url, fuente, className }: { url: string | null; fu
       rel="noopener noreferrer"
       title={`Ver en ${nombreFuente(fuente)}`}
       className={cn(
-        'inline-flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
+        'inline-flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
+        AREA_TACTIL,
         className,
       )}
     >
@@ -57,7 +59,7 @@ export function Asaltos({ v, d, className }: { v: number; d: number; className?:
 
 export function FilaResultado({ r, conArma = false }: { r: FilaListaPerfil; conArma?: boolean }) {
   return (
-    <li className="flex min-w-0 items-center bg-card pr-1 hover:bg-secondary">
+    <li className="flex min-w-0 items-center bg-card pr-1 transition-colors hover:bg-secondary">
       <Link
         href={r.href}
         prefetch={false}

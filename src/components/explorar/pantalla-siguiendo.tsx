@@ -44,9 +44,15 @@ export function PantallaListaSiguiendo({ vista }: { vista: Exclude<VistaListaSig
           <PropuestasParaSeguir sugeridos={vista.sugeridos} />
         </div>
       ) : vista.tipo === 'cursor_invalido' ? (
-        <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Página caducada" accion={<Accion href={RUTA_SIGUIENDO}>Volver al principio</Accion>} />
+        <EstadoVacio
+          tipo="error"
+          icono={TriangleAlert}
+          titulo="Página caducada"
+          descripcion="La lista ha cambiado; vuelve al principio."
+          accion={<Accion href={RUTA_SIGUIENDO}>Volver al principio</Accion>}
+        />
       ) : vista.tipo === 'no_disponible' ? (
-        <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Siguiendo aún no está activo" descripcion="Aún no está activo en esta instalación." />
+        <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Siguiendo aún no está activo" descripcion="Todavía no está disponible." />
       ) : (
         <EstadoVacio tipo="error" icono={TriangleAlert} titulo="No se ha podido abrir la lista" accion={<Accion href={RUTA_SIGUIENDO}>Reintentar</Accion>} />
       )}

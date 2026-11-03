@@ -325,7 +325,7 @@ describe('calendario, navegación y ranking: contrato de presentación', () => {
     expect(banda({ oficiales: [], pendientes: [], estados: {} })).toBe('');
     expect(banda({ oficiales: [], pendientes: [], estados: { [prueba.id]: 'vacia' } })).toContain('Lista vacía');
     expect(banda(null, true)).toContain('No se ha podido leer la lista');
-    expect(banda(lista, true)).toContain('La última lectura falló');
+    expect(banda(lista, true)).toContain('No se ha podido actualizar la lista');
     expect(banda(lista, true)).toContain(nombre);
     expect(banda(lista, true)).toContain('Estás en la lista oficial');
   });
