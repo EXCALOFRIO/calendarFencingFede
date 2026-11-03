@@ -593,8 +593,8 @@ export function BandaEstasDentro({
       : null;
   const matizEsp = inscritosFie
     ? enSkermo
-      ? ' —de la FIE, sólo los españoles—'
-      : ' —aquí, sólo los españoles—'
+      ? ' (de la FIE, sólo los españoles)'
+      : ' (aquí, sólo los españoles)'
     : '';
 
   // Depende de «hay lectura retenida y la última falló», no de las filas de esta prueba.

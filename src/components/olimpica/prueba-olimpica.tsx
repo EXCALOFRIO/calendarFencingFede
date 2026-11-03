@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 import { BanderaPais } from '@/components/bandera';
 import { Pastilla } from '@/components/sistema/pastilla';
 import type {
@@ -138,6 +138,11 @@ function EstadoPropio({ estado }: { estado: EstadoNoc | undefined }) {
  * LA SECCIÓN DE CLASIFICACIÓN OLÍMPICA
  * ===========================================================================
  *
+ * La sección va PLEGADA: de entrada sólo se ve la fila con el título, el
+ * estado del CON propio y la flecha; el desglose se abre al tocarla. El
+ * ranking normal es lo primero que se lee — la proyección olímpica se enseña
+ * a quien la busca, sin estorbar a quien no.
+ *
  * Responde, sin abrir ninguna burbuja y sin saberse el reglamento:
  *
  *   quién entra            las listas de «Por equipos» y «Plazas individuales»,
@@ -197,28 +202,35 @@ export function PruebaOlimpica({
   const textoExcluidos = grupos.join('; ');
 
   return (
-    <article
-      className="min-w-0 max-w-3xl space-y-3 rounded-xl border bg-card p-3 sm:p-4"
+    <details
+      className="group min-w-0 max-w-3xl rounded-xl border bg-card"
       data-prueba={`${resultado.arma}-${resultado.genero}`}
     >
-      <header className="flex min-w-0 flex-wrap items-start gap-2">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl px-3 py-2 focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:px-4 [&::-webkit-details-marker]:hidden">
         <div className="mr-auto min-w-0">
-          <h3 className="text-lg leading-tight">Clasificación olímpica · LA 2028</h3>
-          <div className="text-xs text-muted-foreground">
+          <h3 className="text-base leading-tight">Clasificación olímpica · LA 2028</h3>
+          <div className="truncate text-xs text-muted-foreground">
             {rotuloPrueba({ arma: resultado.arma, genero: resultado.genero })}
           </div>
         </div>
         <EstadoPropio estado={resultado.seguidos[nocPropio]} />
-        <Pastilla tamano="md" data-provisional="">
-          Provisional
-          {fecha ? <time dateTime={resultado.fechaRanking ?? undefined}>{fecha}</time> : null}
-        </Pastilla>
-      </header>
+        <ChevronDown
+          aria-hidden
+          className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+        />
+      </summary>
 
-      <div className="text-xs text-muted-foreground">
-        {`Quién entraría si el ranking se cerrara hoy; decide el del ${fechaDecisiva ?? R.fechaRankingDecisivo}.`}
-        {textoExcluidos ? ` Sin contar: ${textoExcluidos}.` : ''}
-      </div>
+      <div className="space-y-3 border-t border-border px-3 pb-3 pt-3 sm:px-4 sm:pb-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+          <Pastilla tamano="md" data-provisional="">
+            Provisional
+            {fecha ? <time dateTime={resultado.fechaRanking ?? undefined}>{fecha}</time> : null}
+          </Pastilla>
+          <span className="min-w-0 flex-1 text-xs text-muted-foreground">
+            {`Quién entraría si el ranking se cerrara hoy; decide el del ${fechaDecisiva ?? R.fechaRankingDecisivo}.`}
+            {textoExcluidos ? ` Sin contar: ${textoExcluidos}.` : ''}
+          </span>
+        </div>
 
       {resultado.equipos.length > 0 ? (
         <Seccion
@@ -328,6 +340,7 @@ export function PruebaOlimpica({
           </li>
         </Seccion>
       ) : null}
-    </article>
+      </div>
+    </details>
   );
 }

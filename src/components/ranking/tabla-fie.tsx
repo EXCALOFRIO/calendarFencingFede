@@ -48,9 +48,11 @@ const PASO = 50;
  *    (`?jjoo=1`) para poder compartir el enlace.
  *
  * La clasificación olímpica va en su propia sección (`PruebaOlimpica`),
- * encima del ranking: quién entra por equipos y por individual, quién está
- * cerca y qué le falta. No va mezclada con la lista FIE porque es otra cosa
- * — una proyección con sus reglas, no un puesto más.
+ * encima del ranking y PLEGADA: la fila con el título y el estado de España
+ * se ve siempre, el desglose se abre al tocarla. Quién entra por equipos y
+ * por individual, quién está cerca y qué le falta. No va mezclada con la
+ * lista FIE porque es otra cosa — una proyección con sus reglas, no un
+ * puesto más.
  *
  * Se pide un grupo a la vez (el más grande son ~1.250 filas): el de arranque
  * viene pintado del servidor y cambiar de arma pide sólo ese grupo, con sus
