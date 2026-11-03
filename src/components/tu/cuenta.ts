@@ -38,7 +38,7 @@ export function describirCuenta(
   const subtitulo =
     tirador && tirador.weapons.length > 0
       ? [
-          WEAPON_LABEL[tirador.weapons[0]!],
+          tirador.weapons.map((w) => WEAPON_LABEL[w]).join(' + '),
           categorias?.own ? (CATEGORY_LABEL[categorias.own as keyof typeof CATEGORY_LABEL] ?? categorias.own) : null,
         ]
           .filter(Boolean)

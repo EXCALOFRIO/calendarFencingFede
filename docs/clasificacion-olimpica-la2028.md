@@ -146,7 +146,7 @@ Cada fila del ranking internacional sénior lleva, como mucho, una marca:
 | Color | Estado | Quién |
 |---|---|---|
 | Verde | `clasificado` | Tendría plaza hoy: los 8 equipos, los 3 mejores del ranking de cada CON con equipo, los 2 del AOR y el mejor de cada zona en el AOR. **30 tiradores por prueba** (34 plazas − 4 de torneo zonal). |
-| Amarillo | `cerca` («Por asegurar») | El **primer reserva** de cada camino, es decir, quien heredaría la plaza si el último que entra por ese camino la perdiera (el orden de reasignación de §F.1): el siguiente equipo del ranking, el siguiente equipo de cada zona, el siguiente del AOR y el siguiente de cada zona en el AOR; también los 3 mejores tiradores de un equipo reserva. Además **no le puede faltar más de un tercio de los puntos** de quien tiene que pasar. Y los 3 mejores de USA en un arma donde no tenga plaza (anfitrión). |
+| Amarillo | `cerca` («Cerca de clasificar», con lo que falta: «A 30 pts») | El **primer reserva** de cada camino, es decir, quien heredaría la plaza si el último que entra por ese camino la perdiera (el orden de reasignación de §F.1): el siguiente equipo del ranking, el siguiente equipo de cada zona, el siguiente del AOR y el siguiente de cada zona en el AOR; también los 3 mejores tiradores de un equipo reserva. Además **no le puede faltar más de un tercio de los puntos** de quien tiene que pasar. Y los 3 mejores de USA en un arma donde no tenga plaza (anfitrión). |
 | Gris | `pendiente` | RUS y BLR que serían verdes o amarillos si contaran. |
 | Nada | | Todos los demás, incluidos los que solo tienen el torneo zonal. |
 

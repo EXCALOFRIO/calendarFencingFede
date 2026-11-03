@@ -3,6 +3,7 @@ import {
   esPortada,
   mejorEnlace,
   normalizarUrlDirecto,
+  PRIORIDAD_PROVEEDOR,
   proveedorDeUrl,
   type EnlaceDirecto,
 } from '@/lib/calendario/enlaces-directo';
@@ -37,6 +38,13 @@ export function atribuirEnlacesDirecto({
 }): {
   porTarjeta: Map<string, EnlaceDirecto>;
   porPrueba: Map<string, EnlaceDirecto>;
+  /**
+   * TODOS los enlaces de cada tarjeta o prueba, no sólo el mejor: la ficha
+   * los enseña uno a uno como hub de fuentes. Una entrada por URL, ordenados
+   * por lo específico del proveedor.
+   */
+  todosPorTarjeta: Map<string, EnlaceDirecto[]>;
+  todosPorPrueba: Map<string, EnlaceDirecto[]>;
 } {
   const clavePorId = new Map(pruebas.map((p) => [p.id, p.clave] as const));
   const pruebasPorEvento = new Map<string, string[]>();
@@ -81,15 +89,39 @@ export function atribuirEnlacesDirecto({
     const propios = lista.filter((x) => x.propio);
     return mejorEnlace((propios.length > 0 ? propios : lista).map((x) => x.enlace));
   };
+  /**
+   * Y todos, no sólo el elegido: el de la FIE y el propio valen a la vez
+   * (Fencing Time Live cuelga del registro de la FIE y el de Engarde del de
+   * Skermo). Una vez por URL, del proveedor más específico al menos.
+   */
+  const todos = (lista: { enlace: EnlaceDirecto; propio: boolean }[]) => {
+    const vistas = new Set<string>();
+    const salida: EnlaceDirecto[] = [];
+    const ordenados = [...lista].sort(
+      (a, b) => PRIORIDAD_PROVEEDOR[a.enlace.proveedor] - PRIORIDAD_PROVEEDOR[b.enlace.proveedor],
+    );
+    for (const { enlace } of ordenados) {
+      if (vistas.has(enlace.url)) continue;
+      vistas.add(enlace.url);
+      salida.push(enlace);
+    }
+    return salida;
+  };
   const porTarjeta = new Map<string, EnlaceDirecto>();
+  const todosPorTarjeta = new Map<string, EnlaceDirecto[]>();
   for (const [k, lista] of deTarjeta) {
     const e = elegir(lista);
     if (e) porTarjeta.set(k, e);
+    const t = todos(lista);
+    if (t.length > 0) todosPorTarjeta.set(k, t);
   }
   const porPrueba = new Map<string, EnlaceDirecto>();
+  const todosPorPrueba = new Map<string, EnlaceDirecto[]>();
   for (const [k, lista] of dePrueba) {
     const e = elegir(lista);
     if (e) porPrueba.set(k, e);
+    const t = todos(lista);
+    if (t.length > 0) todosPorPrueba.set(k, t);
   }
-  return { porTarjeta, porPrueba };
+  return { porTarjeta, porPrueba, todosPorTarjeta, todosPorPrueba };
 }

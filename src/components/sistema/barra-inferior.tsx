@@ -14,11 +14,14 @@ import { recordarSiEsSuya, resolverToque, useRouterOpcional, type DeLaPestana } 
 /**
  * Barra inferior única de la aplicación (`docs/diseno-sistema.md` § 1.1).
  *
- * 50 px de iconos más el área segura del iPhone. Sin rótulos por defecto: el
- * nombre va en `aria-label`. La pestaña marcada se distingue por el trazo
- * (2,4 frente a 1,7) y por el color, no por una pastilla de fondo. Un
- * destino con `retrato` pinta esa foto (24 px) en vez del icono en cuanto
- * carga, con un aro fino cuando está marcado.
+ * 50 px de iconos más el área segura del iPhone. Con rótulo por defecto: el
+ * icono solo no basta —una persona que no conoce la aplicación no distingue
+ * la brújula de Explorar del trofeo de Ranking—, así que cada pestaña lleva
+ * su nombre de 12 px debajo (`ocultos` queda para muestras y arneses). La
+ * pestaña marcada se distingue por el trazo (2,4 frente a 1,7) y por el
+ * color, no por una pastilla de fondo. Un destino con `retrato` pinta esa
+ * foto (24 px) en vez del icono en cuanto carga, con un aro fino cuando
+ * está marcado.
  *
  * Precarga (§ 5.4): por intención (ratón detenido, foco de teclado y al
  * poner el dedo en una pestaña) y, una vez por sesión y solo en 4G sin
@@ -40,7 +43,7 @@ export type PropsBarraInferior = {
    * soporte o con transparencia reducida. `solido` para muestras y arneses.
    */
   fondo?: 'solido' | 'cristal';
-  /** `visibles` añade un rótulo de 12 px bajo cada icono. */
+  /** Por defecto cada pestaña lleva su nombre bajo el icono; `ocultos` es para muestras. */
   rotulos?: 'ocultos' | 'visibles';
   /** `estatica` sólo para la página de muestra y los arneses. */
   posicion?: 'fija' | 'estatica';
@@ -117,7 +120,7 @@ export function BarraInferior({
   activa,
   etiqueta = 'Secciones',
   fondo = 'cristal',
-  rotulos = 'ocultos',
+  rotulos = 'visibles',
   posicion = 'fija',
   soloMovil = true,
   busqueda,
@@ -202,7 +205,7 @@ function Pestana({
       href={href}
       alPulsar={!es}
       transitionTypes={toque.accion === 'navegar' ? toque.tipos : undefined}
-      aria-label={conRotulo ? undefined : nombre}
+      aria-label={conRotulo && !destino.insignia ? undefined : nombre}
       aria-current={es ? 'page' : undefined}
       data-pestana={destino.clave}
       onClick={(e) => {

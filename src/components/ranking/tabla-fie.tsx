@@ -5,6 +5,7 @@ import * as React from 'react';
 import { OpcionesFiltro } from '@/components/filtros/chips';
 import { BurbujaOlimpica } from '@/components/olimpica/burbuja-olimpica';
 import { FiltroOlimpico } from '@/components/olimpica/filtro-olimpico';
+import { PruebaOlimpica } from '@/components/olimpica/prueba-olimpica';
 import { VerMas } from '@/components/sistema/cabecera-seccion';
 import { ChipFiltro } from '@/components/sistema/chip-filtro';
 import { EstadoVacio } from '@/components/sistema/estado-vacio';
@@ -45,6 +46,11 @@ const PASO = 50;
  *    orden de `ordenarSoloJjoo`. La marca va en cada fila, detrás del nombre
  *    (`BurbujaOlimpica`), con el filtro encendido o no. Se recuerda en la URL
  *    (`?jjoo=1`) para poder compartir el enlace.
+ *
+ * La clasificación olímpica va en su propia sección (`PruebaOlimpica`),
+ * encima del ranking: quién entra por equipos y por individual, quién está
+ * cerca y qué le falta. No va mezclada con la lista FIE porque es otra cosa
+ * — una proyección con sus reglas, no un puesto más.
  *
  * Se pide un grupo a la vez (el más grande son ~1.250 filas): el de arranque
  * viene pintado del servidor y cambiar de arma pide sólo ese grupo, con sus
@@ -318,6 +324,13 @@ export function TablaRankingFie({
         />
       ) : null}
 
+      {olimpica ? (
+        <PruebaOlimpica
+          resultado={olimpica.resultado}
+          excluidos={olimpica.excluidos}
+        />
+      ) : null}
+
       {tabla ? (
         <p role="status" className="sr-only">
           {filtradas.length}{' '}
@@ -349,7 +362,7 @@ export function TablaRankingFie({
                 sinRetrato={porEquipos}
                 enlacePais={porEquipos}
                 tras={anotacionDe(fila)?.estado ? (
-                  <BurbujaOlimpica anotacion={anotacionDe(fila)} fechaRanking={olimpica?.fechaRanking ?? null} compacta className="shrink-0" />
+                  <BurbujaOlimpica anotacion={anotacionDe(fila)} fechaRanking={olimpica?.fechaRanking ?? null} reglas={olimpica?.resultado.reglas} compacta className="shrink-0" />
                 ) : undefined}
               />
             );

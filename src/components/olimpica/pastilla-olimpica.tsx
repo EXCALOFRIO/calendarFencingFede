@@ -2,7 +2,7 @@ import { Pastilla } from '@/components/sistema/pastilla';
 import { colorOlimpico, type AnotacionOlimpica, type ColorOlimpico } from '@/lib/ranking/olimpica';
 import { cn } from '@/lib/utils';
 import { IconoAros } from './icono-aros';
-import { etiquetaAccesible, puntos } from './textos';
+import { etiquetaAccesible, textoPastilla } from './textos';
 
 /**
  * Tintes opacos (`docs/diseno-sistema.md` § 3 y § 9): el color del estado
@@ -15,18 +15,17 @@ export const CLASES_COLOR_OLIMPICO: Record<ColorOlimpico, string> = {
   gris: 'bg-[color-mix(in_oklab,var(--off)_18%,var(--card))] text-muted-foreground',
 };
 
-// La baldosa compacta es tan pequeña que necesita más tinte para que el color se lea.
-const RELLENO_COMPACTO: Record<ColorOlimpico, string> = {
-  verde: 'max-[359px]:bg-[color-mix(in_oklab,var(--ok)_30%,var(--card))]',
-  amarillo: 'max-[359px]:bg-[color-mix(in_oklab,var(--warn)_30%,var(--card))]',
-  gris: 'max-[359px]:bg-[color-mix(in_oklab,var(--off)_30%,var(--card))]',
-};
-
 /**
  * La etiqueta olímpica sin interacción: los aros, en el color del estado (ver
- * `colorOlimpico`; el icono usa `currentColor`, así que lo toma de `text-*`).
- * En amarillo lleva además los puntos que faltan; en gris los aros van
- * apagados, para que no dependa sólo del color. Sin color no se pinta nada.
+ * `colorOlimpico`; el icono usa `currentColor`, así que lo toma de `text-*`),
+ * **y el estado en texto** (`textoPastilla`): «Clasificado», «A 30 pts»,
+ * «Sin decidir». El color nunca es la única señal — era la queja del
+ * seleccionador que motivó esta pieza—; en gris los aros van apagados y el
+ * texto lo dice igual. Sin color no se pinta nada.
+ *
+ * Debajo de 360 px con `compacta` se esconden los aros, no el texto: lo que
+ * informa es la palabra, y «Clasificado» ya no cabe el nombre del ranking al
+ * lado.
  */
 export function PastillaOlimpica({
   anotacion,
@@ -35,7 +34,7 @@ export function PastillaOlimpica({
   className,
 }: {
   anotacion: AnotacionOlimpica | null | undefined;
-  /** Por debajo de 360 px, una baldosa de 16 px con los aros: sin los puntos, pero con el color. */
+  /** Por debajo de 360 px, solo el texto en el color del estado: sin aros. */
   compacta?: boolean;
   /** Dentro de un botón que ya lleva la etiqueta accesible. */
   decorativa?: boolean;
@@ -43,7 +42,7 @@ export function PastillaOlimpica({
 }) {
   const color = colorOlimpico(anotacion);
   if (!anotacion || !color) return null;
-  const faltan = anotacion.estado === 'cerca' ? anotacion.faltan : null;
+  const texto = textoPastilla(anotacion);
   return (
     <Pastilla
       {...(decorativa ? { 'aria-hidden': true } : { role: 'img', 'aria-label': etiquetaAccesible(anotacion) })}
@@ -53,16 +52,13 @@ export function PastillaOlimpica({
         // Los aros son el doble de anchos que de altos: no caben en el cuadrado de icono de la pastilla.
         'font-semibold tabular-nums [&_svg]:h-auto [&_svg]:w-5',
         CLASES_COLOR_OLIMPICO[color],
-        // Por debajo de 360 px la fila de /ranking le deja 16 px junto a los puntos.
-        compacta && 'max-[359px]:h-4 max-[359px]:w-4 max-[359px]:justify-center max-[359px]:rounded-md max-[359px]:px-0 max-[359px]:[&_svg]:w-3.5',
-        compacta && RELLENO_COMPACTO[color],
+        // Por debajo de 360 px la fila de /ranking deja poco sitio: el texto es lo que queda.
+        compacta && 'max-[359px]:[&_svg]:hidden',
         className,
       )}
     >
       <IconoAros apagados={color === 'gris'} />
-      {faltan !== null ? (
-        <span aria-hidden className={compacta ? 'max-[359px]:hidden' : undefined}>{`−${puntos(faltan)}`}</span>
-      ) : null}
+      <span aria-hidden>{texto}</span>
     </Pastilla>
   );
 }

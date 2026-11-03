@@ -60,7 +60,10 @@ describe('objetivos de 44 px', () => {
     // Flechas y lupa como `BotonIcono` md (32 px); «Hoy» como `Boton` sm; los filtros, la barra del sistema.
     expect(vista).toMatch(/<BotonIcono\s+etiqueta=\{vista === 'mes' \? 'Mes anterior' : 'Trimestre anterior'\}\s+tamano="md"/);
     expect(vista).toMatch(/<Boton\s+tamano="sm"\s+aria-label="Hoy: ir al mes actual"/);
-    expect(vista).toMatch(/<BarraFiltros\s+etiqueta="Filtros del calendario"/);
+    // La fila de filtros del sistema: botón «Filtros» que abre la hoja y chips escritos.
+    expect(vista).toMatch(/<FilaChips\s+etiqueta="Filtros del calendario"/);
+    expect(vista).toMatch(/<BotonFiltros\s/);
+    expect(vista).toMatch(/<HojaFiltros\s/);
     expect(vista).not.toContain('overflow-x');
     // Nada de alturas en rem en la cabecera: con la raíz de 18 px crecían en el móvil.
     expect(vista).not.toMatch(/className="h-11\b/);

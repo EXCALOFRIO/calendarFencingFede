@@ -152,16 +152,16 @@ describe('individual (D.2)', () => {
   });
 
   it('un mismo CON dos veces en la lista de su zona solo cuenta una', () => {
-    const europa = r.aorZona.EUROPA;
+    const europa = r.aorZona.EUROPA[0];
     expect(europa).toMatchObject({ noc: 'ISR', via: 'AOR_ZONA', zonaPlaza: 'EUROPA' });
     // El segundo ucraniano (5.º) no puede ser el siguiente europeo.
     expect(r.primerFuera.aorZona.EUROPA?.noc).toBe('GER');
   });
 
   it('una plaza por zona y el siguiente con su diferencia', () => {
-    expect(r.aorZona.ASIA_OCEANIA?.noc).toBe('KAZ');
-    expect(r.aorZona.AMERICA?.noc).toBe('VEN');
-    expect(r.aorZona.AFRICA?.noc).toBe('ALG');
+    expect(r.aorZona.ASIA_OCEANIA[0]?.noc).toBe('KAZ');
+    expect(r.aorZona.AMERICA[0]?.noc).toBe('VEN');
+    expect(r.aorZona.AFRICA[0]?.noc).toBe('ALG');
     // ALG 200 (11.º) frente a TUN 190 (13.º).
     expect(r.primerFuera.aorZona.AFRICA).toMatchObject({ noc: 'TUN', diferencia: 10 });
     expect(r.primerFuera.aorZona.AMERICA).toMatchObject({ noc: 'ARG' });
@@ -185,7 +185,7 @@ describe('individual (D.2)', () => {
     const s = calcularClasificacionOlimpica(
       entrada({ equipos: equipos(EQUIPOS_BASE), individual: individual(sinAfrica) }),
     );
-    expect(s.aorZona.AFRICA).toBeNull();
+    expect(s.aorZona.AFRICA).toEqual([]);
     expect(s.primerFuera.aorZona.AFRICA).toBeNull();
   });
 

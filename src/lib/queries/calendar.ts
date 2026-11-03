@@ -34,7 +34,7 @@ import { PATRONES_CAMPO_RETIRADO_SQL, etiquetaDeCampo } from '@/lib/ai/campos';
 import type { CategoryCode, SeasonCategoryRow } from '../categories';
 import { clavePrueba } from './clave-prueba';
 import { atribuirEnlacesDirecto } from './enlaces-directo-vista';
-import type { EnlaceDirecto } from '@/lib/calendario/enlaces-directo';
+import { esUrlInscritosFie, type EnlaceDirecto } from '@/lib/calendario/enlaces-directo';
 import {
   type ComputedDeadline,
   type DeadlineRuleRow,
@@ -129,6 +129,19 @@ export type CompetitionView = {
   datosExtraidos: DatoExtraidoView[];
   /** Dónde seguir esta prueba en directo y ver luego sus resultados. */
   enlaceDirecto?: EnlaceDirecto | null;
+  /**
+   * La lista de inscritos de la FIE, con TODOS los países: la de esta prueba o
+   * la de su pareja absorbida. La lista guardada sólo trae los españoles
+   * (`inscritos-fie.ts` lee `PAIS_PROPIO`), así que la completa está siempre a
+   * un clic de la ficha. Solo en el detalle (`conPlazos`).
+   */
+  inscritosFieUrl?: string | null;
+  /**
+   * Todos los enlaces de directo/resultados de esta prueba —Engarde, Fencing
+   * Time Live, Fencing Worldwide, la propia FIE—, no sólo el mejor. Con las
+   * fuentes del torneo forman el «hub» de la ficha. Solo en el detalle.
+   */
+  enlacesDirectos?: EnlaceDirecto[];
 };
 
 /**
@@ -180,6 +193,11 @@ export type EventView = {
   liveLinks: { id: string; platform: string; kind: string; url: string; label: string | null }[];
   /** El enlace de directo del torneo entero (p. ej. la página del torneo en Engarde). */
   enlaceDirecto?: EnlaceDirecto | null;
+  /**
+   * Todos los enlaces de directo del torneo, no sólo el mejor (Engarde y
+   * Fencing Worldwide pueden convivir). Solo en el detalle (`conPlazos`).
+   */
+  enlacesDirectos?: EnlaceDirecto[];
   /**
    * Los registros de la FIE que son ESTE MISMO torneo y se han colapsado en
    * esta tarjeta. Vacío en la inmensa mayoría de eventos.
@@ -658,6 +676,19 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
   }
   const conEnlace = (enlace: EnlaceDirecto | undefined) => (enlace ? { enlaceDirecto: enlace } : {});
   const clavePorPrueba = new Map(competitionRows.map((f) => [f.prueba.id, f.clave] as const));
+  /**
+   * La lista completa de inscritos la publica la FIE en `…/entries` y es la
+   * `sourceUrl` de su registro de prueba —que con frecuencia es el absorbido,
+   * no el que se pinta. Se rescata por clave de prueba para que la tarjeta
+   * española ofrezca también el enlace de su pareja: la que se ve (Skermo o
+   * sólo los españoles) y la completa quedan a un clic la una de la otra.
+   */
+  const inscritosFiePorClave = new Map<string, string>();
+  for (const f of conTarjeta) {
+    if (!f.prueba.sourceUrl || !esUrlInscritosFie(f.prueba.sourceUrl)) continue;
+    const clave = `${f.tarjetaId}|${f.clave}`;
+    if (!inscritosFiePorClave.has(clave)) inscritosFiePorClave.set(clave, f.prueba.sourceUrl);
+  }
   const directos = atribuirEnlacesDirecto({
     enlaces: liveRows.map((l) => ({ ...l, tarjetaId: tarjetaDe(l.eventId, l.canonico) })),
     pruebas: competitionRows.map((f) => ({
@@ -877,9 +908,27 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
           datosExtraidos: [],
           // Ausente y no `null` cuando no hay: son 250 tarjetas por carga y casi ninguna lo tiene.
           ...conEnlace(directos.porPrueba.get(`${e.id}|${clavePorPrueba.get(c.id)}`)),
+          /*
+            Lo mismo que `deadlines` y `status`: sólo el detalle los pide
+            (`conPlazos`), y en la rejilla serían una URL por prueba viajando
+            250 veces. El enlace de la FIE ya puede ser el `sourceUrl` propio;
+            si la prueba se ve por su fila de Skermo, se toma el de la pareja.
+          */
+          ...(filters.conPlazos
+            ? {
+                inscritosFieUrl: esUrlInscritosFie(c.sourceUrl)
+                  ? c.sourceUrl
+                  : (inscritosFiePorClave.get(`${e.id}|${clavePorPrueba.get(c.id)}`) ?? null),
+                enlacesDirectos:
+                  directos.todosPorPrueba.get(`${e.id}|${clavePorPrueba.get(c.id)}`) ?? [],
+              }
+            : {}),
         };
       }),
       ...conEnlace(directos.porTarjeta.get(e.id)),
+      ...(filters.conPlazos
+        ? { enlacesDirectos: directos.todosPorTarjeta.get(e.id) ?? [] }
+        : {}),
       datosExtraidos: [],
     };
 

@@ -1,5 +1,10 @@
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
+import {
+  esUrlInscritosFie,
+  esUrlSkermo,
+  urlsDePruebaFie,
+} from '@/lib/calendario/enlaces-directo';
 import { clasificarSerie, SERIES_COMPLEMENTARIAS, type SerieComplementaria } from '@/lib/ingest/series-complementarias';
 import { exigirPerfil, filas, type ContextoExplorador } from './contexto';
 import { codificarCursor, decodificarCursor, UUID_RE } from './cursor';
@@ -154,6 +159,13 @@ type FilaPrueba = {
   formato: Formato;
   fecha: string | null;
   fuente: string;
+  /** Temporada y clave de la fuente ('fie' → temporada y competitionId). */
+  temporada: string | null;
+  clave: string;
+  /** La página de la prueba en la fuente (`sport_competition.source_url`). */
+  urlFuente: string | null;
+  /** La página de su prueba vinculada del calendario, si la hay. */
+  urlCalendario: string | null;
   pruebaCalendarioId: string | null;
   importados: number;
   asaltos?: number;
@@ -167,6 +179,29 @@ type FilaLectura = {
   cursor: string | null;
   url: string | null;
 };
+
+/**
+ * Las páginas oficiales de la prueba: su ficha en la fuente y, donde se
+ * publica, su lista de inscritos. La de la FIE —la única con todos los
+ * países— es `fie.org/competition/<temporada>/<prueba>/entries`, que se
+ * guarda además como `source_url` de la prueba del calendario cuando está
+ * vinculada; en Skermo la inscripción está en ese mismo detalle del torneo.
+ */
+function urlsOficiales(f: FilaPrueba): { urlOficial: string | null; urlInscritos: string | null } {
+  if (f.fuente === FUENTE_FIE) {
+    const publicada =
+      urlsDePruebaFie(f.urlFuente) ??
+      (f.temporada && /^\d+$/.test(f.clave)
+        ? urlsDePruebaFie(`https://fie.org/competition/${f.temporada}/${f.clave}`)
+        : null);
+    const inscritos = esUrlInscritosFie(f.urlCalendario)
+      ? f.urlCalendario
+      : (publicada?.inscritos ?? null);
+    return { urlOficial: publicada?.ficha ?? null, urlInscritos: inscritos };
+  }
+  const inscritos = esUrlSkermo(f.urlCalendario) ? f.urlCalendario : null;
+  return { urlOficial: f.urlFuente ?? inscritos, urlInscritos: inscritos };
+}
 
 export function aPrueba(
   f: FilaPrueba,
@@ -183,6 +218,7 @@ export function aPrueba(
     fuente: f.fuente,
     pruebaCalendarioId: f.pruebaCalendarioId,
     asaltos: Number(f.asaltos ?? 0),
+    ...urlsOficiales(f),
     resultados: {
       estado: estadoResultados(
         importados,
@@ -212,10 +248,13 @@ async function leerPruebas(
       SELECT c.id AS id, c.edition_id AS "edicionId", c.weapon AS arma,
              c.gender AS genero, c.category AS categoria, c.category_raw AS "categoriaRaw",
              c.format AS formato, c.competition_date AS fecha, c.source AS fuente,
+             c.season AS temporada, c.competition_key AS clave,
+             c.source_url AS "urlFuente", ec.source_url AS "urlCalendario",
              c.event_competition_id AS "pruebaCalendarioId",
              (SELECT count(*) FROM sport_result r WHERE r.competition_id = c.id) AS importados,
              (SELECT count(*) FROM sport_bout b WHERE b.competition_id = c.id) AS asaltos
       FROM sport_competition c
+      LEFT JOIN event_competition ec ON ec.id = c.event_competition_id
       WHERE c.edition_id IN (${ids})
       ORDER BY c.edition_id, c.competition_date NULLS LAST, c.format, c.weapon,
                c.gender, c.category, c.id

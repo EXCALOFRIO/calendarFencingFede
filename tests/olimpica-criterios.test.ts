@@ -93,7 +93,7 @@ describe('recuentos por prueba = plazas oficiales (B.3, D.1, D.2)', () => {
   it('30 verdes individuales: 24 por equipo + 2 por el AOR + 4 por el AOR por zona (los 4 del torneo zonal no se calculan)', () => {
     expect(r.porEquipo.flatMap((p) => p.tiradores)).toHaveLength(24);
     expect(r.aorMundial).toHaveLength(2);
-    expect(Object.values(r.aorZona).filter(Boolean)).toHaveLength(4);
+    expect(Object.values(r.aorZona).filter((l) => l.length > 0)).toHaveLength(4);
     expect(r.plazasTorneoZonal).toBe(PLAZAS_TORNEO_ZONAL);
     expect(contar(a.individual).verde).toBe(PLAZAS_CALCULABLES);
     const caminos = Object.values(a.individual).filter((x) => x.estado === 'clasificado').map((x) => x.camino);
@@ -185,7 +185,7 @@ describe('equipos y sus individuales (D.2, primer párrafo)', () => {
 
   it('ningún tirador de un CON con equipo entra en el AOR', () => {
     const conEquipo = new Set(r.equipos.map((x) => x.noc));
-    for (const t of [...r.aorMundial, ...Object.values(r.aorZona)]) expect(conEquipo.has(t!.noc)).toBe(false);
+    for (const t of [...r.aorMundial, ...Object.values(r.aorZona).flat()]) expect(conEquipo.has(t.noc)).toBe(false);
   });
 
   it('el tirador clasificado por su equipo hereda el puesto y el margen del equipo', () => {
@@ -207,12 +207,12 @@ describe('zonas (D.1 y D.2): una plaza por zona, con la zona de la confederació
       ['CZE', 'A'], ['NED', 'B'], // AOR mundial
       ['ISR', 'C'], ['KAZ', 'D'], ['TUR', 'E'], ['AUS', 'F'], ['MEX', 'G'], ['SEN', 'H'],
     ]));
-    expect(r.aorZona.EUROPA?.noc).toBe('ISR');
-    expect(r.aorZona.ASIA_OCEANIA?.noc).toBe('KAZ');
+    expect(r.aorZona.EUROPA[0]?.noc).toBe('ISR');
+    expect(r.aorZona.ASIA_OCEANIA[0]?.noc).toBe('KAZ');
     expect(r.primerFuera.aorZona.EUROPA?.noc).toBe('TUR');
     expect(r.primerFuera.aorZona.ASIA_OCEANIA?.noc).toBe('AUS');
-    expect(r.aorZona.AMERICA?.noc).toBe('MEX');
-    expect(r.aorZona.AFRICA?.noc).toBe('SEN');
+    expect(r.aorZona.AMERICA[0]?.noc).toBe('MEX');
+    expect(r.aorZona.AFRICA[0]?.noc).toBe('SEN');
   });
 
   it('si los dos del AOR mundial son europeos, la plaza de Europa es para el siguiente CON europeo', () => {
@@ -220,13 +220,13 @@ describe('zonas (D.1 y D.2): una plaza por zona, con la zona de la confederació
       ['CZE', 'A'], ['NED', 'B'], ['CZE', 'A2'], ['BEL', 'C'], ['MEX', 'G'], ['SEN', 'H'], ['AUS', 'F'],
     ]));
     expect(r.aorMundial.map((t) => t.noc)).toEqual(['CZE', 'NED']);
-    expect(r.aorZona.EUROPA?.noc).toBe('BEL');
+    expect(r.aorZona.EUROPA[0]?.noc).toBe('BEL');
   });
 
   it('una zona sin tiradores elegibles deja su plaza sin calcular y sin reserva', () => {
     const e = base([['CZE', 'A'], ['NED', 'B'], ['BEL', 'C'], ['MEX', 'G'], ['AUS', 'F']]);
     const r = calcularClasificacionOlimpica(e);
-    expect(r.aorZona.AFRICA).toBeNull();
+    expect(r.aorZona.AFRICA).toEqual([]);
     expect(Object.values(anotarRankingOlimpico(e).individual).filter((x) => x.zona === 'AFRICA' && x.estado)).toEqual([]);
   });
 

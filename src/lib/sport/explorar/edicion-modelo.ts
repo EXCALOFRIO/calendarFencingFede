@@ -215,6 +215,18 @@ export type PruebaDeEdicion = {
   pruebaCalendarioId: string | null;
   resultados: { estado: EstadoResultados; importados: number };
   enlaces: EnlaceDto[];
+  /**
+   * La página oficial de la prueba en su fuente: la ficha de la FIE, la
+   * prueba en Skermo o en Engarde (`sport_competition.source_url`). Null si
+   * la fuente no publica una.
+   */
+  urlOficial?: string | null;
+  /**
+   * La lista de inscritos publicada por la fuente: la de la FIE —todos los
+   * países, `…/entries`— o el detalle de la inscripción en Skermo cuando la
+   * prueba del calendario está vinculada. Null si no se publica o no se conoce.
+   */
+  urlInscritos?: string | null;
   /** Asaltos importados (poules y directas) de la prueba; sin el dato se toma 0. */
   asaltos?: number;
   /**

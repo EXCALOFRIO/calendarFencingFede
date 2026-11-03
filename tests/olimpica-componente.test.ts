@@ -50,7 +50,9 @@ describe('PruebaOlimpica', () => {
   const resultado = calcularClasificacionOlimpica(entrada());
   const out = html(React.createElement(PruebaOlimpica, { resultado }));
 
-  it('pinta la prueba con pastilla provisional y la fecha del ranking', () => {
+  it('pinta la sección con su título, la pastilla provisional y la fecha del ranking', () => {
+    expect(out).toContain('Clasificación olímpica');
+    expect(out).toContain('LA 2028');
     expect(out).toContain('Espada masculina');
     expect(out).toContain('data-provisional');
     expect(out).toContain('Provisional');
@@ -58,8 +60,9 @@ describe('PruebaOlimpica', () => {
     expect(out).toMatch(/28 sept?( 2026)?</);
   });
 
-  it('enseña los 8 equipos con su camino y resalta España', () => {
+  it('enseña los 8 equipos con su camino, en su sección aparte, y resalta España', () => {
     expect((out.match(/data-propio=""/g) ?? []).length).toBeGreaterThanOrEqual(1);
+    expect(out).toContain('Por equipos');
     expect(out).toContain('4 primeros');
     expect(out).toContain('Europa');
     expect(out).toContain('Asia-Oceanía');
@@ -75,15 +78,16 @@ describe('PruebaOlimpica', () => {
     expect(out).toContain('1.º fuera');
     const fuera = resultado.primerFuera.equipos;
     expect(fuera).not.toBeNull();
-    expect(out).toContain(`−${fuera?.diferencia}`);
+    expect(out).toContain(`a ${fuera?.diferencia}`);
   });
 
   it('plazas individuales: top 2, zonas, siguiente por zona y los zonales', () => {
+    expect(out).toContain('Plazas individuales');
     expect(out).toContain('2 primeros');
     expect(out).not.toContain('Mundial');
     expect(out).toContain('REIZLIN Roman');
     expect(out).toContain('MEHDI Salim');
-    expect(out).toContain('Sig.');
+    expect(out).toContain('Siguiente:');
     expect(out).toContain('BEN Ali');
     expect(out).toContain('data-zonales');
   });

@@ -192,9 +192,9 @@ export function FichaVinculada({
           <div className="flex flex-wrap gap-2 pt-5">
             <Button asChild>
               <Link href="/">
-                {resumen.armas.length > 0
+                {resumen.armas.length === 1
                   ? `Ver mi calendario de ${rotuloArma(resumen.armas[0]).toLowerCase()}`
-                  : 'Ver el calendario'}
+                  : 'Ver mi calendario'}
               </Link>
             </Button>
             <Button variant="outline" asChild>

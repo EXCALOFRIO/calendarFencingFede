@@ -99,7 +99,7 @@ describe('IconoAros', () => {
 });
 
 describe('PastillaOlimpica: verde, amarillo y gris, sin check', () => {
-  it('verde = clasificado; amarillo = por asegurar, con lo que falta; gris = RUS/BLR con opción', () => {
+  it('verde = clasificado; amarillo = cerca de clasificar, con lo que falta; gris = RUS/BLR con opción', () => {
     const v = html(h(PastillaOlimpica, { anotacion: CLASIFICADO }));
     expect(v).toContain('data-color-olimpico="verde"');
     expect(v).toContain('text-ok');
@@ -116,7 +116,7 @@ describe('PastillaOlimpica: verde, amarillo y gris, sin check', () => {
     const a = html(h(PastillaOlimpica, { anotacion: CERCA }));
     expect(a).toContain('data-color-olimpico="amarillo"');
     expect(a).toContain('text-warn');
-    expect(a).toContain('−30');
+    expect(a).toContain('A 30 pts');
     expect(a).toContain('le faltan 30 puntos');
 
     // Los aros toman el color del estado (currentColor dentro de text-ok/text-warn).
@@ -136,10 +136,10 @@ describe('PastillaOlimpica: verde, amarillo y gris, sin check', () => {
     expect(html(h(PastillaOlimpica, { anotacion: anot({ estado: 'pendiente', motivo: 'NEUTRAL' }) }))).toBe('');
   });
 
-  it('compacta: por debajo de 360 px una baldosa de 16 px, sin los puntos pero con el color', () => {
+  it('compacta: por debajo de 360 px se esconden los aros, no el texto del estado', () => {
     const c = html(h(PastillaOlimpica, { anotacion: CERCA, compacta: true }));
-    expect(c).toContain('max-[359px]:hidden');
-    expect(c).toContain('max-[359px]:w-4');
+    expect(c).toContain('max-[359px]:[&amp;_svg]:hidden');
+    expect(c).toContain('A 30 pts');
     expect(c).toContain('bg-warn-tinte');
     expect(c).not.toContain('bg-transparent');
     expect(html(h(PastillaOlimpica, { anotacion: CERCA }))).not.toContain('max-[359px]');
@@ -163,7 +163,7 @@ describe('ContenidoBurbujaOlimpica', () => {
 
   it('amarillo: puntos y puestos que le faltan y a quién pasar; sin margen', () => {
     const o = html(h(ContenidoBurbujaOlimpica, { anotacion: CERCA, fechaRanking: FECHA }));
-    expect(o).toContain('Por asegurar');
+    expect(o).toContain('Cerca de clasificar');
     expect(o).toContain('Mejor de Europa');
     expect(o).toContain('12.º');
     expect(o).toContain('ranking individual');
@@ -184,7 +184,7 @@ describe('ContenidoBurbujaOlimpica', () => {
 
   it('gris: motivo y qué tendría si contara, con el puesto del ranking de ese camino', () => {
     const o = html(h(ContenidoBurbujaOlimpica, { anotacion: PENDIENTE, fechaRanking: null }));
-    expect(o).toContain('Pendiente');
+    expect(o).toContain('Sin decidir');
     expect(o).toContain('Participación sin decidir');
     expect(o).toContain('Si contara');
     expect(o).toContain('4 primeros equipos');
@@ -206,7 +206,7 @@ describe('BurbujaOlimpica, InsigniaOlimpica, MarcaOlimpicaPersona y FiltroOlimpi
   it('la burbuja es un botón con la pastilla decorativa y la etiqueta accesible', () => {
     const o = html(h(BurbujaOlimpica, { anotacion: CERCA, fechaRanking: FECHA }));
     expect(o).toContain('<button');
-    expect(o).toContain('aria-label="JJOO LA 2028: por asegurar, Mejor de Europa, le faltan 30 puntos"');
+    expect(o).toContain('aria-label="JJOO LA 2028: cerca de clasificar, Mejor de Europa, le faltan 30 puntos"');
     // 44 px de alto de verdad (lo que mide un dedo y la sonda), sin agrandar la fila.
     expect(o).toContain('h-[44px]');
     expect(o).toContain('-my-3');
@@ -226,7 +226,7 @@ describe('BurbujaOlimpica, InsigniaOlimpica, MarcaOlimpicaPersona y FiltroOlimpi
       { anotacion: PENDIENTE },
     ];
     const o = html(h(MarcaOlimpicaPersona, { marcas }));
-    expect(o).toContain('−30');
+    expect(o).toContain('A 30 pts');
     expect(html(h(MarcaOlimpicaPersona, { marcas: [...marcas, { anotacion: CLASIFICADO }] }))).toContain('data-color-olimpico="verde"');
     expect(html(h(MarcaOlimpicaPersona, { marcas: [] }))).toBe('');
   });

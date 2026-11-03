@@ -1,9 +1,11 @@
-import type {
-  AnotacionOlimpica,
-  CaminoOlimpico,
-  EstadoOlimpico,
-  MotivoPendiente,
-  ZonaFie,
+import {
+  REGLAS_LA2028,
+  type AnotacionOlimpica,
+  type CaminoOlimpico,
+  type EstadoOlimpico,
+  type MotivoPendiente,
+  type ReglasOlimpicas,
+  type ZonaFie,
 } from '@/lib/ranking/olimpica';
 import { fechaCorta as fechaCortaComun } from '@/lib/fechas';
 
@@ -14,10 +16,15 @@ export const ZONA_CORTA: Record<ZonaFie, string> = {
   AFRICA: 'África',
 };
 
+/**
+ * El estado dicho, no solo pintado. «Cerca» es la palabra que usa todo el
+ * mundo («¿está cerca de clasificar?»), mejor que «por asegurar»: un seleccionador
+ * tiene que entenderlo sin abrir la burbuja.
+ */
 export const ESTADO_TEXTO: Record<EstadoOlimpico, string> = {
   clasificado: 'Clasificado',
-  cerca: 'Por asegurar',
-  pendiente: 'Pendiente',
+  cerca: 'Cerca de clasificar',
+  pendiente: 'Sin decidir',
 };
 
 /** En los caminos de equipo el puesto y los puntos son del ranking por equipos. */
@@ -32,11 +39,66 @@ export const MOTIVO_TEXTO: Record<MotivoPendiente, string> = {
   NEUTRAL: 'Neutral',
 };
 
-/** Rótulo corto del camino. «Internacional», nunca «Mundial». */
-export function textoCamino(camino: CaminoOlimpico, zona: ZonaFie | null): string {
+/**
+ * Lo que se lee en la etiqueta junto al nombre, al lado de los aros:
+ *
+ *   clasificado              «Clasificado»; si es por su equipo, «Clasificado · equipo».
+ *   cerca                    «A 30 pts» —lo que falta—, «Equipo a 30 pts» cuando la
+ *                            distancia es de su equipo, «Anfitrión» si depende de EE. UU.
+ *   pendiente                «Sin decidir».
+ *
+ * El color sigue acompañando (verde/amarillo/gris), pero ya nadie tiene que
+ * deducirlo de un aro amarillo suelto.
+ */
+export function textoPastilla(a: AnotacionOlimpica): string {
+  switch (a.estado) {
+    case 'clasificado':
+      return a.camino === 'POR_EQUIPO' ? 'Clasificado · equipo' : 'Clasificado';
+    case 'cerca': {
+      if (a.camino === 'ANFITRION') return 'Anfitrión';
+      if (a.faltan === null) return 'Cerca';
+      return a.camino === 'POR_EQUIPO'
+        ? `Equipo a ${puntos(a.faltan)} pts`
+        : `A ${puntos(a.faltan)} pts`;
+    }
+    case 'pendiente':
+      return 'Sin decidir';
+    default:
+      return '';
+  }
+}
+
+/** El formato de la plaza dicho —individual o por equipos— para la burbuja. */
+export function textoFormato(camino: CaminoOlimpico | null): string | null {
   switch (camino) {
     case 'EQUIPO_TOP':
-      return '4 primeros equipos';
+    case 'EQUIPO_ZONA':
+    case 'EQUIPO_SIGUIENTE':
+    case 'POR_EQUIPO':
+      return 'Por equipos';
+    case 'AOR':
+    case 'AOR_ZONA':
+    case 'ANFITRION':
+    case 'TORNEO_ZONAL':
+      return 'Individual';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Rótulo corto del camino. «Internacional», nunca «Mundial». Las cifras
+ * salen de las reglas aplicadas para no escribir «4» o «2» a mano; sin
+ * `reglas`, las de LA 2028.
+ */
+export function textoCamino(
+  camino: CaminoOlimpico,
+  zona: ZonaFie | null,
+  reglas: Pick<ReglasOlimpicas, 'equiposTop' | 'plazasAorMundial'> = REGLAS_LA2028,
+): string {
+  switch (camino) {
+    case 'EQUIPO_TOP':
+      return `${reglas.equiposTop} primeros equipos`;
     case 'EQUIPO_ZONA':
       return zona ? `Equipo de ${ZONA_CORTA[zona]}` : 'Equipo por zona';
     case 'EQUIPO_SIGUIENTE':
@@ -44,7 +106,7 @@ export function textoCamino(camino: CaminoOlimpico, zona: ZonaFie | null): strin
     case 'POR_EQUIPO':
       return 'Con su equipo';
     case 'AOR':
-      return '2 primeros individuales';
+      return `${reglas.plazasAorMundial} primeros individuales`;
     case 'AOR_ZONA':
       return zona ? `Mejor de ${ZONA_CORTA[zona]}` : 'Mejor de su zona';
     case 'ANFITRION':

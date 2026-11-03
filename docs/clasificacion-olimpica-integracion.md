@@ -1,8 +1,17 @@
-# Integración: marca olímpica en el ranking internacional (FIE)
+# Integración: clasificación olímpica en el ranking internacional (FIE)
 
-La clasificación olímpica de LA 2028 **no es un ranking aparte**: es una marca
-en cada fila del ranking internacional y un filtro «Solo JJOO». Reglas en
-`docs/clasificacion-olimpica-la2028.md`.
+La clasificación olímpica de LA 2028 se enseña en dos sitios, siempre aparte
+del puesto FIE en sí:
+
+- **una sección propia** (`PruebaOlimpica`) encima del ranking de cada prueba
+  olímpica: quién entra por equipos y por plazas individuales —las dos vías
+  dichas—, quién está cerca («Siguiente: …», «1.º fuera») y qué le falta en
+  puntos, con el estado del CON seguido en la cabecera;
+- **una marca en cada fila** con el estado EN TEXTO junto a los aros
+  («Clasificado», «Clasificado · equipo», «A 30 pts», «Sin decidir»), la
+  burbuja con la explicación al tocarla y el filtro «Solo JJOO».
+
+Reglas en `docs/clasificacion-olimpica-la2028.md`.
 
 Terminología: el ranking de la FIE es «Internacional», nunca «Mundial».
 
@@ -11,14 +20,13 @@ Terminología: el ranking de la FIE es «Internacional», nunca «Mundial».
 | Pieza | Fichero | Tipo |
 |---|---|---|
 | `getAnotacionesOlimpicas(arma, genero)` | `src/lib/queries/olimpica.ts` | servidor, `cache` |
-| `anotarRankingOlimpico(entrada, { cercanos?, faltaMaxima? })` | `src/lib/ranking/olimpica/anotar.ts` | puro |
+| `anotarRankingOlimpico(entrada, { cercanos?, faltaMaxima?, reglas?, nocsSeguidos? })` | `src/lib/ranking/olimpica/anotar.ts` | puro |
 | `ordenarSoloJjoo(filas, datos)` | `src/lib/ranking/olimpica/anotar.ts` | puro |
+| `PruebaOlimpica` | `src/components/olimpica/prueba-olimpica.tsx` | sin estado |
+| `ClasificacionOlimpica` | `src/components/olimpica/clasificacion-olimpica.tsx` | cliente |
 | `BurbujaOlimpica` | `src/components/olimpica/burbuja-olimpica.tsx` | cliente |
 | `InsigniaOlimpica` | `src/components/olimpica/insignia-olimpica.tsx` | sin estado |
 | `FiltroOlimpico` | `src/components/olimpica/filtro-olimpico.tsx` | cliente |
-
-`PruebaOlimpica` y `ClasificacionOlimpica` (vista por prueba) **quedan sin usar**
-en esta integración; se conservan por si la burbuja necesita un «ver todo».
 
 ### Datos
 
@@ -31,6 +39,8 @@ type AnotacionesPrueba = {
   fechaRanking: string | null;          // ISO, lectura más vieja de los dos grupos
   equipos: Record<string, AnotacionOlimpica>;    // clave: FilaFie.pais («ESP»)
   individual: Record<string, AnotacionOlimpica>; // clave: String(FilaFie.fieId)
+  resultado: ResultadoPrueba;           // quién entraría hoy + reglas aplicadas
+  excluidos: { noc: string; motivo }[]; // sale en el ranking pero no cuenta
 };
 ```
 

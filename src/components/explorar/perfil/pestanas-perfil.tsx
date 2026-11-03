@@ -40,7 +40,18 @@ export function PestanasPerfil({
   // La pulsada vale mientras la URL no cambie; al llegar la sección nueva manda otra vez la URL.
   const [pulsada, setPulsada] = useState<{ desde: SeccionPerfil; a: SeccionPerfil } | null>(null);
   const marcada = pulsada && pulsada.desde === actual ? pulsada.a : actual;
-  const lista = SECCIONES_PERFIL.filter((s) => secciones.includes(s.clave) || s.clave === actual);
+  /*
+    El orden lo decide la pantalla (`secciones`), no el catálogo: va de lo que
+    cualquiera entiende a lo del experto —Resultados → Ranking → Rivales →
+    Estadísticas—. Si la sección abierta ya no está en la lista (un ranking
+    que desapareció), se añade al final para que la pestaña activa exista.
+  */
+  const porClave = new Map(SECCIONES_PERFIL.map((s) => [s.clave, s]));
+  const lista = secciones
+    .map((clave) => porClave.get(clave))
+    .filter((s): s is NonNullable<typeof s> => s !== undefined);
+  const suelta = SECCIONES_PERFIL.find((s) => s.clave === actual && !secciones.includes(s.clave));
+  if (suelta) lista.push(suelta);
   const caja = useRef<HTMLDivElement>(null);
   const anterior = useRef(actual);
 

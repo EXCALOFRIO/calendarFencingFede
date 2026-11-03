@@ -8,6 +8,7 @@ import {
   mejorMarcaOlimpica,
   type AnotacionOlimpica,
   type Referencia,
+  type ReglasOlimpicas,
 } from '@/lib/ranking/olimpica';
 import { rotuloPrueba } from '@/lib/sport/rotulos';
 import { cn } from '@/lib/utils';
@@ -21,6 +22,7 @@ import {
   plural,
   puntos,
   textoCamino,
+  textoFormato,
 } from './textos';
 
 function Dato({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
@@ -59,9 +61,12 @@ const Suave = ({ children }: { children: React.ReactNode }) => (
 export function ContenidoBurbujaOlimpica({
   anotacion,
   fechaRanking,
+  reglas,
 }: {
   anotacion: AnotacionOlimpica;
   fechaRanking?: string | null;
+  /** Las reglas del cálculo, para que los «N primeros» del texto coincidan. */
+  reglas?: ReglasOlimpicas;
 }) {
   const { estado } = anotacion;
   const color = colorOlimpico(anotacion);
@@ -69,6 +74,7 @@ export function ContenidoBurbujaOlimpica({
   const isoFecha = fechaRanking ?? anotacion.fechaRanking ?? null;
   const fecha = fechaCorta(isoFecha);
   const camino = estado === 'pendiente' ? (anotacion.sinVeto?.camino ?? null) : anotacion.camino;
+  const formato = textoFormato(camino);
   const puesto = anotacion.puesto ?? null;
   const prueba = anotacion.prueba
     ? rotuloPrueba({ arma: anotacion.prueba.arma, genero: anotacion.prueba.genero }, { variante: 'corto' })
@@ -89,13 +95,14 @@ export function ContenidoBurbujaOlimpica({
         {estado === 'pendiente' && anotacion.sinVeto ? (
           <Dato rotulo="Si contara">
             <span className="min-w-0 truncate">
-              {textoCamino(anotacion.sinVeto.camino, anotacion.sinVeto.zona)}
+              {textoCamino(anotacion.sinVeto.camino, anotacion.sinVeto.zona, reglas)}
             </span>
             <Suave>{ESTADO_TEXTO[anotacion.sinVeto.estado].toLowerCase()}</Suave>
           </Dato>
         ) : null}
+        {formato ? <Dato rotulo="Formato">{formato}</Dato> : null}
         {estado !== 'pendiente' && anotacion.camino ? (
-          <Dato rotulo="Vía">{textoCamino(anotacion.camino, anotacion.zona)}</Dato>
+          <Dato rotulo="Vía">{textoCamino(anotacion.camino, anotacion.zona, reglas)}</Dato>
         ) : null}
         {puesto !== null ? (
           <Dato rotulo="Puesto">
@@ -153,12 +160,15 @@ export function ContenidoBurbujaOlimpica({
 export function BurbujaOlimpica({
   anotacion,
   fechaRanking,
+  reglas,
   compacta = false,
   className,
 }: {
   anotacion: AnotacionOlimpica | null | undefined;
   /** Si no se pasa, la de la propia anotación (perfil, Buscar). */
   fechaRanking?: string | null;
+  /** Las reglas del cálculo; sin ellas los textos usan las de LA 2028. */
+  reglas?: ReglasOlimpicas;
   /** Ver `PastillaOlimpica`. */
   compacta?: boolean;
   className?: string;
@@ -185,7 +195,7 @@ export function BurbujaOlimpica({
         />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[min(19rem,calc(100vw-2rem))] p-3">
-        <ContenidoBurbujaOlimpica anotacion={anotacion} fechaRanking={fechaRanking} />
+        <ContenidoBurbujaOlimpica anotacion={anotacion} fechaRanking={fechaRanking} reglas={reglas} />
       </PopoverContent>
     </Popover>
   );

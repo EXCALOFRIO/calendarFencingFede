@@ -1,4 +1,8 @@
-import { NOCS_NO_ELEGIBLES_POR_DEFECTO, REGLAS_LA2028 } from './reglas';
+import {
+  NOCS_NO_ELEGIBLES_POR_DEFECTO,
+  resolverReglas,
+  type ReglasOlimpicas,
+} from './reglas';
 import { ZONAS_FIE, zonaDe, type ZonaFie } from './zonas';
 
 /**
@@ -48,6 +52,12 @@ export type OpcionesClasificacion = {
   nocsNoElegibles?: readonly string[];
   /** CON cuyo estado se quiere con detalle (por defecto, España). */
   nocsSeguidos?: readonly string[];
+  /**
+   * Cuotas y umbrales a aplicar sobre `REGLAS_LA2028`. Todo lo que no se
+   * pase queda con el valor oficial: para otra versión del sistema o un
+   * escenario «¿y si…?» no hay que tocar el motor.
+   */
+  reglas?: Partial<ReglasOlimpicas>;
 };
 
 export type EquipoRankeado = {
@@ -137,7 +147,8 @@ export type ResultadoPrueba = {
   /** Los tres mejor clasificados de cada CON con equipo (los elige el CON). */
   porEquipo: { noc: string; tiradores: TiradorRankeado[] }[];
   aorMundial: TiradorClasificado[];
-  aorZona: Record<ZonaFie, TiradorClasificado | null>;
+  /** Por zona, hasta `reglas.plazasAorPorZona` (vacio = zona sin plaza hoy). */
+  aorZona: Record<ZonaFie, TiradorClasificado[]>;
   primerFuera: {
     /** El 5.º, que se queda a las puertas de los cuatro primeros. */
     equiposTop: PrimerFuera | null;
@@ -154,6 +165,15 @@ export type ResultadoPrueba = {
   plazasPorNoc: Record<string, number>;
   plazasTorneoZonal: number;
   seguidos: Record<string, EstadoNoc>;
+  /** Las reglas con las que se ha calculado (LA 2028 + overrides). */
+  reglas: ReglasOlimpicas;
+  /**
+   * CON que salen en el ranking pero no cuentan (RUS, BLR, neutrales hoy):
+   * la sección los nombra para que nadie pregunte dónde están. Se calcula
+   * sobre la lista que llega — si la FIE los readmite, aquí no hay nada fijo
+   * que cambiar.
+   */
+  excluidos: string[];
 };
 
 const redondear = (n: number) => Math.round(n * 1000) / 1000;
@@ -234,7 +254,7 @@ export function calcularDetalleOlimpico(
   entrada: EntradaPrueba,
   opciones: OpcionesClasificacion = {},
 ): DetalleOlimpico {
-  const R = REGLAS_LA2028;
+  const R = resolverReglas(opciones.reglas);
   const noElegibles = new Set(
     (opciones.nocsNoElegibles ?? NOCS_NO_ELEGIBLES_POR_DEFECTO).map((n) => n.toUpperCase()),
   );
@@ -242,8 +262,16 @@ export function calcularDetalleOlimpico(
 
   // ------------------------------------------------------------ Equipos ---
   const vistosEquipo = new Set<string>();
+  // CON presentes en el ranking que no cuentan (para la nota «Sin contar»).
+  const excluidos = new Set<string>();
+  const anotarExcluido = (noc: string | null, posicion: number | null) => {
+    const n = normalizarNoc(noc);
+    if (n && posicion !== null && noElegibles.has(n)) excluidos.add(n);
+  };
+
   const equiposValidos: Omit<EquipoRankeado, 'orden'>[] = [];
   for (const f of entrada.equipos) {
+    anotarExcluido(f.noc, f.posicion);
     const noc = normalizarNoc(f.noc);
     if (!noc || f.posicion === null || noElegibles.has(noc)) continue;
     equiposValidos.push({ noc, zona: zonaDe(noc), posicion: f.posicion, puntos: f.puntos ?? 0 });
@@ -356,6 +384,7 @@ export function calcularDetalleOlimpico(
   const nocsConEquipo = new Set(clasificados.keys());
   const individualesValidos: TiradorRankeado[] = [];
   for (const f of entrada.individual) {
+    anotarExcluido(f.noc, f.posicion);
     const noc = normalizarNoc(f.noc);
     if (!noc || f.posicion === null || noElegibles.has(noc)) continue;
     individualesValidos.push({
@@ -388,16 +417,21 @@ export function calcularDetalleOlimpico(
     .map((t) => ({ ...t, via: 'AOR', zonaPlaza: null }));
   const nocsAorMundial = new Set(aorMundial.map((t) => t.noc));
 
-  const aorZona = porZona<TiradorClasificado | null>(() => null);
+  const aorZona = porZona<TiradorClasificado[]>(() => []);
   const fueraAorZona = porZona<PrimerFuera | null>(() => null);
   for (const zona of ZONAS_FIE) {
     const deLaZona = aor.filter((t) => t.zona === zona && !nocsAorMundial.has(t.noc));
-    const q = deLaZona[0];
-    if (!q) continue;
-    aorZona[zona] = { ...q, via: 'AOR_ZONA', zonaPlaza: zona };
-    const siguiente = deLaZona[1];
-    if (siguiente) {
-      fueraAorZona[zona] = primerFuera({ ...referenciaTirador(siguiente), zona }, referenciaTirador(q));
+    if (deLaZona.length === 0) continue;
+    aorZona[zona] = deLaZona
+      .slice(0, R.plazasAorPorZona)
+      .map((t) => ({ ...t, via: 'AOR_ZONA' as const, zonaPlaza: zona }));
+    const ultima = aorZona[zona].at(-1);
+    const siguiente = deLaZona[R.plazasAorPorZona];
+    if (ultima && siguiente) {
+      fueraAorZona[zona] = primerFuera(
+        { ...referenciaTirador(siguiente), zona },
+        referenciaTirador(ultima),
+      );
     }
   }
 
@@ -411,10 +445,7 @@ export function calcularDetalleOlimpico(
   // ------------------------------------------------------------ Totales ---
   const plazasPorNoc: Record<string, number> = {};
   for (const e of equiposDentro) plazasPorNoc[e.noc] = R.tiradoresPorEquipo;
-  const individualesDentro = [
-    ...aorMundial,
-    ...ZONAS_FIE.map((z) => aorZona[z]).filter((t): t is TiradorClasificado => t !== null),
-  ];
+  const individualesDentro = [...aorMundial, ...ZONAS_FIE.flatMap((z) => aorZona[z])];
   for (const t of individualesDentro) plazasPorNoc[t.noc] = (plazasPorNoc[t.noc] ?? 0) + 1;
 
   const anfitrion = {
@@ -432,7 +463,7 @@ export function calcularDetalleOlimpico(
 
     let distanciaIndividual: Distancia | null = null;
     if (!equipo && !individual && mejorAor) {
-      const zonaQ = mejorAor.zona ? aorZona[mejorAor.zona] : null;
+      const zonaQ = mejorAor.zona ? (aorZona[mejorAor.zona].at(-1) ?? null) : null;
       distanciaIndividual = masCorta([
         ultimoAorMundial
           ? {
@@ -484,6 +515,8 @@ export function calcularDetalleOlimpico(
     plazasPorNoc,
     plazasTorneoZonal: ZONAS_FIE.length * R.plazasTorneoZonalPorZona,
     seguidos: estados,
+    reglas: R,
+    excluidos: [...excluidos].sort(),
   };
   return { resultado, equipos, individual: individualOrdenado, aor };
 }

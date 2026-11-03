@@ -62,8 +62,8 @@ describe('navegación por rol', () => {
   const hrefs = (role: 'admin' | 'coach' | 'athlete') =>
     seccionesDeTu({ role, fichaPropia: null, convocatorias: 0 }).flatMap((s) => s.filas.map((f) => f.href));
 
-  it('la barra es la misma para todos: Calendario, Explorar, Ranking y Tú', () => {
-    expect(DESTINOS_APP.map((d) => d.href)).toEqual(['/', '/explorar', '/ranking', '/explorar/yo']);
+  it('la barra es la misma para todos: Calendario, Ranking, Explorar y Tú', () => {
+    expect(DESTINOS_APP.map((d) => d.href)).toEqual(['/', '/ranking', '/explorar', '/explorar/yo']);
   });
 
   it('lo que depende del papel va en Tú: ni la administración ni Mi estado a quien no le toca', () => {

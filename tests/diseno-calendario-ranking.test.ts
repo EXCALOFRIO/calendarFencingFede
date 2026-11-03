@@ -212,7 +212,7 @@ const temporadas = () => React.createElement(TiraTemporadas, {
 
 describe('calendario, navegación y ranking: contrato de presentación', () => {
   it('una sola barra con los mismos cuatro destinos para todos, sin submenús', () => {
-    expect(DESTINOS_APP.map((d) => d.href)).toEqual(['/', '/explorar', '/ranking', '/explorar/yo']);
+    expect(DESTINOS_APP.map((d) => d.href)).toEqual(['/', '/ranking', '/explorar', '/explorar/yo']);
     for (const Nav of [NavEscritorio, NavMovil]) {
       const marcado = html(React.createElement(Nav, { role: 'admin' }));
       expect(marcado).toContain('aria-current="page"');

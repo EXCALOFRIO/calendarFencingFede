@@ -193,7 +193,7 @@ describe('la vista del calendario', () => {
     expect(noviembre).toMatch(/<h2[^>]*>Noviembre/);
   });
 
-  it('los filtros son un botón «Filtros» con su cuenta y chips que se quitan; sin carriles horizontales', () => {
+  it('los filtros van escritos en la fila: ámbito, armas y géneros se marcan de un toque; sin carriles horizontales', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-03T12:00:00Z'));
     const marcado = vista({
@@ -202,11 +202,35 @@ describe('la vista del calendario', () => {
     });
     expect(marcado).toContain('aria-label="Filtros del calendario"');
     expect(marcado).toMatch(/data-tipo="menu"[^>]*>[\s\S]*?Filtros/);
-    expect(marcado).toContain('aria-label="Quitar Internacional"');
-    expect(marcado).toContain('aria-label="Quitar Florete"');
+    // Cada opción se ve con su nombre; la puesta va marcada (aria-pressed).
+    expect(marcado).toMatch(/aria-pressed="true"><span>Internacional<\/span>/);
+    expect(marcado).toMatch(/aria-pressed="false"><span>Nacional<\/span>/);
+    expect(marcado).toMatch(/aria-pressed="true"><span>Florete<\/span>/);
+    expect(marcado).toMatch(/aria-pressed="false"><span>Espada<\/span>/);
+    expect(marcado).toMatch(/aria-pressed="false"><span>Masculino<\/span>/);
     expect(marcado).not.toMatch(/overflow-x-(auto|scroll)|snap-x/);
-    // Sin filtros puestos no hay chips que quitar.
+    // Las categorías puestas son chips que se quitan; sin ellas no hay chips «quitar».
     const limpio = vista({ hoy: '2026-10-03', inicial: { mes: '2026-10', vista: 'trimestre' } });
     expect(limpio).not.toContain('aria-label="Quitar ');
+  });
+
+  it('en «Nacional» no sale nada internacional y la leyenda no explica colores que ninguna tarjeta lleva', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-03T12:00:00Z'));
+    const marcado = vista({
+      hoy: '2026-10-03',
+      eventos: [
+        evento(),
+        evento({ id: 'ev2', name: 'Torneo Nacional', source: 'skermo_rfee', scope: 'NACIONAL', circuit: 'NACIONAL', city: 'SABADELL', country: 'ES' }),
+      ],
+      inicial: { mes: '2026-10', vista: 'trimestre', ambito: 'NACIONAL' },
+    });
+    // La Copa del Mundo se queda fuera; el torneo nacional se ve.
+    expect(marcado).not.toContain('Copa del Mundo');
+    expect(marcado).toContain('Torneo Nacional');
+    // La leyenda sólo explica lo que hay: RFEE sí; FIE y EFC, no.
+    expect(marcado).toContain('Nacional (RFEE)');
+    expect(marcado).not.toContain('>FIE<');
+    expect(marcado).not.toContain('>EFC<');
   });
 });

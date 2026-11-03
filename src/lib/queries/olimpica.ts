@@ -244,7 +244,9 @@ export function olvidarAnotacionesOlimpicas() {
 async function anotarPrueba(arma: ArmaOlimpica, genero: GeneroOlimpico): Promise<AnotacionesPrueba | null> {
   const { entradas } = await getEntradasOlimpicas({ arma, genero });
   const entrada = entradas[0];
-  return entrada ? anotarRankingOlimpico(entrada) : null;
+  // `nocsSeguidos` llena `resultado.seguidos`, que es lo que enseña la
+  // sección de clasificación olímpica (el «Dentro/Fuera» de España).
+  return entrada ? anotarRankingOlimpico(entrada, { nocsSeguidos: ['ESP'] }) : null;
 }
 
 /**

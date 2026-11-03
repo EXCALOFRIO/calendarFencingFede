@@ -177,9 +177,9 @@ describe('chips', () => {
 });
 
 describe('barra inferior', () => {
-  it('iconos sin texto, nombre en aria-label y la pestaña de la ruta marcada', () => {
+  it('con `ocultos` el nombre va en aria-label y la pestaña de la ruta marcada', () => {
     ruta('/ranking');
-    const html = pintar(h(BarraInferior, { destinos: DESTINOS }));
+    const html = pintar(h(BarraInferior, { destinos: DESTINOS, rotulos: 'ocultos' }));
     expect(html).toContain('data-slot="sistema-barra-inferior"');
     expect(html).toContain('h-[50px]');
     expect(html).toContain('pb-[env(safe-area-inset-bottom)]');
@@ -199,11 +199,13 @@ describe('barra inferior', () => {
     expect(html).not.toMatch(/class="[^"]*\bcristal\b/);
   });
 
-  it('con rótulos visibles el texto sustituye al aria-label', () => {
+  it('por defecto cada pestaña lleva su nombre y el texto sustituye al aria-label', () => {
     ruta('/');
-    const html = pintar(h(BarraInferior, { destinos: DESTINOS, rotulos: 'visibles', posicion: 'estatica' }));
+    const html = pintar(h(BarraInferior, { destinos: DESTINOS, posicion: 'estatica' }));
     expect(html).toMatch(/>Calendario</);
     expect(html).not.toContain('aria-label="Calendario"');
+    // La insignia sigue diciendo «con novedades» aunque el nombre ya se vea.
+    expect(html).toContain('aria-label="Tú, con novedades"');
     expect(html).not.toContain('fixed');
   });
 });

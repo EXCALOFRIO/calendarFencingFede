@@ -90,8 +90,8 @@ export function MisTiradores({
                       etiqueta: (
                         <span data-lado={fed} className="inline-flex min-w-0 items-center gap-1">
                           <Escudo federacion={lado.federacion} tamano="nota" decorativo />
-                          {/* En el móvil el escudo ya dice cuál es; el nombre queda para el lector de pantalla. */}
-                          <span className="shrink-0 max-sm:sr-only">{lado.etiqueta}</span>
+                          {/* El nombre queda a la vista también en el móvil: el escudo no dice «nacional» ni «internacional» a quien no lo conoce. */}
+                          <span className="shrink-0">{lado.etiqueta}</span>
                           <span className="cifra shrink-0">{puesto !== null ? `${puesto}º` : '—'}</span>
                           {mejor ? (
                             <span className="min-w-0 truncate font-normal">{mejor.etiqueta}</span>

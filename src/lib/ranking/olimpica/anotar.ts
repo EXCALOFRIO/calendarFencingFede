@@ -5,9 +5,11 @@ import {
   type EquipoRankeado,
   type PrimerFuera,
   type Referencia,
+  type ResultadoPrueba,
+  type TiradorClasificado,
   type TiradorRankeado,
 } from './calcular';
-import { PENDIENTES_LA2028, REGLAS_LA2028, type MotivoPendiente } from './reglas';
+import { PENDIENTES_LA2028, type MotivoPendiente, type ReglasOlimpicas } from './reglas';
 import type { ZonaFie } from './zonas';
 
 /**
@@ -92,6 +94,14 @@ export type AnotacionesPrueba = {
   equipos: Record<string, AnotacionOlimpica>;
   /** Por `fieId` del tirador, como texto. */
   individual: Record<string, AnotacionOlimpica>;
+  /**
+   * Quién iría hoy con estos rankings y las reglas aplicadas
+   * (`resultado.reglas`), con el estado de los CON seguidos: es lo que pinta
+   * la sección de clasificación olímpica, aparte del ranking en sí.
+   */
+  resultado: ResultadoPrueba;
+  /** CON que aparecen en el ranking pero no cuentan, y por qué. */
+  excluidos: { noc: string; motivo: MotivoPendiente }[];
 };
 
 /**
@@ -116,6 +126,10 @@ export type OpcionesAnotacion = {
   /** Fracción de los puntos del rival que puede faltar como mucho (ver `FALTA_MAXIMA_CERCA`). */
   faltaMaxima?: number;
   pendientes?: Readonly<Record<string, MotivoPendiente>>;
+  /** Cuotas y umbrales a aplicar sobre `REGLAS_LA2028` (ver `calcular.ts`). */
+  reglas?: Partial<ReglasOlimpicas>;
+  /** CON cuyo estado llega en `resultado.seguidos` (por defecto, ninguno). */
+  nocsSeguidos?: readonly string[];
 };
 
 type Criterio = { cercanos: number; faltaMaxima: number };
@@ -241,7 +255,9 @@ function conSuEquipo(eq: AnotacionOlimpica): AnotacionOlimpica {
 }
 
 function anotarNucleo(d: DetalleOlimpico, criterio: Criterio) {
-  const R = REGLAS_LA2028;
+  // Las reglas aplicadas vienen del propio cálculo, así quien llame con
+  // `opciones.reglas` no tiene que repetirlas aquí.
+  const R = d.resultado.reglas;
   const r = d.resultado;
   const equipos: Record<string, AnotacionOlimpica> = {};
   const individual: Record<string, AnotacionOlimpica> = {};
@@ -308,8 +324,10 @@ function anotarNucleo(d: DetalleOlimpico, criterio: Criterio) {
   for (const t of r.aorMundial) {
     clasificadosInd.set(t.fieId, { camino: 'AOR', zona: null, pf: r.primerFuera.aorMundial });
   }
-  for (const [z, t] of Object.entries(r.aorZona) as [ZonaFie, typeof r.aorMundial[number] | null][]) {
-    if (t) clasificadosInd.set(t.fieId, { camino: 'AOR_ZONA', zona: z, pf: r.primerFuera.aorZona[z] });
+  for (const [z, lista] of Object.entries(r.aorZona) as [ZonaFie, TiradorClasificado[]][]) {
+    for (const t of lista) {
+      clasificadosInd.set(t.fieId, { camino: 'AOR_ZONA', zona: z, pf: r.primerFuera.aorZona[z] });
+    }
   }
   const fueraAor = d.aor.filter((t) => !clasificadosInd.has(t.fieId));
   const representante = new Set(d.aor.map((t) => t.fieId));
@@ -373,7 +391,7 @@ function anotarNucleo(d: DetalleOlimpico, criterio: Criterio) {
           }),
         );
       }
-      const qz = t.zona ? r.aorZona[t.zona] : null;
+      const qz = t.zona ? (r.aorZona[t.zona].at(-1) ?? null) : null;
       if (t.zona && qz) {
         const deSuZona = fueraAor.filter((x) => x.zona === t.zona);
         candidatos.push(
@@ -413,10 +431,12 @@ export function anotarRankingOlimpico(
   const pendientes = opciones.pendientes ?? PENDIENTES_LA2028;
   const nocsPendientes = Object.keys(pendientes);
 
-  const nucleo = anotarNucleo(
-    calcularDetalleOlimpico(entrada, { nocsNoElegibles: nocsPendientes, nocsSeguidos: [] }),
-    criterio,
-  );
+  const detalle = calcularDetalleOlimpico(entrada, {
+    nocsNoElegibles: nocsPendientes,
+    nocsSeguidos: opciones.nocsSeguidos ?? [],
+    reglas: opciones.reglas,
+  });
+  const nucleo = anotarNucleo(detalle, criterio);
 
   const vetados = (noc: string | null) => {
     const n = noc?.trim().toUpperCase();
@@ -432,6 +452,7 @@ export function anotarRankingOlimpico(
         calcularDetalleOlimpico(entrada, {
           nocsNoElegibles: nocsPendientes.filter((n) => pendientes[n] === 'NEUTRAL'),
           nocsSeguidos: [],
+          reglas: opciones.reglas,
         }),
         criterio,
       )
@@ -442,9 +463,11 @@ export function anotarRankingOlimpico(
       ? { estado: a.estado, camino: a.camino, zona: a.zona }
       : null;
 
+  const excluidos = new Map<string, MotivoPendiente>();
   for (const f of entrada.equipos) {
     const v = f.posicion === null ? null : vetados(f.noc);
     if (!v) continue;
+    excluidos.set(v.noc, v.motivo);
     nucleo.equipos[v.noc] = anotacion({
       estado: 'pendiente',
       motivo: v.motivo,
@@ -456,6 +479,7 @@ export function anotarRankingOlimpico(
   for (const f of entrada.individual) {
     const v = f.posicion === null ? null : vetados(f.noc);
     if (!v) continue;
+    excluidos.set(v.noc, v.motivo);
     const clave = String(f.fieId);
     nucleo.individual[clave] = anotacion({
       estado: 'pendiente',
@@ -472,6 +496,10 @@ export function anotarRankingOlimpico(
     fechaRanking: entrada.fechaRanking,
     equipos: nucleo.equipos,
     individual: nucleo.individual,
+    resultado: detalle.resultado,
+    excluidos: [...excluidos.entries()]
+      .map(([noc, motivo]) => ({ noc, motivo }))
+      .sort((a, b) => a.noc.localeCompare(b.noc)),
   };
 }
 

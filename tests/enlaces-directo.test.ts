@@ -5,10 +5,15 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   enlaceDeTarjeta,
+  enlacesOficialesDePrueba,
   esPortada,
+  esUrlInscritosFie,
+  esUrlSkermo,
   estadoDirecto,
   normalizarUrlDirecto,
   proveedorDeUrl,
+  urlFichaFie,
+  urlsDePruebaFie,
 } from '@/lib/calendario/enlaces-directo';
 import {
   REGLA_ENGARDE_CIUDAD,
@@ -325,6 +330,99 @@ describe('reparto de enlaces en la tarjeta', () => {
     });
     expect(porPrueba.get('ev|K1')?.url).toBe(url);
     expect(porTarjeta.size).toBe(0);
+  });
+
+  it('todosPorPrueba trae también el de la FIE absorbida, una vez por URL', () => {
+    const engarde = 'https://engarde-service.com/competition/rfee/a/b';
+    const { todosPorPrueba } = atribuirEnlacesDirecto({
+      enlaces: [
+        { eventId: 'fie-1', eventCompetitionId: 'c-fie', kind: 'resultados', url: ftl, tarjetaId: 'skermo' },
+        { eventId: 'skermo', eventCompetitionId: 'c-skermo', kind: 'resultados', url: engarde, tarjetaId: 'skermo' },
+        // La misma URL publicada en los dos registros llega una vez.
+        { eventId: 'fie-1', eventCompetitionId: 'c-fie', kind: 'resultados', url: `${engarde}#x`, tarjetaId: 'skermo' },
+      ],
+      pruebas: [
+        { id: 'c-skermo', eventId: 'skermo', clave: 'K' },
+        { id: 'c-fie', eventId: 'fie-1', clave: 'K' },
+      ],
+    });
+    expect(todosPorPrueba.get('skermo|K')).toEqual([
+      { url: engarde, proveedor: 'engarde' },
+      { url: ftl, proveedor: 'ftl' },
+    ]);
+  });
+});
+
+describe('fuentes oficiales de una prueba', () => {
+  const entries = 'https://fie.org/competition/2027/1410/entries';
+  const ficha = 'https://fie.org/competition/2027/1410';
+
+  it('la lista de la FIE se reconoce por /entries y su ficha es la misma sin la coletilla', () => {
+    expect(esUrlInscritosFie(entries)).toBe(true);
+    expect(esUrlInscritosFie(ficha)).toBe(false);
+    expect(esUrlInscritosFie('https://app.skermo.org/calendar/public/rfee')).toBe(false);
+    expect(urlFichaFie(entries)).toBe(ficha);
+    expect(urlFichaFie('https://engarde-service.com/x')).toBeNull();
+  });
+
+  it('la página de Skermo se reconoce por el dominio', () => {
+    expect(esUrlSkermo('https://app.skermo.org/calendar/public/rfee#detail123')).toBe(true);
+    expect(esUrlSkermo('https://fie.org/competition/2027/1410')).toBe(false);
+  });
+
+  it('internacional: inscritos de la FIE, resultados de FTL y la ficha, en ese orden', () => {
+    expect(
+      enlacesOficialesDePrueba(
+        {
+          sourceUrl: 'https://app.skermo.org/calendar/public/rfee?x=1#detail9',
+          inscritosFieUrl: entries,
+          enlacesDirectos: [{ url: 'https://www.fencingtimelive.com/tournaments/eventSchedule/ABC', proveedor: 'ftl' }],
+        },
+        [],
+      ),
+    ).toEqual([
+      { para: 'inscritos', proveedor: 'fie', url: entries },
+      { para: 'inscritos', proveedor: 'skermo', url: 'https://app.skermo.org/calendar/public/rfee?x=1#detail9' },
+      { para: 'resultados', proveedor: 'ftl', url: 'https://www.fencingtimelive.com/tournaments/eventSchedule/ABC' },
+      { para: 'ficha', proveedor: 'fie', url: ficha },
+    ]);
+  });
+
+  it('nacional: la inscripción de Skermo y el Engarde del torneo', () => {
+    expect(
+      enlacesOficialesDePrueba(
+        { sourceUrl: 'https://app.skermo.org/calendar/public/rfee#detail5' },
+        [{ url: 'https://engarde-service.com/competition/rfee/x/fma', proveedor: 'engarde' }],
+      ),
+    ).toEqual([
+      { para: 'inscritos', proveedor: 'skermo', url: 'https://app.skermo.org/calendar/public/rfee#detail5' },
+      { para: 'resultados', proveedor: 'engarde', url: 'https://engarde-service.com/competition/rfee/x/fma' },
+    ]);
+  });
+
+  it('la ficha de la FIE no sale dos veces cuando el directo ya apuntaba a ella', () => {
+    expect(
+      enlacesOficialesDePrueba(
+        { inscritosFieUrl: entries, enlacesDirectos: [{ url: ficha, proveedor: 'fie' }] },
+        [],
+      ),
+    ).toEqual([
+      { para: 'inscritos', proveedor: 'fie', url: entries },
+      { para: 'resultados', proveedor: 'fie', url: ficha },
+    ]);
+  });
+
+  it('de una ficha de la FIE pelada —la de una edición pasada— salen también los inscritos', () => {
+    expect(urlsDePruebaFie(ficha)).toEqual({ ficha, inscritos: entries });
+    expect(urlsDePruebaFie(`${ficha}/`)).toEqual({ ficha, inscritos: entries });
+    expect(urlsDePruebaFie('https://fie.org/tournaments/2027/45')).toBeNull();
+    expect(urlsDePruebaFie('https://engarde-service.com/competition/x/y/z')).toBeNull();
+    expect(
+      enlacesOficialesDePrueba({ sourceUrl: ficha }, []),
+    ).toEqual([
+      { para: 'inscritos', proveedor: 'fie', url: entries },
+      { para: 'ficha', proveedor: 'fie', url: ficha },
+    ]);
   });
 });
 

@@ -48,7 +48,7 @@ const explorar = DESTINOS_APP.find((d) => d.clave === 'explorar')!;
 
 describe('Explorar es una sola pestaña: búsqueda y descubrimiento', () => {
   it('la barra tiene cuatro destinos y ninguno es «Buscar»', () => {
-    expect(DESTINOS_APP.map((d) => d.clave)).toEqual(['calendario', 'explorar', 'ranking', 'tu']);
+    expect(DESTINOS_APP.map((d) => d.clave)).toEqual(['calendario', 'ranking', 'explorar', 'tu']);
     expect(DESTINOS_APP.map((d) => d.etiqueta)).not.toContain('Buscar');
   });
 

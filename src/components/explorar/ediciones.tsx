@@ -1,4 +1,5 @@
 import { CalendarDays, ExternalLink, MapPin, Medal, SearchX, Swords, TriangleAlert } from 'lucide-react';
+import { esUrlFie, esUrlSkermo } from '@/lib/calendario/enlaces-directo';
 import type { VistaConjunta } from '@/lib/sport/explorar/conjunta-edicion';
 import { ETIQUETA_PRUEBA_CONJUNTA } from '@/lib/sport/explorar/pruebas-conjuntas';
 import { EnlaceIntencion } from '@/components/enlace-intencion';
@@ -361,6 +362,50 @@ function enlaceOficial(p: PruebaDeEdicion | null) {
 }
 
 /**
+ * La prueba en las fuentes oficiales, con el nombre de a dónde va cada
+ * botón: la lista de inscritos —la de la FIE es la única con todos los
+ * países—, los resultados en los proveedores comprobados (Engarde, Fencing
+ * Worldwide, Fencing Time Live) y la página de la prueba en la fuente. Saltar
+ * a la fuente oficial sin buscar en veintisiete sitios; lo que ninguna fuente
+ * publica no aparece.
+ */
+function FuentesDePrueba({ prueba }: { prueba: PruebaDeEdicion }) {
+  const vistas = new Set<string>();
+  const filas: { para: string; fuente: string; url: string }[] = [];
+  const poner = (para: string, fuente: string, url: string | null | undefined) => {
+    if (!url || vistas.has(url)) return;
+    vistas.add(url);
+    filas.push({ para, fuente, url });
+  };
+  const nombreFuente = ETIQUETA_FUENTE[prueba.fuente] ?? prueba.fuente;
+  // El rótulo lee la URL, no la fuente de la edición: una ficha de la RFEE
+  // puede apuntar a la inscripción de Skermo o a la lista de la FIE.
+  const quienPublica = (url: string | null | undefined) =>
+    esUrlFie(url) ? 'FIE' : esUrlSkermo(url) ? 'Skermo' : nombreFuente;
+  poner('Inscritos', quienPublica(prueba.urlInscritos), prueba.urlInscritos);
+  for (const e of prueba.enlaces) {
+    if (e.tipo === 'sin_enlace') continue;
+    poner('Resultados', ETIQUETA_PROVEEDOR[e.proveedor], e.url);
+  }
+  poner('La prueba', quienPublica(prueba.urlOficial), prueba.urlOficial);
+  if (filas.length === 0) return null;
+  return (
+    <ul className="flex flex-wrap items-center gap-2" aria-label="La prueba en las fuentes oficiales">
+      {filas.map((f) => (
+        <li key={`${f.para}-${f.url}`} className="flex min-w-0 max-w-full">
+          <Button asChild variant="outline" size="sm" className="min-w-0 max-w-full shrink rounded-full">
+            <a href={f.url} target="_blank" rel="noopener noreferrer" title={f.url}>
+              <ExternalLink aria-hidden className="size-4" />
+              <span className="truncate">{f.para} · {f.fuente}</span>
+            </a>
+          </Button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
  * Prueba partida ↔ prueba conjunta: desde una parte, el enlace a las poules y
  * el cuadro; desde la conjunta, las clasificaciones oficiales que agrupa.
  */
@@ -489,6 +534,8 @@ export function EdicionCompleta({
         catalogo={criterios.catalogo}
         persona={criterios.persona}
       />
+
+      {elegida ? <FuentesDePrueba prueba={elegida} /> : null}
 
       {conjunta && elegida ? <EnlaceConjunta conjunta={conjunta} criterios={criterios} /> : null}
 

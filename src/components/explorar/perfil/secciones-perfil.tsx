@@ -32,9 +32,14 @@ import { SugeridosPerfil } from './sugeridos-perfil';
 
 const NIVEL = 'pagina' as const;
 
-/** Qué pestañas salen: Ranking sólo con algún puesto. Las curiosidades van al final de Estadísticas. */
+/**
+ * Qué pestañas salen y en qué orden: la jerarquía pedida, de lo que cualquiera
+ * entiende a lo que mira el experto —Resultados → Ranking → Rivales →
+ * Estadísticas, siempre al final—. Ranking sólo con algún puesto. Las
+ * curiosidades van al final de Estadísticas.
+ */
 export function seccionesDisponibles(_ficha: FichaConPerfil, extras: ExtrasPerfil): SeccionPerfil[] {
-  return ['resultados', 'estadisticas', 'rivales', ...(bloquesRankingPerfil(extras).hay ? (['ranking'] as const) : [])];
+  return ['resultados', ...(bloquesRankingPerfil(extras).hay ? (['ranking'] as const) : []), 'rivales', 'estadisticas'];
 }
 
 export function CabeceraPerfil({

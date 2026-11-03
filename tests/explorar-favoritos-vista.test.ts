@@ -292,7 +292,7 @@ describe('Favoritos alcanzable sin otro destino principal', () => {
   it('la barra de navegación no gana ningún destino: Favoritos es Tú › Siguiendo', () => {
     const hrefs = DESTINOS_APP.map((d) => d.href);
     expect(hrefs).not.toContain('/explorar/favoritos');
-    expect(hrefs).toEqual(['/', '/explorar', '/ranking', '/explorar/yo']);
+    expect(hrefs).toEqual(['/', '/ranking', '/explorar', '/explorar/yo']);
     expect(pestanaDeRuta('/explorar/favoritos', false)).toBe('tu');
   });
 

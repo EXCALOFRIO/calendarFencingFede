@@ -18,10 +18,12 @@ import { cn } from '@/lib/utils';
 /**
  * Navegación de la aplicación: una sola barra, la misma para todos los
  * papeles y en todas las pantallas (`docs/diseno-sistema.md` § 1.1). En el
- * móvil es `BarraInferior`; desde 1024 px, los mismos destinos en la
- * cabecera (§ 1.6). Son cuatro: Calendario, Explorar (que también busca),
- * Ranking y Tú. Lo que depende del papel (Mi estado, Tiradores,
- * Gestión) son filas de «Tú».
+ * móvil es `BarraInferior` —con el nombre bajo cada icono—; desde 1024 px,
+ * los mismos destinos en la cabecera (§ 1.6). Son cuatro y van en el orden
+ * de la jerarquía pedida: Calendario (las competiciones), Ranking, Explorar
+ * (que también busca, y es donde se descubren las fichas con estadísticas)
+ * y Tú. Lo que depende del papel (Mi estado, Tiradores, Gestión) son filas
+ * de «Tú».
  *
  * Calendario y Explorar son dos pestañas de la misma barra: no hay un «modo
  * Explorar» con barra propia ni un botón de volver al calendario.

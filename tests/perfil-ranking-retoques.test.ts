@@ -102,14 +102,15 @@ describe('insignia olímpica compacta', () => {
     estado: 'cerca', camino: null, zona: null, contra: null, faltan: 12, margen: null, sobre: null, puestoFuera: 1, motivo: null, sinVeto: null,
   };
 
-  it('por debajo de 360 px deja sólo el laurel y conserva la etiqueta accesible', () => {
+  it('por debajo de 360 px esconde los aros, mantiene el texto y conserva la etiqueta accesible', () => {
     const compacta = html(React.createElement(InsigniaOlimpica, { anotacion: cerca, compacta: true }));
     const normal = html(React.createElement(InsigniaOlimpica, { anotacion: cerca }));
     const etiqueta = /aria-label="([^"]+)"/.exec(normal)?.[1];
     expect(etiqueta).toBeTruthy();
     expect(compacta).toContain(`aria-label="${etiqueta}"`);
-    expect(compacta).toMatch(/<span aria-hidden="true" class="max-\[359px\]:hidden">−12<\/span>/);
-    expect(normal).not.toContain('max-[359px]:hidden');
+    expect(compacta).toContain('max-[359px]');
+    expect(compacta).toContain('A 12 pts');
+    expect(normal).not.toContain('max-[359px]');
   });
 
   it('la marca no va en la línea del nombre: por debajo de 360 px comparte celda con los puntos', () => {

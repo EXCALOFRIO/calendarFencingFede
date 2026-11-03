@@ -16,6 +16,11 @@ import { CLAVES_CRITERIO, RUTA_BUSCAR, RUTA_BUSCAR_PAISES } from '@/lib/sport/ex
  * (`/explorar/ediciones`) y Países son ámbitos de la misma pestaña. Los
  * destinos son los mismos para todos los papeles; lo que depende del papel
  * (Mi estado, Tiradores, Gestión) son filas de «Tú».
+ *
+ * El orden lee la jerarquía que pidió el seleccionador: competiciones
+ * (Calendario) → Ranking. Explorar —de donde se abren perfiles con sus
+ * estadísticas y comparaciones— va después, porque la profundidad se
+ * descubre dentro, no se impone en la barra.
  */
 export type ClavePestana = 'calendario' | 'explorar' | 'ranking' | 'tu';
 
@@ -35,9 +40,9 @@ const DE_TU = [
 
 export const DESTINOS_APP: readonly (DestinoBarra & { clave: ClavePestana })[] = [
   { clave: 'calendario', href: '/', etiqueta: 'Calendario', icono: CalendarDays },
+  { clave: 'ranking', href: '/ranking', etiqueta: 'Ranking', icono: Trophy },
   // `/explorar/buscar` y `/explorar/ediciones` cuelgan de `/explorar`: no hacen falta prefijos.
   { clave: 'explorar', href: RUTA_INICIO, etiqueta: 'Explorar', icono: Compass },
-  { clave: 'ranking', href: '/ranking', etiqueta: 'Ranking', icono: Trophy },
   { clave: 'tu', href: RUTA_YO, etiqueta: 'Tú', icono: CircleUserRound, prefijos: DE_TU },
 ];
 

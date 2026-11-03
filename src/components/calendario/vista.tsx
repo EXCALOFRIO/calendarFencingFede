@@ -13,11 +13,11 @@ import Link from 'next/link';
 import * as React from 'react';
 import { toast } from 'sonner';
 import {
-  BarraFiltros,
   OpcionesFiltro,
   SeccionFiltro,
   type FiltroActivo,
 } from '@/components/filtros/barra-filtros';
+import { BotonFiltros, HojaFiltros } from '@/components/filtros/chips';
 import { Boton, BotonIcono } from '@/components/sistema/boton';
 import { ChipFiltro, FilaChips } from '@/components/sistema/chip-filtro';
 import { EstadoVacio } from '@/components/sistema/estado-vacio';
@@ -43,7 +43,7 @@ import {
 } from '@/lib/ambito';
 import { rotuloArma, rotuloCategoria, rotuloGenero } from '@/lib/sport/rotulos';
 import { hoyMadrid, rangoFechas } from '@/lib/fechas';
-import { cn, organismoDe, titularTorneo } from '@/lib/utils';
+import { cn, organismoDe, titularTorneo, type Organismo } from '@/lib/utils';
 import { pastillaDeCircuito, plazoDe } from '@/lib/calendario/rotulos';
 import { Sede } from './fila-competicion';
 import type { QuienVa } from '@/app/(app)/inscritos';
@@ -245,12 +245,14 @@ export function VistaCalendario({
   const tirador = tiradores.find((t) => t.id === tiradorId) ?? tiradores[0] ?? null;
 
   /**
-   * Categorías que hay DE VERDAD en el calendario.
+   * Categorías que hay DE VERDAD en el calendario, en los dos ámbitos.
    *
    * No se ofrece M9 si esta temporada no hay ninguna prueba M9: un filtro con
-   * opciones que no cambian nada es ruido.
+   * opciones que no cambian nada es ruido. Es la lista con la que se decide
+   * «lo mío» —las categorías en las que tira alguien no dependen del ámbito
+   * que se esté mirando— y con la que «Ver todo» repone la selección entera.
    */
-  const categoriasDisponibles = React.useMemo(
+  const categoriasTemporada = React.useMemo(
     () =>
       ordenarCategorias([
         ...new Set(eventos.flatMap((e) => e.competitions.map((c) => c.category))),
@@ -269,8 +271,8 @@ export function VistaCalendario({
    * No se guardan entre visitas a propósito: recargar devuelve a lo suyo.
    */
   const propio = React.useMemo(
-    () => arranqueDelCalendario(perfil, tirador, categoriasDisponibles),
-    [perfil, tirador, categoriasDisponibles],
+    () => arranqueDelCalendario(perfil, tirador, categoriasTemporada),
+    [perfil, tirador, categoriasTemporada],
   );
 
   /*
@@ -318,6 +320,31 @@ export function VistaCalendario({
     tarjeta tendría un color y el filtro otro.
   */
   const [ambito, setAmbito] = React.useState<Ambito>(inicial?.ambito ?? 'TODO');
+
+  /**
+   * Las categorías que se ofrecen: las que existen en el ámbito que se está
+   * mirando.
+   *
+   * En «Nacional» no se ofrece una categoría que sólo se tira fuera —sería un
+   * chip que siempre llega a «Sin pruebas»—: quien no compite en
+   * internacional tiene en «Nacional» su calendario entero, sin opciones
+   * muertas. Una categoría ya puesta que no exista en el ámbito sigue puesta
+   * (y se ve y se quita de un toque en los chips); no se borra por la espalda.
+   */
+  const categoriasDisponibles = React.useMemo(
+    () =>
+      ambito === 'TODO'
+        ? categoriasTemporada
+        : ordenarCategorias([
+            ...new Set(
+              eventos
+                .filter((e) => encajaEnElAmbito(e, ambito))
+                .flatMap((e) => e.competitions.map((c) => c.category)),
+            ),
+          ]),
+    [eventos, ambito, categoriasTemporada],
+  );
+
   /*
     Lo recordado manda sobre lo de arranque, pero sólo si aún significa algo:
     una selección vacía o categorías que ya no existen en el calendario dejarían
@@ -331,7 +358,7 @@ export function VistaCalendario({
   );
   const [categorias, setCategorias] = React.useState<string[]>(() => {
     const recordadas = (inicial?.categorias ?? []).filter((c) =>
-      categoriasDisponibles.includes(c),
+      categoriasTemporada.includes(c),
     );
     return recordadas.length > 0 ? recordadas : propio.categorias;
   });
@@ -581,7 +608,9 @@ export function VistaCalendario({
     setAmbito('TODO');
     setArmas([...ARMAS]);
     setGeneros([...CODIGOS_GENERO]);
-    setCategorias(categoriasDisponibles);
+    // Todas las de la temporada, no las del ámbito que se estaba mirando:
+    // «Ver todo» es todo, también en las categorías.
+    setCategorias(categoriasTemporada);
   };
   const verLoMio = () => {
     setArmas(propio.armas);
@@ -600,7 +629,7 @@ export function VistaCalendario({
     const nuevo = tiradores.find((t) => t.id === id);
     if (!nuevo) return;
     setTiradorId(id);
-    const suyo = arranqueDelCalendario(perfil, nuevo, categoriasDisponibles);
+    const suyo = arranqueDelCalendario(perfil, nuevo, categoriasTemporada);
     setArmas(suyo.armas);
     setGeneros(suyo.generos);
     setCategorias(suyo.categorias);
@@ -633,6 +662,16 @@ export function VistaCalendario({
       }))
       .filter((e) => e.competitions.length > 0);
   }, [todos, ambito, armas, generos, categorias, categoriasDisponibles]);
+
+  /**
+   * Los organismos que de verdad se están viendo, para la leyenda: en
+   * «Nacional» no se explica el color de la FIE porque ninguna tarjeta lo
+   * lleva. El orden es el de siempre (RFEE, FIE, EFC), no el del calendario.
+   */
+  const organismos = React.useMemo(() => {
+    const vistos = new Set(filtrados.map((e) => organismoDe(e.source, e.scope, e.circuit)));
+    return (['RFEE', 'FIE', 'EFC'] as const).filter((o) => vistos.has(o));
+  }, [filtrados]);
 
   /**
    * BUSCAR TE LLEVA, NO TE ESCONDE.
@@ -1257,7 +1296,7 @@ export function VistaCalendario({
         </TransicionContenido>
       )}
 
-      {filtrados.length > 0 ? <Leyenda /> : null}
+      {filtrados.length > 0 ? <Leyenda organismos={organismos} /> : null}
 
       {/*
         La paleta de búsqueda.
@@ -1542,9 +1581,15 @@ function alternar<T extends string>(todos: readonly T[], puestos: T[], valor: T)
 const MAXIMO_CHIPS_CATEGORIA = 3;
 
 /**
- * Los filtros: un botón «Filtros (N)» que abre una sola hoja, y lo puesto como
- * chips que se quitan con un toque y saltan de línea. Un grupo con todo puesto
- * no es un filtro y no sale como chip.
+ * Los filtros: la fila enseña lo que se puede tocar, con su nombre —«Filtros»
+ * abre la hoja (vista, categoría y tirador), «Nacional» e «Internacional»
+ * acotan el calendario, las tres armas y los dos géneros se marcan de un
+ * toque— y lo puesto se ve marcado ahí mismo, sin abrir nada ni descifrar
+ * un contador. Es la fila de la primera versión, la que se entendía sola.
+ *
+ * Las categorías viven dentro de la hoja; las puestas salen al final de la
+ * fila como chips que se quitan con un toque, para que su filtro también se
+ * lea sin abrir nada. Un grupo con todo puesto no es un filtro: no se marca.
  */
 function FiltrosCalendario({
   ambito,
@@ -1591,6 +1636,7 @@ function FiltrosCalendario({
   temporada: string | null;
   actualizado: string | null;
 }) {
+  const [abierta, setAbierta] = React.useState(false);
   const todasLasArmas = armas.length === ARMAS.length;
   const ambosGeneros = generos.length === GENEROS.length;
   const todasLasCategorias = categorias.length >= categoriasDisponibles.length;
@@ -1600,28 +1646,16 @@ function FiltrosCalendario({
   const esLoMio =
     mismo(armas, propio.armas) && mismo(generos, propio.generos) && mismo(categorias, propio.categorias);
 
+  /** Grupos de filtro puestos (ámbito, arma, género, categoría): el contador del botón «Filtros». */
+  const puestos =
+    (ambito !== 'TODO' ? 1 : 0) + (todasLasArmas ? 0 : 1) + (ambosGeneros ? 0 : 1) + (todasLasCategorias ? 0 : 1);
+
+  /*
+    Las categorías son lo único que no cabe en la fila: viven en la hoja y lo
+    puesto se enseña al final de la fila como chips que se quitan. Ámbito,
+    arma y género ya se ven marcados en sus propios chips.
+  */
   const activos: FiltroActivo[] = [];
-  if (ambito !== 'TODO') {
-    activos.push({
-      clave: 'ambito',
-      etiqueta: AMBITOS.find((a) => a.v === ambito)?.largo ?? ambito,
-      onQuitar: () => setAmbito('TODO'),
-    });
-  }
-  if (!todasLasArmas) {
-    for (const a of armas) {
-      activos.push({ clave: `arma-${a}`, etiqueta: rotuloArma(a), onQuitar: () => setArmas(quitar(ARMAS, armas, a)) });
-    }
-  }
-  if (!ambosGeneros) {
-    for (const g of generos) {
-      activos.push({
-        clave: `genero-${g}`,
-        etiqueta: rotuloGenero(g),
-        onQuitar: () => setGeneros(quitar(codigosGenero, generos, g)),
-      });
-    }
-  }
   if (!todasLasCategorias) {
     if (categorias.length <= MAXIMO_CHIPS_CATEGORIA) {
       for (const c of categorias) {
@@ -1642,12 +1676,55 @@ function FiltrosCalendario({
 
   return (
     <>
-      <BarraFiltros
-        etiqueta="Filtros del calendario"
-        activos={activos}
-        onLimpiar={verTodo}
-        resultados={`Ver ${numTorneos} ${numTorneos === 1 ? 'torneo' : 'torneos'}`}
-      >
+      <div data-slot="barra-filtros" className="flex min-w-0 flex-col gap-3">
+        <FilaChips etiqueta="Filtros del calendario">
+          <BotonFiltros activos={puestos} onClick={() => setAbierta(true)} aria-expanded={abierta} />
+          {/*
+            Ámbito: «Nacional» e «Internacional», siempre escritos. Tocar el
+            marcado vuelve a «Todo» (es un alternar, con aria-pressed): un
+            chip que no respondiera al toque sería una trampa.
+          */}
+          {AMBITOS.filter((a) => a.v !== 'TODO').map((a) => (
+            <ChipFiltro
+              key={a.v}
+              marcado={ambito === a.v}
+              onClick={() => setAmbito(ambito === a.v ? 'TODO' : a.v)}
+            >
+              {a.largo}
+            </ChipFiltro>
+          ))}
+          {ARMAS.map((a) => (
+            <ChipFiltro
+              key={a}
+              marcado={!todasLasArmas && armas.includes(a)}
+              onClick={() => setArmas(alternar(ARMAS, armas, a))}
+            >
+              {rotuloArma(a)}
+            </ChipFiltro>
+          ))}
+          {GENEROS.map((g) => (
+            <ChipFiltro
+              key={g.v}
+              marcado={!ambosGeneros && generos.includes(g.v)}
+              onClick={() => setGeneros(alternar(codigosGenero, generos, g.v))}
+            >
+              {g.largo}
+            </ChipFiltro>
+          ))}
+          {activos.map((f) => (
+            <ChipFiltro key={f.clave} tipo="quitar" onClick={f.onQuitar}>
+              {f.etiqueta}
+            </ChipFiltro>
+          ))}
+        </FilaChips>
+
+        <HojaFiltros
+          abierta={abierta}
+          onAbierta={setAbierta}
+          titulo="Filtros"
+          resultados={`Ver ${numTorneos} ${numTorneos === 1 ? 'torneo' : 'torneos'}`}
+          onLimpiar={puestos > 0 ? verTodo : null}
+        >
         {propio.propio && !esLoMio ? (
           <Boton tamano="md" className="self-start" onClick={verLoMio}>
             Ver lo mío
@@ -1735,7 +1812,8 @@ function FiltrosCalendario({
           {temporada ? ` · Temporada ${temporada}` : null}
           {actualizado ? ` · ${actualizado}` : null}
         </p>
-      </BarraFiltros>
+        </HojaFiltros>
+      </div>
       <p role="status" className="sr-only">
         {numTorneos} {numTorneos === 1 ? 'torneo' : 'torneos'}
       </p>
@@ -1747,10 +1825,10 @@ function FiltrosCalendario({
  * La leyenda: lo único que el color no dice por sí mismo, el organismo de
  * cada filete, y la marca de inscrito.
  */
-function Leyenda() {
+function Leyenda({ organismos }: { organismos: readonly Organismo[] }) {
   return (
     <ul className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-      {(['RFEE', 'FIE', 'EFC'] as const).map((o) => {
+      {organismos.map((o) => {
         const c = COLOR_ORGANISMO[o];
         return (
           <li key={o} className="flex items-center gap-2">

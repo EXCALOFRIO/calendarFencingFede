@@ -75,8 +75,8 @@ function fixture() {
 const html = (nodo: React.ReactElement) => renderToStaticMarkup(nodo);
 
 describe('una sola app: la barra es la misma dentro y fuera de Explorar', () => {
-  it('cuatro destinos: Calendario, Explorar (que también busca), Ranking y Tú', () => {
-    expect(DESTINOS_APP.map((d) => d.href)).toEqual(['/', '/explorar', '/ranking', RUTA_YO]);
+  it('cuatro destinos: Calendario, Ranking, Explorar (que también busca) y Tú', () => {
+    expect(DESTINOS_APP.map((d) => d.href)).toEqual(['/', '/ranking', '/explorar', RUTA_YO]);
   });
 
   it('marca la pestaña por la ruta; los cuatro ámbitos de Explorar marcan Explorar', () => {
@@ -88,16 +88,18 @@ describe('una sola app: la barra es la misma dentro y fuera de Explorar', () => 
     expect(pestanaDeRuta(`/explorar/${uuid(1)}`, false)).toBe('explorar');
   });
 
-  it('en Explorar y en el calendario es la misma barra de iconos, sin rótulos y sin «Volver al calendario»', () => {
+  it('en Explorar y en el calendario es la misma barra, cada destino con su nombre, y sin «Volver al calendario»', () => {
     ruta.pathname = '/explorar';
     ruta.busqueda = 'q=garcia';
     const movil = html(React.createElement(NavMovil, { role: 'coach' }));
     expect(movil).toContain('data-barra="app"');
     expect(movil).not.toContain('Volver al calendario');
-    expect(movil).toMatch(/<a(?=[^>]*aria-label="Explorar")(?=[^>]*aria-current="page")/);
+    expect(movil).toMatch(/<a(?=[^>]*aria-current="page")(?=[^>]*data-pestana="explorar")|<a(?=[^>]*data-pestana="explorar")(?=[^>]*aria-current="page")/);
     expect(movil).not.toContain('aria-label="Buscar"');
     expect(movil).toContain('size-[22px]');
-    expect(movil).not.toMatch(/<span[^>]*>Explorar<\/span>/);
+    // El nombre va escrito bajo cada icono: la brújula y el trofeo solos no se distinguen.
+    expect(movil).toMatch(/<span[^>]*>Explorar<\/span>/);
+    expect(movil).toMatch(/<span[^>]*>Ranking<\/span>/);
     const escritorio = html(React.createElement(NavEscritorio, { role: 'coach' }));
     expect(escritorio).toContain('>Explorar<');
     expect(escritorio).toContain('>Calendario<');
