@@ -23,6 +23,7 @@ const { TarjetaBloque, DivisorHueco } = await import('@/components/calendario/ta
 const { VistaCalendario } = await import('@/components/calendario/vista');
 const { agruparEnBloques } = await import('@/lib/calendario/bloques');
 const { pruebasDe, plazoDe } = await import('@/lib/calendario/rotulos');
+const { categoriasDeEventos } = await import('@/lib/ambito');
 
 const html = (nodo: React.ReactElement) => renderToStaticMarkup(nodo);
 
@@ -184,13 +185,16 @@ describe('el divisor de semanas libres', () => {
 });
 
 describe('la vista del calendario', () => {
-  const vista = (props: Record<string, unknown>) =>
-    html(
+  // `eventos`/`inscripciones` sueltos se traducen al `listado` de ahora.
+  const vista = ({ eventos: propios, inscripciones, ...props }: Record<string, unknown> = {}) => {
+    const eventos = (propios as EventView[] | undefined) ?? [evento()];
+    return html(
       React.createElement(VistaCalendario, {
-        eventos: [evento()],
+        // El listado llega ya resuelto: las hojas del `use()` pintan a la primera.
+        listado: { eventos, inscripciones: (inscripciones as Record<string, string>) ?? {}, solicitudes: [] },
+        categoriasOfertadas: categoriasDeEventos(eventos),
         perfil: { role: 'admin', weapons: [] },
         tiradores: [],
-        inscripciones: {},
         temporada: '2026-2027',
         actualizado: null,
         solicitarInscripcion: vi.fn(),
@@ -198,6 +202,7 @@ describe('la vista del calendario', () => {
         ...props,
       } as React.ComponentProps<typeof VistaCalendario>),
     );
+  };
 
   it('sin `?mes=`, el mes de arranque sale del «hoy» del servidor, no del reloj del que pinta', () => {
     vi.useFakeTimers({ toFake: ['Date'] });

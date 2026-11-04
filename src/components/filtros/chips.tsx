@@ -182,8 +182,11 @@ export function HojaFiltros({
   abierta: boolean;
   onAbierta: (v: boolean) => void;
   titulo?: string;
-  /** «Ver 907 tiradores». */
-  resultados: string;
+  /**
+   * «Ver 907 tiradores». Un nodo, no sólo texto: el Calendario le cuelga un
+   * `<Suspense>` para que la cuenta llegue por el stream con el listado.
+   */
+  resultados: React.ReactNode;
   /** Si se pasa, aparece «Restablecer». */
   onLimpiar?: (() => void) | null;
   children: React.ReactNode;
@@ -210,7 +213,7 @@ export function PieHojaFiltros({
   onLimpiar,
   onCerrar,
 }: {
-  resultados: string;
+  resultados: React.ReactNode;
   onLimpiar?: (() => void) | null;
   onCerrar: () => void;
 }) {

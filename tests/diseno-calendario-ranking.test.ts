@@ -52,6 +52,7 @@ const { BarraPlazos } = await import('@/components/calendario/barra-plazos');
 const { Button } = await import('@/components/ui/button');
 const { Input } = await import('@/components/ui/input');
 const { agruparEnBloques } = await import('@/lib/calendario/bloques');
+const { categoriasDeEventos } = await import('@/lib/ambito');
 
 const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const salida = join(tmpdir(), 'qa-prod-calendario', 'droids', 'diseno-offline');
@@ -156,8 +157,11 @@ const mundial: TablaFieCompleta = {
   personas: {},
 };
 const calendario = () => React.createElement(VistaCalendario, {
-  eventos: [evento], perfil: { role: 'admin', weapons: [] }, tiradores: [],
-  inscripciones: {}, temporada: '2026-2027', actualizado: '1 oct 2026',
+  // El listado ya resuelto: el armazón y las tarjetas salen en el mismo marcado.
+  listado: { eventos: [evento], inscripciones: {}, solicitudes: [] },
+  categoriasOfertadas: categoriasDeEventos([evento]),
+  perfil: { role: 'admin', weapons: [] }, tiradores: [],
+  temporada: '2026-2027', actualizado: '1 oct 2026',
   inicial: { mes: '2026-10', vista: 'trimestre' },
   solicitarInscripcion: vi.fn(), cargarInscritos: vi.fn(),
 });

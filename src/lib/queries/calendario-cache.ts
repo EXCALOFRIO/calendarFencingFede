@@ -2,7 +2,8 @@ import { db } from '@/db';
 import { cacheCompartida } from '@/lib/cache';
 import { hoyMadrid } from '@/lib/callups/fechas';
 import { contextoPublico } from '@/lib/sport/explorar/contexto-publico';
-import { getEvent, listEvents } from './calendar';
+import { esInternacional } from '@/lib/utils';
+import { getEvent, listCategoriasCalendario, listEvents } from './calendar';
 import { crearCachesCalendario } from './calendario-cache-modelo';
 import { cargarTramoPasado, edicionesExplorarDeEvento } from './calendario-pasado';
 import { cargarPodiosEvento } from './evento-resultados';
@@ -20,6 +21,11 @@ export const calendarioCompartido = crearCachesCalendario({
   cache: cacheCompartida,
   leer: {
     eventos: () => listEvents({ limit: 500, scope: [...AMBITOS_CALENDARIO] }),
+    categorias: async () =>
+      // Mismo tope y mismos ámbitos que `eventos`: lo que la vista deriva del listado.
+      (await listCategoriasCalendario({ limit: 500, scope: [...AMBITOS_CALENDARIO] })).map(
+        (r) => ({ categoria: r.category, internacional: esInternacional(r.source, r.scope, r.circuit ?? undefined) }),
+      ),
     tramo: (t) => cargarTramoPasado({ ...t, scope: [...AMBITOS_CALENDARIO] }),
     detalle: (eventId) => getEvent(eventId),
     inscritos: (eventId) => leerListaUnidaTrasGuarda([eventId]),

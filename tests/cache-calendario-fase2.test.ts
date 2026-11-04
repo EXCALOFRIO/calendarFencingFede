@@ -70,6 +70,7 @@ function entorno() {
         cuentas.eventos++;
         return [evento('e1'), evento('e2')];
       },
+      categorias: async () => [],
       tramo: async (t) => {
         cuentas.tramo.push(t);
         return { desde: t.desde, hasta: t.hasta, disponible: true, eventos: [evento('p1')], importados: [], resultados: {} } satisfies TramoPasado;

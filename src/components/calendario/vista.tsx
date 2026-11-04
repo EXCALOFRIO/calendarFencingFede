@@ -32,11 +32,13 @@ import {
   GENEROS as CODIGOS_GENERO,
   arranqueDelCalendario,
   ordenarCategorias,
+  type CategoriaDeCalendario,
   type PerfilAmbito,
 } from '@/lib/ambito';
 import { rotuloArma, rotuloCategoria, rotuloGenero } from '@/lib/sport/rotulos';
 import { hoyMadrid, rangoFechas } from '@/lib/fechas';
-import { cn, organismoDe, titularTorneo, type Organismo } from '@/lib/utils';
+import type { ListadoDelCalendario } from '@/lib/queries/calendario-pantalla';
+import { cn, esInternacional, organismoDe, titularTorneo, type Organismo } from '@/lib/utils';
 import { plazoDe } from '@/lib/calendario/rotulos';
 import { Sede } from './fila-competicion';
 import type { QuienVa } from '@/app/(app)/inscritos';
@@ -186,9 +188,93 @@ const AMBITOS: { v: Ambito; largo: string }[] = [
  */
 function encajaEnElAmbito(evento: EventView, ambito: Ambito): boolean {
   if (ambito === 'TODO') return true;
-  const organismo = organismoDe(evento.source, evento.scope, evento.circuit);
-  const internacional = organismo === 'FIE' || organismo === 'EFC';
+  const internacional = esInternacional(evento.source, evento.scope, evento.circuit);
   return ambito === 'INTERNACIONAL' ? internacional : !internacional;
+}
+
+/** El pasado ya leído, por tramos, tal como lo lleva la vista. */
+type TramosLeidos = Record<string, { estado: EstadoDelMes; datos: TramoPasado | null }>;
+
+/** Lo que el listado publica para la intención de abrir una ficha (delegada en la raíz). */
+type DatosCalendario = { porId: Map<string, EventView>; importados: Set<string> };
+
+/**
+ * El listado de la pantalla: llega resuelto o como promesa por el stream
+ * (ver `listado` de `VistaCalendario`). `use()` lo cuelga del `<Suspense>`
+ * que envuelve a quien llama; con el objeto ya resuelto —arneses y pruebas—
+ * no hay suspensión que hacer.
+ */
+function useListado(
+  listado: ListadoDelCalendario | Promise<ListadoDelCalendario>,
+): ListadoDelCalendario {
+  return esPromesa(listado) ? React.use(listado) : listado;
+}
+
+/** Lo de hoy en adelante y todo lo ya celebrado que se ha ido leyendo, sin repetir. */
+function unirPasado(eventos: EventView[], tramos: TramosLeidos) {
+  const vistos = new Set(eventos.map((e) => e.id));
+  const todos = [...eventos];
+  const resultadosPasados: Record<string, PruebaPasada[]> = {};
+  const importados = new Set<string>();
+  for (const { datos } of Object.values(tramos)) {
+    if (!datos) continue;
+    Object.assign(resultadosPasados, datos.resultados);
+    for (const id of datos.importados) importados.add(id);
+    for (const e of datos.eventos) {
+      if (vistos.has(e.id)) continue;
+      vistos.add(e.id);
+      todos.push(e);
+    }
+  }
+  return { todos, resultadosPasados, importados };
+}
+
+/** La selección de filtros, como la pasan las hojas que la usan. */
+type SeleccionCalendario = {
+  ambito: Ambito;
+  armas: readonly Weapon[];
+  generos: readonly ('M' | 'F')[];
+  categorias: readonly string[];
+  categoriasDisponibles: readonly string[];
+};
+
+/**
+ * Los torneos que pasan los filtros puestos. La búsqueda NO entra aquí:
+ * buscar te lleva al mes, no esconde nada. La misma regla en el listado, el
+ * marcador y los recuentos de la hoja.
+ */
+function filtrarEventos(todos: EventView[], s: SeleccionCalendario): EventView[] {
+  /*
+    Con todas las categorías marcadas no se filtra por categoría. Lo de otros
+    años trae categorías que la temporada actual no tiene (M23, M14…) y no
+    salen en el filtro; «todas» tiene que querer decir todas.
+  */
+  const todasLasCategorias = s.categorias.length >= s.categoriasDisponibles.length;
+  return todos
+    .filter((e) => encajaEnElAmbito(e, s.ambito))
+    .map((e) => ({
+      ...e,
+      competitions: e.competitions.filter(
+        (c) =>
+          s.armas.includes(c.weapon) &&
+          // Las pruebas por equipos mixtos no tienen género propio: se ven
+          // siempre, porque descartarlas sería esconder competiciones.
+          (c.gender === 'MIXTO' || s.generos.includes(c.gender as 'M' | 'F')) &&
+          (todasLasCategorias || s.categorias.includes(c.category)),
+      ),
+    }))
+    .filter((e) => e.competitions.length > 0);
+}
+
+/** Las coincidencias del buscador dentro de lo filtrado, por fecha. */
+function coincidenciasDe(filtrados: EventView[], busqueda: string): EventView[] {
+  const t = busqueda.trim().toLowerCase();
+  if (!t) return [];
+  return filtrados
+    .filter((e) =>
+      `${e.name} ${e.city ?? ''} ${e.country ?? ''}`.toLowerCase().includes(t),
+    )
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
 }
 
 /**
@@ -208,11 +294,11 @@ function encajaEnElAmbito(evento: EventView, ambito: Ambito): boolean {
  * Todas las herramientas tienen al menos 44 × 44 px de toque.
  */
 export function VistaCalendario({
-  eventos,
+  listado,
+  categoriasOfertadas,
   perfil,
   tiradores,
   sinFicha = false,
-  inscripciones,
   temporada,
   actualizado,
   solicitarInscripcion,
@@ -247,7 +333,20 @@ export function VistaCalendario({
    * edición o una persona (ver `contexto-url.ts`). Sin él, se abre con lo suyo.
    */
   inicial?: ContextoCalendarioLeido;
-  eventos: EventView[];
+  /**
+   * Lo pesado de la pantalla —la temporada desde hoy y las inscripciones—,
+   * resuelto o en camino por el stream, igual que `pasadoInicial`: la página
+   * lo lanza sin esperarlo para enseñar ya la estructura, y cada `<Suspense>`
+   * de abajo lo resuelve con `use()` cuando llega (marcador, hoja de filtros
+   * y listado; en los arneses y las pruebas llega ya resuelto).
+   */
+  listado: ListadoDelCalendario | Promise<ListadoDelCalendario>;
+  /**
+   * Las categorías con prueba en el calendario, con su ámbito. Llegan en la
+   * `base` —antes que el listado— porque los filtros se arman con ellas:
+   * es el mismo conjunto que saldría de los eventos, pedido aparte y barato.
+   */
+  categoriasOfertadas: CategoriaDeCalendario[];
   /**
    * Quién está mirando. Solo el papel y las armas: es lo que decide con qué
    * filtros se abre la pantalla (ver `src/lib/ambito.ts`).
@@ -260,10 +359,9 @@ export function VistaCalendario({
    * «Tus pruebas», ya pintada en el servidor: va entre la cabecera y el
    * listado, como el aviso de `sinFicha`. Un elemento React cruza la frontera
    * servidor → cliente serializado, así que llega sin trabajo de cliente.
+   * Espera la misma promesa que el listado: sale con él, no antes.
    */
   tusPruebas?: React.ReactNode;
-  /** competitionId -> estado legible de la inscripción de esta cuenta. */
-  inscripciones: Record<string, string>;
   temporada: string | null;
   actualizado: string | null;
   solicitarInscripcion: (
@@ -316,9 +414,9 @@ export function VistaCalendario({
   const categoriasTemporada = React.useMemo(
     () =>
       ordenarCategorias([
-        ...new Set(eventos.flatMap((e) => e.competitions.map((c) => c.category))),
+        ...new Set(categoriasOfertadas.map((c) => c.categoria)),
       ]),
-    [eventos],
+    [categoriasOfertadas],
   );
 
   /**
@@ -398,12 +496,12 @@ export function VistaCalendario({
         ? categoriasTemporada
         : ordenarCategorias([
             ...new Set(
-              eventos
-                .filter((e) => encajaEnElAmbito(e, ambito))
-                .flatMap((e) => e.competitions.map((c) => c.category)),
+              categoriasOfertadas
+                .filter((c) => c.internacional === (ambito === 'INTERNACIONAL'))
+                .map((c) => c.categoria),
             ),
           ]),
-    [eventos, ambito, categoriasTemporada],
+    [categoriasOfertadas, ambito, categoriasTemporada],
   );
 
   /*
@@ -625,91 +723,6 @@ export function VistaCalendario({
       ? 'listo'
       : (tramos[claveActual!]?.estado ?? 'cargando');
 
-  /** Un mes del tramo se da por leído si empieza hoy o después, o si el tramo ya llegó. */
-  const estadoDelMes = React.useCallback(
-    (mes: string): EstadoDelMes => (`${mes}-01` >= hoy ? 'listo' : estadoActual),
-    [hoy, estadoActual],
-  );
-
-  /** Lo de hoy en adelante y todo lo ya celebrado que se ha ido leyendo, sin repetir. */
-  const { todos, resultadosPasados, importados } = React.useMemo(() => {
-    const vistos = new Set(eventos.map((e) => e.id));
-    const lista = [...eventos];
-    const resultados: Record<string, PruebaPasada[]> = {};
-    const deExplorar = new Set<string>();
-    for (const { datos } of Object.values(tramos)) {
-      if (!datos) continue;
-      Object.assign(resultados, datos.resultados);
-      for (const id of datos.importados) deExplorar.add(id);
-      for (const e of datos.eventos) {
-        if (vistos.has(e.id)) continue;
-        vistos.add(e.id);
-        lista.push(e);
-      }
-    }
-    return { todos: lista, resultadosPasados: resultados, importados: deExplorar };
-  }, [eventos, tramos]);
-
-  /** Un torneo que solo existe en Explorar se abre por sus resultados, no por una ficha de inscripción. */
-  const abrir = React.useCallback(
-    (e: EventView) => (importados.has(e.id) ? setAbiertoPasado(e) : setAbierto(e)),
-    [importados],
-  );
-
-  /**
-   * `evento=<id>` (desde una edición o un aviso) abre esa ficha en cuanto el
-   * torneo está cargado: el mes de la dirección es el suyo, así que llega con
-   * los eventos o con el tramo pasado que se pide al arrancar. Antes de abrirla
-   * se quita `evento` de la dirección, sin entrada nueva: la ficha apila la
-   * suya (`useEntradaDeHistorial`) y al cerrarla se vuelve al calendario sin
-   * que se reabra. Si el tramo llega y el torneo no está, no se abre nada.
-   */
-  const eventoPendiente = React.useRef(eventoInicial);
-  React.useEffect(() => {
-    const id = eventoPendiente.current;
-    if (!id) return;
-    const e = todos.find((x) => x.id === id);
-    if (!e && estadoActual !== 'listo' && estadoActual !== 'fallo') return;
-    eventoPendiente.current = null;
-    const limpia = quitarEventoDeUrl(`${window.location.pathname}${window.location.search}${window.location.hash}`);
-    window.history.replaceState(window.history.state, '', limpia);
-    if (e) abrir(e);
-  }, [todos, estadoActual, abrir]);
-
-  /**
-   * Quién va al torneo abierto.
-   *
-   * Se pide al abrir la ficha y no con el calendario: son cientos de torneos y
-   * traerse las inscripciones de todos para enseñar las de uno sería un viaje
-   * de red enorme a cambio de nada.
-   */
-  const [lecturaInscritos, setLecturaInscritos] = React.useState<
-    LecturaDeEvento<QuienVa>
-  >(SIN_EVENTO);
-  const abiertoId = abierto?.id ?? null;
-  const abiertoFin = abierto?.endDate ?? null;
-  const lecturaAbierta = lecturaDelEvento(lecturaInscritos, abiertoId);
-  // Lo precargado con la intención de abrir la ficha se pinta ya en la primera vuelta.
-  const inscritos =
-    datosVigentes(lecturaAbierta) ?? (abierto ? (fichaRecibida(abierto)?.inscritos ?? null) : null);
-  const falloInscritos = lecturaAbierta.tipo === 'error';
-
-  // Depende del id y no del objeto del evento: reabrir el mismo torneo no
-  // borra lo leído, y un fallo se señala aparte sin disfrazarse de lista vacía.
-  React.useEffect(() => {
-    if (!abiertoId || !abiertoFin) return;
-    return iniciarLectura({
-      eventoId: abiertoId,
-      cargar: cargarInscritos
-        ?? ((id) =>
-          leerFicha({ id, endDate: abiertoFin }).then((f) => {
-            if (!f.inscritos) throw new Error('inscritos');
-            return f.inscritos;
-          })),
-      actualizar: setLecturaInscritos,
-    });
-  }, [abiertoId, abiertoFin, cargarInscritos]);
-
   /**
    * INTENCIÓN DE ABRIR UNA FICHA: se pide antes de que llegue el toque.
    *
@@ -717,8 +730,15 @@ export function VistaCalendario({
    * `data-evento`. Con ratón espera a que el puntero se pare un instante sobre
    * la tarjeta (pasar por encima de diez no pide diez fichas); con teclado,
    * al momento. Un gesto táctil puede ser scroll: no especula.
+   *
+   * Los torneos los rellena el listado en `datosCalendario` al montarse: el
+   * manejador queda aquí, en la raíz, y lee la referencia, así que sirve lo
+   * que haya en pantalla aunque el listado haya entrado por el stream.
    */
-  const porId = React.useMemo(() => new Map(todos.map((e) => [e.id, e])), [todos]);
+  const datosCalendario = React.useRef<DatosCalendario>({
+    porId: new Map(),
+    importados: new Set(),
+  });
   const temporizadorFicha = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const intencionDeFicha = React.useCallback(
     (destino: EventTarget | null, esperaMs: number) => {
@@ -726,8 +746,8 @@ export function VistaCalendario({
       temporizadorFicha.current = null;
       if (ahorrarDatos()) return;
       const id = destino instanceof Element ? destino.closest('[data-evento]')?.getAttribute('data-evento') : null;
-      const evento = id ? porId.get(id) : undefined;
-      if (!evento || importados.has(evento.id)) return;
+      const evento = id ? datosCalendario.current.porId.get(id) : undefined;
+      if (!evento || datosCalendario.current.importados.has(evento.id)) return;
       // Los datos y el trozo de la ficha, calentándose antes del toque.
       void import('./ficha-evento');
       if (esperaMs === 0) precargarFicha(evento);
@@ -735,13 +755,19 @@ export function VistaCalendario({
         if (!ahorrarDatos()) precargarFicha(evento);
       }, esperaMs);
     },
-    [porId, importados],
+    [],
   );
   React.useEffect(
     () => () => {
       if (temporizadorFicha.current) clearTimeout(temporizadorFicha.current);
     },
     [],
+  );
+
+  /** La selección tal como la piden las hojas que filtran (marcador, hoja y listado). */
+  const seleccion = React.useMemo<SeleccionCalendario>(
+    () => ({ ambito, armas, generos, categorias, categoriasDisponibles }),
+    [ambito, armas, generos, categorias, categoriasDisponibles],
   );
 
   const verTodo = () => {
@@ -775,116 +801,10 @@ export function VistaCalendario({
     setCategorias(suyo.categorias);
   };
 
-  /**
-   * Los torneos que se pintan.
-   *
-   * Aquí ya NO entra la búsqueda: buscar no esconde nada. Ver más abajo.
-   */
-  const filtrados = React.useMemo(() => {
-    /*
-      Con todas las categorías marcadas no se filtra por categoría. Lo de otros
-      años trae categorías que la temporada actual no tiene (M23, M14…) y no
-      salen en el filtro; «todas» tiene que querer decir todas.
-    */
-    const todasLasCategorias = categorias.length >= categoriasDisponibles.length;
-    return todos
-      .filter((e) => encajaEnElAmbito(e, ambito))
-      .map((e) => ({
-        ...e,
-        competitions: e.competitions.filter(
-          (c) =>
-            armas.includes(c.weapon) &&
-            // Las pruebas por equipos mixtos no tienen género propio: se ven
-            // siempre, porque descartarlas sería esconder competiciones.
-            (c.gender === 'MIXTO' || generos.includes(c.gender as 'M' | 'F')) &&
-            (todasLasCategorias || categorias.includes(c.category)),
-        ),
-      }))
-      .filter((e) => e.competitions.length > 0);
-  }, [todos, ambito, armas, generos, categorias, categoriasDisponibles]);
-
-  /**
-   * Los organismos que de verdad se están viendo, para la leyenda: en
-   * «Nacional» no se explica el color de la FIE porque ninguna tarjeta lo
-   * lleva. El orden es el de siempre (RFEE, FIE, EFC), no el del calendario.
-   */
-  const organismos = React.useMemo(() => {
-    const vistos = new Set(filtrados.map((e) => organismoDe(e.source, e.scope, e.circuit)));
-    return (['RFEE', 'FIE', 'EFC'] as const).filter((o) => vistos.has(o));
-  }, [filtrados]);
-
-  /**
-   * BUSCAR TE LLEVA, NO TE ESCONDE.
-   *
-   * Antes el buscador era un filtro: al escribir «mundial» desaparecía todo lo
-   * demás y había que acordarse de vaciar la caja. Y no respondía a la
-   * pregunta que se estaba haciendo, que no es «qué torneos se llaman mundial»
-   * sino **cuándo es el mundial**.
-   *
-   * Sigue llevando al mes del torneo y resaltándolo. Lo único que cambia es el
-   * envoltorio: el campo de la cabecera, que estaba siempre vacío y se llevaba
-   * media anchura, es ahora un icono que abre una paleta (`Command`). Al
-   * elegir una coincidencia se salta a su mes; la banda de arriba pasa a
-   * enseñar ese torneo, con flechas para pasar de una coincidencia a otra y un
-   * aspa para volver a lo normal. Así el estado de búsqueda **se ve**, que era
-   * el riesgo de esconder la caja.
-   */
-  const coincidencias = React.useMemo(() => {
-    const t = busqueda.trim().toLowerCase();
-    if (!t) return [];
-    return filtrados
-      .filter((e) =>
-        `${e.name} ${e.city ?? ''} ${e.country ?? ''}`.toLowerCase().includes(t),
-      )
-      .sort((a, b) => a.startDate.localeCompare(b.startDate));
-  }, [filtrados, busqueda]);
-
-  const resaltados = React.useMemo(
-    () => new Set(coincidencias.map((e) => e.id)),
-    [coincidencias],
-  );
-
   const [cual, setCual] = React.useState(0);
 
   // Al cambiar lo escrito se vuelve a la primera coincidencia.
   React.useEffect(() => setCual(0), [busqueda]);
-
-  const irA = React.useCallback((iso: string) => {
-    const d = new Date(`${iso}T12:00:00`);
-    enTransicion(() => setAncla((previa) => {
-      if (
-        previa.getFullYear() === d.getFullYear() &&
-        previa.getMonth() === d.getMonth()
-      ) {
-        return previa;
-      }
-      setDireccion(
-        d.getTime() > new Date(previa.getFullYear(), previa.getMonth(), 1).getTime()
-          ? 1
-          : -1,
-      );
-      return new Date(d.getFullYear(), d.getMonth(), 1);
-    }));
-  }, []);
-
-  // El salto de mes va en un efecto y no en el `onSelect` para que también
-  // funcione al cambiar de coincidencia con las flechas.
-  const encontrado = coincidencias[cual] ?? null;
-  /*
-    Al volver con una búsqueda recordada, el periodo recordado manda: saltar al
-    mes de la primera coincidencia deshacería justo lo que se vuelve a ver.
-    Sólo se omite ese primer salto, y se libera en cuanto hay uno propio.
-  */
-  const [sinSaltoDe] = React.useState<string | null>(() =>
-    inicial?.mes && inicial.busqueda ? (encontrado?.id ?? null) : null,
-  );
-  const yaSalto = React.useRef(false);
-  React.useEffect(() => {
-    if (!encontrado) return;
-    if (!yaSalto.current && encontrado.id === sinSaltoDe) return;
-    yaSalto.current = true;
-    irA(encontrado.startDate);
-  }, [encontrado, irA, sinSaltoDe]);
 
   /**
    * El calendario tal y como se está mirando, como dirección acotada: es lo que
@@ -906,39 +826,36 @@ export function VistaCalendario({
     [vista, ancla, ambito, armas, generos, categorias, busqueda, tirador?.id],
   );
 
-  /** Lo que las tarjetas necesitan para decir «Terminada» y enlazar sus resultados. */
-  const pasadoDeTarjeta = React.useMemo<PasadoDeTarjeta>(
-    () => ({
-      hoy,
-      resultados: resultadosPasados,
-      retorno: retornoCalendario,
-      onVer: setAbiertoPasado,
-    }),
-    [hoy, resultadosPasados, retornoCalendario],
-  );
-
-  /** Se cuentan pruebas, no torneos: es lo que de verdad se puede tirar. */
-  const numPruebas = React.useMemo(
-    () => filtrados.reduce((n, e) => n + e.competitions.length, 0),
-    [filtrados],
-  );
-
   /**
-   * Lo próximo que hay, de lo que se está mirando.
-   *
-   * Es la respuesta a la única pregunta que trae a nadie a esta pantalla:
-   * «¿cuándo compito y cuánto me queda?». Antes no estaba en ninguna parte:
-   * había que contar días en la rejilla a ojo. Se calcula sobre lo filtrado,
-   * así que para una tiradora es su próxima competición y para la dirección
-   * técnica el próximo torneo del calendario que esté mirando.
+   * Saltar al mes de un día, como hace el buscador al elegir una coincidencia.
+   * No depende del listado: se crea aquí y se la llevan las hojas que
+   * suspenden.
    */
-  const proximo = React.useMemo(
-    () =>
-      [...filtrados]
-        // «Tu próxima competición» no puede ser una que la organización canceló.
-        .filter((e) => e.endDate >= hoy && !e.cancelled)
-        .sort((a, b) => a.startDate.localeCompare(b.startDate))[0] ?? null,
-    [filtrados, hoy],
+  const irA = React.useCallback((iso: string) => {
+    const d = new Date(`${iso}T12:00:00`);
+    enTransicion(() => setAncla((previa) => {
+      if (
+        previa.getFullYear() === d.getFullYear() &&
+        previa.getMonth() === d.getMonth()
+      ) {
+        return previa;
+      }
+      setDireccion(
+        d.getTime() > new Date(previa.getFullYear(), previa.getMonth(), 1).getTime()
+          ? 1
+          : -1,
+      );
+      return new Date(d.getFullYear(), d.getMonth(), 1);
+    }));
+  }, []);
+
+  /** Ir a un mes, como hace «marzo 2019» en la paleta. */
+  const irAMes = React.useCallback(
+    (destino: Date) => {
+      setDireccion(destino.getTime() > ancla.getTime() ? 1 : -1);
+      enTransicion(() => setAncla(destino));
+    },
+    [ancla],
   );
 
   const meses = React.useMemo(
@@ -949,82 +866,6 @@ export function VistaCalendario({
       ),
     [ancla, vista],
   );
-
-  /**
-   * LOS BLOQUES DE COMPETICIÓN, QUE SON LA UNIDAD DE LA PANTALLA.
-   *
-   * Se calculan una vez para todo lo que se está mirando y cada columna se
-   * queda con los de su mes (`itemsDelMes`). No se agrupa por mes primero: dos
-   * eventos que se solapan a caballo entre octubre y noviembre son el mismo
-   * bloque, y partirlo por el mes lo rompería en dos medias tarjetas.
-   *
-   * Toda la lógica es una función normal y está probada en
-   * `tests/bloques.test.ts`.
-   */
-  const bloques = React.useMemo(() => agruparEnBloques(filtrados), [filtrados]);
-
-  /** El último día del tramo que se está pintando. */
-  const finDelTramo = React.useMemo(() => {
-    const ultimo = meses[meses.length - 1];
-    const d = new Date(ultimo.getFullYear(), ultimo.getMonth() + 1, 0);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-      d.getDate(),
-    ).padStart(2, '0')}`;
-  }, [meses]);
-
-  /**
-   * Lo próximo que hay **fuera** del tramo que se está pintando.
-   *
-   * La misma respuesta a la misma pregunta en los dos sitios donde acaba: al
-   * final de la columna en escritorio y al final del feed en el móvil, detrás
-   * del calendario, que es lo que pidió el usuario.
-   *
-   * Se compara con el rango REAL (el de las pruebas), no con `startDate`: si
-   * el cartel de un torneo empieza el 30 de noviembre pero solo se tira el 1 y
-   * el 2 de diciembre, su bloque está en diciembre y aquí tiene que salir.
-   */
-  const fuera = React.useMemo(() => {
-    return filtrados
-      .filter((e) => {
-        const r = rangoRealDeEvento(e);
-        return r.desde > finDelTramo && r.hasta >= hoy;
-      })
-      .sort((a, b) => a.startDate.localeCompare(b.startDate))
-      .slice(0, CUANTO_DESPUES);
-    /*
-      AQUÍ SE QUITÓ UNA EXCLUSIÓN, Y ESTA ES LA RAZÓN.
-
-      Esta lista descartaba el torneo del marcador de arriba, «para no enseñar
-      la misma tarjeta dos veces». Tenía sentido cuando las dos eran tarjetas
-      parecidas; ahora hace daño por dos sitios, y los dos se ven en la
-      captura de septiembre en un iPhone:
-
-      1. **En el móvil el marcador NO existe.** Va `hidden sm:flex` porque no
-         cabe. Así que descartar su torneo no evitaba una repetición: lo
-         escondía. La primera competición de la temporada desaparecía del
-         teléfono.
-      2. **Rompía la cuenta de un bloque múltiple.** El fin de semana del 3 de
-         octubre tiene cuatro torneos de florete y la tarjeta decía
-         «Competición múltiple · 3 torneos», porque el cuarto era el del
-         marcador. Un número que no cuadra al contar es peor que no ponerlo.
-
-      Y la repetición que se temía ya no lo es: el marcador es un renglón de
-      44 px con el nombre y los días, no una tarjeta. Que lo próximo salga
-      arriba en una línea y abajo con su fecha y su sede no es decir dos veces
-      lo mismo; es el titular y la ficha.
-    */
-  }, [filtrados, finDelTramo, hoy]);
-
-  /** Torneos que caen en el tramo que pinta la vista. El denominador. */
-  const enElTramo = React.useMemo(() => {
-    const primero = meses[0];
-    const desde = `${primero.getFullYear()}-${String(
-      primero.getMonth() + 1,
-    ).padStart(2, '0')}-01`;
-    return bloques
-      .filter((b) => b.rango.desde >= desde && b.rango.desde <= finDelTramo)
-      .reduce((n, b) => n + b.eventos.length, 0);
-  }, [bloques, meses, finDelTramo]);
 
   const mover = (paso: number) => {
     setDireccion(paso > 0 ? 1 : -1);
@@ -1228,8 +1069,9 @@ export function VistaCalendario({
           propio={propio}
           verTodo={verTodo}
           verLoMio={verLoMio}
-          numPruebas={numPruebas}
-          numTorneos={filtrados.length}
+          listado={listado}
+          tramos={tramos}
+          seleccion={seleccion}
           temporada={temporada}
           actualizado={actualizado}
         />
@@ -1237,23 +1079,26 @@ export function VistaCalendario({
         {/*
           El marcador: lo próximo o, buscando, la coincidencia en la que se
           está. En el móvil solo buscando: ahí la primera tarjeta del feed ya
-          es lo próximo.
+          es lo próximo. Espera al listado como el resto: el hueco que deja
+          el `null` del fallback se ve ya ocupado por el propio listado en
+          cuanto entra.
         */}
-        <FranjaDestacada
-          clase={cn('w-full min-w-0', !busqueda.trim() && 'hidden sm:flex')}
-          evento={encontrado ?? proximo}
-          buscando={Boolean(busqueda.trim())}
-          cual={cual}
-          total={coincidencias.length}
-          hayTiradores={tiradores.length > 0}
-          hoy={hoy}
-          onAnterior={() =>
-            setCual((p) => (p - 1 + coincidencias.length) % coincidencias.length)
-          }
-          onSiguiente={() => setCual((p) => (p + 1) % coincidencias.length)}
-          onLimpiar={() => setBusqueda('')}
-          onAbrir={abrir}
-        />
+        <React.Suspense fallback={null}>
+          <FranjaDelCalendario
+            clase={cn('w-full min-w-0', !busqueda.trim() && 'hidden sm:flex')}
+            listado={listado}
+            tramos={tramos}
+            seleccion={seleccion}
+            busqueda={busqueda}
+            cual={cual}
+            setCual={setCual}
+            onLimpiar={() => setBusqueda('')}
+            hayTiradores={tiradores.length > 0}
+            hoy={hoy}
+            setAbierto={setAbierto}
+            setAbiertoPasado={setAbiertoPasado}
+          />
+        </React.Suspense>
       </div>
 
       {/*
@@ -1291,6 +1136,397 @@ export function VistaCalendario({
       */}
       {tusPruebas}
 
+      {/*
+        EL LISTADO, EN SU `<Suspense>`.
+
+        Todo lo que cuelga de `eventos` —el vacío o los bloques, la leyenda,
+        la paleta y las dos fichas— vive dentro: se resuelve con `use()` al
+        llegar la promesa y entra de una vez, sin medio calendario. Cabecera,
+        chips y filtros ya están fuera, visibles desde el primer trozo.
+      */}
+      <React.Suspense fallback={null}>
+        <ListadoCalendario
+          listado={listado}
+          tramos={tramos}
+          estadoActual={estadoActual}
+          seleccion={seleccion}
+          vista={vista}
+          ancla={ancla}
+          meses={meses}
+          hoy={hoy}
+          escritorio={escritorio}
+          retornoCalendario={retornoCalendario}
+          busqueda={busqueda}
+          setBusqueda={setBusqueda}
+          cual={cual}
+          setCual={setCual}
+          irA={irA}
+          irAMes={irAMes}
+          inicial={inicial}
+          eventoInicial={eventoInicial}
+          tirador={tirador}
+          solicitarInscripcion={solicitarInscripcion}
+          cargarInscritos={cargarInscritos}
+          abierto={abierto}
+          setAbierto={setAbierto}
+          abiertoPasado={abiertoPasado}
+          setAbiertoPasado={setAbiertoPasado}
+          mostrarArma={mostrarArma}
+          mostrarGenero={mostrarGenero}
+          mostrarCategoria={mostrarCategoria}
+          datosCalendario={datosCalendario}
+          verTodo={verTodo}
+          paletaMontada={paletaMontada}
+          buscando={buscando}
+          setBuscando={setBuscando}
+          saltoDeMes={saltoDeMes}
+        />
+      </React.Suspense>
+    </div>
+  );
+}
+
+/**
+ * EL LISTADO: TODO LO QUE ESPERA A LOS EVENTOS.
+ *
+ * Resuelve `listado` con `use()` —que lo cuelga del `<Suspense>` de arriba—
+ * y a partir de ahí es la pantalla de siempre: el vacío o los bloques, la
+ * leyenda, la paleta y las dos fichas. Lo que no depende del listado
+ * (periodo, filtros, tramos pasados, apertura de paleta y fichas) sigue
+ * siendo estado de la raíz y se le pasa, así que cambiar de mes o quitar un
+ * chip no vuelve a suspender nada.
+ */
+function ListadoCalendario({
+  listado,
+  tramos,
+  estadoActual,
+  seleccion,
+  vista,
+  ancla,
+  meses,
+  hoy,
+  escritorio,
+  retornoCalendario,
+  busqueda,
+  setBusqueda,
+  cual,
+  setCual,
+  irA,
+  irAMes,
+  inicial,
+  eventoInicial,
+  tirador,
+  solicitarInscripcion,
+  cargarInscritos,
+  abierto,
+  setAbierto,
+  abiertoPasado,
+  setAbiertoPasado,
+  mostrarArma,
+  mostrarGenero,
+  mostrarCategoria,
+  datosCalendario,
+  verTodo,
+  paletaMontada,
+  buscando,
+  setBuscando,
+  saltoDeMes,
+}: {
+  listado: ListadoDelCalendario | Promise<ListadoDelCalendario>;
+  tramos: TramosLeidos;
+  estadoActual: EstadoDelMes;
+  seleccion: SeleccionCalendario;
+  vista: Vista;
+  ancla: Date;
+  meses: Date[];
+  hoy: string;
+  escritorio: boolean | null;
+  retornoCalendario: string;
+  busqueda: string;
+  setBusqueda: (b: string) => void;
+  cual: number;
+  setCual: React.Dispatch<React.SetStateAction<number>>;
+  irA: (iso: string) => void;
+  irAMes: (destino: Date) => void;
+  inicial?: ContextoCalendarioLeido;
+  eventoInicial?: string | null;
+  tirador: TiradorOpcion | null;
+  solicitarInscripcion?: (
+    competitionId: string,
+    athleteId: string,
+  ) => Promise<{ ok: true; message: string } | { ok: false; error: string }>;
+  cargarInscritos?: (eventoId: string) => Promise<QuienVa>;
+  abierto: EventView | null;
+  setAbierto: (e: EventView | null) => void;
+  abiertoPasado: EventView | null;
+  setAbiertoPasado: (e: EventView | null) => void;
+  mostrarArma: boolean;
+  mostrarGenero: boolean;
+  mostrarCategoria: boolean;
+  datosCalendario: React.RefObject<DatosCalendario>;
+  verTodo: () => void;
+  paletaMontada: boolean;
+  buscando: boolean;
+  setBuscando: (b: boolean) => void;
+  saltoDeMes: { anio: number; mes: number } | null;
+}) {
+  const { eventos, inscripciones } = useListado(listado);
+
+  /** Lo de hoy en adelante y todo lo ya celebrado que se ha ido leyendo, sin repetir. */
+  const { todos, resultadosPasados, importados } = React.useMemo(
+    () => unirPasado(eventos, tramos),
+    [eventos, tramos],
+  );
+
+  /*
+    Lo que la intención de abrir una ficha (delegada en la raíz) consulta:
+    los torneos por id y los que sólo están en Explorar. Se escribe aquí, en
+    el listado, que es donde está el dato.
+  */
+  React.useEffect(() => {
+    datosCalendario.current = {
+      porId: new Map(todos.map((e) => [e.id, e])),
+      importados,
+    };
+  }, [todos, importados, datosCalendario]);
+
+  /** Un mes del tramo se da por leído si empieza hoy o después, o si el tramo ya llegó. */
+  const estadoDelMes = React.useCallback(
+    (mes: string): EstadoDelMes => (`${mes}-01` >= hoy ? 'listo' : estadoActual),
+    [hoy, estadoActual],
+  );
+
+  /** Un torneo que solo existe en Explorar se abre por sus resultados, no por una ficha de inscripción. */
+  const abrir = React.useCallback(
+    (e: EventView) => (importados.has(e.id) ? setAbiertoPasado(e) : setAbierto(e)),
+    [importados, setAbiertoPasado, setAbierto],
+  );
+
+  /**
+   * `evento=<id>` (desde una edición o un aviso) abre esa ficha en cuanto el
+   * torneo está cargado: el mes de la dirección es el suyo, así que llega con
+   * los eventos o con el tramo pasado que se pide al arrancar. Antes de abrirla
+   * se quita `evento` de la dirección, sin entrada nueva: la ficha apila la
+   * suya (`useEntradaDeHistorial`) y al cerrarla se vuelve al calendario sin
+   * que se reabra. Si el tramo llega y el torneo no está, no se abre nada.
+   */
+  const eventoPendiente = React.useRef(eventoInicial);
+  React.useEffect(() => {
+    const id = eventoPendiente.current;
+    if (!id) return;
+    const e = todos.find((x) => x.id === id);
+    if (!e && estadoActual !== 'listo' && estadoActual !== 'fallo') return;
+    eventoPendiente.current = null;
+    const limpia = quitarEventoDeUrl(`${window.location.pathname}${window.location.search}${window.location.hash}`);
+    window.history.replaceState(window.history.state, '', limpia);
+    if (e) abrir(e);
+  }, [todos, estadoActual, abrir]);
+
+  /**
+   * Quién va al torneo abierto.
+   *
+   * Se pide al abrir la ficha y no con el calendario: son cientos de torneos y
+   * traerse las inscripciones de todos para enseñar las de uno sería un viaje
+   * de red enorme a cambio de nada.
+   */
+  const [lecturaInscritos, setLecturaInscritos] = React.useState<
+    LecturaDeEvento<QuienVa>
+  >(SIN_EVENTO);
+  const abiertoId = abierto?.id ?? null;
+  const abiertoFin = abierto?.endDate ?? null;
+  const lecturaAbierta = lecturaDelEvento(lecturaInscritos, abiertoId);
+  // Lo precargado con la intención de abrir la ficha se pinta ya en la primera vuelta.
+  const inscritos =
+    datosVigentes(lecturaAbierta) ?? (abierto ? (fichaRecibida(abierto)?.inscritos ?? null) : null);
+  const falloInscritos = lecturaAbierta.tipo === 'error';
+
+  // Depende del id y no del objeto del evento: reabrir el mismo torneo no
+  // borra lo leído, y un fallo se señala aparte sin disfrazarse de lista vacía.
+  React.useEffect(() => {
+    if (!abiertoId || !abiertoFin) return;
+    return iniciarLectura({
+      eventoId: abiertoId,
+      cargar: cargarInscritos
+        ?? ((id) =>
+          leerFicha({ id, endDate: abiertoFin }).then((f) => {
+            if (!f.inscritos) throw new Error('inscritos');
+            return f.inscritos;
+          })),
+      actualizar: setLecturaInscritos,
+    });
+  }, [abiertoId, abiertoFin, cargarInscritos]);
+
+  /**
+   * Los torneos que se pintan. Aquí ya NO entra la búsqueda: buscar no
+   * esconde nada. Ver más abajo.
+   */
+  const filtrados = React.useMemo(
+    () => filtrarEventos(todos, seleccion),
+    [todos, seleccion],
+  );
+
+  /**
+   * Los organismos que de verdad se están viendo, para la leyenda: en
+   * «Nacional» no se explica el color de la FIE porque ninguna tarjeta lo
+   * lleva. El orden es el de siempre (RFEE, FIE, EFC), no el del calendario.
+   */
+  const organismos = React.useMemo(() => {
+    const vistos = new Set(filtrados.map((e) => organismoDe(e.source, e.scope, e.circuit)));
+    return (['RFEE', 'FIE', 'EFC'] as const).filter((o) => vistos.has(o));
+  }, [filtrados]);
+
+  /**
+   * BUSCAR TE LLEVA, NO TE ESCONDE.
+   *
+   * Antes el buscador era un filtro: al escribir «mundial» desaparecía todo lo
+   * demás y había que acordarse de vaciar la caja. Y no respondía a la
+   * pregunta que se estaba haciendo, que no es «qué torneos se llaman mundial»
+   * sino **cuándo es el mundial**.
+   *
+   * Sigue llevando al mes del torneo y resaltándolo. Lo único que cambia es el
+   * envoltorio: el campo de la cabecera, que estaba siempre vacío y se llevaba
+   * media anchura, es ahora un icono que abre una paleta (`Command`). Al
+   * elegir una coincidencia se salta a su mes; la banda de arriba pasa a
+   * enseñar ese torneo, con flechas para pasar de una coincidencia a otra y un
+   * aspa para volver a lo normal. Así que el estado de búsqueda **se ve**, que era
+   * el riesgo de esconder la caja.
+   */
+  const coincidencias = React.useMemo(
+    () => coincidenciasDe(filtrados, busqueda),
+    [filtrados, busqueda],
+  );
+
+  const resaltados = React.useMemo(
+    () => new Set(coincidencias.map((e) => e.id)),
+    [coincidencias],
+  );
+
+  // El salto de mes va en un efecto y no en el `onSelect` para que también
+  // funcione al cambiar de coincidencia con las flechas.
+  const encontrado = coincidencias[cual] ?? null;
+  /*
+    Al volver con una búsqueda recordada, el periodo recordado manda: saltar al
+    mes de la primera coincidencia deshacería justo lo que se vuelve a ver.
+    Sólo se omite ese primer salto, y se libera en cuanto hay uno propio.
+  */
+  const [sinSaltoDe] = React.useState<string | null>(() =>
+    inicial?.mes && inicial.busqueda ? (encontrado?.id ?? null) : null,
+  );
+  const yaSalto = React.useRef(false);
+  React.useEffect(() => {
+    if (!encontrado) return;
+    if (!yaSalto.current && encontrado.id === sinSaltoDe) return;
+    yaSalto.current = true;
+    irA(encontrado.startDate);
+  }, [encontrado, irA, sinSaltoDe]);
+
+  /** Lo que las tarjetas necesitan para decir «Terminada» y enlazar sus resultados. */
+  const pasadoDeTarjeta = React.useMemo<PasadoDeTarjeta>(
+    () => ({
+      hoy,
+      resultados: resultadosPasados,
+      retorno: retornoCalendario,
+      onVer: setAbiertoPasado,
+    }),
+    [hoy, resultadosPasados, retornoCalendario, setAbiertoPasado],
+  );
+
+  /**
+   * Lo próximo que hay, de lo que se está mirando.
+   *
+   * Es la respuesta a la única pregunta que trae a nadie a esta pantalla:
+   * «¿cuándo compito y cuánto me queda?». Antes no estaba en ninguna parte:
+   * había que contar días en la rejilla a ojo. Se calcula sobre lo filtrado,
+   * así que para una tiradora es su próxima competición y para la dirección
+   * técnica el próximo torneo del calendario que esté mirando.
+   */
+  const proximo = React.useMemo(
+    () =>
+      [...filtrados]
+        // «Tu próxima competición» no puede ser una que la organización canceló.
+        .filter((e) => e.endDate >= hoy && !e.cancelled)
+        .sort((a, b) => a.startDate.localeCompare(b.startDate))[0] ?? null,
+    [filtrados, hoy],
+  );
+
+  /**
+   * LOS BLOQUES DE COMPETICIÓN, QUE SON LA UNIDAD DE LA PANTALLA.
+   *
+   * Se calculan una vez para todo lo que se está mirando y cada columna se
+   * queda con los de su mes (`itemsDelMes`). No se agrupa por mes primero: dos
+   * eventos que se solapan a caballo entre octubre y noviembre son el mismo
+   * bloque, y partirlo por el mes lo rompería en dos medias tarjetas.
+   *
+   * Toda la lógica es una función normal y está probada en
+   * `tests/bloques.test.ts`.
+   */
+  const bloques = React.useMemo(() => agruparEnBloques(filtrados), [filtrados]);
+
+  /** El último día del tramo que se está pintando. */
+  const finDelTramo = React.useMemo(() => {
+    const ultimo = meses[meses.length - 1];
+    const d = new Date(ultimo.getFullYear(), ultimo.getMonth() + 1, 0);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+      d.getDate(),
+    ).padStart(2, '0')}`;
+  }, [meses]);
+
+  /**
+   * Lo próximo que hay **fuera** del tramo que se está pintando.
+   *
+   * La misma respuesta a la misma pregunta en los dos sitios donde acaba: al
+   * final de la columna en escritorio y al final del feed en el móvil, detrás
+   * del calendario, que es lo que pidió el usuario.
+   *
+   * Se compara con el rango REAL (el de las pruebas), no con `startDate`: si
+   * el cartel de un torneo empieza el 30 de noviembre pero solo se tira el 1 y
+   * el 2 de diciembre, su bloque está en diciembre y aquí tiene que salir.
+   */
+  const fuera = React.useMemo(() => {
+    return filtrados
+      .filter((e) => {
+        const r = rangoRealDeEvento(e);
+        return r.desde > finDelTramo && r.hasta >= hoy;
+      })
+      .sort((a, b) => a.startDate.localeCompare(b.startDate))
+      .slice(0, CUANTO_DESPUES);
+    /*
+      AQUÍ SE QUITÓ UNA EXCLUSIÓN, Y ESTA ES LA RAZÓN.
+
+      Esta lista descartaba el torneo del marcador de arriba, «para no enseñar
+      la misma tarjeta dos veces». Tenía sentido cuando las dos eran tarjetas
+      parecidas; ahora hace daño por dos sitios, y los dos se ven en la
+      captura de septiembre en un iPhone:
+
+      1. **En el móvil el marcador NO existe.** Va `hidden sm:flex` porque no
+         cabe. Así que descartar su torneo no evitaba una repetición: lo
+         escondía. La primera competición de la temporada desaparecía del
+         teléfono.
+      2. **Rompía la cuenta de un bloque múltiple.** El fin de semana del 3 de
+         octubre tiene cuatro torneos de florete y la tarjeta decía
+         «Competición múltiple · 3 torneos», porque el cuarto era el del
+         marcador. Un número que no cuadra al contar es peor que no ponerlo.
+
+      Y la repetición que se temía ya no lo es: el marcador es un renglón de
+      44 px con el nombre y los días, no una tarjeta. Que lo próximo salga
+      arriba en una línea y abajo con su fecha y su sede no es decir dos veces
+      lo mismo; es el titular y la ficha.
+    */
+  }, [filtrados, finDelTramo, hoy]);
+
+  /** Torneos que caen en el tramo que pinta la vista. El denominador. */
+  const enElTramo = React.useMemo(() => {
+    const primero = meses[0];
+    const desde = `${primero.getFullYear()}-${String(
+      primero.getMonth() + 1,
+    ).padStart(2, '0')}-01`;
+    return bloques
+      .filter((b) => b.rango.desde >= desde && b.rango.desde <= finDelTramo)
+      .reduce((n, b) => n + b.eventos.length, 0);
+  }, [bloques, meses, finDelTramo]);
+
+  return (
+    <>
       {filtrados.length === 0 ? (
         <EstadoVacio
           className="flex-1 justify-center rounded-xl border border-dashed border-border"
@@ -1479,10 +1715,7 @@ export function VistaCalendario({
           onBusqueda={setBusqueda}
           saltoDeMes={saltoDeMes}
           coincidencias={coincidencias}
-          onIrAMes={(destino) => {
-            setDireccion(destino.getTime() > ancla.getTime() ? 1 : -1);
-            enTransicion(() => setAncla(destino));
-          }}
+          onIrAMes={irAMes}
           onElegir={(e, i) => {
             setCual(i);
             irA(e.startDate);
@@ -1512,7 +1745,8 @@ export function VistaCalendario({
             retornoCalendario={retornoCalendario}
             onSolicitar={async (competitionId) => {
               if (!tirador) return;
-              const r = await solicitarInscripcion(competitionId, tirador.id);
+              const r = await solicitarInscripcion?.(competitionId, tirador.id);
+              if (!r) return;
               setAbierto(null);
               /*
                 A un aviso flotante: una fila nueva movería el calendario justo
@@ -1550,7 +1784,85 @@ export function VistaCalendario({
           />
         ) : null}
       </PantallaFicha>
-    </div>
+    </>
+  );
+}
+
+/**
+ * EL MARCADOR, TRAS EL LISTADO: lo próximo o la coincidencia en la que se
+ * está. Resuelve el listado con `use()` en su `<Suspense>` (ver arriba):
+ * es un renglón, así que si aún no ha llegado no sale nada —la zona la
+ * estrena el propio listado.
+ */
+function FranjaDelCalendario({
+  clase,
+  listado,
+  tramos,
+  seleccion,
+  busqueda,
+  cual,
+  setCual,
+  onLimpiar,
+  hayTiradores,
+  hoy,
+  setAbierto,
+  setAbiertoPasado,
+}: {
+  clase?: string;
+  listado: ListadoDelCalendario | Promise<ListadoDelCalendario>;
+  tramos: TramosLeidos;
+  seleccion: SeleccionCalendario;
+  busqueda: string;
+  cual: number;
+  setCual: React.Dispatch<React.SetStateAction<number>>;
+  onLimpiar: () => void;
+  hayTiradores: boolean;
+  hoy: string;
+  setAbierto: (e: EventView | null) => void;
+  setAbiertoPasado: (e: EventView | null) => void;
+}) {
+  const { eventos } = useListado(listado);
+  const { todos, importados } = React.useMemo(
+    () => unirPasado(eventos, tramos),
+    [eventos, tramos],
+  );
+  const filtrados = React.useMemo(
+    () => filtrarEventos(todos, seleccion),
+    [todos, seleccion],
+  );
+  const coincidencias = React.useMemo(
+    () => coincidenciasDe(filtrados, busqueda),
+    [filtrados, busqueda],
+  );
+  const proximo = React.useMemo(
+    () =>
+      [...filtrados]
+        .filter((e) => e.endDate >= hoy && !e.cancelled)
+        .sort((a, b) => a.startDate.localeCompare(b.startDate))[0] ?? null,
+    [filtrados, hoy],
+  );
+  const abrir = React.useCallback(
+    (e: EventView) => (importados.has(e.id) ? setAbiertoPasado(e) : setAbierto(e)),
+    [importados, setAbiertoPasado, setAbierto],
+  );
+  const buscando = Boolean(busqueda.trim());
+
+  return (
+    <FranjaDestacada
+      clase={clase}
+      evento={coincidencias[cual] ?? proximo}
+      buscando={buscando}
+      cual={cual}
+      total={coincidencias.length}
+      hayTiradores={hayTiradores}
+      hoy={hoy}
+      onAnterior={() =>
+        setCual((p) => (p - 1 + coincidencias.length) % coincidencias.length)
+      }
+      onSiguiente={() => setCual((p) => (p + 1) % coincidencias.length)}
+      onLimpiar={onLimpiar}
+      onAbrir={abrir}
+    />
   );
 }
 
@@ -1730,8 +2042,9 @@ function FiltrosCalendario({
   propio,
   verTodo,
   verLoMio,
-  numPruebas,
-  numTorneos,
+  listado,
+  tramos,
+  seleccion,
   temporada,
   actualizado,
 }: {
@@ -1752,8 +2065,13 @@ function FiltrosCalendario({
   propio: { propio: boolean; armas: Weapon[]; generos: ('M' | 'F')[]; categorias: string[] };
   verTodo: () => void;
   verLoMio: () => void;
-  numPruebas: number;
-  numTorneos: number;
+  /**
+   * Los recuentos («N torneos», «N pruebas») esperan al listado como el
+   * resto: cada uno es un `use()` tras su `<Suspense>`, sin frenar la fila.
+   */
+  listado: ListadoDelCalendario | Promise<ListadoDelCalendario>;
+  tramos: TramosLeidos;
+  seleccion: SeleccionCalendario;
   temporada: string | null;
   actualizado: string | null;
 }) {
@@ -1843,7 +2161,17 @@ function FiltrosCalendario({
           abierta={abierta}
           onAbierta={setAbierta}
           titulo="Filtros"
-          resultados={`Ver ${numTorneos} ${numTorneos === 1 ? 'torneo' : 'torneos'}`}
+          resultados={
+            // La hoja se abre a mano y el listado casi siempre ya llegó.
+            <React.Suspense fallback="Ver torneos">
+              <RecuentoFiltrado
+                listado={listado}
+                tramos={tramos}
+                seleccion={seleccion}
+                que="boton"
+              />
+            </React.Suspense>
+          }
           onLimpiar={puestos > 0 ? verTodo : null}
         >
         {propio.propio && !esLoMio ? (
@@ -1928,16 +2256,63 @@ function FiltrosCalendario({
         ) : null}
 
         <p className="text-xs text-muted-foreground">
-          <span className="text-foreground tabular-nums">{numPruebas}</span>{' '}
-          {numPruebas === 1 ? 'prueba' : 'pruebas'}
+          <React.Suspense fallback={null}>
+            <RecuentoFiltrado
+              listado={listado}
+              tramos={tramos}
+              seleccion={seleccion}
+              que="pruebas"
+            />
+          </React.Suspense>
           {temporada ? ` · Temporada ${temporada}` : null}
           {actualizado ? ` · ${actualizado}` : null}
         </p>
         </HojaFiltros>
       </div>
       <p role="status" className="sr-only">
-        {numTorneos} {numTorneos === 1 ? 'torneo' : 'torneos'}
+        <React.Suspense fallback={null}>
+          <RecuentoFiltrado
+            listado={listado}
+            tramos={tramos}
+            seleccion={seleccion}
+            que="torneos"
+          />
+        </React.Suspense>
       </p>
+    </>
+  );
+}
+
+/**
+ * El número que falta en «Ver N torneos» y «N pruebas»: lo mismo que se está
+ * pintando debajo, contado con la misma regla (`filtrarEventos`). Espera el
+ * listado por `use()` dentro de su `<Suspense>`; la hoja que lo lleva se
+ * abre a mano, así que en la práctica el dato ya está cuando se lee.
+ */
+function RecuentoFiltrado({
+  listado,
+  tramos,
+  seleccion,
+  que,
+}: {
+  listado: ListadoDelCalendario | Promise<ListadoDelCalendario>;
+  tramos: TramosLeidos;
+  seleccion: SeleccionCalendario;
+  que: 'boton' | 'torneos' | 'pruebas';
+}) {
+  const { eventos } = useListado(listado);
+  const filtrados = React.useMemo(
+    () => filtrarEventos(unirPasado(eventos, tramos).todos, seleccion),
+    [eventos, tramos, seleccion],
+  );
+  const torneos = filtrados.length;
+  if (que === 'boton') return <>Ver {torneos} {torneos === 1 ? 'torneo' : 'torneos'}</>;
+  if (que === 'torneos') return <>{torneos} {torneos === 1 ? 'torneo' : 'torneos'}</>;
+  const pruebas = filtrados.reduce((n, e) => n + e.competitions.length, 0);
+  return (
+    <>
+      <span className="text-foreground tabular-nums">{pruebas}</span>{' '}
+      {pruebas === 1 ? 'prueba' : 'pruebas'}
     </>
   );
 }

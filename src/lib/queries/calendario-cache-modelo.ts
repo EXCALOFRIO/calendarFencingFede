@@ -1,5 +1,6 @@
 import type { Cacheado, DefinicionCache } from '@/lib/cache/cache';
 import type { ParteClave } from '@/lib/cache/claves';
+import type { CategoriaDeCalendario } from '@/lib/ambito';
 import { claveExtra, personaDeFila, type ExtraInscrito, type FilaUnida } from '@/lib/entries/union';
 import type { EstadoLista } from '@/lib/entries/lectura';
 import type { ExtrasInscritos, ParInscrito } from './inscritos-extras';
@@ -65,6 +66,12 @@ export function conExtras(lista: ListaPublica, extras: ExtrasInscritos | null): 
 export type LectoresCalendario = {
   /** La temporada de hoy en adelante (`listEvents` de la pantalla principal). */
   eventos: () => Promise<EventView[]>;
+  /**
+   * Las categorías con prueba en el calendario, con su ámbito: lo que la
+   * `base` necesita para los filtros sin pagar el listado entero
+   * (`listCategoriasCalendario`).
+   */
+  categorias: () => Promise<CategoriaDeCalendario[]>;
   tramo: (t: { desde: string; hasta: string; hoy: string }) => Promise<TramoPasado>;
   /** `getEvent`: con plazos y lo extraído de los PDFs. */
   detalle: (eventId: string) => Promise<EventView | null>;
@@ -144,6 +151,19 @@ export function crearCachesCalendario({ cache, leer }: { cache: Definidor; leer:
     guardarSi: (v: EventView[]) => v.length > 0,
   });
 
+  /*
+    Las categorías de los filtros: mismo corte por día y misma frescura que
+    `eventos`, del que es la versión barata (las pruebas sin los torneos).
+  */
+  const categorias = cache.definir({
+    espacio: 'calendario-categorias',
+    depende: ['calendario'],
+    frescoMs: 5 * MINUTO,
+    caducaMs: DIA,
+    cargar: async (_dia: string) => leer.categorias(),
+    guardarSi: (v: CategoriaDeCalendario[]) => v.length > 0,
+  });
+
   const definicionTramo = (espacio: string, frescoMs: number, caducaMs: number) =>
     cache.definir({
       espacio,
@@ -219,6 +239,10 @@ export function crearCachesCalendario({ cache, leer }: { cache: Definidor; leer:
     /** La temporada de la rejilla, recortada. */
     eventosDelCalendario(): Promise<EventView[]> {
       return eventos(diaUtc());
+    },
+    /** Las categorías que se ofrecen en los filtros, con su ámbito. */
+    categoriasDelCalendario(): Promise<CategoriaDeCalendario[]> {
+      return categorias(diaUtc());
     },
     /** Lo ya celebrado de un tramo (ya acotado a ayer por quien llama). */
     tramoPasado(t: { desde: string; hasta: string; hoy: string }): Promise<TramoPasado> {

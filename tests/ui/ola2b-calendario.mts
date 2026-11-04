@@ -28,6 +28,7 @@ import tailwind from '@tailwindcss/postcss';
 import { chromium, type Page } from 'playwright';
 import type { D1Binding, D1QueryResult, D1Statement } from '@/db/d1/binding';
 import { hoyMadrid } from '@/lib/callups/fechas';
+import { categoriasDeEventos } from '@/lib/ambito';
 import { listEvents, type Scope } from '@/lib/queries/calendar';
 import { cargarTramoPasado } from '@/lib/queries/calendario-pasado';
 import { tramoDeMeses, tramoPasadoDe } from '@/lib/queries/calendario-pasado-tramo';
@@ -125,10 +126,11 @@ const [eventos, tramo, js, css] = await Promise.all([
 ]);
 const datos = {
   inicial: { vista: 'mes', mes: `${anio}-${String(mes).padStart(2, '0')}` },
-  eventos,
+  // El listado ya resuelto: el arnés pinta el calendario entero a la primera.
+  listado: { eventos, inscripciones: {}, solicitudes: [] },
+  categoriasOfertadas: categoriasDeEventos(eventos),
   perfil: { role: 'admin', weapons: [] },
   tiradores: [],
-  inscripciones: {},
   temporada: '2026-2027',
   actualizado: '07 oct, 05:00',
   pasadoInicial: tramo,

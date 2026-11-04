@@ -54,6 +54,7 @@ const { CampanaCliente } = await import('@/components/notificaciones/campana-cli
 const { AccionesNotificaciones, BandejaNotificaciones } = await import('@/components/notificaciones/bandeja');
 const { agruparBandeja } = await import('@/lib/notificaciones/bandeja');
 const { VistaCalendario } = await import('@/components/calendario/vista');
+const { categoriasDeEventos } = await import('@/lib/ambito');
 const { listEvents, getDataFreshness } = await import('@/lib/queries/calendar');
 const { cargarPantallaRanking } = await import('@/app/(app)/ranking/datos');
 const { VistaRanking } = await import('@/app/(app)/ranking/vista');
@@ -125,10 +126,11 @@ const paginas = new Map<string, string>();
   const eventos = await listEvents({ limit: 500, scope: ['NACIONAL', 'INTERNACIONAL'] });
   paginas.set('calendario', documento(css, '/', h(VistaCalendario, {
     inicial: { vista: 'mes', mes: hoy.slice(0, 7) },
-    eventos,
+    // El listado ya resuelto, como en las capturas de siempre: todo sale a la vez.
+    listado: { eventos, inscripciones: {}, solicitudes: [] },
+    categoriasOfertadas: categoriasDeEventos(eventos),
     perfil: { role: 'athlete', weapons: ['FLORETE'] },
     tiradores: [],
-    inscripciones: {},
     temporada: '2026-2027',
     actualizado: null,
     solicitarInscripcion: nada,

@@ -15,9 +15,10 @@ const AVANZAR = [TIPO_TRANSICION.avanzar];
 /**
  * Una fila de ranking en UNA línea, igual en la tabla nacional y en la
  * internacional, con el orden de `FilaPersona`: puesto, avatar, bandera,
- * nombre (recortado con puntos suspensivos, nunca en dos renglones), lo que
- * haga falta detrás del nombre (la marca olímpica, «Tú») y los puntos. A
- * 320 px no se desplaza nada en horizontal: lo único que encoge es el nombre,
+ * nombre (recortado con puntos suspensivos; sólo cuando hay algo detrás —la
+ * marca olímpica— puede bajar a dos renglones para no pelear por el sitio),
+ * lo que haga falta detrás del nombre (la marca olímpica, «Tú») y los puntos.
+ * A 320 px no se desplaza nada en horizontal: lo único que encoge es el nombre,
  * y por debajo de 360 px el club sale de la vista (no del lector de pantalla)
  * y la marca olímpica pasa junto a los puntos para dejarle sitio. El avatar se
  * queda siempre: es lo que hace reconocible la fila de un vistazo.
@@ -67,7 +68,16 @@ export const FilaLinea = memo(function FilaLinea({
   /** Botón al final de la fila (abrir el detalle). */
   accion?: React.ReactNode;
 }) {
-  const claseNombre = cn('min-w-0 truncate text-sm leading-5', mio ? 'font-semibold' : 'font-medium');
+  const conTras = tras !== undefined && tras !== null && tras !== false;
+  /*
+    Sin nada detrás el nombre se corta con puntos como siempre; con la marca
+    olímpica al lado puede bajar a dos renglones (nombre en la línea de arriba,
+    apellido debajo) en vez de comerse medio nombre truncado.
+  */
+  // `line-clamp` impone `-webkit-box`: va sobre el texto, no sobre el enlace
+  // flex que centra la fila — si no, rompe el centrado vertical.
+  const claseCorte = conTras ? 'line-clamp-2' : 'truncate';
+  const claseNombre = cn('min-w-0 text-sm leading-5', mio ? 'font-semibold' : 'font-medium');
   /*
     El enlace ocupa el alto de la fila (40 px, en px y no en rem para que no
     crezca con la raíz del móvil) y un pseudoelemento le añade 2 px arriba y
@@ -75,7 +85,6 @@ export const FilaLinea = memo(function FilaLinea({
     `.ranking a[href]` porque las utilidades van después de base.
   */
   const claseEnlace = "relative flex min-h-[40px] items-center after:absolute after:inset-x-0 after:-inset-y-[2px] after:content-[''] hover:underline focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none";
-  const conTras = tras !== undefined && tras !== null && tras !== false;
   const paisDestino = enlacePais ? rutaPaisDe(pais) : null;
   return (
     <li
@@ -102,19 +111,19 @@ export const FilaLinea = memo(function FilaLinea({
         {pais ? <BanderaPais pais={pais} soloBandera className="shrink-0" /> : null}
         {personaId ? (
           <EnlaceIntencion href={`${RUTA_EXPLORAR}/${personaId}`} transitionTypes={AVANZAR} title={nombre} data-nombre className={cn(claseNombre, claseEnlace)}>
-            <span className="truncate">{nombre}</span>
+            <span className={claseCorte}>{nombre}</span>
           </EnlaceIntencion>
         ) : enlaceExterno ? (
           <a href={enlaceExterno} target="_blank" rel="noreferrer" title={nombre} data-nombre className={cn(claseNombre, claseEnlace)}>
-            <span className="truncate">{nombre}</span>
+            <span className={claseCorte}>{nombre}</span>
             <span className="sr-only"> (se abre en otra pestaña)</span>
           </a>
         ) : paisDestino ? (
           <EnlaceIntencion href={paisDestino} transitionTypes={AVANZAR} title={nombre} data-nombre data-enlace="pais" className={cn(claseNombre, claseEnlace)}>
-            <span className="truncate">{nombre}</span>
+            <span className={claseCorte}>{nombre}</span>
           </EnlaceIntencion>
         ) : (
-          <span className={claseNombre} title={nombre} data-nombre>{nombre}</span>
+          <span className={cn(claseNombre, claseCorte)} title={nombre} data-nombre>{nombre}</span>
         )}
         {mio ? <MarcaPropia /> : null}
         {club ? (

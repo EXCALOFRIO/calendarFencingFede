@@ -103,6 +103,7 @@ describe('caché: lista y extras por separado, sin datos de cuenta', () => {
       cache,
       leer: {
         eventos: async () => [],
+        categorias: async () => [],
         tramo: async () => { throw new Error('no'); },
         detalle: async () => null,
         inscritos: async () => {

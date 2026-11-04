@@ -28,6 +28,7 @@ import type { D1Binding, D1QueryResult, D1Statement } from '@/db/d1/binding';
 import { VistaCalendario } from '@/components/calendario/vista';
 import { ResultadosPasados } from '@/components/calendario/pasado/resultados-pasados';
 import { hoyMadrid } from '@/lib/callups/fechas';
+import { categoriasDeEventos } from '@/lib/ambito';
 import { listEvents, type Scope } from '@/lib/queries/calendar';
 import { cargarTramoPasado, edicionesExplorarDeEvento } from '@/lib/queries/calendario-pasado';
 import { tramoDeMeses, tramoPasadoDe } from '@/lib/queries/calendario-pasado-tramo';
@@ -154,10 +155,11 @@ for (const mes of MESES) {
       css,
       React.createElement(VistaCalendario, {
         inicial: { vista: VISTA, mes },
-        eventos,
+        // El listado ya resuelto: las capturas enseñan el calendario entero.
+        listado: { eventos, inscripciones: {}, solicitudes: [] },
+        categoriasOfertadas: categoriasDeEventos(eventos),
         perfil: { role: 'admin', weapons: [] },
         tiradores: [],
-        inscripciones: {},
         temporada: '2026-2027',
         actualizado: null,
         solicitarInscripcion: sinAccion,

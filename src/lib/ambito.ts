@@ -1,4 +1,6 @@
 import type { Role, Weapon } from '@/lib/auth/session';
+import type { EventView } from '@/lib/queries/calendar';
+import { esInternacional } from './utils';
 
 /**
  * Ámbito de arranque: con qué filtros se abre el calendario según quién entra.
@@ -170,4 +172,42 @@ export function armasDeArranque(perfil: PerfilAmbito): Weapon[] {
   if (perfil.role !== 'coach') return [...ARMAS];
   const armas = perfil.weapons.filter(esArma);
   return armas.length > 0 ? armas : [...ARMAS];
+}
+
+/**
+ * Una categoría con prueba en el calendario, con su ámbito.
+ *
+ * Es lo que la barra de filtros necesita para armarse sin esperar al
+ * listado: en «Nacional» no se ofrece una categoría que sólo se tira fuera.
+ * El ámbito es EL DE LA TARJETA que la enseña, igual que al filtrar.
+ */
+export type CategoriaDeCalendario = {
+  categoria: string;
+  internacional: boolean;
+};
+
+/**
+ * Las categorías de un listado de eventos, una por (categoría, ámbito): la
+ * misma cuenta que hace la vista al pintar —las competiciones de cada
+ * tarjeta, con el ámbito de la tarjeta—.
+ *
+ * Sirve para los arneses y las pruebas, que ya tienen los eventos en
+ * memoria; la página las pide directas a D1 en su `base`
+ * (`listCategoriasCalendario`, mismo conjunto), para no esperar al listado.
+ */
+export function categoriasDeEventos(
+  eventos: readonly EventView[],
+): CategoriaDeCalendario[] {
+  const vistas = new Set<string>();
+  const salida: CategoriaDeCalendario[] = [];
+  for (const e of eventos) {
+    const internacional = esInternacional(e.source, e.scope, e.circuit);
+    for (const c of e.competitions) {
+      const clave = `${c.category}${internacional ? 'I' : 'N'}`;
+      if (vistas.has(clave)) continue;
+      vistas.add(clave);
+      salida.push({ categoria: c.category, internacional });
+    }
+  }
+  return salida;
 }

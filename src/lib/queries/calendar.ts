@@ -1006,6 +1006,65 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
 }
 
 /**
+ * Las categorías con prueba en el calendario, con el organismo de la tarjeta
+ * que las enseña. Es lo único que la `base` de la portada necesita para
+ * armar sus filtros sin traer el listado entero (`listEvents`, mucho más
+ * caro): el conjunto es el mismo —mismas tarjetas, mismas pruebas, incluidas
+ * las heredadas del par enlazado—, sólo que sin pedir los torneos.
+ *
+ * Devuelve los campos crudos; quién es «internacional» lo decide quien llama
+ * con `organismoDe`/`esInternacional`, para que la regla siga en un sitio.
+ */
+export async function listCategoriasCalendario({
+  scope,
+  limit = 400,
+}: {
+  scope: readonly Scope[];
+  limit?: number;
+}): Promise<
+  { category: string; source: string; scope: string; circuit: string | null }[]
+> {
+  const today = new Date().toISOString().slice(0, 10);
+  /*
+    Las MISMAS tarjetas que pide el listado (canónicas, sin desaparecer,
+    desde hoy, de estos ámbitos, con el mismo tope y el mismo orden), pero
+    sólo sus ids: la selección se queda dentro de la sentencia.
+  */
+  const visibles = db
+    .select({ id: event.id })
+    .from(event)
+    .where(
+      and(
+        isNull(event.disappearedAt),
+        isNull(event.canonicalEventId),
+        gte(event.endDate, today),
+        inArray(event.scope, [...scope]),
+      ),
+    )
+    .orderBy(asc(event.startDate), asc(event.name))
+    .limit(limit);
+
+  const padre = alias(event, 'padre');
+  return db
+    .selectDistinct({
+      category: eventCompetition.category,
+      // El ámbito es el de la tarjeta que la enseña (el canónico), como en la vista.
+      source: sql<string>`coalesce(${padre.source}, ${event.source})`,
+      scope: sql<string>`coalesce(${padre.scope}, ${event.scope})`,
+      circuit: sql<string | null>`coalesce(${padre.circuit}, ${event.circuit})`,
+    })
+    .from(eventCompetition)
+    .innerJoin(event, eq(event.id, eventCompetition.eventId))
+    .leftJoin(padre, eq(padre.id, event.canonicalEventId))
+    .where(
+      or(
+        inArray(eventCompetition.eventId, visibles),
+        inArray(event.canonicalEventId, visibles),
+      ) ?? sql`true`,
+    );
+}
+
+/**
  * ¿Esto se parece a un huso IANA de verdad?
  *
  * Hace falta porque hay husos heredados de la FIE ya guardados en la base con

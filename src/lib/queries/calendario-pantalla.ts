@@ -1,29 +1,74 @@
 import { inArray } from 'drizzle-orm';
 import { db } from '@/db';
 import { entry } from '@/db/schema';
-import { getManagedAthletes, type SessionProfile } from '@/lib/auth/session';
+import {
+  getManagedAthletes,
+  type AthleteSummary,
+  type SessionProfile,
+} from '@/lib/auth/session';
+import type { CategoriaDeCalendario } from '@/lib/ambito';
+import type { SolicitudDeCuenta } from '@/lib/calendario/tus-pruebas';
 import { ENTRY_STATUS_LABEL, type EntryStatus } from '@/lib/entries/state-machine';
-import { getCurrentSeason, getDataFreshness } from './calendar';
+import { getCurrentSeason, getDataFreshness, type EventView } from './calendar';
 import { calendarioCompartido } from './calendario-cache';
 import type { TramoPasado } from './calendario-pasado-modelo';
 import { tramoDeMeses, tramoPasadoDe } from './calendario-pasado-tramo';
 
 /**
- * Lo que lee la pantalla principal (el calendario), en DOS promesas, no en un
- * solo `await`:
+ * El armazón de la portada: lo barato con lo que se pintan la cabecera, la
+ * barra y los filtros —sin esperar al listado—.
  *
- * - `critica`: lo que hace falta para pintar —la temporada de hoy en
- *   adelante (caché compartida), la cuenta (sus tiradores y sus inscripciones,
- *   encadenadas a la sesión sin esperar al resto) y el armazón (`getCurrentSeason`,
- *   `getDataFreshness`: memorizadas por petición con React `cache`, así que el
- *   layout y esta página las leen una sola vez). La página la espera y pinta.
- * - `pasadoInicial`: lo ya celebrado del tramo con el que se abre. Arranca
- *   a la vez pero NO se espera aquí: viaja como promesa hasta la vista y
- *   entra por el stream cuando se resuelve, sin frenar el primer pintado
- *   (ver «Streaming data to the client» en la guía de streaming de Next).
+ * Todo aquí es una caché (la compartida o la de petición de `cache()`): lo
+ * único de verdad que se espera es la sesión y sus tiradores, que el layout
+ * ya pidió en paralelo. Con eso la página enseña su estructura en cuanto el
+ * armazón común está, como `/ranking`.
+ */
+export type BaseDelCalendario = {
+  perfil: SessionProfile;
+  atletas: AthleteSummary[];
+  temporada: Awaited<ReturnType<typeof getCurrentSeason>>;
+  frescura: Awaited<ReturnType<typeof getDataFreshness>>;
+  /**
+   * Las categorías con prueba en el calendario, con su ámbito: con ellas se
+   * arman los filtros antes de que llegue el listado (`categoriasDeEventos`
+   * es la misma cuenta sobre los eventos).
+   */
+  categorias: CategoriaDeCalendario[];
+};
+
+/**
+ * El listado: lo pesado. La temporada entera de eventos de hoy en adelante —
+ * la consulta cara de la ruta— y las inscripciones de la cuenta. Viaja como
+ * promesa hasta la vista, que la resuelve con `use()` dentro de sus
+ * `<Suspense>`: la estructura se ve ya y el listado entra por el stream.
+ */
+export type ListadoDelCalendario = {
+  eventos: EventView[];
+  /** competitionId -> estado legible de la inscripción de esta cuenta. */
+  inscripciones: Record<string, string>;
+  /**
+   * Las solicitudes de la cuenta (`entry`), con su tirador. El calendario no
+   * las pinta: las usa «Tus pruebas», que las espera en el servidor sobre la
+   * misma promesa —sin una segunda lectura—.
+   */
+  solicitudes: SolicitudDeCuenta[];
+};
+
+/**
+ * Lo que lee la pantalla principal (el calendario), en TRES promesas, no en
+ * un solo `await`:
  *
- * Si la sesión falla, `critica` rechaza igual que antes (`NO_AUTENTICADO` lo
- * recoge la frontera de error).
+ * - `base`: lo que hace falta para el armazón —la sesión y los tiradores de
+ *   la cuenta, la temporada, la frescura y el catálogo de categorías de los
+ *   filtros. La página la espera y pinta la estructura.
+ * - `listado`: la temporada entera y las inscripciones. NO se espera aquí:
+ *   viaja como promesa hasta la vista y entra por el stream cuando se
+ *   resuelve («Streaming data to the client» en la guía de Next).
+ * - `pasadoInicial`: lo ya celebrado del tramo con el que se abre, igual que
+ *   `listado`: arranca a la vez y entra por el stream.
+ *
+ * Si la sesión falla, `base` y `listado` rechazan igual que antes
+ * (`NO_AUTENTICADO` lo recoge la frontera de error).
  */
 export function cargarPantallaCalendario({
   perfil,
@@ -33,8 +78,9 @@ export function cargarPantallaCalendario({
 }: {
   /**
    * La sesión en curso, como promesa (la página la pasa sin esperar). Lo que
-   * no depende de la cuenta —la temporada, la frescura, el pasado del tramo—
-   * arranca ya, en paralelo con la sesión, en vez de detrás de ella.
+   * no depende de la cuenta —la temporada, la frescura, las categorías, el
+   * pasado del tramo— arranca ya, en paralelo con la sesión, en vez de
+   * detrás de ella.
    */
   perfil: Promise<SessionProfile>;
   /** Día en Madrid (`hoyMadrid`). */
@@ -44,7 +90,8 @@ export function cargarPantallaCalendario({
   /** Uno (vista de mes) o tres (trimestre). */
   meses: number;
 }): {
-  critica: ReturnType<typeof juntaCritica>;
+  base: Promise<BaseDelCalendario>;
+  listado: Promise<ListadoDelCalendario>;
   pasadoInicial: Promise<TramoPasado | null> | null;
 } {
   const [anio, numeroMes] = (mes ?? hoy.slice(0, 7)).split('-').map(Number);
@@ -52,14 +99,47 @@ export function cargarPantallaCalendario({
   const tramoInicial = tramoPasadoDe(arranque.desde, arranque.hasta, hoy);
 
   /*
-    Lo de la cuenta cuelga de la sesión y nada más: sus tiradores y, a la
-    vez, sus inscripciones pedidas.
+    Lo de la cuenta cuelga de la sesión y nada más: una sola promesa de
+    `getManagedAthletes` —que está memoizada con `cache()`, así que el
+    layout y esta página la leen una vez— y, a su rueda, las inscripciones.
+    Así `base` no espera a `entry` y `listado` no espera a la sesión.
   */
-  const cuenta = perfil.then(async (p) => {
-    const atletas = await getManagedAthletes(p.profileId);
-    const { mapa, filas } = await inscripcionesDe(atletas);
-    return { perfil: p, atletas, inscripciones: mapa, solicitudes: filas };
-  });
+  const cuenta = perfil.then(async (p) => ({
+    perfil: p,
+    atletas: await getManagedAthletes(p.profileId),
+  }));
+  const inscripciones = cuenta.then(({ atletas }) => inscripcionesDe(atletas));
+
+  /*
+    El armazón: sesión + tiradores + temporada + frescura + el catálogo de
+    categorías. Todo lo demás está en la caché compartida o en la de la
+    petición, así que en la práctica `base` vale lo que vale la sesión.
+  */
+  const base = Promise.all([
+    cuenta,
+    getCurrentSeason(),
+    getDataFreshness(),
+    calendarioCompartido.categoriasDelCalendario(),
+  ]).then(([{ perfil: sesion, atletas }, temporada, frescura, categorias]) => ({
+    perfil: sesion,
+    atletas,
+    temporada,
+    frescura,
+    categorias,
+  }));
+
+  /*
+    El listado: la temporada desde hoy (la cara) y las inscripciones, que
+    sueltan en cuanto los tiradores estén, sin esperar a los eventos.
+  */
+  const listado = Promise.all([
+    calendarioCompartido.eventosDelCalendario(),
+    inscripciones,
+  ]).then(([eventos, { mapa, filas }]) => ({
+    eventos,
+    inscripciones: mapa,
+    solicitudes: filas,
+  }));
 
   /*
     Un fallo del tramo no tumba la pantalla: la vista lo vuelve a pedir. Se
@@ -71,28 +151,7 @@ export function cargarPantallaCalendario({
     ? calendarioCompartido.tramoPasado({ ...tramoInicial, hoy }).catch(() => null)
     : null;
 
-  const critica = juntaCritica(cuenta);
-
-  return { critica, pasadoInicial };
-}
-
-/** La tanda paralela con la que pinta la vista (ver arriba). */
-async function juntaCritica(
-  cuenta: Promise<{
-    perfil: SessionProfile;
-    atletas: Awaited<ReturnType<typeof getManagedAthletes>>;
-    inscripciones: Record<string, string>;
-    solicitudes: { competitionId: string; athleteId: string; status: EntryStatus }[];
-  }>,
-) {
-  const [eventos, { perfil: sesion, atletas, inscripciones, solicitudes }, temporada, frescura] =
-    await Promise.all([
-      calendarioCompartido.eventosDelCalendario(),
-      cuenta,
-      getCurrentSeason(),
-      getDataFreshness(),
-    ]);
-  return { perfil: sesion, eventos, atletas, inscripciones, solicitudes, temporada, frescura };
+  return { base, listado, pasadoInicial };
 }
 
 /**

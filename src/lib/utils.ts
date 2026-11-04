@@ -275,6 +275,22 @@ export function organismoDe(
   return 'RFEE';
 }
 
+/**
+ * El torneo es del ámbito «Internacional» del calendario (FIE o EFC).
+ *
+ * Es la MISMA regla que aplica la vista para filtrar, sacada a función para
+ * que la base de la página —que decide las categorías a ofrecer sin tener
+ * los eventos— no pueda desviarse de ella (`encajaEnElAmbito` en la vista).
+ */
+export function esInternacional(
+  source: string,
+  scope: string,
+  circuit?: string,
+): boolean {
+  const organismo = organismoDe(source, scope, circuit);
+  return organismo === 'FIE' || organismo === 'EFC';
+}
+
 /** Primera letra en mayúscula y el resto tal cual. */
 export function capitalizar(texto: string): string {
   return texto.charAt(0).toUpperCase() + texto.slice(1);
