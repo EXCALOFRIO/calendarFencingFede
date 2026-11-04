@@ -185,6 +185,7 @@ export function cabeceraDeRuta(
   if (AMBITOS_EXPLORAR.has(ruta)) return { variante: 'raiz', titulo: 'Explorar', campana: true };
   if (ruta === RUTA_YO) return { variante: 'raiz', titulo: 'Tú' };
   if (ruta === '/ranking') return { variante: 'raiz', titulo: 'Ranking' };
+  if (ruta === '/olimpica') return { variante: 'subpantalla', titulo: 'Clasificación olímpica', volverA: '/ranking' };
   if (ruta === RUTA_SIGUIENDO || ruta === RUTA_FAVORITOS) return { variante: 'subpantalla', titulo: 'Siguiendo', volverA: RUTA_YO };
 
   // Desde Explorar se vuelve al ámbito de la ruta; desde otra pestaña, a su raíz.

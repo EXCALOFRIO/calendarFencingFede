@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation';
 import { PruebaOlimpica } from '@/components/olimpica/prueba-olimpica';
-import { CabeceraCompacta } from '@/components/sistema/cabecera-compacta';
 import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import { getSessionProfile } from '@/lib/auth/session';
 import { getAnotacionesOlimpicas, getClasificacionOlimpica } from '@/lib/queries/olimpica';
@@ -31,8 +30,6 @@ export default async function Pagina() {
   );
 
   return (
-    <>
-      <CabeceraCompacta titulo="Clasificación olímpica" volverA="/ranking" />
       <main className="ancho-app mx-auto flex w-full max-w-3xl flex-col gap-3 px-3 pb-[calc(56px+env(safe-area-inset-bottom)+16px)] pt-3 sm:px-4">
         <div className="min-w-0">
           <h2 className="font-display text-xl leading-6">Los Ángeles 2028</h2>
@@ -66,6 +63,5 @@ export default async function Pagina() {
           />
         ) : null}
       </main>
-    </>
   );
 }

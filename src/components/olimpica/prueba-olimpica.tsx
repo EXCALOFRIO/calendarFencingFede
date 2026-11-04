@@ -1,4 +1,5 @@
 import { Check, ChevronDown } from 'lucide-react';
+import { Fragment } from 'react';
 import { BanderaPais } from '@/components/bandera';
 import { Pastilla } from '@/components/sistema/pastilla';
 import type {
@@ -22,137 +23,156 @@ function viaEquipo(e: EquipoClasificado, R: ReglasOlimpicas): string {
   return 'Plaza libre';
 }
 
-function Seccion({
-  titulo,
-  cifra,
-  descripcion,
-  children,
-}: {
-  titulo: string;
-  cifra: number;
-  descripcion?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="min-w-0 border-t border-border pt-3">
-      <h4 className="flex flex-wrap items-baseline gap-x-2">
-        <span className="cifra text-3xl leading-none">{cifra}</span>
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{titulo}</span>
-      </h4>
-      {descripcion ? (
-        <div className="mt-1 text-xs text-muted-foreground">{descripcion}</div>
-      ) : null}
-      <ul className="mt-2 min-w-0 space-y-px">{children}</ul>
-    </section>
-  );
-}
-
+/**
+ * Una fila de la proyección, con la forma de las filas del ranking:
+ * posición, bandera, nombre y puntos. El color manda:
+ *
+ *   `dentro`  verde — esa plaza la tiene hoy (equipo o tirador);
+ *   `fuera`   amarillo — la primera que se queda fuera de ese camino,
+ *             con lo que le falta («a 14 pts», empate dicho).
+ *
+ * El CON seguido (`propio`) conserva el marcado de siempre encima del color.
+ */
 function Fila({
-  rotulo,
+  posicion,
   noc,
   nombre,
+  via,
   puntos,
+  estado,
   propio,
-  segunda,
 }: {
-  rotulo: React.ReactNode;
+  posicion: string;
   noc: string;
+  /** Nombre del tirador; en equipos se enseña el país con `conNombre`. */
   nombre?: string | null;
-  puntos: number;
+  /** El camino de la plaza («4 primeros», «Europa», «12.º» en los de fuera). */
+  via?: string | null;
+  puntos: string;
+  estado: 'dentro' | 'fuera';
   propio: boolean;
-  segunda?: React.ReactNode;
 }) {
   return (
     <li
+      data-estado={estado}
       data-propio={propio ? '' : undefined}
       className={cn(
-        'min-w-0 rounded-md px-2 py-2',
+        'grid min-w-0 grid-cols-[2.5rem_auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-2',
+        estado === 'dentro' ? 'bg-ok-tinte/50' : 'bg-warn-tinte/60',
         propio && 'bg-marcado font-semibold',
       )}
     >
-      <div className="grid min-w-0 grid-cols-[4.75rem_auto_minmax(0,1fr)_auto] items-center gap-2">
-        <span className="truncate text-xs text-muted-foreground">{rotulo}</span>
-        <BanderaPais pais={noc} />
-        <span className="min-w-0 truncate text-sm">{nombre ?? ''}</span>
-        <span className="cifra text-sm tabular-nums">{numero.format(puntos)}</span>
-      </div>
-      {segunda ? (
-        <div className="mt-1 min-w-0 truncate pl-[5.25rem] text-xs text-muted-foreground">
-          {segunda}
-        </div>
-      ) : null}
+      <span
+        className={cn(
+          'truncate text-xs tabular-nums',
+          estado === 'dentro' ? 'text-ok' : 'text-warn',
+          propio && 'text-foreground',
+        )}
+      >
+        {posicion}
+      </span>
+      <BanderaPais pais={noc} conNombre={!nombre} />
+      <span className="min-w-0 truncate text-sm">
+        {nombre}
+        {via ? (
+          <span className={cn('text-xs font-normal', nombre ? 'ml-1.5 text-muted-foreground' : 'text-muted-foreground')}>
+            {nombre ? `· ${via}` : via}
+          </span>
+        ) : null}
+      </span>
+      <span
+        className={cn(
+          'cifra text-sm tabular-nums',
+          estado === 'fuera' && 'text-warn',
+          propio && 'text-foreground',
+        )}
+      >
+        {puntos}
+      </span>
     </li>
   );
 }
 
-/** «Siguiente: KOR a 25 pts» — quién hereda ese camino si el de arriba cae. */
-function Siguiente({ fuera, propio }: { fuera: PrimerFuera; propio: string }) {
+/** La fila amarilla: quién hereda el camino si el de arriba cae. */
+function FilaFuera({ fuera, rotulo, propio }: { fuera: PrimerFuera; rotulo: string; propio: string }) {
   return (
-    <span
-      data-propio={fuera.noc === propio ? '' : undefined}
-      className={cn(
-        'inline-flex min-w-0 max-w-full items-center gap-1',
-        fuera.noc === propio && 'font-semibold text-foreground',
-      )}
-    >
-      <span>Siguiente:</span>
-      <BanderaPais pais={fuera.noc} soloBandera />
-      <span className="min-w-0 truncate">{fuera.nombre ?? fuera.noc}</span>
-      <span className="shrink-0 tabular-nums">
-        {fuera.empate ? 'empate' : `a ${numero.format(fuera.diferencia)}`}
-      </span>
+    <Fila
+      posicion={rotulo}
+      noc={fuera.noc}
+      nombre={fuera.nombre}
+      via={fuera.nombre ? `${fuera.posicion}.º` : `${fuera.posicion}.º · siguiente`}
+      puntos={fuera.empate ? 'empate' : `a ${numero.format(fuera.diferencia)}`}
+      estado="fuera"
+      propio={fuera.noc === propio}
+    />
+  );
+}
+
+function Seccion({ titulo, descripcion, children }: { titulo: string; descripcion?: string; children: React.ReactNode }) {
+  return (
+    <section className="min-w-0">
+      <h4 className="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {titulo}
+        {descripcion ? <span className="ml-2 normal-case tracking-normal">· {descripcion}</span> : null}
+      </h4>
+      <ul className="mt-1.5 min-w-0 space-y-px">{children}</ul>
+    </section>
+  );
+}
+
+/**
+ * El estado del CON seguido, en dos rótulos —equipo e individual— porque
+ * son plazas distintas que se ganan distinto: «Equipo» en verde o «Equipo a
+ * 30 pts» en amarillo, «Clasificado» o «Individual a 12 pts». Antes sólo
+ * salía el del equipo y el individual quedaba escondido dentro.
+ */
+function EstadoPropio({ estado }: { estado: EstadoNoc | undefined }) {
+  if (!estado) return null;
+  const equipo = estado.equipo ? (
+    <Pastilla tono="ok" tamano="sm" data-estado-equipo="dentro">
+      <Check aria-hidden />
+      Equipo
+    </Pastilla>
+  ) : estado.distanciaEquipo ? (
+    <Pastilla tono="aviso" tamano="sm" data-estado-equipo="fuera">
+      {`Equipo a ${numero.format(estado.distanciaEquipo.diferencia)} pts`}
+    </Pastilla>
+  ) : null;
+  const individual = estado.tiradores > 0 ? (
+    <Pastilla tono="ok" tamano="sm" data-estado-individual="dentro">
+      <Check aria-hidden />
+      {`Clasificado${estado.tiradores > 1 ? ` · ${estado.tiradores}` : ''}`}
+    </Pastilla>
+  ) : estado.distanciaIndividual ? (
+    <Pastilla tono="aviso" tamano="sm" data-estado-individual="fuera">
+      {`Individual a ${numero.format(estado.distanciaIndividual.diferencia)} pts`}
+    </Pastilla>
+  ) : null;
+  if (!equipo && !individual) return null;
+  return (
+    <span className="flex shrink-0 items-center gap-1.5">
+      <BanderaPais pais={estado.noc} soloBandera />
+      {equipo}
+      {individual}
     </span>
   );
 }
 
 /**
- * El estado del CON seguido, en texto y a la vista: «Clasificado»,
- * «Clasificado · equipo», «Equipo a 30 pts» o «A 30 pts». Es la misma frase
- * que lleva la etiqueta junto al nombre en el ranking.
- */
-function EstadoPropio({ estado }: { estado: EstadoNoc | undefined }) {
-  if (!estado) return null;
-  const dentro = estado.tiradores > 0;
-  if (dentro) {
-    return (
-      <Pastilla tono="ok" tamano="md" data-estado-propio="dentro">
-        <BanderaPais pais={estado.noc} soloBandera />
-        <Check aria-hidden />
-        {estado.equipo ? 'Clasificado · equipo' : `Clasificado${estado.tiradores > 1 ? ` · ${estado.tiradores} plazas` : ''}`}
-      </Pastilla>
-    );
-  }
-  const distancia = estado.distanciaEquipo ?? estado.distanciaIndividual;
-  if (!distancia) return null;
-  const deEquipo = distancia.camino.startsWith('EQUIPO');
-  return (
-    <Pastilla tono="aviso" tamano="md" data-estado-propio="fuera">
-      <BanderaPais pais={estado.noc} soloBandera />
-      {`${deEquipo ? 'Equipo a' : 'A'} ${numero.format(distancia.diferencia)} pts`}
-    </Pastilla>
-  );
-}
-
-/**
  * ===========================================================================
- * LA SECCIÓN DE CLASIFICACIÓN OLÍMPICA
+ * LA PRUEBA DE CLASIFICACIÓN OLÍMPICA
  * ===========================================================================
  *
- * La sección va PLEGADA: de entrada sólo se ve la fila con el título, el
- * estado del CON propio y la flecha; el desglose se abre al tocarla. El
- * ranking normal es lo primero que se lee — la proyección olímpica se enseña
- * a quien la busca, sin estorbar a quien no.
+ * Cada prueba va PLEGADA: de entrada se ve el arma con el género y, junto a
+ * la flecha, el estado del CON seguido en dos rótulos (equipo e individual).
+ * Abierta, es una clasificación con la forma del ranking —filas de posición,
+ * bandera, nombre y puntos— coloreada por lo que significa:
  *
- * Responde, sin abrir ninguna burbuja y sin saberse el reglamento:
- *
- *   quién entra            las listas de «Por equipos» y «Plazas individuales»,
- *                          separadas porque son plazas distintas que se ganan
- *                          distinto;
- *   quién está cerca       «Siguiente: …» bajo cada camino y el «1.º fuera»;
- *   qué falta              las distancias en puntos («a 25», empates dichos);
- *   y España               el rótulo propio en la cabecera («Clasificado ·
- *                          equipo», «Equipo a 30 pts»…), igual que en el
- *                          ranking.
+ *   en verde,    quién tiene hoy la plaza (los 4 primeros y el mejor de cada
+ *                zona por equipos; los AOR y los mejores de cada zona por
+ *                individual — el torneo zonal aún no tiene nombres);
+ *   en amarillo, el primero que se queda fuera de cada camino y a cuántos
+ *                puntos está.
  *
  * Cifras y umbrales salen de `resultado.reglas`, no escritos a mano: si el
  * sistema cambia de cuota (o la composición del ranking, p. ej. una
@@ -176,7 +196,6 @@ export function PruebaOlimpica({
   const R = resultado.reglas;
   const fecha = fechaCorta(resultado.fechaRanking);
   const fechaDecisiva = fechaCorta(R.fechaRankingDecisivo);
-  const fueraEquipos = resultado.primerFuera.equipos;
   const ultimoTop = resultado.equipos.map((e) => e.via).lastIndexOf('TOP');
 
   const totalIndividual =
@@ -207,12 +226,9 @@ export function PruebaOlimpica({
       data-prueba={`${resultado.arma}-${resultado.genero}`}
     >
       <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl px-3 py-2 transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:px-4 [&::-webkit-details-marker]:hidden">
-        <div className="mr-auto min-w-0">
-          <h3 className="text-base leading-tight">Clasificación olímpica · LA 2028</h3>
-          <div className="truncate text-xs text-muted-foreground">
-            {rotuloPrueba({ arma: resultado.arma, genero: resultado.genero })}
-          </div>
-        </div>
+        <h3 className="mr-auto min-w-0 truncate text-base leading-tight">
+          {rotuloPrueba({ arma: resultado.arma, genero: resultado.genero })}
+        </h3>
         <EstadoPropio estado={resultado.seguidos[nocPropio]} />
         <ChevronDown
           aria-hidden
@@ -220,7 +236,7 @@ export function PruebaOlimpica({
         />
       </summary>
 
-      <div className="space-y-3 border-t border-border px-3 pb-3 pt-3 sm:px-4 sm:pb-4">
+      <div className="space-y-4 border-t border-border px-3 pb-3 pt-3 sm:px-4 sm:pb-4">
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           <Pastilla tamano="md" data-provisional="">
             Provisional
@@ -232,114 +248,96 @@ export function PruebaOlimpica({
           </span>
         </div>
 
-      {resultado.equipos.length > 0 ? (
-        <Seccion
-          titulo="Por equipos"
-          cifra={resultado.equipos.length}
-          descripcion={`Los ${R.equiposTop} primeros y el mejor de cada zona entre el ${R.tramoZonaEquipos.desde}.º y el ${R.tramoZonaEquipos.hasta}.º.`}
-        >
-          {resultado.equipos.map((e, i) => {
-            const fuera =
-              e.via === 'TOP'
-                ? i === ultimoTop
-                  ? resultado.primerFuera.equiposTop
-                  : null
-                : e.plazaDeZona
-                  ? resultado.primerFuera.equiposZona[e.plazaDeZona]
-                  : null;
-            return (
-              <Fila
-                key={e.noc}
-                rotulo={viaEquipo(e, R)}
-                noc={e.noc}
-                nombre={`${e.posicion}.º`}
-                puntos={e.puntos}
-                propio={e.noc === nocPropio}
-                segunda={fuera ? <Siguiente fuera={fuera} propio={nocPropio} /> : null}
-              />
-            );
-          })}
-          {fueraEquipos ? (
-            <li
-              data-primer-fuera=""
-              data-propio={fueraEquipos.noc === nocPropio ? '' : undefined}
-              className={cn(
-                'grid min-w-0 grid-cols-[4.75rem_auto_minmax(0,1fr)_auto] items-center gap-2 px-2 py-2 text-muted-foreground',
-                fueraEquipos.noc === nocPropio && 'bg-marcado font-semibold text-foreground',
-              )}
-            >
-              <span className="text-xs">1.º fuera</span>
-              <BanderaPais pais={fueraEquipos.noc} />
-              <span className="min-w-0 truncate text-sm">{`${fueraEquipos.posicion}.º`}</span>
-              <span className="cifra text-sm tabular-nums">
-                {fueraEquipos.empate ? 'empate' : `a ${numero.format(fueraEquipos.diferencia)}`}
-              </span>
-            </li>
-          ) : null}
-          {!resultado.anfitrion.conEquipo ? (
-            <li
-              data-anfitrion=""
-              className="grid min-w-0 grid-cols-[4.75rem_auto_minmax(0,1fr)] items-center gap-2 px-2 py-2 text-muted-foreground"
-            >
-              <span className="text-xs">Anfitrión</span>
-              <BanderaPais pais={resultado.anfitrion.noc} />
-              <span className="min-w-0 truncate text-xs">Sin equipo hoy</span>
-            </li>
-          ) : null}
-        </Seccion>
-      ) : null}
-
-      {totalIndividual > 0 ? (
-        <Seccion
-          titulo="Plazas individuales"
-          cifra={totalIndividual}
-          descripcion={`Los ${R.plazasAorMundial} primeros, el mejor de cada zona y ${resultado.plazasTorneoZonal} del torneo zonal.`}
-        >
-          {resultado.aorMundial.map((t, i) => (
-            <Fila
-              key={t.fieId}
-              rotulo={`${R.plazasAorMundial} primeros`}
-              noc={t.noc}
-              nombre={t.nombre}
-              puntos={t.puntos}
-              propio={t.noc === nocPropio}
-              segunda={
-                i === resultado.aorMundial.length - 1 && resultado.primerFuera.aorMundial ? (
-                  <Siguiente fuera={resultado.primerFuera.aorMundial} propio={nocPropio} />
-                ) : null
-              }
-            />
-          ))}
-          {ZONAS_FIE.flatMap((zona) =>
-            resultado.aorZona[zona].map((t, i, lista) => (
-              <Fila
-                key={`${zona}-${t.fieId}`}
-                rotulo={ZONA_CORTA[zona]}
-                noc={t.noc}
-                nombre={t.nombre}
-                puntos={t.puntos}
-                propio={t.noc === nocPropio}
-                segunda={
-                  i === lista.length - 1 && resultado.primerFuera.aorZona[zona] ? (
-                    <Siguiente fuera={resultado.primerFuera.aorZona[zona]} propio={nocPropio} />
-                  ) : null
-                }
-              />
-            )),
-          )}
-          <li
-            data-zonales=""
-            className="grid min-w-0 grid-cols-[4.75rem_minmax(0,1fr)_auto] items-center gap-2 px-2 py-2 text-muted-foreground"
+        {resultado.equipos.length > 0 ? (
+          <Seccion
+            titulo={`Por equipos · ${resultado.equipos.length}`}
+            descripcion={`los ${R.equiposTop} primeros y el mejor de cada zona entre el ${R.tramoZonaEquipos.desde}.º y el ${R.tramoZonaEquipos.hasta}.º`}
           >
-            <span className="text-xs">Torneo zonal</span>
-            <span className="min-w-0 truncate text-xs">abr 2028 · por decidir</span>
-            <span className="cifra text-sm tabular-nums">{resultado.plazasTorneoZonal}</span>
-          </li>
-          <li className="min-w-0 px-2 pb-1 text-xs text-muted-foreground">
-            {`Y los ${R.tiradoresPorEquipo} tiradores de cada equipo clasificado (${resultado.equipos.length * R.tiradoresPorEquipo} más).`}
-          </li>
-        </Seccion>
-      ) : null}
+            {resultado.equipos.map((e, i) => {
+              const fuera =
+                e.via === 'TOP'
+                  ? i === ultimoTop
+                    ? resultado.primerFuera.equiposTop
+                    : null
+                  : e.plazaDeZona
+                    ? resultado.primerFuera.equiposZona[e.plazaDeZona]
+                    : null;
+              return (
+                <Fragment key={e.noc}>
+                  <Fila
+                    posicion={`${e.posicion}.º`}
+                    noc={e.noc}
+                    via={viaEquipo(e, R)}
+                    puntos={numero.format(e.puntos)}
+                    estado="dentro"
+                    propio={e.noc === nocPropio}
+                  />
+                  {fuera ? (
+                    <FilaFuera
+                      fuera={fuera}
+                      rotulo={e.via === 'TOP' ? '1.º fuera' : `${ZONA_CORTA[e.plazaDeZona!]} fuera`}
+                      propio={nocPropio}
+                    />
+                  ) : null}
+                </Fragment>
+              );
+            })}
+            {!resultado.anfitrion.conEquipo ? (
+              <li data-anfitrion="" className="px-2 py-1.5 text-xs text-muted-foreground">
+                Anfitrión: <BanderaPais pais={resultado.anfitrion.noc} soloBandera /> {resultado.anfitrion.noc} sin equipo hoy.
+              </li>
+            ) : null}
+          </Seccion>
+        ) : null}
+
+        {totalIndividual > 0 ? (
+          <Seccion
+            titulo={`Plazas individuales · ${totalIndividual}`}
+            descripcion={`los ${R.plazasAorMundial} primeros, el mejor de cada zona y ${resultado.plazasTorneoZonal} del torneo zonal`}
+          >
+            {resultado.aorMundial.map((t, i) => (
+              <Fragment key={t.fieId}>
+                <Fila
+                  posicion={`${t.posicion}.º`}
+                  noc={t.noc}
+                  nombre={t.nombre}
+                  via={`${R.plazasAorMundial} primeros`}
+                  puntos={numero.format(t.puntos)}
+                  estado="dentro"
+                  propio={t.noc === nocPropio}
+                />
+                {i === resultado.aorMundial.length - 1 && resultado.primerFuera.aorMundial ? (
+                  <FilaFuera fuera={resultado.primerFuera.aorMundial} rotulo="1.º fuera" propio={nocPropio} />
+                ) : null}
+              </Fragment>
+            ))}
+            {ZONAS_FIE.flatMap((zona) =>
+              resultado.aorZona[zona].map((t, i, lista) => (
+                <Fragment key={`${zona}-${t.fieId}`}>
+                  <Fila
+                    posicion={`${t.posicion}.º`}
+                    noc={t.noc}
+                    nombre={t.nombre}
+                    via={ZONA_CORTA[zona]}
+                    puntos={numero.format(t.puntos)}
+                    estado="dentro"
+                    propio={t.noc === nocPropio}
+                  />
+                  {i === lista.length - 1 && resultado.primerFuera.aorZona[zona] ? (
+                    <FilaFuera fuera={resultado.primerFuera.aorZona[zona]} rotulo={`${ZONA_CORTA[zona]} fuera`} propio={nocPropio} />
+                  ) : null}
+                </Fragment>
+              )),
+            )}
+            <li data-zonales="" className="px-2 py-1.5 text-xs text-muted-foreground">
+              Torneo zonal · abr 2028: {resultado.plazasTorneoZonal}{' '}
+              {resultado.plazasTorneoZonal === 1 ? 'plaza' : 'plazas'} por decidir.
+            </li>
+            <li className="px-2 pb-1 text-xs text-muted-foreground">
+              {`Y los ${R.tiradoresPorEquipo} tiradores de cada equipo clasificado (${resultado.equipos.length * R.tiradoresPorEquipo} más).`}
+            </li>
+          </Seccion>
+        ) : null}
       </div>
     </details>
   );
