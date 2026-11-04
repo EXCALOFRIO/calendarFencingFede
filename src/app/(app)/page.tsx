@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import { TusPruebas } from '@/components/calendario/tus-pruebas';
 import { VistaCalendario, type TiradorOpcion } from '@/components/calendario/vista';
 import { requireProfile } from '@/lib/auth/session';
-import { leerContextoCalendario, leerEventoCalendario } from '@/lib/calendario/contexto-url';
+import { leerContextoCalendario } from '@/lib/calendario/contexto-url';
 import { filasDeTusPruebas, type TiradorDeCuenta } from '@/lib/calendario/tus-pruebas';
 import { deriveCategoriesFromBirthDate } from '@/lib/categories';
 import { requestEntry } from '@/lib/entries/actions';
@@ -66,8 +66,6 @@ async function ContenidoCalendario({
   // Periodo y filtros con los que se vuelve desde una edición o una persona.
   const consulta = (await searchParams) ?? {};
   const inicial = leerContextoCalendario(consulta);
-  // La ficha que se abre al llegar desde una edición o un aviso (`evento=`).
-  const eventoInicial = leerEventoCalendario(consulta);
 
   /**
    * LO YA CELEBRADO DEL TRAMO CON EL QUE SE ABRE, Y SOLO ESO.
@@ -113,7 +111,6 @@ async function ContenidoCalendario({
   return (
     <VistaCalendario
       inicial={inicial}
-      eventoInicial={eventoInicial}
       /*
         «Tus pruebas», en su `<Suspense>`: usa los mismos datos que el
         listado —no repite lectura— y llega con él, sin frenar el armazón.

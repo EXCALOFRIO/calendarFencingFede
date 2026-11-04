@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import * as React from 'react';
 import {
   OpcionesFiltro,
@@ -304,7 +305,6 @@ export function VistaCalendario({
   solicitarInscripcion,
   cargarInscritos,
   inicial,
-  eventoInicial = null,
   pasadoInicial = null,
   cargarPasado,
   tusPruebas = null,
@@ -316,8 +316,6 @@ export function VistaCalendario({
    * 02:00 de Madrid, el Worker (UTC) y el navegador no están ni en el mismo mes.
    */
   hoy?: string;
-  /** Torneo cuya ficha se abre al llegar (`evento=` de la dirección). */
-  eventoInicial?: string | null;
   /**
    * Lo ya celebrado del tramo con el que se abre. Puede venir resuelto o como
    * promesa aún en el aire: la página lo lanza sin esperarlo para que el
@@ -1170,7 +1168,6 @@ export function VistaCalendario({
           irA={irA}
           irAMes={irAMes}
           inicial={inicial}
-          eventoInicial={eventoInicial}
           tirador={tirador}
           solicitarInscripcion={solicitarInscripcion}
           cargarInscritos={cargarInscritos}
@@ -1221,7 +1218,6 @@ function ListadoCalendario({
   irA,
   irAMes,
   inicial,
-  eventoInicial,
   tirador,
   solicitarInscripcion,
   cargarInscritos,
@@ -1256,7 +1252,6 @@ function ListadoCalendario({
   irA: (iso: string) => void;
   irAMes: (destino: Date) => void;
   inicial?: ContextoCalendarioLeido;
-  eventoInicial?: string | null;
   tirador: TiradorOpcion | null;
   solicitarInscripcion?: (
     competitionId: string,
@@ -1310,24 +1305,30 @@ function ListadoCalendario({
   );
 
   /**
-   * `evento=<id>` (desde una edición o un aviso) abre esa ficha en cuanto el
-   * torneo está cargado: el mes de la dirección es el suyo, así que llega con
-   * los eventos o con el tramo pasado que se pide al arrancar. Antes de abrirla
-   * se quita `evento` de la dirección, sin entrada nueva: la ficha apila la
-   * suya (`useEntradaDeHistorial`) y al cerrarla se vuelve al calendario sin
-   * que se reabra. Si el tramo llega y el torneo no está, no se abre nada.
+   * `evento=<id>` (desde una edición, un aviso o «Tus pruebas») abre esa
+   * ficha en cuanto el torneo está cargado: el mes de la dirección es el
+   * suyo, así que llega con los eventos o con el tramo pasado que se pide al
+   * arrancar. Antes de abrirla se quita `evento` de la dirección, sin
+   * entrada nueva: la ficha apila la suya (`useEntradaDeHistorial`) y al
+   * cerrarla se vuelve al calendario sin que se reabra. Si el tramo llega y
+   * el torneo no está, no se abre nada.
+   *
+   * El parámetro se lee de `useSearchParams`, no de una prop congelada al
+   * montar: ya estando en el calendario, pulsar una fila de «Tus pruebas»
+   * navega a `/?evento=` SIN remontar el componente, y un ref inicializado
+   * una vez se quedaba sordo a todo lo que viniera después —que era justo el
+   * fallo de las filas que no abrían nada.
    */
-  const eventoPendiente = React.useRef(eventoInicial);
+  const parametros = useSearchParams();
+  const eventoEnUrl = parametros.get('evento');
   React.useEffect(() => {
-    const id = eventoPendiente.current;
-    if (!id) return;
-    const e = todos.find((x) => x.id === id);
+    if (!eventoEnUrl) return;
+    const e = todos.find((x) => x.id === eventoEnUrl);
     if (!e && estadoActual !== 'listo' && estadoActual !== 'fallo') return;
-    eventoPendiente.current = null;
     const limpia = quitarEventoDeUrl(`${window.location.pathname}${window.location.search}${window.location.hash}`);
     window.history.replaceState(window.history.state, '', limpia);
     if (e) abrir(e);
-  }, [todos, estadoActual, abrir]);
+  }, [eventoEnUrl, todos, estadoActual, abrir]);
 
   /**
    * Quién va al torneo abierto.
