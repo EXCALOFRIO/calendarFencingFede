@@ -46,47 +46,30 @@ import { ageOn, requiresGuardianAccount } from '@/lib/categories';
 import { WEAPON_LABEL, cn } from '@/lib/utils';
 
 /**
- * Altas de usuarios.
+ * Altas de usuarios, pensadas por TAREA y no por campos.
  *
- * La regla que manda sobre todo lo demás es el RGPD: en España un menor de 14
- * años no puede consentir el tratamiento por sí mismo, así que no se le crea
- * cuenta. Eso no se explica en una nota al pie: en cuanto la fecha de
- * nacimiento dice que es menor, el formulario cambia solo y pide el correo
- * del tutor, porque un aviso que hay que leer es un aviso que no se lee.
+ * Antes había un desplegable de «papel» y un formulario gigante que cambiaba
+ * de forma según lo elegido: para dar de alta a un seleccionador de florete
+ * había que entender todos los campos de un tirador. Ahora cada pestaña es
+ * una tarea —«un tirador», «un seleccionador», «dirección técnica», «la
+ * lista entera»— y enseña solo lo que esa tarea pide.
  *
- * La importación nunca escribe a ciegas. Primero se previsualiza fila a fila
- * —qué entraría, qué falla y por qué— y solo después se confirma: una carga
- * de 200 filas sin mirar es la forma más rápida de llenar la base de basura.
+ * La regla que manda sigue siendo el RGPD: en España un menor de 14 años no
+ * puede consentir el tratamiento por sí mismo, así que no se le crea cuenta.
+ * No hay camino de tutor: ni aquí ni en el CSV (antes el CSV sí creaba esas
+ * cuentas, y el alta manual las rechazaba — dos reglas distintas para el
+ * mismo caso, que era buena parte del lío).
  */
 
 const ARMAS: Weapon[] = ['FLORETE', 'ESPADA', 'SABLE'];
 const SIN_CLUB = '__sin_club__';
 
 /**
- * LOS PAPELES SON TRES Y MEDIO, Y «CLUB» YA NO ES UNO.
- *
- * `Role` en `src/lib/auth/session.ts` es `'admin' | 'coach' | 'athlete' |
- * 'guardian'`: el club se quitó de la aplicación y con él el papel. Así que
- * «Responsable de club» sale de este desplegable — ofrecer un papel que el
- * tipo no admite es prometer un alta que no se puede hacer.
- *
- * El club sigue existiendo como DATO del tirador, porque viene en el ranking
- * oficial y en las listas de Skermo. Lo que no existe es un club que valide
- * nada.
- */
-const ROLES = [
-  { valor: 'athlete', etiqueta: 'Tirador' },
-  { valor: 'coach', etiqueta: 'Seleccionador' },
-  { valor: 'admin', etiqueta: 'Dirección técnica' },
-];
-
-/**
  * Cómo se nombra el papel de una cuenta que YA existe.
  *
- * Aquí sí está `club`, y a propósito: en la base queda una cuenta con ese
- * papel de antes del cambio, y pintarla como «Tirador» sería mentir mientras
- * dejar `club` a pelo se lee como una errata. Se dice lo que es —un papel que
- * ya no se usa— para que alguien la reasigne.
+ * `club` y `guardian` siguen aquí a propósito: en la base puede quedar alguna
+ * cuenta con esos papeles de antes del cambio, y pintarlas como «Tirador»
+ * sería mentir. Se dice lo que son —papeles retirados— para reasignarlas.
  */
 const ROL_LABEL: Record<string, string> = {
   admin: 'Dirección técnica',
@@ -96,7 +79,7 @@ const ROL_LABEL: Record<string, string> = {
   club: 'Papel retirado (club)',
 };
 
-const ROL_RETIRADO = new Set(['club']);
+const ROL_RETIRADO = new Set(['club', 'guardian']);
 
 export function UsuariosPanel({
   clubes,
@@ -107,14 +90,24 @@ export function UsuariosPanel({
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      <Tabs defaultValue="individual">
+      <Tabs defaultValue="tirador">
         <TabsList className="max-w-full flex-wrap group-data-[orientation=horizontal]/tabs:h-auto">
-          <TabsTrigger value="individual">Alta individual</TabsTrigger>
-          <TabsTrigger value="csv">Importar un CSV</TabsTrigger>
+          <TabsTrigger value="tirador">Un tirador</TabsTrigger>
+          <TabsTrigger value="seleccionador">Un seleccionador</TabsTrigger>
+          <TabsTrigger value="direccion">Dirección técnica</TabsTrigger>
+          <TabsTrigger value="csv">Lista entera (CSV)</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="individual" className="pt-2">
-          <FormularioAlta clubes={clubes} />
+        <TabsContent value="tirador" className="pt-2">
+          <AltaTirador clubes={clubes} />
+        </TabsContent>
+
+        <TabsContent value="seleccionador" className="pt-2">
+          <FormularioPersonal rol="coach" />
+        </TabsContent>
+
+        <TabsContent value="direccion" className="pt-2">
+          <FormularioPersonal rol="admin" />
         </TabsContent>
 
         <TabsContent value="csv" className="pt-2">
@@ -136,12 +129,6 @@ export function UsuariosPanel({
             explicacion="Da de alta a la primera persona con el formulario de arriba, o importa el listado entero desde un CSV."
           />
         ) : (
-          /*
-            LA FILA ES UNA TARJETA EN MÓVIL Y UNA FILA EN ESCRITORIO.
-            Cada dato en su renglón con su rótulo: la fecha, que en escritorio
-            va a la derecha, en móvil baja debajo del correo en vez de
-            apretujar el nombre contra el borde.
-          */
           <ul className="divide-y overflow-hidden rounded-lg border-t border-filete bg-card">
             {altas.map((a) => (
               <li
@@ -167,11 +154,6 @@ export function UsuariosPanel({
                     ) : null}
                   </span>
 
-                  {/*
-                    El correo va en una línea propia y se parte por donde haga
-                    falta: recortado con puntos suspensivos no sirve para nada,
-                    porque un correo a medias no se puede ni leer ni copiar.
-                  */}
                   <span className="min-w-0 break-all text-xs text-muted-foreground">
                     {a.email}
                   </span>
@@ -186,17 +168,6 @@ export function UsuariosPanel({
                     {a.clubNombre ? <span>Club {a.clubNombre}</span> : null}
                   </span>
 
-                  {/*
-                    LAS FICHAS, UNA PASTILLA CADA UNA Y NO UNA LISTA RECORTADA.
-
-                    Estaba como «Fichas de tirador: Lucía Fernández Lacalle,
-                    Marcos Fernández…» con `truncate`, y medido en un iPhone se
-                    comía el 56 % de la línea: se veía el primer nombre y del
-                    segundo la mitad. Era el único texto de verdad cortado de
-                    las cuatro pantallas. En pastillas que envuelven caben los
-                    dos nombres enteros y además se leen como lo que son, dos
-                    fichas distintas, no una frase.
-                  */}
                   {a.fichas.length > 0 ? (
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                       <span>
@@ -219,75 +190,20 @@ export function UsuariosPanel({
   );
 }
 
-// ------------------------------------------------------ alta individual ---
-
-function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
+/** Lo que comparten todos los formularios de alta: envío, error y limpieza. */
+function useAlta() {
   const router = useRouter();
   const [ocupado, setOcupado] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [creandoClub, setCreandoClub] = React.useState(false);
 
-  const [rol, setRol] = React.useState('athlete');
-  /*
-    Un tirador se da de alta buscándolo en la clasificación oficial, no
-    tecleando su licencia. Esto solo se pone a `true` desde el enlace de
-    «darlo de alta a mano», que es para quien todavía no tiene clasificación.
-    Se olvida al cambiar de papel: un seleccionador no se busca en un ranking
-    de tiradores.
-  */
-  const [aMano, setAMano] = React.useState(false);
-  const [firstName, setFirstName] = React.useState('');
-  const [lastName, setLastName] = React.useState('');
-  const [email, setEmail] = React.useState('');
-  const [clubId, setClubId] = React.useState(SIN_CLUB);
-  const [birthDate, setBirthDate] = React.useState('');
-  const [gender, setGender] = React.useState('');
-  const [rfeeLicense, setRfeeLicense] = React.useState('');
-  const [armas, setArmas] = React.useState<Weapon[]>([]);
-  const [guardianEmail, setGuardianEmail] = React.useState('');
-  const [guardianName, setGuardianName] = React.useState('');
-
-  const esTirador = rol === 'athlete';
-  const esSeleccionador = rol === 'coach';
-  const desdeRanking = esTirador && !aMano;
-  const edad = birthDate ? ageOn(birthDate) : null;
-  const menor = Boolean(esTirador && birthDate && requiresGuardianAccount(birthDate));
-
-  function limpiar() {
-    setFirstName('');
-    setLastName('');
-    setEmail('');
-    setBirthDate('');
-    setGender('');
-    setRfeeLicense('');
-    setArmas([]);
-    setGuardianEmail('');
-    setGuardianName('');
-    setError(null);
-  }
-
-  async function enviar() {
+  async function enviar(datos: FormData, despues: () => void) {
     setOcupado(true);
     setError(null);
-
-    const datos = new FormData();
-    datos.set('firstName', firstName);
-    datos.set('lastName', lastName);
-    datos.set('email', email);
-    datos.set('role', rol);
-    datos.set('clubId', clubId === SIN_CLUB ? '' : clubId);
-    datos.set('birthDate', birthDate);
-    datos.set('gender', gender);
-    datos.set('rfeeLicense', rfeeLicense);
-    datos.set('guardianEmail', guardianEmail);
-    datos.set('guardianName', guardianName);
-    for (const arma of armas) datos.append('weapons', arma);
-
     try {
       const resultado = await crearUsuario(datos);
       if (resultado.ok) {
         toast.success(resultado.message, { duration: 8000 });
-        limpiar();
+        despues();
         router.refresh();
       } else {
         setError(resultado.error);
@@ -299,258 +215,331 @@ function FormularioAlta({ clubes }: { clubes: ClubFila[] }) {
     }
   }
 
+  return { ocupado, error, enviar, router };
+}
+
+/** El aviso de error, el mismo en los tres formularios. */
+function ErrorAlta({ error }: { error: string | null }) {
+  if (!error) return null;
+  return (
+    <p className="medida rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+      {error}
+    </p>
+  );
+}
+
+/** Las casillas de arma con su explicación según a quién se da de alta. */
+function CasillasArmas({
+  armas,
+  setArmas,
+  leyenda,
+  ayuda,
+}: {
+  armas: Weapon[];
+  setArmas: (a: Weapon[]) => void;
+  leyenda: string;
+  ayuda?: string;
+}) {
+  return (
+    <fieldset className="flex flex-col gap-2 sm:col-span-2">
+      <legend className="mb-2 text-sm font-medium">{leyenda}</legend>
+      <div className="flex flex-wrap gap-4">
+        {ARMAS.map((arma) => (
+          <div key={arma} className="flex items-center gap-3">
+            <Checkbox
+              id={`alta-arma-${arma}`}
+              checked={armas.includes(arma)}
+              onCheckedChange={(valor) =>
+                setArmas(valor === true ? [...armas, arma] : armas.filter((a) => a !== arma))
+              }
+            />
+            <Label htmlFor={`alta-arma-${arma}`} className="font-normal">
+              {WEAPON_LABEL[arma]}
+            </Label>
+          </div>
+        ))}
+      </div>
+      {ayuda ? <p className="text-xs text-muted-foreground">{ayuda}</p> : null}
+    </fieldset>
+  );
+}
+
+// ------------------------------------------------------------- tirador ---
+
+/**
+ * Dar de alta a un tirador: primero buscándolo en la clasificación oficial
+ * (lo normal), a mano solo cuando aún no tiene clasificación.
+ */
+function AltaTirador({ clubes }: { clubes: ClubFila[] }) {
+  const [aMano, setAMano] = React.useState(false);
+  return aMano ? (
+    <FormularioTiradorAMano clubes={clubes} aBuscar={() => setAMano(false)} />
+  ) : (
+    <AltaTiradorDesdeRanking aMano={() => setAMano(true)} />
+  );
+}
+
+/**
+ * La salida de emergencia del alta de tirador: para quien todavía no está en
+ * la clasificación RFEE. Es el único sitio donde nacimiento, género y
+ * licencia se teclean — con el aviso de por qué es peor que buscarlo.
+ */
+function FormularioTiradorAMano({
+  clubes,
+  aBuscar,
+}: {
+  clubes: ClubFila[];
+  aBuscar: () => void;
+}) {
+  const { ocupado, error, enviar } = useAlta();
+  const [creandoClub, setCreandoClub] = React.useState(false);
+
+  const [firstName, setFirstName] = React.useState('');
+  const [lastName, setLastName] = React.useState('');
+  const [email, setEmail] = React.useState('');
+  const [clubId, setClubId] = React.useState(SIN_CLUB);
+  const [birthDate, setBirthDate] = React.useState('');
+  const [gender, setGender] = React.useState('');
+  const [rfeeLicense, setRfeeLicense] = React.useState('');
+  const [armas, setArmas] = React.useState<Weapon[]>([]);
+
+  const edad = birthDate ? ageOn(birthDate) : null;
+  const menor = Boolean(birthDate && requiresGuardianAccount(birthDate));
+
+  function limpiar() {
+    setFirstName('');
+    setLastName('');
+    setEmail('');
+    setBirthDate('');
+    setGender('');
+    setRfeeLicense('');
+    setArmas([]);
+  }
+
+  function enviarFormulario() {
+    const datos = new FormData();
+    datos.set('firstName', firstName);
+    datos.set('lastName', lastName);
+    datos.set('email', email);
+    datos.set('role', 'athlete');
+    datos.set('clubId', clubId === SIN_CLUB ? '' : clubId);
+    datos.set('birthDate', birthDate);
+    datos.set('gender', gender);
+    datos.set('rfeeLicense', rfeeLicense);
+    for (const arma of armas) datos.append('weapons', arma);
+    void enviar(datos, limpiar);
+  }
+
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-col gap-2 rounded-lg border bg-card p-4">
-        <Label htmlFor="alta-rol-arriba">Papel</Label>
-        <Select
-          value={rol}
-          onValueChange={(v) => {
-            setRol(v);
-            setAMano(false);
-          }}
-        >
-          <SelectTrigger id="alta-rol-arriba" className="w-full sm:w-64">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {ROLES.map((r) => (
-              <SelectItem key={r.valor} value={r.valor}>
-                {r.etiqueta}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground">
-          {esSeleccionador
-            ? 'Marca abajo de qué arma se ocupa. Es lo que decide qué tiradores y qué competiciones ve al entrar.'
-            : 'Ningún alta envía correo: la persona entra escribiendo su dirección en la pantalla de acceso.'}
-        </p>
-      </div>
-
-      {desdeRanking ? <AltaTiradorDesdeRanking aMano={() => setAMano(true)} /> : null}
-
-      {desdeRanking ? null : (
-    <div className="flex min-w-0 flex-col gap-4 rounded-lg border bg-card p-4">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="alta-nombre">Nombre</Label>
-          <Input
-            id="alta-nombre"
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
-            placeholder="Lucía"
-          />
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="alta-apellidos">Apellidos</Label>
-          <Input
-            id="alta-apellidos"
-            value={lastName}
-            onChange={(e) => setLastName(e.target.value)}
-            placeholder="Fernández Soto"
-          />
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="alta-correo">Correo</Label>
-          <Input
-            id="alta-correo"
-            type="email"
-            inputMode="email"
-            value={email}
-            disabled={menor}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="lucia@ejemplo.es"
-          />
-          {menor ? (
-            <p className="text-xs text-warn">
-              Por debajo de 14 años no se le crea cuenta, así que este correo se ignora.
-            </p>
-          ) : null}
-        </div>
-
-        <div className="flex flex-col gap-2 sm:col-span-2">
-          <Label htmlFor="alta-club">Club</Label>
-          <div className="flex gap-2">
-            <Select value={clubId} onValueChange={setClubId}>
-              <SelectTrigger id="alta-club" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={SIN_CLUB}>Sin club</SelectItem>
-                {clubes.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                    {c.regionalFederation ? ` · ${c.regionalFederation}` : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              type="button"
-              variant="outline"
-              className="shrink-0"
-              onClick={() => setCreandoClub(true)}
-            >
-              <Plus /> Nuevo club
-            </Button>
+      <div className="flex min-w-0 flex-col gap-4 rounded-lg border bg-card p-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="alta-nombre">Nombre</Label>
+            <Input id="alta-nombre" value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Lucía" />
           </div>
-        </div>
-
-        {esTirador ? (
-          <>
-            <CampoFecha
-              id="alta-nacimiento"
-              etiqueta="Fecha de nacimiento"
-              valorIso={birthDate}
-              onChange={setBirthDate}
-              ayuda="Obligatoria: la categoría se deriva de ella, nunca se escribe a mano."
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="alta-apellidos">Apellidos</Label>
+            <Input id="alta-apellidos" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Fernández Soto" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="alta-correo">Correo</Label>
+            <Input
+              id="alta-correo"
+              type="email"
+              inputMode="email"
+              value={email}
+              disabled={menor}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="lucia@ejemplo.es"
             />
-
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="alta-genero">Género</Label>
-              <Select value={gender} onValueChange={setGender}>
-                <SelectTrigger id="alta-genero" className="w-full">
-                  <SelectValue placeholder="Elige" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="alta-club">Club</Label>
+            <div className="flex gap-2">
+              <Select value={clubId} onValueChange={setClubId}>
+                <SelectTrigger id="alta-club" className="w-full">
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="F">Femenino</SelectItem>
-                  <SelectItem value="M">Masculino</SelectItem>
+                  <SelectItem value={SIN_CLUB}>Sin club</SelectItem>
+                  {clubes.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                      {c.regionalFederation ? ` · ${c.regionalFederation}` : ''}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                Determina en qué pruebas puede inscribirse.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="alta-licencia">Licencia RFEE</Label>
-              <Input
-                id="alta-licencia"
-                value={rfeeLicense}
-                onChange={(e) => setRfeeLicense(e.target.value)}
-                placeholder="LFS01234"
-              />
-              <p className="text-xs text-muted-foreground">
-                Es la clave con la que se emparejan sus resultados. Sin ella habrá que
-                asignarlos a mano.
-              </p>
-            </div>
-
-          </>
-        ) : null}
-
-        {/*
-          Armas: las mismas casillas para un tirador y para un seleccionador,
-          porque la pregunta es la misma —«de qué arma»— aunque se guarden en
-          sitios distintos (`athlete_weapon` frente a `profile_weapon`).
-        */}
-        {esTirador || esSeleccionador ? (
-          <fieldset className="flex flex-col gap-2 sm:col-span-2">
-            <legend className="mb-2 text-sm font-medium">
-              {esSeleccionador ? 'Armas que lleva' : 'Armas'}
-            </legend>
-            <div className="flex flex-wrap gap-4">
-              {ARMAS.map((arma) => (
-                <div key={arma} className="flex items-center gap-3">
-                  <Checkbox
-                    id={`alta-arma-${arma}`}
-                    checked={armas.includes(arma)}
-                    onCheckedChange={(valor) =>
-                      setArmas(
-                        valor === true
-                          ? [...armas, arma]
-                          : armas.filter((a) => a !== arma),
-                      )
-                    }
-                  />
-                  <Label htmlFor={`alta-arma-${arma}`} className="font-normal">
-                    {WEAPON_LABEL[arma]}
-                  </Label>
-                </div>
-              ))}
-            </div>
-            {esSeleccionador ? (
-              <p className="text-xs text-muted-foreground">
-                Lleva los dos géneros de su arma, masculino y femenino. El
-                calendario le arrancará en absoluto, y el resto de categorías
-                le quedan a un toque.
-              </p>
-            ) : null}
-          </fieldset>
-        ) : null}
-      </div>
-
-      {menor ? (
-        <div className="flex flex-col gap-3 rounded-md border border-warn/40 bg-warn/5 p-3">
-          <p className="medida text-sm text-warn">
-            {firstName || 'Este tirador'} tiene {edad} años. Por debajo de 14 la cuenta
-            va a nombre del padre, madre o tutor y la ficha queda vinculada, sin acceso
-            propio. No es configurable: lo impone el RGPD.
-          </p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="alta-tutor-correo">Correo del tutor</Label>
-              <Input
-                id="alta-tutor-correo"
-                type="email"
-                inputMode="email"
-                value={guardianEmail}
-                onChange={(e) => setGuardianEmail(e.target.value)}
-                placeholder="madre@ejemplo.es"
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="alta-tutor-nombre">Nombre del tutor</Label>
-              <Input
-                id="alta-tutor-nombre"
-                value={guardianName}
-                onChange={(e) => setGuardianName(e.target.value)}
-                placeholder="Ana Soto"
-              />
+              <Button type="button" variant="outline" className="shrink-0" onClick={() => setCreandoClub(true)}>
+                <Plus /> Nuevo club
+              </Button>
             </div>
           </div>
+
+          <CampoFecha
+            id="alta-nacimiento"
+            etiqueta="Fecha de nacimiento"
+            valorIso={birthDate}
+            onChange={setBirthDate}
+            ayuda="Obligatoria: la categoría se deriva de ella, nunca se escribe a mano."
+          />
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="alta-genero">Género</Label>
+            <Select value={gender} onValueChange={setGender}>
+              <SelectTrigger id="alta-genero" className="w-full">
+                <SelectValue placeholder="Elige" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="F">Femenino</SelectItem>
+                <SelectItem value="M">Masculino</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Determina en qué pruebas puede inscribirse.</p>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="alta-licencia">Licencia RFEE</Label>
+            <Input id="alta-licencia" value={rfeeLicense} onChange={(e) => setRfeeLicense(e.target.value)} placeholder="LFS01234" />
+            <p className="text-xs text-muted-foreground">
+              Es la clave con la que se emparejan sus resultados. Sin ella habrá que asignarlos a mano.
+            </p>
+          </div>
+
+          <CasillasArmas armas={armas} setArmas={setArmas} leyenda="Armas" />
         </div>
-      ) : null}
 
-      {error ? (
-        <p className="medida rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
+        {menor ? (
+          <p className="medida rounded-md border border-warn/40 bg-warn/5 p-3 text-sm text-warn">
+            {firstName || 'Este tirador'} tiene {edad} años. Por debajo de 14 no se puede
+            crear una cuenta: la ley exige el consentimiento del padre, madre o tutor, y
+            esta aplicación no gestiona cuentas de tutor. Su ficha puede existir para el
+            ranking y las convocatorias, pero sin acceso propio.
+          </p>
+        ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Button disabled={ocupado} onClick={enviar}>
-          {ocupado ? <Loader2 className="animate-spin" /> : null}
-          Dar de alta
-        </Button>
-        <Button variant="ghost" onClick={limpiar} disabled={ocupado}>
-          Vaciar el formulario
-        </Button>
+        <ErrorAlta error={error} />
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button disabled={ocupado || menor} onClick={enviarFormulario}>
+            {ocupado ? <Loader2 className="animate-spin" /> : null}
+            Dar de alta
+          </Button>
+          <Button variant="ghost" onClick={limpiar} disabled={ocupado}>
+            Vaciar el formulario
+          </Button>
+        </div>
       </div>
+
+      <p className="text-xs text-muted-foreground">
+        Estás dándolo de alta a mano.{' '}
+        <button
+          type="button"
+          onClick={aBuscar}
+          className="underline underline-offset-2 transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
+        >
+          Buscarlo en la clasificación
+        </button>
+        , que rellena la licencia, el club y la fecha sin teclearlos.
+      </p>
 
       <DialogClub abierto={creandoClub} onCerrar={() => setCreandoClub(false)} />
     </div>
-      )}
+  );
+}
 
-      {aMano && esTirador ? (
-        <p className="text-xs text-muted-foreground">
-          Estás dándolo de alta a mano.{' '}
-          <button
-            type="button"
-            onClick={() => setAMano(false)}
-            className="underline underline-offset-2 transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
-          >
-            Buscarlo en la clasificación
-          </button>
-          , que rellena la licencia, el club y la fecha sin teclearlos.
-        </p>
-      ) : null}
+// ------------------------------------------------------ personal técnico ---
+
+/**
+ * Un seleccionador o la dirección técnica: el alta más corta que hay, porque
+ * ninguno de los dos es un tirador — no hay nacimiento, ni género, ni
+ * licencia, ni club. Al seleccionador solo se le pregunta de qué arma se
+ * ocupa, que es lo que decide qué ve al entrar.
+ */
+function FormularioPersonal({ rol }: { rol: 'coach' | 'admin' }) {
+  const { ocupado, error, enviar } = useAlta();
+  const esSeleccionador = rol === 'coach';
+
+  const [firstName, setFirstName] = React.useState('');
+  const [lastName, setLastName] = React.useState('');
+  const [email, setEmail] = React.useState('');
+  const [armas, setArmas] = React.useState<Weapon[]>([]);
+
+  function limpiar() {
+    setFirstName('');
+    setLastName('');
+    setEmail('');
+    setArmas([]);
+  }
+
+  function enviarFormulario() {
+    const datos = new FormData();
+    datos.set('firstName', firstName);
+    datos.set('lastName', lastName);
+    datos.set('email', email);
+    datos.set('role', rol);
+    for (const arma of armas) datos.append('weapons', arma);
+    void enviar(datos, limpiar);
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-4 rounded-lg border bg-card p-4">
+      <p className="medida text-sm text-muted-foreground">
+        {esSeleccionador
+          ? 'Nombre, correo y de qué arma se ocupa. Verá las dos categorías de su arma, masculina y femenina, y el calendario le arrancará en la suya.'
+          : 'La dirección técnica entra a todo: usuarios, convocatorias, emparejado y salud de los datos. Se lo das solo a quien lo necesite.'}
+      </p>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="per-nombre">Nombre</Label>
+          <Input id="per-nombre" value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Luca" />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="per-apellidos">Apellidos</Label>
+          <Input id="per-apellidos" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Papale" />
+        </div>
+        <div className="flex flex-col gap-2 sm:col-span-2">
+          <Label htmlFor="per-correo">Correo</Label>
+          <Input
+            id="per-correo"
+            type="email"
+            inputMode="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="luca@ejemplo.es"
+          />
+          <p className="text-xs text-muted-foreground">
+            No se le manda ningún correo: entra escribiendo esta dirección en la pantalla de acceso.
+          </p>
+        </div>
+
+        {esSeleccionador ? (
+          <CasillasArmas
+            armas={armas}
+            setArmas={setArmas}
+            leyenda="Armas que lleva"
+            ayuda="Sin arma no es un seleccionador: entraría viendo las tres y no sabría cuáles son sus tiradores."
+          />
+        ) : null}
+      </div>
+
+      <ErrorAlta error={error} />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button disabled={ocupado} onClick={enviarFormulario}>
+          {ocupado ? <Loader2 className="animate-spin" /> : null}
+          {esSeleccionador ? 'Dar de alta al seleccionador' : 'Dar de alta'}
+        </Button>
+        <Button variant="ghost" onClick={limpiar} disabled={ocupado}>
+          Vaciar
+        </Button>
+      </div>
     </div>
   );
 }
+
+// ---------------------------------------------------------------- club ---
 
 function DialogClub({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
   const router = useRouter();
@@ -560,7 +549,7 @@ function DialogClub({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => v
   const [ocupado, setOcupado] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  async function enviar() {
+  async function enviarClub() {
     setOcupado(true);
     setError(null);
     const datos = new FormData();
@@ -600,32 +589,15 @@ function DialogClub({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => v
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-2">
             <Label htmlFor="club-nombre">Nombre</Label>
-            <Input
-              id="club-nombre"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              placeholder="Sala de Armas de Valencia"
-            />
+            <Input id="club-nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Sala de Armas de Valencia" />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="club-federacion">Federación autonómica</Label>
-            <Input
-              id="club-federacion"
-              value={federacion}
-              onChange={(e) => setFederacion(e.target.value)}
-              placeholder="Comunidad Valenciana"
-            />
+            <Input id="club-federacion" value={federacion} onChange={(e) => setFederacion(e.target.value)} placeholder="Comunidad Valenciana" />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="club-correo">Correo de contacto</Label>
-            <Input
-              id="club-correo"
-              type="email"
-              inputMode="email"
-              value={correo}
-              onChange={(e) => setCorreo(e.target.value)}
-              placeholder="contacto@club.es"
-            />
+            <Input id="club-correo" type="email" inputMode="email" value={correo} onChange={(e) => setCorreo(e.target.value)} placeholder="contacto@club.es" />
           </div>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
         </div>
@@ -634,7 +606,7 @@ function DialogClub({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => v
           <Button variant="ghost" onClick={onCerrar}>
             Cancelar
           </Button>
-          <Button disabled={ocupado} onClick={enviar}>
+          <Button disabled={ocupado} onClick={enviarClub}>
             {ocupado ? <Loader2 className="animate-spin" /> : null}
             Crear el club
           </Button>
@@ -783,7 +755,7 @@ function ImportadorCsv() {
           rows={6}
           className="font-mono text-xs"
           aria-label="Contenido del CSV"
-          placeholder={'nombre;apellidos;email;rol;club;fecha_nacimiento;genero;armas;licencia_rfee;email_tutor;nombre_tutor'}
+          placeholder={'nombre;apellidos;email;rol;club;fecha_nacimiento;genero;armas;licencia_rfee'}
         />
 
         <div className="flex flex-wrap items-center gap-2">
@@ -873,8 +845,8 @@ function ImportadorCsv() {
                       </Badge>
                     ) : null}
                     {f.requiereTutor ? (
-                      <Badge variant="outline" className="font-normal">
-                        Menor de 14
+                      <Badge variant="destructive" className="font-normal">
+                        Menor de 14 · no entra
                       </Badge>
                     ) : null}
                     {f.weapons.map((a) => (
@@ -885,11 +857,7 @@ function ImportadorCsv() {
                   </span>
                   {/* Cada dato en su hueco, no encadenados con puntos. */}
                   <span className="flex flex-wrap gap-x-3 text-xs text-muted-foreground">
-                    <span className="min-w-0 truncate">
-                      {f.requiereTutor
-                        ? f.guardianEmail || 'sin correo de tutor'
-                        : f.email || 'sin correo'}
-                    </span>
+                    <span className="min-w-0 truncate">{f.email || 'sin correo'}</span>
                     {f.birthDate ? <span>{fechaCorta(f.birthDate)}</span> : null}
                     {f.clubName ? (
                       <span className="min-w-0 truncate">{f.clubName}</span>

@@ -630,6 +630,12 @@ export type PrevisualizacionCsv = {
 
 export type ErrorCsv = { ok: false; error: string };
 
+/**
+ * Las columnas de la plantilla. Las de tutor (`email_tutor`, `nombre_tutor`)
+ * se quitaron al retirar el alta de menores: un CSV viejo que las traiga se
+ * lee igual —sus datos se ignoran con aviso—, pero la plantilla nueva no las
+ * promete.
+ */
 const COLUMNAS_ESPERADAS = [
   'nombre',
   'apellidos',
@@ -640,8 +646,6 @@ const COLUMNAS_ESPERADAS = [
   'genero',
   'armas',
   'licencia_rfee',
-  'email_tutor',
-  'nombre_tutor',
 ];
 
 /** Cabecera de ejemplo para el botón "descargar plantilla". */
@@ -813,40 +817,33 @@ async function analizarCsv(texto: string): Promise<PrevisualizacionCsv | ErrorCs
       esTirador && birthDate && requiresGuardianAccount(birthDate),
     );
 
+    /**
+     * MENOR DE 14: LA FILA NO ENTRA. Antes el CSV creaba la cuenta a nombre
+     * del tutor mientras el alta manual la rechazaba — dos reglas distintas
+     * para el mismo caso. Como el papel de tutor ya no existe, la respuesta
+     * es una sola: no hay alta posible y se dice por qué. Las columnas
+     * `email_tutor`/`nombre_tutor` se siguen aceptando en la cabecera, pero
+     * ya no habilitan nada.
+     */
     if (requiereTutor) {
-      if (!guardianEmail || !emailValido(guardianEmail)) {
-        errores.push(
-          `Menor de 14 años (${
-            birthDate ? ageOn(birthDate) : '?'
-          }): hace falta el correo del tutor, porque la cuenta no puede ser suya.`,
-        );
-      } else {
-        avisos.push(
-          `Menor de 14: la cuenta será de ${guardianEmail} y ${firstName} quedará ` +
-            'como ficha vinculada, sin acceso propio.',
-        );
-      }
-      if (email) {
-        avisos.push(
-          'Se ignora el correo del menor: por debajo de 14 años no se le crea cuenta.',
-        );
+      errores.push(
+        `Menor de 14 años (${birthDate ? ageOn(birthDate) : '?'}): por ley la ` +
+          'cuenta no puede ser suya y la aplicación no gestiona cuentas de tutor. ' +
+          'Su ficha puede existir para el ranking, sin acceso.',
+      );
+      if (guardianEmail || guardianName) {
+        avisos.push('Se ignoran los datos del tutor: no hay cuenta que crearle.');
       }
     } else if (!emailValido(email)) {
       errores.push(`Correo no válido: "${email}".`);
     }
 
-    const correoCuenta = requiereTutor ? guardianEmail : email;
+    const correoCuenta = requiereTutor ? '' : email;
     if (correoCuenta) {
       if (emailsExistentes.has(correoCuenta)) {
-        if (requiereTutor) {
-          avisos.push(
-            `El tutor ${correoCuenta} ya tiene cuenta: la ficha colgará de ella.`,
-          );
-        } else {
-          errores.push(`Ya existe una cuenta con el correo ${correoCuenta}.`);
-        }
+        errores.push(`Ya existe una cuenta con el correo ${correoCuenta}.`);
       }
-      if (emailsEnElFichero.has(correoCuenta) && !requiereTutor) {
+      if (emailsEnElFichero.has(correoCuenta)) {
         errores.push(`El correo ${correoCuenta} está repetido dentro del fichero.`);
       }
       emailsEnElFichero.add(correoCuenta);
@@ -927,31 +924,24 @@ export async function importarUsuarios(
   let creadosPerfiles = 0;
   let creadosTiradores = 0;
 
-  // Los tutores se cachean: dos hermanos comparten la misma cuenta.
-  const tutores = new Map<string, string>();
-
   for (const fila of validas) {
-    const correoCuenta = fila.requiereTutor ? fila.guardianEmail : fila.email;
+    // Las filas con `requiereTutor` llegan ya con error de análisis —aquí solo
+    // entran las válidas—, así que toda cuenta que se crea es de su titular.
+    let profileId: string | null = null;
 
-    let profileId = tutores.get(correoCuenta) ?? null;
-
-    if (!profileId) {
-      const [existente] = await db
-        .select({ id: userProfile.id })
-        .from(userProfile)
-        .where(eq(userProfile.email, correoCuenta))
-        .limit(1);
-      profileId = existente?.id ?? null;
-    }
+    const [existente] = await db
+      .select({ id: userProfile.id })
+      .from(userProfile)
+      .where(eq(userProfile.email, fila.email))
+      .limit(1);
+    profileId = existente?.id ?? null;
 
     if (!profileId) {
       const [creado] = await db
         .insert(userProfile)
         .values({
-          email: correoCuenta,
-          fullName: fila.requiereTutor
-            ? fila.guardianName || `Tutor de ${fila.firstName} ${fila.lastName}`
-            : `${fila.firstName} ${fila.lastName}`,
+          email: fila.email,
+          fullName: `${fila.firstName} ${fila.lastName}`,
           role: fila.role ?? 'athlete',
           clubId: fila.clubId,
           icalToken: newIcalToken(),
@@ -963,15 +953,12 @@ export async function importarUsuarios(
       creadosPerfiles += 1;
     }
 
-    if (fila.requiereTutor) tutores.set(correoCuenta, profileId);
-
     if (fila.role !== 'athlete') continue;
 
     const [fichaCreada] = await db
       .insert(athlete)
       .values({
-        userProfileId: fila.requiereTutor ? null : profileId,
-        guardianProfileId: fila.requiereTutor ? profileId : null,
+        userProfileId: profileId,
         firstName: fila.firstName,
         lastName: fila.lastName,
         birthDate: fila.birthDate!,
@@ -994,13 +981,6 @@ export async function importarUsuarios(
           })),
         )
         .onConflictDoNothing();
-    }
-
-    if (fila.requiereTutor) {
-      detalle.push(
-        `${fila.firstName} ${fila.lastName}: ficha vinculada a la cuenta de ` +
-          `${correoCuenta} (menor de 14 años).`,
-      );
     }
   }
 
