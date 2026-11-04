@@ -1,4 +1,4 @@
-import { Check, ChevronDown } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { Fragment } from 'react';
 import { BanderaPais } from '@/components/bandera';
 import { Pastilla } from '@/components/sistema/pastilla';
@@ -29,10 +29,18 @@ function viaEquipo(e: EquipoClasificado, R: ReglasOlimpicas): string {
  *
  *   `dentro`  verde — esa plaza la tiene hoy (equipo o tirador);
  *   `fuera`   amarillo — la primera que se queda fuera de ese camino,
- *             con lo que le falta («a 14 pts», empate dicho).
+ *             con lo que le falta («a 14 pts», empate dicho);
+ *   `dudoso`  gris — aparece en el ranking pero hoy no cuenta (la
+ *             participación de BLR y RUS está sin decidir).
  *
  * El CON seguido (`propio`) conserva el marcado de siempre encima del color.
  */
+const TONOS_FILA = {
+  dentro: { fila: 'bg-ok-tinte/50', posicion: 'text-ok', puntos: '' },
+  fuera: { fila: 'bg-warn-tinte/60', posicion: 'text-warn', puntos: 'text-warn' },
+  dudoso: { fila: 'bg-secondary/50 text-muted-foreground', posicion: 'text-muted-foreground', puntos: '' },
+} as const;
+
 function Fila({
   posicion,
   noc,
@@ -49,44 +57,33 @@ function Fila({
   /** El camino de la plaza («4 primeros», «Europa», «12.º» en los de fuera). */
   via?: string | null;
   puntos: string;
-  estado: 'dentro' | 'fuera';
+  estado: 'dentro' | 'fuera' | 'dudoso';
   propio: boolean;
 }) {
+  const tono = TONOS_FILA[estado];
   return (
     <li
       data-estado={estado}
       data-propio={propio ? '' : undefined}
       className={cn(
         'grid min-w-0 grid-cols-[2.5rem_auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-2',
-        estado === 'dentro' ? 'bg-ok-tinte/50' : 'bg-warn-tinte/60',
-        propio && 'bg-marcado font-semibold',
+        tono.fila,
+        propio && 'bg-marcado font-semibold text-foreground',
       )}
     >
-      <span
-        className={cn(
-          'truncate text-xs tabular-nums',
-          estado === 'dentro' ? 'text-ok' : 'text-warn',
-          propio && 'text-foreground',
-        )}
-      >
+      <span className={cn('truncate text-xs tabular-nums', tono.posicion, propio && 'text-foreground')}>
         {posicion}
       </span>
       <BanderaPais pais={noc} conNombre={!nombre} />
       <span className="min-w-0 truncate text-sm">
         {nombre}
         {via ? (
-          <span className={cn('text-xs font-normal', nombre ? 'ml-1.5 text-muted-foreground' : 'text-muted-foreground')}>
-            {nombre ? `· ${via}` : via}
+          <span className="text-xs font-normal text-muted-foreground">
+            {nombre ? ` · ${via}` : via}
           </span>
         ) : null}
       </span>
-      <span
-        className={cn(
-          'cifra text-sm tabular-nums',
-          estado === 'fuera' && 'text-warn',
-          propio && 'text-foreground',
-        )}
-      >
+      <span className={cn('cifra text-sm tabular-nums', tono.puntos, propio && 'text-foreground')}>
         {puntos}
       </span>
     </li>
@@ -203,40 +200,24 @@ export function PruebaOlimpica({
     ZONAS_FIE.reduce((n, z) => n + resultado.aorZona[z].length, 0) +
     resultado.plazasTorneoZonal;
 
-  // «Sin contar: RUS, BLR (participación sin decidir)», agrupando por motivo.
+  // Los que aparecen en el ranking pero no cuentan, con su motivo cuando lo
+  // hay: salen como filas grises al final («RUS · Participación sin decidir»).
   const lista = excluidos?.length
     ? excluidos
     : resultado.excluidos.map((noc) => ({ noc, motivo: undefined }));
-  const grupos: string[] = [];
-  const sinMotivo: string[] = [];
-  const porMotivo = new Map<MotivoPendiente, string[]>();
-  for (const e of lista) {
-    if (e.motivo) porMotivo.set(e.motivo, [...(porMotivo.get(e.motivo) ?? []), e.noc]);
-    else sinMotivo.push(e.noc);
-  }
-  if (sinMotivo.length) grupos.push(sinMotivo.join(', '));
-  for (const [m, nocs] of porMotivo) {
-    grupos.push(`${nocs.join(', ')} (${MOTIVO_TEXTO[m].toLowerCase()})`);
-  }
-  const textoExcluidos = grupos.join('; ');
 
   return (
-    <details
-      className="sis-details sis-details-grande group min-w-0 max-w-3xl rounded-xl border bg-card"
+    <section
+      className="min-w-0 max-w-3xl rounded-xl border bg-card px-3 pb-3 pt-3 sm:px-4 sm:pb-4"
       data-prueba={`${resultado.arma}-${resultado.genero}`}
     >
-      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl px-3 py-2 transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:px-4 [&::-webkit-details-marker]:hidden">
-        <h3 className="mr-auto min-w-0 truncate text-base leading-tight">
-          {rotuloPrueba({ arma: resultado.arma, genero: resultado.genero })}
-        </h3>
-        <EstadoPropio estado={resultado.seguidos[nocPropio]} />
-        <ChevronDown
-          aria-hidden
-          className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180 motion-reduce:transition-none"
-        />
-      </summary>
-
-      <div className="space-y-4 border-t border-border px-3 pb-3 pt-3 sm:px-4 sm:pb-4">
+      <div className="space-y-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+          <h3 className="min-w-0 flex-1 text-base leading-tight">
+            {rotuloPrueba({ arma: resultado.arma, genero: resultado.genero })}
+          </h3>
+          <EstadoPropio estado={resultado.seguidos[nocPropio]} />
+        </div>
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           <Pastilla tamano="md" data-provisional="">
             Provisional
@@ -244,7 +225,6 @@ export function PruebaOlimpica({
           </Pastilla>
           <span className="min-w-0 flex-1 text-xs text-muted-foreground">
             {`Quién entraría si el ranking se cerrara hoy; decide el del ${fechaDecisiva ?? R.fechaRankingDecisivo}.`}
-            {textoExcluidos ? ` Sin contar: ${textoExcluidos}.` : ''}
           </span>
         </div>
 
@@ -338,7 +318,23 @@ export function PruebaOlimpica({
             </li>
           </Seccion>
         ) : null}
+
+        {lista.length > 0 ? (
+          <Seccion titulo="Sin contar" descripcion="aparecen en el ranking pero hoy no cuentan">
+            {lista.map((e) => (
+              <Fila
+                key={e.noc}
+                posicion="—"
+                noc={e.noc}
+                via={e.motivo ? MOTIVO_TEXTO[e.motivo] : 'no cuenta hoy'}
+                puntos="no cuenta"
+                estado="dudoso"
+                propio={false}
+              />
+            ))}
+          </Seccion>
+        ) : null}
       </div>
-    </details>
+    </section>
   );
 }

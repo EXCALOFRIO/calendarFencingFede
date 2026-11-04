@@ -303,7 +303,7 @@ export function TablaRankingFie({
           y `/olimpica` lleva el desglose por equipos e individual.
         */
         <EnlaceIntencion
-          href={`/olimpica#${olimpica.resultado.arma}-${olimpica.resultado.genero}`}
+          href={`/olimpica?prueba=${olimpica.resultado.arma}-${olimpica.resultado.genero}`}
           className="flex min-h-11 min-w-0 max-w-3xl items-center gap-2 rounded-xl border bg-card px-3 py-2 transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:px-4"
         >
           <IconoAros className="w-5 shrink-0 text-muted-foreground" />

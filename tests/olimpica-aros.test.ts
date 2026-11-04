@@ -255,8 +255,8 @@ describe('/ranking internacional: la clasificación olímpica va aparte, no en l
   it('un botón a /olimpica, sin burbujas en las filas ni sección dentro', () => {
     busqueda.valor = new URLSearchParams();
     const o = pintar(PRUEBA);
-    // El botón lleva a la pantalla propia, anclada a la prueba.
-    expect(o).toContain('href="/olimpica#ESPADA-M"');
+    // El botón lleva a la pantalla propia, con la prueba elegida en la URL.
+    expect(o).toContain('href="/olimpica?prueba=ESPADA-M"');
     expect(o).toContain('Clasificación olímpica');
     // Pero nada de clasificación mezclada en el ranking normal.
     expect(o).not.toContain('data-color-olimpico');
