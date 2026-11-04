@@ -171,7 +171,7 @@ export function PanelTiradores({
           descripcion={
 
             busqueda
-              ? `Nadie coincide con «${busqueda}» en ${nombresDeArmas(armas)}. ` +
+              ? `«${busqueda}» no aparece en ${nombresDeArmas(armas)}. ` +
                 'Prueba con las tres armas o con otro nombre.'
               : esAdmin
                 ? `Todavía no hay ninguna ficha de ${nombresDeArmas(armas)}. Las fichas se crean en Gestión › Usuarios.`
@@ -504,7 +504,7 @@ function ListaCompeticiones({ tiradores }: { tiradores: TiradorVista[] }) {
       <EstadoVacio
         titulo="Todavía no va nadie a ninguna competición"
         descripcion=
-"En cuanto se pida una inscripción para una competición futura, aparecerá aquí agrupada por competición, con quién va a cada una."
+"En cuanto se pida una inscripción para una competición futura, aparecerá aquí con quién va a cada una."
       />
     );
   }

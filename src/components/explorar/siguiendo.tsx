@@ -186,7 +186,7 @@ export function EstadoSiguiendo({
         />
       );
     case 'no_disponible':
-      return <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Siguiendo aún no está activo" descripcion="Todavía no está disponible." />;
+      return <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Siguiendo aún no está activo" />;
     case 'entrada_invalida':
     case 'error':
       return (

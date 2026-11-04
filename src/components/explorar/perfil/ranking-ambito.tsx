@@ -139,7 +139,7 @@ export function RankingAmbitoPerfil({
         </ol>
       ) : null}
       {resto.length > 0 ? (
-        <details className="sis-details group min-w-0">
+        <details className="sis-details sis-details-grande group min-w-0">
           <summary className="inline-flex min-h-11 cursor-pointer list-none items-center text-sm font-medium text-primary-text underline-offset-4 hover:underline group-open:hidden focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
             {textoVerMas(resto.length)}
           </summary>

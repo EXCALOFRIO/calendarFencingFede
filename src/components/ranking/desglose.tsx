@@ -1,5 +1,3 @@
-'use client';
-
 import { Check, ExternalLink, Minus } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 import type { BreakdownEntry, RankingTableView } from '@/lib/queries/ranking';

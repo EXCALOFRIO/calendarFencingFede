@@ -240,7 +240,7 @@ export function TarjetaConvocatoria({
           </Button>
         ) : (
           <span className="text-xs text-muted-foreground">
-            Sin PDF de convocatoria publicado
+            Sin PDF
           </span>
         )}
       </div>
@@ -254,9 +254,7 @@ export function TarjetaConvocatoria({
               {c.status === 'confirmado' ? 'Cambiar la respuesta' : 'No puedo ir'}
             </DialogTitle>
             <DialogDescription className="medida">
-              Explica por qué. El seleccionador necesita saber si es una lesión, un
-              examen o el coste del viaje: cada cosa se resuelve de una forma
-              distinta, y de ello depende a quién llama en tu lugar.
+              El seleccionador decide a quién llama en tu lugar según el motivo.
             </DialogDescription>
           </DialogHeader>
 

@@ -121,7 +121,7 @@ export function InscritosFieTodos({ urlInscritos }: { urlInscritos: string }) {
   return (
     <details
       ref={detalles}
-      className="sis-details group min-w-0"
+      className="sis-details sis-details-grande group min-w-0"
       onToggle={(e) => {
         if (e.currentTarget.open) alAbrir();
       }}
@@ -169,7 +169,7 @@ export function InscritosFieTodos({ urlInscritos }: { urlInscritos: string }) {
         {estado === 'ok' && lista ? (
           <>
             <p className="text-sm text-muted-foreground">
-              Lista de la FIE — todos los países
+              Lista de la FIE
               {lista.total > lista.inscritos.length
                 ? ` · Se muestran los ${lista.inscritos.length} primeros de ${lista.total}`
                 : ''}

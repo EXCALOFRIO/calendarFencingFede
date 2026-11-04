@@ -534,7 +534,7 @@ function ListaCruces({
 /** «Ver más (N)» que despliega el resto de una lista sin JavaScript. */
 function Desplegar({ resto, children }: { resto: number; children: React.ReactNode }) {
   return (
-    <details className="sis-details group min-w-0">
+    <details className="sis-details sis-details-grande group min-w-0">
       <summary
         className={cn(
           'flex min-h-11 cursor-pointer list-none items-center justify-center gap-1 border-t border-filete text-sm font-medium text-primary-text transition-colors hover:bg-secondary [&::-webkit-details-marker]:hidden',

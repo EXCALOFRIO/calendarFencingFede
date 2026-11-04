@@ -187,6 +187,14 @@
  * dos sentidos. Donde el pseudo aún no existe (Safari, Firefox hoy) abre
  * de golpe, como siempre; no necesita `@supports` porque una regla que no
  * casa no cambia nada.
+ *
+ * La animación de alto es la excepción consentida a la regla de § 4.1
+ * («nunca alto ni ancho»): cada fotograma recoloca lo que va debajo y
+ * repinta la franja revelada. En un bloque corto (una aclaración, una
+ * alineación) son unos cientos de px; en una lista de datos sin tope son
+ * miles, y un deslizamiento de esa distancia ya se lee instantáneo de todos
+ * modos. Para esos va `.sis-details-grande`: mismo plegado, apertura de
+ * golpe, y ningún `block-size` recalculando por fotograma.
  */
 .sis-details {
   interpolate-size: allow-keywords;
@@ -200,6 +208,9 @@
 }
 .sis-details[open]::details-content {
   block-size: auto;
+}
+.sis-details-grande::details-content {
+  transition: none;
 }
 
 /*

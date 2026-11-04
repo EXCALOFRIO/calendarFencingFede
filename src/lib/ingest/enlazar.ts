@@ -1,4 +1,4 @@
-import { and, sql } from 'drizzle-orm';
+import { and, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { enLista as inArray, lotesDeInsercion } from '@/lib/sqlite';
 import { db } from '@/db';
 import { event, eventCompetition, eventLink } from '@/db/schema';
@@ -173,6 +173,14 @@ function solapan(a: FilaEvento, b: FilaEvento): boolean {
  * Coste: tres lecturas y como mucho cuatro escrituras, todas en lote. El
  * driver de Neon es HTTP y cada consulta es una ida y vuelta, así que no hay
  * ni un SELECT por evento.
+ *
+ * Las lecturas están acotadas por lo que el emparejado de verdad puede usar:
+ * un evento `disappeared_at` ya no sale de la fuente y nunca puede ser ni
+ * secundario ni principal, así que solo se lee si todavía arrastra un
+ * `canonical_event_id` que haya que limpiar (ver `planificarEnlaces`: con la
+ * columna ya a `null` no produciría ningún UPDATE). Por la misma razón las
+ * pruebas solo se leen de eventos vivos: ningún índice de `pruebasPorEvento`
+ * se consulta jamás para un `disappeared_at` no nulo.
  */
 export async function recalcularEnlaces(): Promise<ResumenEnlaces> {
   const ahora = new Date();
@@ -192,7 +200,8 @@ export async function recalcularEnlaces(): Promise<ResumenEnlaces> {
         cancelled: event.cancelled,
         canonicalEventId: event.canonicalEventId,
       })
-      .from(event),
+      .from(event)
+      .where(or(isNull(event.disappearedAt), isNotNull(event.canonicalEventId))),
     db
       .select({
         eventId: eventCompetition.eventId,
@@ -201,7 +210,11 @@ export async function recalcularEnlaces(): Promise<ResumenEnlaces> {
         category: eventCompetition.category,
         format: eventCompetition.format,
       })
-      .from(eventCompetition),
+      .from(eventCompetition)
+      .where(inArray(
+        eventCompetition.eventId,
+        sql`(select ${event.id} from ${event} where ${event.disappearedAt} is null)`,
+      )),
     db
       .select({
         id: eventLink.id,

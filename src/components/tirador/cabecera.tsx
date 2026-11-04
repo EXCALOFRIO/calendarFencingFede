@@ -1,5 +1,3 @@
-'use client';
-
 import { ExternalLink } from 'lucide-react';
 import type * as React from 'react';
 import { BanderaPais } from '@/components/bandera';

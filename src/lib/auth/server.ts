@@ -9,12 +9,19 @@ import { createSessionCache } from './session-cache';
 /** Per isolate, shared by every request it serves. 30 s: see `session-cache.ts` for the residual risk. */
 const sesionesValidadas = createSessionCache<ProviderSession>({ ttlMs: 30_000 });
 
-/** Lazy: importing a page during a build must not resolve a Worker binding or secret. */
-export function getAuth() {
-  const origin = process.env.NEXT_PUBLIC_APP_URL;
-  const baseUrl = process.env.NEON_AUTH_URL ?? process.env.NEON_AUTH_BASE_URL;
-  const secret = process.env.NEON_AUTH_COOKIE_SECRET ?? '';
-  if (!origin || !baseUrl) throw new Error('Falta la configuración de Neon Auth y del origen de la aplicación.');
+/**
+ * Una instancia por aislado y configuración: `createNeonAuth` monta la
+ * instancia de better-auth (resolución de plugins, tabla de rutas, claves) y
+ * `createManagedAuth` su API entera. Hacerlo en cada `getAuth()` pagaba ese
+ * montaje en TODA petición autenticada, aunque la configuración nunca cambia
+ * dentro de un aislado. La clave son los propios valores de configuración: si
+ * alguno cambiara (pruebas con entornos distintos) se construye otra instancia
+ * en vez de mezclar orígenes o secretos. En producción el Map tiene una sola
+ * entrada siempre.
+ */
+const instancias = new Map<string, ReturnType<typeof construirAuth>>();
+
+function construirAuth(origin: string, baseUrl: string, secret: string) {
   // `sessionDataTtl: 1` and `disableCookieCache` keep the SDK's signed-cookie
   // cache out of the way; the only reuse of a validated session is `sesionesValidadas`.
   const managed = createNeonAuth({
@@ -43,4 +50,19 @@ export function getAuth() {
       }
     },
   });
+}
+
+/** Lazy: importing a page during a build must not resolve a Worker binding or secret. */
+export function getAuth() {
+  const origin = process.env.NEXT_PUBLIC_APP_URL;
+  const baseUrl = process.env.NEON_AUTH_URL ?? process.env.NEON_AUTH_BASE_URL;
+  const secret = process.env.NEON_AUTH_COOKIE_SECRET ?? '';
+  if (!origin || !baseUrl) throw new Error('Falta la configuración de Neon Auth y del origen de la aplicación.');
+  const clave = `${origin}${baseUrl}${secret}${otpDailyLimit()}`;
+  let instancia = instancias.get(clave);
+  if (!instancia) {
+    instancia = construirAuth(origin, baseUrl, secret);
+    instancias.set(clave, instancia);
+  }
+  return instancia;
 }

@@ -441,8 +441,36 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
     );
   }
 
+  /**
+   * Sólo las columnas que la vista de abajo lee: `select()` traía además
+   * `sourceId`, `contentHash`, `sourceModifiedAt`, `firstSeenAt`, `cancelled`
+   * y `canonicalEventId` de cada evento en cada carga del calendario —la
+   * pantalla más caliente de la aplicación— sin gastarlas nunca.
+   */
   const eventRows = await db
-    .select()
+    .select({
+      id: event.id,
+      source: event.source,
+      sourceUrl: event.sourceUrl,
+      name: event.name,
+      startDate: event.startDate,
+      endDate: event.endDate,
+      venue: event.venue,
+      venueAddress: event.venueAddress,
+      city: event.city,
+      country: event.country,
+      geoLat: event.geoLat,
+      geoLon: event.geoLon,
+      timezone: event.timezone,
+      officialSite: event.officialSite,
+      imageUrl: event.imageUrl,
+      circuit: event.circuit,
+      scope: event.scope,
+      regionalFederation: event.regionalFederation,
+      notes: event.notes,
+      lastSeenAt: event.lastSeenAt,
+      disappearedAt: event.disappearedAt,
+    })
     .from(event)
     .where(and(...conditions))
     .orderBy(asc(event.startDate), asc(event.name))

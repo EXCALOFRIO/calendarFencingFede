@@ -1,5 +1,3 @@
-'use client';
-
 import { BanderaPais } from '@/components/bandera';
 import { Pastilla } from '@/components/sistema/pastilla';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';

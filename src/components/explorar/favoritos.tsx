@@ -145,7 +145,7 @@ export function EstadoFavoritos({
         />
       );
     case 'no_disponible':
-      return <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Favoritos aún no está activo" descripcion="Todavía no está disponible." />;
+      return <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Favoritos aún no está activo" />;
     case 'entrada_invalida':
     case 'error':
       return <EstadoVacio tipo="error" icono={TriangleAlert} titulo="No se ha podido abrir tu lista" accion={<Accion href={reintentar}>Reintentar</Accion>} />;

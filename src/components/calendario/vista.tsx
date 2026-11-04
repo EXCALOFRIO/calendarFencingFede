@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  CalendarSearch,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -12,7 +11,6 @@ import {
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import * as React from 'react';
-import { toast } from 'sonner';
 import {
   OpcionesFiltro,
   SeccionFiltro,
@@ -24,15 +22,8 @@ import { ChipFiltro, FilaChips } from '@/components/sistema/chip-filtro';
 import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import { SelectorSegmentado } from '@/components/sistema/selector-segmentado';
 import { TransicionContenido } from '@/components/sistema/transicion';
+import { avisar } from '@/components/ui/sonner-diferido';
 import { ahorrarDatos } from '@/components/sistema/red-cliente';
-import {
-  Command,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { COLOR_ORGANISMO } from '@/lib/colores';
 import type { EventView, Weapon } from '@/lib/queries/calendar';
 import {
@@ -45,7 +36,7 @@ import {
 import { rotuloArma, rotuloCategoria, rotuloGenero } from '@/lib/sport/rotulos';
 import { hoyMadrid, rangoFechas } from '@/lib/fechas';
 import { cn, organismoDe, titularTorneo, type Organismo } from '@/lib/utils';
-import { pastillaDeCircuito, plazoDe } from '@/lib/calendario/rotulos';
+import { plazoDe } from '@/lib/calendario/rotulos';
 import { Sede } from './fila-competicion';
 import type { QuienVa } from '@/app/(app)/inscritos';
 import {
@@ -113,6 +104,16 @@ const CUANTO_DESPUES = 6;
  * primer toque.
  */
 const FichaEvento = dynamic(() => import('./ficha-evento').then((m) => m.FichaEvento));
+
+/**
+ * La paleta de búsqueda (`Command` + `Dialog`, ~20 KB con `cmdk`): abre siempre
+ * tras un toque, así que va en su trozo, como la ficha. Se pide con la intención
+ * (`precargarPaleta`) y se monta la primera vez que se abre; luego se queda
+ * montada, cerrada, para que el cierre conserve su animación.
+ */
+const PaletaBusqueda = dynamic(() =>
+  import('./paleta-busqueda').then((m) => m.PaletaBusqueda),
+);
 
 const GENEROS: { v: 'M' | 'F'; largo: string }[] = [
   { v: 'M', largo: rotuloGenero('M') },
@@ -373,6 +374,15 @@ export function VistaCalendario({
   });
   const [busqueda, setBusqueda] = React.useState(inicial?.busqueda ?? '');
   const [buscando, setBuscando] = React.useState(false);
+  /**
+   * La paleta se monta al abrirla por primera vez (su trozo se pide con la
+   * intención, abajo) y luego se queda, cerrada, para conservar el fundido.
+   */
+  const [paletaMontada, setPaletaMontada] = React.useState(false);
+  const abrirPaleta = React.useCallback(() => {
+    setPaletaMontada(true);
+    setBuscando(true);
+  }, []);
   /**
    * Hacia dónde se movió la última vez.
    *
@@ -949,12 +959,12 @@ export function VistaCalendario({
     const alPulsar = (e: KeyboardEvent) => {
       if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        setBuscando(true);
+        abrirPaleta();
       }
     };
     document.addEventListener('keydown', alPulsar);
     return () => document.removeEventListener('keydown', alPulsar);
-  }, []);
+  }, [abrirPaleta]);
 
   /**
    * Arma y género en las barras, solo cuando el filtro abarca más de uno.
@@ -1063,7 +1073,16 @@ export function VistaCalendario({
             <BotonIcono
               etiqueta="Buscar un torneo o una sede"
               tamano="md"
-              onClick={() => setBuscando(true)}
+              // El trozo de la paleta, calentándose con la intención, como la ficha.
+              onPointerEnter={(e) => {
+                if (e.pointerType === 'mouse' && !ahorrarDatos()) void import('./paleta-busqueda');
+              }}
+              onFocus={(e) => {
+                if (e.currentTarget.matches(':focus-visible') && !ahorrarDatos()) {
+                  void import('./paleta-busqueda');
+                }
+              }}
+              onClick={abrirPaleta}
             >
               <Search aria-hidden />
             </BotonIcono>
@@ -1310,88 +1329,30 @@ export function VistaCalendario({
       {filtrados.length > 0 ? <Leyenda organismos={organismos} /> : null}
 
       {/*
-        La paleta de búsqueda.
+        La paleta de búsqueda. No filtra el calendario: lleva a él.
 
-        No filtra el calendario: lleva a él. Cada resultado dice de qué es
-        —arma, género, categoría, circuito— y cuándo y dónde, que es justo lo
-        que hace falta para reconocer el que se buscaba entre cuatro «Copa del
-        Mundo Cadete» del mismo mes.
+        Se monta al abrirla por primera vez y no se desmonta, para que el
+        cierre conserve su animación y el segundo toque no repita el trozo.
       */}
-      <Dialog open={buscando} onOpenChange={setBuscando}>
-        <DialogContent className="overflow-hidden p-0 sm:max-w-lg" showCloseButton={false}>
-          <DialogTitle className="sr-only">Buscar un torneo o una sede</DialogTitle>
-          <Command shouldFilter={false}>
-            <CommandInput
-              value={busqueda}
-              onValueChange={setBusqueda}
-              placeholder="Buscar un torneo o una sede"
-            />
-            <CommandList>
-              {/*
-                IR A UN MES CUALQUIERA, TAMBIÉN DE HACE AÑOS.
-
-                El calendario llega hacia atrás hasta donde llega Explorar, y
-                eso son décadas: a marzo de 2019 había que dar más de ochenta
-                toques a la flecha. Escribir «2019» o «marzo 2019» ofrece ir
-                directamente. Va arriba y aparte de las coincidencias.
-              */}
-              {saltoDeMes ? (
-                <CommandItem
-                  value={`ir-a-${saltoDeMes.anio}-${saltoDeMes.mes}`}
-                  onSelect={() => {
-                    const destino = new Date(saltoDeMes.anio, saltoDeMes.mes, 1);
-                    setDireccion(destino.getTime() > ancla.getTime() ? 1 : -1);
-                    enTransicion(() => setAncla(destino));
-                    setBusqueda('');
-                    setBuscando(false);
-                  }}
-                  className="min-h-11 gap-2 py-3 text-sm font-medium"
-                >
-                  <CalendarSearch className="size-4" aria-hidden />
-                  Ir a {nombreDeMes(saltoDeMes.anio, saltoDeMes.mes).toLocaleLowerCase('es-ES')}
-                </CommandItem>
-              ) : null}
-              {busqueda.trim() === '' ? (
-                <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-                  Torneo, ciudad o mes («marzo 2019»)
-                </p>
-              ) : saltoDeMes && coincidencias.length === 0 ? null : coincidencias.length === 0 ? (
-                <CommandEmpty>Sin coincidencias</CommandEmpty>
-              ) : (
-                coincidencias.slice(0, 40).map((e, i) => {
-                  const circuito = pastillaDeCircuito(e);
-                  return (
-                    <CommandItem
-                      key={e.id}
-                      value={e.id}
-                      onSelect={() => {
-                        setCual(i);
-                        irA(e.startDate);
-                        setBuscando(false);
-                      }}
-                      className="min-h-11 flex-col items-start gap-1 py-3"
-                    >
-                      <span className="flex w-full flex-wrap items-baseline gap-x-2 gap-y-1">
-                        <span className="min-w-0 flex-1 text-sm font-medium break-words">
-                          {titularTorneo(e.name)}
-                        </span>
-                        <span className="shrink-0 text-sm text-muted-foreground tabular-nums">
-                          {rangoFechas(e.startDate, e.endDate, 'linea', { anio: 'auto', referencia: hoy })}
-                        </span>
-                      </span>
-                      {/* Dos datos y no tres: el circuito ya dice de quién es. */}
-                      <span className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                        {circuito ? <span className="min-w-0 break-words">{circuito}</span> : null}
-                        {e.city ? <Sede ciudad={e.city} pais={e.country} /> : null}
-                      </span>
-                    </CommandItem>
-                  );
-                })
-              )}
-            </CommandList>
-          </Command>
-        </DialogContent>
-      </Dialog>
+      {paletaMontada ? (
+        <PaletaBusqueda
+          abierta={buscando}
+          onAbierta={setBuscando}
+          busqueda={busqueda}
+          onBusqueda={setBusqueda}
+          saltoDeMes={saltoDeMes}
+          coincidencias={coincidencias}
+          onIrAMes={(destino) => {
+            setDireccion(destino.getTime() > ancla.getTime() ? 1 : -1);
+            enTransicion(() => setAncla(destino));
+          }}
+          onElegir={(e, i) => {
+            setCual(i);
+            irA(e.startDate);
+          }}
+          hoy={hoy}
+        />
+      ) : null}
 
       {/*
         La ficha del torneo y la hoja de resultados de un torneo pasado, como
@@ -1416,9 +1377,14 @@ export function VistaCalendario({
               if (!tirador) return;
               const r = await solicitarInscripcion(competitionId, tirador.id);
               setAbierto(null);
-              // A un aviso flotante: una fila nueva movería el calendario justo al volver de la ficha.
-              if (r.ok) toast.success(r.message);
-              else toast.error(r.error);
+              /*
+                A un aviso flotante: una fila nueva movería el calendario justo
+                al volver de la ficha. `sonner` se pide aquí, al avisar, y no
+                en la carga: casi ninguna visita al calendario manda un aviso
+                (ver `AvisosApp`).
+              */
+              if (r.ok) await avisar('success', r.message);
+              else await avisar('error', r.error);
             }}
           />
         ) : null}

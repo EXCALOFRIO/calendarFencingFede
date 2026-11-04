@@ -26,6 +26,22 @@
   "main": "worker/index.ts",
 
   /**
+   * Minificado del bundle antes de subir. El handler de OpenNext llega SIN
+   * minificar (~19,1 MB dentro del bundle): con esto el upload baja de
+   * 25.841 KiB a 18.095 KiB (−30%; gzip 5.926 → 5.362 KiB), y en cada arranque
+   * en frío V8 tiene ~7,7 MB menos que parsear. Medido con
+   * `wrangler deploy --dry-run`.
+   *
+   * `keep_names` conserva `Function#name`/`Class#name` en lo que se renombra:
+   * es el único efecto visible de un minificado (la comprobación
+   * `instanceof` y los `this.name = 'X'` de las clases de error no dependen
+   * de él) y aquí no cambia ni un byte, así que se queda por prudencia.
+   * Revertir = borrar estas dos líneas.
+   */
+  "minify": true,
+  "keep_names": true,
+
+  /**
    * Fecha de compatibilidad.
    *
    * Tiene que ser >= 2025-04-01 para que `process.env` se rellene con las

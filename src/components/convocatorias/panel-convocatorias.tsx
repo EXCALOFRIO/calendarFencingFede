@@ -268,8 +268,7 @@ function Fila({
           <div className="flex flex-col gap-4">
             {c.convocados.length === 0 ? (
               <p className="medida text-sm text-muted-foreground">
-                No hay nadie convocado todavía. Una convocatoria sin convocados no se
-                puede publicar.
+                Sin convocados no se puede publicar.
               </p>
             ) : (
               <Table>

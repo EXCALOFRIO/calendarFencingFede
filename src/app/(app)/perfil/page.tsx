@@ -114,7 +114,7 @@ export default async function Pagina({
 
       <Seccion titulo="Favoritos" accion={<EnlaceFavoritos />}>
         <p className="medida pt-3 text-sm text-muted-foreground">
-          Las fichas deportivas que has guardado para volver a ellas. La lista es privada y guardar a
+          Las fichas deportivas que has guardado. La lista es privada y guardar a
           alguien no envía avisos.
         </p>
       </Seccion>

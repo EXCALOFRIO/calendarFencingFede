@@ -115,15 +115,32 @@ export type RankingTableView = {
   } | null;
 };
 
-/** Temporada actual. Sin ella no hay ranking que enseñar. */
-export const getRankingSeason = cache(async () => {
-  const [row] = await db
-    .select()
-    .from(seasonTable)
-    .where(eq(seasonTable.current, true))
-    .limit(1);
-  return row ?? null;
+/**
+ * Temporada actual. Sin ella no hay ranking que enseñar.
+ *
+ * Es la misma para todas las cuentas y sólo cambia desde Gestión › Normativa
+ * (que invalida `calendario`): caché compartida, igual que las reglas de
+ * abajo. Sólo la FILA —las categorías las piden otras pantallas por
+ * `temporadaCompartida`—, así que en el peor caso es la misma consulta de
+ * antes y en el habitual, cero.
+ */
+const filaTemporadaCompartida = cacheCompartida.definir({
+  espacio: 'temporada-fila',
+  depende: ['calendario'],
+  frescoMs: 10 * MINUTO,
+  caducaMs: DIA,
+  anteriorMientrasRevalida: false,
+  cargar: async () => {
+    const [row] = await db
+      .select()
+      .from(seasonTable)
+      .where(eq(seasonTable.current, true))
+      .limit(1);
+    return row ?? null;
+  },
 });
+
+export const getRankingSeason = cache(() => filaTemporadaCompartida());
 
 /**
  * Estado real del ranking, para que la pantalla pueda ser HONESTA cuando está
@@ -150,7 +167,7 @@ export const getRankingStatus = cache(async () => {
     };
   }
 
-  const { rules, invalid } = await loadRankingRules(season.id);
+  const { rules, invalid } = await reglasRankingCompartidas(season.id);
 
   const [counts] = await db
     .select({
@@ -179,8 +196,14 @@ export const getRankingStatus = cache(async () => {
   };
 });
 
-/** Las dos últimas fechas de cálculo: la actual y la de referencia. */
-async function lastTwoComputedAt(seasonId: string): Promise<(Date | null)[]> {
+/**
+ * Las dos últimas fechas de cálculo: la actual y la de referencia.
+ *
+ * `cache()` porque una misma petición la pedía una vez por grupo desde
+ * `getRankingTable` (el dato de `ranking_snapshot` es interno, así que NO va
+ * a la caché compartida: se deduplica dentro de la petición y ya).
+ */
+const lastTwoComputedAt = cache(async (seasonId: string): Promise<(Date | null)[]> => {
   const rows = await db
     .selectDistinct({ computedAt: rankingSnapshotTable.computedAt })
     .from(rankingSnapshotTable)
@@ -188,7 +211,25 @@ async function lastTwoComputedAt(seasonId: string): Promise<(Date | null)[]> {
     .orderBy(desc(rankingSnapshotTable.computedAt))
     .limit(2);
   return [rows[0]?.computedAt ?? null, rows[1]?.computedAt ?? null];
-}
+});
+
+/**
+ * Normativa de ranking de la temporada. Es la misma para todas las cuentas y
+ * sólo cambia desde Gestión › Normativa, que invalida `ranking`: caché
+ * compartida, igual que las tablas públicas de `compartido.ts`. Antes se leía
+ * de D1 en cada llamada a `getRankingTable` (y, por tanto, una vez por grupo
+ * en cada pantalla del ranking interno).
+ *
+ * Lo que guarda no lleva nada de cuenta: `loadRankingRules` recibe sólo el id
+ * de temporada y devuelve las filas ya validadas.
+ */
+export const reglasRankingCompartidas = cacheCompartida.definir({
+  espacio: 'ranking-reglas',
+  depende: ['ranking'],
+  frescoMs: 10 * MINUTO,
+  caducaMs: 7 * DIA,
+  cargar: (seasonId: string) => loadRankingRules(seasonId),
+});
 
 /**
  * Combinaciones arma/género/categoría que tienen ranking calculado.
@@ -301,7 +342,7 @@ export async function getRankingTable(
           .from(rankingSnapshotTable)
           .where(where(previousComputedAt))
       : Promise.resolve([] as { athleteId: string; position: number }[]),
-    loadRankingRules(season.id),
+    reglasRankingCompartidas(season.id),
   ]);
 
   const previousByAthlete = new Map(previous.map((p) => [p.athleteId, p.position]));
@@ -675,14 +716,132 @@ export async function getRankingScreenData(
   const groups = await listRankingGroups(armas);
   if (groups.length === 0) return empty;
 
+  /**
+   * Todas las tablas en DOS consultas a `ranking_snapshot` —la del cálculo
+   * vigente y la de referencia para el «subió/bajó»— en vez de la pareja que
+   * pedía `getRankingTable` por grupo: con treinta grupos eran más de sesenta
+   * viajes a D1 para pintar la misma pantalla. Las filas se reparten por
+   * grupo en memoria, que es gratis.
+   */
+  const [computedAt, previousComputedAt] = await lastTwoComputedAt(season.id);
+  if (!computedAt) return empty;
+
+  const [actuales, anteriores, { rules }] = await Promise.all([
+    db
+      .select({
+        weapon: rankingSnapshotTable.weapon,
+        gender: rankingSnapshotTable.gender,
+        category: rankingSnapshotTable.category,
+        athleteId: rankingSnapshotTable.athleteId,
+        position: rankingSnapshotTable.position,
+        totalPoints: rankingSnapshotTable.totalPoints,
+        countedEventIds: rankingSnapshotTable.countedEventIds,
+        firstName: athleteTable.firstName,
+        lastName: athleteTable.lastName,
+        clubName: clubTable.name,
+      })
+      .from(rankingSnapshotTable)
+      .innerJoin(athleteTable, eq(athleteTable.id, rankingSnapshotTable.athleteId))
+      .leftJoin(clubTable, eq(clubTable.id, athleteTable.clubId))
+      .where(
+        and(
+          eq(rankingSnapshotTable.seasonId, season.id),
+          eq(rankingSnapshotTable.computedAt, computedAt),
+          inArray(rankingSnapshotTable.weapon, [...armas]),
+        ),
+      )
+      .orderBy(
+        asc(rankingSnapshotTable.weapon),
+        asc(rankingSnapshotTable.gender),
+        asc(rankingSnapshotTable.category),
+        asc(rankingSnapshotTable.position),
+      ),
+    previousComputedAt
+      ? db
+          .select({
+            weapon: rankingSnapshotTable.weapon,
+            gender: rankingSnapshotTable.gender,
+            category: rankingSnapshotTable.category,
+            athleteId: rankingSnapshotTable.athleteId,
+            position: rankingSnapshotTable.position,
+          })
+          .from(rankingSnapshotTable)
+          .where(
+            and(
+              eq(rankingSnapshotTable.seasonId, season.id),
+              eq(rankingSnapshotTable.computedAt, previousComputedAt),
+              inArray(rankingSnapshotTable.weapon, [...armas]),
+            ),
+          )
+      : Promise.resolve(
+          [] as {
+            weapon: string;
+            gender: string;
+            category: string;
+            athleteId: string;
+            position: number;
+          }[],
+        ),
+    reglasRankingCompartidas(season.id),
+  ]);
+
+  // Una tabla por grupo, aunque quede vacía: el resto de la función espera
+  // la misma forma que daba `getRankingTable` (grupo, regla, cortes).
   const tables: Record<string, RankingTableView> = {};
-  const cutoffs: Record<string, Record<string, CutoffStatus>> = {};
-
   for (const group of groups) {
-    const key = groupKey(group);
-    const table = await getRankingTable(armas, group);
-    tables[key] = table;
+    const rule = pickRule(rules, group.weapon, group.category);
+    tables[groupKey(group)] = {
+      group: {
+        weapon: group.weapon,
+        gender: group.gender,
+        category: group.category,
+      },
+      rows: [],
+      computedAt,
+      previousComputedAt,
+      rule: rule
+        ? {
+            countingEvents: rule.countingEvents,
+            rankingPlaces: rule.rankingPlaces,
+            technicalPlaces: rule.technicalPlaces,
+            cutoffDate: rule.cutoffDate,
+            sourceDocument: rule.sourceDocument,
+            sourceUrl: rule.sourceUrl,
+          }
+        : null,
+    };
+  }
 
+  const anteriorDe = new Map(
+    anteriores.map((p) => [
+      `${p.weapon}|${p.gender}|${p.category}|${p.athleteId}`,
+      p.position,
+    ]),
+  );
+
+  for (const row of actuales) {
+    const key = `${row.weapon}|${row.gender}|${row.category}`;
+    const table = tables[key];
+    if (!table) continue;
+    const before = anteriorDe.get(`${key}|${row.athleteId}`);
+    table.rows.push({
+      ...table.group,
+      athleteId: row.athleteId,
+      athleteName: `${row.firstName} ${row.lastName}`.trim(),
+      clubName: row.clubName,
+      position: row.position,
+      totalPoints: Number.parseFloat(row.totalPoints),
+      countedEvents: Array.isArray(row.countedEventIds)
+        ? row.countedEventIds.length
+        : 0,
+      // Subir en el ranking es bajar de número: se invierte para que el
+      // signo signifique lo que la gente espera.
+      change: before === undefined ? null : before - row.position,
+    });
+  }
+
+  const cutoffs: Record<string, Record<string, CutoffStatus>> = {};
+  for (const [key, table] of Object.entries(tables)) {
     cutoffs[key] = {};
     if (table.rule) {
       const simple = table.rows.map((r) => ({
@@ -833,33 +992,38 @@ export type RankingOficialScreenData = {
 export async function getRankingOficialScreenData(
   hoy: string = hoyMadrid(),
 ): Promise<RankingOficialScreenData> {
-  const [temporada, filas] = await Promise.all([
-    getRankingSeason(),
-    db
-      .select({
-        id: officialRankingEntryTable.id,
-        seasonLabel: officialRankingEntryTable.seasonLabel,
-        weapon: officialRankingEntryTable.weapon,
-        gender: officialRankingEntryTable.gender,
-        category: officialRankingEntryTable.category,
-        position: officialRankingEntryTable.position,
-        totalPoints: officialRankingEntryTable.totalPoints,
-        nombre: officialRankingEntryTable.sourceAthleteName,
-        club: officialRankingEntryTable.sourceClub,
-        nacimiento: officialRankingEntryTable.sourceBirthDate,
-        athleteId: officialRankingEntryTable.athleteId,
-        sourceUrl: officialRankingEntryTable.sourceUrl,
-        updatedAt: officialRankingEntryTable.updatedAt,
-      })
-      .from(officialRankingEntryTable)
-      .orderBy(
-        asc(officialRankingEntryTable.weapon),
-        asc(officialRankingEntryTable.category),
-        asc(officialRankingEntryTable.gender),
-        sql`${officialRankingEntryTable.position} asc nulls last`,
-        asc(officialRankingEntryTable.sourceAthleteName),
-      ),
-  ]);
+  /**
+   * La temporada va aparte, antes del barrido: viene de la caché compartida
+   * (un acierto en memoria en cualquier pantalla que ya la haya pedido) y
+   * meterla en el Promise.all la hacía competir con la consulta grande por
+   * nada.
+   */
+  const temporada = await getRankingSeason();
+
+  const filas = await db
+    .select({
+      id: officialRankingEntryTable.id,
+      seasonLabel: officialRankingEntryTable.seasonLabel,
+      weapon: officialRankingEntryTable.weapon,
+      gender: officialRankingEntryTable.gender,
+      category: officialRankingEntryTable.category,
+      position: officialRankingEntryTable.position,
+      totalPoints: officialRankingEntryTable.totalPoints,
+      nombre: officialRankingEntryTable.sourceAthleteName,
+      club: officialRankingEntryTable.sourceClub,
+      nacimiento: officialRankingEntryTable.sourceBirthDate,
+      athleteId: officialRankingEntryTable.athleteId,
+      sourceUrl: officialRankingEntryTable.sourceUrl,
+      updatedAt: officialRankingEntryTable.updatedAt,
+    })
+    .from(officialRankingEntryTable)
+    .orderBy(
+      asc(officialRankingEntryTable.weapon),
+      asc(officialRankingEntryTable.category),
+      asc(officialRankingEntryTable.gender),
+      sql`${officialRankingEntryTable.position} asc nulls last`,
+      asc(officialRankingEntryTable.sourceAthleteName),
+    );
 
   const vacio: RankingOficialScreenData = {
     seasonLabel: null,
@@ -885,7 +1049,7 @@ export async function getRankingOficialScreenData(
   const delAno = filas.filter((f) => f.seasonLabel === temporadaVigente);
 
   const { rules } = temporada
-    ? await loadRankingRules(temporada.id)
+    ? await reglasRankingCompartidas(temporada.id)
     : { rules: [] };
 
   const tables: Record<string, TablaOficial> = {};

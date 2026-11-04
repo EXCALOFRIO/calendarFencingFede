@@ -189,7 +189,7 @@ function Historial({ ranking, nivel }: { ranking: RankingNacional; nivel: Nivel 
       <Subtitulo nivel={nivel}>Temporadas</Subtitulo>
       <ol className="grid min-w-0 gap-px overflow-hidden rounded-xl border bg-border">{visibles.map(fila)}</ol>
       {resto.length > 0 ? (
-        <details className="sis-details group min-w-0">
+        <details className="sis-details sis-details-grande group min-w-0">
           <summary className="inline-flex min-h-[44px] cursor-pointer items-center text-sm text-primary-text underline-offset-4 hover:underline group-open:hidden focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none">
             Ver más
           </summary>

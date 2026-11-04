@@ -1,5 +1,3 @@
-'use client';
-
 import { SelectorNiveles } from '@/components/sistema/selector-niveles';
 import { SelectorSegmentado } from '@/components/sistema/selector-segmentado';
 import { SEPARADOR } from '@/lib/sport/rotulos';

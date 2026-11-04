@@ -74,7 +74,7 @@ export function FeedIncremental({
           <p className="text-xs text-muted-foreground">No hay más resultados.</p>
         ) : null}
         <p role="status" className={estado === 'error' ? 'text-center text-sm text-danger' : 'sr-only'}>
-          {estado === 'cargando' ? 'Leyendo más resultados' : estado === 'error' ? 'No se han podido cargar más resultados. Toca «Ver más» para reintentar.' : ''}
+          {estado === 'cargando' ? 'Leyendo más resultados' : estado === 'error' ? 'No se han podido cargar más resultados.' : ''}
         </p>
       </div>
     </>

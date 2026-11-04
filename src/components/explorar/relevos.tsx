@@ -86,7 +86,7 @@ function Lista<T>({ items, clave, fila }: { items: readonly T[]; clave: (x: T) =
     <div className="min-w-0 overflow-hidden rounded-md border border-t-filete-alto bg-card">
       {lista(items.slice(0, VISIBLES))}
       {items.length > VISIBLES ? (
-        <details className="sis-details group min-w-0">
+        <details className="sis-details sis-details-grande group min-w-0">
           <summary
             className={cn(
               'flex min-h-[44px] cursor-pointer list-none items-center justify-center gap-2 border-t border-filete text-sm font-medium text-primary-text transition-colors hover:bg-secondary [&::-webkit-details-marker]:hidden',

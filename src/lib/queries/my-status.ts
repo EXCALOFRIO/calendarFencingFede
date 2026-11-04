@@ -111,8 +111,103 @@ export type MyStatus = {
  */
 export async function getMyStatus(profileId: string): Promise<MyStatus> {
   const managed = await getManagedAthletes(profileId);
-  const current = await getCurrentSeason();
-  const rules = await getDeadlineRules();
+
+  /**
+   * Sin tiradores a cargo no hay nada que buscar: la salida temprana va ANTES
+   * de pedir temporada y reglas, que esta cuenta tampoco necesita.
+   */
+  if (managed.length === 0) {
+    return {
+      athletes: [],
+      entries: [],
+      upcomingEntries: [],
+      pastEntries: [],
+      callUps: [],
+      today: [],
+    };
+  }
+
+  const athleteIds = managed.map((a) => a.id);
+  const today = new Date().toISOString().slice(0, 10);
+
+  /**
+   * Una sola ola con todo lo que no depende de nada: temporada y reglas (ya
+   * compartidas entre peticiones), inscripciones y convocatorias. Antes las
+   * convocatorias esperaban a que terminaran inscripciones, plazos y
+   * resultados para hacer su propia consulta, que era el último viaje serial
+   * de la función.
+   */
+  const [current, rules, rows, callUpRows] = await Promise.all([
+    getCurrentSeason(),
+    getDeadlineRules(),
+    db
+      .select({
+        entryId: entry.id,
+        status: entry.status,
+        requestedAt: entry.requestedAt,
+        clubDecidedAt: entry.clubDecidedAt,
+        federationDecidedAt: entry.federationDecidedAt,
+        submittedAt: entry.submittedAt,
+        reason: entry.reason,
+        athleteId: athlete.id,
+        firstName: athlete.firstName,
+        lastName: athlete.lastName,
+        eventId: event.id,
+        eventName: event.name,
+        startDate: event.startDate,
+        endDate: event.endDate,
+        city: event.city,
+        country: event.country,
+        timezone: event.timezone,
+        venue: event.venue,
+        venueAddress: event.venueAddress,
+        geoLat: event.geoLat,
+        geoLon: event.geoLon,
+        circuit: event.circuit,
+        scope: event.scope,
+        competitionId: eventCompetition.id,
+        weapon: eventCompetition.weapon,
+        gender: eventCompetition.gender,
+        category: eventCompetition.category,
+        format: eventCompetition.format,
+        callTime: eventCompetition.callTime,
+        startTime: eventCompetition.startTime,
+        installationOpen: eventCompetition.installationOpen,
+        scratchTime: eventCompetition.scratchTime,
+      })
+      .from(entry)
+      .innerJoin(athlete, eq(entry.athleteId, athlete.id))
+      .innerJoin(eventCompetition, eq(entry.eventCompetitionId, eventCompetition.id))
+      .innerJoin(event, eq(eventCompetition.eventId, event.id))
+      .where(inArray(entry.athleteId, athleteIds))
+      .orderBy(asc(event.startDate)),
+    db
+      .select({
+        id: callUpAthlete.id,
+        callUpId: callUp.id,
+        title: callUp.title,
+        eventName: event.name,
+        startDate: event.startDate,
+        athleteId: athlete.id,
+        firstName: athlete.firstName,
+        lastName: athlete.lastName,
+        placeType: callUpAthlete.placeType,
+        status: callUpAthlete.status,
+        respondBy: callUpAthlete.respondBy,
+        pdfUrl: callUp.pdfUrl,
+      })
+      .from(callUpAthlete)
+      .innerJoin(callUp, eq(callUpAthlete.callUpId, callUp.id))
+      .innerJoin(event, eq(callUp.eventId, event.id))
+      .innerJoin(athlete, eq(callUpAthlete.athleteId, athlete.id))
+      .where(
+        and(
+          inArray(callUpAthlete.athleteId, athleteIds),
+          eq(callUp.published, true),
+        ),
+      )
+      .orderBy(desc(callUp.publishedAt)),
+  ]);
 
   const athletes = managed.map((a) => {
     const derived = current
@@ -134,69 +229,22 @@ export async function getMyStatus(profileId: string): Promise<MyStatus> {
     };
   });
 
-  if (managed.length === 0) {
-    return {
-      athletes,
-      entries: [],
-      upcomingEntries: [],
-      pastEntries: [],
-      callUps: [],
-      today: [],
-    };
-  }
-
-  const athleteIds = managed.map((a) => a.id);
-  const today = new Date().toISOString().slice(0, 10);
-
-  const rows = await db
-    .select({
-      entryId: entry.id,
-      status: entry.status,
-      requestedAt: entry.requestedAt,
-      clubDecidedAt: entry.clubDecidedAt,
-      federationDecidedAt: entry.federationDecidedAt,
-      submittedAt: entry.submittedAt,
-      reason: entry.reason,
-      athleteId: athlete.id,
-      firstName: athlete.firstName,
-      lastName: athlete.lastName,
-      eventId: event.id,
-      eventName: event.name,
-      startDate: event.startDate,
-      endDate: event.endDate,
-      city: event.city,
-      country: event.country,
-      timezone: event.timezone,
-      venue: event.venue,
-      venueAddress: event.venueAddress,
-      geoLat: event.geoLat,
-      geoLon: event.geoLon,
-      circuit: event.circuit,
-      scope: event.scope,
-      competitionId: eventCompetition.id,
-      weapon: eventCompetition.weapon,
-      gender: eventCompetition.gender,
-      category: eventCompetition.category,
-      format: eventCompetition.format,
-      callTime: eventCompetition.callTime,
-      startTime: eventCompetition.startTime,
-      installationOpen: eventCompetition.installationOpen,
-      scratchTime: eventCompetition.scratchTime,
-    })
-    .from(entry)
-    .innerJoin(athlete, eq(entry.athleteId, athlete.id))
-    .innerJoin(eventCompetition, eq(entry.eventCompetitionId, eventCompetition.id))
-    .innerJoin(event, eq(eventCompetition.eventId, event.id))
-    .where(inArray(entry.athleteId, athleteIds))
-    .orderBy(asc(event.startDate));
-
   const competitionIds = rows.map((r) => r.competitionId);
 
   // Plazos publicados y resultados, en una consulta cada uno.
   const [publishedDeadlines, results] = await Promise.all([
     competitionIds.length > 0
       ? db
-          .select()
+          .select({
+            type: eventDeadline.type,
+            eventCompetitionId: eventDeadline.eventCompetitionId,
+            deadlineAt: eventDeadline.deadlineAt,
+            surchargeEur: eventDeadline.surchargeEur,
+            blocking: eventDeadline.blocking,
+            origin: eventDeadline.origin,
+            sourceDocument: eventDeadline.sourceDocument,
+            sourceUrl: eventDeadline.sourceUrl,
+          })
           .from(eventDeadline)
           .where(inArray(eventDeadline.eventCompetitionId, competitionIds))
       : Promise.resolve([]),
@@ -292,28 +340,6 @@ export async function getMyStatus(profileId: string): Promise<MyStatus> {
       resultPoints: res?.points ?? null,
     };
   });
-
-  const callUpRows = await db
-    .select({
-      id: callUpAthlete.id,
-      callUpId: callUp.id,
-      title: callUp.title,
-      eventName: event.name,
-      startDate: event.startDate,
-      athleteId: athlete.id,
-      firstName: athlete.firstName,
-      lastName: athlete.lastName,
-      placeType: callUpAthlete.placeType,
-      status: callUpAthlete.status,
-      respondBy: callUpAthlete.respondBy,
-      pdfUrl: callUp.pdfUrl,
-    })
-    .from(callUpAthlete)
-    .innerJoin(callUp, eq(callUpAthlete.callUpId, callUp.id))
-    .innerJoin(event, eq(callUp.eventId, event.id))
-    .innerJoin(athlete, eq(callUpAthlete.athleteId, athlete.id))
-    .where(and(inArray(callUpAthlete.athleteId, athleteIds), eq(callUp.published, true)))
-    .orderBy(desc(callUp.publishedAt));
 
   return {
     athletes,

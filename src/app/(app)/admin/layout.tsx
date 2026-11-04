@@ -1,6 +1,6 @@
 import { SinAcceso, exigirRol } from '@/components/admin/guardia';
 import { TiraSecciones } from '@/components/admin/tira-secciones';
-import { Toaster } from '@/components/ui/sonner';
+import { AvisosApp } from '@/components/ui/sonner-diferido';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,8 +39,9 @@ export default async function GestionLayout({
       <TiraSecciones />
       {children}
       {/* El panel es la única zona con acciones que escriben, así que el
-          avisador vive aquí y no en el layout de la aplicación. */}
-      <Toaster position="bottom-center" closeButton richColors />
+          avisador vive aquí y no en el layout de la aplicación. Diferido:
+          los ~40 KB de sonner no entran en la carga inicial. */}
+      <AvisosApp position="bottom-center" closeButton richColors />
     </div>
   );
 }

@@ -9,7 +9,7 @@ import {
 } from '@/lib/sport/explorar/ranking-nacional';
 import { personaDeFilaOficial } from './personas-ranking';
 import type { ArmaNacional, FiltroRankingNacional, GeneroNacional } from '@/lib/ranking/url-nacional';
-import { type CutoffStatus, cutoffStatus, loadRankingRules, pickRule } from '@/lib/ranking/compute';
+import { type CutoffStatus, cutoffStatus, pickRule } from '@/lib/ranking/compute';
 import { titular } from '@/lib/utils';
 import {
   type FilaOficial,
@@ -17,6 +17,7 @@ import {
   type TablaOficial,
   anioNacimientoVisible,
   getRankingSeason,
+  reglasRankingCompartidas,
 } from './ranking';
 
 /**
@@ -280,7 +281,7 @@ export async function leerTablaOficialVigente(
     getRankingSeason(),
   ]);
   if (filas.length === 0) return null;
-  const { rules } = temporadaReglas ? await loadRankingRules(temporadaReglas.id) : { rules: [] };
+  const { rules } = temporadaReglas ? await reglasRankingCompartidas(temporadaReglas.id) : { rules: [] };
   const regla = pickRule(rules, grupo.weapon, grupo.category);
 
   const personas: Record<string, string> = {};

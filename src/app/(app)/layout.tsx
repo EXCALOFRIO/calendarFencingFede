@@ -7,7 +7,7 @@ import { NavMovil } from '@/components/nav';
 import { CampanaNotificaciones } from '@/components/notificaciones/campana';
 import { describirCuenta, ROL } from '@/components/tu/cuenta';
 import { Button } from '@/components/ui/button';
-import { Toaster } from '@/components/ui/sonner';
+import { AvisosApp } from '@/components/ui/sonner-diferido';
 import { getManagedAthletes, getSessionProfile } from '@/lib/auth/session';
 import { getCurrentSeason, getDataFreshness } from '@/lib/queries/calendar';
 import { formatDateEs } from '@/lib/utils';
@@ -117,8 +117,11 @@ export default async function AppLayout({
         `richColors` está apagado a propósito: los colores los pone el tema
         de la aplicación, y el rojo y el verde de la librería no son los del
         semáforo de plazos.
+
+        Diferido (`alPrimerAviso`): los ~40 KB de `sonner` sólo se piden si
+        algo avisa; casi ninguna visita al calendario lo hace.
       */}
-      <Toaster position="bottom-center" closeButton />
+      <AvisosApp alPrimerAviso position="bottom-center" closeButton />
     </div>
   );
 }

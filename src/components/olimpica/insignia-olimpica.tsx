@@ -1,5 +1,3 @@
-'use client';
-
 import type { AnotacionOlimpica } from '@/lib/ranking/olimpica';
 import { BurbujaOlimpica } from './burbuja-olimpica';
 

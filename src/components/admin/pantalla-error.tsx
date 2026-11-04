@@ -59,7 +59,7 @@ export function PantallaError({
         </p>
       ) : null}
       <div className="mt-2 flex flex-wrap gap-2">
-        <Button onClick={reintentar}>Volver a intentarlo</Button>
+        <Button onClick={reintentar}>Reintentar</Button>
         <Button variant="outline" asChild>
           <Link href="/">Volver al calendario</Link>
         </Button>

@@ -272,7 +272,7 @@ export function EstadoSinLista({
         />
       );
     case 'no_disponible':
-      return <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Búsqueda no disponible" descripcion="Todavía no está activa." />;
+      return <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Búsqueda no disponible" />;
     case 'error':
       return (
         <EstadoVacio

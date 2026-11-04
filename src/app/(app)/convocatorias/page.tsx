@@ -135,7 +135,7 @@ function contextoCabecera(
       : `${sinResponder} convocatorias pendientes de respuesta`;
   }
   if (atletas === 0 && (rol === 'coach' || rol === 'admin')) {
-    return 'Convocatorias de la selección y respuestas';
+    return 'Convocatorias y respuestas';
   }
   return 'Al día: no tienes nada pendiente de responder';
 }

@@ -1,5 +1,3 @@
-'use client';
-
 import { ChevronDown, ExternalLink, Navigation } from 'lucide-react';
 import * as React from 'react';
 import { BanderaPais } from '@/components/bandera';

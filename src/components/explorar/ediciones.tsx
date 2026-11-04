@@ -644,9 +644,7 @@ export function EstadoEdicion({
       );
     case 'no_disponible':
       return (
-        <Aviso alerta icono={<TriangleAlert className="size-5 text-warn" aria-hidden />} titulo="Las ediciones aún no están activas">
-          <p className="text-sm text-muted-foreground">Todavía no están disponibles.</p>
-        </Aviso>
+        <Aviso alerta icono={<TriangleAlert className="size-5 text-warn" aria-hidden />} titulo="Las ediciones aún no están activas" />
       );
     default:
       return (

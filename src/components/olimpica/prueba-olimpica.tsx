@@ -203,7 +203,7 @@ export function PruebaOlimpica({
 
   return (
     <details
-      className="sis-details group min-w-0 max-w-3xl rounded-xl border bg-card"
+      className="sis-details sis-details-grande group min-w-0 max-w-3xl rounded-xl border bg-card"
       data-prueba={`${resultado.arma}-${resultado.genero}`}
     >
       <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl px-3 py-2 transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:px-4 [&::-webkit-details-marker]:hidden">

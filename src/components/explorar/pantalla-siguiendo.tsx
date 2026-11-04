@@ -52,7 +52,7 @@ export function PantallaListaSiguiendo({ vista }: { vista: Exclude<VistaListaSig
           accion={<Accion href={RUTA_SIGUIENDO}>Volver al principio</Accion>}
         />
       ) : vista.tipo === 'no_disponible' ? (
-        <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Siguiendo aún no está activo" descripcion="Todavía no está disponible." />
+        <EstadoVacio tipo="error" icono={TriangleAlert} titulo="Siguiendo aún no está activo" />
       ) : (
         <EstadoVacio tipo="error" icono={TriangleAlert} titulo="No se ha podido abrir la lista" accion={<Accion href={RUTA_SIGUIENDO}>Reintentar</Accion>} />
       )}

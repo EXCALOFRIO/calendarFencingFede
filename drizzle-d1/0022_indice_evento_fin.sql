@@ -1,0 +1,35 @@
+-- Índice parcial de fin de evento, para la consulta más caliente del calendario:
+-- `listEvents` (src/lib/queries/calendar.ts) la hace en la portada, en cada
+-- tramo del pasado, en los convocables del seleccionador y en el feed del
+-- club; `contarPruebas` repite el mismo WHERE en el pie de cada página.
+--
+-- Todas esas consultas filtran `disappeared_at IS NULL` y, salvo la revisión
+-- de enlaces de admin, `canonical_event_id IS NULL`, más un rango sobre
+-- `end_date`, y ordenan por `start_date`. El plan hasta ahora usaba
+-- `event_start_idx` para el ORDER BY y leía la tabla entera para filtrar:
+-- cada carga recorría todos los eventos —incluidos los duplicados de la FIE
+-- ya absorbidos y los desaparecidos— para quedarse con los del rango. Con el
+-- índice, SQLite salta directamente al principio del rango y lee sólo las
+-- filas visibles que tocan.
+--
+-- Parcial por dos motivos:
+--   * Los eventos absorbidos (canonical_event_id puesto) y los desaparecidos
+--     no pueden salir NUNCA en el listado: no ocupan índice ni pagan la
+--     escritura extra cada vez que el scraper los toca (last_seen_at se
+--     actualiza en cada pasada, end_date casi nunca).
+--   * Las consultas con includeLinked (admin, revisión de enlaces) no cumplen
+--     el WHERE del índice parcial y siguen con el plan de antes, que es lo
+--     que queremos: no cambia nada para ellas.
+--
+-- Sólo un índice: no crea ni cambia tablas, columnas, triggers ni
+-- restricciones, y no escribe ninguna fila. Coste de escritura: una fila de
+-- índice por evento visible cuando cambia end_date (casi nunca) o cuando se
+-- marca/desmarca disappeared_at o canonical_event_id (al enlazar o al
+-- desaparecer: decenas de eventos por pasada, no cientos).
+--
+-- Aplicar en remoto con:
+--   node node_modules/wrangler/bin/wrangler.js d1 execute calendario-fie-fede-db --remote --env-file NUL --file drizzle-d1/0022_indice_evento_fin.sql
+-- (la base remota no lleva registro de migraciones). Es idempotente.
+CREATE INDEX IF NOT EXISTS event_fin_vigente_idx
+  ON event (end_date)
+  WHERE disappeared_at IS NULL AND canonical_event_id IS NULL;
