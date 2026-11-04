@@ -68,7 +68,14 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "cristal-panel fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 overscroll-contain rounded-xl border p-6 shadow-[var(--sombra-flotante)] outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-bottom-2 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-2 sm:max-w-lg",
+          /*
+            `max-h` + `overflow-y-auto`: en apaisado un diálogo alto centrado
+            se salía por arriba y por abajo de la ventana y no había forma de
+            llegar a él. Las `env()` meten además las muescas y el indicador
+            de inicio en la cuenta, así que el panel nace ya dentro del área
+            segura. `contain: layout` aísla su maquetación de la página.
+          */
+          "cristal-panel fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem-env(safe-area-inset-left)-env(safe-area-inset-right))] max-h-[calc(100dvh-2rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto overscroll-contain contain-layout rounded-xl border p-6 shadow-[var(--sombra-flotante)] outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-bottom-2 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-2 sm:max-w-lg",
           className
         )}
         {...props}

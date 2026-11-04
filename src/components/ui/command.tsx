@@ -90,7 +90,14 @@ function CommandList({
     <CommandPrimitive.List
       data-slot="command-list"
       className={cn(
-        "max-h-[300px] scroll-py-1 overflow-x-hidden overflow-y-auto",
+        /*
+          `overscroll-contain`: al llegar al final de la lista el gesto no
+          pasa a la página de detrás. `contain: layout` aísla el cálculo de
+          las filas del documento, y `scrollbar-gutter` reserva el carril
+          para que el texto no salte cuando aparece la barra (escritorio con
+          barras clásicas).
+        */
+        "max-h-[300px] scroll-py-1 overflow-x-hidden overflow-y-auto overscroll-contain contain-layout [scrollbar-gutter:stable]",
         className
       )}
       {...props}

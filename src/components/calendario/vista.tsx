@@ -1280,7 +1280,7 @@ export function VistaCalendario({
               colar un mes que enseña 7 de 39 y pasa el barrido.
             */
             data-torneos={enElTramo}
-            className="hidden min-h-0 flex-1 flex-col gap-3 overflow-y-auto sm:flex"
+            className="hidden min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain sm:flex"
           >
             <div
               className={cn(

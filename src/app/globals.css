@@ -258,6 +258,20 @@
   html {
     -webkit-text-size-adjust: 100%;
     background-color: var(--background);
+    /*
+     * Sin espera de doble toque: `manipulation` es `pan-x pan-y pinch-zoom`,
+     * así que el desplazamiento y la pinza de ampliar siguen funcionando; lo
+     * que se quita es el zoom de doble toque (y su retardo) al pulsar botones
+     * y enlaces. El `touch-none` de un elemento concreto sigue ganando.
+     */
+    touch-action: manipulation;
+    /*
+     * El resalte al tocar, del tema y no el gris del navegador: blanco al
+     * 8 % (el valor de `--border`), visible sobre el lienzo oscuro. Los
+     * controles con respuesta propia (`pulsable`, la barra) lo dejan en
+     * `transparent`, como hasta ahora.
+     */
+    -webkit-tap-highlight-color: rgba(255, 255, 255, 0.08);
   }
 
   /*
@@ -433,6 +447,16 @@
   html,
   body {
     overscroll-behavior-y: none;
+  }
+
+  /*
+   * El carril de la barra de scroll siempre reservado: al bloquear el scroll
+   * de la página (una hoja o un diálogo) el contenido no se corre a la
+   * derecha unos píxeles, y al quedarse sin barra no le queda al lienzo una
+   * franja distinta. En móvil y en barras flotantes no pinta nada.
+   */
+  html {
+    scrollbar-gutter: stable;
   }
 
   @media (min-width: 1024px) {

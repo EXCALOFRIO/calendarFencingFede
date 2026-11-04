@@ -2,18 +2,25 @@ import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 import { Slot } from "radix-ui"
-import { AREA_TACTIL } from "@/components/sistema/tactil"
+import { AREA_TACTIL, PULSACION } from "@/components/sistema/tactil"
 
 /*
  * Se ve de 28-40 px (en px, no en rem: en el móvil la raíz son 18 px) y se
  * toca en 44: el área sobrante es el `::after` invisible de `AREA_TACTIL`,
  * que también cubre `asChild` con un enlace (la regla global de
  * `globals.css` sólo alcanza a `button` y `a[role=button]`).
+ *
+ * `PULSACION` (`.pulsable`): respuesta al toque del sistema — el botón se
+ * hunde un 2 % mientras se pulsa y el cambio de color se funde—, y deja el
+ * resalte nativo de WebKit en `transparent` (la respuesta propia lo
+ * sustituye). Su `transition` gana a la utilidad de abajo, así que el set de
+ * propiedades fundidas es el del sistema.
  */
 const buttonVariants = cva(
   cn(
     "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,filter,opacity] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
     AREA_TACTIL,
+    PULSACION,
   ),
   {
     variants: {

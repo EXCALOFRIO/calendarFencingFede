@@ -138,7 +138,8 @@ export function HojaInferior({
               </Dialog.Description>
             ) : null}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-[16px] pb-[16px]">{children}</div>
+          {/* `contain: layout`: la maquetación de dentro no se propaga al documento. */}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain contain-layout px-[16px] pb-[16px]">{children}</div>
           {pie ? <div className="shrink-0 border-t border-filete px-[16px] py-[12px]">{pie}</div> : null}
         </Dialog.Content>
       </Dialog.Portal>

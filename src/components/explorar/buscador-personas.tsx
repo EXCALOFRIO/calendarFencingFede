@@ -138,7 +138,7 @@ export function BuscadorPersonas({ valor, onChange }: { valor: string; onChange:
         ) : null}
         {abierto ? (
           <ul ref={lista} id="explorar-sugerencias" role="listbox" aria-label="Fichas con nombres parecidos"
-            className="absolute top-full right-0 left-0 z-30 mt-1 max-h-96 overflow-y-auto rounded-md border bg-popover text-popover-foreground">
+            className="absolute top-full right-0 left-0 z-30 mt-1 max-h-96 overflow-y-auto overscroll-contain contain-layout rounded-md border bg-popover text-popover-foreground">
             {resultado.items.map((p, i) => (
               <li key={p.id} role="presentation">
                 <Button type="button" variant="ghost" tabIndex={-1}

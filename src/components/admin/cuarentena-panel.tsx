@@ -475,7 +475,7 @@ export function CuarentenaPanel({ filas }: { filas: FilaCuarentena[] }) {
                     ) : null}
                     <pre
                       className={cn(
-                        'max-h-72 overflow-auto border-t px-3 py-2 font-mono text-xs leading-relaxed',
+                        'max-h-72 overflow-auto overscroll-contain border-t px-3 py-2 font-mono text-xs leading-relaxed',
                         'whitespace-pre-wrap break-all text-muted-foreground',
                       )}
                     >

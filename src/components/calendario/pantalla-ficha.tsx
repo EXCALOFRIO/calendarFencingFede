@@ -66,6 +66,13 @@ export function PantallaFicha({
           }}
           className={cn(
             'fixed inset-0 z-50 flex flex-col bg-background text-foreground outline-none',
+            /*
+              El borde derecho del panel es siempre el de la pantalla (a todo
+              lo ancho en el móvil, anclado a la derecha desde 640 px): la
+              `env()` aparta el contenido de la muesca y de la esquina
+              redondeada en apaisado. En vertical vale 0.
+            */
+            'pr-[env(safe-area-inset-right)]',
             // En el panel, «el fondo» es el del panel: los velos y degradados de dentro se apagan en él.
             'sm:left-auto sm:w-full sm:max-w-xl sm:border-l sm:border-filete-alto sm:bg-popover sm:shadow-[var(--sombra-hoja-der)] sm:[--background:var(--popover)]',
             // Avanza: 28 px y fundido al entrar, sólo fundido al salir. Con movimiento reducido, nada.
@@ -97,7 +104,7 @@ export function PantallaFicha({
             ref={cuerpo}
             data-slot="pantalla-ficha-cuerpo"
             onScroll={medir}
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain contain-layout pb-[env(safe-area-inset-bottom)]"
           >
             {children}
           </div>

@@ -71,7 +71,8 @@ export function CabeceraCompacta({
     >
       <div
         className={cn(
-          'ancho-app grid h-[48px] items-center gap-[8px] px-[8px]',
+          // La `env()` lateral aparta la fila de la muesca en apaisado; en vertical vale 0.
+          'ancho-app grid h-[48px] items-center gap-[8px] px-[8px] pr-[max(0.5rem,env(safe-area-inset-right))] pl-[max(0.5rem,env(safe-area-inset-left))]',
           sub ? 'grid-cols-[minmax(36px,1fr)_auto_minmax(36px,1fr)]' : 'grid-cols-[auto_minmax(0,1fr)_auto]',
         )}
       >

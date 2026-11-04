@@ -1,8 +1,8 @@
 'use client';
 
 import { Search, SearchX, X } from 'lucide-react';
-import Link from 'next/link';
 import * as React from 'react';
+import { EnlaceIntencion } from '@/components/enlace-intencion';
 import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
 import { urlPaises } from '@/lib/sport/explorar/ambitos-url';
@@ -19,9 +19,9 @@ const ESPERA_URL = 400;
 export function FilaPais({ pais, className }: { pais: Pais; className?: string }) {
   return (
     <li>
-      <Link href={rutaPais(pais.codigo)} prefetch={false} transitionTypes={AVANZAR} className={cn(CLASE_FILA_PAIS, className)}>
+      <EnlaceIntencion href={rutaPais(pais.codigo)} transitionTypes={AVANZAR} className={cn(CLASE_FILA_PAIS, className)}>
         <ContenidoPais pais={pais} />
-      </Link>
+      </EnlaceIntencion>
     </li>
   );
 }

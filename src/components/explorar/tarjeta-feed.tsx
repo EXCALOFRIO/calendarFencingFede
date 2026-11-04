@@ -1,6 +1,6 @@
-import Link from 'next/link';
 import { memo } from 'react';
 import { BanderaPais } from '@/components/bandera';
+import { EnlaceIntencion } from '@/components/enlace-intencion';
 import { Avatar } from '@/components/sistema/avatar';
 import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
 import { Puesto } from '@/components/sistema/pastilla';
@@ -46,7 +46,9 @@ const SUBRAYADO = 'rounded-sm underline-offset-4 hover:underline focus-visible:r
  * Toda la tarjeta lleva a la ficha: el enlace del nombre se estira sobre ella
  * con un `after` invisible, así el toque es la fila entera sin que se dibuje
  * ningún botón. El torneo queda por encima con su propio enlace, que se toca
- * en 44 px (`AREA_TACTIL`) sin mover las líneas.
+ * en 44 px (`AREA_TACTIL`) sin mover las líneas. Ambos precargan por intención
+ * (`EnlaceIntencion`, § 5.4) y el hundido al tocar es el `pulsable` del
+ * `<article>`: `:active` le llega del enlace que se pulsa.
  *
  * Memorizada y sin maquetar fuera de pantalla (`content-visibility`, con 88 px
  * de alto estimado — `auto` recuerda el real): al cargar otra tanda del feed
@@ -60,32 +62,30 @@ export const TarjetaSiguiendo = memo(function TarjetaSiguiendo({ e }: { e: Entra
   const de = e.puesto !== null && e.participantes > 0 ? e.participantes : null;
   return (
     <li className="min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_88px]">
-      <article className="relative flex min-w-0 items-center gap-3 py-3" aria-label={`${nombre}, ${torneo}`}>
+      <article className="pulsable relative flex min-w-0 items-center gap-3 py-3" aria-label={`${nombre}, ${torneo}`}>
         <Avatar personaId={e.persona.id} nombre={nombre} tamano={40} />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <p className="flex min-w-0 items-center gap-2 text-sm leading-5">
             {e.persona.pais ? <BanderaPais pais={e.persona.pais} soloBandera className="shrink-0" /> : null}
-            <Link
+            <EnlaceIntencion
               href={rutaFicha(e.persona.id)}
-              prefetch={false}
               transitionTypes={AVANZAR}
               title={nombre}
               className={cn(SUBRAYADO, 'min-w-0 truncate font-semibold after:absolute after:inset-0')}
             >
               {nombre}
-            </Link>
+            </EnlaceIntencion>
             <Fecha iso={e.fecha} />
           </p>
-          <Link
+          <EnlaceIntencion
             href={construirUrlEdicion(e.prueba.edicionId, { prueba: e.prueba.id, persona: e.persona.id })}
-            prefetch={false}
             transitionTypes={AVANZAR}
             title={lugar}
             className={cn(SUBRAYADO, AREA_TACTIL, 'relative z-[1] block min-w-0 text-sm leading-5')}
           >
             {/* El recorte va dentro: con `overflow: hidden` en el enlace, su `::after` de 44 px quedaría cortado. */}
             <span className="block truncate">{lugar}</span>
-          </Link>
+          </EnlaceIntencion>
           <p className="flex min-w-0 items-center gap-2 text-xs leading-4 text-muted-foreground">
             <EtiquetaTipoCompeticion clasificacion={e.clasificacion} />
             <span className="min-w-0 truncate" title={prueba}>{prueba}</span>

@@ -1,12 +1,16 @@
-import Link from 'next/link';
 import { memo } from 'react';
 import { BanderaPais } from '@/components/bandera';
+import { EnlaceIntencion } from '@/components/enlace-intencion';
 import { Avatar } from '@/components/sistema/avatar';
+import { TIPO_TRANSICION } from '@/components/sistema/navegacion';
 import { MarcaPropia, Puesto } from '@/components/sistema/pastilla';
 import { rutaPaisDe } from '@/lib/sport/explorar/enlace-pais';
 import { RUTA_EXPLORAR } from '@/lib/sport/explorar/url';
 import { cn } from '@/lib/utils';
 import { puntos as formatoPuntos } from './formato';
+
+/** De la tabla a una ficha: entrar en algo. */
+const AVANZAR = [TIPO_TRANSICION.avanzar];
 
 /**
  * Una fila de ranking en UNA línea, igual en la tabla nacional y en la
@@ -77,7 +81,8 @@ export const FilaLinea = memo(function FilaLinea({
     <li
       data-mio={mio || undefined}
       className={cn(
-        'grid min-h-[40px] min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-x-2 bg-card px-2 sm:px-3 [content-visibility:auto] [contain-intrinsic-size:auto_40px]',
+        // `.pulsable`: el hundido al tocar (`:active` llega del enlace o del botón de dentro).
+        'pulsable grid min-h-[40px] min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-x-2 bg-card px-2 sm:px-3 [content-visibility:auto] [contain-intrinsic-size:auto_40px]',
         /*
           Con algo detrás del nombre, desde 360 px va en su columna pegada al
           nombre (que sólo ocupa lo que mide) y un hueco empuja los puntos a la
@@ -96,18 +101,18 @@ export const FilaLinea = memo(function FilaLinea({
         {sinRetrato ? null : <Avatar personaId={personaId} nombre={nombre} tamano={28} apagado />}
         {pais ? <BanderaPais pais={pais} soloBandera className="shrink-0" /> : null}
         {personaId ? (
-          <Link href={`${RUTA_EXPLORAR}/${personaId}`} prefetch={false} title={nombre} data-nombre className={cn(claseNombre, claseEnlace)}>
+          <EnlaceIntencion href={`${RUTA_EXPLORAR}/${personaId}`} transitionTypes={AVANZAR} title={nombre} data-nombre className={cn(claseNombre, claseEnlace)}>
             <span className="truncate">{nombre}</span>
-          </Link>
+          </EnlaceIntencion>
         ) : enlaceExterno ? (
           <a href={enlaceExterno} target="_blank" rel="noreferrer" title={nombre} data-nombre className={cn(claseNombre, claseEnlace)}>
             <span className="truncate">{nombre}</span>
             <span className="sr-only"> (se abre en otra pestaña)</span>
           </a>
         ) : paisDestino ? (
-          <Link href={paisDestino} prefetch={false} title={nombre} data-nombre data-enlace="pais" className={cn(claseNombre, claseEnlace)}>
+          <EnlaceIntencion href={paisDestino} transitionTypes={AVANZAR} title={nombre} data-nombre data-enlace="pais" className={cn(claseNombre, claseEnlace)}>
             <span className="truncate">{nombre}</span>
-          </Link>
+          </EnlaceIntencion>
         ) : (
           <span className={claseNombre} title={nombre} data-nombre>{nombre}</span>
         )}

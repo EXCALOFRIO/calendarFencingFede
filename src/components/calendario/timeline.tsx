@@ -242,7 +242,7 @@ export function FeedMovil({
         </nav>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain contain-layout">
         {porMes.map((m) => (
           <section key={`${m.anio}-${m.mes}`} id={ancla(m)} className="scroll-mt-1">
             {/* Fondo sólido, sin alfa ni desenfoque: va por encima de las tarjetas al desplazarse. */}

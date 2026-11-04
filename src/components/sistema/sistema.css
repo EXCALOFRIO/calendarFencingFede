@@ -158,6 +158,34 @@
 }
 
 /*
+ * Línea de progreso de navegación (§ 5.3): un hilo de `--primary` en el
+ * borde inferior de la cabecera mientras la pantalla nueva no llega.
+ * `linea-progreso.tsx` sólo la pinta si la espera pasa de 300 ms, así que
+ * en una navegación normal no sale nunca. No recorre nada: el presupuesto
+ * de movimiento del sistema es ≤ 260 ms y una pieza en bucle se comería el
+ * presupuesto entero por fotograma; aparece con el fundido de siempre y se
+ * queda quieta hasta que la ruta nueva la apaga.
+ */
+.sis-linea {
+  position: fixed;
+  /* El borde inferior de `CabeceraCompacta`: 48 px + la zona segura. */
+  top: calc(48px + env(safe-area-inset-top));
+  right: 0;
+  left: 0;
+  z-index: 40;
+  height: 2px;
+  background: var(--primary);
+  animation: 180ms var(--sis-curva) backwards sis-aparecer;
+  pointer-events: none;
+}
+/* En escritorio cuelga de la cabecera de 56 px. */
+@media (min-width: 1024px) {
+  .sis-linea {
+    top: 56px;
+  }
+}
+
+/*
  * Aparición de listas y tarjetas: sólo opacidad, así que no desplaza nada
  * (CLS 0). `.sis-aparecer` para un bloque suelto; `.sis-aparecer-lista` en
  * el contenedor escalona las ocho primeras filas 20 ms cada una (como mucho
@@ -314,6 +342,7 @@
   .sis-marcar,
   .sis-aparecer,
   .sis-aparecer-lista > *,
+  .sis-linea,
   [data-slot='card'] {
     animation: none !important;
   }

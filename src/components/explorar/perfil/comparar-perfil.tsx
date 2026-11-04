@@ -132,7 +132,7 @@ export function CompararPerfil({
             ) : items.length === 0 ? (
               <p role="status" className="px-4 py-3 text-sm text-muted-foreground">Nadie coincide con ese nombre.</p>
             ) : (
-              <ul id={listaId} role="listbox" aria-label="Personas encontradas" className="max-h-80 overflow-y-auto py-1">
+              <ul id={listaId} role="listbox" aria-label="Personas encontradas" className="max-h-80 overflow-y-auto overscroll-contain contain-layout py-1">
                 {items.map((s, i) => (
                   <li
                     key={s.id}

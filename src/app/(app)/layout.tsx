@@ -5,6 +5,7 @@ import { CabeceraApp } from '@/components/cabecera-app';
 import { CabeceraEscritorio } from '@/components/cabecera-escritorio';
 import { NavMovil } from '@/components/nav';
 import { CampanaNotificaciones } from '@/components/notificaciones/campana';
+import { LineaProgreso } from '@/components/sistema/linea-progreso';
 import { describirCuenta, ROL } from '@/components/tu/cuenta';
 import { Button } from '@/components/ui/button';
 import { AvisosApp } from '@/components/ui/sonner-diferido';
@@ -49,7 +50,7 @@ export default async function AppLayout({
     las pantallas.
   */
   const aviso = frescura.stale ? (
-    <p role="status" className="ancho-app flex items-center gap-2 px-4 pt-2 text-xs leading-4 text-warn">
+    <p role="status" className="ancho-app flex items-center gap-2 px-4 pt-2 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] text-xs leading-4 text-warn">
       <TriangleAlert aria-hidden className="size-[14px] shrink-0" />
       {frescura.lastSeenAt
         ? `Sin actualizar desde el ${formatDateEs(frescura.lastSeenAt)}. Comprueba en la fuente oficial.`
@@ -69,6 +70,8 @@ export default async function AppLayout({
 
       <CabeceraEscritorio campana={campana} cuenta={cuenta} esAdmin={perfil.role === 'admin'} />
       <CabeceraApp campana={campana} aviso={aviso} />
+      {/* § 5.3: si la espera pasa de 300 ms, una línea de 2 px bajo la cabecera. */}
+      <LineaProgreso />
 
       {perfil.preview ? (
         <aside aria-label="Vista previa de solo lectura" className="border-b border-filete bg-warn-tinte">
@@ -100,10 +103,15 @@ export default async function AppLayout({
         El mismo ancho que la cabecera, y de la misma fuente: `.ancho-app` es
         un token, no dos números escritos a mano que se desincronizan.
       */}
+      {/*
+        `max()`: en apaisado el contenido queda fuera de la muesca lateral y
+        de las esquinas redondeadas; en vertical la `env()` vale 0 y manda el
+        margen de 16 px de siempre.
+      */}
       <main
         id="contenido"
         tabIndex={-1}
-        className="ancho-app flex flex-1 flex-col px-4 py-4 outline-none"
+        className="ancho-app flex flex-1 flex-col px-4 py-4 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] outline-none"
       >
         {children}
       </main>

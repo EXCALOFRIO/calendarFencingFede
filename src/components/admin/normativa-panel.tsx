@@ -628,7 +628,7 @@ function Marco({
           <SheetDescription>{descripcion}</SheetDescription>
         </SheetHeader>
 
-        <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4">
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto overscroll-contain contain-layout px-4 pb-4">
           {children}
         </div>
 
