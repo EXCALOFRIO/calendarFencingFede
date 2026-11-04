@@ -2,6 +2,7 @@ import { and, asc, eq, isNotNull, sql } from 'drizzle-orm';
 import { cache } from 'react';
 import { db } from '@/db';
 import { fieClasificacion as fieClasificacionTable } from '@/db/schema';
+import { cacheCompartida, DIA, MINUTO } from '@/lib/cache';
 import { enLista as inArray } from '@/lib/sqlite';
 import {
   anotarRankingOlimpico,
@@ -207,6 +208,40 @@ export async function getEntradasOlimpicas(
 }
 
 /**
+ * El panel entero de `/olimpica` en una lectura: las entradas de las seis
+ * pruebas (miles de filas de `fie_clasificacion`), sus proyecciones Y las
+ * anotaciones con el detalle de España — las dos salen del mismo conjunto,
+ * así que la página no vuelve a la base seis veces como antes (una por
+ * prueba en `getAnotacionesOlimpicas`). Se guarda en la caché compartida
+ * bajo `ranking-fie`: el ranking FIE cambia como mucho una vez al día y una
+ * ingesta nueva se ve a los diez minutos, igual que `getAnotacionesOlimpicas`.
+ */
+const panelOlimpico = cacheCompartida.definir({
+  espacio: 'olimpica-panel',
+  depende: ['ranking-fie'],
+  frescoMs: 10 * MINUTO,
+  caducaMs: DIA,
+  cargar: async (): Promise<{
+    season: number | null;
+    resultados: ResultadoPrueba[];
+    anotaciones: Record<string, AnotacionesPrueba>;
+    pendientes: PruebaPendiente[];
+  }> => {
+    const { season, entradas, pendientes } = await getEntradasOlimpicas();
+    const resultados = calcularClasificacionesOlimpicas(entradas, { nocsSeguidos: ['ESP'] });
+    const anotaciones: Record<string, AnotacionesPrueba> = {};
+    for (const e of entradas) {
+      const a = anotarRankingOlimpico(e, { nocsSeguidos: ['ESP'] });
+      if (a) anotaciones[`${e.arma}-${e.genero}`] = a;
+    }
+    return { season, resultados, anotaciones, pendientes };
+  },
+});
+
+/** `/olimpica` y quien quiera todo el panel de una vez. */
+export const getPanelOlimpico = cache(() => panelOlimpico());
+
+/**
  * La proyección de las seis pruebas, con el detalle de España. Solo viaja al
  * cliente el resultado, no los miles de filas del ranking individual. Las
  * pruebas sin los dos rankings de una misma temporada van en `pendientes`.
@@ -217,12 +252,8 @@ export const getClasificacionOlimpica = cache(
     resultados: ResultadoPrueba[];
     pendientes: PruebaPendiente[];
   }> => {
-    const { season, entradas, pendientes } = await getEntradasOlimpicas();
-    return {
-      season,
-      resultados: calcularClasificacionesOlimpicas(entradas, { nocsSeguidos: ['ESP'] }),
-      pendientes,
-    };
+    const { season, resultados, pendientes } = await panelOlimpico();
+    return { season, resultados, pendientes };
   },
 );
 

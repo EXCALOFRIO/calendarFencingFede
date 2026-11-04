@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import { SeleccionOlimpica } from '@/components/olimpica/seleccion';
 import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import { getSessionProfile } from '@/lib/auth/session';
-import { getAnotacionesOlimpicas, getClasificacionOlimpica } from '@/lib/queries/olimpica';
+import { getPanelOlimpico } from '@/lib/queries/olimpica';
 import { rotuloPrueba } from '@/lib/sport/rotulos';
 
 export const dynamic = 'force-dynamic';
@@ -32,15 +32,14 @@ export default async function Pagina({
   if (!perfil) redirect('/entrar');
   const { prueba: clave } = await searchParams;
 
-  const { season, resultados, pendientes } = await getClasificacionOlimpica();
-  const anotaciones = await Promise.all(
-    resultados.map((r) => getAnotacionesOlimpicas(r.arma, r.genero)),
-  );
+  // Una lectura para todo el panel (caché compartida): seis proyecciones
+  // y sus anotaciones, sin volver a la base por prueba.
+  const { season, resultados, anotaciones, pendientes } = await getPanelOlimpico();
   const excluidos: Record<string, { noc: string; motivo: never }[]> = {};
-  resultados.forEach((r, i) => {
-    const e = anotaciones[i]?.excluidos;
+  for (const r of resultados) {
+    const e = anotaciones[`${r.arma}-${r.genero}`]?.excluidos;
     if (e?.length) excluidos[`${r.arma}-${r.genero}`] = e as never;
-  });
+  }
 
   // La prueba pedida manda; sin `?prueba=` se abre la primera con datos.
   const valida = resultados.some((r) => `${r.arma}-${r.genero}` === clave);
