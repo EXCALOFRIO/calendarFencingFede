@@ -66,16 +66,16 @@ function Fila({
       data-estado={estado}
       data-propio={propio ? '' : undefined}
       className={cn(
-        'grid min-w-0 grid-cols-[2.5rem_auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-2',
+        'grid min-w-0 grid-cols-[2rem_auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2 py-2',
         tono.fila,
         propio && 'bg-marcado font-semibold text-foreground',
       )}
     >
-      <span className={cn('truncate text-xs tabular-nums', tono.posicion, propio && 'text-foreground')}>
+      <span className={cn('text-xs tabular-nums', tono.posicion, propio && 'text-foreground')}>
         {posicion}
       </span>
       <BanderaPais pais={noc} conNombre={!nombre} />
-      <span className="min-w-0 truncate text-sm">
+      <span className="line-clamp-2 min-w-0 text-sm leading-tight">
         {nombre}
         {via ? (
           <span className="text-xs font-normal text-muted-foreground">
@@ -90,14 +90,18 @@ function Fila({
   );
 }
 
-/** La fila amarilla: quién hereda el camino si el de arriba cae. */
-function FilaFuera({ fuera, rotulo, propio }: { fuera: PrimerFuera; rotulo: string; propio: string }) {
+/**
+ * La fila amarilla: quién hereda el camino si el de arriba cae. Su posición
+ * real va en la columna de siempre — «siguiente» junto al nombre, porque va
+ * pegada a la fila cuya plaza perseguiría.
+ */
+function FilaFuera({ fuera, propio }: { fuera: PrimerFuera; propio: string }) {
   return (
     <Fila
-      posicion={rotulo}
+      posicion={`${fuera.posicion}.º`}
       noc={fuera.noc}
       nombre={fuera.nombre}
-      via={fuera.nombre ? `${fuera.posicion}.º` : `${fuera.posicion}.º · siguiente`}
+      via="siguiente"
       puntos={fuera.empate ? 'empate' : `a ${numero.format(fuera.diferencia)}`}
       estado="fuera"
       propio={fuera.noc === propio}
@@ -252,13 +256,7 @@ export function PruebaOlimpica({
                     estado="dentro"
                     propio={e.noc === nocPropio}
                   />
-                  {fuera ? (
-                    <FilaFuera
-                      fuera={fuera}
-                      rotulo={e.via === 'TOP' ? '1.º fuera' : `${ZONA_CORTA[e.plazaDeZona!]} fuera`}
-                      propio={nocPropio}
-                    />
-                  ) : null}
+                  {fuera ? <FilaFuera fuera={fuera} propio={nocPropio} /> : null}
                 </Fragment>
               );
             })}
@@ -287,7 +285,7 @@ export function PruebaOlimpica({
                   propio={t.noc === nocPropio}
                 />
                 {i === resultado.aorMundial.length - 1 && resultado.primerFuera.aorMundial ? (
-                  <FilaFuera fuera={resultado.primerFuera.aorMundial} rotulo="1.º fuera" propio={nocPropio} />
+                  <FilaFuera fuera={resultado.primerFuera.aorMundial} propio={nocPropio} />
                 ) : null}
               </Fragment>
             ))}
@@ -304,7 +302,7 @@ export function PruebaOlimpica({
                     propio={t.noc === nocPropio}
                   />
                   {i === lista.length - 1 && resultado.primerFuera.aorZona[zona] ? (
-                    <FilaFuera fuera={resultado.primerFuera.aorZona[zona]} rotulo={`${ZONA_CORTA[zona]} fuera`} propio={nocPropio} />
+                    <FilaFuera fuera={resultado.primerFuera.aorZona[zona]} propio={nocPropio} />
                   ) : null}
                 </Fragment>
               )),
