@@ -78,6 +78,28 @@ export type TiradorOpcion = {
 };
 
 /**
+ * El ancho de la pantalla como suscripción (el mismo patrón que
+ * `consultaDeAncho` de `explorar/asaltos-prueba.tsx`).
+ *
+ * Sirve para montar UNO de los dos árboles del calendario —el feed del móvil
+ * o las columnas del escritorio— en el cliente. El servidor no sabe el ancho
+ * y devuelve `null` («los dos»), así que el HTML lleva ambos, como siempre;
+ * al hidratar la suscripción coincide con ese `null` y luego queda sólo el
+ * árbol que se ve. Lo que se nota es en una navegación cliente, donde no hay
+ * HTML que reutilizar y React monta la rama nueva de cero: ahí se crea ya
+ * sólo el árbol del ancho real —la mitad de nodos—, que es el grueso del
+ * coste de entrar en esta pantalla.
+ */
+const anchoPantalla = {
+  suscribir(avisar: () => void) {
+    const mq = window.matchMedia('(min-width: 640px)');
+    mq.addEventListener('change', avisar);
+    return () => mq.removeEventListener('change', avisar);
+  },
+  ahora: () => window.matchMedia('(min-width: 640px)').matches,
+};
+
+/**
  * Cuántas competiciones se enseñan en «lo próximo, fuera de este mes».
  *
  * Antes esto era un cálculo: la rejilla **medía** el hueco que le sobraba en
@@ -260,6 +282,19 @@ export function VistaCalendario({
       null,
   );
   const tirador = tiradores.find((t) => t.id === tiradorId) ?? tiradores[0] ?? null;
+
+  /**
+   * Qué árbol montar: el feed del móvil, las columnas del escritorio o los
+   * dos. En el servidor y al hidratar vale `null` —los dos, igual que el
+   * HTML servido—; ya en el cliente es el ancho de verdad y se monta uno
+   * solo. En una navegación cliente eso es la mitad de nodos por crear, que
+   * es donde más pesa esta pantalla.
+   */
+  const escritorio = React.useSyncExternalStore<boolean | null>(
+    anchoPantalla.suscribir,
+    anchoPantalla.ahora,
+    () => null,
+  );
 
   /**
    * Categorías que hay DE VERDAD en el calendario, en los dos ámbitos.
@@ -1195,7 +1230,19 @@ export function VistaCalendario({
           clave={`${vista}-${ancla.getFullYear()}-${ancla.getMonth()}`}
           nombre="calendario-periodo"
         >
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div
+          /*
+            Cuántos torneos hay DE VERDAD en el tramo que se está pintando.
+            Es el denominador del único criterio que importa aquí: a cuántos
+            se puede llegar sin cambiar de mes. Se publica en el marcado
+            porque medirlo desde fuera es la forma de que no se vuelva a
+            colar un mes que enseña 7 de 39 y pasa el barrido. Va en el
+            contenedor común, no en el árbol del escritorio: en un móvil ese
+            árbol no se monta y la medida seguiría saliendo.
+          */
+          data-torneos={enElTramo}
+          className="flex min-h-0 flex-1 flex-col"
+        >
           {/*
             ===============================================================
             EL MÓVIL: UNA SOLA COLUMNA, LAS DOS VISTAS IGUAL
@@ -1213,11 +1260,13 @@ export function VistaCalendario({
             un teléfono es cuántos meses trae el feed, que es exactamente lo
             que el conmutador debería significar.
 
-            El árbol del móvil y el del escritorio existen los dos y se apagan
-            con CSS, no con `matchMedia`: un interruptor en JavaScript no sabe
-            el tamaño de la pantalla hasta después del primer pintado. Esta
-            pantalla ya peleó ese salto una vez.
+            El árbol del móvil y el del escritorio salen LOS DOS en el HTML —
+            el servidor no sabe el ancho— y se apagan con CSS; ya en el
+            cliente `escritorio` deja montado sólo el que se ve (ver
+            `anchoPantalla`), así que una navegación cliente crea la mitad de
+            nodos.
           */}
+          {escritorio !== true ? (
           <div className="flex min-h-0 flex-1 flex-col sm:hidden">
             <FeedMovil
               meses={meses.map((m) => ({ anio: m.getFullYear(), mes: m.getMonth() }))}
@@ -1250,6 +1299,7 @@ export function VistaCalendario({
               }
             />
           </div>
+          ) : null}
 
           {/*
             ===============================================================
@@ -1286,15 +1336,8 @@ export function VistaCalendario({
             para un mes flojo, y con tres meses delante eso ya se ve. Además
             repetía torneos que estaban dos columnas más allá.
           */}
+          {escritorio !== false ? (
           <div
-            /*
-              Cuántos torneos hay DE VERDAD en el tramo que se está pintando.
-              Es el denominador del único criterio que importa aquí: a cuántos
-              se puede llegar sin cambiar de mes. Se publica en el marcado
-              porque medirlo desde fuera es la forma de que no se vuelva a
-              colar un mes que enseña 7 de 39 y pasa el barrido.
-            */
-            data-torneos={enElTramo}
             className="hidden min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain sm:flex"
           >
             <div
@@ -1337,6 +1380,7 @@ export function VistaCalendario({
             </div>
 
           </div>
+          ) : null}
         </div>
         </TransicionContenido>
       )}

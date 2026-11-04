@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { TusPruebas } from '@/components/calendario/tus-pruebas';
 import { VistaCalendario, type TiradorOpcion } from '@/components/calendario/vista';
 import { EstadoVacio } from '@/components/sistema/estado-vacio';
@@ -30,12 +31,34 @@ export const metadata = { title: 'Calendario' };
  * de la caché compartida; lo de la cuenta se lee aparte, en la misma tanda
  * (ver `calendario-pantalla.ts`).
  */
-export default async function CalendarioPage({
+export default function CalendarioPage({
   searchParams,
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 } = {}) {
-  const perfil = await requireProfile();
+  /*
+    Sin esqueleto: el armazón (cabecera y barra) sale en el primer trozo del
+    HTML y el calendario llega en streaming, como las sugerencias de
+    `/explorar/buscar` (`explorar/pantalla-buscar.tsx`).
+  */
+  return (
+    <Suspense fallback={null}>
+      <ContenidoCalendario searchParams={searchParams} />
+    </Suspense>
+  );
+}
+
+async function ContenidoCalendario({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  /*
+    La sesión se pide YA, sin esperarla: todo lo que no depende de la cuenta
+    (contexto de la URL, temporada, frescura, el pasado del tramo) corre en
+    paralelo con ella dentro de `cargarPantallaCalendario`.
+  */
+  const sesion = requireProfile();
   // Periodo y filtros con los que se vuelve desde una edición o una persona.
   const consulta = (await searchParams) ?? {};
   const inicial = leerContextoCalendario(consulta);
@@ -50,9 +73,9 @@ export default async function CalendarioPage({
    */
   // Un solo «hoy» para el servidor y para el primer pintado del cliente (ver `VistaCalendario`).
   const hoy = hoyMadrid();
-  const { eventos, atletas, inscripciones, solicitudes, temporada, frescura, pasadoInicial } =
+  const { perfil, eventos, atletas, inscripciones, solicitudes, temporada, frescura, pasadoInicial } =
     await cargarPantallaCalendario({
-      profileId: perfil.profileId,
+      perfil: sesion,
       hoy,
       mes: inicial.mes ?? null,
       meses: (inicial.vista ?? 'trimestre') === 'mes' ? 1 : 3,

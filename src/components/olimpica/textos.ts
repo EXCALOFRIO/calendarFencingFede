@@ -42,7 +42,9 @@ export const MOTIVO_TEXTO: Record<MotivoPendiente, string> = {
 /**
  * Lo que se lee en la etiqueta junto al nombre, al lado de los aros:
  *
- *   clasificado              «Clasificado»; si es por su equipo, «Clasificado · equipo».
+ *   clasificado              «Clasificado»; si es por su equipo, «Con su equipo»
+ *                            —la misma vía que explica la burbuja, más corta que
+ *                            «Clasificado · equipo» para que no opaque el nombre.
  *   cerca                    «A 30 pts» —lo que falta—, «Equipo a 30 pts» cuando la
  *                            distancia es de su equipo, «Anfitrión» si depende de EE. UU.
  *   pendiente                «Sin decidir».
@@ -53,7 +55,7 @@ export const MOTIVO_TEXTO: Record<MotivoPendiente, string> = {
 export function textoPastilla(a: AnotacionOlimpica): string {
   switch (a.estado) {
     case 'clasificado':
-      return a.camino === 'POR_EQUIPO' ? 'Clasificado · equipo' : 'Clasificado';
+      return a.camino === 'POR_EQUIPO' ? 'Con su equipo' : 'Clasificado';
     case 'cerca': {
       if (a.camino === 'ANFITRION') return 'Anfitrión';
       if (a.faltan === null) return 'Cerca';

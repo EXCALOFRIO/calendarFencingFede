@@ -1,7 +1,7 @@
 import { inArray } from 'drizzle-orm';
 import { db } from '@/db';
 import { entry } from '@/db/schema';
-import { getManagedAthletes } from '@/lib/auth/session';
+import { getManagedAthletes, type SessionProfile } from '@/lib/auth/session';
 import { ENTRY_STATUS_LABEL, type EntryStatus } from '@/lib/entries/state-machine';
 import { getCurrentSeason, getDataFreshness } from './calendar';
 import { calendarioCompartido } from './calendario-cache';
@@ -19,12 +19,17 @@ import { tramoDeMeses, tramoPasadoDe } from './calendario-pasado-tramo';
  *   sola vez.
  */
 export async function cargarPantallaCalendario({
-  profileId,
+  perfil,
   hoy,
   mes,
   meses,
 }: {
-  profileId: string;
+  /**
+   * La sesión en curso, como promesa (la página la pasa sin esperar). Lo que
+   * no depende de la cuenta —la temporada, la frescura, el pasado del tramo—
+   * arranca ya, en paralelo con la sesión, en vez de detrás de ella.
+   */
+  perfil: Promise<SessionProfile>;
   /** Día en Madrid (`hoyMadrid`). */
   hoy: string;
   /** `AAAA-MM` con el que se abre, o `null` para el de hoy. */
@@ -36,12 +41,20 @@ export async function cargarPantallaCalendario({
   const arranque = tramoDeMeses(anio, numeroMes - 1, meses);
   const tramoInicial = tramoPasadoDe(arranque.desde, arranque.hasta, hoy);
 
-  const [eventos, [atletas, inscripciones, solicitudes], temporada, frescura, pasadoInicial] = await Promise.all([
+  /*
+    Lo de la cuenta cuelga de la sesión y nada más: sus tiradores y, a la
+    vez, sus inscripciones pedidas. Si la sesión falla, la tanda entera
+    rechaza igual que antes (`NO_AUTENTICADO` lo recoge la frontera de error).
+  */
+  const cuenta = perfil.then(async (p) => {
+    const atletas = await getManagedAthletes(p.profileId);
+    const { mapa, filas } = await inscripcionesDe(atletas);
+    return { perfil: p, atletas, inscripciones: mapa, solicitudes: filas };
+  });
+
+  const [eventos, { perfil: sesion, atletas, inscripciones, solicitudes }, temporada, frescura, pasadoInicial] = await Promise.all([
     calendarioCompartido.eventosDelCalendario(),
-    getManagedAthletes(profileId).then(async (atletas) => {
-      const { mapa, filas } = await inscripcionesDe(atletas);
-      return [atletas, mapa, filas] as const;
-    }),
+    cuenta,
     getCurrentSeason(),
     getDataFreshness(),
     /*
@@ -52,7 +65,7 @@ export async function cargarPantallaCalendario({
     */
     tramoInicial ? calendarioCompartido.tramoPasado({ ...tramoInicial, hoy }).catch(() => null) : null,
   ]);
-  return { eventos, atletas, inscripciones, solicitudes, temporada, frescura, pasadoInicial };
+  return { perfil: sesion, eventos, atletas, inscripciones, solicitudes, temporada, frescura, pasadoInicial };
 }
 
 /**

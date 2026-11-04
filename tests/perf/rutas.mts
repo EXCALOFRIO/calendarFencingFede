@@ -235,9 +235,14 @@ async function armazon(perfil: SessionProfile) {
   return Promise.all([getDataFreshness(), getCurrentSeason(), getManagedAthletes(perfil.profileId)]);
 }
 
-/** Lo mismo que `(app)/page.tsx`: `cargarPantallaCalendario` (caché compartida + lo de la cuenta). */
+/**
+ * Lo mismo que `(app)/page.tsx`: `cargarPantallaCalendario` (caché compartida
+ * + lo de la cuenta). La sesión la mide `armazon` aparte, así que aquí el
+ * perfil llega ya resuelto —en la página real la promesa tarda lo que tarda
+ * `requireProfile` y corre en paralelo con lo compartido.
+ */
 async function calendario(perfil: SessionProfile, mes: string | null) {
-  return cargarPantallaCalendario({ profileId: perfil.profileId, hoy: HOY, mes, meses: 3 });
+  return cargarPantallaCalendario({ perfil: Promise.resolve(perfil), hoy: HOY, mes, meses: 3 });
 }
 
 async function perfilCompleto(perfil: SessionProfile, id: string) {
