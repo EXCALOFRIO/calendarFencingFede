@@ -193,6 +193,7 @@ export function VistaCalendario({
   eventoInicial = null,
   pasadoInicial = null,
   cargarPasado,
+  tusPruebas = null,
   hoy: hoyDelServidor,
 }: {
   /**
@@ -224,6 +225,12 @@ export function VistaCalendario({
   tiradores: TiradorOpcion[];
   /** La cuenta es de tirador o tutor y todavía no tiene ficha vinculada. */
   sinFicha?: boolean;
+  /**
+   * «Tus pruebas», ya pintada en el servidor: va entre la cabecera y el
+   * listado, como el aviso de `sinFicha`. Un elemento React cruza la frontera
+   * servidor → cliente serializado, así que llega sin trabajo de cliente.
+   */
+  tusPruebas?: React.ReactNode;
   /** competitionId -> estado legible de la inscripción de esta cuenta. */
   inscripciones: Record<string, string>;
   temporada: string | null;
@@ -1162,6 +1169,14 @@ export function VistaCalendario({
           <ChevronRight className="size-5 shrink-0" aria-hidden />
         </Link>
       ) : null}
+
+      {/*
+        «Tus pruebas»: en qué está inscrito alguien de la cuenta y qué plazos
+        suyos cierran pronto, encima del listado. Viene ya pintada del
+        servidor y es `null` cuando la cuenta no gestiona tiradores —que es
+        justo cuando `sinFicha` se enseña en su lugar.
+      */}
+      {tusPruebas}
 
       {filtrados.length === 0 ? (
         <EstadoVacio

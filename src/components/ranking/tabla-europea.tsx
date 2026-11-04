@@ -2,7 +2,7 @@
 
 import { useSearchParams } from 'next/navigation';
 import * as React from 'react';
-import { VerMas } from '@/components/sistema/cabecera-seccion';
+import { PieIncremental } from '@/components/sistema/lista-incremental';
 import { ChipFiltro } from '@/components/sistema/chip-filtro';
 import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import type { RankingGroupKey } from '@/lib/queries/ranking';
@@ -108,12 +108,14 @@ export function TablaRankingEuropeo({
 
   const buscar = (q: string) => {
     setBusqueda(q);
+    setTope(PASO);
     if (ranking) ranking.memoria.current = { ...ranking.memoria.current, q };
     escribirUrl({ q });
   };
 
   const cambiarEspana = (activo: boolean) => {
     setSoloEspana(activo);
+    setTope(PASO);
     escribirUrl({ espana: activo ? '1' : null });
   };
 
@@ -192,9 +194,13 @@ export function TablaRankingEuropeo({
         />
       ) : null}
 
-      {quedan > 0 ? (
-        <VerMas onClick={() => setTope(tope + PASO)} cuenta={quedan} detalle="tiradores de la clasificación" className="self-center" />
-      ) : null}
+      <PieIncremental
+        quedan={quedan}
+        alAsomar={() => setTope((t) => t + PASO)}
+        cuenta={quedan}
+        detalle="tiradores de la clasificación"
+        className="self-center"
+      />
     </div>
   );
 }

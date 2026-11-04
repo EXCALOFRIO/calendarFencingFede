@@ -35,7 +35,7 @@ Con sesión propia, en cada ruta y en cada ancho (**320, 393, 768 y 1440 CSS px*
 
 | Ruta | Existente/nueva | Comprobar además |
 |---|---|---|
-| `/` (calendario y ficha de torneo, banda «Estás dentro», resultados) | existente | foco al abrir y cerrar la hoja; lista de inscritos vacía vs sin consultar; aviso de lectura fallida con la lista retenida |
+| `/` (calendario y ficha de torneo, banda «Inscritos y fuentes», resultados) | existente | foco al abrir y cerrar la hoja; lista de inscritos vacía vs sin consultar; aviso de lectura fallida con la lista retenida |
 | `/explorar` | nueva | filtros en URL, «Solo España», chips de filtro con valor largo sin recorte, «Ver más deportistas» con cursor, retorno desde la ficha |
 | `/explorar/[personaId]` | nueva | temporada y modalidad conservadas, favorito Guardar/Quitar con anuncio de estado, vuelta a la búsqueda de origen |
 | `/explorar/[personaId]/cara-a-cara` | nueva | solo asaltos individuales, filtros de rival y temporada, detalle por asalto |

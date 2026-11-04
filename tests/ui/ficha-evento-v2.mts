@@ -211,7 +211,7 @@ const BANDAS: [clave: string, selector: string][] = [
   ['resultados', 'section[aria-labelledby="resultados-torneo"]'],
   ['inscripcion', 'section:has(> header > h3:text-is("Inscripción"))'],
   ['donde', 'section:has(> header > h3:text-is("Dónde y cuándo"))'],
-  ['inscritos', 'section:has(> header > h3:text-is("¿Estás dentro?"))'],
+  ['inscritos', 'section:has(> header > h3:text-is("Inscritos y fuentes"))'],
   ['convocatoria', 'section:has(> header > h3:text-is("Convocatoria"))'],
 ];
 

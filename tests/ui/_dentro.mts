@@ -100,8 +100,8 @@ for (const [vista, config] of [
 
   /**
    * Y ahora lo que se viene a comprobar. No vale con que la captura salga:
-   * se lee el texto de la banda «¿Estás dentro?» y se dice si aparece la
-   * marca de que estás en la lista oficial.
+   * se lee el texto de la banda «Inscritos y fuentes» y se dice si aparece
+   * la marca de que estás en la lista oficial.
    */
   const banda = p.getByRole('dialog').getByText(/Estás en la lista oficial/i);
   const dentro = (await banda.count()) > 0;

@@ -80,12 +80,11 @@ import type { TiradorOpcion } from './vista';
  *      forma de pago y requisitos.
  *   2. **Dónde y cuándo** — la sede con su mapa, la hora de allí y la tuya, y
  *      el horario día a día.
- *   3. **¿Estás dentro?** — la lista oficial de inscritos, con su fuente y su
- *      enlace (la completa de la FIE siempre a un clic).
- *   4. **En las fuentes** — inscritos, prueba y resultados de la prueba en las
- *      webs oficiales: Skermo, la FIE, Engarde, Fencing Time Live y Fencing
- *      Worldwide.
- *   5. **Convocatoria** — documentos, retransmisión, quién organiza, enlaces
+ *   3. **Inscritos y fuentes** — la lista de inscritos que se guardó (los
+ *      españoles), la completa de la FIE en un desplegable y los enlaces de
+ *      la prueba en las webs oficiales: Skermo, la FIE, Engarde, Fencing Time
+ *      Live y Fencing Worldwide.
+ *   4. **Convocatoria** — documentos, retransmisión, quién organiza, enlaces
  *      del PDF y procedencia.
  *
  * Cuando el torneo ya se ha tirado la inscripción no le importa a nadie y
@@ -293,13 +292,12 @@ export function FichaEvento({
         <>
           {terminado ? null : <BandaPlazo evento={evento} prueba={prueba} />}
           <BandaDondeYCuando evento={evento} prueba={prueba} principal={!terminado} />
-          <BandaEstasDentro
+          <BandaInscritosYFuentes
             evento={evento}
             prueba={prueba}
             inscritos={inscritos}
             fallo={falloInscritos}
           />
-          <BandaFuentes evento={evento} prueba={prueba} />
         </>
       ) : null}
 
@@ -525,15 +523,34 @@ function BandaDondeYCuando({
 }
 
 // ---------------------------------------------------------------------------
-// 3 · ¿Estás dentro?
+// 3 · Inscritos y fuentes
 // ---------------------------------------------------------------------------
 
+/** El icono de a qué lleva el enlace: la lista, los resultados o la ficha. */
+const ICONO_PARA: Record<EnlaceFuente['para'], typeof ClipboardList> = {
+  inscritos: ClipboardList,
+  resultados: Activity,
+  ficha: Globe,
+};
+
+const ROTULO_PARA: Record<EnlaceFuente['para'], string> = {
+  inscritos: 'Inscritos',
+  resultados: 'Resultados',
+  ficha: 'La prueba',
+};
+
 /**
- * La lista oficial de inscritos, que es la pregunta del usuario con sus
- * palabras: *«si estoy o no»*. Es la lista que **publica la organización** y
- * es la única que se enseña: una solicitud sin validar no es estar dentro.
+ * Los inscritos y dónde comprobarlos fuera, en una sola banda: primero la
+ * lista que se guardó aquí —los españoles, que es «si estoy o no», la
+ * pregunta del usuario—, luego la completa de la FIE en un desplegable que la
+ * pide en vivo y, debajo, la prueba en las webs oficiales: su lista en Skermo
+ * o en la FIE, los resultados en vivo de cada proveedor y la ficha en la
+ * fuente.
+ *
+ * Es la lista que **publica la organización**, la única que se enseña: una
+ * solicitud sin validar no es estar dentro.
  */
-export function BandaEstasDentro({
+export function BandaInscritosYFuentes({
   evento,
   prueba,
   inscritos,
@@ -575,28 +592,28 @@ export function BandaEstasDentro({
           : null;
 
   /*
-    De qué fuente sale la lista que se ve, y dónde está la que la fuente
-    publica entera. La lectura de la FIE se guarda sólo con los españoles, así
-    que en un internacional «a quién le toca en la poule» se responde en
-    fie.org, a un clic —«que vaya a entries de la FIE aunque sea». Cuando las
-    dos fuentes se han unido en la misma lista el matiz es de la parte de la
-    FIE: la de Skermo puede traer extranjeros.
+    De qué fuente sale la lista que se ve, en una línea corta. La lectura de
+    la FIE se guarda sólo con los españoles —la completa va en el desplegable,
+    que la pide en vivo— y la de Skermo puede traer extranjeros, así que el
+    matiz «españoles» sólo se promete cuando la lista es de la FIE a secas.
+    Los mismos saltos son las filas «Inscritos · …» de los enlaces de abajo:
+    no hace falta un botón aparte por fuente.
   */
   const inscritosFie =
     prueba.inscritosFieUrl ?? urlsDePruebaFie(prueba.sourceUrl)?.inscritos ?? null;
   const enSkermo = esUrlSkermo(prueba.sourceUrl) ? prueba.sourceUrl : null;
-  const fuenteDeLaLista = inscritosFie
+  const via = inscritosFie
     ? enSkermo
-      ? 'Skermo y de la FIE'
-      : 'la FIE'
+      ? 'Vía Skermo y la FIE'
+      : 'Españoles vía la FIE'
     : enSkermo
-      ? 'Skermo'
+      ? 'Vía Skermo'
       : null;
-  const matizEsp = inscritosFie
-    ? enSkermo
-      ? ' (de la FIE, sólo los españoles)'
-      : ' (aquí, sólo los españoles)'
-    : '';
+
+  // Los del torneo entero valen también para la prueba (el Engarde del evento).
+  const delTorneo =
+    evento.enlacesDirectos ?? (evento.enlaceDirecto ? [evento.enlaceDirecto] : []);
+  const enlaces = enlacesOficialesDePrueba(prueba, delTorneo);
 
   // Depende de «hay lectura retenida y la última falló», no de las filas de esta prueba.
   const avisoDeFallo =
@@ -607,47 +624,62 @@ export function BandaEstasDentro({
     ) : null;
 
   /*
-    Sin lista publicada la banda entera sobraba; ahora también responde «dónde
-    está la lista», así que con fuente se queda aunque aquí aún no haya nada.
+    La lista local se omite cuando no hay nada que enseñar ni fuente que
+    nombrar, y mientras llega: ni hueco reservado ni esqueleto. La banda se
+    queda si le queda el desplegable de la FIE o algún enlace que ofrecer.
   */
   const sinLista =
     inscritos !== null && !fallo && oficiales.length === 0 && inscritos.estados[prueba.id] !== 'vacia';
-  if (sinLista && !fuenteDeLaLista) return null;
-  // Mientras llega tampoco se reserva su hueco ni se pinta un esqueleto.
-  if (inscritos === null && !fallo) return null;
+  const sinListaLocal = (sinLista && !via) || (inscritos === null && !fallo);
+  if (sinListaLocal && !inscritosFie && enlaces.length === 0) return null;
 
   return (
     <Banda
-      titulo="¿Estás dentro?"
+      titulo="Inscritos y fuentes"
       cifra={conteo}
       rotulo={
         conteo !== null ? (inscritosFie && !enSkermo ? 'españoles' : 'inscritos') : undefined
       }
     >
-      {fuenteDeLaLista ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <p className="text-sm text-muted-foreground">
-            Lista de {fuenteDeLaLista}
-            {matizEsp}
-          </p>
-          {inscritosFie ? (
-            <Boton asChild variante="contorno" tamano="sm">
-              <a href={inscritosFie} target="_blank" rel="noreferrer">
-                <ExternalLink aria-hidden />
-                Todos los países en fie.org
-              </a>
-            </Boton>
-          ) : null}
-          {enSkermo ? (
-            <Boton asChild variante="contorno" tamano="sm">
-              <a href={enSkermo} target="_blank" rel="noreferrer">
-                <ExternalLink aria-hidden />
-                Inscritos en Skermo
-              </a>
-            </Boton>
-          ) : null}
-        </div>
-      ) : null}
+      {sinListaLocal ? null : (
+        <>
+          {inscritos === null ? (
+            <p role="alert" className="text-sm text-warn">
+              No se ha podido leer la lista de inscritos. Cierra y vuelve a abrir la ficha para reintentar.
+            </p>
+          ) : oficiales.length === 0 ? (
+            <>
+              <p className="text-sm text-muted-foreground">
+                {inscritos?.estados[prueba.id] === 'vacia' ? 'Lista vacía' : 'Todavía no hay lista'}
+              </p>
+              {avisoDeFallo}
+            </>
+          ) : (
+            <>
+              {estasDentro ? (
+                <p className="flex items-center gap-2 text-sm font-medium text-ok">
+                  <CircleCheck className="size-4 shrink-0" aria-hidden />
+                  Estás en la lista oficial.
+                </p>
+              ) : null}
+
+              <ul data-slot="inscritos" className="flex flex-col divide-y divide-border">
+                {visibles.map((i, n) => (
+                  <li key={`${i.competitionId}-${i.equipo ?? ''}-${i.nombre}-${n}`}>
+                    <FilaInscrito inscrito={i} />
+                  </li>
+                ))}
+              </ul>
+
+              {ocultos > 0 ? (
+                <VerMas onClick={() => setTodos(true)} cuenta={oficiales.length} detalle="de inscritos" className="self-start" />
+              ) : null}
+
+              {avisoDeFallo}
+            </>
+          )}
+        </>
+      )}
       {/*
         La FIE publica todos los países y aquí sólo se guardan los españoles:
         la completa va en un desplegable que la pide en vivo al abrir, para no
@@ -655,115 +687,49 @@ export function BandaEstasDentro({
         plegado, como el «ver más» de la lista local.
       */}
       {inscritosFie ? <InscritosFieTodos key={inscritosFie} urlInscritos={inscritosFie} /> : null}
-      {inscritos === null ? (
-        <p role="alert" className="text-sm text-warn">
-          No se ha podido leer la lista de inscritos. Cierra y vuelve a abrir la ficha para reintentar.
-        </p>
-      ) : oficiales.length === 0 ? (
-        <>
-          <p className="text-sm text-muted-foreground">
-            {inscritos?.estados[prueba.id] === 'vacia' ? 'Lista vacía' : 'Todavía no hay lista'}
-          </p>
-          {avisoDeFallo}
-        </>
-      ) : (
-        <>
-          {estasDentro ? (
-            <p className="flex items-center gap-2 text-sm font-medium text-ok">
-              <CircleCheck className="size-4 shrink-0" aria-hidden />
-              Estás en la lista oficial.
-            </p>
-          ) : null}
-
-          <ul data-slot="inscritos" className="flex flex-col divide-y divide-border">
-            {visibles.map((i, n) => (
-              <li key={`${i.competitionId}-${i.equipo ?? ''}-${i.nombre}-${n}`}>
-                <FilaInscrito inscrito={i} />
-              </li>
-            ))}
-          </ul>
-
-          {ocultos > 0 ? (
-            <VerMas onClick={() => setTodos(true)} cuenta={oficiales.length} detalle="de inscritos" className="self-start" />
-          ) : null}
-
-          {avisoDeFallo}
-        </>
-      )}
+      {/*
+        Y los enlaces oficiales debajo: «entrar aquí y saltar a la fuente sin
+        buscar en 27 sitios». Lo que ninguna fuente publica no aparece.
+      */}
+      {enlaces.length > 0 ? (
+        <ItemGroup className="gap-1">
+          {enlaces.map((e) => {
+            const Icono = ICONO_PARA[e.para];
+            const fuente = e.proveedor === 'otro' ? dominioDe(e.url) : NOMBRE_FUENTE[e.proveedor];
+            return (
+              <div key={`${e.para}-${e.url}`} role="listitem">
+                <Item asChild size="sm" variant="outline" className={FILA_ENLACE}>
+                  <a href={e.url} target="_blank" rel="noreferrer">
+                    <ItemMedia variant="icon" className="size-8">
+                      <Icono />
+                    </ItemMedia>
+                    <ItemContent>
+                      <ItemTitle className="text-sm">
+                        {ROTULO_PARA[e.para]} · {fuente}
+                      </ItemTitle>
+                    </ItemContent>
+                    <ItemActions>
+                      <ExternalLink className="size-4 text-muted-foreground" aria-hidden />
+                      <span className="sr-only">(se abre en otra pestaña)</span>
+                    </ItemActions>
+                  </a>
+                </Item>
+              </div>
+            );
+          })}
+        </ItemGroup>
+      ) : null}
+      {/*
+        Y al final, la procedencia en una línea: no repite lo que ya dice el
+        desplegable («todos los países») ni las filas de enlaces.
+      */}
+      {via ? <p className="text-sm text-muted-foreground">{via}</p> : null}
     </Banda>
   );
 }
 
 // ---------------------------------------------------------------------------
-// 4 · En las fuentes
-// ---------------------------------------------------------------------------
-
-/** El icono de a qué lleva el enlace: la lista, los resultados o la ficha. */
-const ICONO_PARA: Record<EnlaceFuente['para'], typeof ClipboardList> = {
-  inscritos: ClipboardList,
-  resultados: Activity,
-  ficha: Globe,
-};
-
-const ROTULO_PARA: Record<EnlaceFuente['para'], string> = {
-  inscritos: 'Inscritos',
-  resultados: 'Resultados',
-  ficha: 'La prueba',
-};
-
-/**
- * La prueba en las webs oficiales: «entrar aquí y saltar a la fuente oficial
- * sin buscar en 27 sitios». Inscritos en Skermo o en la FIE (que es la única
- * que publica todos los países), los resultados en vivo de cada proveedor y
- * la ficha de la prueba. Lo que ninguna fuente publica no aparece.
- */
-export function BandaFuentes({
-  evento,
-  prueba,
-}: {
-  evento: EventView;
-  prueba: CompetitionView;
-}) {
-  // Los del torneo entero valen también para la prueba (el Engarde del evento).
-  const delTorneo =
-    evento.enlacesDirectos ?? (evento.enlaceDirecto ? [evento.enlaceDirecto] : []);
-  const enlaces = enlacesOficialesDePrueba(prueba, delTorneo);
-  if (enlaces.length === 0) return null;
-
-  return (
-    <Banda titulo="En las fuentes">
-      <ItemGroup className="gap-1">
-        {enlaces.map((e) => {
-          const Icono = ICONO_PARA[e.para];
-          const fuente = e.proveedor === 'otro' ? dominioDe(e.url) : NOMBRE_FUENTE[e.proveedor];
-          return (
-            <div key={`${e.para}-${e.url}`} role="listitem">
-              <Item asChild size="sm" variant="outline" className={FILA_ENLACE}>
-                <a href={e.url} target="_blank" rel="noreferrer">
-                  <ItemMedia variant="icon" className="size-8">
-                    <Icono />
-                  </ItemMedia>
-                  <ItemContent>
-                    <ItemTitle className="text-sm">
-                      {ROTULO_PARA[e.para]} · {fuente}
-                    </ItemTitle>
-                  </ItemContent>
-                  <ItemActions>
-                    <ExternalLink className="size-4 text-muted-foreground" aria-hidden />
-                    <span className="sr-only">(se abre en otra pestaña)</span>
-                  </ItemActions>
-                </a>
-              </Item>
-            </div>
-          );
-        })}
-      </ItemGroup>
-    </Banda>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// 5 · Convocatoria
+// 4 · Convocatoria
 // ---------------------------------------------------------------------------
 
 /**

@@ -5,8 +5,8 @@ import * as React from 'react';
 import { codigoPais } from '@/components/bandera';
 import { CampoBuscar } from '@/components/filtros/chips';
 import { Boton } from '@/components/sistema/boton';
-import { VerMas } from '@/components/sistema/cabecera-seccion';
 import { FilaPersona } from '@/components/sistema/fila-persona';
+import { PieIncremental } from '@/components/sistema/lista-incremental';
 import type { InscritoFiePublico, ListaFie } from '@/lib/entries/inscritos-fie';
 import { sinAcentos } from '@/lib/nombres';
 import { nombrePaisFie } from '@/lib/sport/explorar/pais-codigos';
@@ -210,14 +210,18 @@ export function InscritosFieTodos({ urlInscritos }: { urlInscritos: string }) {
               </p>
             )}
 
-            {ocultos > 0 ? (
-              <VerMas
-                onClick={() => setVisibles((v) => v + ASOMAN)}
-                cuenta={filtrados.length}
-                detalle="de la lista de la FIE"
-                className="self-start"
-              />
-            ) : null}
+            {/*
+              Por lotes, sin fetch: al acercarse al pie el centinela enseña
+              otra tanda; el «Ver más» queda de respaldo. Cerrado, el details
+              no da caja al hueco y el observador no dispara.
+            */}
+            <PieIncremental
+              quedan={ocultos}
+              alAsomar={() => setVisibles((v) => v + ASOMAN)}
+              cuenta={filtrados.length}
+              detalle="de la lista de la FIE"
+              className="self-start"
+            />
           </>
         ) : null}
       </div>

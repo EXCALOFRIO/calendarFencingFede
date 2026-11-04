@@ -6,7 +6,7 @@ import { OpcionesFiltro } from '@/components/filtros/chips';
 import { BurbujaOlimpica } from '@/components/olimpica/burbuja-olimpica';
 import { FiltroOlimpico } from '@/components/olimpica/filtro-olimpico';
 import { PruebaOlimpica } from '@/components/olimpica/prueba-olimpica';
-import { VerMas } from '@/components/sistema/cabecera-seccion';
+import { PieIncremental } from '@/components/sistema/lista-incremental';
 import { ChipFiltro } from '@/components/sistema/chip-filtro';
 import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import type {
@@ -205,6 +205,7 @@ export function TablaRankingFie({
 
   const buscar = (q: string) => {
     setBusqueda(q);
+    setTope(PASO);
     recordar({ q });
     escribirUrl({ q });
   };
@@ -216,10 +217,12 @@ export function TablaRankingFie({
 
   const cambiarJjoo = (activo: boolean) => {
     setJjooPedido(activo);
+    setTope(PASO);
     escribirUrl({ jjoo: activo ? '1' : null });
   };
   const cambiarEspana = (activo: boolean) => {
     setSoloEspana(activo);
+    setTope(PASO);
     escribirUrl({ espana: activo ? '1' : null });
   };
 
@@ -379,10 +382,18 @@ export function TablaRankingFie({
         />
       ) : null}
 
-      {quedan > 0 ? (
-        <VerMas onClick={() => setTope(tope + PASO)} cuenta={quedan} detalle="tiradores de la clasificación" className="self-center" />
-
-      ) : null}
+      {/*
+        Por lotes y solo pintado: al acercarse al pie el centinela sube el
+        tope otro PASO; el «Ver más» queda de respaldo. Buscando o filtrando
+        se sigue enseñando todo lo que casa, sin lotes.
+      */}
+      <PieIncremental
+        quedan={quedan}
+        alAsomar={() => setTope((t) => t + PASO)}
+        cuenta={quedan}
+        detalle="tiradores de la clasificación"
+        className="self-center"
+      />
     </div>
   );
 }

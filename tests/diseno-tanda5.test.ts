@@ -23,7 +23,7 @@ vi.mock('radix-ui', async () => {
 const { VistaPrueba } = await import('@/components/explorar/prueba/vista-prueba');
 const { SelectorPruebaPorNiveles } = await import('@/components/explorar/prueba/selector-prueba');
 const { CabeceraExplorar } = await import('@/components/explorar/cabecera-explorar');
-const { BandaEstasDentro } = await import('@/components/calendario/ficha-evento');
+const { BandaInscritosYFuentes } = await import('@/components/calendario/ficha-evento');
 const { CabeceraFicha } = await import('@/components/calendario/cabecera-ficha');
 const { HorariosTorneo } = await import('@/components/calendario/horarios-torneo');
 const { LineaDireccion } = await import('@/components/calendario/ficha/datos-ficha');
@@ -108,8 +108,8 @@ describe('pantalla de prueba', () => {
 });
 
 describe('ficha de evento', () => {
-  it('sin lista publicada no hay banda «¿Estás dentro?»', () => {
-    expect(html(React.createElement(BandaEstasDentro, { evento, prueba, inscritos: { oficiales: [], pendientes: [], estados: {} } }))).toBe('');
+  it('sin lista publicada ni fuentes no hay banda de inscritos', () => {
+    expect(html(React.createElement(BandaInscritosYFuentes, { evento, prueba, inscritos: { oficiales: [], pendientes: [], estados: {} } }))).toBe('');
   });
 
   it('la apertura del pabellón va en el titular del día, una vez', () => {

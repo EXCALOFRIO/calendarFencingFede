@@ -11,6 +11,7 @@ import {
   resolverVarias,
 } from '@/app/(app)/admin/cuarentena/actions';
 import { Vacio } from '@/components/admin/piezas';
+import { PieIncremental } from '@/components/sistema/lista-incremental';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -489,7 +490,7 @@ export function CuarentenaPanel({ filas }: { filas: FilaCuarentena[] }) {
         </ul>
       )}
 
-      {quedan > 0 ? (
+      <PieIncremental quedan={quedan} alAsomar={() => setTope((n) => n + PASO)}>
         <Button
           variant="outline"
           className="h-11 w-full"
@@ -498,7 +499,7 @@ export function CuarentenaPanel({ filas }: { filas: FilaCuarentena[] }) {
           Ver {Math.min(quedan, PASO)} más
           <span className="cifra text-xs text-muted-foreground">{quedan}</span>
         </Button>
-      ) : null}
+      </PieIncremental>
     </div>
   );
 }

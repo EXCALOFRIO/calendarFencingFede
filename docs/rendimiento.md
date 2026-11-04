@@ -464,7 +464,7 @@ Consultas / filas leídas / idas en serie:
   - en el calendario no hay «Cargando…»: un tramo pasado que aún no ha llegado
     no se pinta a medias; la vista sigue enseñando el anterior hasta tenerlo
     (cursor de espera y `aria-busy` en las flechas);
-  - la ficha no pinta esqueletos: la banda «¿Estás dentro?» y la de
+  - la ficha no pinta esqueletos: la banda «Inscritos y fuentes» y la de
     resultados aparecen cuando hay datos.
 - **Precarga por intención**:
   - `src/components/enlace-intencion.tsx`: `prefetch={true}` al entrar el

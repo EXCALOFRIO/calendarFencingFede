@@ -5,6 +5,7 @@ import * as React from 'react';
 import { Buscador } from '@/components/admin/buscador';
 import { ChipFiltro, FilaChips } from '@/components/sistema/chip-filtro';
 import { EstadoVacio } from '@/components/sistema/estado-vacio';
+import { PieIncremental } from '@/components/sistema/lista-incremental';
 import { Pastilla } from '@/components/sistema/pastilla';
 import { SelectorSegmentado } from '@/components/sistema/selector-segmentado';
 import { Button } from '@/components/ui/button';
@@ -189,7 +190,22 @@ export function PanelTiradores({
 
 // ------------------------------------------------------- por tirador ---
 
+/** Fichas por tanda: son bandas altas, medio centenar ya da para una sentada. */
+const PASO = 50;
+
 function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
+  /**
+   * Las fichas se pintan por lotes: la lista entera cabe en memoria pero no
+   * en un DOM de una pieza. Al filtrar cambia el contenido y se vuelve a
+   * empezar por arriba.
+   */
+  const [tope, setTope] = React.useState(PASO);
+  React.useEffect(() => {
+    setTope(PASO);
+  }, [tiradores]);
+  const pintadas = tiradores.slice(0, tope);
+  const quedan = tiradores.length - pintadas.length;
+
   /**
    * Si nadie tiene puesto todavía, la columna del ranking desaparece.
    *
@@ -216,7 +232,7 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
         falta que sea la única cifra grande de cada banda.
       */}
       <ul className="flex flex-col divide-y border-t">
-        {tiradores.map((t) => (
+        {pintadas.map((t) => (
         // Las bandas no se maquetan fuera de pantalla; 112 px de reserva
         // plegada (`auto` recuerda el alto real, también abierta).
         <li key={t.id} className="min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_112px]">
@@ -394,6 +410,13 @@ function ListaTiradores({ tiradores }: { tiradores: TiradorVista[] }) {
         </li>
         ))}
       </ul>
+      <PieIncremental
+        quedan={quedan}
+        alAsomar={() => setTope((t) => t + PASO)}
+        cuenta={quedan}
+        detalle="fichas de tiradores"
+        className="pt-1"
+      />
     </div>
   );
 }

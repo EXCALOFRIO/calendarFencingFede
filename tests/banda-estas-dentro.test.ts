@@ -14,7 +14,7 @@ import type { CompetitionView, EventView } from '@/lib/queries/calendar';
 vi.mock('@/app/(app)/detalle-evento', () => ({ detalleDelEvento: vi.fn() }));
 vi.mock('@/app/(app)/explorar/resultados-evento', () => ({ resultadosDelEvento: vi.fn() }));
 
-const { BandaEstasDentro, BandaFuentes } = await import(
+const { BandaInscritosYFuentes } = await import(
   '@/components/calendario/ficha-evento'
 );
 
@@ -49,11 +49,11 @@ function propsDeLectura(lectura: LecturaDeEvento<QuienVa>) {
 
 function render(props: { inscritos: QuienVa | null; fallo?: boolean }) {
   return renderToStaticMarkup(
-    React.createElement(BandaEstasDentro, { evento, prueba, ...props }),
+    React.createElement(BandaInscritosYFuentes, { evento, prueba, ...props }),
   );
 }
 
-describe('BandaEstasDentro: aviso de lectura fallida', () => {
+describe('BandaInscritosYFuentes: aviso de lectura fallida', () => {
   it('avisa tras una lectura válida vacía seguida de un error, sin perder la lista', () => {
     let lectura: LecturaDeEvento<QuienVa> = {
       eventoId: 'ev-1',
@@ -133,7 +133,7 @@ describe('BandaEstasDentro: aviso de lectura fallida', () => {
   });
 });
 
-describe('BandaEstasDentro: de qué fuente es la lista y a dónde salta', () => {
+describe('BandaInscritosYFuentes: de dónde sale la lista y a dónde salta', () => {
   const ENTRIES = 'https://fie.org/competition/2027/1410/entries';
   const FICHA = 'https://fie.org/competition/2027/1410';
   const SKERMO = 'https://app.skermo.org/calendar/public/rfee#detail5';
@@ -143,7 +143,7 @@ describe('BandaEstasDentro: de qué fuente es la lista y a dónde salta', () => 
     props: { inscritos: QuienVa | null; fallo?: boolean },
   ) {
     return renderToStaticMarkup(
-      React.createElement(BandaEstasDentro, {
+      React.createElement(BandaInscritosYFuentes, {
         evento,
         prueba: { ...prueba, ...p } as CompetitionView,
         ...props,
@@ -157,40 +157,40 @@ describe('BandaEstasDentro: de qué fuente es la lista y a dónde salta', () => 
       estados: { 'prueba-a': 'con_datos' },
     });
 
-  it('FIE: lo que se ve son sólo los españoles y la completa está en fie.org', () => {
+  it('FIE: lo que se ve son los españoles y la completa está a un clic', () => {
     const html = renderCon(
       { sourceUrl: ENTRIES },
       { inscritos: conLista() },
     );
-    expect(html).toContain('Lista de la FIE');
-    expect(html).toContain('sólo los españoles');
+    expect(html).toContain('Españoles vía la FIE');
     expect(html).toContain(`href="${ENTRIES}"`);
-    expect(html).toContain('Todos los países en fie.org');
+    // El salto a la lista entera es la fila de enlaces de la misma banda.
+    expect(html).toContain('Inscritos · FIE');
     // La cifra se lee como «españoles», no como la lista entera.
     expect(html).toContain('españoles');
-    expect(html).not.toContain('Inscritos en Skermo');
+    expect(html).not.toContain('Skermo');
   });
 
   it('Skermo: la lista es la inscripción de Skermo, sin matiz de incompleta', () => {
     const html = renderCon({ sourceUrl: SKERMO }, { inscritos: conLista() });
-    expect(html).toContain('Lista de Skermo');
+    expect(html).toContain('Vía Skermo');
     expect(html).toContain(`href="${SKERMO}"`);
-    expect(html).toContain('Inscritos en Skermo');
-    expect(html).not.toContain('sólo los españoles');
+    expect(html).toContain('Inscritos · Skermo');
+    expect(html).not.toContain('españoles');
     expect(html).not.toContain('fie.org');
   });
 
-  it('unidas: nombra las dos fuentes, matiza la parte de la FIE y enlaza las dos', () => {
+  it('unidas: nombra las dos fuentes sin prometer que todos son de aquí', () => {
     const html = renderCon(
       { sourceUrl: SKERMO, inscritosFieUrl: ENTRIES },
       { inscritos: conLista() },
     );
-    expect(html).toContain('Lista de Skermo y de la FIE');
-    expect(html).toContain('de la FIE, sólo los españoles');
+    expect(html).toContain('Vía Skermo y la FIE');
     expect(html).toContain(`href="${ENTRIES}"`);
     expect(html).toContain(`href="${SKERMO}"`);
-    // La cuenta es de la lista unida, no de «españoles».
+    // La cuenta es de la lista unida, que puede traer extranjeros por Skermo.
     expect(html).not.toMatch(/>\s*2\s*españoles/);
+    expect(html).not.toContain('Españoles vía');
   });
 
   it('sin lista aquí pero con fuente, la banda se queda para saltar a la oficial', () => {
@@ -199,7 +199,7 @@ describe('BandaEstasDentro: de qué fuente es la lista y a dónde salta', () => 
       { inscritos: datos({ estados: { 'prueba-a': 'sin_consultar' } }) },
     );
     expect(html).toContain('Todavía no hay lista');
-    expect(html).toContain('Todos los países en fie.org');
+    expect(html).toContain('Españoles vía la FIE');
     expect(html).toContain(`href="${ENTRIES}"`);
   });
 
@@ -211,15 +211,16 @@ describe('BandaEstasDentro: de qué fuente es la lista y a dónde salta', () => 
     expect(html).toBe('');
   });
 
-  it('la completa se ofrece dentro: «Ver todos los países» además del enlace a fie.org', () => {
+  it('la completa se ofrece dentro: «Ver todos los países» y la fila a fie.org', () => {
     const html = renderCon(
       { sourceUrl: ENTRIES },
       { inscritos: conLista() },
     );
     // El desplegable que pide la lista entera a nuestra ruta…
     expect(html).toContain('Ver todos los países');
-    // …y el salto a fie.org se queda como enlace secundario.
-    expect(html).toContain('Todos los países en fie.org');
+    // …y el salto a fie.org es la fila «Inscritos · FIE» de la misma banda.
+    expect(html).toContain('Inscritos · FIE');
+    expect(html).toContain(`href="${ENTRIES}"`);
   });
 
   it('también con la lista unida de Skermo y FIE', () => {
@@ -236,7 +237,7 @@ describe('BandaEstasDentro: de qué fuente es la lista y a dónde salta', () => 
   });
 });
 
-describe('BandaFuentes: la prueba en las fuentes oficiales', () => {
+describe('BandaInscritosYFuentes: la prueba en las fuentes oficiales', () => {
   const ENTRIES = 'https://fie.org/competition/2027/1410/entries';
   const FICHA = 'https://fie.org/competition/2027/1410';
   const FTL = 'https://www.fencingtimelive.com/tournaments/eventSchedule/ABC';
@@ -244,9 +245,10 @@ describe('BandaFuentes: la prueba en las fuentes oficiales', () => {
 
   function renderHub(p: Partial<CompetitionView>, e: Partial<EventView> = {}) {
     return renderToStaticMarkup(
-      React.createElement(BandaFuentes, {
+      React.createElement(BandaInscritosYFuentes, {
         evento: { ...evento, ...e } as EventView,
         prueba: { ...prueba, ...p } as CompetitionView,
+        inscritos: null,
       }),
     );
   }
@@ -256,7 +258,7 @@ describe('BandaFuentes: la prueba en las fuentes oficiales', () => {
       sourceUrl: ENTRIES,
       enlacesDirectos: [{ url: FTL, proveedor: 'ftl' }],
     });
-    expect(html).toContain('En las fuentes');
+    expect(html).toContain('Inscritos y fuentes');
     expect(html).toContain('Inscritos · FIE');
     expect(html).toContain('Resultados · Fencing Time Live');
     expect(html).toContain('La prueba · FIE');

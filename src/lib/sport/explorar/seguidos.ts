@@ -33,8 +33,10 @@ export const listarSeguidos = listarFavoritos;
 const CLASE = 'siguiendo';
 
 /**
- * Personas seguidas que entran en el feed (las guardadas más recientemente).
- * Acota el trabajo de una cuenta con muchísimos favoritos.
+ * Personas que entran en el feed: las seguidas por la cuenta (las guardadas
+ * más recientemente) más las vinculadas a ella —su propia ficha o la de quien
+ * gestiona—, que no hace falta seguir a mano. Acota el trabajo de una cuenta
+ * con muchísimos favoritos.
  */
 export const MAX_SEGUIDAS_FEED = 300;
 
@@ -61,20 +63,33 @@ const esquemaFeed = z
   })
   .strict();
 
-/** Seguidas de la cuenta, llevadas a su persona raíz (las fusiones no encadenan). */
+/**
+ * Las personas del feed de la cuenta, llevadas a su persona raíz (las
+ * fusiones no encadenan): las que sigue, más las vinculadas a ella —su ficha
+ * propia o la de quien gestiona (`athlete.user_profile_id` /
+ * `guardian_profile_id`)—, que son «para ti» sin seguirlas a mano. Las
+ * vinculadas van con `creado` nulo y ceden el límite a las seguidas.
+ */
 function seguidasDe(profileId: string) {
   return sql`
     seguidas AS MATERIALIZED (
-      SELECT coalesce(p.merged_into_person_id, p.id) AS canonica, max(f.created_at) AS creado
-      FROM sport_favorite f CROSS JOIN sport_person p ON p.id = f.person_id
-      WHERE f.profile_id = ${profileId}
-      GROUP BY coalesce(p.merged_into_person_id, p.id)
+      SELECT u.canonica, max(u.creado) AS creado FROM (
+        SELECT coalesce(p.merged_into_person_id, p.id) AS canonica, f.created_at AS creado
+        FROM sport_favorite f CROSS JOIN sport_person p ON p.id = f.person_id
+        WHERE f.profile_id = ${profileId}
+        UNION ALL
+        SELECT coalesce(propia.merged_into_person_id, propia.id) AS canonica, NULL AS creado
+        FROM athlete a CROSS JOIN sport_person propia ON propia.athlete_id = a.id
+        WHERE a.active AND (a.user_profile_id = ${profileId} OR a.guardian_profile_id = ${profileId})
+      ) u
+      GROUP BY u.canonica
       ORDER BY creado DESC LIMIT ${MAX_SEGUIDAS_FEED}
     )`;
 }
 
 /**
- * Resultados de las personas seguidas, del más reciente al más antiguo.
+ * Resultados de las personas seguidas o vinculadas, del más reciente al más
+ * antiguo.
  *
  * Leer la fila de `sport_result` cuesta ~10 µs (filas anchas); seguir a 300
  * personas con muchos resultados son ~40 000 filas. Por eso primero se
@@ -298,11 +313,12 @@ export async function leerFeedSiguiendo(
  *
  * Una entrada sólo vale con la misma revisión, que se lee en cada visita con
  * una sentencia de pocas filas (`sqlRevisionFeed`): el contador de escrituras
- * de `sport_*` (cualquier resultado, persona o fusión nuevos lo suben) y la
- * huella de las seguidas (cuántas y cuándo se guardaron). Seguir o dejar de
- * seguir cambia la huella aunque la petición caiga en otro isolate. Lo que no
- * cubre (la tabla `event`, que sólo aporta el tipo de competición) caduca a
- * los `MEMO_FEED_MS`.
+ * de `sport_*` (cualquier resultado, persona o fusión nuevos lo suben), la
+ * huella de las seguidas (cuántas y cuándo se guardaron) y la de las fichas
+ * vinculadas (cuántas y cuándo se enlazaron). Seguir, dejar de seguir,
+ * vincular o desvincular cambia la huella aunque la petición caiga en otro
+ * isolate. Lo que no cubre (la tabla `event`, que sólo aporta el tipo de
+ * competición) caduca a los `MEMO_FEED_MS`.
  */
 const MEMO_FEED_MS = 60_000;
 const MAX_MEMO_FEED = 200;
@@ -312,18 +328,24 @@ const memosFeed = new WeakMap<object, Map<string, MemoFeed>>();
 export function sqlRevisionFeed(profileId: string) {
   return sql`
     SELECT (SELECT accounted_bytes FROM sport_capacity_ledger WHERE key = 'global') AS datos,
-           count(*) AS n, max(f.created_at) AS ultima, total(f.created_at) AS suma
+           count(*) AS n, max(f.created_at) AS ultima, total(f.created_at) AS suma,
+           (SELECT count(*) || ':' || coalesce(max(a.linked_at), 0) || ':' || total(propia.athlete_linked_at)
+            FROM athlete a CROSS JOIN sport_person propia ON propia.athlete_id = a.id
+            WHERE a.active AND (a.user_profile_id = ${profileId} OR a.guardian_profile_id = ${profileId})
+           ) AS vinculo
     FROM sport_favorite f WHERE f.profile_id = ${profileId}`;
 }
 
 async function revisionFeed(db: ContextoExplorador['db'], profileId: string): Promise<string | null> {
   try {
-    const [fila] = filas<{ datos: number | null; n: number; ultima: number | null; suma: number }>(
+    const [fila] = filas<{
+      datos: number | null; n: number; ultima: number | null; suma: number; vinculo: string | null;
+    }>(
       await db.execute(sqlRevisionFeed(profileId)),
     );
     // Sin contador de escrituras no se sabe si los datos cambiaron: sin memo.
     if (!fila || fila.datos === null || fila.datos === undefined) return null;
-    return `${fila.datos}|${fila.n}|${fila.ultima ?? ''}|${fila.suma}`;
+    return `${fila.datos}|${fila.n}|${fila.ultima ?? ''}|${fila.suma}|${fila.vinculo ?? ''}`;
   } catch {
     return null;
   }

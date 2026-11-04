@@ -36,9 +36,12 @@ export async function cargarPantallaCalendario({
   const arranque = tramoDeMeses(anio, numeroMes - 1, meses);
   const tramoInicial = tramoPasadoDe(arranque.desde, arranque.hasta, hoy);
 
-  const [eventos, [atletas, inscripciones], temporada, frescura, pasadoInicial] = await Promise.all([
+  const [eventos, [atletas, inscripciones, solicitudes], temporada, frescura, pasadoInicial] = await Promise.all([
     calendarioCompartido.eventosDelCalendario(),
-    getManagedAthletes(profileId).then(async (atletas) => [atletas, await inscripcionesDe(atletas)] as const),
+    getManagedAthletes(profileId).then(async (atletas) => {
+      const { mapa, filas } = await inscripcionesDe(atletas);
+      return [atletas, mapa, filas] as const;
+    }),
     getCurrentSeason(),
     getDataFreshness(),
     /*
@@ -49,23 +52,35 @@ export async function cargarPantallaCalendario({
     */
     tramoInicial ? calendarioCompartido.tramoPasado({ ...tramoInicial, hoy }).catch(() => null) : null,
   ]);
-  return { eventos, atletas, inscripciones, temporada, frescura, pasadoInicial };
+  return { eventos, atletas, inscripciones, solicitudes, temporada, frescura, pasadoInicial };
 }
 
 /**
  * Inscripciones ya solicitadas, para no ofrecer "solicitar" en algo que ya
  * se pidió. Una consulta para todas, no una por prueba.
+ *
+ * Devuelve dos vistas de las mismas filas: el mapa `competitionId -> estado`
+ * que marcan las tarjetas, y la lista con su `athleteId`, que es la que
+ * permite a «Tus pruebas» decir de QUIÉN es cada inscripción (una cuenta de
+ * tutor lleva a dos hijos y el mapa los aplana).
  */
-async function inscripcionesDe(atletas: readonly { id: string }[]): Promise<Record<string, string>> {
-  const inscripciones: Record<string, string> = {};
-  if (atletas.length === 0) return inscripciones;
-  const filas = await db
-    .select({ competitionId: entry.eventCompetitionId, status: entry.status })
+async function inscripcionesDe(atletas: readonly { id: string }[]) {
+  const mapa: Record<string, string> = {};
+  const filas: { competitionId: string; athleteId: string; status: EntryStatus }[] = [];
+  if (atletas.length === 0) return { mapa, filas };
+  const crudas = await db
+    .select({
+      competitionId: entry.eventCompetitionId,
+      athleteId: entry.athleteId,
+      status: entry.status,
+    })
     .from(entry)
     .where(inArray(entry.athleteId, atletas.map((a) => a.id)));
-  for (const f of filas) {
+  for (const f of crudas) {
     if (f.status === 'withdrawn' || f.status === 'rejected') continue;
-    inscripciones[f.competitionId] = ENTRY_STATUS_LABEL[f.status as EntryStatus];
+    const status = f.status as EntryStatus;
+    mapa[f.competitionId] = ENTRY_STATUS_LABEL[status];
+    filas.push({ competitionId: f.competitionId, athleteId: f.athleteId, status });
   }
-  return inscripciones;
+  return { mapa, filas };
 }

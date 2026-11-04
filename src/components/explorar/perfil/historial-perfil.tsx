@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { BanderaPais } from '@/components/bandera';
 import { Boton } from '@/components/sistema/boton';
-import { VerMas } from '@/components/sistema/cabecera-seccion';
 import { EstadoVacio } from '@/components/sistema/estado-vacio';
+import { PieIncremental } from '@/components/sistema/lista-incremental';
 import { SelectorSegmentado } from '@/components/sistema/selector-segmentado';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { categoriaVisible, ordenCategoriaVisible } from '@/lib/sport/explorar/presentacion';
@@ -326,14 +326,13 @@ export function HistorialPerfil({
                 </section>
               );
             })}
-            {filtradas.length > mostradas.length ? (
-              <VerMas
-                onClick={() => setVisibles((v) => v + PASO)}
-                cuenta={filtradas.length - mostradas.length}
-                detalle="pruebas del historial"
-                className="self-center"
-              />
-            ) : null}
+            <PieIncremental
+              quedan={filtradas.length - mostradas.length}
+              alAsomar={() => setVisibles((v) => v + PASO)}
+              cuenta={filtradas.length - mostradas.length}
+              detalle="pruebas del historial"
+              className="self-center"
+            />
             {lista.truncado && !filtrando ? (
               <p className="text-xs text-muted-foreground">Solo las pruebas más recientes.</p>
             ) : null}

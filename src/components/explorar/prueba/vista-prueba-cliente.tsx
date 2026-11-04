@@ -3,6 +3,7 @@
 import { ChevronDown, GitFork, Grid3x3, ListOrdered, Loader2, Search, X } from 'lucide-react';
 import { useDeferredValue, useEffect, useId, useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
 import { ahorrarDatos } from '@/components/sistema/red-cliente';
+import { PieIncremental } from '@/components/sistema/lista-incremental';
 import { AREA_TACTIL } from '@/components/sistema/tactil';
 import { construirUrlEdicion, type VistaPrueba as Vista } from '@/lib/sport/explorar/edicion-url';
 import { cargarVistaDePrueba } from '@/lib/sport/explorar/prueba-acciones';
@@ -338,17 +339,24 @@ export function VistaPruebaCliente({
           <>
             <ListaClasificacion filas={filas ?? []} enlace={enlace} filtro={filtro} limite={pintadas} />
             {restantes > 0 ? (
-              <button
-                type="button"
-                onClick={() => setLimite(pintadas + TRAMO_CLASIFICACION)}
-                className={cn(
-                  'inline-flex h-[32px] items-center justify-center self-center rounded-full border border-input bg-card px-5 text-sm transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none',
-                  AREA_TACTIL,
-                )}
+              // Los datos ya están: el centinela enseña otro tramo al asomar
+              // y el botón queda de respaldo.
+              <PieIncremental
+                quedan={restantes}
+                alAsomar={() => setLimite(pintadas + TRAMO_CLASIFICACION)}
               >
-                Ver más
-                <span className="sr-only"> puestos ({restantes} más)</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => setLimite(pintadas + TRAMO_CLASIFICACION)}
+                  className={cn(
+                    'inline-flex h-[32px] items-center justify-center self-center rounded-full border border-input bg-card px-5 text-sm transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none motion-reduce:transition-none',
+                    AREA_TACTIL,
+                  )}
+                >
+                  Ver más
+                  <span className="sr-only"> puestos ({restantes} más)</span>
+                </button>
+              </PieIncremental>
             ) : (
               pieClasificacion
             )}

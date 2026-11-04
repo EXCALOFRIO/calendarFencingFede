@@ -3,7 +3,7 @@
 import { ChevronRight, ExternalLink, Scissors } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import * as React from 'react';
-import { VerMas } from '@/components/sistema/cabecera-seccion';
+import { PieIncremental } from '@/components/sistema/lista-incremental';
 import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import { HojaInferior } from '@/components/sistema/hoja-inferior';
 import type {
@@ -262,6 +262,7 @@ export function TablaRankingOficial({
 
   function buscar(q: string) {
     setBusqueda(q);
+    setTope(PASO);
     if (ranking) ranking.memoria.current = { ...ranking.memoria.current, q };
     escribirUrl({ q });
   }
@@ -441,10 +442,17 @@ export function TablaRankingOficial({
         </ol>
       ) : null}
 
-      {/* «Ver más (159)»: con lo que falta, que dice dónde estás. */}
-      {quedan > 0 ? (
-        <VerMas onClick={() => setTope(limite + PASO)} cuenta={quedan} detalle="tiradores de la clasificación" className="self-center" />
-      ) : null}
+      {/*
+        «Ver más (159)»: con lo que falta, que dice dónde estás. El centinela
+        pide el siguiente lote al asomar; el botón queda de respaldo.
+      */}
+      <PieIncremental
+        quedan={quedan}
+        alAsomar={() => setTope(limite + PASO)}
+        cuenta={quedan}
+        detalle="tiradores de la clasificación"
+        className="self-center"
+      />
 
       {conFicha < tabla.rows.length ? (
         <p

@@ -79,6 +79,14 @@ function fixture() {
     .run(id, `${id}@example.test`, 'Cuenta sintética', `token-${id}`);
   const seguir = (cuentaId: string, personaId: string, creado: number) =>
     db.prepare('INSERT INTO sport_favorite(profile_id, person_id, created_at) VALUES (?,?,?)').run(cuentaId, personaId, creado);
+  /** Ficha `athlete` de la cuenta (propia o tutelada) enlazada a la persona. */
+  const vincular = (cuentaId: string, personaId: string, como: 'propia' | 'tutelada' = 'propia') => {
+    const atleta = `atleta-${personaId}`;
+    db.prepare(`INSERT INTO athlete(id, ${como === 'propia' ? 'user_profile_id' : 'guardian_profile_id'}, first_name, last_name, birth_date, gender, linked_at)
+      VALUES (?,?,?,?,?,?,?)`).run(atleta, cuentaId, 'Uno', 'Dos', '2010-01-01', 'M', 1);
+    db.prepare('UPDATE sport_person SET athlete_id = ?, athlete_linked_at = ? WHERE id = ?')
+      .run(atleta, 1, personaId);
+  };
 
   function ejecutar<T>(consulta: SQL): T[] {
     const q = dialecto.sqlToQuery(consulta);
@@ -96,7 +104,7 @@ function fixture() {
       db: { execute: (q: SQL) => database.execute(q) } as ContextoExplorador['db'],
     };
   }
-  return { db, persona, prueba, asalto, resultado, cuenta, seguir, ejecutar, plan, contexto };
+  return { db, persona, prueba, asalto, resultado, cuenta, seguir, vincular, ejecutar, plan, contexto };
 }
 
 const rivales = (f: ReturnType<typeof fixture>, ids: string[], canonica: string) =>
@@ -397,6 +405,26 @@ describe('Siguiendo', () => {
     expect(medallas.map((m) => [m.prueba.id, m.medalla])).toEqual([['p3', 'bronce'], ['p2', 'plata'], ['p1', 'oro']]);
     expect(medallas[0]).toMatchObject({ participantes: 3, clasificacion: { tipo: 'TNR', ambito: 'nacional' } });
     expect(medallas[1].clasificacion).toMatchObject({ tipo: 'COPA_MUNDO', tono: 'org-fie' });
+  });
+
+  it('incluye a las vinculadas a la cuenta aunque no siga a nadie, y sólo las suyas', async () => {
+    const f = fixture();
+    f.cuenta(CUENTA); f.cuenta(OTRA_CUENTA);
+    f.persona(YO, 'YO Propia'); f.persona(RIVAL, 'RIVAL'); f.persona(OTRO, 'OTRO');
+    f.prueba('p1', { fecha: '2026-01-10' });
+    f.resultado('p1', YO, 1, '2026-01-10');
+    f.resultado('p1', RIVAL, 2, '2026-01-10');
+    f.resultado('p1', OTRO, 3, '2026-01-10');
+    f.vincular(CUENTA, YO);
+    // Sin seguir a nadie el feed ya es «para ti»: sólo la ficha propia.
+    expect((await todas(f.contexto(), {})).map((v) => v.persona.id)).toEqual([YO]);
+    // La tutelada de otra cuenta alimenta su feed, no el de la primera.
+    f.vincular(OTRA_CUENTA, OTRO, 'tutelada');
+    expect((await todas(f.contexto(OTRA_CUENTA), {})).map((v) => v.persona.id)).toEqual([OTRO]);
+    expect((await todas(f.contexto(), {})).map((v) => v.persona.id)).toEqual([YO]);
+    // Y al desactivarse la ficha deja de alimentar el feed.
+    f.db.prepare('UPDATE athlete SET active = 0').run();
+    expect(await todas(f.contexto(), {})).toEqual([]);
   });
 
   it('un cursor de otra cuenta o de otro filtro no sirve', async () => {

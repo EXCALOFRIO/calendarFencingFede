@@ -16,6 +16,7 @@ import {
 import { AltaTiradorDesdeRanking } from '@/components/admin/alta-tirador';
 import { CampoFecha } from '@/components/admin/campo-fecha';
 import { Vacio } from '@/components/admin/piezas';
+import { PieIncremental } from '@/components/sistema/lista-incremental';
 import { AREA_TACTIL } from '@/components/sistema/tactil';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -653,6 +654,9 @@ type Previsualizacion = {
   cabeceraDetectada: string[];
 };
 
+/** Filas de la vista previa por tanda: un CSV puede traer varios cientos. */
+const PASO_PREVIA = 50;
+
 function ImportadorCsv() {
   const router = useRouter();
   const [texto, setTexto] = React.useState('');
@@ -660,6 +664,12 @@ function ImportadorCsv() {
   const [error, setError] = React.useState<string | null>(null);
   const [ocupado, setOcupado] = React.useState(false);
   const [soloProblemas, setSoloProblemas] = React.useState(false);
+  const [tope, setTope] = React.useState(PASO_PREVIA);
+
+  // Vista previa nueva o cambio de filtro: se vuelve a empezar por arriba.
+  React.useEffect(() => {
+    setTope(PASO_PREVIA);
+  }, [previa, soloProblemas]);
 
   async function leerFichero(fichero: File) {
     const contenido = await fichero.text();
@@ -840,7 +850,7 @@ function ImportadorCsv() {
           </div>
 
           <ul className="divide-y overflow-hidden rounded-lg border bg-card">
-            {visibles.map((f) => (
+            {visibles.slice(0, tope).map((f) => (
               <li
                 key={f.linea}
                 className={cn(
@@ -913,6 +923,13 @@ function ImportadorCsv() {
               </li>
             ))}
           </ul>
+          <PieIncremental
+            quedan={visibles.length - Math.min(tope, visibles.length)}
+            alAsomar={() => setTope((t) => t + PASO_PREVIA)}
+            cuenta={visibles.length - Math.min(tope, visibles.length)}
+            detalle="filas de la vista previa"
+            className="self-center"
+          />
         </div>
       ) : null}
     </div>

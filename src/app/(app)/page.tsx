@@ -1,7 +1,9 @@
+import { TusPruebas } from '@/components/calendario/tus-pruebas';
 import { VistaCalendario, type TiradorOpcion } from '@/components/calendario/vista';
 import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import { requireProfile } from '@/lib/auth/session';
 import { leerContextoCalendario, leerEventoCalendario } from '@/lib/calendario/contexto-url';
+import { filasDeTusPruebas } from '@/lib/calendario/tus-pruebas';
 import { deriveCategoriesFromBirthDate } from '@/lib/categories';
 import { requestEntry } from '@/lib/entries/actions';
 import { frescura as textoFrescura, hoyMadrid } from '@/lib/fechas';
@@ -48,7 +50,7 @@ export default async function CalendarioPage({
    */
   // Un solo «hoy» para el servidor y para el primer pintado del cliente (ver `VistaCalendario`).
   const hoy = hoyMadrid();
-  const { eventos, atletas, inscripciones, temporada, frescura, pasadoInicial } =
+  const { eventos, atletas, inscripciones, solicitudes, temporada, frescura, pasadoInicial } =
     await cargarPantallaCalendario({
       profileId: perfil.profileId,
       hoy,
@@ -89,10 +91,18 @@ export default async function CalendarioPage({
   const sinFicha =
     atletas.length === 0 && perfil.role === 'athlete';
 
+  /**
+   * «Tus pruebas», encima del listado: con qué cuenta y sobre lo ya cargado.
+   * Sin tiradores vinculados `filasDeTusPruebas` devuelve vacío y la sección
+   * no se pinta: el calendario queda exactamente como antes.
+   */
+  const filasPropias = filasDeTusPruebas({ eventos, tiradores, solicitudes });
+
   return (
     <VistaCalendario
       inicial={inicial}
       eventoInicial={eventoInicial}
+      tusPruebas={<TusPruebas filas={filasPropias} variosTiradores={tiradores.length > 1} />}
       eventos={eventos}
       /**
        * Papel y armas, que es lo que decide con qué filtros se abre la

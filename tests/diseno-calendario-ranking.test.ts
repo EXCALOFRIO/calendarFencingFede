@@ -47,7 +47,7 @@ const { TablaRankingOficial } = await import('@/components/ranking/tabla-oficial
 const { TablaRankingFie } = await import('@/components/ranking/tabla-fie');
 const { TablaRanking } = await import('@/components/ranking/tabla-ranking');
 const { TiraTemporadas } = await import('@/components/ranking/tira-temporadas');
-const { FichaEvento, BandaEstasDentro } = await import('@/components/calendario/ficha-evento');
+const { FichaEvento, BandaInscritosYFuentes } = await import('@/components/calendario/ficha-evento');
 const { BarraPlazos } = await import('@/components/calendario/barra-plazos');
 const { Button } = await import('@/components/ui/button');
 const { Input } = await import('@/components/ui/input');
@@ -318,7 +318,7 @@ describe('calendario, navegación y ranking: contrato de presentación', () => {
 
   it('distingue lista en lectura, no publicada, vacía y lectura fallida sin ocultar datos retenidos', () => {
     const banda = (inscritos: QuienVa | null, fallo = false) =>
-      html(React.createElement(BandaEstasDentro, { evento, prueba, inscritos, fallo }));
+      html(React.createElement(BandaInscritosYFuentes, { evento, prueba, inscritos, fallo }));
     // Mientras llega no se pinta nada (ni esqueleto): llega precargada con la intención.
     expect(banda(null)).toBe('');
     // Sin lista publicada la banda no se pinta: no hay nada que mirar todavía.
@@ -442,7 +442,7 @@ describe('renderizado offline a 320, 393, 768 y 1440 px', () => {
     interno,
     ficha,
     inscritos: () => React.createElement('div', { className: 'calendario' },
-      React.createElement(BandaEstasDentro, { evento, prueba, inscritos: lista })),
+      React.createElement(BandaInscritosYFuentes, { evento, prueba, inscritos: lista })),
     plazos: () => React.createElement('div', { className: 'calendario' },
       React.createElement(BarraPlazos, { plazos, estado: estadoPlazos })),
     temporadas,
