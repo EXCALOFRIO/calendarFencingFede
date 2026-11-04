@@ -228,7 +228,7 @@ describe('Buscar: marcas de varias personas de una vez', () => {
   });
 });
 
-describe('/ranking internacional: la misma burbuja en cada fila y con «Solo JJOO»', () => {
+describe('/ranking internacional: la clasificación olímpica va aparte, no en la lista', () => {
   const grupo = { weapon: 'ESPADA', gender: 'M', category: 'ABS' } as const;
   const tabla = (olimpica: AnotacionesPrueba | null) => ({
     group: grupo,
@@ -252,30 +252,32 @@ describe('/ranking internacional: la misma burbuja en cada fila y con «Solo JJO
     cargar: vi.fn(),
   }));
 
-  it('verde y amarillo en sus filas, el filtro con aros y el mismo recuento', () => {
+  it('sección plegada aparte, sin burbujas en las filas ni filtro olímpico', () => {
     busqueda.valor = new URLSearchParams();
     const o = pintar(PRUEBA);
-    expect(o).toContain('data-color-olimpico="verde"');
-    expect(o).toContain('data-color-olimpico="amarillo"');
-    expect(o).toContain('data-filtro-olimpico');
-    expect(o).toContain('data-icono="aros"');
+    // La sección propia sigue: es «lo aparte» que Luca aprueba.
+    expect(o).toContain('data-prueba="ESPADA-M"');
+    expect(o).toContain('Clasificación olímpica');
+    // Pero nada de clasificación mezclada en el ranking normal.
+    expect(o).not.toContain('data-color-olimpico');
+    expect(o).not.toContain('data-filtro-olimpico');
     expect(o).not.toContain('laurel');
-    const conColor = Object.values(PRUEBA.individual).filter((x) => colorOlimpico(x)).length;
-    expect((o.match(/data-slot="popover-trigger"/g) ?? []).length).toBe(conColor);
+    expect(o).toContain('NIKISHYN');
+    expect(o).toContain('HEINE');
   });
 
-  it('con ?jjoo=1 sólo quedan las filas con color', () => {
+  it('?jjoo=1 queda ignorado: la tabla sigue siendo la FIE normal', () => {
     busqueda.valor = new URLSearchParams('jjoo=1');
     const o = pintar(PRUEBA);
-    expect(o).toContain('aria-pressed="true"');
-    expect(o).not.toContain('NIKISHYN');
+    expect(o).toContain('NIKISHYN');
     expect(o).toContain('HEINE');
     busqueda.valor = new URLSearchParams();
   });
 
-  it('sin marcas olímpicas, ni burbujas ni filtro', () => {
+  it('sin marcas olímpicas, ni burbujas ni sección', () => {
     const o = pintar(null);
     expect(o).not.toContain('data-color-olimpico');
     expect(o).not.toContain('data-filtro-olimpico');
+    expect(o).not.toContain('data-prueba=');
   });
 });

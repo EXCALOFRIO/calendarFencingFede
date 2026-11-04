@@ -3,8 +3,6 @@
 import { useSearchParams } from 'next/navigation';
 import * as React from 'react';
 import { OpcionesFiltro } from '@/components/filtros/chips';
-import { BurbujaOlimpica } from '@/components/olimpica/burbuja-olimpica';
-import { FiltroOlimpico } from '@/components/olimpica/filtro-olimpico';
 import { PruebaOlimpica } from '@/components/olimpica/prueba-olimpica';
 import { PieIncremental } from '@/components/sistema/lista-incremental';
 import { ChipFiltro } from '@/components/sistema/chip-filtro';
@@ -16,7 +14,6 @@ import type {
   RankingGroupKey,
 } from '@/lib/queries/ranking';
 import { nombreCasa } from '@/lib/nombres';
-import { ordenarSoloJjoo, type AnotacionOlimpica, type ReglasOlimpicas } from '@/lib/ranking/olimpica';
 import type { TablaFieCompleta } from '@/lib/ranking/tabla-fie-completa';
 import { cn } from '@/lib/utils';
 import { claveTablaFie, escribirUrl, urlDeGrupo, useRanking } from './estado-ranking';
@@ -41,18 +38,14 @@ const PASO = 50;
  *  - **«Solo España», APAGADO de entrada**: lo primero que se ve es el mundo.
  *    Encendido, la misma tabla con sus puestos intactos: el 13 sigue siendo
  *    el 13, no pasa a ser el 1.
- *  - **«Solo JJOO»**, sólo en las seis pruebas olímpicas (absoluto, masculino
- *    o femenino): quien entra hoy en Los Ángeles 2028 o está cerca, en el
- *    orden de `ordenarSoloJjoo`. La marca va en cada fila, detrás del nombre
- *    (`BurbujaOlimpica`), con el filtro encendido o no. Se recuerda en la URL
- *    (`?jjoo=1`) para poder compartir el enlace.
  *
  * La clasificación olímpica va en su propia sección (`PruebaOlimpica`),
  * encima del ranking y PLEGADA: la fila con el título y el estado de España
  * se ve siempre, el desglose se abre al tocarla. Quién entra por equipos y
  * por individual, quién está cerca y qué le falta. No va mezclada con la
- * lista FIE porque es otra cosa — una proyección con sus reglas, no un
- * puesto más.
+ * lista FIE — ni burbuja en las filas ni filtro «Solo JJOO» — porque es
+ * otra cosa: el ranking de clasificación empieza de cero en el ciclo
+ * olímpico y acaba siendo distinto al internacional.
  *
  * Se pide un grupo a la vez (el más grande son ~1.250 filas): el de arranque
  * viene pintado del servidor y cambiar de arma pide sólo ese grupo, con sus
@@ -115,7 +108,6 @@ export function TablaRankingFie({
   const [tabla, setTabla] = React.useState<TablaFieCompleta | null>(arranque.tabla);
   const [cargando, setCargando] = React.useState(arranque.pedir);
   const [soloEspana, setSoloEspana] = React.useState(() => parametros?.get('espana') === '1');
-  const [jjooPedido, setJjooPedido] = React.useState(() => parametros?.get('jjoo') === '1');
   const [busqueda, setBusqueda] = React.useState(() => ranking?.memoria.current.q ?? parametros?.get('q') ?? '');
   const [tope, setTope] = React.useState(PASO);
 
@@ -212,33 +204,15 @@ export function TablaRankingFie({
 
   const porEquipos = format === 'EQUIPOS';
   const olimpica = tabla?.olimpica ?? null;
-  // Fuera de las pruebas olímpicas el `?jjoo=1` se ignora y el conmutador no se pinta.
-  const soloJjoo = jjooPedido && olimpica !== null;
 
-  const cambiarJjoo = (activo: boolean) => {
-    setJjooPedido(activo);
-    setTope(PASO);
-    escribirUrl({ jjoo: activo ? '1' : null });
-  };
   const cambiarEspana = (activo: boolean) => {
     setSoloEspana(activo);
     setTope(PASO);
     escribirUrl({ espana: activo ? '1' : null });
   };
 
-  const anotacionDe = React.useCallback(
-    (r: FilaFie) => (porEquipos ? olimpica?.equipos[r.pais ?? ''] : olimpica?.individual[String(r.fieId)]),
-    [olimpica, porEquipos],
-  );
-
-  const conJjoo = React.useMemo(() => {
-    if (!olimpica) return [];
-    const base = (tabla?.rows ?? []).filter((r) => !soloEspana || r.pais === 'ESP');
-    return ordenarSoloJjoo(base, (r) => ({ anotacion: anotacionDe(r), posicion: r.position }));
-  }, [tabla, olimpica, soloEspana, anotacionDe]);
-
   const filtradas = React.useMemo(() => {
-    let f = soloJjoo ? conJjoo : (tabla?.rows ?? []).filter((r) => !soloEspana || r.pais === 'ESP');
+    let f = (tabla?.rows ?? []).filter((r) => !soloEspana || r.pais === 'ESP');
     if (busqueda) {
       f = f.filter(
         (r) =>
@@ -248,49 +222,39 @@ export function TablaRankingFie({
       );
     }
     return f;
-  }, [tabla, soloEspana, soloJjoo, conJjoo, busqueda]);
+  }, [tabla, soloEspana, busqueda]);
 
   /**
    * Buscando o filtrando se enseña TODO lo que casa, sin «ver más»: quien
    * escribe un nombre quiere ese nombre.
    */
-  const recorta = !busqueda && !soloEspana && !soloJjoo;
+  const recorta = !busqueda && !soloEspana;
   const visibles = recorta ? filtradas.slice(0, tope) : filtradas;
   const quedan = filtradas.length - visibles.length;
   const conBandera = !soloEspana;
 
   /*
-    «Solo España» y «Solo JJOO» como chips que se encienden y se apagan, igual
-    que «Solo España» en Buscar. Con la cifra de lo que queda al lado: «45»
-    españoles de 907 dice si merece la pena tocarlo.
+    «Solo España» como chip que se enciende y se apaga, igual que en Buscar.
+    Con la cifra de lo que queda al lado: «45» españoles de 907 dice si
+    merece la pena tocarlo.
   */
   const interruptores = (
-    <>
-      <ChipFiltro
-        marcado={soloEspana}
-        onClick={() => cambiarEspana(!soloEspana)}
-        contador={tabla ? tabla.espanoles : undefined}
-        detalle={tabla ? `de ${tabla.rows.length}` : undefined}
-      >
-        Solo España
-      </ChipFiltro>
-      {olimpica ? (
-        <FiltroOlimpico
-          activo={soloJjoo}
-          onCambio={cambiarJjoo}
-          cuantos={conJjoo.length}
-        />
-      ) : null}
-    </>
+    <ChipFiltro
+      marcado={soloEspana}
+      onClick={() => cambiarEspana(!soloEspana)}
+      contador={tabla ? tabla.espanoles : undefined}
+      detalle={tabla ? `de ${tabla.rows.length}` : undefined}
+    >
+      Solo España
+    </ChipFiltro>
   );
 
   const quitables: Quitable[] = porEquipos
     ? [{ clave: 'formato', texto: 'Selecciones', etiqueta: 'Selecciones', onQuitar: () => cambiarFormato('INDIVIDUAL') }]
     : [];
-  const activos = (porEquipos ? 1 : 0) + (soloEspana ? 1 : 0) + (soloJjoo ? 1 : 0);
+  const activos = (porEquipos ? 1 : 0) + (soloEspana ? 1 : 0);
   const restablecer = activos > 0 ? () => {
     if (soloEspana) cambiarEspana(false);
-    if (jjooPedido) cambiarJjoo(false);
     if (porEquipos) cambiarFormato('INDIVIDUAL');
   } : null;
 
@@ -359,9 +323,6 @@ export function TablaRankingFie({
               conBandera={conBandera}
               mio={fila.athleteId !== null && mios.includes(fila.athleteId)}
               personaId={porEquipos ? null : (tabla?.personas[String(fila.fieId)] ?? null)}
-              anotacion={anotacionDe(fila)}
-              fechaRanking={olimpica?.fechaRanking ?? null}
-              reglas={olimpica?.resultado.reglas}
             />
           ))}
         </ol>
@@ -372,11 +333,9 @@ export function TablaRankingFie({
           titulo={
             busqueda
               ? 'Ningún nombre coincide'
-              : soloJjoo
-                ? 'Nadie entra hoy ni está cerca de los Juegos'
-                : soloEspana
-                  ? 'Nadie de España en esta prueba'
-                  : 'Sin clasificación internacional en esta prueba'
+              : soloEspana
+                ? 'Nadie de España en esta prueba'
+                : 'Sin clasificación internacional en esta prueba'
           }
           descripcion={busqueda ? 'Prueba otro nombre o país.' : undefined}
         />
@@ -400,9 +359,7 @@ export function TablaRankingFie({
 
 /**
  * La fila memorizada con props planas: al escribir en el buscador o tocar un
- * filtro se repintaba la tabla entera — la burbuja olímpica era un elemento
- * nuevo en cada render y anulaba el `memo` de `FilaLinea`. Con la anotación
- * como dato estable sólo se repintan las filas que entran o salen.
+ * filtro sólo se repintan las filas que entran o salen, no la tabla entera.
  */
 const FilaTablaFie = React.memo(function FilaTablaFie({
   fila,
@@ -410,18 +367,12 @@ const FilaTablaFie = React.memo(function FilaTablaFie({
   conBandera,
   mio,
   personaId,
-  anotacion,
-  fechaRanking,
-  reglas,
 }: {
   fila: FilaFie;
   porEquipos: boolean;
   conBandera: boolean;
   mio: boolean;
   personaId: string | null;
-  anotacion: AnotacionOlimpica | undefined;
-  fechaRanking: string | null;
-  reglas: ReglasOlimpicas | undefined;
 }) {
   return (
     <FilaLinea
@@ -435,9 +386,6 @@ const FilaTablaFie = React.memo(function FilaTablaFie({
       resaltada={fila.pais === 'ESP'}
       sinRetrato={porEquipos}
       enlacePais={porEquipos}
-      tras={anotacion?.estado ? (
-        <BurbujaOlimpica anotacion={anotacion} fechaRanking={fechaRanking} reglas={reglas} compacta className="shrink-0" />
-      ) : undefined}
     />
   );
 });
