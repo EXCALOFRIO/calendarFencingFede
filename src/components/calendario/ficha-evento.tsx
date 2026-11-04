@@ -143,10 +143,16 @@ function useConDatosDeLosPdfs(base: EventView): EventView {
         },
       ]),
     );
+    /*
+      El detalle va ENCIMA del evento de la rejilla: ésta viaja recortada
+      (`recortarParaRejilla`) sin documentos, enlaces ni fuentes —eso lo trae
+      `leidos`—, así que el spread lo añade todo de una vez. Las pruebas sí
+      se conservan de `base`, que puede venir ya filtrada por arma/género.
+    */
     return {
       ...base,
+      ...leidos,
       datosExtraidos: leidos.datosExtraidos,
-      enlacesDirectos: leidos.enlacesDirectos ?? base.enlacesDirectos,
       competitions: base.competitions.map((c) => {
         const d = detalle.get(c.id);
         return {

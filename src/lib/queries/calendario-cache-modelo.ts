@@ -95,8 +95,8 @@ export function idDeEventoValido(id: unknown): id is string {
 
 /**
  * Lo que la rejilla del calendario no lee y viajaba igualmente en cada carga
- * (medido: ~20 % del JSON de la temporada). Se vacían, no se quitan, para no
- * cambiar el tipo:
+ * (medido sobre el documento real: el JSON del listado era ~450 kB, la mitad
+ * de la página). Se vacían, no se quitan, para no cambiar el tipo:
  *
  * - `linkedEvents`, `imageSource`, `circuitFie`, `regionalFederation` y
  *   `notes`: ningún componente del cliente los usa (el tramo pasado ya cruzó
@@ -104,10 +104,16 @@ export function idDeEventoValido(id: unknown): id is string {
  * - `status.label` y `status.next`: la rejilla sólo usa `state`, `closed` y
  *   `daysLeft`; la frase sólo la pinta la barra de plazos, que no aparece
  *   hasta que llega el detalle, y el detalle trae su propio `status`.
- *
- * Lo que sólo pinta la ficha (documentos, horarios, cuota, enlaces) se queda:
- * la ficha se abre con esto y no puede enseñar «no publicado» mientras llega
- * el detalle.
+ * - Lo que sólo pinta la ficha —documentos, sede, geoposición, web oficial,
+ *   url de la fuente, horarios, cuota, inscritos de la prueba y si
+ *   desapareció de la fuente—: la ficha pide el detalle al abrirse
+ *   (precargado ya al mostrar intención sobre la tarjeta,
+ *   `ficha/precarga.ts`) y `useConDatosDeLosPdfs` lo extiende por encima del
+ *   evento recortado, así que esos campos llegan justo cuando se enseñan en
+ *   vez de viajar 160 veces por si acaso. La cabecera mientras tanto tiene
+ *   lo suyo (nombre, fechas, ciudad, cartel, cancelada); `sources`,
+ *   `timezone` y los enlaces de directo se quedan porque la tarjeta los
+ *   usa (la pastilla «En directo»).
  */
 export function recortarParaRejilla(eventos: readonly EventView[]): EventView[] {
   return eventos.map((e) => ({
@@ -117,7 +123,27 @@ export function recortarParaRejilla(eventos: readonly EventView[]): EventView[] 
     circuitFie: null,
     regionalFederation: null,
     notes: null,
-    competitions: e.competitions.map((c) => ({ ...c, status: { ...c.status, label: '', next: null } })),
+    documents: [],
+    liveLinks: [],
+    venue: null,
+    venueAddress: null,
+    geoLat: null,
+    geoLon: null,
+    officialSite: null,
+    sourceUrl: null,
+    disappearedAt: null,
+    competitions: e.competitions.map((c) => ({
+      ...c,
+      status: { ...c.status, label: '', next: null },
+      installationOpen: null,
+      callTime: null,
+      scratchTime: null,
+      startTime: null,
+      registrationCount: null,
+      feeEur: null,
+      sourceUrl: null,
+      inscritosFieUrl: undefined,
+    })),
   }));
 }
 

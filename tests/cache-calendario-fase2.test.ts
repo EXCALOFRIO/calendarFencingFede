@@ -98,16 +98,31 @@ function entorno() {
 }
 
 describe('recorte de la temporada para la rejilla', () => {
-  it('vacía lo que el cliente no lee y conserva lo que pinta la ficha', () => {
+  it('vacía lo que sólo pinta la ficha (llega con el detalle) y conserva lo de la rejilla', () => {
     const [e] = recortarParaRejilla([evento('e1')]);
     expect(e.linkedEvents).toEqual([]);
     expect([e.imageSource, e.circuitFie, e.regionalFederation, e.notes]).toEqual([null, null, null, null]);
     expect(e.competitions[0].status).toMatchObject({ state: 'verde', daysLeft: 12, closed: false, label: '', next: null });
-    // La ficha se abre con esto: no puede perder documentos, horarios, cuota ni enlaces.
-    expect(e.documents).toHaveLength(1);
+    /*
+      Documentos, enlaces, sede, horarios, cuota y la url de la fuente ya no
+      viajan en la temporada: la ficha los pide con el detalle al abrirse
+      (precargado al mostrar intención). Se conservan `sources` —el enlace
+      original es información de la tarjeta—, las fechas, la ciudad, el
+      cartel, `cancelled` y `timezone`, que la tarjeta usa para el directo.
+    */
+    expect(e.documents).toEqual([]);
+    expect(e.liveLinks).toEqual([]);
+    expect([e.venue, e.venueAddress, e.geoLat, e.geoLon, e.officialSite, e.sourceUrl, e.disappearedAt])
+      .toEqual([null, null, null, null, null, null, null]);
+    expect(e.competitions[0]).toMatchObject({
+      installationOpen: null, callTime: null, scratchTime: null, startTime: null,
+      registrationCount: null, feeEur: null, sourceUrl: null,
+      inscritosFieUrl: undefined,
+    });
+    // La tarjeta usa `sources`, `timezone` y el enlace de directo: se quedan.
     expect(e.sources).toHaveLength(1);
-    expect(e.competitions[0]).toMatchObject({ feeEur: '30', startTime: '09:00', sourceUrl: 'https://example.test/prueba' });
     expect(e.timezone).toBe('Europe/Madrid');
+    expect(e.name).toBe(evento('e1').name);
     expect(JSON.stringify(e).length).toBeLessThan(JSON.stringify(evento('e1')).length);
   });
 });
