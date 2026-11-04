@@ -252,15 +252,16 @@ describe('/ranking internacional: la clasificación olímpica va aparte, no en l
     cargar: vi.fn(),
   }));
 
-  it('sección plegada aparte, sin burbujas en las filas ni filtro olímpico', () => {
+  it('un botón a /olimpica, sin burbujas en las filas ni sección dentro', () => {
     busqueda.valor = new URLSearchParams();
     const o = pintar(PRUEBA);
-    // La sección propia sigue: es «lo aparte» que Luca aprueba.
-    expect(o).toContain('data-prueba="ESPADA-M"');
+    // El botón lleva a la pantalla propia, anclada a la prueba.
+    expect(o).toContain('href="/olimpica#ESPADA-M"');
     expect(o).toContain('Clasificación olímpica');
     // Pero nada de clasificación mezclada en el ranking normal.
     expect(o).not.toContain('data-color-olimpico');
     expect(o).not.toContain('data-filtro-olimpico');
+    expect(o).not.toContain('data-prueba=');
     expect(o).not.toContain('laurel');
     expect(o).toContain('NIKISHYN');
     expect(o).toContain('HEINE');

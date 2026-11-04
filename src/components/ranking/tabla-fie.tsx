@@ -2,8 +2,10 @@
 
 import { useSearchParams } from 'next/navigation';
 import * as React from 'react';
+import { ChevronRight } from 'lucide-react';
 import { OpcionesFiltro } from '@/components/filtros/chips';
-import { PruebaOlimpica } from '@/components/olimpica/prueba-olimpica';
+import { IconoAros } from '@/components/olimpica/icono-aros';
+import { EnlaceIntencion } from '@/components/enlace-intencion';
 import { PieIncremental } from '@/components/sistema/lista-incremental';
 import { ChipFiltro } from '@/components/sistema/chip-filtro';
 import { EstadoVacio } from '@/components/sistema/estado-vacio';
@@ -14,6 +16,7 @@ import type {
   RankingGroupKey,
 } from '@/lib/queries/ranking';
 import { nombreCasa } from '@/lib/nombres';
+import { rotuloPrueba } from '@/lib/sport/rotulos';
 import type { TablaFieCompleta } from '@/lib/ranking/tabla-fie-completa';
 import { cn } from '@/lib/utils';
 import { claveTablaFie, escribirUrl, urlDeGrupo, useRanking } from './estado-ranking';
@@ -294,10 +297,24 @@ export function TablaRankingFie({
       ) : null}
 
       {olimpica ? (
-        <PruebaOlimpica
-          resultado={olimpica.resultado}
-          excluidos={olimpica.excluidos}
-        />
+        /*
+          A su pantalla: la clasificación olímpica ya no va plegada dentro
+          del ranking. El botón enseña lo mínimo — título, prueba y flecha —
+          y `/olimpica` lleva el desglose por equipos e individual.
+        */
+        <EnlaceIntencion
+          href={`/olimpica#${olimpica.resultado.arma}-${olimpica.resultado.genero}`}
+          className="flex min-h-11 min-w-0 max-w-3xl items-center gap-2 rounded-xl border bg-card px-3 py-2 transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none sm:px-4"
+        >
+          <IconoAros className="w-5 shrink-0 text-muted-foreground" />
+          <span className="mr-auto min-w-0">
+            <span className="block truncate text-base leading-tight font-medium">Clasificación olímpica · LA 2028</span>
+            <span className="block truncate text-xs text-muted-foreground">
+              {rotuloPrueba({ arma: olimpica.resultado.arma, genero: olimpica.resultado.genero })} · por equipos e individual
+            </span>
+          </span>
+          <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        </EnlaceIntencion>
       ) : null}
 
       {tabla ? (
