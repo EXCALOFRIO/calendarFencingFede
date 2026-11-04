@@ -81,6 +81,16 @@ export function invalidarCache(deps: readonly Dependencia[]): Promise<void> {
 }
 
 /**
+ * Trabajo en segundo plano dentro de una petición: el Worker lo termina aunque
+ * la respuesta ya haya salido (ctx.waitUntil), y un fallo no rompe nada. Para
+ * precalentar la caché compartida — p. ej. /ranking deja listo el panel
+ * olímpico mientras la persona aún está leyendo la tabla.
+ */
+export function enSegundoPlano(trabajo: Promise<unknown>): void {
+  esperar(trabajo.catch(() => {}));
+}
+
+/**
  * Para la ingesta automática: llamar al terminar `runIngest(fuente)` (con o
  * sin error: una carga a medias también cambia datos). Nunca lanza.
  */

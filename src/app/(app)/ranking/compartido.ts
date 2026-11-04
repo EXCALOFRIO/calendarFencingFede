@@ -1,8 +1,8 @@
 import type { GrupoEuropeo, TablaEuropea } from '@/components/ranking/tipos-europeo';
 import { db } from '@/db';
-import { DIA, MINUTO, cacheCompartida } from '@/lib/cache';
+import { DIA, MINUTO, cacheCompartida, enSegundoPlano } from '@/lib/cache';
 import { hoyMadrid } from '@/lib/callups/fechas';
-import { getAnotacionesOlimpicas } from '@/lib/queries/olimpica';
+import { getAnotacionesOlimpicas, getPanelOlimpico } from '@/lib/queries/olimpica';
 import { personasPorFieId } from '@/lib/queries/personas-ranking';
 import {
   type FilaFie,
@@ -113,6 +113,9 @@ export const tablaFieCompartida = cacheCompartida.definir({
       category === 'ABS' && (gender === 'M' || gender === 'F')
         ? getAnotacionesOlimpicas(tabla.group.weapon, gender).catch(() => null)
         : Promise.resolve(null);
+    // Mientras la persona lee la tabla se deja listo el panel de /olimpica:
+    // el botón entra luego en la pantalla ya calculada, sin esperar la base.
+    if (category === 'ABS' && (gender === 'M' || gender === 'F')) enSegundoPlano(getPanelOlimpico());
     const personas =
       tabla.format === 'INDIVIDUAL'
         ? personasPorFieId(db, tabla.rows.map((r) => r.fieId))

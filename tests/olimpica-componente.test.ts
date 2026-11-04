@@ -51,8 +51,8 @@ describe('PruebaOlimpica', () => {
   const out = html(React.createElement(PruebaOlimpica, { resultado }));
 
   it('pinta la sección con su título, la pastilla provisional y la fecha del ranking', () => {
-    expect(out).toContain('Clasificación olímpica');
-    expect(out).toContain('LA 2028');
+    // El titular de página («Clasificación olímpica · LA 2028») lo pone la
+    // ruta; la tarjeta sólo nombra su prueba.
     expect(out).toContain('Espada masculina');
     expect(out).toContain('data-provisional');
     expect(out).toContain('Provisional');
@@ -70,13 +70,12 @@ describe('PruebaOlimpica', () => {
     expect(out).toContain('África');
     // ESP es 6.º: entra entre los 4 primeros no, pero sí como mejor europeo.
     expect(resultado.equipos.find((e) => e.noc === 'ESP')?.via).toBe('ZONA');
-    expect(out).toContain('data-estado-propio="dentro"');
+    expect(out).toContain('data-estado="dentro"');
   });
 
   it('dice quién es el primero fuera y por cuántos puntos', () => {
-    expect(out).toContain('data-primer-fuera');
-    expect(out).toContain('1.º fuera');
-    const fuera = resultado.primerFuera.equipos;
+    expect(out).toContain('siguiente');
+    const fuera = resultado.primerFuera.equiposTop ?? resultado.primerFuera.equipos;
     expect(fuera).not.toBeNull();
     expect(out).toContain(`a ${fuera?.diferencia}`);
   });
@@ -87,7 +86,7 @@ describe('PruebaOlimpica', () => {
     expect(out).not.toContain('Mundial');
     expect(out).toContain('REIZLIN Roman');
     expect(out).toContain('MEHDI Salim');
-    expect(out).toContain('Siguiente:');
+    expect(out).toContain('siguiente');
     expect(out).toContain('BEN Ali');
     expect(out).toContain('data-zonales');
   });
@@ -97,9 +96,9 @@ describe('PruebaOlimpica', () => {
     expect(out).toContain('data-anfitrion');
   });
 
-  it('pensado para 320 px: filas truncadas, sin desbordes ni frases', () => {
+  it('pensado para 320 px: nombres a dos líneas, sin desbordes ni frases', () => {
     expect(out).not.toMatch(/overflow-x-(auto|scroll)/);
-    expect(out).toContain('truncate');
+    expect(out).toContain('line-clamp-2');
     expect(out).toContain('minmax(0,1fr)');
     expect(out).not.toMatch(/<p[\s>]/);
   });
@@ -112,7 +111,7 @@ describe('PruebaOlimpica', () => {
     });
     const r = calcularClasificacionOlimpica(sinEsp);
     const o = html(React.createElement(PruebaOlimpica, { resultado: r }));
-    expect(o).toContain('data-estado-propio="fuera"');
+    expect(o).toContain('data-estado-equipo="fuera"');
     expect(o).toMatch(/a \d+(,\d)? pts/);
   });
 });
