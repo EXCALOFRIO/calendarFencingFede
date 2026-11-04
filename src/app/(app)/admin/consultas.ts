@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gte, isNotNull, isNull, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { enLista as inArray } from '@/lib/sqlite';
 import { db } from '@/db';
 import {
@@ -22,6 +22,7 @@ import {
 import type { Weapon } from '@/lib/auth/session';
 import type { EntryStatus } from '@/lib/entries/state-machine';
 import { openQuarantineCount, sourceHealth } from '@/lib/ingest/runner';
+import { esInternacional } from '@/lib/utils';
 
 /**
  * Consultas de lectura del panel.
@@ -566,6 +567,161 @@ export async function contarResultadosEmparejados(): Promise<number> {
 // ------------------------------------------------------------- salud ---
 
 export type SaludIngestion = Awaited<ReturnType<typeof sourceHealth>>;
+
+// ------------------------------------------------- cambios sospechosos ---
+
+/**
+ * Lo que el calendario enseña y la fuente ya no dice —o dice distinto—.
+ *
+ * La cancelación de la Copa del Mundo de Palma lo dejó claro: Skermo seguía
+ * listándola después de que la FIE la retirara, y el evento sólo existía por
+ * Skermo, así que `disappeared_at` no saltaba nunca. La detección por fuente
+ * (cada evento con su `source_id`) no ve los cruces entre fuentes; esta
+ * consulta sí.
+ *
+ * Casos, de más a menos seguros:
+ *
+ *   RETIRADA_FIE    el hermano FIE enlazado tiene `disappeared_at`: la FIE
+ *                   la sacó de su calendario y la española sigue visible.
+ *   SIN_RASTRO_FIE  internacional futura SIN enlace FIE y sin ningún evento
+ *                   FIE vivo en el mismo país con fechas solapadas (±2 días).
+ *                   Más débil: puede ser un torneo que la FIE aún no publica.
+ *   DESAPARECIDA    `disappeared_at` puesto y sin `cancelled`: ya no sale en
+ *                   el calendario pero conviene revisarla y cerrarla.
+ *   FECHA_DISTINTA  el hermano FIE tiene otras fechas (>1 día): la FIE la
+ *                   movió y la fuente española aún dice la vieja.
+ *
+ * Es consulta, no acción: nada se marca solo. Un falso positivo que oculta
+ * un torneo cuesta un viaje; uno que se revisa a mano cuesta un clic.
+ */
+export type SospechaCambio = {
+  tipo: 'RETIRADA_FIE' | 'SIN_RASTRO_FIE' | 'DESAPARECIDA' | 'FECHA_DISTINTA';
+  eventId: string;
+  nombre: string;
+  ciudad: string | null;
+  pais: string | null;
+  inicio: string;
+  fin: string;
+  sourceUrl: string | null;
+  detalle: string;
+};
+
+export async function sospechasDeCambios(): Promise<SospechaCambio[]> {
+  const hoy = new Date().toISOString().slice(0, 10);
+
+  // Futuras visibles (ni desaparecidas ni canceladas ni absorbidas).
+  const [futuras, desaparecidas, parejas] = await Promise.all([
+    db
+      .select({
+        id: event.id, name: event.name, startDate: event.startDate,
+        endDate: event.endDate, city: event.city, country: event.country,
+        source: event.source, circuit: event.circuit, scope: event.scope,
+        sourceUrl: event.sourceUrl,
+      })
+      .from(event)
+      .where(and(
+        gte(event.startDate, hoy),
+        isNull(event.disappearedAt),
+        isNull(event.canonicalEventId),
+        eq(event.cancelled, false),
+      )),
+    db
+      .select({
+        id: event.id, name: event.name, startDate: event.startDate,
+        endDate: event.endDate, city: event.city, country: event.country,
+        source: event.source, sourceUrl: event.sourceUrl,
+      })
+      .from(event)
+      .where(and(
+        gte(event.startDate, hoy),
+        isNotNull(event.disappearedAt),
+        isNull(event.canonicalEventId),
+        eq(event.cancelled, false),
+      )),
+    db.execute<{
+      canon_id: string; canon_nombre: string; canon_inicio: string; canon_fin: string;
+      canon_ciudad: string | null; canon_pais: string | null; canon_url: string | null;
+      fie_desaparecio: string | null; fie_inicio: string; fie_fin: string;
+    }>(sql`
+      select c.id as canon_id, c.name as canon_nombre, c.start_date as canon_inicio,
+             c.end_date as canon_fin, c.city as canon_ciudad, c.country as canon_pais,
+             c.source_url as canon_url,
+             f.disappeared_at as fie_desaparecio, f.start_date as fie_inicio,
+             f.end_date as fie_fin
+      from event_link l
+      join event c on c.id = l.canonical_event_id
+      join event f on f.id = l.linked_event_id
+      where l.status in ('AUTOMATICO','CONFIRMADO','DUDOSO')
+        and c.start_date >= ${hoy}
+        and c.disappeared_at is null
+        and c.cancelled = false`),
+  ]);
+
+  const sospechas: SospechaCambio[] = [];
+
+  // Retiradas por la FIE y fechas que no cuadran, de los enlaces vivos.
+  const canonConFie = new Set<string>();
+  for (const p of parejas.rows) {
+    canonConFie.add(p.canon_id);
+    if (p.fie_desaparecio) {
+      sospechas.push({
+        tipo: 'RETIRADA_FIE', eventId: p.canon_id, nombre: p.canon_nombre,
+        ciudad: p.canon_ciudad, pais: p.canon_pais,
+        inicio: p.canon_inicio, fin: p.canon_fin, sourceUrl: p.canon_url,
+        detalle: 'La FIE la sacó de su calendario; la fuente española sigue listándola.',
+      });
+    } else {
+      const desfase =
+        Math.abs(Date.parse(p.canon_inicio) - Date.parse(p.fie_inicio)) > 86_400_000 ||
+        Math.abs(Date.parse(p.canon_fin) - Date.parse(p.fie_fin)) > 86_400_000;
+      if (desfase) {
+        sospechas.push({
+          tipo: 'FECHA_DISTINTA', eventId: p.canon_id, nombre: p.canon_nombre,
+          ciudad: p.canon_ciudad, pais: p.canon_pais,
+          inicio: p.canon_inicio, fin: p.canon_fin, sourceUrl: p.canon_url,
+          detalle: `La FIE la pone del ${p.fie_inicio} al ${p.fie_fin}.`,
+        });
+      }
+    }
+  }
+
+  // Internacionales sin rastro en la FIE: ni enlace ni torneo FIE vivo cerca.
+  const internacionales = futuras.filter((e) => esInternacional(e.source, e.scope, e.circuit));
+  const sinEnlace = internacionales.filter((e) => !canonConFie.has(e.id));
+  const fiesVivos = await (sinEnlace.length > 0
+    ? db
+        .select({ startDate: event.startDate, endDate: event.endDate, country: event.country })
+        .from(event)
+        .where(and(eq(event.source, 'fie' as never), isNull(event.disappearedAt), gte(event.endDate, hoy)))
+    : Promise.resolve([]));
+  for (const e of sinEnlace) {
+    const cerca = fiesVivos.some(
+      (f) =>
+        f.country === e.country &&
+        f.startDate <= e.endDate &&
+        f.endDate >= e.startDate,
+    );
+    if (!cerca) {
+      sospechas.push({
+        tipo: 'SIN_RASTRO_FIE', eventId: e.id, nombre: e.name,
+        ciudad: e.city, pais: e.country,
+        inicio: e.startDate, fin: e.endDate, sourceUrl: e.sourceUrl,
+        detalle: 'Internacional sin torneo FIE vivo en el mismo país y fechas: posible cancelada o aún sin publicar.',
+      });
+    }
+  }
+
+  for (const e of desaparecidas) {
+    sospechas.push({
+      tipo: 'DESAPARECIDA', eventId: e.id, nombre: e.name,
+      ciudad: e.city, pais: e.country,
+      inicio: e.startDate, fin: e.endDate, sourceUrl: e.sourceUrl,
+      detalle: 'Dejó de aparecer en su fuente; ya no sale en el calendario.',
+    });
+  }
+
+  return sospechas;
+}
 
 export async function saludDeLaIngestion() {
   const [fuentes, cuarentenaPorFuente, ultimas] = await Promise.all([
