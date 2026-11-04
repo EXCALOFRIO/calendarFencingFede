@@ -13,6 +13,20 @@ import { puntos as formatoPuntos } from './formato';
 const AVANZAR = [TIPO_TRANSICION.avanzar];
 
 /**
+ * «APELLIDO Nombre» → [apellido, nombre de pila]: la FIE escribe el
+ * apellido en mayúsculas, así que el nombre de pila empieza en la primera
+ * palabra que tiene minúsculas (con su inicial suelta si la hay:
+ * «HUSISIA N Hadley» → «HUSISIA» / «N Hadley»). Si el formato es otro,
+ * se parte por el último espacio; un solo término va entero arriba.
+ */
+function partirNombre(nombre: string): [string, string | null] {
+  const m = /^(.+?)\s+((?:\p{Lu}\s+)?\S*\p{Ll}.*)$/u.exec(nombre);
+  if (m) return [m[1], m[2]];
+  const i = nombre.lastIndexOf(' ');
+  return i > 0 ? [nombre.slice(0, i), nombre.slice(i + 1)] : [nombre, null];
+}
+
+/**
  * Una fila de ranking en UNA línea, igual en la tabla nacional y en la
  * internacional, con el orden de `FilaPersona`: puesto, avatar, bandera,
  * nombre (recortado con puntos suspensivos; sólo cuando hay algo detrás —la
@@ -69,15 +83,23 @@ export const FilaLinea = memo(function FilaLinea({
   accion?: React.ReactNode;
 }) {
   const conTras = tras !== undefined && tras !== null && tras !== false;
-  /*
-    Sin nada detrás el nombre se corta con puntos como siempre; con la marca
-    olímpica al lado puede bajar a dos renglones (nombre en la línea de arriba,
-    apellido debajo) en vez de comerse medio nombre truncado.
-  */
-  // `line-clamp` impone `-webkit-box`: va sobre el texto, no sobre el enlace
-  // flex que centra la fila — si no, rompe el centrado vertical.
-  const claseCorte = conTras ? 'line-clamp-2' : 'truncate';
   const claseNombre = cn('min-w-0 text-sm leading-5', mio ? 'font-semibold' : 'font-medium');
+  /*
+    Sin nada detrás el nombre se corta con puntos como siempre. Con la
+    marca olímpica al lado baja a dos renglones cortados POR PALABRAS —
+    «APELLIDO / Nombre», cada línea con su propio truncado—: `line-clamp`
+    cortaría donde cupiera, incluso a media palabra («SANTUCC / IO…»).
+    Dos líneas de 20 px son justo los 40 px del `min-h` de la fila.
+  */
+  const [linea1, linea2] = conTras ? partirNombre(nombre) : [null, null];
+  const contenidoNombre = conTras ? (
+    <span className="min-w-0">
+      <span className="block truncate">{linea1}</span>
+      {linea2 ? <span className="block truncate">{linea2}</span> : null}
+    </span>
+  ) : (
+    <span className="block truncate">{nombre}</span>
+  );
   /*
     El enlace ocupa el alto de la fila (40 px, en px y no en rem para que no
     crezca con la raíz del móvil) y un pseudoelemento le añade 2 px arriba y
@@ -111,19 +133,19 @@ export const FilaLinea = memo(function FilaLinea({
         {pais ? <BanderaPais pais={pais} soloBandera className="shrink-0" /> : null}
         {personaId ? (
           <EnlaceIntencion href={`${RUTA_EXPLORAR}/${personaId}`} transitionTypes={AVANZAR} title={nombre} data-nombre className={cn(claseNombre, claseEnlace)}>
-            <span className={claseCorte}>{nombre}</span>
+            {contenidoNombre}
           </EnlaceIntencion>
         ) : enlaceExterno ? (
           <a href={enlaceExterno} target="_blank" rel="noreferrer" title={nombre} data-nombre className={cn(claseNombre, claseEnlace)}>
-            <span className={claseCorte}>{nombre}</span>
+            {contenidoNombre}
             <span className="sr-only"> (se abre en otra pestaña)</span>
           </a>
         ) : paisDestino ? (
           <EnlaceIntencion href={paisDestino} transitionTypes={AVANZAR} title={nombre} data-nombre data-enlace="pais" className={cn(claseNombre, claseEnlace)}>
-            <span className={claseCorte}>{nombre}</span>
+            {contenidoNombre}
           </EnlaceIntencion>
         ) : (
-          <span className={cn(claseNombre, claseCorte)} title={nombre} data-nombre>{nombre}</span>
+          <span className={claseNombre} title={nombre} data-nombre>{contenidoNombre}</span>
         )}
         {mio ? <MarcaPropia /> : null}
         {club ? (
