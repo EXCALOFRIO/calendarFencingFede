@@ -7,6 +7,8 @@ import { enLista as inArray } from '@/lib/sqlite';
 import {
   anotarRankingOlimpico,
   calcularClasificacionesOlimpicas,
+  ordenarSoloJjoo,
+  type AnotacionOlimpica,
   type AnotacionesPrueba,
   type ArmaOlimpica,
   type EntradaPrueba,
@@ -208,6 +210,16 @@ export async function getEntradasOlimpicas(
 }
 
 /**
+ * Una persona de la lista de `/olimpica`: su fila del ranking individual más
+ * su marca olímpica — el estado y el camino MÁS CORTO que ya eligió el motor
+ * («Con su equipo» si lo que le pilla cerca es la plaza de su selección, «A
+ * 30 pts» si es la individual, «Sin decidir» para los pendientes). Sale en
+ * el orden de `ordenarSoloJjoo`: clasificados por puesto, luego los que
+ * están cerca de más probable a menos, y al final los grises que contarían.
+ */
+export type PersonaOlimpica = FilaIndividualFie & { anotacion: AnotacionOlimpica };
+
+/**
  * El panel entero de `/olimpica` en una lectura: las entradas de las seis
  * pruebas (miles de filas de `fie_clasificacion`), sus proyecciones Y las
  * anotaciones con el detalle de España — las dos salen del mismo conjunto,
@@ -225,16 +237,26 @@ const panelOlimpico = cacheCompartida.definir({
     season: number | null;
     resultados: ResultadoPrueba[];
     anotaciones: Record<string, AnotacionesPrueba>;
+    personas: Record<string, PersonaOlimpica[]>;
     pendientes: PruebaPendiente[];
   }> => {
     const { season, entradas, pendientes } = await getEntradasOlimpicas();
     const resultados = calcularClasificacionesOlimpicas(entradas, { nocsSeguidos: ['ESP'] });
     const anotaciones: Record<string, AnotacionesPrueba> = {};
+    const personas: Record<string, PersonaOlimpica[]> = {};
     for (const e of entradas) {
+      const clave = `${e.arma}-${e.genero}`;
       const a = anotarRankingOlimpico(e, { nocsSeguidos: ['ESP'] });
-      if (a) anotaciones[`${e.arma}-${e.genero}`] = a;
+      if (!a) continue;
+      anotaciones[clave] = a;
+      // La lista que ve la gente: sólo quien va hoy, quien está cerca y los
+      // pendientes que contarían — el resto del ranking individual no sale.
+      personas[clave] = ordenarSoloJjoo(e.individual, (f) => ({
+        anotacion: a.individual[String(f.fieId)],
+        posicion: f.posicion,
+      })).map((f) => ({ ...f, anotacion: a.individual[String(f.fieId)] }));
     }
-    return { season, resultados, anotaciones, pendientes };
+    return { season, resultados, anotaciones, personas, pendientes };
   },
 });
 

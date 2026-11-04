@@ -6,7 +6,8 @@ import { EstadoVacio } from '@/components/sistema/estado-vacio';
 import { SelectorSegmentado } from '@/components/sistema/selector-segmentado';
 import { rotuloPrueba } from '@/lib/sport/rotulos';
 import { capitalizar } from '@/lib/utils';
-import type { ArmaOlimpica, GeneroOlimpico, MotivoPendiente, ResultadoPrueba } from '@/lib/ranking/olimpica';
+import type { PersonaOlimpica } from '@/lib/queries/olimpica';
+import type { ArmaOlimpica, GeneroOlimpico, ResultadoPrueba } from '@/lib/ranking/olimpica';
 
 const ARMAS: readonly ArmaOlimpica[] = ['FLORETE', 'ESPADA', 'SABLE'];
 const GENEROS: readonly { valor: GeneroOlimpico; etiqueta: string }[] = [
@@ -23,12 +24,12 @@ const GENEROS: readonly { valor: GeneroOlimpico; etiqueta: string }[] = [
  */
 export function SeleccionOlimpica({
   resultados,
-  excluidos,
+  personas,
   pruebaInicial,
   nocPropio,
 }: {
   resultados: ResultadoPrueba[];
-  excluidos: Record<string, { noc: string; motivo: MotivoPendiente }[]>;
+  personas: Record<string, PersonaOlimpica[]>;
   pruebaInicial: string;
   nocPropio?: string;
 }) {
@@ -62,7 +63,7 @@ export function SeleccionOlimpica({
       {sel ? (
         <PruebaOlimpica
           resultado={sel}
-          excluidos={excluidos[`${sel.arma}-${sel.genero}`]}
+          personas={personas[`${sel.arma}-${sel.genero}`] ?? []}
           nocPropio={nocPropio}
         />
       ) : (

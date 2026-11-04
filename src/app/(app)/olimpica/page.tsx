@@ -51,12 +51,7 @@ export default async function Pagina({
 
 /** La parte que espera los datos: filtros, proyección y pendientes. */
 async function PanelServidor({ clave }: { clave?: string }) {
-  const { season, resultados, anotaciones, pendientes } = await getPanelOlimpico();
-  const excluidos: Record<string, { noc: string; motivo: never }[]> = {};
-  for (const r of resultados) {
-    const e = anotaciones[`${r.arma}-${r.genero}`]?.excluidos;
-    if (e?.length) excluidos[`${r.arma}-${r.genero}`] = e as never;
-  }
+  const { season, resultados, personas, pendientes } = await getPanelOlimpico();
 
   const valida = resultados.some((r) => `${r.arma}-${r.genero}` === clave);
   const pruebaInicial = valida ? clave! : `${resultados[0]?.arma ?? 'ESPADA'}-${resultados[0]?.genero ?? 'F'}`;
@@ -67,7 +62,7 @@ async function PanelServidor({ clave }: { clave?: string }) {
         {season ? `Proyección con el ranking de la temporada ${season}.` : null}
       </p>
       {resultados.length > 0 ? (
-        <SeleccionOlimpica resultados={resultados} excluidos={excluidos} pruebaInicial={pruebaInicial} />
+        <SeleccionOlimpica resultados={resultados} personas={personas} pruebaInicial={pruebaInicial} />
       ) : (
         <EstadoVacio
           titulo="Sin datos de clasificación olímpica"
