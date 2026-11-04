@@ -398,6 +398,7 @@ function eventoDeGrupo(g: Grupo): { evento: EventView; pruebas: PruebaPasada[] }
     notes: null,
     lastSeenAt: new Date(0),
     disappearedAt: null,
+    cancelled: false,
     competitions: pruebas.map((p) => ({
       id: p.id,
       weapon: p.arma,

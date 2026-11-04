@@ -1,6 +1,6 @@
 'use client';
 
-import { Flag, MapPin } from 'lucide-react';
+import { Ban, Flag, MapPin } from 'lucide-react';
 import * as React from 'react';
 import { InsigniaOrganismo } from '@/components/insignia-organismo';
 import { Pastilla } from '@/components/sistema/pastilla';
@@ -111,14 +111,23 @@ export function CabeceraFicha({ evento }: { evento: EventView }) {
           <Pastilla tamano="md" className="border-border bg-transparent text-xs">
             {CIRCUIT_LABEL[evento.circuit] ?? evento.circuit}
           </Pastilla>
-          {/* Un torneo pasado se abre para ver quién ganó: icono y palabra, no solo color. */}
-          {terminado ? (
+          {/*
+            Cancelada por la organización: lo primero que hay que saber del
+            torneo, icono y palabra, no solo color. Un torneo cancelado no
+            «terminó»: si se cumplió su fecha diría una mentira.
+          */}
+          {evento.cancelled ? (
+            <Pastilla tamano="md" tono="peligro" icono={Ban}>
+              Cancelada
+            </Pastilla>
+          ) : terminado ? (
+            // Un torneo pasado se abre para ver quién ganó.
             <Pastilla tamano="md" icono={Flag} className="bg-muted text-xs text-muted-foreground">
               Terminada
             </Pastilla>
           ) : null}
         </div>
-        <h2 data-titulo-ficha className="text-3xl leading-tight text-balance">
+        <h2 data-titulo-ficha className={cn('text-3xl leading-tight text-balance', evento.cancelled && 'line-through decoration-[1.5px]')}>
           {titularTorneo(evento.name)}
         </h2>
         <dl className="grid grid-cols-2 gap-x-3 gap-y-1">

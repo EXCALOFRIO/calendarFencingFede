@@ -263,8 +263,8 @@ function Retrato({
       width={medida}
       height={medida}
       // La cabecera de la ficha está siempre a la vista: sin esperar al lazy.
-      loading={tamano === 'heroe' ? 'eager' : 'lazy'}
-      fetchPriority={tamano === 'heroe' ? 'high' : 'low'}
+      loading={prioritaria ? 'eager' : 'lazy'}
+      fetchPriority={prioritaria ? 'high' : 'low'}
       decoding="async"
       referrerPolicy="no-referrer"
       className={`absolute inset-0 size-full object-cover ${cargada ? '' : 'invisible'}`}

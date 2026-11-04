@@ -34,7 +34,7 @@ const evento = (id: string, sobre: Partial<EventView> = {}): EventView => ({
   endDate: '2026-11-02', venue: 'Pabellón', venueAddress: 'Calle 1', city: 'Madrid', country: 'ESP',
   geoLat: '40', geoLon: '-3', timezone: 'Europe/Madrid', officialSite: 'https://example.test', imageUrl: null,
   circuit: 'TNR', scope: 'NACIONAL', regionalFederation: 'FMEsgrima', notes: 'Observaciones',
-  lastSeenAt: new Date('2026-10-07T10:00:00Z'), disappearedAt: null, competitions: [prueba(`${id}-p1`)],
+  lastSeenAt: new Date('2026-10-07T10:00:00Z'), disappearedAt: null, cancelled: false, competitions: [prueba(`${id}-p1`)],
   documents: [{ id: 'd1', title: 'Convocatoria', url: 'https://example.test/c.pdf', kind: 'convocatoria' }],
   liveLinks: [], linkedEvents: [{
     id: 'fie-1', source: 'fie', sourceId: 'fie-2027-1', sourceUrl: null, name: 'TNR FIE', startDate: '2026-11-01',

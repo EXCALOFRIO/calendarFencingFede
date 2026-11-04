@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, Flag } from 'lucide-react';
+import { Ban, Check, Flag } from 'lucide-react';
 import * as React from 'react';
 import { InsigniaOrganismo } from '@/components/insignia-organismo';
 import { VerMas } from '@/components/sistema/cabecera-seccion';
@@ -210,13 +210,15 @@ function FilaEvento({
       titulo={titularTorneo(evento.name)}
       ciudad={evento.city}
       pais={evento.country}
-      apagado={terminado}
+      apagado={terminado || evento.cancelled}
+      tachado={evento.cancelled}
       onClick={() => onAbrir(evento)}
       datos={{
         'data-barra': 'torneo',
         'data-agenda': 'tarjeta',
         'data-evento': evento.id,
         'data-terminado': terminado || undefined,
+        'data-cancelada': evento.cancelled || undefined,
       }}
       estado={
         <EstadoDelEvento
@@ -264,6 +266,26 @@ function EstadoDelEvento({
   entreSemana: boolean;
   enPie: boolean;
 }) {
+  /*
+    Cancelada por la organización: se queda en el calendario, tachada y con
+    la pastilla —sin plazo ni «Entre semana», que invitarían a darse prisa
+    por un torneo que no se tira. Si se había pedido estar, «Inscrito» sigue
+    siendo verdad y se mantiene.
+  */
+  if (evento.cancelled) {
+    return (
+      <>
+        <Pastilla icono={Ban} className="text-muted-foreground">
+          Cancelada
+        </Pastilla>
+        {inscrito ? (
+          <Pastilla tono="ok" icono={Check}>
+            Inscrito
+          </Pastilla>
+        ) : null}
+      </>
+    );
+  }
   if (terminado) {
     return enPie ? null : (
       <Pastilla icono={Flag} className="text-muted-foreground">
@@ -303,6 +325,8 @@ const SANGRIA_PIE = 'border-t-0 pr-3 pl-18';
  * que se tira. Antes del torneo no se pinta: el enlace ya está en la ficha.
  */
 function PieDeEvento({ evento, pasado, hoy }: { evento: EventView; pasado?: PasadoDeTarjeta; hoy: string }) {
+  // Cancelada: ni «En directo» ni resultados —de lo que no se tiró no hay nada que enseñar.
+  if (evento.cancelled) return null;
   const terminado = estaTerminado(evento, hoy);
   const enlace = enlaceDeTarjeta(evento, hoy);
   const estado = enlace ? estadoDirecto(rangoRealDeEvento(evento), hoy, evento.timezone) : null;

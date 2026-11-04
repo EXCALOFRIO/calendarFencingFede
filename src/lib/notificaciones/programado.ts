@@ -80,7 +80,9 @@ async function avisosCalendario(db: DbAvisos, ahora: Date): Promise<{ perfiles: 
       SELECT id FROM event WHERE first_seen_at >= ${ahora.getTime() - HORAS_NUEVA * 3_600_000}
         AND cancelled = 0 AND disappeared_at IS NULL`),
   ]);
-  const eventos: EventoCalendario[] = vistas.map((e) => ({
+  // Un torneo cancelado no avisa: ni «nuevo» (ya lo filtra la consulta de
+  // arriba) ni «cierra el plazo», porque ya no hay nada que cerrar.
+  const eventos: EventoCalendario[] = vistas.filter((e) => !e.cancelled).map((e) => ({
     id: e.id, name: e.name, startDate: e.startDate, endDate: e.endDate, city: e.city,
     competitions: e.competitions.map((c) => ({
       weapon: c.weapon, gender: c.gender, category: c.category, format: c.format,

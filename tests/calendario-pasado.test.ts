@@ -74,6 +74,7 @@ function evento(sobre: Partial<EventView>): EventView {
     notes: null,
     lastSeenAt: new Date(0),
     disappearedAt: null,
+    cancelled: false,
     competitions: [prueba({})],
     documents: [],
     liveLinks: [],

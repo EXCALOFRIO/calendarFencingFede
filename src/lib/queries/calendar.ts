@@ -188,6 +188,12 @@ export type EventView = {
   notes: string | null;
   lastSeenAt: Date;
   disappearedAt: Date | null;
+  /**
+   * La organización la canceló (lo marca la fuente, o el equipo técnico a
+   * mano). El torneo se sigue enseñando —ocultarlo diría que nunca estuvo—
+   * pero con «Cancelada» y sin plazos que inviten a nada.
+   */
+  cancelled: boolean;
   competitions: CompetitionView[];
   documents: { id: string; title: string; url: string; kind: string | null }[];
   liveLinks: { id: string; platform: string; kind: string; url: string; label: string | null }[];
@@ -443,8 +449,8 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
 
   /**
    * Sólo las columnas que la vista de abajo lee: `select()` traía además
-   * `sourceId`, `contentHash`, `sourceModifiedAt`, `firstSeenAt`, `cancelled`
-   * y `canonicalEventId` de cada evento en cada carga del calendario —la
+   * `sourceId`, `contentHash`, `sourceModifiedAt`, `firstSeenAt` y
+   * `canonicalEventId` de cada evento en cada carga del calendario —la
    * pantalla más caliente de la aplicación— sin gastarlas nunca.
    */
   const eventRows = await db
@@ -470,6 +476,7 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
       notes: event.notes,
       lastSeenAt: event.lastSeenAt,
       disappearedAt: event.disappearedAt,
+      cancelled: event.cancelled,
     })
     .from(event)
     .where(and(...conditions))
@@ -889,6 +896,7 @@ export async function listEvents(filters: CalendarFilters = {}): Promise<EventVi
       notes: e.notes,
       lastSeenAt: e.lastSeenAt,
       disappearedAt: e.disappearedAt,
+      cancelled: e.cancelled,
       documents: (documentsByEvent.get(e.id) ?? []).map((d) => ({
         id: d.id,
         title: d.title,
@@ -1554,7 +1562,8 @@ const ultimaLecturaCompartida = cacheCompartida.definir({
  *
  * Es el único dato que enseña la pantalla de acceso, y es real: sale de
  * contar la tabla, no de un número escrito a mano que envejece. Cuenta
- * pruebas y no torneos porque una prueba es a lo que uno se inscribe.
+ * pruebas y no torneos porque una prueba es a lo que uno se inscribe —y a
+ * una cancelada ya no se inscribe nadie, así que tampoco cuenta.
  */
 export const contarPruebas = cache(async (): Promise<number> => {
   const hoy = new Date().toISOString().slice(0, 10);
@@ -1566,6 +1575,7 @@ export const contarPruebas = cache(async (): Promise<number> => {
       and(
         isNull(event.disappearedAt),
         isNull(event.canonicalEventId),
+        eq(event.cancelled, false),
         gte(event.endDate, hoy),
       ),
     );

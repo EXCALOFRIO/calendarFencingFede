@@ -96,6 +96,7 @@ function evento(over: Partial<EventView> = {}): EventView {
     notes: null,
     lastSeenAt: new Date(),
     disappearedAt: null,
+    cancelled: false,
     competitions: [prueba()],
     documents: [],
     liveLinks: [],

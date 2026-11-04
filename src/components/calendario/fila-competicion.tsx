@@ -32,6 +32,7 @@ export function FilaCompeticion({
   detalle,
   estado,
   apagado = false,
+  tachado = false,
   onClick,
   className,
   datos,
@@ -48,6 +49,8 @@ export function FilaCompeticion({
   estado?: React.ReactNode;
   /** Ya celebrada: fecha y nombre en gris, sin velo de opacidad. */
   apagado?: boolean;
+  /** Cancelada por la organización: el nombre, tachado. */
+  tachado?: boolean;
   onClick?: () => void;
   className?: string;
   /** Atributos `data-*` para la delegación de eventos y las capturas. */
@@ -70,6 +73,7 @@ export function FilaCompeticion({
           className={cn(
             'min-w-0 text-sm leading-snug font-semibold break-words',
             apagado ? 'text-muted-foreground' : 'text-foreground',
+            tachado && 'line-through decoration-[1.5px]',
           )}
         >
           {titulo}

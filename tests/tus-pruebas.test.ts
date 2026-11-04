@@ -77,6 +77,7 @@ function evento(over: Partial<EventView> = {}): EventView {
     notes: null,
     lastSeenAt: new Date(),
     disappearedAt: null,
+    cancelled: false,
     competitions: [prueba()],
     documents: [],
     liveLinks: [],
@@ -182,6 +183,23 @@ describe('los plazos que cierran pronto', () => {
       solicitudes: [solicitud({ competitionId: 'c-9' })],
     });
     expect(filas.map((f) => f.tipo)).toEqual(['inscrito']);
+  });
+
+  it('un torneo cancelado no es plazo ni próxima; una solicitud suya se queda, marcada', () => {
+    const pedida = prueba({ id: 'c-9' });
+    const caida = prueba({ id: 'c-11', status: { ...prueba().status, daysLeft: 5 } });
+    const filas = filasDeTusPruebas({
+      eventos: [
+        evento({ id: 'e-1', cancelled: true, competitions: [pedida] }),
+        evento({ id: 'e-2', cancelled: true, competitions: [caida] }),
+      ],
+      tiradores: [TIRADORA],
+      solicitudes: [solicitud({ competitionId: 'c-9' })],
+    });
+    // Estabas dentro cuando cayó: la fila se queda, pero marcada y sin plazo.
+    expect(filas.map((f) => f.tipo)).toEqual(['inscrito']);
+    expect(filas[0].cancelada).toBe(true);
+    expect(filas[0].diasCierre).toBeNull();
   });
 
   it('una prueba ya cerrada no se anuncia', () => {

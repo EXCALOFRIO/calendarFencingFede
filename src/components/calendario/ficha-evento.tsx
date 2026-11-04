@@ -266,6 +266,12 @@ export function FichaEvento({
   );
   const terminado = torneoTerminado(evento);
   const hoy = hoyMadrid();
+  /*
+    Cancelada por la organización: no hubo resultados que buscar —nunca se
+    tiró— ni una acción principal que proponer. La banda de inscripción es
+    la que dice qué pasó (`BandaPlazo`), pasara o no la fecha del torneo.
+  */
+  const celebrable = terminado && !evento.cancelled;
 
   return (
     <div className="flex flex-col gap-4 px-4 pt-2 pb-10">
@@ -279,7 +285,7 @@ export function FichaEvento({
 
       {prueba ? <CabeceraPrueba evento={evento} prueba={prueba} hoy={hoy} /> : null}
 
-      {terminado ? (
+      {celebrable ? (
         <ResultadosTorneo
           eventoId={evento.id}
           retorno={retornoCalendario}
@@ -290,8 +296,12 @@ export function FichaEvento({
 
       {prueba ? (
         <>
-          {terminado ? null : <BandaPlazo evento={evento} prueba={prueba} />}
-          <BandaDondeYCuando evento={evento} prueba={prueba} principal={!terminado} />
+          {celebrable ? null : <BandaPlazo evento={evento} prueba={prueba} />}
+          <BandaDondeYCuando
+            evento={evento}
+            prueba={prueba}
+            principal={!terminado && !evento.cancelled}
+          />
           <BandaInscritosYFuentes
             evento={evento}
             prueba={prueba}
@@ -322,12 +332,15 @@ function CabeceraPrueba({ evento, prueba, hoy }: { evento: EventView; prueba: Co
         <span className="text-base font-semibold text-foreground">{nombre}</span>
         {categoria ? <Pastilla tamano="md">{categoria}</Pastilla> : null}
       </p>
-      <PastillaDirectoDePrueba
-        enlace={prueba.enlaceDirecto ?? evento.enlaceDirecto}
-        fecha={prueba.competitionDate}
-        evento={evento}
-        hoy={hoy}
-      />
+      {/* Un torneo cancelado no está «en directo» el día que habría empezado. */}
+      {evento.cancelled ? null : (
+        <PastillaDirectoDePrueba
+          enlace={prueba.enlaceDirecto ?? evento.enlaceDirecto}
+          fecha={prueba.competitionDate}
+          evento={evento}
+          hoy={hoy}
+        />
+      )}
     </div>
   );
 }
@@ -348,6 +361,19 @@ function BandaPlazo({
   evento: EventView;
   prueba: CompetitionView;
 }) {
+  /*
+    Torneo cancelado: la banda no enseña plazos ni condiciones —nada invita
+    a actuar—, sólo dice lo que pasó.
+  */
+  if (evento.cancelled) {
+    return (
+      <Banda titulo="Inscripción">
+        <p className="text-sm text-muted-foreground">
+          La organización la ha cancelado.
+        </p>
+      </Banda>
+    );
+  }
   const { cuotas, condiciones, requisitos } = inscripcionDe(evento, prueba);
   /*
     Un plazo que sólo dice la convocatoria no entra en la barra —la barra son

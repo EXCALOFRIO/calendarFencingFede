@@ -240,9 +240,20 @@ async function armazon(perfil: SessionProfile) {
  * + lo de la cuenta). La sesión la mide `armazon` aparte, así que aquí el
  * perfil llega ya resuelto —en la página real la promesa tarda lo que tarda
  * `requireProfile` y corre en paralelo con lo compartido.
+ *
+ * Devuelve dos promesas: `critica` es lo que la página espera para pintar y
+ * `pasadoInicial` lo que el stream resuelve al final. La medida recoge las
+ * dos, que es lo que la ruta trabaja en total.
  */
 async function calendario(perfil: SessionProfile, mes: string | null) {
-  return cargarPantallaCalendario({ perfil: Promise.resolve(perfil), hoy: HOY, mes, meses: 3 });
+  const { critica, pasadoInicial } = cargarPantallaCalendario({
+    perfil: Promise.resolve(perfil),
+    hoy: HOY,
+    mes,
+    meses: 3,
+  });
+  const [vista, pasado] = await Promise.all([critica, pasadoInicial]);
+  return { ...vista, pasadoInicial: pasado };
 }
 
 async function perfilCompleto(perfil: SessionProfile, id: string) {

@@ -120,6 +120,7 @@ const evento: EventView = {
   notes: null,
   lastSeenAt: new Date('2026-10-01T12:00:00Z'),
   disappearedAt: null,
+  cancelled: false,
   competitions: [prueba],
   documents: [],
   liveLinks: [],

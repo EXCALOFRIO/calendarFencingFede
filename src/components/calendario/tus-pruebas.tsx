@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react';
+import { Ban, ChevronDown } from 'lucide-react';
 import { EnlaceIntencion } from '@/components/enlace-intencion';
 import { FilaCompeticion } from '@/components/calendario/fila-competicion';
 import { PastillaPlazo } from '@/components/calendario/tarjeta-bloque';
@@ -67,14 +67,21 @@ export function TusPruebas({
                 titulo={titularTorneo(f.eventName)}
                 ciudad={f.city}
                 pais={f.country}
+                apagado={f.cancelada}
+                tachado={f.cancelada}
                 estado={
                   <>
+                    {f.cancelada ? (
+                      <Pastilla icono={Ban} className="text-muted-foreground">
+                        Cancelada
+                      </Pastilla>
+                    ) : null}
                     {f.solicitud ? (
                       <Pastilla tono={TONO_SOLICITUD[f.solicitud] ?? 'neutro'}>
                         {ENTRY_STATUS_LABEL[f.solicitud]}
                       </Pastilla>
                     ) : null}
-                    {f.diasCierre !== null ? (
+                    {!f.cancelada && f.diasCierre !== null ? (
                       <PastillaPlazo
                         plazo={{
                           texto: textoDePlazo(f.diasCierre),

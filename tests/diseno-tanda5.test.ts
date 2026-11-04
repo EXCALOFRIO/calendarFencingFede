@@ -51,7 +51,7 @@ const evento: EventView = {
   id: 'ev1', source: 'fie', sourceUrl: null, name: 'Tournoi Satellite', startDate: '2026-09-05', endDate: '2026-09-05',
   venue: null, venueAddress: null, city: 'Reykjavik', country: 'IS', geoLat: null, geoLon: null, timezone: null,
   officialSite: null, imageUrl: null, imageSource: null, circuit: 'SATELITE', circuitFie: null, scope: 'INTERNACIONAL',
-  regionalFederation: null, notes: null, lastSeenAt: new Date(0), disappearedAt: null, competitions: [prueba],
+  regionalFederation: null, notes: null, lastSeenAt: new Date(0), disappearedAt: null, cancelled: false, competitions: [prueba],
   documents: [], liveLinks: [], linkedEvents: [], sources: [], datosExtraidos: [],
 } as EventView;
 const pasada: PruebaPasada = {

@@ -681,7 +681,7 @@ function buildVEvent(
   lines.push(`CATEGORIES:${categorias.map(escapeIcalText).join(',')}`);
 
   lines.push('TRANSP:OPAQUE');
-  lines.push(ev.disappearedAt ? 'STATUS:CANCELLED' : 'STATUS:CONFIRMED');
+  lines.push(ev.disappearedAt || ev.cancelled ? 'STATUS:CANCELLED' : 'STATUS:CONFIRMED');
 
   /**
    * SEQUENCE derivado del contenido.
@@ -706,7 +706,7 @@ function buildVEvent(
     ev.endDate,
     location ?? '',
     comp.feeEur ?? '',
-    ev.disappearedAt ? 'cancelado' : '',
+    ev.disappearedAt || ev.cancelled ? 'cancelado' : '',
     ...comp.deadlines.map((d) => `${d.type}:${d.deadlineAt.toISOString()}`),
   ].join('|');
   lines.push(`SEQUENCE:${fnv1a(huella) % 65_536}`);

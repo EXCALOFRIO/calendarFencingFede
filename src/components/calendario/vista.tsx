@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  Ban,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -148,6 +149,11 @@ function anclaDeMes(iso: string): Date {
   return new Date(anio, mes - 1, 1);
 }
 
+/** ¿La prop viaja como promesa por el stream? (ver `pasadoInicial`). */
+function esPromesa<T>(x: T | Promise<T> | null | undefined): x is Promise<T> {
+  return typeof (x as Promise<T> | null | undefined)?.then === 'function';
+}
+
 /**
  * ===========================================================================
  * EL ÁMBITO: TODO, NACIONAL O INTERNACIONAL
@@ -227,10 +233,13 @@ export function VistaCalendario({
   /** Torneo cuya ficha se abre al llegar (`evento=` de la dirección). */
   eventoInicial?: string | null;
   /**
-   * Lo ya celebrado del tramo con el que se abre, leído en el servidor. El de
-   * cualquier otro tramo se pide con `cargarPasado` al llegar a él.
+   * Lo ya celebrado del tramo con el que se abre. Puede venir resuelto o como
+   * promesa aún en el aire: la página lo lanza sin esperarlo para que el
+   * calendario pinte ya, y entra por el stream cuando se resuelve («Streaming
+   * data to the client»). El de cualquier otro tramo se pide con
+   * `cargarPasado` al llegar a él.
    */
-  pasadoInicial?: TramoPasado | null;
+  pasadoInicial?: TramoPasado | Promise<TramoPasado | null> | null;
   /** Lo ya celebrado de un tramo, con sus resultados de Explorar. */
   cargarPasado?: (desde: string, hasta: string) => Promise<TramoPasado | null>;
   /**
@@ -461,13 +470,6 @@ export function VistaCalendario({
    * intención (el puntero sobre una flecha, un toque, el foco), y mientras el
    * pedido no ha llegado se sigue pintando el que había.
    */
-  const [tramos, setTramos] = React.useState<
-    Record<string, { estado: EstadoDelMes; datos: TramoPasado | null }>
-  >(() =>
-    pasadoInicial
-      ? { [claveDeTramo(pasadoInicial)]: { estado: 'listo', datos: pasadoInicial } }
-      : {},
-  );
   const tramoDe = React.useCallback(
     (a: Date, v: Vista) => {
       const t = tramoDeMeses(a.getFullYear(), a.getMonth(), v === 'mes' ? 1 : 3);
@@ -475,6 +477,22 @@ export function VistaCalendario({
     },
     [hoy],
   );
+
+  const [tramos, setTramos] = React.useState<
+    Record<string, { estado: EstadoDelMes; datos: TramoPasado | null }>
+  >(() => {
+    if (!pasadoInicial) return {};
+    if (!esPromesa(pasadoInicial)) {
+      return { [claveDeTramo(pasadoInicial)]: { estado: 'listo', datos: pasadoInicial } };
+    }
+    /*
+      Viene por el stream como promesa: el tramo del arranque se marca en
+      camino para que `pedirTramo` no lo pida dos veces ni el mes salte a
+      «sin competiciones» mientras llega.
+    */
+    const t = tramoDe(anclaPedida, vistaPedida);
+    return t ? { [claveDeTramo(t)]: { estado: 'cargando', datos: null } } : {};
+  });
 
   /** El tramo guardado que ya cubre `t`, si lo hay: un mes dentro de un trimestre ya leído. */
   const cubiertoPor = React.useCallback(
@@ -496,7 +514,8 @@ export function VistaCalendario({
       if (!t || !cargarPasado) return;
       const clave = claveDeTramo(t);
       const guardados = tramosVistos.current;
-      if (enCamino.current.has(clave) || guardados[clave]?.estado === 'listo') return;
+      const guardado = guardados[clave];
+      if (enCamino.current.has(clave) || guardado?.estado === 'listo' || guardado?.estado === 'cargando') return;
       const cubre = Object.values(guardados).some(
         (x) => x.estado === 'listo' && x.datos && x.datos.desde <= t.desde && x.datos.hasta >= t.hasta,
       );
@@ -519,6 +538,64 @@ export function VistaCalendario({
     [tramoDe, anclaPedida, vistaPedida],
   );
   const clavePedida = tramoPedido ? claveDeTramo(tramoPedido) : null;
+
+  /*
+    El pasado del tramo de arranque puede llegar como promesa: la página lo
+    lanza sin esperarlo y entra por el stream cuando se resuelve. El tramo ya
+    está marcado «cargando» desde el primer pintado; aquí sólo se recoge su
+    llegada. Se registra la clave en `enCamino` antes que el `pedirTramo` de
+    abajo, que de otro modo la pediría otra vez.
+
+    Un `null` es el adelanto que no entregó nada (una lectura del servidor
+    que falla de vez en cuando): se reintenta por la acción, el mismo camino
+    de siempre, una vez —el pedido de `pedirTramo` marca su propio
+    «cargando» y, si también falla, sí deja el aviso.
+  */
+  const pasadoPromesa = esPromesa(pasadoInicial) ? pasadoInicial : null;
+  React.useEffect(() => {
+    if (!pasadoPromesa) return;
+    const clave = clavePedida;
+    const tramo = tramoPedido;
+    if (clave) enCamino.current.add(clave);
+    let vigente = true;
+    const reintentar = () => {
+      if (!clave || !tramo) return;
+      // `pedirTramo` consulta el mapa vivo: hay que quitar la marca de
+      // «cargando» que aún lee, o no reintentaría nada.
+      delete tramosVistos.current[clave];
+      enCamino.current.delete(clave);
+      pedirTramo(tramo);
+    };
+    pasadoPromesa
+      .then((datos) => {
+        if (!vigente) return;
+        if (!datos) {
+          reintentar();
+          return;
+        }
+        const destino = claveDeTramo(datos);
+        enTransicion(() =>
+          setTramos((x) => {
+            const siguiente = { ...x };
+            // La clave del tramo resuelto es la pedida; si alguna vez
+            // difiriera, la marca de arranque no se queda «cargando».
+            if (clave && destino !== clave) delete siguiente[clave];
+            siguiente[destino] = { estado: 'listo', datos };
+            return siguiente;
+          }),
+        );
+        if (clave) enCamino.current.delete(clave);
+      })
+      .catch(() => {
+        if (vigente) reintentar();
+      });
+    return () => {
+      vigente = false;
+    };
+    // La promesa no cambia de identidad y la clave que espera es la de arranque.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pasadoPromesa]);
+
   React.useEffect(() => {
     pedirTramo(tramoPedido);
     // Solo al pedir otro tramo: el propio `tramoPedido` es un objeto nuevo en cada render.
@@ -858,7 +935,8 @@ export function VistaCalendario({
   const proximo = React.useMemo(
     () =>
       [...filtrados]
-        .filter((e) => e.endDate >= hoy)
+        // «Tu próxima competición» no puede ser una que la organización canceló.
+        .filter((e) => e.endDate >= hoy && !e.cancelled)
         .sort((a, b) => a.startDate.localeCompare(b.startDate))[0] ?? null,
     [filtrados, hoy],
   );
@@ -1531,7 +1609,8 @@ function FranjaDestacada({
   // Buscando, la coincidencia puede ser de hace años: no está «en marcha» por haber empezado antes de hoy.
   const terminado = diasHasta(evento.endDate) < 0;
   const enMarcha = dias <= 0 && !terminado;
-  const plazo = terminado ? null : plazoDe(evento);
+  const cancelada = evento.cancelled;
+  const plazo = terminado || cancelada ? null : plazoDe(evento);
 
   return (
     <div className={cn('flex min-h-11 items-center gap-2', clase)}>
@@ -1543,7 +1622,13 @@ function FranjaDestacada({
       >
         {/* Ancho fijo: la cifra llega con `font-display: swap` y su métrica no debe mover el renglón. */}
         <span className="flex w-12 shrink-0 flex-col items-start leading-none">
-          {terminado ? (
+          {cancelada ? (
+            // La cancelación es el dato; una cuenta atrás diría que se tira.
+            <>
+              <Ban className="size-5 text-muted-foreground" aria-hidden />
+              <span className="pt-1 text-xs text-muted-foreground">Cancelada</span>
+            </>
+          ) : terminado ? (
             <>
               <Flag className="size-5 text-muted-foreground" aria-hidden />
               <span className="pt-1 text-xs text-muted-foreground">Terminada</span>

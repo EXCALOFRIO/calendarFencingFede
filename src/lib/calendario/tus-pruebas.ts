@@ -55,6 +55,8 @@ export type FilaTusPruebas = {
   solicitud: EntryStatus | null;
   /** Días que quedan de plazo; `null` cuando no hay cierre que contar. */
   diasCierre: number | null;
+  /** La organización la canceló: se sigue enseñando, tachada y sin plazo. */
+  cancelada?: boolean;
 };
 
 /**
@@ -125,6 +127,8 @@ export function filasDeTusPruebas({
    */
   const candidatas: { evento: EventView; prueba: CompetitionView; tirador: TiradorDeCuenta }[] = [];
   for (const evento of eventos) {
+    // Ni plazo ni «próxima» de un torneo que la organización ya canceló.
+    if (evento.cancelled) continue;
     for (const prueba of evento.competitions) {
       if (prueba.format !== 'INDIVIDUAL' || prueba.status.closed) continue;
       for (const tirador of tiradores) {
@@ -221,5 +225,6 @@ function fila(
     athleteName: tirador.fullName,
     solicitud: extra.solicitud ?? null,
     diasCierre: extra.diasCierre ?? null,
+    cancelada: evento.cancelled,
   };
 }

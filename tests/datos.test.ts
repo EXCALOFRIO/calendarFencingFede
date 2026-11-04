@@ -251,6 +251,7 @@ describe('un plazo calculado nunca se presenta igual que uno publicado', () => {
       notes: null,
       lastSeenAt: new Date(),
       disappearedAt: null,
+      cancelled: false,
       documents: [],
       liveLinks: [],
       // Campos nuevos de `EventView`: el emparejado del mismo torneo entre

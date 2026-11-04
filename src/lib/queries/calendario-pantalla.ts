@@ -5,20 +5,27 @@ import { getManagedAthletes, type SessionProfile } from '@/lib/auth/session';
 import { ENTRY_STATUS_LABEL, type EntryStatus } from '@/lib/entries/state-machine';
 import { getCurrentSeason, getDataFreshness } from './calendar';
 import { calendarioCompartido } from './calendario-cache';
+import type { TramoPasado } from './calendario-pasado-modelo';
 import { tramoDeMeses, tramoPasadoDe } from './calendario-pasado-tramo';
 
 /**
- * Lo que lee la pantalla principal (el calendario), en UNA tanda paralela:
+ * Lo que lee la pantalla principal (el calendario), en DOS promesas, no en un
+ * solo `await`:
  *
- * - común, de la caché compartida: la temporada de hoy en adelante y lo ya
- *   celebrado del tramo con el que se abre;
- * - de la cuenta, en la petición: sus tiradores y, encadenadas a ellos sin
- *   esperar al resto, sus inscripciones solicitadas;
- * - del armazón (`getCurrentSeason`, `getDataFreshness`): memorizadas por
- *   petición con React `cache`, así que el layout y esta página las leen una
- *   sola vez.
+ * - `critica`: lo que hace falta para pintar —la temporada de hoy en
+ *   adelante (caché compartida), la cuenta (sus tiradores y sus inscripciones,
+ *   encadenadas a la sesión sin esperar al resto) y el armazón (`getCurrentSeason`,
+ *   `getDataFreshness`: memorizadas por petición con React `cache`, así que el
+ *   layout y esta página las leen una sola vez). La página la espera y pinta.
+ * - `pasadoInicial`: lo ya celebrado del tramo con el que se abre. Arranca
+ *   a la vez pero NO se espera aquí: viaja como promesa hasta la vista y
+ *   entra por el stream cuando se resuelve, sin frenar el primer pintado
+ *   (ver «Streaming data to the client» en la guía de streaming de Next).
+ *
+ * Si la sesión falla, `critica` rechaza igual que antes (`NO_AUTENTICADO` lo
+ * recoge la frontera de error).
  */
-export async function cargarPantallaCalendario({
+export function cargarPantallaCalendario({
   perfil,
   hoy,
   mes,
@@ -36,15 +43,17 @@ export async function cargarPantallaCalendario({
   mes: string | null;
   /** Uno (vista de mes) o tres (trimestre). */
   meses: number;
-}) {
+}): {
+  critica: ReturnType<typeof juntaCritica>;
+  pasadoInicial: Promise<TramoPasado | null> | null;
+} {
   const [anio, numeroMes] = (mes ?? hoy.slice(0, 7)).split('-').map(Number);
   const arranque = tramoDeMeses(anio, numeroMes - 1, meses);
   const tramoInicial = tramoPasadoDe(arranque.desde, arranque.hasta, hoy);
 
   /*
     Lo de la cuenta cuelga de la sesión y nada más: sus tiradores y, a la
-    vez, sus inscripciones pedidas. Si la sesión falla, la tanda entera
-    rechaza igual que antes (`NO_AUTENTICADO` lo recoge la frontera de error).
+    vez, sus inscripciones pedidas.
   */
   const cuenta = perfil.then(async (p) => {
     const atletas = await getManagedAthletes(p.profileId);
@@ -52,20 +61,38 @@ export async function cargarPantallaCalendario({
     return { perfil: p, atletas, inscripciones: mapa, solicitudes: filas };
   });
 
-  const [eventos, { perfil: sesion, atletas, inscripciones, solicitudes }, temporada, frescura, pasadoInicial] = await Promise.all([
-    calendarioCompartido.eventosDelCalendario(),
-    cuenta,
-    getCurrentSeason(),
-    getDataFreshness(),
-    /*
-      Un fallo aquí no tumba la pantalla: la vista lo vuelve a pedir. Se
-      adelanta el del tramo de arranque porque casi siempre lo hay (el día 5,
-      los cuatro primeros días del mes ya pasaron) y porque al volver desde una
-      edición de 2019 el calendario tiene que abrirse ya pintado.
-    */
-    tramoInicial ? calendarioCompartido.tramoPasado({ ...tramoInicial, hoy }).catch(() => null) : null,
-  ]);
-  return { perfil: sesion, eventos, atletas, inscripciones, solicitudes, temporada, frescura, pasadoInicial };
+  /*
+    Un fallo del tramo no tumba la pantalla: la vista lo vuelve a pedir. Se
+    adelanta el del tramo de arranque porque casi siempre lo hay (el día 5,
+    los cuatro primeros días del mes ya pasaron) y porque al volver desde una
+    edición de 2019 el calendario tiene que abrirse ya pintado.
+  */
+  const pasadoInicial = tramoInicial
+    ? calendarioCompartido.tramoPasado({ ...tramoInicial, hoy }).catch(() => null)
+    : null;
+
+  const critica = juntaCritica(cuenta);
+
+  return { critica, pasadoInicial };
+}
+
+/** La tanda paralela con la que pinta la vista (ver arriba). */
+async function juntaCritica(
+  cuenta: Promise<{
+    perfil: SessionProfile;
+    atletas: Awaited<ReturnType<typeof getManagedAthletes>>;
+    inscripciones: Record<string, string>;
+    solicitudes: { competitionId: string; athleteId: string; status: EntryStatus }[];
+  }>,
+) {
+  const [eventos, { perfil: sesion, atletas, inscripciones, solicitudes }, temporada, frescura] =
+    await Promise.all([
+      calendarioCompartido.eventosDelCalendario(),
+      cuenta,
+      getCurrentSeason(),
+      getDataFreshness(),
+    ]);
+  return { perfil: sesion, eventos, atletas, inscripciones, solicitudes, temporada, frescura };
 }
 
 /**

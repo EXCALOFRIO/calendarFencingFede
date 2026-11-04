@@ -116,6 +116,7 @@ function evento(sobre: Partial<EventView> = {}): EventView {
     notes: null,
     lastSeenAt: new Date('2026-10-01T12:00:00Z'),
     disappearedAt: null,
+    cancelled: false,
     competitions: [prueba()],
     documents: [],
     liveLinks: [],
@@ -314,6 +315,17 @@ describe('la ficha', () => {
     expect(html).not.toContain('>https://www.kotoden.co.jp');
     // El pabellón leído aparece una vez, en la sede.
     expect(html.match(/Kagawa Prefectural Arena/g)).toHaveLength(1);
+  });
+
+  it('un torneo cancelado lo dice arriba y no invita a inscribirse', () => {
+    const cancelado = evento({ ...ev, cancelled: true });
+    const html = pintar(cancelado);
+    // «Cancelada» en la cabecera, y donde iría el plazo, la verdad.
+    expect(html).toContain('Cancelada');
+    expect(html).toContain('La organización la ha cancelado');
+    // Sin la pastilla del estado del plazo ni la barra: no hay nada que cerrar.
+    expect(html).not.toContain('data-slot="estado-plazo"');
+    expect(html).not.toContain('Cierra en');
   });
 
   it('un torneo terminado lo dice, sin plazo y sin banda de resultados hasta que haya algo', () => {

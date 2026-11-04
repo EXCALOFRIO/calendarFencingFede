@@ -73,13 +73,20 @@ async function ContenidoCalendario({
    */
   // Un solo «hoy» para el servidor y para el primer pintado del cliente (ver `VistaCalendario`).
   const hoy = hoyMadrid();
-  const { perfil, eventos, atletas, inscripciones, solicitudes, temporada, frescura, pasadoInicial } =
-    await cargarPantallaCalendario({
-      perfil: sesion,
-      hoy,
-      mes: inicial.mes ?? null,
-      meses: (inicial.vista ?? 'trimestre') === 'mes' ? 1 : 3,
-    });
+  /*
+    La carga va en dos velocidades: lo que hace falta para pintar (`critica`)
+    se espera aquí, y el pasado del tramo de arranque viaja como promesa a la
+    vista sin resolverlo —el calendario se enseña ya y aquel hueco entra por
+    el stream cuando se resuelve (`pasadoInicial` de `VistaCalendario`).
+  */
+  const { critica, pasadoInicial } = cargarPantallaCalendario({
+    perfil: sesion,
+    hoy,
+    mes: inicial.mes ?? null,
+    meses: (inicial.vista ?? 'trimestre') === 'mes' ? 1 : 3,
+  });
+  const { perfil, eventos, atletas, inscripciones, solicitudes, temporada, frescura } =
+    await critica;
 
   const tiradores: TiradorOpcion[] = atletas.map((a) => ({
     id: a.id,

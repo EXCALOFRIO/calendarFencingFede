@@ -113,7 +113,7 @@ describe('EFC en el calendario ya celebrado', () => {
     id: 'ev-tes', source: 'skermo_rfee', sourceUrl: null, name: 'CIRCUITO EUROPEO CADETE', startDate: '2026-10-03',
     endDate: '2026-10-04', venue: null, venueAddress: null, city: 'TESALÓNICA', country: 'GR', geoLat: null, geoLon: null,
     timezone: null, officialSite: null, imageUrl: null, circuit: 'ECC', scope: 'INTERNACIONAL', regionalFederation: null,
-    notes: null, lastSeenAt: new Date(0), disappearedAt: null,
+    notes: null, lastSeenAt: new Date(0), disappearedAt: null, cancelled: false,
     competitions: [prueba({ id: 'ec-m' }), prueba({ id: 'ec-f', gender: 'F' })],
     documents: [], liveLinks: [], linkedEvents: [], sources: [], imageSource: null, circuitFie: null, datosExtraidos: [],
   };

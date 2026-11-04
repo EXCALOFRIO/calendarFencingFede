@@ -85,6 +85,7 @@ const evento = (parcial: Partial<EventView> = {}): EventView =>
     notes: null,
     lastSeenAt: new Date(0),
     disappearedAt: null,
+    cancelled: false,
     competitions: [prueba({ id: 'p1', competitionDate: '2026-10-15' }), prueba({ id: 'p2', competitionDate: '2026-10-18' })],
     documents: [],
     liveLinks: [],
@@ -147,6 +148,22 @@ describe('la fila de competición, una para todo', () => {
     expect(pruebasDe(e, { arma: true, genero: true, categoria: false })).toEqual(['Florete masculino', 'Florete femenino']);
     expect(pruebasDe(evento({ competitions: [prueba({ weapon: 'ESPADA', gender: 'F', category: 'M17' })] }), { arma: true, genero: true, categoria: true })).toEqual(['Espada Fem. M17']);
     expect(pruebasDe(e, { arma: false, genero: false, categoria: false })).toEqual([]);
+  });
+
+  it('un torneo cancelado se queda en el calendario: tachado, con «Cancelada» y sin plazo', () => {
+    const marcado = tarjeta(
+      [evento({ cancelled: true, name: 'COPA MUNDO PALMA DE MALLORCA' })],
+      { p1: 'pendiente' },
+    );
+    // No desaparece: se sigue viendo su nombre y su sede.
+    expect(marcado).toContain('Palma de Mallorca');
+    expect(marcado).toContain('data-cancelada');
+    expect(marcado).toContain('Cancelada');
+    expect(marcado).toContain('line-through');
+    // El plazo no invita a nada; «Inscrito» sigue siendo verdad y se mantiene.
+    expect(marcado).not.toContain('Cierra en');
+    expect(marcado).not.toContain('Entre semana');
+    expect(marcado).toContain('Inscrito');
   });
 
   it('el plazo dice «día» en singular y tiene tono de semáforo', () => {
