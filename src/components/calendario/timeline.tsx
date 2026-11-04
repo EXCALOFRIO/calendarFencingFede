@@ -110,8 +110,10 @@ function claveDeItem(item: ItemMes): string {
 /**
  * La tarjeta de un bloque va dentro de un `<li>` sin maquetar fuera de
  * pantalla: en el feed del móvil y en la columna del escritorio, lo que no se
- * ve no se maqueta (`content-visibility`), con 88 px de alto estimado — una
- * tarjeta de un torneo mide unos 90 px (`auto` recuerda el alto real).
+ * ve no se maqueta (`content-visibility`), con 160 px de alto estimado —
+ * las tarjetas con chips de plazo/cancelada y varias pruebas pasan de los
+ * 88 px iniciales; estimarlas bajo hacía saltar el scroll al maquetarlas
+ * (`auto` recuerda el alto real tras la primera vez).
  * Memorizada para que abrir una ficha no repinte el mes entero.
  */
 const ItemDeLista = React.memo(function ItemDeLista({ item, ...comun }: { item: ItemMes } & Comun) {
@@ -126,7 +128,7 @@ const ItemDeLista = React.memo(function ItemDeLista({ item, ...comun }: { item: 
     );
   }
   return (
-    <li className="[content-visibility:auto] [contain-intrinsic-size:auto_88px]">
+    <li className="[content-visibility:auto] [contain-intrinsic-size:auto_160px]">
       <TarjetaBloque bloque={item.bloque} {...comun} />
     </li>
   );
@@ -242,7 +244,7 @@ export function FeedMovil({
         </nav>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain contain-layout">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {porMes.map((m) => (
           <section key={`${m.anio}-${m.mes}`} id={ancla(m)} className="scroll-mt-1">
             {/* Fondo sólido, sin alfa ni desenfoque: va por encima de las tarjetas al desplazarse. */}

@@ -39,7 +39,7 @@ export function LoQueViene({
       <ul className="flex min-w-0 flex-col border-t border-border">
         {bloques.map((bloque) => (
           // La misma reserva que en `ItemDeLista`: fuera de pantalla no se maqueta.
-          <li key={bloque.clave} className="[content-visibility:auto] [contain-intrinsic-size:auto_88px]">
+          <li key={bloque.clave} className="[content-visibility:auto] [contain-intrinsic-size:auto_160px]">
             <TarjetaBloque
               bloque={bloque}
               inscripciones={inscripciones}

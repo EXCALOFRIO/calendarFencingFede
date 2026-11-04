@@ -1659,7 +1659,7 @@ function ListadoCalendario({
           */}
           {escritorio !== false ? (
           <div
-            className="hidden min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain sm:flex"
+            className="hidden min-h-0 flex-1 flex-col gap-3 overflow-y-auto sm:flex"
           >
             <div
               className={cn(
