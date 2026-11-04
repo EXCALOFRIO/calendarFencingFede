@@ -31,3 +31,5 @@ tests/ui/iconos.html
 # Libro del piloto de IA (contadores locales de documentos y coste)
 .piloto-ia
 qa-*.tmp
+*.tmp
+.playwright-mcp/

@@ -664,7 +664,14 @@ export function VistaCalendario({
       enCamino.current.delete(clave);
       pedirTramo(tramo);
     };
-    pasadoPromesa
+    /*
+      La promesa que llega por el stream de React no es una promesa de
+      verdad: su `then` NO devuelve otra promesa (sólo está pensado para
+      `use()`), así que encadenarle `.then().catch()` revienta en cliente.
+      `Promise.resolve` la asimila: la convierte en una promesa real a la
+      que sí se le puede encadenar.
+    */
+    Promise.resolve(pasadoPromesa)
       .then((datos) => {
         if (!vigente) return;
         if (!datos) {
